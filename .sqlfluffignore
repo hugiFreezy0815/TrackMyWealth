@@ -1,0 +1,4 @@
+# V90 is vendored verbatim from the quartz-2.3.2.jar (see its own header comment) - it follows
+# Quartz's upstream formatting, not this project's SQL style, and must stay byte-for-byte
+# reproducible from that source rather than being reformatted.
+backend/src/main/resources/db/migration/V90__quartz_schema.sql

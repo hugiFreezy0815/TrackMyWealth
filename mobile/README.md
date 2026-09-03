@@ -6,7 +6,7 @@ the project.
 
 This one codebase targets iOS, Android, **and web** (via `react-native-web`, already configured).
 The web build is deployed independently from the native app-store builds - see "Web app" below -
-but it is deliberately the *same* screens and components, not a separate implementation, so the
+but it is deliberately the _same_ screens and components, not a separate implementation, so the
 web experience stays identical to mobile by construction rather than by manual upkeep.
 
 ## What's here

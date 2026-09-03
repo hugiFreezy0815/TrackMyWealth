@@ -9,27 +9,35 @@ for `requirements-personal-wealth-platform.md` and
 ## What's here
 
 ```
-.github/workflows/backend-ci.yml Runs the backend test suite (incl. Testcontainers) on every push/PR
-.github/workflows/mobile-web-ci.yml Type-checks and builds the web export on every push/PR
+.github/workflows/backend-ci.yml    Backend tests, formatting/static analysis, SQL lint, Docker build
+.github/workflows/mobile-web-ci.yml Type-check, lint, format-check, test, web export build
+.github/workflows/codeql.yml        SAST (Java + JS/TS), every push/PR
+.github/workflows/gitleaks.yml      Secret scanning, every push/PR
+.github/dependabot.yml              Weekly dependency-update PRs (Maven, npm, Docker, Actions)
+.sqlfluff / .sqlfluffignore         SQL lint config - see docs/architecture/development-standards.md
 backend/                         Spring Boot 3 / Java 17 backend
+  mvnw / mvnw.cmd / .mvn/          Maven Wrapper - always build via ./mvnw, not a local mvn
   Dockerfile                     Multi-stage build -> runtime image (amd64/arm64/armv7)
-  pom.xml
+  pom.xml                        Spotless/PMD/SpotBugs/JaCoCo wired into the verify phase
   src/main/java/.../TrackMyWealthApplication.java
   src/main/java/.../config/DatabaseBootstrapInitializer.java   <- see "Database" below
   src/main/java/.../config/SecurityConfig.java                  <- placeholder posture + CORS, see EPIC-02/28
   src/main/resources/application.yml
-  src/main/resources/db/migration/V1..V20__*.sql               <- the full MVP schema
+  src/main/resources/db/migration/V1..V21__*.sql               <- the full MVP schema
   src/main/resources/db/migration/V90__quartz_schema.sql       <- background-job store (EPIC 30)
-  src/test/java/.../DatabaseBootstrapInitializerTest.java       <- US-01-01
+  src/test/java/.../architecture/ArchitectureTest.java           <- layering rules (ArchUnit)
+  src/test/java/.../db/SchemaConventionsTest.java                 <- US-28-03 (no SERIAL PKs)
   src/test/java/.../TrackMyWealthApplicationStartupTest.java    <- US-01-02
 mobile/                          React Native + Expo (SDK 57) client - iOS, Android, AND web
   app.json
+  eslint.config.js / .prettierrc.json  Lint + format config
   src/app/                       File-based routes, shared across all three platforms
-  src/api/client.ts               Fetch wrapper around the backend (EXPO_PUBLIC_API_URL)
+  src/api/client.ts               Fetch wrapper around the backend (EXPO_PUBLIC_API_URL), tested
   README.md                      Mobile + web setup, run, and deploy instructions
 docs/
   architecture/
     database-schema.md          Design rationale, migration index, ERD
+    development-standards.md    Coding standards per language, what's automated vs. convention
     adr/0001-database-auto-migration.md
   user-stories/
     README.md                   Backlog index and suggested sequencing
@@ -125,9 +133,9 @@ running on the same NAS if you want everything on one box.
 
 ```bash
 cd backend
-mvn verify          # requires a local Docker daemon - Testcontainers starts real PostgreSQL 16
-                     # instances for DatabaseBootstrapInitializerTest and
-                     # TrackMyWealthApplicationStartupTest (US-01-01/US-01-02's Definition of Done)
+./mvnw verify        # requires a local Docker daemon - Testcontainers starts real PostgreSQL 16
+                     # instances for the DB-level tests, and this also runs formatting/static
+                     # analysis (Spotless, PMD, SpotBugs) - see docs/architecture/development-standards.md
 ```
 
 `.github/workflows/backend-ci.yml` runs the same command on every push/PR touching `backend/**` —
@@ -135,10 +143,18 @@ GitHub-hosted runners have Docker preinstalled, so no extra CI setup is needed f
 This is the first slice of test coverage; most epics' Definition of Done (see
 `docs/user-stories/`) still needs its corresponding implementation and tests written.
 
-`.github/workflows/mobile-web-ci.yml` type-checks `mobile/` and builds its web export
-(`npx expo export -p web`) on every push/PR touching `mobile/**`, as a build-verification smoke
-test for the independent web app. It does not deploy anywhere yet — wire your chosen static host's
-deploy step in once you've picked one (Vercel, Netlify, Cloudflare Pages, ...).
+`.github/workflows/mobile-web-ci.yml` type-checks, lints, formats-checks and tests `mobile/`, then
+builds its web export (`npx expo export -p web`) on every push/PR touching `mobile/**`. It does
+not deploy anywhere yet — wire your chosen static host's deploy step in once you've picked one
+(Vercel, Netlify, Cloudflare Pages, ...).
+
+`.github/workflows/codeql.yml` (SAST, both languages) and `.github/workflows/gitleaks.yml` (secret
+scanning) run on every push/PR across the whole repo; `.github/dependabot.yml` opens weekly
+dependency-update PRs for Maven, npm, the backend's Docker base images, and the GitHub Actions
+themselves.
+
+See **`docs/architecture/development-standards.md`** for the full picture — what's enforced
+automatically vs. convention-only, per language, and how to run each check locally before pushing.
 
 ## Where to start as a developer
 

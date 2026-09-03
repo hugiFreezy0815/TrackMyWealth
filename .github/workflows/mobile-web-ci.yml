@@ -45,6 +45,15 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      - name: Lint
+        run: npx expo lint
+
+      - name: Format check
+        run: npx prettier --check .
+
+      - name: Test
+        run: npx jest --ci
+
       # This is the independent web app's build step - it's the same Expo Router codebase as
       # iOS/Android (see mobile/README.md), exported as a static site. A successful export here
       # is what the deploy pipeline for the web app would run before publishing `dist/`.
