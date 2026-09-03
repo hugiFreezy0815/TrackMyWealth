@@ -1,0 +1,52 @@
+name: Mobile Web CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-web-ci.yml"
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-web-ci.yml"
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # expo-env.d.ts (gitignored, machine-generated) is normally created the first time the
+      # Expo CLI runs against the project; tsc needs it to resolve the ambient *.css/*.module.css
+      # module declarations `expo/types` provides. Content matches exactly what `expo start`
+      # writes on first run.
+      - name: Generate Expo types
+        run: |
+          cat > expo-env.d.ts << 'EOF'
+          /// <reference types="expo/types" />
+
+          // NOTE: This file should not be edited and should be in your git ignore
+          EOF
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      # This is the independent web app's build step - it's the same Expo Router codebase as
+      # iOS/Android (see mobile/README.md), exported as a static site. A successful export here
+      # is what the deploy pipeline for the web app would run before publishing `dist/`.
+      - name: Build web export
+        run: npx expo export -p web

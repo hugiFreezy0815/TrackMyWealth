@@ -1,0 +1,54 @@
+# Full local/self-hosted stack: PostgreSQL + the backend API, both containerized. Suitable for a
+# laptop (`docker compose up -d`) or a self-hosted NAS (e.g. Synology Container Manager pointed at
+# this file) - see the root README's "Running on a NAS" section.
+#
+# Postgres deliberately has NO database or schema pre-created - that is the point: it lets the
+# application's own startup sequence (DatabaseBootstrapInitializer creates the `trackmywealth`
+# database, then Flyway creates the schema) do its job, rather than relying on Postgres's
+# image-level POSTGRES_DB variable to do that step for you. See
+# docs/architecture/adr/0001-database-auto-migration.md.
+#
+# The mobile/web client (`mobile/`) is not part of this stack - it's built and deployed
+# separately (native app stores; the web build as a static site). See mobile/README.md.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: trackmywealth
+      POSTGRES_PASSWORD: trackmywealth
+      # Deliberately NOT setting POSTGRES_DB here - the application creates its own database on
+      # first startup. If you want Postgres to pre-create it instead, set POSTGRES_DB=trackmywealth
+      # and DB_AUTO_CREATE=false on the backend service below.
+    ports:
+      - "5432:5432"
+    volumes:
+      - trackmywealth_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trackmywealth"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # `postgres` here is the other service's name, resolved via Docker's internal DNS - not
+      # `localhost`, since the two containers are not the same network namespace.
+      DB_URL: jdbc:postgresql://postgres:5432/trackmywealth
+      DB_USERNAME: trackmywealth
+      DB_PASSWORD: trackmywealth
+      # No login/JWT issuance is implemented yet (see EPIC-02/28), so the placeholder default in
+      # application.yml is left as-is here. Override with a real secret via a `.env` file
+      # (docker compose reads one automatically) once auth exists:
+      #   JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  trackmywealth_pgdata:

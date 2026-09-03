@@ -1,0 +1,39 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # Testcontainers (DatabaseBootstrapInitializerTest, TrackMyWealthApplicationStartupTest)
+      # needs a Docker daemon - already present on GitHub-hosted ubuntu-latest runners.
+      - name: Run tests
+        run: mvn -B verify
+
+      # Verifies the deployment path a self-hosted install (laptop or NAS) actually uses
+      # (`docker compose up -d --build`, see the root README's "Running on a NAS" section) still
+      # builds - separate from the Maven build above, which doesn't touch the Dockerfile at all.
+      - name: Build Docker image
+        run: docker build -t trackmywealth-backend .
