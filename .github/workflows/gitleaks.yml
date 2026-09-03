@@ -8,6 +8,11 @@ on:
 jobs:
   gitleaks:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # gitleaks-action calls the PR-commits API to scan just the PR's diff on a pull_request
+      # event - without this it fails with "Resource not accessible by integration".
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:

@@ -14,6 +14,10 @@ jobs:
     permissions:
       security-events: write
       contents: read
+      # The analyze step looks up workflow-run metadata (e.g. to categorize results for a PR vs.
+      # a push) - without this it fails at the very end with "Resource not accessible by
+      # integration" even though the scan itself already completed.
+      actions: read
     strategy:
       fail-fast: false
       matrix:
