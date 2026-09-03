@@ -35,7 +35,15 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
     validate-on-migrate: true
-    out-of-order: false
+    # V90 (Quartz's own schema) is deliberately numbered far above the domain migrations
+    # (V1-V20, V21+) to keep framework-owned schema visually separate - see
+    # V90__quartz_schema.sql's header. That only works if out-of-order application is allowed:
+    # once V90 has run on any environment, Flyway's default (out-of-order: false) would refuse
+    # every subsequent V21..V89 domain migration as "not applied in order," since they sort
+    # before the highest version already applied. V21 and V90 have no dependency on each other
+    # (Quartz's tables vs. the transaction ledger), so applying V21 after V90 on an
+    # already-migrated database is safe.
+    out-of-order: true
 
   jpa:
     open-in-view: false

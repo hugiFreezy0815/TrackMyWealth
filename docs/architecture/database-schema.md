@@ -49,11 +49,29 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V18` | `reference_package`, `pension_scheme_rule`, `gics_structure_version`, `fallback_sector_taxonomy`, `trading_calendar` |
 | `V19` | Baseline reference-data seed (categories, institution catalogue, fallback taxonomy) — **must run before V20** |
 | `V20` | Row-level security: `current_household_id()`, per-table policies, the household bootstrap sequence |
+| `V21` | Fixes `trg_transaction_append_only` (V10) to also cover `fee_amount`/`fx_rate_to_account_currency`/`fx_rate_date`, which the original trigger omitted |
+| `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
-All twenty migrations have been applied end-to-end against a real PostgreSQL 16 instance as part
-of this design (including a positive/negative row-level-security test as a non-superuser role);
-see the commit history for the fixes that came out of that pass (reserved-word collision on
-`system_user`, partitioned-table primary key rules for `price`/`fx_rate`/`daily_valuation`).
+All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
+instance as part of this design (including a positive/negative row-level-security test as a
+non-superuser role); see the commit history for the fixes that came out of that pass
+(reserved-word collision on `system_user`, partitioned-table primary key rules for
+`price`/`fx_rate`/`daily_valuation`).
+
+### Migration numbering and out-of-order application
+
+`V90` (Quartz's own job-store schema) is deliberately numbered far above the domain migrations so
+it reads as visually distinct framework-owned schema rather than another `V21`, `V22`, ... in the
+same sequence as `household`/`account`/`transaction`. That only works because
+`spring.flyway.out-of-order` is `true` (`application.yml`): once `V90` has been applied to a
+database, Flyway's default (`out-of-order: false`) would refuse every subsequent domain migration
+numbered below it (`V21`-`V89`) as "not applied in order." `V21` (the append-only trigger fix
+below) is what surfaced this — it was rejected on a database that already had `V90` applied until
+`out-of-order` was turned on. This is safe here because `V21` and `V90` touch disjoint,
+independent parts of the schema (the transaction ledger vs. Quartz's tables); it would not
+automatically be safe for two migrations that *do* depend on each other's ordering, so don't reach
+for `out-of-order` reflexively when adding a future migration in this range - the pairing has to
+be independent for it to be sound.
 
 ## 3. The account hierarchy (class-table inheritance)
 
