@@ -1,0 +1,31 @@
+[sqlfluff]
+dialect = postgres
+templater = raw
+max_line_length = 100
+
+# Only new/changed migrations are linted in CI (see .github/workflows/backend-ci.yml) - an
+# already-applied Flyway migration must never be rewritten, since that would change its checksum
+# and break `flyway.validate-on-migrate` for every environment that already ran it (see
+# docs/architecture/database-schema.md's "never edit an applied migration" convention). This file
+# still applies if you run sqlfluff by hand against an existing migration for reference.
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+# Table/column names are lower_snake_case throughout the schema; type/function names
+# (NUMERIC, gen_random_uuid()) follow their own casing - leave identifier casing unconstrained.
+extended_capitalisation_policy = none
+
+[sqlfluff:rules:capitalisation.functions]
+# The schema's own convention is lower_snake_case for both built-ins (now(), gen_random_uuid())
+# and user-defined trigger functions (trg_set_updated_at) - see V1__extensions_and_conventions.sql.
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = upper
+
+# The schema's own convention (V1__extensions_and_conventions.sql) is deliberately padded/aligned
+# column definitions for readability - don't fight that with a line-length-driven rule here.
+[sqlfluff:rules:layout.long_lines]
+ignore_comment_lines = true

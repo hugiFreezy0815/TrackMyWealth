@@ -37,3 +37,34 @@ jobs:
       # builds - separate from the Maven build above, which doesn't touch the Dockerfile at all.
       - name: Build Docker image
         run: docker build -t trackmywealth-backend .
+
+  sql-lint:
+    # Only new/changed migration files are linted, never the full directory: an already-applied
+    # Flyway migration must never be rewritten (it would change its checksum and break
+    # `flyway.validate-on-migrate` for every environment that already ran it - see
+    # docs/architecture/database-schema.md). See .sqlfluff for the project's SQL style and
+    # .sqlfluffignore for V90 (vendored verbatim from the Quartz jar, not this project's style).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install sqlfluff
+
+      - name: Lint new/changed migrations
+        run: |
+          changed_migrations=$(git diff --name-only --diff-filter=AM \
+            "origin/${{ github.base_ref }}...HEAD" -- 'backend/src/main/resources/db/migration/*.sql')
+          if [ -z "$changed_migrations" ]; then
+            echo "No changed migration files in this PR."
+            exit 0
+          fi
+          echo "Linting:"
+          echo "$changed_migrations"
+          echo "$changed_migrations" | xargs sqlfluff lint

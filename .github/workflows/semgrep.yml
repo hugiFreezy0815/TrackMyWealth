@@ -1,0 +1,34 @@
+name: Semgrep
+
+# Replaces CodeQL for SAST: CodeQL's analyze step uploads SARIF to GitHub's
+# Code Scanning API, which requires GitHub Advanced Security - not available
+# on private repos without a paid GHAS seat. Semgrep runs standalone (no
+# upload, no login) and works the same on free private repos.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * 1" # weekly, Monday 05:00 UTC
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # p/ci covers OWASP Top 10 + language security rules for Java/Kotlin/JS/TS;
+      # --error makes the job fail (non-zero exit) when a finding is reported.
+      - run: semgrep scan --config=p/ci --sarif --output=semgrep.sarif --error
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep.sarif
+          retention-days: 30
