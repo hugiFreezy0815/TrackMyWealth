@@ -37,7 +37,7 @@
     "jest": "~30.5.1",
     "jest-expo": "~57.0.5",
     "prettier": "^3.9.6",
-    "typescript": "~6.0.3"
+    "typescript": "~7.0.2"
   },
   "scripts": {
     "start": "expo start",
