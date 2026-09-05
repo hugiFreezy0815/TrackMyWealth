@@ -14,7 +14,7 @@ other tool-generated diff.
 |---|---|---|
 | Formatting | Spotless + google-java-format | **Automated** (`mvn verify`) |
 | Static analysis (bug patterns, best practices, security) | PMD | **Automated** (`mvn verify`) |
-| Static analysis (bug detection) | SpotBugs | **Automated** (`mvn verify`) |
+| Static analysis (bug detection) | SpotBugs (`spotbugs-exclude.xml` - each exemption named and justified, same standard as `SchemaConventionsTest`'s) | **Automated** (`mvn verify`) |
 | Architecture/layering rules | ArchUnit | **Automated** (`mvn test`, `ArchitectureTest`) |
 | Vulnerability scanning (Java + JS/TS) | Semgrep | **Automated** (`.github/workflows/semgrep.yml`) |
 | Dependency updates | Dependabot | **Automated** (`.github/dependabot.yml`) |

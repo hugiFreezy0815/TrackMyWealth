@@ -57,10 +57,14 @@
 
         <!-- Schema migrations: applied automatically on every application startup.
              See DatabaseBootstrapInitializer for pre-Flyway database creation, and
-             docs/architecture/adr/0001-database-auto-migration.md for the full rationale. -->
+             docs/architecture/adr/0001-database-auto-migration.md for the full rationale.
+             Spring Boot 4 split FlywayAutoConfiguration out of the (now-modularized)
+             spring-boot-autoconfigure jar into its own artifact - spring-boot-starter-flyway is
+             the one that actually wires migrate-on-startup back up; flyway-core alone (still
+             needed, e.g. as a compile-time API dependency) is not sufficient by itself anymore. -->
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -82,6 +86,13 @@
             <artifactId>jjwt-impl</artifactId>
             <version>0.13.0</version>
             <scope>runtime</scope>
+        </dependency>
+        <!-- Argon2id password hashing (FR-AUT-007): Spring Security's Argon2PasswordEncoder
+             requires a BouncyCastle Argon2 implementation on the classpath. -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.85.2</version>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -219,6 +230,7 @@
                 <configuration>
                     <effort>Max</effort>
                     <threshold>Medium</threshold>
+                    <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
                 </configuration>
                 <executions>
                     <execution>
