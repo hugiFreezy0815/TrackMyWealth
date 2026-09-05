@@ -16,7 +16,7 @@ other tool-generated diff.
 | Static analysis (bug patterns, best practices, security) | PMD | **Automated** (`mvn verify`) |
 | Static analysis (bug detection) | SpotBugs | **Automated** (`mvn verify`) |
 | Architecture/layering rules | ArchUnit | **Automated** (`mvn test`, `ArchitectureTest`) |
-| Vulnerability scanning (Java + JS/TS) | CodeQL | **Automated** (`.github/workflows/codeql.yml`) |
+| Vulnerability scanning (Java + JS/TS) | Semgrep | **Automated** (`.github/workflows/semgrep.yml`) |
 | Dependency updates | Dependabot | **Automated** (`.github/dependabot.yml`) |
 | Test coverage | JaCoCo | Reported, not gated (see below) |
 | Build reproducibility | Maven Wrapper (`./mvnw`) | Always use `./mvnw`, not a locally installed `mvn`, so CI and every contributor build with the same Maven version |
@@ -101,7 +101,7 @@ verbatim from the `quartz-2.3.2.jar` and must track that source exactly, not thi
 | Formatting | Prettier | **Automated** (`.github/workflows/mobile-web-ci.yml`) |
 | Type checking | `tsc --noEmit` (strict mode) | **Automated** (`.github/workflows/mobile-web-ci.yml`) |
 | Unit tests | Jest (`jest-expo` preset) + Testing Library | **Automated** (`.github/workflows/mobile-web-ci.yml`) |
-| Vulnerability scanning | CodeQL | **Automated** (`.github/workflows/codeql.yml`) |
+| Vulnerability scanning | Semgrep | **Automated** (`.github/workflows/semgrep.yml`) |
 | Dependency updates | Dependabot | **Automated** (`.github/dependabot.yml`) |
 | Web build actually succeeds | `expo export -p web` | **Automated** (`.github/workflows/mobile-web-ci.yml`) |
 

@@ -11,7 +11,7 @@ for `requirements-personal-wealth-platform.md` and
 ```
 .github/workflows/backend-ci.yml    Backend tests, formatting/static analysis, SQL lint, Docker build
 .github/workflows/mobile-web-ci.yml Type-check, lint, format-check, test, web export build
-.github/workflows/codeql.yml        SAST (Java + JS/TS), every push/PR
+.github/workflows/semgrep.yml       SAST (Java + JS/TS), every push/PR
 .github/workflows/gitleaks.yml      Secret scanning, every push/PR
 .github/dependabot.yml              Weekly dependency-update PRs (Maven, npm, Docker, Actions)
 .sqlfluff / .sqlfluffignore         SQL lint config - see docs/architecture/development-standards.md
@@ -148,7 +148,7 @@ builds its web export (`npx expo export -p web`) on every push/PR touching `mobi
 not deploy anywhere yet — wire your chosen static host's deploy step in once you've picked one
 (Vercel, Netlify, Cloudflare Pages, ...).
 
-`.github/workflows/codeql.yml` (SAST, both languages) and `.github/workflows/gitleaks.yml` (secret
+`.github/workflows/semgrep.yml` (SAST, both languages) and `.github/workflows/gitleaks.yml` (secret
 scanning) run on every push/PR across the whole repo; `.github/dependabot.yml` opens weekly
 dependency-update PRs for Maven, npm, the backend's Docker base images, and the GitHub Actions
 themselves.
