@@ -1,0 +1,2302 @@
+TrackMyWealth — Consolidated Product & Requirements Specification
+ 
+Single source of truth for requirements engineering, architecture and backlog decomposition
+ 
+Table of Contents
+ 
+# 0. Document Provenance and Change Summary
+ 
+This edition merges the TrackMyWealth requirements baseline with a competitive software analysis of **Parqet, getquin, Ghostfolio and BlueBudget**. The baseline structure, numbering and requirement IDs are preserved; new material is additive.
+ 
+| Section | What was added in this edition |
+| --- | --- |
+| 1.1–1.2 | Market context, competitive positioning and differentiation pillars |
+| 5 | Cross-border, privacy-motivated and financial-independence personas |
+| 6 | PR-010 to PR-012 — correctness, no silent estimates, graceful degradation |
+| 9.2 | Container rules C1–C9 — empty containers, repeated account types, negative roll-ups, accounts without an institution |
+| 10.1–10.3 | Account capability model; discretionary mandates; occupational pension / vested benefits |
+| 11.1 | Currency attribution (local return vs FX contribution) |
+| 12.1 | **Balance ****&**** holdings snapshots and the reconciliation engine** — the single largest addition |
+| 14 | Statement cycle, transaction-date attribution, foreign-currency card transactions |
+| 19–20 | Identity resolution, effective-dated master data, successor linkage, completeness indicators |
+| 21 | Fund decomposition as a schema requirement; GICS structure versioning; fallback taxonomy |
+| 22 | Raw-vs-adjusted price immutability, trading calendars, backfill, FX as a parallel series |
+| 23 | **TWR/MWR methodology and the daily-valuation prerequisite**; explain-this-number |
+| 24 | Pension holdings included in consolidated allocation |
+| 25a | New section — Pension and retirement requirements |
+| 28, 28.1 | Snapshot import, connector health and degradation; **template-driven multi-bank CSV import and the deferred institution/template input** |
+| 30 | Consequences of open distribution for licensed data and API credentials |
+| 33 | Golden-dataset and known-answer verification requirements |
+| 35 | RULE-020 to RULE-032 |
+| 45–47 | New sections — risk register, calculation methodology, verification dataset |
+| 48–51 | **New sections — deployment topologies and tenancy; authentication and authorization; API and client applications; operations and data protection** |
+| 30 | Local-first restated as deployment sovereignty; offline requirements replaced with online-only behaviour |
+| 4, 31 | **User-facing export deferred (OOS-008); statutory portability obligation retained separately** |
+| 52–55 | **New sections — data lifecycle and deletion; concurrency; reference-data distribution; household lifecycle** |
+| 56 | Glossary (renumbered) |
+ 
+| Item | Baseline |
+| --- | --- |
+| Geographic scope | Switzerland (CH) and Germany (DE) |
+| Languages | English and German |
+| Product orientation | Privacy-first, open-source foundation. **Hybrid deployment: one architecture, two topologies — self-hosted or hosted service.** Client is online-only. |
+| Technology baseline | React Native + Expo (iOS, Android, web); Spring Boot REST API with JWT; PostgreSQL |
+| Target users | Individuals, beginner and advanced private investors, families/households |
+| Primary purpose | Personal finance + budgeting + investment/wealth consolidation |
+| Tax topics | Explicitly out of scope |
+| Document status | Consolidated requirements baseline, merged edition |
+ 
+# 1. Application Introduction
+ 
+TrackMyWealth is a privacy-first personal finance, portfolio and wealth-management application for private individuals and households in Switzerland and Germany. Its purpose is to bring financial data that is normally fragmented across banks, brokers, pension providers, credit-card providers and other financial institutions into one coherent, user-controlled system.
+ 
+The application combines household cash-flow and budgeting functions with advanced private-investor portfolio analytics. A user shall be able to understand not only how an investment portfolio performs, but also how salary, spending, saving, investing, liabilities and long-term wealth interact.
+ 
+**Core product promise:** one private application that shows where money is held, how it flows, how investments perform, what assets and liabilities exist, and the resulting consolidated net worth.
+ 
+## 1.1 Market context and competitive positioning
+ 
+Four products define the competitive field. None occupies the position TrackMyWealth targets.
+ 
+| Product | Position | Strength | Gap relative to TrackMyWealth |
+| --- | --- | --- | --- |
+| **Parqet** (DE, ~350k users) | DACH portfolio tracker | Deepest German broker ingestion; PDF parsing for 50+ brokers; broker-reported holdings reconciliation; ETF look-through; FIFO cost basis | Assets only, no budgeting; German-centric; no Swiss pension; cloud-only; paid tiers gate the valuable analytics |
+| **getquin** (DE, ~500k users) | Wealth platform with social layer | Widest European account connectivity; AI document import; instrument-level community | Retrofitting cashflow onto an investment model — had to split cash into a separate account type in mid-2026, relocating user balances; reported accuracy problems with corporate actions and transfers |
+| **Ghostfolio** (CH, open source) | Self-hosted wealth tracker | Data sovereignty; documented REST API; clean six-type activity model; deliberate scope restraint | No broker connectivity at all; no budgeting; no pension; AGPL constrains commercial reuse |
+| **BlueBudget** (CH) | Swiss budgeting app | Swiss open banking via SIX bLink; budgets derived from real transactions; expense splitting; strong behavioural design | No securities capability; Switzerland only; young product |
+ 
+**Two structural gaps follow:**
+ 
+- **Nobody covers both sides of the balance sheet in one coherent model.** Trackers ignore spending; budgeting apps ignore investments. The one product attempting both is visibly paying the cost of retrofitting.
+ 
+- **Nobody serves Switzerland and Germany equally.** The German leader has no Swiss pension competence; the Swiss leader has no securities capability. Cross-border households — CH residents with German brokers, DE residents with Swiss accounts, cross-border commuters — currently run two tools and reconcile by hand.
+ 
+## 1.2 Differentiation pillars
+ 
+Each pillar is an architecture commitment, not a feature to be added later.
+ 
+| # | Pillar | Why it is defensible |
+| --- | --- | --- |
+| D1 | **Unified balance-sheet and cashflow domain model**, designed as one from day one | Retrofitting is the documented failure of the nearest competitor; the cost of doing it later is user-visible data migration |
+| D2 | **Pension folded into the whole picture** — Pillar 3a holdings counted in consolidated asset allocation and concentration analysis | No analysed product does this. For a Swiss user with a large 3a equity allocation, any concentration analysis that omits it is simply wrong. |
+| D3 | **Dual-jurisdiction CH/DE households treated as normal**, with a full multi-tier currency model | The market is structurally split; nobody serves the overlap |
+| D4 | **Measurement quality** — TWR and MWR side by side, currency attribution, reconciliation against provider-reported balances, standards-based classification | Trackers lose users to wrong numbers, not missing features |
+| D5 | **Deployment sovereignty** — the household may run the entire system on infrastructure it controls, with direct access to its own database | Only Ghostfolio offers self-hosting, and it has no cashflow, budgeting or pension capability. Parqet and getquin are cloud-only. |
+ 
+**Positioning caution.** D1–D5 are architecture-led and therefore slow for a competitor to copy — but also slow to demonstrate on a landing page. A feature such as a tax export would have been easier to show and is out of scope. Launch messaging must solve this deliberately (see OPEN-018).
+ 
+# 2. Product Vision and Objectives
+ 
+TrackMyWealth shall provide a single financial system of record capable of answering:
+ 
+- What do I or my household own?
+ 
+- What do I or my household owe?
+ 
+- Where is the money held?
+ 
+- How much cash is available?
+ 
+- How much was earned, spent, saved and invested?
+ 
+- How are investments performing?
+ 
+- What are Time-Weighted Return (TWR) and Money-Weighted Return (MWR)?
+ 
+- How are assets allocated by asset class, GICS sector/industry, currency, country, institution and account?
+ 
+- How has net worth developed over time?
+ 
+- How are financial goals progressing?
+ 
+- **Does what the application shows agree with what the bank or broker reports?**
+ 
+The application is an information, consolidation, analysis and reporting system. It shall not execute payments, bank transfers or security trades.
+ 
+# 3. Scope
+ 
+## 3.1 Geographic scope
+ 
+- Switzerland (CH)
+ 
+- Germany (DE)
+ 
+Country-specific functionality, terminology, institutions and integrations shall focus on these two markets. The domain model shall avoid hard-coding that would prevent future expansion. Austria is the natural third market; connectivity built for Germany is largely reusable there, jurisdiction-specific logic is not.
+ 
+## 3.2 Language scope
+ 
+- English
+ 
+- German
+ 
+**Note for planning:** DE+EN covers Germany fully and German-speaking Switzerland, roughly two-thirds of the Swiss market. The Romandie and Ticino are not served. French should be treated as the first post-launch language, and no design decision may foreclose FR/IT.
+ 
+## 3.3 Financial scope
+ 
+- Bank/current accounts and savings accounts
+ 
+- Securities accounts / depots
+ 
+- Pension accounts, including Swiss Pillar 3a and Swiss Pillar 2 / vested-benefit accounts
+ 
+- Discretionary / managed mandates (robo-advisors and managed 3a products)
+ 
+- Credit cards
+ 
+- Mortgages and loans
+ 
+- Cryptocurrency accounts/wallets
+ 
+- Cash, securities, pensions, real estate, commodities, precious metals and custom assets
+ 
+- Household cash flow, budgeting, savings and financial goals
+ 
+- Portfolio valuation, asset allocation, TWR, MWR, dividends and benchmark comparison
+ 
+# 4. Explicitly Out of Scope
+ 
+| ID | Capability | Decision |
+| --- | --- | --- |
+| OOS-001 | Brokerage / trade execution | Not supported |
+| OOS-002 | Payment execution | Not supported |
+| OOS-003 | Professional financial advice | Not supported |
+| OOS-004 | Tax calculations, tax reporting, tax-return preparation or filing | Not supported at all |
+| OOS-005 | Private-equity valuation | Not supported |
+| OOS-006 | Public social network / public portfolio feed | Not supported |
+| OOS-007 | Stock screening and investment research terminal | Not supported. Ghostfolio omits this entirely and remains viable; large scope, low differentiation. |
+| OOS-008 | **User-facing data export** | **Not a requirement at present.** Deferred to post-MVP (section 38). See section 31 for the residual obligation that cannot be deferred. |
+ 
+## 4.1 Tax exclusion — retained residue
+ 
+Tax functionality is out of scope. However, **tax amounts are a cash event that changes what the user actually received**, and cannot be discarded without making returns wrong. The following is retained explicitly as *return mechanics*, not as tax functionality:
+ 
+| ID | Retained | Reason |
+| --- | --- | --- |
+| FR-TAXR-001 [MUST] | Tax deducted at source is stored as a distinct amount on the transaction, and gross versus net income is distinguishable | A gross dividend of 100 with 35% withheld puts 65 in the user’s account. Recording only the net figure makes dividend analysis wrong; recording only the gross figure makes the cash balance wrong. |
+| FR-TAXR-002 [MUST] | Withholding-source country is retained on the security master | Used to explain a reduced dividend receipt. No reclaim logic is built. |
+| FR-TAXR-003 [MUST] | Cost-basis method remains a configurable accounting parameter | Required for realised gain/loss and for reconciliation against broker statements. Accounting requirement, not tax. |
+| FR-TAXR-004 [MUST] | Tax-related source fields are never dropped at import | Historical withholding data cannot be reconstructed later. Capturing it costs nothing now and is impossible to backfill. |
+ 
+**Design instruction:** do not remove tax fields from the schema. Should tax reporting ever be reinstated, the historical data must already be present.
+ 
+# 5. Target Users
+ 
+| User group | Primary needs |
+| --- | --- |
+| Beginner / private investor | Simple overview, understandable returns, easy imports, budgeting, savings, net worth, goals |
+| Advanced private investor | Consolidated depots, master data, prices, TWR/MWR, benchmarks, GICS, asset/currency/country exposure |
+| Family / household | Multiple users and owners, shared/private accounts, mortgages, credit cards, household budget, consolidated wealth |
+| **Cross-border household** | CH resident with a German broker, DE resident with Swiss accounts, or a cross-border commuter earning CHF and spending EUR. Needs dual-currency consolidation and both markets’ institutions in one place. Currently forced to run two tools. |
+| **Privacy-motivated user** | Rejects cloud aggregation of financial data. Needs the ability to self-host with no dependency on the project. This persona is the reason for the self-hosted topology and must not be traded away for convenience features. |
+| **Financial-independence planner** | Models time to independence: savings rate, withdrawal scenarios, net-worth trajectory |
+| System administrator | Manage users, roles, account status and system access |
+ 
+# 6. Product Principles
+ 
+**PR-001 — Privacy-first [MUST]**: Financial data shall be protected as a primary product requirement.
+ 
+**PR-002 — Deployment sovereignty [MUST]**: A user or household shall be able to run the entire system on infrastructure they control, with no dependency on a service operated by the project. The same application, API and schema serve both topologies; there is no reduced self-hosted variant and no separate codebase.
+ 
+*This supersedes the earlier local-first formulation. The client is an online API consumer in both topologies (section 48). Sovereignty is achieved by letting the user own the server, not by removing the server.*
+ 
+**PR-003 — User ownership [MUST]**: A household’s data belongs to that household. In the self-hosted topology this is achieved directly: the household controls the database. In the hosted topology it is achieved through backup, restore and the statutory portability obligation of section 31.
+ 
+*Amended: user-facing export is no longer a product requirement (OOS-008). The ownership principle is retained because it drives the deployment model and the data-protection obligations, not because of the export feature.*
+ 
+**PR-004 — Unified financial model [MUST]**: Budgeting and investing shall share one coherent domain model.
+ 
+**PR-005 — Financial correctness [MUST]**: Calculations shall be deterministic, reproducible and testable.
+ 
+**PR-006 — Progressive complexity [MUST]**: Beginners receive clear summaries; advanced users can drill into professional analytics.
+ 
+**PR-007 — Read/analyze only [MUST]**: The system does not move money or execute trades.
+ 
+**PR-008 — Extensible architecture [MUST]**: Institutions, data providers and account types shall be connected through abstractions.
+ 
+**PR-009 — Transparent classification [MUST]**: Source standards and user/reporting classifications shall be stored separately.
+ 
+**PR-010 — Correctness is the product [MUST]**: Where correctness and feature scope conflict, correctness wins. Competing trackers lose user trust through wrong numbers — mishandled corporate actions, missing cost basis, double-counted transfers — not through missing features. A wrong number displayed confidently is worse than a figure withheld with an explanation.
+ 
+**PR-011 — No silent estimates [MUST]**: Any value that is estimated, interpolated, carried forward or derived from incomplete data shall be visibly marked as such. The system shall never present an approximation with the same visual authority as a reconciled figure.
+ 
+**PR-012 — Graceful degradation [MUST]**: Failure of any external dependency — price provider, FX source, institution connector, classification data — shall degrade the affected feature only. It shall never block access to data already stored.
+ 
+# 7. High-Level Financial Domain
+ 
+TrackMyWealth
+|
++-- System Administration
+|   +-- Users
+|   +-- Roles / Permissions
+|
++-- Household / Financial Context
+    +-- Members / Owners
+    +-- Financial Institutions (Containers)
+        +-- Accounts
+            +-- Transactions
+            +-- Holdings / Positions
+            +-- Balances
+            +-- Snapshots (provider-reported)
+            +-- Valuations
+    +-- Security Master
+    +-- Budgets
+    +-- Goals
+    +-- Consolidated Reporting
+ 
+A Financial Institution is a container. It is not itself a bank account. Examples include PostFinance, Yuh, DKB, Sparkasse and VIAC. One container may hold different account types simultaneously.
+ 
+# 8. User Administration and Household Model
+ 
+## 8.1 System user versus household member
+ 
+A System User is a person who can authenticate to TrackMyWealth. A Household Member is a person represented in the financial model. These concepts shall be separate; a child or dependent may be represented financially without having a login.
+ 
+**FR-USR-001 — User administration [MUST]**: The system shall provide user administration for authorized administrators.
+ 
+**FR-USR-002 — Initial administrator [MUST]**: Initial setup shall establish at least one System Administrator.
+ 
+**FR-USR-003 — Create/edit/disable users [MUST]**: Administrators shall create, edit, disable and reactivate users.
+ 
+**FR-USR-004 — Roles [MUST]**: The initial roles shall include System Administrator and Standard User; the model shall support future expansion.
+ 
+**FR-USR-005 — Last-admin protection [MUST]**: The last active administrator shall not be disabled, deleted or demoted without another active administrator.
+ 
+**FR-USR-006 — User language [MUST]**: Each user shall have an English or German language preference.
+ 
+**FR-USR-007 — User reporting currency [MUST]**: A reporting currency shall be selected for each user profile and used for that user’s consolidated views.
+ 
+**FR-USR-008 — Household link [MUST]**: A System User may be linked to a Household Member.
+ 
+**FR-USR-009 — RBAC [MUST]**: Administrative permissions shall be enforced through role-based authorization, not UI hiding alone.
+ 
+**FR-USR-010 — Financial-access separation [MUST]**: System administration rights and financial-data access shall be modeled as distinct permission concerns.
+ 
+**FR-USR-011 — Disabled user data retention [MUST]**: Disabling a System User shall not delete or orphan the financial data of the linked Household Member. Ownership records reference the Member, not the User.
+ 
+## 8.2 Ownership model
+ 
+- Individual ownership
+ 
+- Joint ownership
+ 
+- Household ownership
+ 
+- Child/dependent
+ 
+**FR-HOU-001 — Household [MUST]**: The financial model shall support one or more household members/owners.
+ 
+**FR-HOU-002 — Ownership assignment [MUST]**: Accounts and relevant assets/liabilities shall be assignable to an owner or ownership context.
+ 
+**FR-HOU-003 — Ownership percentage [SHOULD]**: Fractional ownership should be supported where needed.
+ 
+**FR-HOU-004 — Future privacy levels [SHOULD]**: The architecture should support no access, balance-only, read, edit and full access for future multi-user sharing.
+ 
+**FR-HOU-005 — Ownership-aware aggregation [MUST]**: Where fractional or joint ownership applies, consolidated figures scoped to a single person shall apply the ownership share. Household-scoped figures shall count the full amount exactly once, never double-counting a jointly owned account across two members.
+ 
+**FR-HOU-006 — Ownership changes are dated [SHOULD]**: A change of ownership shall carry an effective date so historical reports remain reproducible.
+ 
+# 9. Financial Institution / Container
+ 
+The Financial Institution (also referred to as Institution or Container) is the grouping level for products provided by one bank, broker, pension provider or similar financial provider.
+ 
+**FR-INS-001 — Institution container [MUST]**: The system shall model institutions independently from accounts.
+ 
+**FR-INS-002 — Multiple accounts [MUST]**: A container shall support zero to many accounts of different types.
+ 
+**FR-INS-003 — Custom institutions [MUST]**: Users shall be able to add institutions not predefined by TrackMyWealth.
+ 
+**FR-INS-004 — Container currency [MUST]**: When a container is created, a container reporting currency shall be selected.
+ 
+**FR-INS-005 — No currency restriction [MUST]**: The container currency shall not restrict the currencies of accounts or securities inside the container.
+ 
+**FR-INS-006 — Institution summary [MUST]**: Every container shall have a dedicated Institution Summary View.
+ 
+**FR-INS-007 — Institution catalogue [MUST]**: A curated catalogue of Swiss and German institutions shall ship as seed data — name, country, type, identifier, logo, available import methods — searchable at container creation. The catalogue shall be maintained as configuration data and updatable without an application release.
+ 
+**FR-INS-008 — Institution type is descriptive only [MUST]**: An institution’s type (bank, broker, pension provider, card issuer, asset manager, exchange, other) is metadata for display and filtering. It shall never constrain which account types may be created beneath it. PostFinance is a bank, a broker and a 3a provider simultaneously; Yuh is a bank and a broker. Any validation rule coupling institution type to account type will break the first time a provider expands its offering, and will break for existing users.
+ 
+**FR-INS-009 — Institution reassignment [SHOULD]**: Accounts shall be movable between containers without data loss. Institutions merge, rebrand and are acquired.
+ 
+**FR-INS-010 — Missing connector never blocks [MUST]**: Any institution may be created and fully used with manual or file-based data alone. Automated connectivity is an optional enhancement layered on top, never a precondition.
+ 
+## 9.1 Institution Summary View
+ 
+Where applicable, the summary shall aggregate:
+ 
+- Total assets, total liabilities and net value
+ 
+- Cash balances and savings
+ 
+- Investment/depot value
+ 
+- Pension value
+ 
+- Mortgages, loans and credit-card liabilities
+ 
+- Income, expenses, savings and cash flow
+ 
+- Account overview
+ 
+- Investment performance, TWR, MWR and asset allocation for investment accounts
+ 
+**FR-INS-SUM-001 — Container summary currency [MUST]**: Aggregated values in the Institution Summary shall be displayed in the container currency.
+ 
+**FR-INS-SUM-002 — Drill-down [MUST]**: Institution summary values shall drill down to contributing accounts, positions or transactions.
+ 
+**FR-INS-SUM-003 — Mixed asset and liability display [MUST]**: Where a container holds both assets and liabilities, the summary net value may legitimately be negative — a Sparkasse container holding a current account and a mortgage is the normal case. Negative container totals shall be displayed correctly and shall not be presented as an error state.
+ 
+**FR-INS-SUM-004 — Summary currency transparency [MUST]**: Where the summary converts from account currencies to the container currency, the applied FX rate and its date shall be inspectable.
+ 
+## 9.2 Container rules
+ 
+The container is a generic grouping device. It holds no balance, no behaviour and no currency of its own beyond its chosen reporting currency.
+ 
+| Rule | Statement |
+| --- | --- |
+| C1 | A container holds 0..n accounts of **heterogeneous types** in any mixture |
+| C2 | An account belongs to **exactly one** container at a time (reassignable per FR-INS-009) |
+| C3 | **Container type never constrains account type** (FR-INS-008) |
+| C4 | The **same account type may occur repeatedly** in one container — three current accounts at UBS, two Pillar 3a accounts at VIAC, which is normal Swiss practice for staggered withdrawal. Account identity is therefore never the pair (container, type). |
+| C5 | A container may hold accounts in **different currencies** simultaneously |
+| C6 | A container may mix assets and liabilities, so its roll-up may be **negative** (FR-INS-SUM-003) |
+| C7 | A container may be **empty** and remain valid |
+| C8 | All container-level figures are **derived**, never stored |
+| C9 | **A container need not be an institution.** A default *Personal Assets* container holds items held with no provider — real estate, vehicles, precious metals, collectibles. Every account has a parent; some parents are not companies. |
+ 
+**FR-INS-011 — Personal Assets container [MUST]**: A default container shall exist for assets and liabilities not held at any institution, so that the tree remains uniform and no account is orphaned. See OPEN-012 regarding whether a privately held mortgage attaches here or to the lending institution.
+ 
+**FR-INS-012 — Extensibility verification [MUST]**: Introducing a new account type shall require no change to container logic, tree navigation or the consolidation layer. *Verification: add a new account type in a test build and confirm no consolidation code is modified.*
+ 
+# 10. Account Model
+ 
+| Account type | Purpose / examples |
+| --- | --- |
+| Cash / Current Account | Privatkonto, Girokonto, multi-currency cash account |
+| Savings Account | Sparkonto, Tagesgeld |
+| Securities Account / Depot | Stocks, ETFs, funds, bonds and other securities |
+| Managed Mandate | Discretionary portfolio managed by the provider (robo-advisor, managed 3a) |
+| Pension Account | Generic retirement/pension account; Swiss Pillar 3a as regional classification |
+| Vested Benefits / Occupational Pension | Swiss Pillar 2 / Freizügigkeit, German bAV |
+| Credit Card | Individual purchases plus outstanding liability |
+| Mortgage | Liability account |
+| Loan | Liability account |
+| Cryptocurrency Account / Wallet | Exchange, hardware/software wallet or manual wallet |
+| Custom Asset | Real estate, vehicles, precious metals, collectibles |
+ 
+**FR-ACC-001 — Account attributes [MUST]**: Each account shall store institution, name, account type, owner, native currency, status and optional identifiers.
+ 
+**FR-ACC-002 — Native account currency [MUST]**: Each account shall retain its own account currency independently of container and user reporting currencies.
+ 
+**FR-ACC-003 — Archive accounts [MUST]**: Closed accounts shall be archivable without deleting history.
+ 
+**FR-ACC-004 — Pillar 3a [MUST]**: Swiss Pillar 3a shall be represented as a Swiss classification of a generic pension account.
+ 
+**FR-ACC-005 — Account type is immutable [MUST]**: An account’s type shall not change after creation. A depot does not become a mortgage. Where conversion is genuinely required, it is close-and-recreate with an explicit migration, never an in-place update.
+ 
+**FR-ACC-006 — Archived accounts remain in history [MUST]**: An archived account shall be excluded from current totals but included in all historical series and reports covering periods when it was active.
+ 
+## 10.1 Account capability model
+ 
+The account **type** answers *what it is*. **Capabilities** answer *what it can do* — and capabilities are where behaviour actually lives.
+ 
+**FR-ACC-010 — Declared capabilities [MUST]**: Each account shall carry declared, queryable capability flags rather than having behaviour inferred from its type in application logic. Minimum set: holds_positions, has_transactions, has_statement_cycle, has_amortisation, has_contribution_limit, is_discretionary, manual_valuation.
+ 
+**FR-ACC-011 — Capability, not sub-type, drives variation [MUST]**: Behaviour that varies within a type shall be expressed as capability data, not as additional sub-types. **Pension is the proof case:** a VIAC Pillar 3a holds fund positions and must be performance-measurable exactly like a depot; a PostFinance Pillar 3a may be interest-bearing only; a Pillar 2 is a vested benefit with no visible positions. Creating SecuritiesPension, CashPension and OccupationalPension as separate types multiplies with every provider and jurisdiction added. One pension type with capability flags does not.
+ 
+**FR-ACC-012 — Uniform valuation interface [MUST]**: Every account type, whatever its internals, shall expose the same contract to the rest of the system: a signed value in its own currency at any given date, a currency, an asset/liability nature and a parent container. Consolidation, net worth, allocation and navigation shall consume only this interface and shall never branch on account type.
+ 
+**FR-ACC-013 — Nature derived from type [MUST]**: Asset/liability nature shall be derived from account type and applied as a sign in all aggregation, so that a mortgage can never be added to rather than subtracted from net worth.
+ 
+## 10.2 Discretionary / managed mandates
+ 
+Relevant to Swiss providers such as VIAC, frankly, True Wealth and Selma, and to managed depots generally.
+ 
+**FR-ACC-020 — Snapshot-led maintenance [SHOULD]**: For accounts flagged is_discretionary, the provider rebalances without user action. Holdings shall be maintained primarily from provider-reported snapshots rather than reconstructed from user-entered trades. The system shall not treat unexplained holding changes as missing data, and shall not prompt the user to add a missing trade.
+ 
+**FR-ACC-021 — Management fees recorded [SHOULD]**: Periodic management fees shall be recorded as fee transactions so that they appear in fee analysis and reduce measured return. Tracking a mandate independently of the provider’s own reporting is only worthwhile if the fees are visible in the result.
+ 
+**FR-ACC-022 — Default performance metric [SHOULD]**: TWR shall be the default headline metric for discretionary accounts and MWR for self-directed accounts, because TWR isolates the manager’s contribution from the user’s contribution timing. The user may override the default.
+ 
+## 10.3 Occupational pension and vested benefits
+ 
+**FR-ACC-030 — Balance-and-entitlement model [SHOULD]**: Swiss Pillar 2 and German bAV accounts shall be modelled as balance-only accounts updated from the annual pension certificate — vested benefit, interest credit, employer and employee contributions. They have no visible underlying positions, and forcing them into a holdings model produces meaningless performance figures.
+ 
+**FR-ACC-031 — Purchase capacity [COULD]**: Voluntary purchase capacity (Einkauf) may be recorded as a manually entered figure and surfaced as a savings-goal input. This is a planning feature, not a tax feature.
+ 
+# 11. Currency Model
+ 
+TrackMyWealth shall distinguish four currency concepts:
+ 
+| Level | Meaning | Example |
+| --- | --- | --- |
+| User reporting currency | Currency for the user’s global consolidated view | CHF |
+| Container currency | Currency for one institution’s summary | DKB = EUR |
+| Account / transaction currency | Native/source currency of the underlying financial record | USD account / EUR transaction |
+| Security price/listing currency | Currency in which a market price is quoted | AAPL listing in USD |
+ 
+User reporting currency (e.g. CHF)
+        ^
+        |  FX conversion
+Container currency (e.g. EUR)
+        ^
+        |  FX conversion if required
+Account / Transaction / Price currency (source currency)
+ 
+**FR-CUR-001 — User reporting currency [MUST]**: A reporting currency shall be selected for the user and used by the global consolidated view.
+ 
+**FR-CUR-002 — Container currency [MUST]**: A container currency shall be selected when an institution is created.
+ 
+**FR-CUR-003 — Preserve source currency [MUST]**: Currency conversion shall never overwrite original amounts or source currencies.
+ 
+**FR-CUR-004 — Consolidated conversion [MUST]**: All consolidated monetary values shall be converted to the logged-in user’s reporting currency.
+ 
+**FR-CUR-005 — Institution conversion [MUST]**: Institution Summary values shall be converted to the container currency.
+ 
+**FR-CUR-006 — Historical FX [MUST]**: Historical reports shall use historically appropriate FX rates.
+ 
+**FR-CUR-007 — FX provenance [MUST]**: Stored FX rates shall identify currency pair, date, rate and data source.
+ 
+**FR-CUR-008 — Change reporting currency [MUST]**: Changing a reporting/container currency shall recalculate derived views without modifying source data.
+ 
+**FR-CUR-009 — Initial currencies [MUST]**: CHF and EUR shall be first-class; the architecture shall support USD, GBP and additional currencies needed by portfolios.
+ 
+**FR-CUR-010 — Single conversion step [MUST]**: Conversion from an account currency to the user reporting currency shall use the direct pair where available, and shall not chain through the container currency. Chained conversion compounds rounding error and can make a container summary and the consolidated view disagree on the same account.
+ 
+**FR-CUR-011 — Conversion date convention [MUST]**: The methodology shall define, and document, which date’s rate applies to each figure class: transaction-date rate for realised flows, valuation-date rate for balances and holdings, period-end rate for closing positions. Mixing conventions silently is a common source of unexplainable differences.
+ 
+**FR-CUR-012 — FX rate gaps [MUST]**: Where no rate exists for a required date (weekend, holiday), the last available prior rate shall be carried forward, and the substitution shall be visible on inspection (PR-011).
+ 
+## 11.1 Currency attribution
+ 
+**FR-CUR-020 — Return decomposition [SHOULD]**: Portfolio return shall be decomposable into local-currency return and FX contribution, so that a user can see how much of a result came from the asset and how much from the exchange rate.
+ 
+## This is materially important for the target market — a Swiss user holding US equities experiences two distinct effects — and is absent from all four analysed competitors. It requires only that every cross-currency value already stores the FX rate applied (FR-CUR-007), so the cost is low if the data model is correct from the start and high if it is retrofitted.
+ 
+# 12. Transaction Ledger
+ 
+Transactions are a central source of truth for cash-flow, budgeting and investment analysis. Imported source data shall be preserved separately from normalized user/reporting fields.
+ 
+**FR-TRX-001 — Transaction provenance [MUST]**: Every imported transaction shall retain its source/import origin.
+ 
+**FR-TRX-002 — Transaction types [MUST]**: Support income, expense, transfer, deposit, withdrawal, buy, sell, dividend, interest, fee, refund, debt repayment, pension contribution, credit-card purchase, settlement, valuation adjustment and corporate action.
+ 
+**FR-TRX-003 — Source preservation [MUST]**: User edits shall not destroy original imported transaction content.
+ 
+**FR-TRX-004 — Duplicate detection [MUST]**: Repeated imports shall detect probable duplicates.
+ 
+**FR-TRX-005 — Search/filter [MUST]**: Transactions shall be searchable/filterable by date, institution, account, amount, currency, category, type, merchant/description and owner.
+ 
+**FR-TRX-006 — Split transactions [SHOULD]**: A transaction should support multiple category allocations where required.
+ 
+**FR-TRX-007 — Append-only ledger [MUST]**: The transaction ledger shall be append-only. Corrections shall be recorded as new compensating or superseding entries rather than in-place mutation of the original record. This is what makes every derived figure reproducible and every import safely re-runnable. Section 52.2 defines the three provenance tiers governing what may be soft-deleted, what may only be voided, and what reopens a reconciliation.
+ 
+**FR-TRX-008 — Trade date and settlement date [MUST]**: Investment transactions shall carry both trade date and settlement date where the source provides them. Performance is measured on trade date; cash balances move on settlement date. Collapsing the two produces small, persistent and very hard to diagnose discrepancies against broker statements.
+ 
+**FR-TRX-009 — Stable external identity [MUST]**: Where the source supplies a stable identifier, it shall be stored and used to make repeat imports idempotent. Where it does not, duplicate detection shall fall back to a documented fuzzy match on date, amount, currency and description.
+ 
+**FR-TRX-010 — Import batch identity [MUST]**: Every transaction shall record the import batch that created it, enabling batch-level rollback (FR-IMP-005).
+ 
+## 12.1 Balances, holdings snapshots and reconciliation
+ 
+**This subsection is the single most important addition to the baseline.** Transaction history alone is never complete: brokers supply limited history, transfers arrive without cost basis, and corporate actions are frequently missing. A ledger-only system therefore drifts away from reality and the user discovers it as an unexplained difference against their bank.
+ 
+The competitive evidence is direct. Parqet’s significant product evolution was moving from transaction-only reconstruction to reconciling transactions against broker-reported holdings, entry prices and cash balances. getquin’s most-reported weakness is position counts and returns that disagree with the broker.
+ 
+**FR-REC-001 — Snapshot is a distinct record type [MUST]**: The system shall store provider-reported point-in-time snapshots — account balance, holdings with quantities, and where available cost basis — as records distinct from transactions. A snapshot is an observation of state; a transaction is an event. Neither can be derived from the other.
+ 
+**FR-REC-002 — Reconciliation engine [MUST]**: The system shall compare ledger-derived balances and holdings against the most recent snapshot and report differences per account, showing the amount, the affected position and the probable cause.
+ 
+**FR-REC-003 — Probable-cause classification [SHOULD]**: Differences shall be classified where possible: missing transaction, missing corporate action, unrecorded fee, FX rounding, transfer without cost basis, duplicate entry.
+ 
+**FR-REC-004 — Guided resolution [MUST]**: For each difference the user shall be offered explicit resolution paths — add the missing transaction, accept the provider figure as an adjusting entry, or dismiss with a reason. Adjustments shall be recorded as visible ledger entries, never as silent corrections.
+ 
+**FR-REC-005 — Reconciliation status is visible [MUST]**: Each account shall display when it was last reconciled and whether it currently agrees with the provider. An unreconciled account’s figures shall be marked (PR-011).
+ 
+**FR-REC-006 — Manual snapshot entry [MUST]**: Users shall be able to enter a snapshot manually — typing the balance shown on a statement. This makes reconciliation available before any connector exists and is the mechanism by which a fully manual user still gets correctness.
+ 
+**FR-REC-007 — Opening-balance reconstruction [MUST]**: Where transaction history begins later than the account itself, the user shall be able to record a dated opening balance and opening holdings with cost basis. Without this, every account whose history predates the import shows wrong returns from the first day.
+ 
+**FR-REC-008 — Transferred-in positions [MUST]**: A position transferred from another custodian typically arrives with no cost basis. The system shall accept a user-supplied cost basis, offer the historical market price at transfer date as a proposal, and mark the position’s cost basis as estimated until confirmed.
+ 
+# 13. Cash-Account Categorization and Reporting Taxonomy
+ 
+Cash-account transactions shall be categorized to support meaningful household reports. Standardized/source classification shall remain separate from TrackMyWealth’s reporting categories.
+ 
+**FR-CAT-001 — Hierarchical categories [MUST]**: Reporting categories shall support at least Category > Subcategory.
+ 
+**FR-CAT-002 — Default taxonomy [MUST]**: The application shall ship with a sensible household reporting taxonomy.
+ 
+**FR-CAT-003 — Custom taxonomy [MUST]**: Users shall create, rename, reorganize and deactivate categories.
+ 
+**FR-CAT-004 — ISO 20022 source classification [SHOULD]**: Where available, ISO 20022 Bank Transaction Codes or equivalent bank source codes shall be preserved.
+ 
+**FR-CAT-005 — Standard-to-report mapping [MUST]**: Source classifications shall be mappable to TrackMyWealth reporting categories.
+ 
+**FR-CAT-006 — User override [MUST]**: Users shall override reporting category without modifying source classification.
+ 
+**FR-CAT-007 — Rules [MUST]**: Users shall define reusable categorization rules based on merchant/description, creditor/debtor, account, amount or source classification.
+ 
+**FR-CAT-008 — Language-independent IDs [MUST]**: Default categories shall use stable internal IDs so English/German labels can change without changing historic classification.
+ 
+**FR-CAT-009 — camt source codes [SHOULD]**: Where statements are supplied in ISO 20022 camt.052/053/054 format — the standard delivery format for Swiss and German banks — the structured bank transaction code (domain / family / sub-family) and purpose code shall be extracted and retained as the primary categorization signal for bank transactions.
+ 
+**FR-CAT-010 — Shipped mapping as configuration [MUST]**: The default mapping from source codes (MCC, ISO 20022) to reporting categories shall be configuration data, updatable without an application release.
+ 
+**FR-CAT-011 — Fallback categorization [MUST]**: Where no standard source code is present, categorization shall fall back to merchant name, counterparty identifier and amount pattern. This is not an edge case: source codes are frequently absent, and a card MCC often reflects the acquirer rather than the merchant.
+ 
+**FR-CAT-012 — Retroactive rule application [MUST]**: A newly created or edited rule shall be applicable to existing historical transactions, with a preview of what would change before it is applied.
+ 
+**FR-CAT-013 — Uncategorized is visible [MUST]**: Uncategorized transactions shall be surfaced as an actionable list. They shall never be silently absorbed into a residual “Other” bucket, which hides the gap and quietly distorts every category report.
+ 
+**FR-CAT-014 — Recategorization is non-destructive [MUST]**: Re-running categorization shall never overwrite a user’s manual assignment.
+ 
+**FR-CAT-015 — COICOP mapping [COULD]**: Reporting categories may be mapped to COICOP, the international classification of household consumption used by national statistical offices in both target markets. This enables comparison of household spending against published national averages by category — a differentiating report that no analysed competitor offers, and cheap to add once the mapping layer exists.
+ 
+# 14. Credit Cards
+ 
+**FR-CC-001 — Individual transactions [MUST]**: Credit-card accounts shall store individual purchases/transactions.
+ 
+**FR-CC-002 — MCC [MUST]**: Where available, Merchant Category Code (ISO 18245) shall be retained separately from the reporting category.
+ 
+**FR-CC-003 — Outstanding liability [MUST]**: Outstanding credit-card balance shall contribute to liabilities/net worth.
+ 
+**FR-CC-004 — Settlement handling [MUST]**: Payment of the card balance shall be treated as liability settlement/internal transfer, not a second expense.
+ 
+**FR-CC-005 — Double-count prevention [MUST]**: A credit-card purchase and later card settlement shall count as consumption exactly once.
+ 
+**FR-CC-006 — Unified categories [MUST]**: Cash-account and credit-card transactions shall use the same reporting taxonomy.
+ 
+**FR-CC-007 — Automatic settlement matching [MUST]**: The system shall detect the payment from a current account to a card issuer and match it to the corresponding card balance, proposing it as a settlement rather than an expense. The user shall be able to confirm or correct the match (FR-CF-004).
+ 
+**FR-CC-008 — Statement cycle [SHOULD]**: Card accounts shall support statement period, closing balance, due date and paid/unpaid status.
+ 
+**FR-CC-009 — Transaction-date attribution [MUST]**: Card spending shall be attributed to the transaction date, not the settlement date, so a purchase appears in the month it was made. Attributing to settlement date shifts a variable portion of every month’s spending into the next and makes month-on-month budget comparison meaningless.
+ 
+**FR-CC-010 — Foreign-currency card transactions [SHOULD]**: The original amount, original currency and the rate applied by the issuer shall be retained. Where the issuer discloses a foreign-transaction fee it shall be identified as a fee rather than as part of the purchase amount.
+ 
+**FR-CC-011 — Card utilisation alert [COULD]**: Optional notification on approaching due date or high utilisation.
+ 
+# 15. Internal Transfers, Saving and Investing
+ 
+**FR-CF-001 — Internal transfer neutrality [MUST]**: Transfers between owned accounts shall not increase income or expenses.
+ 
+**FR-CF-002 — Investment classification [MUST]**: Transfers into investment accounts and security purchases shall not automatically be treated as consumer expenses.
+ 
+**FR-CF-003 — Savings distinction [MUST]**: The ledger shall distinguish consumption, saving, investment, internal transfer and debt-principal repayment.
+ 
+**FR-CF-004 — Manual correction [MUST]**: Users shall be able to confirm/correct transfer matching and classification.
+ 
+**FR-CF-005 — Two-sided transfer matching [MUST]**: An internal transfer normally appears twice — as a debit in one account and a credit in another, often on different dates and occasionally in different currencies. The system shall match the two legs into a single logical transfer, and shall handle the case where only one leg has been imported.
+ 
+**FR-CF-006 — Mortgage payment decomposition [SHOULD]**: A mortgage or loan payment shall be separable into interest (an expense) and principal repayment (a balance-sheet movement, not consumption). Treating the entire payment as an expense overstates spending and understates savings rate — a common and material error in household budgeting.
+ 
+**FR-CF-007 — Pension contribution treatment [MUST]**: A contribution to a pension account is saving, not consumption, and shall be classified accordingly in cash-flow and savings-rate calculations.
+ 
+# 16. Budgeting and Cash Flow
+ 
+**FR-BUD-001 — Monthly budgets [MUST]**: Users shall define monthly category budgets.
+ 
+**FR-BUD-002 — Budget progress [MUST]**: Show budgeted amount, actual amount, remaining amount and utilization.
+ 
+**FR-BUD-003 — Household budget [MUST]**: Support household-level budgets.
+ 
+**FR-BUD-004 — Savings rate [MUST]**: Calculate a savings rate from configurable classification rules.
+ 
+**FR-BUD-005 — Recurring transactions [SHOULD]**: Support manual recurring items; automatic detection should follow later.
+ 
+**FR-BUD-006 — Sankey cash flow [SHOULD]**: Provide a money-flow/Sankey visualization in a post-MVP phase.
+ 
+**FR-BUD-007 — Budget proposal from history [SHOULD]**: When a user first creates budgets, the system shall propose category amounts derived from that household’s own actual transaction history rather than presenting empty fields. The design thesis, validated by BlueBudget, is that budgets entered as intentions fail while budgets derived from observed behaviour hold.
+ 
+**FR-BUD-008 — Irregular and annual costs [SHOULD]**: Budgeting shall accommodate non-monthly obligations — insurance premiums, Serafe, annual subscriptions, tax instalments — by amortising them across months or flagging them as upcoming, so that a month containing one is not misread as an overspend.
+ 
+**FR-BUD-009 — Savings rate methodology is documented and configurable [MUST]**: Whether employer pension contributions, mortgage principal and unrealised investment gains count toward savings shall be an explicit, documented and user-visible setting. Every published definition differs, and an undocumented choice makes the headline figure unusable.
+ 
+# 17. Assets, Liabilities and Net Worth
+ 
+| Assets | Liabilities |
+| --- | --- |
+| Cash | Mortgages |
+| Stocks / ETFs / Funds / Bonds | Loans |
+| Cryptocurrency | Credit-card balances |
+| Pensions | Other manually defined liabilities |
+| Real estate |  |
+| Commodities / precious metals |  |
+| Custom manually valued assets |  |
+ 
+**FR-NW-001 — Net worth [MUST]**: Calculate total assets minus total liabilities.
+ 
+**FR-NW-002 — Historical net worth [MUST]**: Provide historical net-worth development.
+ 
+**FR-NW-003 — Manual valuations [MUST]**: Custom assets shall support dated valuations.
+ 
+**FR-NW-004 — Scope breakdown [MUST]**: Net worth shall be analyzable by owner, institution, account, asset class and currency.
+ 
+**FR-NW-005 — Contribution versus performance [MUST]**: Change in net worth over a period shall be decomposable into money added or withdrawn versus value gained or lost. Without this, a user who saved diligently during a falling market cannot tell that they did the right thing, and the headline number actively misleads.
+ 
+**FR-NW-006 — Liability amortisation [SHOULD]**: Mortgages and loans shall support an amortisation schedule — principal, interest rate, fixation end date — so that the outstanding balance evolves correctly between manual updates rather than remaining static.
+ 
+**FR-NW-007 — Property net of financing [SHOULD]**: Real estate shall be presentable at gross value with the related mortgage shown separately, and also at net value. The two must never be combined in a way that double-counts the debt.
+ 
+**FR-NW-008 — Liquidity view [SHOULD]**: Net worth shall be viewable by accessibility — immediately available, available with notice, and locked. Pension assets are frequently the largest single component and are not spendable; presenting them without distinction overstates a household’s real flexibility.
+ 
+# 18. Securities Accounts / Depots
+ 
+A depot contains investment transactions and positions. Portfolio-specific information belongs to the position; security-independent reference data belongs to the centralized Security Master.
+ 
+**FR-DEP-001 — Position reference [MUST]**: Every depot position shall reference a Security Master record.
+ 
+**FR-DEP-002 — Position data [MUST]**: Position-specific data includes quantity, cost basis and calculated position values/performance.
+ 
+**FR-DEP-003 — Cross-depot consolidation [MUST]**: The same security held in multiple depots shall consolidate into one security exposure while retaining separate positions.
+ 
+**FR-DEP-004 — Cost-basis method [MUST]**: The cost-basis method shall be a configurable accounting parameter — FIFO, LIFO or average cost — defaulting to FIFO. Different providers report differently: some brokers report weighted average while the method used for reconstruction is FIFO, and the resulting divergence must be explainable to the user rather than appearing as an error.
+ 
+**FR-DEP-005 — Fee treatment in cost basis [SHOULD]**: Whether transaction fees are included in or excluded from cost basis shall be configurable and documented. This is a known source of small persistent differences against broker statements.
+ 
+**FR-DEP-006 — Position lots [SHOULD]**: Positions shall be decomposable into acquisition lots so that realised gain calculation is inspectable and reproducible under the configured method.
+ 
+**FR-DEP-007 — Short and zero positions [SHOULD]**: The model shall handle a position reaching zero and later being re-established without losing the earlier history, and shall not silently produce negative quantities from an unmatched sale — such a case indicates missing history and shall raise a reconciliation difference (FR-REC-002).
+ 
+# 19. Security Master Data
+ 
+TrackMyWealth shall maintain a centralized Security Master only for securities referenced by current or historical portfolio activity. It shall not persist an unnecessary complete global security universe.
+ 
+**FR-SMD-001 — Portfolio-driven master [MUST]**: Create a master record when a previously unknown security is first referenced by a portfolio transaction/position.
+ 
+**FR-SMD-002 — Historical retention [MUST]**: Retain master data for securities no longer held when historical transactions/reports require it.
+ 
+**FR-SMD-003 — Lifecycle [MUST]**: Support ACTIVE and INACTIVE/HISTORICAL security states.
+ 
+**FR-SMD-004 — Single master [MUST]**: The same security held in several depots shall have one Security Master record.
+ 
+**FR-SMD-005 — Deletion rule [MUST]**: A master record shall be deletable only when no transaction or position in any portfolio references it — never merely because nobody currently holds it.
+ 
+**FR-SMD-006 — Refresh scope follows references [MUST]**: Price and reference-data refresh shall apply only to securities currently held or watchlisted, not to every security ever seen. This is the primary control on recurring external data cost and request volume.
+ 
+**FR-SMD-007 — Lookup without persistence [MUST]**: Searching for a security at add-time may query an external universe without creating a master record; the record is written only on confirmed selection.
+ 
+**FR-SMD-008 — Identity resolution [MUST]**: The same security arriving from different institutions under different identifiers — ISIN from one, Valor from another, ticker from a third — shall resolve to a single master record. ISIN is authoritative where present. A fallback match on ticker plus exchange shall require user confirmation and shall never be applied silently, because ticker collisions across markets are common.
+ 
+**FR-SMD-009 — Effective-dated reference data [SHOULD]**: Names, domiciles and classifications change over time. Where a field materially affects reporting, its history shall be retained so that historical reports remain reproducible.
+ 
+**FR-SMD-010 — Successor linkage [MUST]**: Identifier changes, mergers and spin-offs shall create an explicit link from predecessor to successor so that position history remains continuous across the event.
+ 
+**FR-SMD-011 — Completeness indicator [MUST]**: Each master record shall expose which analysis-relevant fields are populated. Where a requested analysis depends on a missing field, the system shall say so rather than silently producing a chart that omits the position (PR-011).
+ 
+**FR-SMD-012 — Field-level provenance [MUST]**: Each significant field shall record its source, retrieval timestamp and, where multiple providers disagree, the precedence rule applied.
+ 
+**FR-SMD-013 — User override per field [MUST]**: A user-supplied value shall take precedence over provider data and shall never be silently overwritten by a later refresh.
+ 
+## 19.1 Security Master fields
+ 
+| Area | Required information |
+| --- | --- |
+| Identification | Internal Security ID, ISIN where available, additional identifiers, official/short name |
+| Additional identifiers | **Valorennummer (CH) and WKN (DE) are not optional in these markets** — Swiss and German institutions routinely deliver them instead of ISIN. Also CUSIP, SEDOL, FIGI where available. |
+| Description | Security description and company/issuer description, in EN and DE |
+| Issuer | Issuer name, optional LEI/identifier, issuer details |
+| Countries | Security country, issuer country, country of risk, exchange country, **withholding-source country** |
+| Currencies | Denomination/security currency, trading currencies, price currency, **currency-hedged share class flag** |
+| Instrument | Instrument type and CFI where available |
+| Asset class | Economic portfolio asset class — **weighted, one-to-many for funds** (see FR-CLS-004) |
+| GICS | Sector, Industry Group, Industry, Sub-Industry |
+| SNB | Applicable SNB-oriented classification fields; exact taxonomy to be finalized |
+| Listings | Exchange, MIC, ticker, country, trading currency, primary-listing flag |
+| Prices | Historical price series with price type, currency, source and date |
+| Fund attributes | Where applicable: TER, distributing/accumulating, replication method, share class, benchmark, look-through holdings |
+| Bond attributes | Where applicable: coupon, maturity, payment frequency, rating, seniority |
+| Provenance | Source/provider, retrieval date, effective date/version where relevant |
+ 
+**Note on countries.** These are four genuinely different values and must be four fields. An Irish-domiciled ETF, issued by a Luxembourg entity, holding US equities, differs on three of them. The withholding-source country is retained to explain a reduced dividend receipt (FR-TAXR-002), not for reclaim logic.
+ 
+# 20. Security, Issuer and Listing Separation
+ 
+Security
++-- Issuer
++-- Classifications
++-- Listings [0..n]
+    +-- Exchange / MIC
+    +-- Ticker
+    +-- Trading Currency
+    +-- Price Series
+ 
+A ticker belongs to a listing, not globally to the security. The same ISIN may have multiple exchange listings and trading currencies. Exchange-traded prices shall therefore normally be attached to a listing/price series.
+ 
+**FR-LST-001 — Multiple listings [MUST]**: A security shall support multiple exchange listings.
+ 
+**FR-LST-002 — MIC [MUST]**: Market Identifier Code (MIC) shall be stored where available.
+ 
+**FR-LST-003 — Primary listing [SHOULD]**: A primary/preferred listing should be identifiable.
+ 
+**FR-LST-004 — Valuation listing selection [MUST]**: Where a security has several listings, the rule determining which price is used for valuing a given position shall be explicit and inspectable — normally the listing on which the position was acquired, falling back to the primary listing. This case is common in the target market: the same ETF quoted on SIX in CHF and on XETRA in EUR.
+ 
+**FR-LST-005 — Trading calendar [MUST]**: Each listing shall carry a trading calendar and timezone. Without it, a non-trading day cannot be distinguished from missing data, and the daily valuation series required for TWR (FR-PERF-003) becomes unreliable.
+ 
+# 21. Asset and Industry Classification
+ 
+## 21.1 Instrument type versus asset class
+ 
+Instrument structure and economic asset class shall be separate. Example: Instrument Type = ETF, Economic Asset Class = Equity.
+ 
+**FR-CLS-001 — Asset classes [MUST]**: Support Equity, Fixed Income, Cash/Cash Equivalent, Real Estate, Commodity, Precious Metal, Cryptocurrency and Other.
+ 
+**FR-CLS-002 — CFI [MUST]**: Store CFI for instrument classification where available.
+ 
+**FR-CLS-003 — CFI as the asset-class backbone [MUST]**: CFI (ISO 10962) shall be the primary source for asset-class assignment where available. It is an ISO standard tied to the security identifier and carries no licensing restriction, unlike sector data.
+ 
+**FR-CLS-004 — A fund is a weighted set of asset classes, not one [MUST]**: The relationship between a position and asset class shall be one-to-many with weights. This is a data-model requirement in the MVP even where look-through data is not yet available, because a single asset-class field on a position makes correct allocation for a multi-asset or bond ETF impossible to express, and retrofitting it means rewriting every allocation query.
+ 
+**FR-CLS-005 — Declared allocation fallback [SHOULD]**: Where constituent look-through is unavailable, a fund’s own published allocation may be used, and the result shall be marked as estimated (PR-011).
+ 
+## 21.2 GICS
+ 
+GICS shall be the canonical standard for grouping applicable corporate/equity exposure by sector and industry. GICS is a four-tier hierarchical system of 11 sectors, 25 industry groups, 74 industries and 163 sub-industries, developed by and the exclusive property of MSCI and S&P Dow Jones Indices.
+ 
+**FR-GICS-001 — GICS hierarchy [MUST]**: Support Sector > Industry Group > Industry > Sub-Industry.
+ 
+**FR-GICS-002 — Cross-depot grouping [MUST]**: GICS analysis shall work across one depot, one institution, selected depots, a person or the household portfolio.
+ 
+**FR-GICS-003 — Applicability [MUST]**: Do not assign artificial GICS classifications to assets for which GICS is not applicable. GICS classifies companies, not instruments: it says nothing about bonds, commodities, crypto, cash or property. It is a grouping dimension inside the equity sleeve, layered on top of the asset class, never a replacement for it.
+ 
+**FR-GICS-004 — ETF look-through [SHOULD]**: Where licensed constituent data is available, equity ETF/fund exposures should be decomposed into underlying GICS exposure.
+ 
+**FR-GICS-005 — Funds carry no GICS code of their own [MUST]**: A fund’s sector exposure is only obtainable by weighted aggregation of its constituents. Until constituent data is licensed, sector analysis is unavailable for funds and shall be shown as such — not as an empty or misleading chart. This matters more than it appears: ETFs are the majority of a typical target user’s portfolio.
+ 
+**FR-GICS-006 — Eight-digit code with derived levels [MUST]**: Store the full 8-digit sub-industry code and derive Industry, Industry Group and Sector by truncation, rather than storing four independent fields that can fall out of agreement.
+ 
+**FR-GICS-007 — Structure versioning [MUST]**: The GICS structure is reviewed annually and revised — categories are added, split and renamed. The structure version shall be stored alongside the code.
+ 
+**FR-GICS-008 — Historical basis is declared [SHOULD]**: Historical sector charts shall state whether they are shown as-reported (classification in force at the time) or restated (current classification applied throughout). Default restated. Mixing the two across a revision boundary produces charts that quietly contradict themselves.
+ 
+**FR-GICS-009 — Not-classified bucket [MUST]**: Instruments with no GICS classification shall appear in an explicit, visible “Not classified” group — never dropped from the chart, which silently changes every percentage shown.
+ 
+**FR-GICS-010 — Attribution notice [MUST]**: Display the attribution and trademark notice required by the licence wherever GICS data appears.
+ 
+**FR-GICS-011 — Fallback taxonomy [MUST]**: If the GICS licence is unavailable, delayed or withdrawn, sector grouping shall degrade to a documented internal taxonomy without schema change or data loss. Given the self-hosted topology and open-source distribution, this is a realistic scenario rather than a theoretical one.
+ 
+**NFR-GICS-001 — GICS licensing [MUST]**: The architecture shall separate proprietary GICS reference data from the open-source application core and respect licensing requirements.
+ 
+**NFR-GICS-002 — Distribution boundary [MUST]**: No proprietary classification data shall be embedded in the distributed application package or in any publicly available repository. Licensed data shall be retrieved at runtime under the user’s or the operator’s own entitlement. See RISK-003 and OPEN-006.
+ 
+## 21.3 SNB classification
+ 
+**FR-SNB-001 — SNB field structure [MUST]**: Security Master shall support applicable SNB-oriented security/sector classification fields independently of GICS.
+ 
+**FR-SNB-002 — Taxonomy validation [TBD]**: The exact SNB taxonomy/code list and data source shall be finalized before implementation.
+ 
+**FR-SNB-003 — Orthogonality [MUST]**: SNB and GICS classifications are orthogonal and neither shall be derived from the other. GICS classifies a company’s industry; the SNB scheme classifies the issuer’s institutional sector and the instrument category for statistical reporting purposes. Both are stored, both are separately reportable.
+ 
+# 22. Security Prices and Market Data
+ 
+**FR-PRC-001 — Persistent prices [MUST]**: Store historical prices required for portfolio calculations for portfolio-referenced securities.
+ 
+**FR-PRC-002 — Initial history [MUST]**: When a security enters a portfolio, retrieve sufficient history from the earliest relevant transaction date.
+ 
+**FR-PRC-003 — Incremental updates [MUST]**: Active securities shall receive incremental price updates.
+ 
+**FR-PRC-004 — Inactive securities [MUST]**: Historical prices remain stored after a position is closed; future updates may stop until reactivation.
+ 
+**FR-PRC-005 — Price attributes [MUST]**: Store date/time, price, original currency, price type, source and retrieval timestamp.
+ 
+**FR-PRC-006 — NAV/manual prices [MUST]**: Support NAV where appropriate and manual prices when automated data is unavailable.
+ 
+**FR-PRC-007 — Corporate actions [MUST]**: Valuation/performance logic shall account for relevant splits, mergers, spin-offs and identifier changes.
+ 
+**FR-PRC-008 — Gap handling [MUST]**: Define deterministic handling for weekends, holidays, suspensions and missing prices.
+ 
+**FR-PRC-009 — Raw prices are immutable; adjusted series are derived [MUST]**: Prices shall be stored exactly as delivered, with corporate actions stored separately, and any split- or dividend-adjusted series computed on read. Cost basis and realised gains require the price actually traded on the day. A provider that retroactively adjusts a stored series corrupts historical accounting irreversibly.
+ 
+**FR-PRC-010 — Price backfill on first reference [MUST]**: When a security first enters the system, its price history shall be backfilled to the earliest referencing transaction date. Without this, TWR, historical net worth and allocation charts have no data covering the period before the user adopted the application.
+ 
+**FR-PRC-011 — Carry-forward, never interpolate [MUST]**: Across non-trading days the last known price shall be carried forward. Values shall never be interpolated between two known points, which invents price movement that did not occur.
+ 
+**FR-PRC-012 — Staleness threshold [MUST]**: A price older than a configurable threshold shall be flagged as stale in every view that uses it (PR-011, NFR-CON-003).
+ 
+**FR-PRC-013 — FX rates as a parallel series [MUST]**: FX rates shall be stored as their own dated time series per currency pair, under the same provenance, gap and staleness rules as prices.
+ 
+**FR-PRC-014 — Provider abstraction with precedence [MUST]**: Price and FX sources shall sit behind an interface supporting more than one implementation, with configurable global precedence and per-security override.
+ 
+**FR-PRC-015 — Corporate-action review [SHOULD]**: Automatically applied corporate actions shall be visible and reversible. A wrongly applied split silently multiplies or divides a position and is extremely difficult for a user to diagnose unaided.
+ 
+# 23. Portfolio Performance and Analytics
+ 
+**FR-PERF-001 — Absolute performance [MUST]**: Calculate absolute gain/loss.
+ 
+**FR-PERF-002 — Realized/unrealized [MUST]**: Calculate realized and unrealized gains/losses.
+ 
+**FR-PERF-003 — TWR [MUST]**: Calculate Time-Weighted Return for suitable investment scopes.
+ 
+**FR-PERF-004 — MWR [MUST]**: Calculate Money-Weighted Return, using IRR/XIRR methodology where appropriate.
+ 
+**FR-PERF-005 — Periods [MUST]**: Support YTD, 1M, 1Y, 3Y, 5Y, max and custom date ranges as applicable.
+ 
+**FR-PERF-006 — Scope [MUST]**: Performance shall work at position, depot, institution, selected portfolios, owner and household-investment levels where meaningful.
+ 
+**FR-PERF-007 — Benchmarking [MUST]**: Allow comparison with selectable benchmarks.
+ 
+**FR-PERF-008 — Explanations [SHOULD]**: Advanced metrics should include beginner-friendly explanations.
+ 
+## 23.1 Methodology requirements
+ 
+**FR-PERF-010 — Daily valuation series [MUST]**: The system shall maintain a daily valuation series per investment account. **This is an architectural prerequisite, not a reporting feature.** TWR requires sub-period returns bounded by every external cash flow; MWR can be computed on demand from cash flows, but TWR cannot. If daily valuations are not built in the MVP, adding TWR later requires a full historical recomputation for every user.
+ 
+**FR-PERF-011 — TWR construction [MUST]**: TWR shall be computed by geometrically linking sub-period returns, with sub-periods bounded by external cash flows into or out of the scope being measured. Internal movements — a purchase funded by cash already inside the scope — are not external cash flows and must not break the sub-period.
+ 
+**FR-PERF-012 — Approximation is declared [MUST]**: Where an exact valuation at a cash-flow date is unavailable, a documented approximation (such as Modified Dietz) may be used, and the method actually applied shall be recorded for that period and inspectable by the user.
+ 
+**FR-PERF-013 — Simple return remains primary for beginners [MUST]**: Absolute gain/loss and simple return shall remain available and shall be the default headline for non-expert users. TWR and MWR are additive depth, consistent with PR-006, and must not displace the figure most users actually want.
+ 
+**FR-PERF-014 — Annualised versus cumulative [MUST]**: Annualised and cumulative variants shall be clearly distinguished and never presented interchangeably. Annualising a period shorter than one year shall be avoided or explicitly labelled.
+ 
+**FR-PERF-015 — Benchmark parity [MUST]**: A benchmark comparison shall apply the same methodology and the same cash-flow timing as the portfolio figure it is compared against. Comparing a cash-flow-weighted portfolio return to a simple index return is not a like-for-like comparison and overstates or understates skill depending on market direction.
+ 
+**FR-PERF-016 — Explain this number [SHOULD]**: Every performance figure shall be able to show the method used, the period boundaries, the cash flows applied, the valuation source and any data gaps encountered. This is the practical expression of PR-005 and PR-011, and is the single most effective defence against the loss of trust that follows an unexplained number.
+ 
+**FR-PERF-017 — Currency attribution [SHOULD]**: Where the measurement scope contains assets in currencies other than the reporting currency, return shall be decomposable into local-currency return and FX contribution (FR-CUR-020).
+ 
+**FR-PERF-018 — Insufficient data is refused, not estimated [MUST]**: Where history is too incomplete for a requested metric to be meaningful — no opening cost basis, unreconciled gap, missing prices across a material period — the system shall state that the figure cannot be reliably calculated rather than presenting a computed but wrong value (PR-010).
+ 
+**FR-PERF-019 — Default metric by account nature [SHOULD]**: Discretionary accounts shall default to TWR and self-directed accounts to MWR (FR-ACC-022), with user override.
+ 
+# 24. Investment Allocation
+ 
+**FR-ALL-001 — Asset class [MUST]**: Analyze by economic asset class.
+ 
+**FR-ALL-002 — Security [MUST]**: Analyze by individual security.
+ 
+**FR-ALL-003 — GICS [MUST]**: Analyze by GICS levels where applicable.
+ 
+**FR-ALL-004 — Country [SHOULD]**: Analyze geographic exposure where sufficient data exists.
+ 
+**FR-ALL-005 — Currency [MUST]**: Analyze currency exposure.
+ 
+**FR-ALL-006 — Institution/account [MUST]**: Analyze by institution/container and depot/account.
+ 
+**FR-ALL-007 — Direct/indirect exposure [SHOULD]**: Where look-through data exists, distinguish direct holdings from indirect ETF/fund exposure.
+ 
+**FR-ALL-008 — Pension holdings included in allocation [MUST]**: Where a pension account holds positions — a VIAC Pillar 3a being the canonical case — those holdings shall be included in consolidated asset allocation, currency exposure and concentration analysis on the same taxonomy as any other holding.
+ 
+This is differentiation pillar D2. Swiss users routinely hold a large equity allocation inside a Pillar 3a, and no analysed competitor folds it into the overall picture. Concentration analysis that excludes it is not merely incomplete for these users — it is wrong.
+ 
+**FR-ALL-009 — Scope is always visible [MUST]**: The active scope of any allocation view — which accounts, which owner, whether pensions are included — shall be displayed alongside the chart. A user must never be uncertain whether a figure includes their pension.
+ 
+**FR-ALL-010 — Concentration analysis [SHOULD]**: Identify single-position and single-issuer concentration above configurable thresholds, computed after look-through where available, so that the same company held directly and inside three ETFs is recognised as one exposure.
+ 
+## **FR-ALL-011 — Drill-down to classification source [SHOULD]**: Allocation views shall be drillable from asset class or sector down to the individual security and the classification record that placed it there.
+ 
+# 25. Dividends
+ 
+**FR-DIV-001 — Dividend transactions [MUST]**: Recognize dividends as a distinct investment transaction type.
+ 
+**FR-DIV-002 — History [MUST]**: Provide dividend history by security, account, institution and period.
+ 
+**FR-DIV-003 — Calendar/forecast [SHOULD]**: Expected dividend calendar/forecast may be added where reliable data exists.
+ 
+**FR-DIV-004 — Gross and net [MUST]**: Where tax was deducted at source, both the gross dividend and the amount actually received shall be distinguishable (FR-TAXR-001). Dividend yield and income analysis shall state which basis they use.
+ 
+**FR-DIV-005 — Yield on cost [SHOULD]**: Dividend yield shall be available both on current market value and on original cost.
+ 
+**FR-DIV-006 — Accumulating funds [MUST]**: Accumulating funds distribute nothing. They shall not appear in dividend income reports, and their absence shall not be presented as missing data.
+ 
+No tax-oriented dividend analysis is in scope.
+ 
+# 25a. Pension and Retirement
+ 
+Pension is in scope as a financial account category and as a savings goal. It is not in scope as tax optimisation (OOS-004).
+ 
+**FR-PEN-001 — Pension as account type [MUST]**: Pension accounts shall be first-class accounts within the container model, with locked-until or withdrawal-condition semantics reflected in the liquidity view (FR-NW-008).
+ 
+**FR-PEN-002 — Multiple Pillar 3a accounts [MUST]**: A household may hold several Pillar 3a accounts, at one provider or several. This is standard Swiss practice for staggered withdrawal and is a normal case, not an edge case (rule C4).
+ 
+**FR-PEN-003 — Contribution limit tracking [SHOULD]**: Annual contribution progress against the applicable limit shall be trackable, with the limit held as effective-dated configuration data rather than in code. This is a savings-goal feature: it shows whether a savings target has been met, and makes no tax statement.
+ 
+**FR-PEN-004 — Contribution deadline reminder [SHOULD]**: Optional notification ahead of the annual contribution deadline.
+ 
+**FR-PEN-005 — Position-holding pension accounts [MUST]**: Where a pension account holds securities, it shall support full position, valuation and performance treatment identical to a depot (FR-ACC-011, FR-ALL-008).
+ 
+**FR-PEN-006 — Jurisdiction rules as configuration [MUST]**: Contribution limits, deadlines and account variants for CH and DE shall be effective-dated configuration, deployable without an application release.
+ 
+**FR-PEN-007 — Retirement projection [COULD]**: Projected capital at retirement, based on current assets and contribution rate, with user-editable assumptions and results presented as scenario ranges rather than a single figure. Any such output is illustrative modelling, never advice (OOS-003).
+ 
+**FR-PEN-008 — Financial independence modelling [COULD]**: Time-to-independence and sustainable withdrawal modelling for the financial-independence persona, under the same assumption-transparency rules.
+ 
+# 26. Consolidated View
+ 
+The global Consolidated View is the top-level financial overview and shall present all monetary aggregates in the logged-in user’s reporting currency.
+ 
+- Net Worth
+ 
+- Assets and Liabilities
+ 
+- Cash
+ 
+- Investments
+ 
+- Pensions
+ 
+- Real Estate
+ 
+- Mortgages, loans and credit-card liabilities
+ 
+- Income and Expenses
+ 
+- Savings and Savings Rate
+ 
+- Cash Flow
+ 
+- Asset Allocation
+ 
+- Portfolio Performance
+ 
+- TWR and MWR
+ 
+- Dividends
+ 
+- Financial Goals
+ 
+**FR-CON-001 — Single reporting currency [MUST]**: All consolidated monetary aggregates shall be displayed in the user’s reporting currency.
+ 
+**FR-CON-002 — Historical conversion [MUST]**: Historical consolidated values shall use historical FX rates.
+ 
+**FR-CON-003 — Global scope selector [MUST]**: Reports shall support scope by household, person, institution, account, selected accounts or investments only.
+ 
+**FR-CON-004 — Date range [MUST]**: Relevant reports shall support date-range filtering.
+ 
+**FR-CON-005 — Drill-down [MUST]**: Users shall drill from global values to institution, account, security/category and transaction.
+ 
+**FR-CON-006 — Consistent scope across views [MUST]**: The selected scope shall apply consistently across all views and remain visible at all times, so that two figures on screen are never computed over different scopes without the user knowing.
+ 
+**FR-CON-007 — Data-quality banner [MUST]**: Where the consolidated view includes unreconciled accounts, stale prices or estimated valuations, this shall be indicated at the level of the headline figure, not only in a detail view (PR-011).
+ 
+**FR-CON-008 — Reconciliation of the whole [SHOULD]**: The sum of all Institution Summary net values, converted to the reporting currency, shall equal the consolidated net worth. Any residual arising from conversion timing shall be identified rather than absorbed.
+ 
+# 27. Example Application Structure
+ 
+TrackMyWealth
+|
++-- Overview (User Reporting Currency: CHF)
+|   +-- Net Worth
+|   +-- Cash Flow
+|   +-- Income / Expenses / Savings
+|   +-- Goals
+|
++-- Institutions
+|   +-- PostFinance (Container Currency: CHF)
+|   |   +-- Institution Summary
+|   |   +-- Cash Account
+|   |   +-- Savings Account
+|   |   +-- Depot
+|   |   +-- Credit Card
+|   |
+|   +-- DKB (Container Currency: EUR)
+|   |   +-- Institution Summary
+|   |   +-- Girokonto
+|   |   +-- Tagesgeld
+|   |   +-- Depot
+|   |
+|   +-- Broker X (Container Currency: USD)
+|   |   +-- Institution Summary
+|   |   +-- USD/EUR/CHF Cash Accounts
+|   |   +-- Depot
+|   |
+|   +-- Personal Assets (Container Currency: CHF)
+|       +-- Real Estate
+|       +-- Mortgage
+|
++-- Investments
+|   +-- Portfolio
+|   +-- Performance / TWR / MWR
+|   +-- Asset Class
+|   +-- GICS
+|   +-- Geography / Currency
+|   +-- Dividends / Benchmarks
+|
++-- Cash Flow
++-- Budget
++-- Goals
++-- Household
++-- Settings
+    +-- Language
+    +-- Data & Privacy
+    +-- Backup
+    +-- Administration / Users
+ 
+*Change from the baseline: real estate and mortgage are shown inside a Personal Assets container rather than attached directly to the household, so that rule C2 (every account has exactly one parent container) holds without exception. See OPEN-012.*
+ 
+# 28. Import and Integration Requirements
+ 
+**FR-IMP-001 — Manual input [MUST]**: Support manual transaction/holding input.
+ 
+**FR-IMP-002 — Multi-institution CSV import [MUST]**: Support configurable CSV import for **multiple different banks and brokers concurrently**. Each supported institution has its own export format; the importer shall handle an arbitrary number of such formats side by side without any of them being privileged in code.
+ 
+**FR-IMP-003 — Mapping templates [MUST]**: Save reusable institution/import mappings. A template is the unit in which support for one institution’s CSV export is expressed.
+ 
+**FR-IMP-004 — Preview [MUST]**: Show new records, duplicates, errors and warnings before commit.
+ 
+**FR-IMP-005 — Batch/rollback [MUST]**: Each import shall be identifiable and reversible as a batch.
+ 
+**FR-IMP-006 — PDF import [SHOULD]**: Institution-specific PDF parsers may be added where valuable.
+ 
+**FR-IMP-007 — Connector abstraction [MUST]**: Automatic bank/broker connectors shall use a stable abstraction layer.
+ 
+**FR-IMP-008 — Read-only integrations [MUST]**: Where automatic institution connections are added, they should be read-only because payment/trade execution is out of scope.
+ 
+**FR-IMP-009 — Shipped import templates [MUST]**: Import mappings for the supported Swiss and German institutions shall ship as configuration data and be updatable without an application release. Users shall be able to share, export and import mapping definitions.
+ 
+**FR-IMP-010 — Snapshot import [MUST]**: The import pipeline shall accept holdings and balance statements as snapshots (FR-REC-001), not only transaction lists. Many providers export current holdings far more readily than complete transaction history.
+ 
+**FR-IMP-011 — camt.053 import [SHOULD]**: Native support for ISO 20022 camt.052/053/054 files, the standard bank statement format in both target markets, including structured transaction and purpose codes (FR-CAT-009).
+ 
+**FR-IMP-012 — Partial import success [MUST]**: An import containing some unparseable rows shall import the valid rows and report the rest, rather than failing wholesale. The rejected rows shall be exportable for correction and re-import.
+ 
+**FR-IMP-013 — Import provenance retained [MUST]**: The original source file or payload shall be retained, or at minimum a reference to it plus the raw parsed row, so that any imported record can be traced back to its origin.
+ 
+**FR-IMP-014 — Connector health [MUST]**: Where automatic connectors exist, each shall expose a health state. A degraded connector shall be surfaced with a plain-language explanation and a manual fallback path, and shall never block access to already-imported data (PR-012).
+ 
+**FR-IMP-015 — Connector fragility is assumed [MUST]**: Institution-side changes will break connectors without notice; this is an operating assumption, not an exception. Competitors have experienced multi-week outages from a single broker backend change. No feature shall be designed such that its correctness depends on a connector being currently functional.
+ 
+## 28.1 Bank-specific CSV templates
+ 
+Support for each individual bank or broker is delivered as a **declarative template**, not as institution-specific code. This is what allows the supported institution list to grow without touching the application.
+ 
+**FR-IMP-020 — Template is a data artifact [MUST]**: An import template shall be a declarative definition held as configuration data. Adding, correcting or removing support for one institution shall require no code change and no application release.
+ 
+**FR-IMP-021 — Template capability set [MUST]**: A template shall be able to express at minimum the following, because Swiss and German bank exports vary on every one of them:
+ 
+| Aspect | Variation the template must handle |
+| --- | --- |
+| Delimiter | Comma, semicolon (common in DE/CH exports), tab, pipe |
+| Character encoding | UTF-8, UTF-8 with BOM, ISO-8859-1, Windows-1252 |
+| Decimal and thousands separators | 1234.56, 1.234,56 (DE), 1'234.56 (CH) |
+| Date format | ISO, DD.MM.YYYY, DD/MM/YYYY, two-digit years |
+| Header structure | Header row position, preamble rows carrying account metadata, trailing summary rows to ignore |
+| Amount representation | Single signed column, separate debit and credit columns, sign convention, negatives in parentheses |
+| Currency | Fixed per file, per row, or derived from the account |
+| Column mapping | Booking date, value date, trade date, description, counterparty, reference, amount, fee, tax, balance |
+| Securities fields | ISIN, Valor, WKN, ticker, quantity, unit price, fee — where the export is a depot statement |
+| Type mapping | Source transaction-type strings mapped to the canonical transaction types (section 12) |
+| Account identification | How the target account is recognised — from a column, a preamble line, the filename, or chosen by the user |
+ 
+**FR-IMP-022 — Template selection [MUST]**: On import the system shall attempt to identify the correct template automatically, for example by header fingerprint, and shall always allow the user to override the choice or select a template manually.
+ 
+**FR-IMP-023 — Template versioning [MUST]**: Templates shall be versioned with an effective date. Institutions change their export format without notice, and a historical import must remain reproducible under the template version that was actually applied. The template version used shall be recorded on the import batch.
+ 
+**FR-IMP-024 — User-defined templates [MUST]**: Where no shipped template exists, the user shall be able to define one through the mapping interface and save it for reuse. No institution is therefore ever unsupported; it is only more or less convenient (FR-INS-010).
+ 
+**FR-IMP-025 — Unmapped columns preserved [MUST]**: Columns not referenced by a template shall be retained as raw source data rather than discarded, so that a later template revision can make use of them without a re-import (FR-IMP-013).
+ 
+**FR-IMP-026 — Template test fixture [MUST]**: Every shipped template shall be accompanied by an anonymised sample file and its expected parse result, executed as an automated test. A template without a fixture is not considered delivered. This extends the verification dataset in section 47.
+ 
+**FR-IMP-027 — Template failure is contained [MUST]**: A template that no longer matches the institution’s current export shall fail with a clear diagnostic naming the mismatch, and shall not partially import misaligned data. Silent column drift is more damaging than a refused import (PR-010).
+ 
+### 28.1.1 Deferred input — institution list and templates
+ 
+**The list of banks and brokers to be supported, together with their CSV templates and sample files, will be supplied during user-story creation.** They are deliberately not enumerated in this specification.
+ 
+Implications for planning and handover:
+ 
+- **INPUT-001**: For each institution in scope, the following shall be delivered with its user story — institution name and country, an anonymised sample export, the field mapping, and the expected parse result to be used as the test fixture (FR-IMP-026).
+ 
+- **INPUT-002**: Each supported institution shall be its own user story under EPIC 07, sized independently. Institution support is incremental and additive; none of it sits on the critical path of the import framework itself.
+ 
+- **INPUT-003**: The import framework (FR-IMP-001 to FR-IMP-027) is MVP scope and shall be built and tested against at least two structurally different sample formats — one Swiss, one German — before any institution-specific work begins, so that the abstraction is validated rather than assumed.
+ 
+- **INPUT-004**: Depot and securities exports shall be treated as a distinct template class from cash-account exports, and at least one of each shall be represented in the initial set.
+ 
+- **INPUT-005**: The number of institutions supported at launch is a scope decision to be taken with the delivered list, not a requirement of this document.
+ 
+# 29. Data Provenance and Auditability
+ 
+**FR-DAT-001 — Transaction provenance [MUST]**: Retain original transaction/import source.
+ 
+**FR-DAT-002 — Reference-data provenance [MUST]**: Retain provider/retrieval/effective-date metadata for important security master fields.
+ 
+**FR-DAT-003 — Price provenance [MUST]**: Every price series/observation shall identify its source.
+ 
+**FR-DAT-004 — Classification provenance [MUST]**: GICS/SNB/CFI/MCC/ISO 20022 source information shall retain source/version where applicable.
+ 
+**FR-DAT-005 — Admin audit [SHOULD]**: Important user-administration actions should be auditable.
+ 
+**FR-DAT-006 — Three-layer classification model [MUST]**: All classification shall follow the same layering — source codes as received (immutable), the application’s canonical taxonomy (the only layer product logic reads), and optional mappings out to external reporting standards. Binding reports directly to a source standard means a provider change or a licence lapse breaks the reports; the canonical layer absorbs that churn.
+ 
+**FR-DAT-007 — Classification is annotation, never mutation [MUST]**: Classifying a record shall never alter the record. Source values are preserved so that a full re-classification remains possible when rules improve; without this, an early mapping error is permanently baked into the user’s history.
+ 
+**FR-DAT-008 — Derived data is rebuildable [MUST]**: All derived artefacts — positions, tax lots, daily valuations, aggregates — shall be fully reconstructible from the stored source records. Nothing derived is a source of truth.
+ 
+# 30. Privacy, Security and Offline Operation
+ 
+**NFR-PRIV-001 — Data location follows the deployment [MUST]**: Financial data resides in the PostgreSQL database of the deployment the user connects to. In a self-hosted deployment that is infrastructure the user controls; in the hosted service it is the operator’s infrastructure in a declared jurisdiction (section 51).
+ 
+**NFR-PRIV-002 — No dependency on the operator [MUST]**: A self-hosted deployment shall be fully functional without any account, licence check, telemetry call or other runtime dependency on a service operated by the project. Optional outbound calls — market data, FX, classification — shall be individually configurable and disableable.
+ 
+**NFR-PRIV-003 — Explicit consent [MUST]**: External synchronization or processing of financial data shall require explicit user consent.
+ 
+**NFR-SEC-001 — Encryption at rest [MUST]**: Sensitive financial data shall be encrypted at rest.
+ 
+**NFR-SEC-002 — Encryption in transit [MUST]**: External network communication containing sensitive data shall be encrypted.
+ 
+**NFR-SEC-003 — Secure credentials [MUST]**: Secrets/credentials shall never be stored in plaintext and should use OS secure storage where available.
+ 
+**NFR-SEC-004 — Application access protection [MUST]**: Support local access protection such as password/PIN/biometrics as appropriate to platform.
+ 
+**NFR-SEC-005 — No credential enabling money movement [MUST]**: The system shall never store credentials permitting order placement or payment initiation, consistent with PR-007. This is a storage prohibition, not only a feature exclusion.
+ 
+**NFR-SEC-006 — Outbound request minimisation [MUST]**: External requests shall disclose no more than the identifier required. Querying prices for a list of securities reveals a user’s portfolio to the provider; where feasible this shall be batched or padded, and it shall be documented in the privacy statement either way.
+ 
+**NFR-CON-001 — Online-only client [MUST]**: The client requires connectivity to its API. Offline data entry, offline calculation and offline editing are explicitly out of scope. There is no client-side write queue and no synchronisation or conflict-resolution mechanism.
+ 
+**NFR-CON-002 — Connectivity loss is handled, not ignored [MUST]**: Loss of connectivity mid-session shall be detected and communicated clearly. In-progress user input shall not be silently discarded; a failed write shall be retryable without duplicating the record (see idempotency, FR-API-006).
+ 
+**NFR-CON-003 — Stale market data indicator [MUST]**: If the server cannot refresh prices or FX from its providers, it shall continue serving the last stored values and mark them stale everywhere they appear. This concerns provider availability, not client connectivity, and remains a requirement in both topologies (PR-011).
+ 
+**NFR-CON-004 — Manual-price mode remains supported [MUST]**: A deployment with no external market-data entitlement at all shall remain fully usable with manually maintained prices. This is the baseline configuration for self-hosting (section 48.2).
+ 
+## 30.1 Consequences of open distribution for licensed data
+ 
+Open-source distribution combined with the self-hosted topology creates a specific structural problem that must be resolved before implementation. It is recorded here rather than left implicit. Section 48.2 resolves it per topology.
+ 
+A locally installed, openly distributed application still requires market prices, FX rates and — under the GICS decision — licensed classification data. That data is obtained under commercial terms that typically restrict redistribution and require an identified licensee.
+ 
+**NFR-LIC-001 — No embedded provider credentials [MUST]**: API keys or provider credentials shall not be embedded in the distributed application or its source repository. Any such key is effectively published, is a licence breach, and will be revoked.
+ 
+**NFR-LIC-002 — Credential ownership model [MUST]**: The product shall define and document how each user obtains entitlement to external data — the user supplies their own key, an optional managed service proxies requests under the operator’s licence, or a free provider is used within its terms. This decision determines whether a fully local, fully free installation is functionally complete or degraded (OPEN-013).
+ 
+**NFR-LIC-003 — Licensed data not redistributed [MUST]**: Licensed reference data shall not be shipped in the application package, in a seeded database, or in any public repository (NFR-GICS-002).
+ 
+**NFR-LIC-004 — Documented degraded mode [MUST]**: The behaviour of the application with no external data entitlement at all — manual prices only — shall be a documented, supported and usable configuration, not an error state.
+ 
+# 31. Data Ownership and Backup
+ 
+## 31.1 Export — deferred
+ 
+**User-facing data export is not a requirement at present (OOS-008).** No export screen, no download, no scheduled export. Deferred to post-MVP.
+ 
+## 31.2 The residual obligation
+ 
+One element cannot be deferred, and it is a legal obligation rather than a product feature.
+ 
+**FR-POR-001 — Statutory data portability, hosted topology [MUST]**: Where TrackMyWealth is operated as a hosted service for residents of Switzerland or the EU, the operator is a data controller and must be able to supply a data subject’s personal data in a structured, commonly used, machine-readable form on request, within the statutory deadline (NFR-DPR-003).
+ 
+*This does not require a user-facing feature.* It may be satisfied by an operator-side administrative procedure — a documented, tested extraction run by the operator on request. That is materially cheaper than a product feature and is the recommended MVP interpretation.
+ 
+**FR-POR-002 — Not applicable to self-hosting [MUST]**: A self-hosting household is its own controller and has direct database access, so no portability mechanism is required from the application in that topology (NFR-DPR-008).
+ 
+**FR-POR-003 — Schema documentation [MUST]**: The database schema shall be documented to a standard sufficient for the extraction in FR-POR-001 to be performed reliably. This documentation is required in any case for the architect and for self-hosting operators.
+ 
+**Design note.** Because export is deferred rather than prohibited, no design decision may make it unreasonably expensive to add later. In practice this costs nothing: the requirements already mandate that all derived data be reconstructible from source records (FR-DAT-008) and that provenance be retained throughout (section 29). A schema satisfying those can be exported whenever the decision is reversed. See OPEN-031.
+ 
+## 31.3 Backup and restore
+ 
+Backup is a separate concern from export and remains fully in scope.
+ 
+**FR-BCK-001 — Backup [MUST]**: Provide backup of the deployment’s data.
+ 
+**FR-BCK-002 — Restore [MUST]**: Provide restore from backup.
+ 
+**FR-BCK-003 — Encrypted backup [MUST]**: Sensitive backups shall support encryption.
+ 
+**FR-BCK-004 — Restore verification [SHOULD]**: The application shall be able to verify a backup’s integrity and completeness without performing a destructive restore.
+ 
+**FR-BCK-005 — Backup responsibility is explicit [MUST]**: Backup responsibility differs by topology and shall be stated in-product. In a self-hosted deployment the operator of that deployment carries the durability risk and shall be prompted, with the date of the last successful backup shown. In the hosted service, backup is the service operator’s responsibility under the targets in section 51. **With export deferred, a self-hosting household’s only protection against data loss is its own backup, which raises the importance of this requirement.**
+ 
+**FR-BCK-006 — Backup is deployment-level, not tenant-level [MUST]**: With export deferred, backup operates on the deployment as a whole rather than on an individual household. In a multi-tenant hosted deployment, backup and restore therefore cannot serve as a per-household data-retrieval mechanism, which is why FR-POR-001 exists separately.
+ 
+# 32. Localization and UX
+ 
+**NFR-I18N-001 — English/German [MUST]**: All core system-generated UI content shall be available in English and German.
+ 
+**NFR-I18N-002 — Runtime switching [MUST]**: Users shall change language without reinstalling.
+ 
+**NFR-I18N-003 — Locale formatting [MUST]**: Dates, numbers, currencies and percentages shall follow locale preferences, including the Swiss thousands separator convention, which differs from the German one.
+ 
+**NFR-I18N-004 — No concatenated sentences [MUST]**: User-facing text shall be externalised as complete units with parameters, never assembled from fragments, so that a further language can be added without code change.
+ 
+**NFR-I18N-005 — Financial terminology per market [SHOULD]**: German-language terminology shall respect Swiss and German usage where they differ.
+ 
+**NFR-UX-001 — Progressive disclosure [MUST]**: Advanced analytics shall not overwhelm beginner users.
+ 
+**NFR-UX-002 — Consistent terminology [MUST]**: Institution/Container, Account, Transaction, Security, Position, Asset, Liability and Household shall have consistent meanings.
+ 
+**NFR-UX-003 — Explainability [SHOULD]**: Users should be able to understand the source/calculation behind important figures.
+ 
+**NFR-UX-004 — Estimated values are visually distinct [MUST]**: The interface shall carry a consistent visual treatment for estimated, stale and unreconciled values, applied everywhere such a value appears (PR-011).
+ 
+**NFR-UX-005 — Time to first insight [SHOULD]**: A new user importing a single account shall reach a meaningful overview within ten minutes.
+ 
+# 33. Financial Calculation and Reliability
+ 
+**NFR-CALC-001 — Decimal arithmetic [MUST]**: Use appropriate decimal/financial arithmetic for monetary values. Binary floating point shall not be used for any monetary or quantity value at any point, including intermediate calculation.
+ 
+**NFR-CALC-002 — Reproducibility [MUST]**: Same input and methodology shall produce the same result.
+ 
+**NFR-CALC-003 — Document calculations [MUST]**: Formally document net worth, savings rate, FX, portfolio valuation, TWR and MWR methodologies. See section 46.
+ 
+**NFR-CALC-004 — Automated tests [MUST]**: Calculation engines shall have comprehensive automated tests.
+ 
+**NFR-CALC-005 — Golden dataset regression [MUST]**: A fixed reference dataset with known correct answers shall be maintained and run on every change to any calculation path. It shall include, at minimum: a stock split, a reverse split, a merger, a spin-off, an ISIN change, an in-kind transfer with no reported cost basis, a partial sale under FIFO, a multi-currency position, a dividend with withholding deducted, a mid-period cash flow affecting TWR, and an account whose transaction history begins after the account was opened. See section 47.
+ 
+**NFR-CALC-006 — Known-answer tests for TWR and MWR [MUST]**: TWR, MWR and any approximation method shall be validated against published worked examples with independently verifiable results, not only against the system’s own prior output.
+ 
+**NFR-CALC-007 — Rounding policy [MUST]**: A single documented rounding policy shall apply — where rounding occurs, to how many places, and per currency. Rounding shall be applied at presentation, not accumulated through intermediate steps.
+ 
+**NFR-CALC-008 — Recomputation is idempotent [MUST]**: Recalculating derived data from unchanged source records shall produce identical results.
+ 
+**NFR-REL-001 — Atomic updates [MUST]**: Multi-record financial operations/imports shall not leave partially committed states.
+ 
+**NFR-REL-002 — Integrity constraints [MUST]**: Institution/account/transaction/holding relationships shall be protected by data-integrity rules enforced at the data layer, not only in application code.
+ 
+**NFR-REL-003 — Schema migration safety [MUST]**: Migrations shall never silently relocate or alter user-visible balances. Where a structural change moves where a value appears, the change shall be explained in-app. A competitor’s mid-2026 restructuring of cash accounts demonstrated the cost of doing this silently.
+ 
+# 34. Initial Performance Targets
+ 
+| Area | Initial target |
+| --- | --- |
+| Main dashboard | Approximately < 1 second for a typical local household dataset after required data is loaded |
+| Transaction filtering/search | Approximately < 500 ms for ~100,000 transactions on supported hardware |
+| Common portfolio calculations | Approximately < 2 seconds for normal private-investor datasets |
+| Import preview | Approximately < 5 seconds for ~10,000 records |
+| Full historical recomputation | Approximately < 60 seconds for a large household dataset, as a background task with progress indication |
+| Daily valuation series build | Incremental daily update shall not block interactive use |
+ 
+These are engineering targets to be validated during prototyping rather than contractual service levels.
+ 
+# 35. Core Business Rules
+ 
+**RULE-001 [MANDATORY]**: A Financial Institution is a container, not an account.
+ 
+**RULE-002 [MANDATORY]**: A container may hold multiple account types.
+ 
+**RULE-003 [MANDATORY]**: Every container has a container currency and an Institution Summary.
+ 
+**RULE-004 [MANDATORY]**: Each user has a reporting currency for the global Consolidated View.
+ 
+**RULE-005 [MANDATORY]**: Source/account/security currencies remain unchanged by reporting conversions.
+ 
+**RULE-006 [MANDATORY]**: Historical consolidated reports use historical FX rates.
+ 
+**RULE-007 [MANDATORY]**: Internal transfers do not count as income or expenses.
+ 
+**RULE-008 [MANDATORY]**: Security purchases do not automatically count as household consumption.
+ 
+**RULE-009 [MANDATORY]**: Credit-card purchases count as expenses once; settlement does not create a second expense.
+ 
+**RULE-010 [MANDATORY]**: Source transaction classification and reporting category remain separate.
+ 
+**RULE-011 [MANDATORY]**: MCC remains separate from reporting category.
+ 
+**RULE-012 [MANDATORY]**: Security Master information is centralized and referenced by depot positions.
+ 
+**RULE-013 [MANDATORY]**: Only securities referenced by current/historical portfolios are persisted in the Security Master.
+ 
+**RULE-014 [MANDATORY]**: Security and exchange listing are separate entities.
+ 
+**RULE-015 [MANDATORY]**: Instrument type, asset class and GICS are separate classifications.
+ 
+**RULE-016 [MANDATORY]**: GICS is used for applicable sector/industry grouping.
+ 
+**RULE-017 [MANDATORY]**: Historical security master/prices required by reports are retained after a position is sold.
+ 
+**RULE-018 [MANDATORY]**: System User and Household Member are separate concepts.
+ 
+**RULE-019 [MANDATORY]**: Tax functionality is completely out of scope.
+ 
+**RULE-020 [MANDATORY]**: Container type never constrains which account types may exist inside it.
+ 
+**RULE-021 [MANDATORY]**: An account belongs to exactly one container; a container may be empty; a container roll-up may be negative.
+ 
+**RULE-022 [MANDATORY]**: The same account type may occur several times within one container.
+ 
+**RULE-023 [MANDATORY]**: Account type is immutable after creation.
+ 
+**RULE-024 [MANDATORY]**: The transaction ledger is append-only; corrections are compensating entries.
+ 
+**RULE-025 [MANDATORY]**: A provider-reported snapshot and a transaction are different record types, and neither is derived from the other.
+ 
+**RULE-026 [MANDATORY]**: Stored prices are never retro-adjusted; adjusted series are derived from separately stored corporate actions.
+ 
+**RULE-027 [MANDATORY]**: A fund maps to asset classes as a weighted set, never as a single class.
+ 
+**RULE-028 [MANDATORY]**: Estimated, stale, carried-forward and unreconciled values are always visibly marked.
+ 
+**RULE-029 [MANDATORY]**: Pension holdings participate in consolidated allocation on the same basis as any other holding.
+ 
+**RULE-030 [MANDATORY]**: TWR requires a daily valuation series; the series is part of the core model, not of the reporting layer.
+ 
+**RULE-031 [MANDATORY]**: A user override of any classification or value is never overwritten by an automated refresh.
+ 
+**RULE-032 [MANDATORY]**: Licensed third-party reference data is never embedded in the distributed application or a public repository.
+ 
+# 36. Conceptual Domain Model
+ 
+SystemUser
++-- Role / Permissions
++-- Language
++-- ReportingCurrency
++-- optional link -> HouseholdMember
+ 
+Household
++-- HouseholdMember / Ownership (share %, effective-dated)
++-- FinancialInstitution [0..n]            <<container>>
+|   +-- ContainerCurrency
+|   +-- Account [0..n]                     <<abstract>>
+|       +-- AccountType (immutable)
+|       +-- Capabilities (holds_positions, has_transactions,
+|       |                 has_statement_cycle, has_amortisation,
+|       |                 has_contribution_limit, is_discretionary,
+|       |                 manual_valuation)
+|       +-- Nature (asset | liability, derived from type)
+|       +-- NativeCurrency
+|       +-- Transaction [0..n]             (append-only)
+|       +-- Position [0..n] -> Security
+|       +-- Balance / Valuation
+|       +-- Snapshot [0..n]                (provider-reported state)
+|       +-- ReconciliationResult [0..n]
+|       +-- DailyValuation [0..n]          (prerequisite for TWR)
++-- Asset / Liability
++-- Budget / Category / Rule
++-- Goal
+ 
+Account specialisation (disjoint, total, one level deep):
+  Cash | Savings | Securities/Depot | ManagedMandate | Pension |
+  VestedBenefits | CreditCard | Mortgage | Loan | Crypto | CustomAsset
+ 
+Security
++-- Issuer
++-- Identifiers (ISIN, Valor, WKN, ...)
++-- InstrumentType / CFI
++-- AssetClassWeight [1..n]                (weighted, not single-valued)
++-- GICS (8-digit + structure version)
++-- SNB Classification
++-- Listing [0..n]
+|   +-- Exchange / MIC / Ticker / TradingCurrency
+|   +-- TradingCalendar
+|   +-- Price [0..n]                       (raw, immutable)
++-- CorporateAction [0..n]
++-- SuccessorLink
++-- MasterDataProvenance (per field)
+ 
+FXRate
++-- BaseCurrency
++-- QuoteCurrency
++-- Date
++-- Rate
++-- Source
+ 
+**Model notes.**
+ 
+- Account specialisation is **disjoint** (exactly one subtype), **total** (no bare account) and **one level deep**. Variation within a subtype is expressed through capabilities, not through further sub-subtypes (FR-ACC-011).
+ 
+- Every account type exposes the same valuation interface, so consolidation never branches on type (FR-ACC-012).
+ 
+- Snapshot, DailyValuation and ReconciliationResult are the three entities most commonly omitted from designs of this kind, and their absence is the root cause of the accuracy problems visible in competing products.
+ 
+# 37. MVP Baseline
+ 
+The MVP shall establish a correct, extensible financial foundation. Priority areas:
+ 
+- User administration, authentication baseline, user language and user reporting currency
+ 
+- Household/member and ownership model
+ 
+- Financial Institution/Container model including container currency and Institution Summary
+ 
+- Account model for all required account types, with the capability model
+ 
+- Unified transaction ledger, **template-driven multi-bank CSV import framework**, provenance, duplicate detection and rollback
+ 
+- **Snapshots and the reconciliation engine, including manual snapshot entry and opening balances**
+ 
+- Cash and credit-card categorization including MCC/source-classification separation
+ 
+- Transfer, savings, investment and credit-card settlement rules
+ 
+- Budgeting, cash-flow and net-worth reporting
+ 
+- Security Master, listings, classifications and portfolio-driven lifecycle
+ 
+- Historical prices and FX rates, **including backfill and the daily valuation series**
+ 
+- Portfolio holdings, asset allocation, TWR, MWR and benchmark comparison
+ 
+- Consolidated View in the user’s reporting currency
+ 
+- English/German localization
+ 
+- Privacy and security baseline, backup and restore *(user-facing export removed — OOS-008)*
+ 
+- **Golden-dataset regression suite covering the cases in section 47**
+ 
+- **Deletion, void and lifecycle-state rules (section 52); optimistic locking (section 53); reference-bundle import (section 54)**
+ 
+**Sequencing note.** Items 6, 11 and 16 are the additions to the baseline MVP, and they are deliberately placed in the MVP rather than deferred. Reconciliation and the daily valuation series cannot be retrofitted without full historical recomputation, and the regression suite is what makes PR-010 enforceable rather than aspirational.
+ 
+# 38. Post-MVP / Future Capabilities
+ 
+- Institution-specific PDF imports
+ 
+- Read-only Swiss/German bank and broker connectors
+ 
+- Automatic recurring-transaction detection
+ 
+- Upcoming bill forecasts
+ 
+- Sankey cash-flow visualization
+ 
+- ETF/fund look-through and direct/indirect GICS exposure
+ 
+- Dividend calendar and forecasts
+ 
+- Advanced financial-goal and retirement scenarios
+ 
+- **User-facing data export in structured formats, with round-trip fidelity into a clean installation**
+ 
+- Currency attribution reporting
+ 
+- COICOP mapping and national spending benchmarks
+ 
+- Self-hosted synchronization
+ 
+- Optional managed/SaaS synchronization and backups
+ 
+- Optional AI explanations operating on deterministic financial results
+ 
+- French and Italian localization
+ 
+Future capabilities shall not change the permanent exclusions for tax functionality, professional financial advice, payment execution, trade execution, private-equity valuation or public social networking.
+ 
+# 39. Requirements Engineering Handover
+ 
+This document is the baseline from which a requirements engineer creates detailed use cases, user stories and acceptance criteria. Recommended epics:
+ 
+- EPIC 01 — Application Foundation & Configuration
+ 
+- EPIC 02 — User Administration & Authorization
+ 
+- EPIC 03 — Household & Ownership
+ 
+- EPIC 04 — Financial Institutions / Containers
+ 
+- EPIC 05 — Account Management
+ 
+- EPIC 06 — Currency & FX Management
+ 
+- EPIC 07 — Transaction Ledger & Imports *(one story per supported institution template; see 28.1.1)*
+ 
+- EPIC 08 — Transaction Categorization
+ 
+- EPIC 09 — Credit Cards
+ 
+- EPIC 10 — Budgeting & Cash Flow
+ 
+- EPIC 11 — Assets, Liabilities & Net Worth
+ 
+- EPIC 12 — Security Master & Issuers
+ 
+- EPIC 13 — Security Listings & Exchanges
+ 
+- EPIC 14 — Market Prices & Corporate Actions
+ 
+- EPIC 15 — Investment Portfolios & Holdings
+ 
+- EPIC 16 — Performance / TWR / MWR
+ 
+- EPIC 17 — Asset Allocation / GICS / SNB
+ 
+- EPIC 18 — Institution Summary
+ 
+- EPIC 19 — Consolidated Reporting
+ 
+- EPIC 20 — Financial Goals
+ 
+- EPIC 21 — Localization
+ 
+- EPIC 22 — Privacy & Security
+ 
+- EPIC 23 — Backup / Restore
+ 
+- EPIC 24 — External Data & Institution Integrations
+ 
+- **EPIC 25 — Snapshots ****&**** Reconciliation**
+ 
+- **EPIC 26 — Pension ****&**** Retirement Accounts**
+ 
+- **EPIC 27 — Calculation Verification ****&**** Golden Dataset**
+ 
+- **EPIC 28 — Tenancy, Authentication ****&**** Authorization**
+ 
+- **EPIC 29 — API Platform ****&**** Client Shell**
+ 
+- **EPIC 30 — Deployment, Operations ****&**** Data Protection**
+ 
+- **EPIC 31 — Data Lifecycle, Deletion ****&**** Audit**
+ 
+- **EPIC 32 — Reference Data Administration**
+ 
+# 40. User Story Definition Standard
+ 
+Each development-ready user story should include:
+ 
+- Story ID and parent epic
+ 
+- Actor/persona
+ 
+- Business objective/rationale
+ 
+- User story statement
+ 
+- Preconditions
+ 
+- Acceptance criteria (preferably Given / When / Then)
+ 
+- Applicable business rules
+ 
+- Data requirements and validation
+ 
+- Error/edge cases
+ 
+- Authorization/privacy requirements
+ 
+- Dependencies
+ 
+- Priority
+ 
+- Definition of Done
+ 
+- **Data-quality behaviour**: what the story does when the underlying data is incomplete, stale or unreconciled — required by PR-010 and PR-011, and the case most often missed in acceptance criteria
+ 
+# 41. Inputs Required by the Software Architect
+ 
+- Approved domain model and entity relationships
+ 
+- Detailed business rules and calculation methodologies
+ 
+- Data lifecycle/history/provenance requirements
+ 
+- User/role/permission model
+ 
+- Deployment topology behaviour and the online-only client model (sections 48, 30)
+ 
+- Import and external connector contracts
+ 
+- **Import template definition format** — the declarative schema in which per-institution CSV templates are expressed (FR-IMP-020/021)
+ 
+- Security Master and price-data provider requirements
+ 
+- GICS licensing approach and exact SNB taxonomy
+ 
+- **External data entitlement and credential model for a locally installed application (NFR-LIC-002)**
+ 
+- **Daily valuation series storage and recomputation strategy** (OPEN-017)
+ 
+- **Volumetrics** (NFR-OPS-007) — outstanding
+ 
+- **Confirmed household sharing model** (OPEN-021) — outstanding
+ 
+- **Lifecycle state machine definitions** (FR-LIF-010)
+ 
+- **Reference bundle format, schema and signing approach** (section 54)
+ 
+- Performance, reliability, backup and privacy requirements
+ 
+- Development-ready user stories and acceptance criteria
+ 
+The technology baseline in section 48.3 fixes client framework, API framework, transport, authentication mechanism and database. All other technology choices — hosting, job scheduling, caching, observability, build and release tooling — remain the architect’s decision.
+ 
+# 42. Open Decisions / Detailed Analysis Items
+ 
+**OPEN-001 — CLOSED**: Browser plus native iOS and Android, via React Native + Expo (48.3).
+ 
+**OPEN-002 — CLOSED**: PostgreSQL, server-side (48.3). Encryption-at-rest mechanism remains a deployment choice.
+ 
+**OPEN-003 [TBD]**: Open-source license
+ 
+**OPEN-004 [TBD]**: Swiss and German bank/broker *automated connector* strategy. Note this is separate from CSV import: the CSV route is template-driven and its institution list is a deferred delivery input (28.1.1), not an open decision.
+ 
+**OPEN-005 [TBD]**: Market-data, master-data and FX providers
+ 
+**OPEN-006 [TBD]**: Licensed GICS data source and redistribution/storage rights
+ 
+**OPEN-007 [TBD]**: Exact SNB classification taxonomy and source
+ 
+**OPEN-008 [TBD]**: Formal cost-basis/accounting method for portfolio history, excluding tax requirements
+ 
+**OPEN-009 [TBD]**: Corporate-action and adjusted-price methodology
+ 
+**OPEN-010 [TBD]**: Future multi-user household permission semantics
+ 
+**OPEN-011 — CLOSED**: Self-hosting is a first-class topology from the outset (48.1). Client-server synchronisation is not required, as the client is online-only (NFR-CON-001).
+ 
+**OPEN-012 [TBD]**: Do assets held with no provider (real estate, vehicles, private loans) attach to a default *Personal Assets* container, or may an account exist with no container? The baseline structure diagram implies the latter; rule C2 assumes the former. A privately held mortgage is the awkward case — it has a lender, which is arguably an institution. *Recommendation: default container, for tree uniformity.*
+ 
+**OPEN-013 — CLOSED**: Resolved per topology (48.2). Hosted service uses the operator’s pooled licence; self-hosted uses the deploying user’s own entitlement or manual prices.
+ 
+**OPEN-014 — CLOSED**: One deployment, one database, concurrent independent sessions with household-scoped isolation (48.4, 49).
+ 
+**OPEN-015 [TBD]**: Is the Institution Summary displayable only in the container currency, or also switchable to the user reporting currency? The former is simpler and matches FR-INS-SUM-001; the latter is what many users will expect when comparing institutions.
+ 
+**OPEN-016 [TBD]**: Which market leads — CH or DE? They require different first connectors, different institution catalogues and different launch messaging. Building both fully in parallel roughly doubles the critical path. DE is faster to reach because PSD2 connectivity is purchasable; CH is more defensible because bLink access and bank relationships are hard to replicate.
+ 
+**OPEN-017 [TBD]**: Is the daily valuation series stored or recomputed on demand? Storage costs space and requires invalidation on backdated edits; recomputation costs time on every report. The choice affects the local performance targets in section 34.
+ 
+**OPEN-018 [TBD]**: How is differentiation demonstrated without a tax export? The remaining advantages (section 1.2) are architectural and slower to show than a tax report would have been. Needs a positioning answer before any launch communication.
+ 
+**OPEN-019 [TBD]**: Constituent-level look-through data source for funds. This is a separate licensed dataset from GICS itself, and without it sector analysis is unavailable for the majority of a typical portfolio (FR-GICS-005).
+ 
+**OPEN-020 [TBD]**: Are discretionary mandates (VIAC, frankly, True Wealth) and Pillar 2 / vested-benefit accounts confirmed in MVP scope, or deferred? Both are proposed in sections 10.2 and 10.3 as SHOULD.
+ 
+**OPEN-021 [TBD]**: Household sharing model — confirm the provisional resolution in FR-TEN-008. Strict isolation with explicit, revocable, granular grants, reconciling the “no user sees another user’s finances” requirement with household budgets and FR-HOU-004 privacy levels.
+ 
+**OPEN-022 [TBD]**: Registration model for the hosted service — self-service signup, invite-only, or admin-provisioned. Section 8 currently describes admin provisioning, which suits self-hosting but not a public service.
+ 
+**OPEN-023 [TBD]**: Web client approach — Expo web via react-native-web, or a separate React web client sharing a TypeScript API and domain layer. Decide after the transaction-list spike (RISK-010).
+ 
+**OPEN-024 [TBD]**: Over-the-air update policy, specifically whether changes affecting displayed financial figures may bypass store review (RISK-011).
+ 
+**OPEN-025 [TBD]**: Is MFA mandatory, optional, or configurable per deployment (FR-AUT-008)?
+ 
+**OPEN-026 [TBD]**: Supported client-version window and forced-upgrade policy (FR-API-004).
+ 
+**OPEN-027 [TBD]**: Hosting jurisdiction — Switzerland, EU/Germany, or separate deployments per region (NFR-DPR-001).
+ 
+**OPEN-028 [TBD]**: Retention periods for financial records, audit logs and backups (NFR-DPR-005).
+ 
+**OPEN-029 [TBD]**: Commercial model. Per-tenant hosting and pooled market-data licensing now carry recurring cost, so this is no longer deferrable.
+ 
+**OPEN-030 [TBD]**: Volumetrics per NFR-OPS-007 — required before the schema and the section 34 targets can be validated.
+ 
+**OPEN-032 [TBD]**: Soft-delete retention window before purge (FR-LIF-003). *Proposed: 30 days.*
+ 
+**OPEN-033 [TBD]**: Reference-data staleness warning thresholds (FR-REF-008). *Proposed: warn at 6 months, prominently at 12.*
+ 
+**OPEN-034 [TBD]**: Who curates and publishes reference bundles, where they are obtained, and at what cadence (FR-REF-012). Required before launch, since manual import is now the only update channel.
+ 
+**OPEN-035 [TBD]**: Should one person be able to belong to two households — an adult managing their own and a parent’s finances? Currently unsupported (55.2).
+ 
+**OPEN-031 [TBD]**: When does user-facing export return? Three consequences follow from its deferral and should be accepted knowingly rather than discovered later: no supported topology migration (NFR-DEP-006); no route for a user or adviser to derive tax figures externally, now that tax reporting is also out of scope (OOS-004); and no user-side recovery path if a hosted account is closed or the service is discontinued. None is a defect — export is a real cost and deferring it is a reasonable MVP decision — but each is a commitment made by omission.
+ 
+# 43. Representative Acceptance Scenario
+ 
+A representative household shall be able to model the following structure and receive correct consolidated results:
+ 
+User A — Reporting Currency: CHF
+ 
+Household
+|
++-- PostFinance (Container Currency: CHF)
+|   +-- Cash Account CHF
+|   +-- Savings Account CHF
+|   +-- Depot
+|   +-- Credit Card
+|
++-- DKB (Container Currency: EUR)
+|   +-- Girokonto EUR
+|   +-- Tagesgeld EUR
+|   +-- Depot
+|
++-- Broker X (Container Currency: USD)
+|   +-- Cash USD / EUR / CHF
+|   +-- Depot with USD/EUR/CHF listings
+|
++-- VIAC (Container Currency: CHF)
+|   +-- Pillar 3a (holding fund positions)
+|
++-- Personal Assets (Container Currency: CHF)
+    +-- Real Estate
+    +-- Mortgage
+ 
+Consolidated View -> CHF
+ 
+The system shall correctly provide:
+ 
+- Institution summaries in CHF, EUR and USD respectively
+ 
+- A global consolidated overview in CHF for User A
+ 
+- Historically correct FX conversion
+ 
+- Categorized cash-account and credit-card spending
+ 
+- No double counting of card settlement or internal transfers
+ 
+- Assets, liabilities and historical net worth
+ 
+- Consolidated portfolio holdings across depots
+ 
+- Security Master information and historical prices
+ 
+- Asset-class and GICS allocation
+ 
+- TWR and MWR
+ 
+- English/German user experience according to user preference
+ 
+**Additional acceptance conditions introduced by this edition:**
+ 
+- The **VIAC Pillar 3a fund holdings appear in the consolidated asset allocation and GICS analysis**, not only as a pension balance (FR-ALL-008)
+ 
+- The same ETF held in both the DKB depot and the Broker X depot, under two listings in two currencies, consolidates into **one security exposure** with the correct total quantity (FR-DEP-003, FR-LST-004)
+ 
+- Entering the PostFinance balance from a paper statement produces a **reconciliation result** identifying any difference against the ledger (FR-REC-002, FR-REC-006)
+ 
+- The mortgage payment splits into interest and principal, so the savings rate is not understated (FR-CF-006)
+ 
+- The Broker X USD position’s return is decomposable into local return and CHF/USD effect (FR-PERF-017)
+ 
+- Where the server cannot reach its market-data providers, all of the above remain available from stored values, with prices marked stale (NFR-CON-003). Note that the client itself is online-only (NFR-CON-001): loss of client connectivity makes the application unavailable, and this is intended behaviour, not a defect.
+ 
+# 44. Final Product Definition
+ 
+TrackMyWealth is a bilingual, privacy-first personal and household financial management application for Switzerland and Germany, delivered as browser and native mobile clients against a REST API, and deployable either on infrastructure the household controls or as a hosted service. It models financial institutions as currency-aware containers containing different account types; categorizes bank and credit-card transactions for household reporting; centralizes portfolio security master data and historical prices; and consolidates assets, liabilities, cash flow and investment analytics into one user-defined reporting currency.
+ 
+The system is designed to support both understandable household finance and advanced private-investor analysis while remaining under the user’s control. It provides information and analysis only: no payment execution, trade execution, professional financial advice, tax functionality, private-equity valuation or public social-network features.
+ 
+Its distinguishing commitment is correctness: figures are reconciled against what institutions actually report, estimates are always marked as such, and methodology is documented and testable.
+ 
+# 45. Risk Register
+ 
+| ID | Risk | Impact | Mitigation |
+| --- | --- | --- | --- |
+| RISK-001 | **Wrong figures from corporate actions, missing cost basis or incomplete history.** Observed in competing products and the most common cause of user attrition in this category. | Very high — trust is not recoverable once lost | Reconciliation engine (12.1), golden dataset (47), visible flagging of estimates (PR-011), refusal to compute where data is insufficient (FR-PERF-018) |
+| RISK-002 | **Connector breakage from institution-side changes.** A competitor experienced multi-week outages from one broker backend change. | High, recurring | Connector health and degradation (FR-IMP-014/015); manual and file import always available (FR-INS-010) |
+| RISK-003 | **GICS licence terms incompatible with open-source self-hosting.** Redistributing licensed classification data in a downloadable deployment is unlikely to be permitted. | High — affects a MUST requirement | Fallback taxonomy (FR-GICS-011), distribution boundary (NFR-GICS-002), resolve OPEN-006 and OPEN-013 together and early |
+| RISK-004 | **Market-data cost or terms unworkable for a free local product.** Providers generally licence to an identified operator, not to anonymous installations. | High | Resolve OPEN-013; documented degraded manual-price mode (NFR-LIC-004) |
+| RISK-005 | **Swiss connectivity has no purchasable route.** Unlike PSD2 in Germany, Swiss access is contractual via bLink and bank agreements. | High | Treat as a long-lead item; do not place Swiss automated connectivity on the MVP critical path |
+| RISK-006 | **Scope breadth.** The specification covers what four separate products do today. | High | Enforce the MVP cut (37); treat correctness rather than feature count as the differentiator |
+| RISK-007 | **Post-launch data-model migration.** A competitor’s cash-account restructuring visibly moved user balances. | Medium–high | Cash, snapshots, ownership and weighted asset classes resolved in v1; NFR-REL-003 |
+| RISK-008 | **Self-hosted durability.** A self-hosting household loses data to disk failure with no operator-side copy, and with export deferred has no secondary recovery route. | Medium | FR-BCK-004/005 backup prompting and verification; documented in self-hosting guidance |
+| RISK-009 | **Single-maintainer sustainability** for an open-source financial product with recurring data-provider dependencies. | Medium | Address alongside OPEN-003 and OPEN-013 |
+| RISK-012 | **Reference data goes stale under manual-only distribution.** Pension contribution limits above all: an outdated limit produces wrong goal tracking with no visible cause. | Medium | FR-REF-010/011 staleness warnings; effective-dated data marked estimated when no current entry exists |
+| RISK-013 | **Household-splitting constraints erode before the feature arrives.** FR-HHL-001 to 005 are easy to violate accidentally once nobody remembers why they exist. | Medium | Automated check that no derived artefact embeds a household identifier; record the rationale at the ownership relation |
+| RISK-014 | **Void-based correction is misread as a bug.** Users seeing a reversing entry alongside the original may report duplicated data. | Low | FR-LIF-003 presentation rules; voided items shown as voided, not duplicated |
+ 
+# 46. Calculation Methodology Definitions
+ 
+To be formally specified before implementation, satisfying NFR-CALC-003. Each definition shall state inputs, treatment of edge cases, rounding and worked examples.
+ 
+| Metric | Definition to be fixed |
+| --- | --- |
+| **Net worth** | Sum of asset account values minus liability account values at a date, in the reporting currency, using valuation-date FX. Ownership share applied for person-scoped views. |
+| **TWR** | Geometric linking of sub-period returns bounded by external cash flows into or out of the measured scope. Definition must state what counts as external at each scope level — a transfer between two of the user’s own depots is external to each depot but internal to the household. |
+| **MWR** | Internal rate of return (XIRR) over dated external cash flows plus the closing value. Definition must state the convergence tolerance and the behaviour when no solution exists or several do. |
+| **Modified Dietz** | Permitted approximation where intraday valuation is unavailable; the periods where it was applied must be recorded. |
+| **Savings rate** | Definition must fix whether employer pension contributions, mortgage principal repayment and unrealised gains are included (FR-BUD-009). |
+| **Cost basis** | FIFO default; treatment of fees; treatment of transferred-in positions with no reported basis; behaviour across corporate actions. |
+| **Realised gain** | Proceeds minus cost basis of the matched lots, with fee treatment consistent with cost basis. |
+| **FX conversion** | Which date’s rate applies to each figure class (FR-CUR-011); carry-forward rule for missing dates; direct-pair rule (FR-CUR-010). |
+| **Position valuation** | Which listing’s price is used (FR-LST-004); carry-forward across non-trading days; staleness threshold. |
+| **Currency attribution** | Decomposition of total return into local return and FX contribution, with the residual cross-term explicitly assigned. |
+| **Reconciliation difference** | How a difference is computed, its tolerance, and when an account is considered reconciled. |
+ 
+# 47. Verification Dataset
+ 
+A fixed reference dataset with independently verified expected results, required by NFR-CALC-005. Minimum cases:
+ 
+| # | Case | What it protects |
+| --- | --- | --- |
+| V-01 | Forward stock split | Quantity and historical price adjustment; unadjusted prices preserved |
+| V-02 | Reverse split producing a fractional residue | Rounding policy; cash-in-lieu handling |
+| V-03 | Merger, shares exchanged for shares | Successor linkage; continuity of position history |
+| V-04 | Spin-off with cost-basis apportionment | Basis allocation method |
+| V-05 | ISIN change with no economic event | That the position does not appear as sold and rebought |
+| V-06 | In-kind transfer between custodians, no cost basis reported | FR-REC-008; estimated-basis flagging |
+| V-07 | Partial sale under FIFO with three acquisition lots | Lot matching and realised gain |
+| V-08 | USD position held with a CHF reporting currency, over a period of FX movement | Currency attribution; conversion date convention |
+| V-09 | Dividend with withholding tax deducted | Gross versus net; cash balance correctness |
+| V-10 | Large mid-period deposit followed by a market fall | Divergence of TWR and MWR — the two figures must differ, in the expected direction |
+| V-11 | Account whose imported history begins two years after opening | Opening balance reconstruction; refusal to report meaningless earlier returns |
+| V-12 | Same ETF in two depots, two listings, two currencies | Cross-depot consolidation; listing selection |
+| V-13 | Credit-card purchase in month 1 settled from the current account in month 2 | Single expense recognition; transaction-date attribution |
+| V-14 | Mortgage payment covering interest and principal | Expense versus balance-sheet split; savings-rate effect |
+| V-15 | Multi-asset ETF holding equities and bonds | Weighted asset-class decomposition, not single-class assignment |
+| V-16 | Pillar 3a holding equity funds | Inclusion in consolidated allocation and concentration |
+| V-17 | Price series with a market holiday and a trading suspension | Carry-forward versus gap; no interpolation |
+| V-18 | Same import file applied twice | Idempotency; duplicate detection |
+| V-19 | Two structurally different bank CSV formats — semicolon/1.234,56/DD.MM.YYYY versus comma/1'234.56/ISO date | Template abstraction genuinely handles format variance |
+| V-20 | CSV with separate debit and credit columns and a trailing summary row | Sign convention and non-data row handling |
+| V-21 | Institution changes its export format between two imports | Template versioning; historical reproducibility (FR-IMP-023) |
+ 
+Each case shall carry its expected output as a fixture, verified independently of the implementation.
+ 
+# 48. Deployment Topologies, Technology Baseline and Tenancy
+ 
+## 48.1 One architecture, two topologies
+ 
+TrackMyWealth is delivered as a client application and a server API. The client never accesses the database directly. Consequently the same build serves both deployment topologies, and the difference between them is configuration and operational responsibility, not architecture.
+ 
+|  | **Self-hosted** | **Hosted service** |
+| --- | --- | --- |
+| Who runs the API and database | The user or household | The service operator |
+| Typical tenants per deployment | One household | Many households |
+| Registration | Bootstrap administrator at first run, then admin-provisioned users | Per business model (OPEN-022) |
+| Market-data entitlement | Supplied by the deploying user, or manual prices | Operator’s licence, proxied |
+| Licensed classification data (GICS) | Not distributed; fallback taxonomy or the user’s own entitlement | Operator’s licence |
+| Backup | The deploying user | The operator, to section 51 targets |
+| Data protection controller | The deploying user, for their own household | The operator |
+ 
+**NFR-DEP-001 — Single codebase [MUST]**: Both topologies shall run the identical application, API and database schema. There shall be no self-hosted-only or hosted-only code path in the domain, calculation or authorization layers.
+ 
+**NFR-DEP-002 — Differences are configuration [MUST]**: Topology differences shall be expressed as configuration — registration mode, data-provider credentials, backup scheduling, retention — never as compile-time variants.
+ 
+**NFR-DEP-003 — Client is topology-agnostic [MUST]**: The client shall be pointed at an API base URL and shall behave identically regardless of where that API runs. The mobile applications shall permit configuring the server endpoint.
+ 
+**NFR-DEP-004 — No trusted-deployment shortcut [MUST]**: Authorization, tenant isolation and audit shall be enforced identically in a single-household self-hosted deployment. A deployment believed to have one tenant is not permitted to relax any control; families self-host, and the multi-user requirement applies there too.
+ 
+**NFR-DEP-005 — Self-hosted deployment is a first-class deliverable [MUST]**: Container images and a documented, reproducible deployment procedure including database migration shall be part of every release, not an afterthought.
+ 
+**NFR-DEP-006 — Migration between topologies [COULD]**: Moving a household between topologies was previously to be achieved through export and import. With export deferred (OOS-008), no supported migration path exists in the MVP other than a full database transfer between deployments, which is only viable where the source deployment holds a single household. This is a consequence of the export decision and is recorded rather than solved. See OPEN-031.
+ 
+## 48.2 Data entitlement per topology
+ 
+This closes OPEN-013, which was unresolvable under the previous local-first assumption.
+ 
+**NFR-LIC-001** (defined in section 30.1) continues to apply unchanged: API keys shall never be embedded in a distributed client or a public repository.
+ 
+**NFR-LIC-005 — Server holds credentials [MUST]**: All external data provider credentials shall be held server-side and configured per deployment. Clients shall never hold a provider credential.
+ 
+**NFR-LIC-006 — Hosted entitlement is shared and pooled [MUST]**: In the hosted service the security master, price series and FX series are shared across all tenants. Ten tenants holding the same ETF consume one price series and one provider request, not ten. This is the principal control on market-data cost.
+ 
+**NFR-LIC-007 — Shared reference data is not tenant data [MUST]**: Shared master data carries no tenant identity and shall never be inferable back to which tenant caused it to be fetched.
+ 
+**NFR-LIC-008 — Self-hosted degradation is documented [MUST]**: A self-hosted deployment without provider entitlement shall operate on manual prices (NFR-CON-004) and the internal fallback classification taxonomy (FR-GICS-011). This configuration shall be documented and supported, not presented as broken.
+ 
+## 48.3 Technology baseline
+ 
+The baseline recorded here supersedes the technology-neutral stance previously expressed in section 41 for these specific choices. Everything else remains the architect’s decision.
+ 
+| Layer | Decision |
+| --- | --- |
+| Client | React Native + Expo, targeting iOS, Android and web |
+| API | Spring Boot, REST, JWT authentication |
+| Database | PostgreSQL |
+ 
+**NFR-TEC-001 — Decimal types [MUST]**: Monetary and quantity values shall use PostgreSQL NUMERIC and Java BigDecimal end to end. Binary floating point shall not appear in any monetary path, including intermediate calculation and JSON serialisation.
+ 
+**NFR-TEC-002 — Temporal types [MUST]**: Instants shall be stored as timestamptz; trade, booking and value dates as date. Mixing the two is a recurring source of off-by-one errors in performance calculation.
+ 
+**NFR-TEC-003 — Time-series storage [MUST]**: Price, FX and daily-valuation tables are volume-dominant and shall be partitioned by time range.
+ 
+**NFR-TEC-004 — Migrations are versioned and forward-only [MUST]**: Schema migrations shall be version-controlled, applied automatically on deployment, and never destructive to user-visible balances without in-application explanation (NFR-REL-003).
+ 
+**RISK-010 — Data-dense web UI on react-native-web**: The product is substantially tables and charts — transaction lists with sorting, filtering, multi-column layout, keyboard navigation and CSV download. These are the weakest area of react-native-web. *Mitigation: run a spike on the transaction list screen before committing to Expo for web; the fallback is a separate React web client sharing a TypeScript API and domain layer.* See OPEN-023.
+ 
+**RISK-011 — Over-the-air updates to calculation logic**: Expo OTA can deliver client changes bypassing store review. For a financial application, changes affecting displayed figures require a deliberate policy. See OPEN-024.
+ 
+## 48.4 Tenancy and data isolation
+ 
+The controlling requirement: **an authenticated user shall see only data they are entitled to, and by default that is only their own.**
+ 
+**FR-TEN-001 — Tenant is the household [MUST]**: The isolation boundary shall be the household. Every financial record shall be attributable to exactly one household.
+ 
+**FR-TEN-002 — Deny by default [MUST]**: Access shall be denied unless an explicit grant exists. There shall be no implicit visibility derived from being in the same household, the same deployment, or the same database.
+ 
+**FR-TEN-003 — Isolation enforced at the data layer [MUST]**: Tenant isolation shall be enforced in PostgreSQL — row-level security or an equivalent mechanism that cannot be bypassed by a query written in the application. Service-layer filtering alone is insufficient: a single forgotten predicate in one query is the entire failure.
+ 
+**FR-TEN-004 — Object-level authorization on every access [MUST]**: Every read and write shall verify that the authenticated principal is entitled to that specific object, not merely to the endpoint. Broken object-level authorization — retrieving another user’s record by changing an identifier — is the most common serious API vulnerability and is precisely the failure mode this requirement exists to prevent.
+ 
+**FR-TEN-005 — Non-enumerable identifiers [MUST]**: Externally visible identifiers shall be non-sequential and non-guessable.
+ 
+**FR-TEN-006 — Consistent denial [MUST]**: An unauthorized request for an existing object and a request for a non-existent object shall be indistinguishable in response and in timing, so that identifiers cannot be probed.
+ 
+**FR-TEN-007 — Administrative rights are not financial rights [MUST]**: A System Administrator can manage users, roles and system configuration. This shall confer **no** access to any household’s financial data. The two permission domains are separate (FR-USR-010), and this separation shall hold in a self-hosted deployment where the administrator is also a household member — their financial access derives from their household membership alone.
+ 
+**FR-TEN-008 — Sharing is explicit and granular [MUST]**: Where household members share financial visibility, it shall arise from an explicit, revocable grant at account or scope level, with the levels of FR-HOU-004 — no access, balance only, read, edit, full. Shared constructs such as household budgets shall be modelled as objects owned by the household with their own grants, not as an implied merge of members’ private data. *Provisional resolution of the contradiction noted in review; confirm as B5.*
+ 
+**FR-TEN-009 — Grant changes are immediate and audited [MUST]**: Revoking a grant shall take effect on the next request, not on token expiry (see FR-AUT-006).
+ 
+**FR-TEN-010 — Cross-tenant test suite [MUST]**: An automated test suite shall attempt cross-tenant access against every endpoint and every object type, and shall run in continuous integration. Isolation is asserted by tests, not by inspection.
+ 
+**FR-TEN-011 — Aggregates respect scope [MUST]**: Every aggregate, chart and export shall be computed strictly within the requesting principal’s authorized scope, with the scope visible (FR-CON-006). A shared account in a joint household shall be counted exactly once (FR-HOU-005).
+ 
+# 49. Authentication, Sessions and Authorization
+ 
+**FR-AUT-001 — Concurrent independent sessions [MUST]**: Multiple users shall be able to authenticate and operate simultaneously against the same deployment, with fully independent sessions and no shared state between them.
+ 
+**FR-AUT-002 — Multiple sessions per user [MUST]**: One user may hold concurrent sessions on several devices — phone, tablet, browser. Sessions shall be individually listable and revocable by that user.
+ 
+**FR-AUT-003 — Short-lived access tokens [MUST]**: JWT access tokens shall be short-lived. A long-lived access token is not revocable and is unacceptable for financial data.
+ 
+**FR-AUT-004 — Refresh tokens are opaque, stored and rotated [MUST]**: Refresh tokens shall be server-side records rather than self-contained claims, shall rotate on each use, and reuse of a consumed refresh token shall invalidate the entire token family and be treated as a suspected theft event.
+ 
+**FR-AUT-005 — Revocation is real [MUST]**: Logout, password change, session revocation, grant revocation, role change and user deactivation shall take effect within the access-token lifetime at worst, and immediately for security-significant events. The design shall state explicitly how this is achieved — a token version or session identifier checked per request is the usual mechanism. *JWT statelessness is not an acceptable justification for delayed revocation.*
+ 
+**FR-AUT-006 — Token storage per platform [MUST]**: Web shall use an httpOnly, Secure, SameSite cookie for the refresh credential and shall not place tokens in localStorage. Mobile shall use iOS Keychain and Android Keystore. These are different threat models and shall be specified separately.
+ 
+**FR-AUT-007 — Password policy and hashing [MUST]**: A modern memory-hard password hash with per-user salt. Minimum-length-led policy rather than composition rules. Breached-password checking may be offered but shall be optional and privacy-preserving, and shall never be a hard dependency in a self-hosted deployment (NFR-PRIV-002).
+ 
+**FR-AUT-008 — MFA [MUST]**: TOTP multi-factor authentication shall be supported. Whether it is mandatory is a policy decision per deployment (OPEN-025).
+ 
+**FR-AUT-009 — Passkeys [SHOULD]**: WebAuthn/passkey authentication should be supported on all three client platforms.
+ 
+**FR-AUT-010 — Rate limiting and lockout [MUST]**: Authentication endpoints shall be rate-limited per account and per source, with exponential backoff, without enabling denial of service against a legitimate user.
+ 
+**FR-AUT-011 — Biometric re-entry is a local unlock only [MUST]**: Mobile biometric unlock shall gate access to a stored refresh credential. It is not an authentication factor against the server and shall not be presented as one.
+ 
+**FR-AUT-012 — Re-authentication for sensitive operations [SHOULD]**: Changing credentials, granting financial access to another member and deleting an account shall require recent authentication.
+ 
+**FR-AUT-013 — Authentication audit [MUST]**: Successful and failed authentications, token-family invalidations, grant changes and role changes shall be recorded with timestamp, principal and source. Financial data content shall not be written to these logs.
+ 
+**FR-AUT-014 — Optional OIDC [COULD]**: Self-hosted deployments may benefit from delegating authentication to an existing identity provider.
+ 
+# 50. API Contract and Client Applications
+ 
+## 50.1 API
+ 
+**FR-API-001 — Specification is the contract [MUST]**: An OpenAPI specification shall be generated from, and validated against, the implementation, and shall be a release deliverable.
+ 
+**FR-API-002 — Explicit versioning [MUST]**: The API shall be versioned. Breaking changes require a new version; additive changes shall not break existing clients.
+ 
+**FR-API-003 — Version skew is permanent [MUST]**: Clients ship through app stores and update on their own schedule, so old clients calling a newer API is the normal condition, not an exception. The API shall support a declared window of prior client versions, and the client shall degrade gracefully — an unknown field is ignored, an unavailable capability is hidden rather than crashing.
+ 
+**FR-API-004 — Minimum supported client [MUST]**: A minimum supported client version shall be enforced, with a clear upgrade message rather than an opaque failure. See OPEN-026 for the support window.
+ 
+**FR-API-005 — Consistent error envelope [MUST]**: A single machine-readable error format shall carry a stable code, a human-readable message, and a correlation identifier. Errors shall never leak internal detail or the existence of other tenants’ data.
+ 
+**FR-API-006 — Idempotent writes [MUST]**: State-changing operations shall accept an idempotency key so that a retry after a network failure cannot create a duplicate transaction. This is a direct consequence of the online-only, mobile-network reality of NFR-CON-002.
+ 
+**FR-API-007 — Pagination and filtering [MUST]**: Collection endpoints shall be paginated with stable ordering. Transaction queries shall support the filters of FR-TRX-005 server-side; filtering shall never require the client to download the full set.
+ 
+**FR-API-008 — Long-running work is asynchronous [MUST]**: Imports, historical recomputation, price backfill and reconciliation runs shall be submitted as jobs returning a status resource, not held open on a request.
+ 
+**FR-API-009 — Rate limiting [MUST]**: Per-principal rate limits with informative headers.
+ 
+**FR-API-010 — Payload discipline [SHOULD]**: Responses shall be shaped for the screens that consume them. Aggregation belongs on the server; the client shall not compute portfolio figures locally, both for payload size and to guarantee one authoritative implementation of every calculation (NFR-CALC-002).
+ 
+**FR-API-011 — Monetary values in transport [MUST]**: Monetary amounts shall be transported as strings with an explicit currency, never as JSON numbers, to avoid float coercion in the client.
+ 
+## 50.2 Clients
+ 
+**FR-CLI-001 — Three targets, one codebase [MUST]**: iOS, Android and web from the shared React Native + Expo codebase, subject to the web caveat in RISK-010.
+ 
+**FR-CLI-002 — No client-side source of truth [MUST]**: The client holds no authoritative data and performs no financial calculation. Cached responses are presentation state only.
+ 
+**FR-CLI-003 — Cache is cleared on logout and on user switch [MUST]**: All cached financial data, images and derived view state shall be discarded on logout, on session revocation and on switching user. No residue of one user’s data shall be observable to another user of the same device.
+ 
+**FR-CLI-004 — Cached data is encrypted at rest on device [MUST]**: Any financial data persisted on the device shall be encrypted using platform storage facilities.
+ 
+**FR-CLI-005 — Screen protection [SHOULD]**: Suppress sensitive content in the application switcher snapshot; consider blocking screenshots on balance screens.
+ 
+**FR-CLI-006 — Session timeout and re-lock [MUST]**: Configurable inactivity timeout requiring biometric or credential re-entry.
+ 
+**FR-CLI-007 — Server endpoint configuration [MUST]**: The client shall permit configuring the API endpoint so that a self-hosted deployment can be used from the published applications (NFR-DEP-003).
+ 
+**FR-CLI-008 — Certificate and transport security [MUST]**: TLS enforced; consider certificate pinning for the hosted service, but pinning shall not prevent connection to a self-hosted deployment with an operator-supplied certificate.
+ 
+**FR-CLI-009 — Accessibility [MUST]**: WCAG 2.2 AA for the web client and the platform accessibility equivalents on mobile. *Absent from the baseline; added here as a decision to confirm.*
+ 
+**FR-CLI-010 — No third-party analytics on financial screens [MUST]**: No financial data, and no data permitting its inference, shall be transmitted to third-party analytics or crash-reporting services. Crash reporting, if used, shall be opt-in and scrubbed, and disabled by default in self-hosted deployments.
+ 
+# 51. Operations, Background Processing and Data Protection
+ 
+## 51.1 Background processing
+ 
+**FR-JOB-001 — Scheduled work is server-side [MUST]**: Price and FX refresh, daily valuation series maintenance, recurring-rule application and scheduled reconciliation run on the server, independently of any client being connected.
+ 
+**FR-JOB-002 — Jobs are idempotent and resumable [MUST]**: A job interrupted or re-run shall not duplicate data or corrupt derived state.
+ 
+**FR-JOB-003 — Tenant fairness [MUST]**: In a multi-tenant deployment, one tenant’s large import or recomputation shall not degrade interactive response for others.
+ 
+**FR-JOB-004 — Background work never blocks interaction [MUST]**: Recomputation shall not lock interactive reads; the user shall see a clear in-progress state rather than an unresponsive screen.
+ 
+**FR-JOB-005 — Provider request efficiency [MUST]**: Price and FX retrieval shall be batched and deduplicated across tenants (NFR-LIC-006) and shall respect provider rate limits with backoff.
+ 
+**FR-JOB-006 — Backdated edits trigger targeted recomputation [MUST]**: Editing or importing a transaction dated in the past shall invalidate and rebuild only the affected derived data from that date forward. See OPEN-017 on whether the daily valuation series is stored or computed on demand.
+ 
+**FR-JOB-007 — Job observability [MUST]**: Job status, last successful run and failures shall be visible to a deployment administrator, and failures affecting a household’s figures shall be visible to that household as a data-quality indicator (FR-CON-007).
+ 
+## 51.2 Hosted service operations
+ 
+These apply to the hosted topology. A self-hosted operator is responsible for the equivalent and shall be given guidance rather than requirements.
+ 
+**NFR-OPS-001 — Backup objectives [MUST]**: Recovery point and recovery time objectives shall be defined and met. *Proposed: RPO 24 hours, RTO 8 hours; confirm as C15.*
+ 
+**NFR-OPS-002 — Restores are tested [MUST]**: Restore from backup shall be exercised on a defined schedule. An untested backup is not a backup.
+ 
+**NFR-OPS-003 — Backups are encrypted and access-controlled [MUST]**.
+ 
+**NFR-OPS-004 — Availability target [SHOULD]**: Availability target to be defined; degraded market data shall not render the service unavailable (PR-012).
+ 
+**NFR-OPS-005 — Monitoring excludes financial content [MUST]**: Logs, traces and metrics shall not contain financial data or personal identifiers beyond an opaque principal reference.
+ 
+**NFR-OPS-006 — Environment separation [MUST]**: Production data shall never be copied into development or test environments. Test data shall be synthetic — the golden dataset of section 47 serves this purpose.
+ 
+**NFR-OPS-007 — Volumetrics [MUST — INPUT REQUIRED]**: Capacity and performance design requires the figures below. They are not yet supplied and are required before the schema and the targets in section 34 can be validated.
+ 
+| Dimension | Required figure |
+| --- | --- |
+| Accounts per household | *to be supplied* |
+| Transactions per household per year | *to be supplied* |
+| Securities held per household | *to be supplied* |
+| Years of history retained | *to be supplied* |
+| Distinct securities across all tenants | *to be supplied* |
+| Tenants at launch / at 3 years | *to be supplied* |
+| Peak concurrent sessions | *to be supplied* |
+ 
+**NFR-OPS-008 — Revised performance targets [MUST]**: The targets in section 34 were written for a local dataset and shall be restated as API server-side latency, payload size, and end-to-end time on a mobile network, once NFR-OPS-007 is supplied.
+ 
+## 51.3 Data protection
+ 
+Holding Swiss and German residents’ financial data on an operated service makes the operator a controller under the Swiss revised FADP and the EU GDPR. This obligation did not exist under the previous local-first assumption and is new to this edition.
+ 
+**NFR-DPR-001 — Declared jurisdiction and residency [MUST]**: The hosting jurisdiction shall be declared, and data shall not leave it without a documented lawful basis. See OPEN-027 on whether CH and EU require separate deployments.
+ 
+**NFR-DPR-002 — Lawful basis and processing record [MUST]**: Documented for every category of processing, with a maintained subprocessor register covering market-data and classification providers.
+ 
+**NFR-DPR-003 — Subject rights [MUST]**: Access, rectification, erasure and portability shall be operable within statutory deadlines. With user-facing export deferred, portability is satisfied by the operator-side procedure of FR-POR-001, which shall be documented and tested before the hosted service accepts its first external user.
+ 
+**NFR-DPR-004 — Deletion is real and bounded [MUST]**: Household erasure shall remove tenant data within a stated period, including from backups within the published retention window. Erasure operates at household level, not selectively within history (FR-LIF-020). Shared reference data is not tenant data and is unaffected (NFR-LIC-007).
+ 
+**NFR-DPR-005 — Retention policy [MUST]**: Retention periods for financial records, audit logs and backups shall be defined. See OPEN-028.
+ 
+**NFR-DPR-006 — Breach response [MUST]**: A documented breach detection and notification process meeting both regimes’ deadlines.
+ 
+**NFR-DPR-007 — Provider disclosure minimisation [MUST]**: Requests to external providers shall be aggregated across tenants so that a provider cannot attribute a security lookup to an individual household (NFR-SEC-006, NFR-LIC-007).
+ 
+**NFR-DPR-008 — Self-hosted controller guidance [SHOULD]**: Documentation shall make clear that a self-hosting household is its own controller and that the project processes none of their data.
+ 
+**NFR-DPR-009 — Independent security assessment [SHOULD]**: A penetration test covering authentication, authorization and tenant isolation before the hosted service opens to users outside the project.
+ 
+# 52. Data Lifecycle, Deletion and Retention
+ 
+## 52.1 Governing principle
+ 
+**The only hard delete in the system is tenant erasure. Everything else is void or archive.**
+ 
+This follows from three requirements already in force and is not an independent design preference. The ledger is append-only (FR-TRX-007); every derived figure must be reproducible from source records (PR-005, FR-DAT-008); and reconciliation compares ledger-derived state against provider snapshots (FR-REC-002). A hard-deleted transaction breaks all three at once — historical TWR changes silently, and a reconciliation that passed last month fails this month with no visible cause. An audit trail records that a deletion happened but does not prevent the derived data from becoming wrong.
+ 
+## 52.2 Deletion rules by entity
+ 
+**FR-LIF-001 — Deletion matrix [MUST]**
+ 
+| Entity | Rule | Hard delete permitted |
+| --- | --- | --- |
+| Transaction | Void via a reversing entry; original retained | Never |
+| Position | Derived; never directly deleted | Never |
+| Snapshot | Superseded by a later snapshot; retained | Never |
+| Import batch | Rollback as hard delete **only while unmodified** (52.3) | Conditionally |
+| Account | Archive once it holds any transaction, position or snapshot | Only if empty |
+| Financial institution | Delete only when it contains no accounts | Only if empty |
+| Category | Deactivate; historical assignments preserved | Only if never used |
+| Categorization rule | Delete freely; not historical data | Yes |
+| Budget / Goal | Archive; historical periods preserved | Only if never active |
+| Household member | Deactivate if they own or co-own anything | Only if they own nothing |
+| System user | Disable; linked member data unaffected (FR-USR-011) | Only if never linked |
+| Security master record | Retained while referenced (FR-SMD-005) | Only if unreferenced |
+| Household (tenant) | **Hard delete — the erasure path** | Yes |
+ 
+**FR-LIF-002 — Void semantics [MUST]**: Voiding a transaction shall create a reversing entry dated to the void, referencing the original, and shall mark the original with voided_at, voided_by and a reason. Both records remain in the ledger. Derived data shall be recalculated from the affected date forward (FR-JOB-006).
+ 
+### Refinement: transaction removal depends on provenance
+ 
+A flat void-everything rule is correct for imported data but poor usability for manual entry. Requiring a compensating entry to correct a typo the user made thirty seconds ago pollutes the ledger without protecting anything. The permitted operation therefore depends on where the record came from and whether it has been reconciled.
+ 
+**FR-LIF-002a — Removal tiers [MUST]**
+ 
+| Tier | Applies to | Permitted operation | Why |
+| --- | --- | --- | --- |
+| **T1 — Soft delete** | Manually entered, never reconciled, not referenced by a reconciliation resolution | Soft delete; hidden from all views; recoverable for the restore window (FR-LIF-006); purged thereafter | The user is the sole source of truth. There is no institutional record to preserve and no reconciliation assertion to disturb. |
+| **T2 — Void only** | Imported from any source — file, document or connector | Void with a reason; remains visible in the provenance view; excluded from figures | The record is evidence of what the institution reported. Reconciliation compares against it (FR-REC-002), so removing it destroys the ability to explain a difference later. |
+| **T3 — Void reopens reconciliation** | Any record included in a completed reconciliation, however it originated | Void with a reason; the affected reconciliation returns to OPEN and is flagged for review (FR-STA-003) | A reconciled figure was asserted correct. Changing its inputs invalidates that assertion and the user must be told. |
+ 
+**FR-LIF-002b — Tier is determined by the system, not chosen [MUST]**: The applicable tier follows from the record’s provenance and reconciliation state. The user is not offered a choice between soft delete and void.
+ 
+**FR-LIF-002c — Bulk removal only by batch [MUST]**: Imported records shall be removed in bulk only by rolling back their import batch (52.3), never by multi-select deletion.
+ 
+**FR-LIF-003 — Void may be presented as deletion [SHOULD]**: The interface may label voiding as “delete”. The user need not understand the mechanism; the ledger must retain it. Where a voided item appears in a historical view it shall be shown as voided rather than silently omitted.
+ 
+**FR-LIF-004 — Correction versus void [MUST]**: Editing non-financial attributes — description, category, notes — is a normal update. Editing any attribute affecting a financial figure — amount, currency, date, quantity, price, account — shall be recorded as a void plus a replacement entry, so the change is visible in history.
+ 
+**FR-LIF-005 — Archive semantics [MUST]**: An archived account or member is excluded from current totals and from selection lists, but fully included in every historical figure covering a period in which it was active (FR-ACC-006).
+ 
+**FR-LIF-006 — Restore window [MUST]**: Voided transactions and archived accounts shall be restorable through the interface for 30 days. Thereafter they remain in the data but are no longer user-restorable.
+ 
+**FR-LIF-007 — Cascade is explicit and previewed [MUST]**: Any action affecting dependent records shall state what will be affected before confirmation — how many transactions, which positions, which budgets. There shall be no silent cascade.
+ 
+**FR-LIF-008 — No orphans [MUST]**: Referential integrity shall be enforced at the data layer: no account without a container, no transaction without an account, no position without a security.
+ 
+## 52.3 Import batch rollback
+ 
+**FR-LIF-010 — Unmodified batch rollback [MUST]**: An import batch may be hard-deleted while none of its records has been modified — not edited, not manually categorised, not referenced by a reconciliation resolution, not voided. Rejecting an import nobody has worked on is a different act from editing history; treating it as a void would litter the ledger.
+ 
+**FR-LIF-011 — Modified batch rollback [MUST]**: Once any record in a batch has been modified, rollback shall void the batch’s records rather than delete them, and shall report which records were retained and why.
+ 
+**FR-LIF-012 — Rollback is atomic [MUST]**: Rollback shall fully succeed or fully fail (NFR-REL-001).
+ 
+## 52.4 Retention and erasure
+ 
+**FR-LIF-020 — Tenant erasure [MUST]**: Deleting a household shall remove all of its data — transactions, accounts, snapshots, derived data, grants, and audit entries containing personal data — within the period stated in NFR-DPR-004, including from backups within the published retention window.
+ 
+**FR-LIF-021 — Shared reference data survives erasure [MUST]**: Security master records, price series and FX series carry no tenant identity and are unaffected (NFR-LIC-007).
+ 
+**FR-LIF-022 — Erasure is the only selective-deletion answer [MUST]**: The system shall not offer deletion of individual historical records to satisfy an erasure request. Erasure operates at household granularity. This shall be stated in the privacy documentation, as it is a consequence of the append-only ledger.
+ 
+**FR-LIF-023 — Erasure is confirmed and delayed [MUST]**: Tenant erasure shall require recent authentication (FR-AUT-012), explicit confirmation, and a cancellable grace period before execution.
+ 
+# 53. Household Lifecycle
+ 
+Confirmed direction: household splitting is **not an MVP feature**, but the model shall not foreclose it. Anticipating it now costs four constraints and no functionality. Retrofitting it later means rewriting ownership, grants and every historical aggregate.
+ 
+## 53.1 Constraints enabling later splitting
+ 
+**FR-HHL-001 — Ownership is an effective-dated association [MUST]**: Ownership shall be a dated relationship between household member and account, carrying a share where fractional — never a column on the account (FR-HOU-006).
+ 
+**FR-HHL-002 — Household assignment is mutable [MUST]**: An account’s household assignment shall be changeable. No query, index, cache or derived artefact may assume it is fixed for the account’s lifetime.
+ 
+**FR-HHL-003 — No denormalised household identifier in derived data [MUST]**: Derived artefacts shall not embed a household identifier in a way that cannot be rebuilt from source records (FR-DAT-008). Isolation predicates shall resolve household membership through the ownership relation rather than a copied key.
+ 
+**FR-HHL-004 — Membership history is retained [MUST]**: Joining and leaving shall be recorded with effective dates rather than overwriting current membership.
+ 
+**FR-HHL-005 — Grants are dated [MUST]**: Sharing grants (FR-TEN-008) shall carry effective dates, so a historical view can establish who had access to what and when.
+ 
+## 53.2 Policy decisions recorded in advance
+ 
+**FR-HHL-010 — History follows the account [MUST]**: Where an account moves to another household, its complete history moves with it, and the originating household’s historical reports change retroactively as a result. The alternative — history staying behind — leaves both parties permanently incomplete, which is worse. Recorded now so that no interim design assumes the opposite.
+ 
+**FR-HHL-011 — Retroactive change is disclosed [MUST]**: Where a structural change causes historical figures to change, affected households shall be informed in-application (NFR-REL-003).
+ 
+**FR-HHL-012 — Member deactivation retains history [MUST]**: A departing member is deactivated; their historical ownership and the transactions of accounts they owned remain with the household unless and until those accounts are moved.
+ 
+**FR-HHL-013 — One household per person in MVP [MUST]**: Multi-household membership — someone managing their own and a relative’s finances — is out of MVP scope. The model shall not preclude it: the member-to-household relation shall be structurally many-to-many even while the application enforces one. See OPEN-032.
+ 
+**FR-HHL-014 — Death and inheritance out of scope [MUST]**: No estate-transfer functionality. In practice handled by deactivating the member, and later by the splitting capability.
+ 
+**FR-HHL-015 — Last member protection [MUST]**: A household shall always retain at least one active member with full access, by analogy with FR-USR-005.
+ 
+# 54. Concurrency
+ 
+Concurrent independent sessions (FR-AUT-001) combined with shared household objects (FR-BUD-003, FR-TEN-008) make simultaneous modification a normal occurrence, not an edge case.
+ 
+**FR-CNC-001 — Optimistic locking on financial entities [MUST]**: Every mutable financial entity shall carry a version. A write shall fail if the version advanced since the client read it. Last-write-wins is not acceptable where two household members may edit a shared budget.
+ 
+**FR-CNC-002 — Conflict behaviour [MUST]**: On version conflict the API shall return a distinct error (FR-API-005); the client shall inform the user, show current state, and require explicit re-attempt. No merge interface is required in the MVP.
+ 
+**FR-CNC-003 — Bulk operations are transactional [MUST]**: Import commit, batch rollback, retroactive rule application and reconciliation resolution shall be atomic (NFR-REL-001).
+ 
+**FR-CNC-004 — Recomputation does not block reads [MUST]**: A recomputation triggered by one user shall not block another’s reads in the same household. Readers may see pre-recomputation values provided the in-progress state is indicated (FR-JOB-004).
+ 
+**FR-CNC-005 — Serialised derived-data writes per account [MUST]**: Two processes shall not write derived data for the same account simultaneously; rebuilds shall be serialised per account.
+ 
+**FR-CNC-006 — Idempotency covers double submission [MUST]**: Idempotency keys (FR-API-006) shall protect against the same logical write arriving twice from a retry or a double tap, not only from network retries.
+ 
+**FR-CNC-007 — Import concurrency [MUST]**: Two simultaneous imports into the same account shall be serialised or rejected with a clear reason. Interleaved duplicate detection across two in-flight batches need not work.
+ 
+# 55. Reference Data Distribution
+ 
+Confirmed direction: **manual file import only.** No update endpoint, no automatic retrieval, no phone-home. This fully honours NFR-PRIV-002 and removes an outbound dependency from the self-hosted topology.
+ 
+## 55.1 What counts as reference data
+ 
+Data that must be updatable independently of application logic: the institution catalogue (FR-INS-007), CSV import templates (FR-IMP-020), source-code-to-category mappings (FR-CAT-010), pension contribution limits and deadlines (FR-PEN-006), the GICS structure version (FR-GICS-007), and the fallback classification taxonomy (FR-GICS-011).
+ 
+## 55.2 Distribution mechanism
+ 
+**FR-REF-001 — Baseline ships with the release [MUST]**: Every release shall include a complete baseline reference-data set. A fresh installation shall never start with an empty institution catalogue or no import templates. *This resolves the ambiguity in the manual-import decision: the release is the initial channel; manual import is the update channel between releases.*
+ 
+**FR-REF-002 — Manual import is the update channel [MUST]**: Between releases, reference data shall be updatable by importing a package file through the administration interface. There shall be no automatic retrieval.
+ 
+**FR-REF-003 — No outbound dependency [MUST]**: The application shall make no network call for the purpose of obtaining reference data, in either topology.
+ 
+**FR-REF-004 — Versioned package format [MUST]**: Packages shall carry a version, publication date, compatible application version range, and a content manifest.
+ 
+**FR-REF-005 — Integrity verification [MUST]**: Packages shall be integrity-checked on import — signature or checksum. Reference data is administrator-imported and shapes financial categorisation; an unverified package is an injection route.
+ 
+**FR-REF-006 — Validated and previewed [MUST]**: Import shall validate against the expected schema, show what will change, and be rejected in full if invalid. Partial application is not permitted.
+ 
+**FR-REF-007 — Versioned in place [MUST]**: Importing a package shall not discard a prior version where historical reproducibility depends on it — notably GICS structure versions (FR-GICS-007) and effective-dated pension limits (FR-PEN-006).
+ 
+**FR-REF-008 — Rollback [SHOULD]**: The previous reference-data version shall be restorable.
+ 
+**FR-REF-009 — Never overwrites user data [MUST]**: A package shall never overwrite user-created institutions, user-defined templates, user category customisations or user overrides (FR-CAT-014, FR-SMD-013).
+ 
+## 55.3 Staleness
+ 
+Manual-only distribution means reference data can silently age. For date-sensitive values this produces wrong figures with no visible cause, which conflicts with PR-011.
+ 
+**FR-REF-010 — Version is visible [MUST]**: Current reference-data version and publication date shall be shown in the administration interface.
+ 
+**FR-REF-011 — Date-sensitive staleness warning [MUST]**: Where reference data carries effective-dated values — pension contribution limits above all — and no entry covers the current period, the application shall warn and shall mark derived figures as estimated. It shall not silently apply a superseded limit.
+ 
+**FR-REF-012 — Publication [SHOULD]**: Packages shall be published at a stable, documented location an administrator can check. Distribution is manual; discovery need not be.
+ 
+# 56. Entity Lifecycle States
+ 
+Formal state definitions for entities whose lifecycle is otherwise described only in prose. Transitions not listed are prohibited.
+ 
+**FR-STA-001 — Account [MUST]**
+ 
+| State | Meaning | Transitions to |
+| --- | --- | --- |
+| ACTIVE | In use; in current totals | ARCHIVED |
+| ARCHIVED | Closed; out of current totals, in history (FR-LIF-005) | ACTIVE, within the restore window |
+| DELETED | Reachable from ACTIVE only if the account never held data | terminal |
+ 
+**FR-STA-002 — Import batch [MUST]**
+ 
+| State | Meaning | Transitions to |
+| --- | --- | --- |
+| UPLOADED | File received, not parsed | PARSED, FAILED |
+| PARSED | Validated; preview available; nothing committed | COMMITTED, DISCARDED |
+| COMMITTED | Records written to the ledger | ROLLED_BACK, VOIDED |
+| ROLLED_BACK | Hard-deleted; only from an unmodified batch (FR-LIF-010) | terminal |
+| VOIDED | Records voided rather than deleted (FR-LIF-011) | terminal |
+| DISCARDED | Preview abandoned before commit | terminal |
+| FAILED | Unparseable (FR-IMP-027) | terminal |
+ 
+**FR-STA-003 — Reconciliation difference [MUST]**
+ 
+| State | Meaning | Transitions to |
+| --- | --- | --- |
+| OPEN | Detected, unresolved | RESOLVED, ACCEPTED, DISMISSED, SUPERSEDED |
+| RESOLVED | Cause corrected; ledger agrees | terminal |
+| ACCEPTED | Provider figure accepted via a visible adjusting entry (FR-REC-004) | terminal |
+| DISMISSED | Consciously ignored, reason recorded | OPEN |
+| SUPERSEDED | A newer snapshot replaced the basis of comparison | terminal |
+ 
+**FR-STA-004 — Security master record [MUST]**
+ 
+| State | Meaning | Transitions to |
+| --- | --- | --- |
+| ACTIVE | Referenced by a current position or watchlist; refreshed (FR-SMD-006) | INACTIVE |
+| INACTIVE | Referenced only by history; retained, not refreshed (FR-PRC-004) | ACTIVE |
+| DELISTED | No longer traded; last price frozen | SUPERSEDED |
+| SUPERSEDED | Replaced after a corporate action; successor linked (FR-SMD-010) | terminal |
+ 
+**FR-STA-005 — Background job [MUST]**: QUEUED → RUNNING → SUCCEEDED, FAILED or CANCELLED, with RETRYING between RUNNING and a terminal state. Jobs shall be idempotent under retry (FR-JOB-002).
+ 
+**FR-STA-006 — Session [MUST]**: ACTIVE → EXPIRED or REVOKED. Revocation is immediate (FR-AUT-005).
+ 
+**FR-STA-007 — Household member [MUST]**: ACTIVE → INACTIVE, reversible. DELETED reachable only from a member who has never owned anything (FR-LIF-001).
+ 
+**FR-STA-008 — Transitions are audited [MUST]**: Every transition of an account, import batch, reconciliation difference or member shall be recorded with timestamp and actor.
+ 
+# 57. Financial Change Audit
+ 
+FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. Neither records who changed financial data, which matters in a shared household.
+ 
+**FR-AUD-001 — Financial change log [MUST]**: Creation, modification, void and restore of any financial record shall be recorded with timestamp, actor, entity, and the before and after values of changed fields.
+ 
+**FR-AUD-002 — Visible to the household [SHOULD]**: A member with appropriate access shall be able to see the change history of a record they can view.
+ 
+**FR-AUD-003 — Audit is append-only [MUST]**: Audit records shall not be modifiable or deletable through the application, and shall be removed only by tenant erasure (FR-LIF-020).
+ 
+**FR-AUD-004 — Reads are not audited [MUST]**: Read access is not audited by default, to bound volume. See OPEN-033 if a stricter posture is required.
+ 
+# 58. Glossary
+ 
+| Term | Meaning in this specification |
+| --- | --- |
+| **Financial Institution / Container** | Grouping level for accounts held with one provider. Not itself an account. May be a bank, broker, pension provider, card issuer, asset manager, or the default Personal Assets container. |
+| **Account** | A single financial product within a container. Abstract; always of exactly one concrete type. |
+| **Capability** | Declared property determining what an account can do, independent of its type. |
+| **Transaction** | A dated financial event. |
+| **Snapshot** | A provider-reported observation of state at a point in time — balance and/or holdings. Not derivable from transactions. |
+| **Position** | A holding of a security within an account. |
+| **Security Master** | Centralised reference data for a security, shared by all positions referencing it. |
+| **Listing** | A security as traded on one exchange, with its own ticker, trading currency and price series. |
+| **Reconciliation** | Comparison of ledger-derived state against a snapshot, and the identification of any difference. |
+| **Daily valuation series** | Per-account value at each date; prerequisite for TWR. |
+| **TWR** | Time-weighted return — measures the investment strategy, removing the effect of contribution timing. |
+| **MWR** | Money-weighted return — measures the user’s actual experience, including contribution timing. |
+| **Reporting currency** | The currency of a user’s global consolidated view. |
+| **Container currency** | The currency of one institution’s summary. |
+| **Estimated value** | Any figure derived from incomplete data — always visibly marked. |
