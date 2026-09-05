@@ -2,7 +2,7 @@
 # source tree. Base images are multi-arch (amd64/arm64), so this builds and runs unchanged on an
 # Intel/AMD machine, an Apple Silicon Mac, or an arm64 NAS - see docker-compose.yml.
 
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM maven:3-eclipse-temurin-26 AS build
 WORKDIR /build
 
 # Dependencies are resolved before the source is copied in, so editing application code doesn't
