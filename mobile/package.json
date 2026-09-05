@@ -53,5 +53,9 @@
   "private": true,
   "jest": {
     "preset": "jest-expo"
+  },
+  "overrides": {
+    "uuid": "^11.1.1",
+    "decode-uri-component": "^0.5.0"
   }
 }
