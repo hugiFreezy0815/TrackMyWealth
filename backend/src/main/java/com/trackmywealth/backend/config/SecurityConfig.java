@@ -6,17 +6,21 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
- * Placeholder security posture until EPIC-02 (login/JWT) and EPIC-28 (tenancy) are implemented:
- * only the liveness/readiness surface ({@code /actuator/health}, {@code /actuator/info}) is public;
- * everything else requires authentication. Without an explicit {@link SecurityFilterChain} bean,
- * Spring Boot's default posture also requires authentication for actuator endpoints, which would
- * make health checks unusable before any login mechanism exists.
+ * Placeholder security posture until EPIC-02 (login/JWT filter chain) and EPIC-28 (tenancy) are
+ * implemented: only the liveness/readiness surface ({@code /actuator/health}, {@code
+ * /actuator/info}) and the one-time setup bootstrap ({@code /api/v1/setup/**}, US-01-03 - which
+ * must be reachable before any credential exists, and rejects itself once one does, see {@code
+ * SetupService}) are public; everything else requires authentication. Without an explicit {@link
+ * SecurityFilterChain} bean, Spring Boot's default posture also requires authentication for
+ * actuator endpoints, which would make health checks unusable before any login mechanism exists.
  *
  * <p>CORS is configured here because the web build of {@code mobile/} (an Expo Router app exported
  * for web, see its README) calls this API from a browser on a different origin - unlike the
@@ -40,11 +44,29 @@ public class SecurityConfig {
                 authorize
                     .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info")
                     .permitAll()
+                    .requestMatchers("/api/v1/setup/**")
+                    .permitAll()
+                    // Spring MVC's default handling of a thrown ResponseStatusException (e.g.
+                    // US-01-03's "setup already completed" 409) forwards internally to /error to
+                    // render the response body. Spring Security re-secures that forwarded
+                    // dispatch by default; without this, an anonymous caller's intended error
+                    // response gets silently replaced with a bare 403 from
+                    // Http403ForbiddenEntryPoint before it ever reaches BasicErrorController.
+                    .requestMatchers("/error")
+                    .permitAll()
                     .anyRequest()
                     .authenticated())
         // Stateless, token-based API (see EPIC-02) - no session cookie for CSRF to protect.
         .csrf(csrf -> csrf.disable());
     return http.build();
+  }
+
+  // FR-AUT-007: a modern memory-hard hash with a per-user salt. Argon2id specifically (not
+  // Argon2i/d) is Spring Security's default for this factory method, and is the OWASP-recommended
+  // variant. Requires org.bouncycastle:bcprov-jdk18on on the classpath.
+  @Bean
+  PasswordEncoder passwordEncoder() {
+    return Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
   }
 
   private CorsConfigurationSource corsConfigurationSource() {

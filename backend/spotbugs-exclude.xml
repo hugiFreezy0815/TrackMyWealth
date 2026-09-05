@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Exemptions to SpotBugs' default rule set, each named and justified individually - see
+docs/architecture/development-standards.md's standard for how a new exemption should be argued
+(a real, current pain point, not "because it's noisy"), the same standard SchemaConventionsTest
+holds itself to for its own exemption list.
+-->
+<FindBugsFilter>
+    <!-- JPA entity associations (@ManyToOne etc.) must expose the actual Hibernate-managed
+         reference through their getters/setters/constructors - that IS the association.
+         Defensively copying it would silently break lazy loading, dirty checking, and cascading,
+         which is worse than the "external mutability" EI_EXPOSE_REP(2) warns about; there is no
+         safe alternative implementation SpotBugs is pointing toward here. -->
+    <Match>
+        <Package name="com.trackmywealth.backend.entity"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Constructor injection of a Spring-managed singleton collaborator (a @Service,
+         @Repository, or the JPA EntityManager) is this codebase's standard DI pattern
+         (development-standards.md). These are shared, framework-managed references, not mutable
+         value objects a caller could hand in and later mutate out from under us - the concern
+         EI_EXPOSE_REP2 is designed to catch does not apply to this pattern. -->
+    <Match>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- JwtService's constructor derives its signing key from configuration and has nothing to
+         clean up if that fails - a malformed/missing secret should fail application startup
+         immediately (fail-fast), not construct a partially-usable service. No finalizer exists
+         on this class, so the finalizer-attack scenario CT_CONSTRUCTOR_THROW warns about is not
+         reachable here. -->
+    <Match>
+        <Class name="com.trackmywealth.backend.service.JwtService"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+</FindBugsFilter>
