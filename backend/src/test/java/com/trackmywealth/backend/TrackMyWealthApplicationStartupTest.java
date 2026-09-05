@@ -4,12 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.client.RestTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -42,11 +40,15 @@ class TrackMyWealthApplicationStartupTest {
 
   @Test
   void applicationStartsAndHealthEndpointReportsUp() {
-    ResponseEntity<String> response =
-        new TestRestTemplate()
-            .getForEntity("http://localhost:%d/actuator/health".formatted(port), String.class);
-
-    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-    assertThat(response.getBody()).contains("\"status\":\"UP\"");
+    RestTestClient.bindToServer()
+        .baseUrl("http://localhost:%d".formatted(port))
+        .build()
+        .get()
+        .uri("/actuator/health")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(String.class)
+        .value(body -> assertThat(body).contains("\"status\":\"UP\""));
   }
 }
