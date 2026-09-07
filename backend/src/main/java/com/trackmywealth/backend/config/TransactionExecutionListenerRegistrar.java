@@ -6,16 +6,20 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.transaction.TransactionExecutionListener;
-import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 
 /**
  * No Spring Boot autoconfiguration wires {@link TransactionExecutionListener} beans into the
  * transaction manager on its own (unlike, say, {@code HandlerInterceptor} beans and Spring MVC) -
  * this registers every one found in the context, {@link
- * HouseholdContextTransactionExecutionListener} included, onto whichever {@link
- * AbstractPlatformTransactionManager} Spring Boot auto-configures (here, {@code
- * JpaTransactionManager}).
+ * HouseholdContextTransactionExecutionListener} included, onto the auto-configured {@link
+ * JpaTransactionManager} specifically, not every {@code AbstractPlatformTransactionManager} that
+ * might exist. {@link HouseholdContextTransactionExecutionListener} always issues its {@code
+ * set_config} against its own injected {@code DataSource}, so attaching it to some other, future
+ * transaction manager backed by a different data source would silently set the household context on
+ * an unrelated connection instead of the active transaction's own - scoping the match this narrowly
+ * is what keeps that impossible rather than merely unlikely.
  */
 @Configuration
 public class TransactionExecutionListenerRegistrar {
@@ -30,7 +34,7 @@ public class TransactionExecutionListenerRegistrar {
     return new BeanPostProcessor() {
       @Override
       public Object postProcessAfterInitialization(Object bean, String beanName) {
-        if (bean instanceof AbstractPlatformTransactionManager transactionManager) {
+        if (bean instanceof JpaTransactionManager transactionManager) {
           List<TransactionExecutionListener> merged =
               new ArrayList<>(transactionManager.getTransactionExecutionListeners());
           transactionExecutionListeners.forEach(merged::add);

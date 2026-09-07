@@ -6,6 +6,8 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.UUID;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -13,7 +15,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.TransactionExecution;
 import org.springframework.transaction.TransactionExecutionListener;
-import org.springframework.transaction.TransactionSystemException;
 
 /**
  * US-28-01: sets {@code app.current_household_id} exactly once per database transaction, derived
@@ -38,6 +39,9 @@ import org.springframework.transaction.TransactionSystemException;
  */
 @Component
 public class HouseholdContextTransactionExecutionListener implements TransactionExecutionListener {
+
+  private static final Logger log =
+      LoggerFactory.getLogger(HouseholdContextTransactionExecutionListener.class);
 
   private final DataSource dataSource;
 
@@ -81,7 +85,22 @@ public class HouseholdContextTransactionExecutionListener implements Transaction
       statement.setString(1, householdId.toString());
       statement.execute();
     } catch (SQLException e) {
-      throw new TransactionSystemException("Failed to set household context", e);
+      // Deliberately swallowed, not rethrown: afterBegin(..., null) - the success path this
+      // method is only ever called from - runs after AbstractPlatformTransactionManager has
+      // already committed to the transaction being under way (doBegin() succeeded,
+      // prepareSynchronization() already ran), with no surrounding try/catch anywhere up the
+      // call chain to TransactionAspectSupport.invokeWithinTransaction() that would clean up a
+      // listener exception thrown from here. Throwing would leave the connection and
+      // TransactionSynchronizationManager's thread-bound "transaction active" state permanently
+      // stuck for whatever thread happens to be running this - a pool-poisoning resource leak,
+      // not a contained failure. Leaving the household context unset instead means RLS denies by
+      // default (FR-TEN-001..003) - the caller gets a wrong-but-safe authorization failure rather
+      // than a corrupted worker thread, and the underlying connection problem (if real, not
+      // transient) still surfaces normally when the business logic's own query runs next.
+      log.warn(
+          "Failed to set household context for household {}; RLS will deny by default",
+          householdId,
+          e);
     } finally {
       DataSourceUtils.releaseConnection(connection, dataSource);
     }

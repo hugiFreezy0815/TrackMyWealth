@@ -178,6 +178,20 @@ class HouseholdContextTransactionExecutionListenerTest {
   private void createRestrictedRuntimeRole(Statement statement) throws Exception {
     // Mirrors the production role split V20's own commented-out template describes: a login role
     // with ordinary DML rights and no superuser/bypass-RLS privilege of any kind.
+    //
+    // DROP OWNED BY revokes every privilege previously GRANTed to this role (and would drop any
+    // object it owns, though it owns none here) before the role itself is dropped - without it, a
+    // local re-run of just this test method against an already-running Testcontainers instance
+    // (container never restarted) fails on DROP ROLE with "cannot be dropped because some objects
+    // depend on it", since the GRANT below leaves dependent privileges behind otherwise. DROP
+    // OWNED BY has no IF EXISTS form and errors if the role is missing, so it's only run when a
+    // prior test run actually left the role behind (never true on a fresh container/first run).
+    try (var roleExists =
+        statement.executeQuery("SELECT 1 FROM pg_roles WHERE rolname = 'tenancy_test_runtime'")) {
+      if (roleExists.next()) {
+        statement.execute("DROP OWNED BY tenancy_test_runtime");
+      }
+    }
     statement.execute("DROP ROLE IF EXISTS tenancy_test_runtime");
     statement.execute(
         "CREATE ROLE tenancy_test_runtime LOGIN PASSWORD 'tenancy_test_runtime' NOSUPERUSER");

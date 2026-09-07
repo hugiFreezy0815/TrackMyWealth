@@ -113,6 +113,14 @@ connection. `FORCE ROW LEVEL SECURITY` is set on every one of those tables so th
 elevated database role is bound by policy (NFR-DEP-004 — a deployment believed to have one
 household is not permitted to relax any control).
 
+The actual mechanism is `com.trackmywealth.backend.config.HouseholdContextTransactionExecutionListener`
+(US-28-01, see `docs/architecture/adr/0002-household-context-propagation.md`) — not
+`HouseholdContextExample`, the placeholder name `V20__tenancy_row_level_security.sql`'s own header
+comment still references. That migration is already applied and immutable (Flyway checksums its content; see
+`docs/architecture/development-standards.md`'s "an already-applied migration is never edited"
+rule), so the stale name can't be corrected in place — this note is the pointer to the real class
+for anyone who follows that comment and finds nothing under the name it gives.
+
 Tables that hang off a household-scoped table but do not carry `household_id` directly
 (`account_credit_card`, `tax_lot`, `price`, `snapshot_holding`, ...) are protected **transitively**
 through a join to `account`/`security`/`account_snapshot`. `security`, `listing`, `price`,
