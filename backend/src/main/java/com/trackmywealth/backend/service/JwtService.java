@@ -62,7 +62,10 @@ public class JwtService {
       Claims claims =
           Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token).getPayload();
       UUID userId = UUID.fromString(claims.getSubject());
-      int tokenVersion = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
+      Integer tokenVersion = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
+      if (tokenVersion == null) {
+        return Optional.empty();
+      }
       return Optional.of(new AccessTokenClaims(userId, tokenVersion));
     } catch (JwtException | IllegalArgumentException e) {
       return Optional.empty();

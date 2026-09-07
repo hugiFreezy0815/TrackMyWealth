@@ -112,6 +112,62 @@ class AdminUserControllerTest {
   }
 
   @Test
+  void creatingAUserWithAnAlreadyUsedEmailIsRejected() {
+    String adminToken = bootstrapAdministrator();
+    createStandardUser(adminToken, "bob@example.com");
+
+    adminClient(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateUserRequest(
+                "BOB@example.com", "another-strong-password", "STANDARD_USER", "EN"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+
+    assertThat(appUserRepository.findAll()).hasSize(2);
+  }
+
+  @Test
+  void editingAUserToAnAlreadyUsedEmailIsRejected() {
+    String adminToken = bootstrapAdministrator();
+    AppUser bob = createStandardUser(adminToken, "bob@example.com");
+    createStandardUser(adminToken, "charlie@example.com");
+
+    adminClient(adminToken)
+        .patch()
+        .uri("/api/v1/admin/users/" + bob.getId())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new EditUserRequest("charlie@example.com", null, null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+
+    assertThat(appUserRepository.findById(bob.getId()).orElseThrow().getEmail())
+        .isEqualTo("bob@example.com");
+  }
+
+  @Test
+  void editingAUserToABlankEmailIsRejected() {
+    String adminToken = bootstrapAdministrator();
+    AppUser bob = createStandardUser(adminToken, "bob@example.com");
+
+    adminClient(adminToken)
+        .patch()
+        .uri("/api/v1/admin/users/" + bob.getId())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new EditUserRequest("", null, null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+
+    assertThat(appUserRepository.findById(bob.getId()).orElseThrow().getEmail())
+        .isEqualTo("bob@example.com");
+  }
+
+  @Test
   void editUserUpdatesFieldsAndLogsChange() {
     String adminToken = bootstrapAdministrator();
     AppUser bob = createStandardUser(adminToken, "bob@example.com");

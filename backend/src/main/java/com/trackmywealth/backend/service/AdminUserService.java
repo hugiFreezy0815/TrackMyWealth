@@ -13,6 +13,7 @@ import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -56,12 +57,13 @@ public class AdminUserService {
 
   @Transactional
   public UserSummaryResponse createUser(CreateUserRequest request, UUID actorUserId) {
+    assertEmailAvailable(request.email());
     AppUser user = new AppUser();
     user.setEmail(request.email());
     user.setPasswordHash(passwordEncoder.encode(request.password()));
     user.setRole(request.role());
     user.setLanguage(request.language());
-    user = appUserRepository.save(user);
+    user = saveOrRejectDuplicateEmail(user);
 
     writeAuditLog(actorUserId, "USER_CREATED", user.getId(), Map.of("role", request.role()));
     return toSummary(user);
@@ -74,6 +76,12 @@ public class AdminUserService {
     Map<String, Object> changes = new LinkedHashMap<>();
 
     if (request.email() != null) {
+      if (request.email().isBlank()) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "email must not be blank.");
+      }
+      if (!request.email().equalsIgnoreCase(target.getEmail())) {
+        assertEmailAvailable(request.email());
+      }
       changes.put("email", request.email());
       target.setEmail(request.email());
     }
@@ -90,7 +98,7 @@ public class AdminUserService {
       target.setRole(request.role());
     }
 
-    target = appUserRepository.save(target);
+    target = saveOrRejectDuplicateEmail(target);
     writeAuditLog(actorUserId, "USER_EDITED", targetUserId, changes);
     return toSummary(target);
   }
@@ -122,6 +130,24 @@ public class AdminUserService {
 
     writeAuditLog(actorUserId, "USER_REACTIVATED", targetUserId, null);
     return toSummary(target);
+  }
+
+  private void assertEmailAvailable(String email) {
+    if (appUserRepository.existsByEmail(email)) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is already in use.");
+    }
+  }
+
+  // The existsByEmail() pre-check above closes the common case with a clean error before any
+  // write is attempted, but leaves a race window between two concurrent requests for the same
+  // email - this is the backstop, translating the citext UNIQUE constraint's violation into the
+  // same 409 rather than letting it surface as an unhandled 500.
+  private AppUser saveOrRejectDuplicateEmail(AppUser user) {
+    try {
+      return appUserRepository.save(user);
+    } catch (DataIntegrityViolationException e) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is already in use.", e);
+    }
   }
 
   private AppUser findUserOrThrow(UUID userId) {

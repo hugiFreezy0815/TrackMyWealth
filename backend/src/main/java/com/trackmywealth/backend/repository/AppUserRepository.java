@@ -12,9 +12,15 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
-  // citext equality is already case-insensitive at the database level, so a plain `= ?` here
-  // gives the right semantics without needing an IgnoreCase-suffixed method name.
-  boolean existsByEmail(String email);
+  // A derived `email = ?` query is NOT case-insensitive here despite the column being citext:
+  // JDBC binds the parameter as `text`, and Postgres's operator resolution then picks the exact
+  // `text = text` match (silently casting the citext column down to text) over the citext
+  // equality operator - confirmed against a real Postgres 16 instance. Casting the parameter to
+  // citext explicitly forces the case-insensitive comparison the column type promises.
+  @Query(
+      value = "SELECT EXISTS(SELECT 1 FROM app_user WHERE email = CAST(:email AS citext))",
+      nativeQuery = true)
+  boolean existsByEmail(@Param("email") String email);
 
   @Query(
       "SELECT new com.trackmywealth.backend.security.AppUserAuthSnapshot("
