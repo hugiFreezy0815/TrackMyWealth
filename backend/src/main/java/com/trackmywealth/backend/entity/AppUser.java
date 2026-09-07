@@ -184,6 +184,15 @@ public class AppUser {
     return tokenVersion;
   }
 
+  // FR-AUT-005: the one and only way this changes - incrementing it invalidates every previously
+  // issued access token immediately (JwtAuthenticationFilter compares the token's embedded value
+  // against this one on every request) regardless of that token's own unexpired signature. No
+  // plain setter is exposed: every caller means "invalidate existing tokens," never "set to an
+  // arbitrary value."
+  public void incrementTokenVersion() {
+    this.tokenVersion++;
+  }
+
   public OffsetDateTime getCreatedAt() {
     return createdAt;
   }

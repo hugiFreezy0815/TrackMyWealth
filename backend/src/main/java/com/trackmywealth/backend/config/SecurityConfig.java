@@ -1,26 +1,32 @@
 package com.trackmywealth.backend.config;
 
+import com.trackmywealth.backend.security.JwtAuthenticationFilter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
- * Placeholder security posture until EPIC-02 (login/JWT filter chain) and EPIC-28 (tenancy) are
- * implemented: only the liveness/readiness surface ({@code /actuator/health}, {@code
- * /actuator/info}) and the one-time setup bootstrap ({@code /api/v1/setup/**}, US-01-03 - which
- * must be reachable before any credential exists, and rejects itself once one does, see {@code
- * SetupService}) are public; everything else requires authentication. Without an explicit {@link
- * SecurityFilterChain} bean, Spring Boot's default posture also requires authentication for
- * actuator endpoints, which would make health checks unusable before any login mechanism exists.
+ * Public surface: the liveness/readiness endpoints, the one-time setup bootstrap ({@code
+ * /api/v1/setup/**}, US-01-03 - which must be reachable before any credential exists, and rejects
+ * itself once one does, see {@code SetupService}), and {@code /error}. Everything else requires a
+ * valid {@link JwtAuthenticationFilter}-authenticated request; {@code /api/v1/admin/**}
+ * additionally requires the {@code SYSTEM_ADMINISTRATOR} role (US-02-01).
+ *
+ * <p>Still a placeholder in one sense: {@link JwtAuthenticationFilter} validates a token already
+ * issued elsewhere (the setup flow's auto-login today), but nothing yet issues one via an ordinary
+ * login call - that's US-02-02.
  *
  * <p>CORS is configured here because the web build of {@code mobile/} (an Expo Router app exported
  * for web, see its README) calls this API from a browser on a different origin - unlike the
@@ -37,7 +43,8 @@ public class SecurityConfig {
   private List<String> allowedOriginPatterns;
 
   @Bean
-  SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+  SecurityFilterChain filterChain(
+      HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
     http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
         .authorizeHttpRequests(
             authorize ->
@@ -54,8 +61,22 @@ public class SecurityConfig {
                     // Http403ForbiddenEntryPoint before it ever reaches BasicErrorController.
                     .requestMatchers("/error")
                     .permitAll()
+                    // FR-TEN-007: administration rights are their own permission domain -
+                    // gated on role alone here, deliberately never on household context.
+                    .requestMatchers("/api/v1/admin/**")
+                    .hasRole("SYSTEM_ADMINISTRATOR")
                     .anyRequest()
                     .authenticated())
+        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+        // A missing/invalid/expired token gets a plain 401, distinct from the 403 an
+        // authenticated-but-wrong-role caller gets (Spring Security's own AccessDeniedHandler,
+        // unchanged) - without this, both cases fall back to the same Http403ForbiddenEntryPoint,
+        // which is the entry point ordinarily meant for a session/form-login flow, not a
+        // stateless token API where a client needs to tell "log in" apart from "not allowed".
+        .exceptionHandling(
+            exceptions ->
+                exceptions.authenticationEntryPoint(
+                    new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
         // Stateless, token-based API (see EPIC-02) - no session cookie for CSRF to protect.
         .csrf(csrf -> csrf.disable());
     return http.build();
