@@ -72,7 +72,7 @@ class AdminUserControllerTest {
         Statement statement = connection.createStatement()) {
       statement.execute(
           "TRUNCATE TABLE admin_audit_log, user_session, refresh_token, app_user,"
-              + " household_member, financial_institution, household RESTART IDENTITY CASCADE");
+              + " workspace_member, financial_institution, workspace RESTART IDENTITY CASCADE");
     }
   }
 
@@ -357,7 +357,7 @@ class AdminUserControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new SetupAdministratorRequest(
-                "admin@example.com", "correct-horse-battery-staple", "Test Household", "CHF"))
+                "admin@example.com", "correct-horse-battery-staple", "Test Workspace", "CHF"))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

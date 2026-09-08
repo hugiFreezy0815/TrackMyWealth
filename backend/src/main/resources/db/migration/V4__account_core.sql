@@ -12,7 +12,7 @@
 
 CREATE TABLE account (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id            UUID NOT NULL REFERENCES household(id),
+    workspace_id            UUID NOT NULL REFERENCES workspace(id),
     financial_institution_id UUID NOT NULL REFERENCES financial_institution(id), -- C2: exactly one container
     account_type            TEXT NOT NULL CHECK (account_type IN (
                                 'CASH', 'SAVINGS', 'SECURITIES', 'MANAGED_MANDATE', 'PENSION',
@@ -58,7 +58,7 @@ CREATE TABLE account (
     CHECK (closed_at IS NULL OR opened_at IS NULL OR closed_at >= opened_at)
 );
 
-CREATE INDEX idx_account_household ON account(household_id);
+CREATE INDEX idx_account_workspace ON account(workspace_id);
 CREATE INDEX idx_account_institution ON account(financial_institution_id);
 CREATE INDEX idx_account_type ON account(account_type);
 

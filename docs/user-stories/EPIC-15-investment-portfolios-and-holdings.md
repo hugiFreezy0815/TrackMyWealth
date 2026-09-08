@@ -28,7 +28,7 @@ recomputation rather than requiring a data-repair script.
 **Error/edge cases:** A `SELL` with no matching prior `BUY` (would produce a negative position) —
 must raise a reconciliation difference (FR-DEP-007/FR-REC-002), never silently produce a negative
 quantity.
-**Authorization/privacy:** Household-scoped (RLS on `position`).
+**Authorization/privacy:** Workspace-scoped (RLS on `position`).
 **Dependencies:** EPIC 07, EPIC 25.
 **Priority:** MUST.
 **Definition of Done:** Integration test for idempotent rebuild and for the backdated-edit
@@ -40,9 +40,9 @@ no reported basis) must have `is_estimated = true` (PR-011).
 
 ## US-15-02 — Cost-basis method is configurable per account and applied consistently
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-DEP-004/005, FR-DAT (v0.1 doc)-01, section 46.
-**Story:** As a household member, I want to choose FIFO, LIFO or average cost per securities
+**Story:** As a workspace member, I want to choose FIFO, LIFO or average cost per securities
 account (defaulting to FIFO), and decide whether fees are included in cost basis, so that realised
 gains match how I actually think about the account and can be reconciled against broker
 statements that may report differently.
@@ -51,7 +51,7 @@ statements that may report differently.
 - Given three acquisition lots at different prices and a partial sale, when realised gain is
   computed under FIFO, then the earliest lot(s) are consumed first, and the result matches the
   documented worked example in the calculation methodology (EPIC 27).
-- Given the same scenario recomputed under average cost after the household changes the setting,
+- Given the same scenario recomputed under average cost after the workspace changes the setting,
   when displayed, then the change is applied prospectively/retrospectively as documented (the
   service layer must fully rebuild `tax_lot`/`tax_lot_disposal` for the account, since cost basis
   is derived, never stored as ground truth — FR-DAT-008).
@@ -62,7 +62,7 @@ statements that may report differently.
 `fees_included_in_cost_basis`.
 **Error/edge cases:** Changing the method on an account with a long history — must be an
 asynchronous job (large recomputation), not a blocking request.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** US-15-01.
 **Priority:** MUST.
 **Definition of Done:** This is V-07 in the golden verification dataset (EPIC 27 — "partial sale
@@ -73,9 +73,9 @@ under FIFO with three acquisition lots").
 
 ## US-15-03 — Custodian transfer with no reported cost basis
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-DEP-006 (v0.1 doc: FR-POR-06), FR-REC-008.
-**Story:** As a household member who transferred a position between brokers, I want to enter a
+**Story:** As a workspace member who transferred a position between brokers, I want to enter a
 cost basis manually when the receiving broker reports none, with the historical market price at
 transfer date offered as a starting suggestion, so that my realised-gain figures are not simply
 wrong or blank for that position.
@@ -92,7 +92,7 @@ wrong or blank for that position.
 **Error/edge cases:** No historical price is available for that date either (e.g. delisted
 security) — the user must be able to enter cost basis with zero suggestion, still marked
 estimated.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** EPIC 14, EPIC 25.
 **Priority:** MUST.
 **Definition of Done:** This is V-06 in the golden verification dataset ("in-kind transfer between
@@ -104,11 +104,11 @@ rather than absent.
 
 ## US-15-04 — Cross-depot consolidation of the same security
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-DEP-003.
-**Story:** As a household member holding the same ETF in two different depots, I want to see one
+**Story:** As a workspace member holding the same ETF in two different depots, I want to see one
 consolidated exposure figure while still being able to drill into each depot's own position, so
-that concentration and allocation analysis is correct across my whole household.
+that concentration and allocation analysis is correct across my whole workspace.
 **Preconditions:** Two `position` rows for the same `security_id` in different accounts.
 **Acceptance criteria:**
 - Given 100 units in Depot A and 50 units in Depot B of the same security, when consolidated
@@ -119,7 +119,7 @@ that concentration and allocation analysis is correct across my whole household.
 **Error/edge cases:** The two positions were acquired on different listings (different trading
 currencies) — the consolidated value must correctly sum each in its own currency before
 converting, not average two different currency-denominated unit prices together.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** US-15-01, US-13-02.
 **Priority:** MUST.
 **Definition of Done:** This is V-12 in the golden verification dataset, shared with US-13-02.

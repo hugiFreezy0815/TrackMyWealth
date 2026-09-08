@@ -61,7 +61,7 @@ public class SecurityConfig {
                     .requestMatchers("/error")
                     .permitAll()
                     // FR-TEN-007: administration rights are their own permission domain -
-                    // gated on role alone here, deliberately never on household context.
+                    // gated on role alone here, deliberately never on workspace context.
                     .requestMatchers("/api/v1/admin/**")
                     .hasRole("SYSTEM_ADMINISTRATOR")
                     .anyRequest()

@@ -160,7 +160,7 @@ class SchemaConventionsTest {
     // v4-ness at the schema level, rather than merely "some UUID."
     //
     // Excludes PK columns that are also a foreign key (e.g. account_securities.account_id,
-    // savings_rate_methodology.household_id - a "shared primary key" 1:1 extension table, or
+    // savings_rate_methodology.workspace_id - a "shared primary key" 1:1 extension table, or
     // security_identifier.security_id as part of a composite PK): these don't generate a new
     // identity, they inherit the referenced row's already-v4 UUID, so requiring their own
     // gen_random_uuid() default would be wrong, not merely redundant.

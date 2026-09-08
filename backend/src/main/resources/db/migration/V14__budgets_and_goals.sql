@@ -7,10 +7,10 @@
 
 CREATE TABLE budget (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id          UUID NOT NULL REFERENCES household(id),
+    workspace_id          UUID NOT NULL REFERENCES workspace(id),
     name                      TEXT NOT NULL,
     period_type                  TEXT NOT NULL DEFAULT 'MONTHLY' CHECK (period_type = 'MONTHLY'),
-    -- FR-BUD-007: proposed from the household's own transaction history at creation time; this
+    -- FR-BUD-007: proposed from the workspace's own transaction history at creation time; this
     -- flag distinguishes an accepted proposal from a budget built from scratch, for UX purposes.
     derived_from_history               BOOLEAN NOT NULL DEFAULT FALSE,
     is_active                             BOOLEAN NOT NULL DEFAULT TRUE,
@@ -18,7 +18,7 @@ CREATE TABLE budget (
     updated_at                                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     version                                        INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX idx_budget_household ON budget(household_id);
+CREATE INDEX idx_budget_workspace ON budget(workspace_id);
 CREATE TRIGGER budget_set_updated_at BEFORE UPDATE ON budget FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 CREATE TRIGGER budget_bump_version BEFORE UPDATE ON budget FOR EACH ROW EXECUTE FUNCTION trg_bump_version();
 
@@ -37,10 +37,10 @@ CREATE TABLE budget_line (
 CREATE INDEX idx_budget_line_budget ON budget_line(budget_id);
 
 -- FR-BUD-009: the savings-rate methodology must be an explicit, documented, user-visible
--- setting - stored per household rather than assumed globally, since published definitions
+-- setting - stored per workspace rather than assumed globally, since published definitions
 -- genuinely differ.
 CREATE TABLE savings_rate_methodology (
-    household_id                     UUID PRIMARY KEY REFERENCES household(id),
+    workspace_id                     UUID PRIMARY KEY REFERENCES workspace(id),
     include_employer_pension_contrib    BOOLEAN NOT NULL DEFAULT FALSE,
     include_mortgage_principal             BOOLEAN NOT NULL DEFAULT TRUE,
     include_unrealised_gains                  BOOLEAN NOT NULL DEFAULT FALSE,
@@ -49,7 +49,7 @@ CREATE TABLE savings_rate_methodology (
 
 CREATE TABLE goal (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id          UUID NOT NULL REFERENCES household(id),
+    workspace_id          UUID NOT NULL REFERENCES workspace(id),
     goal_type                 TEXT NOT NULL CHECK (goal_type IN (
                                 'PILLAR_3A_MAX_OUT', 'SAVINGS_TARGET', 'FIRE_TARGET',
                                 'HOUSE_DEPOSIT', 'CUSTOM')),
@@ -62,7 +62,7 @@ CREATE TABLE goal (
     updated_at                                     TIMESTAMPTZ NOT NULL DEFAULT now(),
     version                                           INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX idx_goal_household ON goal(household_id);
+CREATE INDEX idx_goal_workspace ON goal(workspace_id);
 CREATE TRIGGER goal_set_updated_at BEFORE UPDATE ON goal FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 CREATE TRIGGER goal_bump_version BEFORE UPDATE ON goal FOR EACH ROW EXECUTE FUNCTION trg_bump_version();
 

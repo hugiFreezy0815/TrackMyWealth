@@ -83,33 +83,33 @@ Testcontainers PostgreSQL instance and asserts a 200 from `/actuator/health`.
 
 ---
 
-## US-01-03 — Initial administrator / first household bootstrap
+## US-01-03 — Initial administrator / first workspace bootstrap
 
 **Actor:** New self-hosting operator, or the hosted service's first user
 **Objective:** FR-USR-002 — initial setup shall establish at least one System Administrator.
 **Story:** As the first person to run TrackMyWealth against a fresh database, I want a guided
-setup step that creates the initial administrator account and their household, so that the
+setup step that creates the initial administrator account and their workspace, so that the
 system is usable immediately without a pre-seeded user.
 
 **Preconditions:** Migrated, empty database (no rows in `app_user`).
 
 **Acceptance criteria:**
 - Given a database with zero rows in `app_user`, when the setup endpoint/flow is invoked with an
-  email, password and household name, then a `household` row is created, its default "Personal
+  email, password and workspace name, then a `workspace` row is created, its default "Personal
   Assets" `financial_institution` is created automatically by the `V19` trigger, a
-  `household_member` row is created for the administrator, and an `app_user` row is created with
+  `workspace_member` row is created for the administrator, and an `app_user` row is created with
   `role = 'SYSTEM_ADMINISTRATOR'` and linked to that member.
 - Given a database that already has at least one `app_user`, when the setup endpoint is invoked
   again, then it is refused (setup is a one-time bootstrap, not a general "create admin"
   endpoint — see EPIC 02 for that).
 - The application-side transaction sequence follows the documented bootstrap order in
-  `V19__seed_reference_data.sql`'s trailing comment: pre-generate the household UUID,
-  `SELECT set_config('app.current_household_id', ...)`, then insert — required for the
-  row-level-security policies in `V20` to allow the household's own first rows to be written.
+  `V19__seed_reference_data.sql`'s trailing comment: pre-generate the workspace UUID,
+  `SELECT set_config('app.current_workspace_id', ...)`, then insert — required for the
+  row-level-security policies in `V20` to allow the workspace's own first rows to be written.
 
 **Applicable business rules:** FR-USR-002/004, FR-INS-011, RULE-018.
 **Data requirements:** Email (valid format, unique), password (meets FR-AUT-007 policy — see
-EPIC 02), household display name.
+EPIC 02), workspace display name.
 **Error/edge cases:** Concurrent double-submission of the setup flow — must not create two
 administrators; guard with a unique check plus a DB-level constraint (at most one setup attempt
 should succeed; use a `SELECT ... FOR UPDATE` or advisory lock around the "does any app_user
@@ -119,7 +119,7 @@ exist" check).
 **Priority:** MUST.
 **Definition of Done:** Integration test creates a fresh database, runs setup once (succeeds),
 runs it again (rejected), and verifies the Personal Assets container exists for the new
-household.
+workspace.
 **Data-quality behaviour:** N/A (bootstrap step, no financial data yet).
 
 ---
@@ -139,9 +139,9 @@ is current before relying on category or institution suggestions.
 - Given a freshly migrated database, when an administrator opens the reference-data admin screen,
   then the current `reference_package.package_version` (`1.0.0-baseline` on a fresh install) and
   its `publication_date` are displayed.
-- Given the shipped baseline, when a new household is created, then it can immediately search and
+- Given the shipped baseline, when a new workspace is created, then it can immediately search and
   select from the seeded `institution_catalogue` rows and see the default `category` tree
-  (`household_id IS NULL` rows) without any additional setup.
+  (`workspace_id IS NULL` rows) without any additional setup.
 - Given no reference package has ever been imported beyond the baseline, when the admin screen is
   viewed, then no staleness warning is shown (staleness warnings — FR-REF-011 — apply to
   effective-dated values with no entry for the current period, not to the baseline's mere age;

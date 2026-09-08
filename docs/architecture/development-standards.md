@@ -74,6 +74,14 @@ a worked example (fixes a bug in `V10` without touching `V10`), and
 `database-schema.md`'s "Migration numbering and out-of-order application" section for a real
 mistake (and its fix) this exact rule caused mid-project.
 
+**One deliberate, explicitly-authorized exception**: the household→workspace rename edited V1-V21
+in place rather than adding a fix-forward migration, on the basis that the project was still in
+its pre-release development phase with no deployed instance anywhere carrying a
+`flyway_schema_history` row for the old content (confirmed: no CI/CD deploy workflow to a
+persistent environment exists in this repo). This rule resumes applying without exception from
+that point on - any migration that predates it must never be edited again, regardless of how
+minor the change.
+
 This is also *why* sqlfluff only lints new/changed files in a PR (via `git diff` against the PR
 base), never the whole directory: several already-shipped migrations don't match the sqlfluff
 config's layout rules, and that's fine — they're frozen, not something to "fix" retroactively.
@@ -86,8 +94,8 @@ verbatim from the `quartz-2.3.2.jar` and must track that source exactly, not thi
 - Primary keys: `UUID PRIMARY KEY DEFAULT gen_random_uuid()`. Exceptions require the same
   reasoning `SchemaConventionsTest` documents for shared, non-tenant reference data
   (`trading_calendar`, `gics_structure_version`) — a natural key for genuinely global, non-tenant,
-  non-enumerable-concern lookup data, never for anything household/user-owned.
-- `household_id` on every household-scoped table, protected by row-level security (`V20`) —
+  non-enumerable-concern lookup data, never for anything workspace/user-owned.
+- `workspace_id` on every workspace-scoped table, protected by row-level security (`V20`) —
   directly, or transitively via a join where the table doesn't carry the column itself (see
   `database-schema.md` section 4 for which tables are transitive and why they need explicit
   cross-tenant test coverage of their own).

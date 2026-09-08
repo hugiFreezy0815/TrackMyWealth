@@ -8,14 +8,14 @@ RULE-025.
 
 ## US-25-01 — Manual snapshot entry gives correctness before any connector exists
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-REC-006 — "the mechanism by which a fully manual user still gets correctness."
-**Story:** As a household member with no automated connector for my bank, I want to type in the
+**Story:** As a workspace member with no automated connector for my bank, I want to type in the
 balance shown on my paper or PDF statement as a snapshot, so that I can verify my ledger-derived
 balance is correct even without any integration.
 **Preconditions:** An account exists.
 **Acceptance criteria:**
-- Given a household types CHF 12,345.67 as today's balance for their PostFinance cash account,
+- Given a workspace types CHF 12,345.67 as today's balance for their PostFinance cash account,
   when saved, then an `account_snapshot` row is created with `source = 'MANUAL'`.
 - Given the account also has holdings (a depot), when a snapshot is entered with per-security
   quantities, then `snapshot_holding` rows are created alongside the balance snapshot.
@@ -25,7 +25,7 @@ balance is correct even without any integration.
 **Error/edge cases:** A second snapshot for the same account/date/source — rejected by the
 `UNIQUE(account_id, snapshot_date, source)` constraint; the UI should offer "update today's
 snapshot" instead of a silent failure.
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** EPIC 05.
 **Priority:** MUST.
 **Definition of Done:** Integration test enters a manual snapshot with holdings.
@@ -59,7 +59,7 @@ immediately rather than discovered by the user months later.
 reconciliation job compares against the most recent one relevant to the comparison date, and an
 older `OPEN` difference whose snapshot has since been superseded transitions to `SUPERSEDED`
 (FR-STA-003), not left dangling as `OPEN`.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** US-25-01, EPIC 07, EPIC 15.
 **Priority:** MUST.
 **Definition of Done:** Integration test with a deliberately introduced CHF 45.67 discrepancy,
@@ -71,9 +71,9 @@ asserting the `reconciliation_result` row and its classification.
 
 ## US-25-03 — Guided resolution of a reconciliation difference
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-REC-004 — explicit resolution paths, adjustments always visible.
-**Story:** As a household member, I want to resolve an open reconciliation difference by either
+**Story:** As a workspace member, I want to resolve an open reconciliation difference by either
 adding the missing transaction, accepting the provider's figure as a visible adjusting entry, or
 dismissing it with a reason, so that every account either agrees with its provider or has a
 documented, visible reason why not.
@@ -93,7 +93,7 @@ documented, visible reason why not.
 **Error/edge cases:** Resolving a difference whose underlying snapshot has since been superseded
 by a newer one — the resolution flow must refresh against the current snapshot before allowing
 confirmation, not resolve against stale data.
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** US-25-02.
 **Priority:** MUST.
 **Definition of Done:** Integration test for all three resolution paths.
@@ -103,10 +103,10 @@ confirmation, not resolve against stale data.
 
 ## US-25-04 — Opening-balance and opening-holdings reconstruction
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-REC-007 — without this, every account whose history predates the import shows
 wrong returns from the first day.
-**Story:** As a household member whose imported transaction history starts later than the account
+**Story:** As a workspace member whose imported transaction history starts later than the account
 itself was opened, I want to record a dated opening balance (and opening holdings with cost
 basis, for investment accounts), so that performance and net-worth figures are correct from that
 opening point rather than silently starting from zero on the date I happened to start importing.
@@ -126,7 +126,7 @@ opening point rather than silently starting from zero on the date I happened to 
 **Error/edge cases:** An opening balance recorded *after* the first real transaction already in
 the ledger — the service layer must reject or clearly flag the inconsistency rather than silently
 double-count the opening period.
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** US-25-01, EPIC 16 (US-16-04 depends on this).
 **Priority:** MUST.
 **Definition of Done:** This is V-11 in the golden verification dataset, shared with EPIC 16's

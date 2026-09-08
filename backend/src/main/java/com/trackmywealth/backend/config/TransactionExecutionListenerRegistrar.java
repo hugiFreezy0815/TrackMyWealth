@@ -13,11 +13,11 @@ import org.springframework.transaction.TransactionExecutionListener;
  * No Spring Boot autoconfiguration wires {@link TransactionExecutionListener} beans into the
  * transaction manager on its own (unlike, say, {@code HandlerInterceptor} beans and Spring MVC) -
  * this registers every one found in the context, {@link
- * HouseholdContextTransactionExecutionListener} included, onto the auto-configured {@link
+ * WorkspaceContextTransactionExecutionListener} included, onto the auto-configured {@link
  * JpaTransactionManager} specifically, not every {@code AbstractPlatformTransactionManager} that
- * might exist. {@link HouseholdContextTransactionExecutionListener} always issues its {@code
+ * might exist. {@link WorkspaceContextTransactionExecutionListener} always issues its {@code
  * set_config} against its own injected {@code DataSource}, so attaching it to some other, future
- * transaction manager backed by a different data source would silently set the household context on
+ * transaction manager backed by a different data source would silently set the workspace context on
  * an unrelated connection instead of the active transaction's own - scoping the match this narrowly
  * is what keeps that impossible rather than merely unlikely.
  */
@@ -29,7 +29,7 @@ public class TransactionExecutionListenerRegistrar {
   // forcing this configuration class to be instantiated too early in the container startup
   // sequence.
   @Bean
-  static BeanPostProcessor householdContextTransactionExecutionListenerRegistrar(
+  static BeanPostProcessor workspaceContextTransactionExecutionListenerRegistrar(
       ObjectProvider<TransactionExecutionListener> transactionExecutionListeners) {
     return new BeanPostProcessor() {
       @Override

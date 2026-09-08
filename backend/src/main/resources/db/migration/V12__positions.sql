@@ -10,7 +10,7 @@
 
 CREATE TABLE position (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id         UUID NOT NULL REFERENCES household(id),
+    workspace_id         UUID NOT NULL REFERENCES workspace(id),
     account_id               UUID NOT NULL REFERENCES account(id),
     security_id                  UUID NOT NULL REFERENCES security(id),
     quantity                        NUMERIC(28,10) NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE position (
     computed_at                                    TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (account_id, security_id)
 );
-CREATE INDEX idx_position_household ON position(household_id);
+CREATE INDEX idx_position_workspace ON position(workspace_id);
 CREATE INDEX idx_position_security ON position(security_id);
 
 COMMENT ON TABLE position IS

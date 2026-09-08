@@ -11,7 +11,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm; -- fuzzy merchant-name search/matching (
 
 CREATE TABLE transaction (
     id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id                UUID NOT NULL REFERENCES household(id),
+    workspace_id                UUID NOT NULL REFERENCES workspace(id),
     account_id                     UUID NOT NULL REFERENCES account(id),
     transaction_type                  TEXT NOT NULL CHECK (transaction_type IN (
                                         'INCOME', 'EXPENSE', 'TRANSFER', 'DEPOSIT', 'WITHDRAWAL',
@@ -70,7 +70,7 @@ CREATE TABLE transaction (
 );
 
 CREATE INDEX idx_transaction_account_date ON transaction(account_id, booking_date DESC);
-CREATE INDEX idx_transaction_household ON transaction(household_id);
+CREATE INDEX idx_transaction_workspace ON transaction(workspace_id);
 CREATE INDEX idx_transaction_security ON transaction(security_id) WHERE security_id IS NOT NULL;
 CREATE INDEX idx_transaction_category ON transaction(category_id) WHERE category_id IS NOT NULL;
 CREATE INDEX idx_transaction_import_batch ON transaction(import_batch_id) WHERE import_batch_id IS NOT NULL;

@@ -20,9 +20,9 @@ import org.hibernate.type.SqlTypes;
 /**
  * Maps {@code financial_institution} (V3) - a container, not an account (RULE-001/002/003). The
  * default "Personal Assets" container is created by V19's {@code
- * household_create_personal_assets_container} trigger immediately after a household is inserted;
+ * workspace_create_personal_assets_container} trigger immediately after a workspace is inserted;
  * {@code SetupService} reads it back and corrects its placeholder {@code CHF} currency to the
- * household's actual chosen currency (see V19's trigger comment).
+ * workspace's actual chosen currency (see V19's trigger comment).
  */
 @Entity
 @Table(name = "financial_institution")
@@ -34,8 +34,8 @@ public class FinancialInstitution {
   private UUID id;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
-  @JoinColumn(name = "household_id", nullable = false)
-  private Household household;
+  @JoinColumn(name = "workspace_id", nullable = false)
+  private Workspace workspace;
 
   @Column(nullable = false)
   private String name;
@@ -71,12 +71,12 @@ public class FinancialInstitution {
     return id;
   }
 
-  public Household getHousehold() {
-    return household;
+  public Workspace getWorkspace() {
+    return workspace;
   }
 
-  public void setHousehold(Household household) {
-    this.household = household;
+  public void setWorkspace(Workspace workspace) {
+    this.workspace = workspace;
   }
 
   public String getName() {

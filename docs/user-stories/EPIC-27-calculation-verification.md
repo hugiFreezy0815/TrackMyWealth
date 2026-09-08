@@ -13,7 +13,7 @@ it as one story done at the very end.
 **Actor:** Developer / QA
 **Objective:** NFR-CALC-005 — a fixed reference dataset with known correct answers, run on every
 change to any calculation path.
-**Story:** As a developer, I want a fixed, version-controlled dataset of synthetic households
+**Story:** As a developer, I want a fixed, version-controlled dataset of synthetic workspaces
 exercising every case in specification section 47 (V-01 through V-21), each with an
 independently-verified expected result, run automatically on every change touching a calculation
 path, so that a regression in corporate-action handling, cost basis, or currency conversion is

@@ -1,7 +1,7 @@
 # EPIC 12 — Security Master & Issuers
 
 Covers `security`, `issuer`, `security_identifier`, `security_asset_class_weight`,
-`security_field_provenance`, `household_security_override` (V7). Section 19, FR-SMD-*, FR-IMD-*,
+`security_field_provenance`, `workspace_security_override` (V7). Section 19, FR-SMD-*, FR-IMD-*,
 DM-24/25.
 
 ---
@@ -11,16 +11,16 @@ DM-24/25.
 **Actor:** System (invoked from transaction entry / import)
 **Objective:** FR-SMD-001/007, DM-25/28 — no bulk universe load; a master record is created only
 on first reference.
-**Story:** As the system, I want a `security` master record to be created only when a household
+**Story:** As the system, I want a `security` master record to be created only when a workspace
 first references it (via a transaction, position, or watchlist entry), and shared globally
-thereafter, so that ten households holding the same ETF create one record, not ten.
-**Preconditions:** A household enters a `BUY` transaction for a security not yet in the master.
+thereafter, so that ten workspaces holding the same ETF create one record, not ten.
+**Preconditions:** A workspace enters a `BUY` transaction for a security not yet in the master.
 **Acceptance criteria:**
 - Given a `BUY` transaction for ISIN `IE00B4L5Y983` not currently in `security`, when it is saved,
   then a new `security` row is created (looked up from an external reference-data provider or
   entered manually if none is configured — NFR-LIC-004/008 manual-price mode), and the
   transaction references it.
-- Given a second household later buys the same ISIN, when their transaction is saved, then no new
+- Given a second workspace later buys the same ISIN, when their transaction is saved, then no new
   `security` row is created — the existing one is referenced and its shared price series
   (`listing`/`price`, EPIC 13/14) is now also relevant to them.
 - Given a search at add-time queries an external universe, when the user has not yet confirmed a
@@ -31,12 +31,12 @@ NOT NULL`, enforced by a `CHECK` constraint in V7).
 **Error/edge cases:** No external provider configured (manual-only deployment, NFR-CON-004) — the
 user must be able to create a minimal master record by hand (name, currency, asset class) and
 have it work identically for everything downstream.
-**Authorization/privacy:** `security` carries no `household_id` — it is global, shared reference
+**Authorization/privacy:** `security` carries no `workspace_id` — it is global, shared reference
 data (NFR-LIC-007); no RLS applies to it (documented in `database-schema.md` section 4).
 **Dependencies:** EPIC 07 (transaction entry triggers this).
 **Priority:** MUST.
-**Definition of Done:** Integration test: two different households (two different
-`app.current_household_id` RLS contexts) each buy the same ISIN and the test asserts exactly one
+**Definition of Done:** Integration test: two different workspaces (two different
+`app.current_workspace_id` RLS contexts) each buy the same ISIN and the test asserts exactly one
 `security` row exists.
 **Data-quality behaviour:** A security created with incomplete master data (e.g. missing GICS)
 must expose that gap via `security_field_provenance`/a completeness indicator (FR-SMD-011),
@@ -80,10 +80,10 @@ ticker-ambiguity-requires-confirmation paths.
 
 ## US-12-03 — A fund is a weighted set of asset classes, never a single class
 
-**Actor:** Household member / System
+**Actor:** Workspace member / System
 **Objective:** FR-CLS-004, DM-24, RULE-027 — schema-level requirement even before look-through
 data is licensed.
-**Story:** As a household member holding a multi-asset or bond ETF, I want its allocation to be
+**Story:** As a workspace member holding a multi-asset or bond ETF, I want its allocation to be
 expressed as a weighted breakdown across asset classes rather than a single label, so that my
 overall equity/fixed-income allocation is actually correct.
 **Preconditions:** A `security` representing a multi-asset fund (e.g. 60% equity / 40% fixed
@@ -114,32 +114,32 @@ assignment.
 
 ## US-12-04 — User override of a security-master field never silently overwritten
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-SMD-013, RULE-031 — a user-supplied value takes precedence and is never
 silently overwritten by a later refresh.
-**Story:** As a household member, I want to correct a security's classification for my own view
-(e.g. a custom/illiquid holding with no market data) without affecting other households' view of
+**Story:** As a workspace member, I want to correct a security's classification for my own view
+(e.g. a custom/illiquid holding with no market data) without affecting other workspaces' view of
 the same shared security record, so that my correction sticks and never leaks to anyone else.
-**Preconditions:** A `security` row exists, potentially shared with other households.
+**Preconditions:** A `security` row exists, potentially shared with other workspaces.
 **Acceptance criteria:**
-- Given the household overrides "asset class" for a security, when the override is saved, then a
-  `household_security_override` row is created (household-scoped, per V7), not a mutation of the
+- Given the workspace overrides "asset class" for a security, when the override is saved, then a
+  `workspace_security_override` row is created (workspace-scoped, per V7), not a mutation of the
   shared `security` row.
-- Given another household views the same security, when they read its asset class, then they see
-  the original shared value, not the first household's override — no cross-household leakage
+- Given another workspace views the same security, when they read its asset class, then they see
+  the original shared value, not the first workspace's override — no cross-workspace leakage
   (DM-25's explicit tenancy hazard).
 - Given a scheduled refresh job later updates the shared `security` row's field from an external
-  provider, when it runs, then it does not touch or need to know about any household's overrides
+  provider, when it runs, then it does not touch or need to know about any workspace's overrides
   at all (they live in a separate table read as an overlay at query time).
 **Applicable business rules:** FR-SMD-013, RULE-031, DM-25.
-**Data requirements:** `household_security_override(household_id, security_id, field_name)`.
-**Error/edge cases:** Two different households override the same field differently for the same
-shared security — both must be independently respected; this is exactly what the per-household
+**Data requirements:** `workspace_security_override(workspace_id, security_id, field_name)`.
+**Error/edge cases:** Two different workspaces override the same field differently for the same
+shared security — both must be independently respected; this is exactly what the per-workspace
 override table is for.
-**Authorization/privacy:** Household-scoped read/write on the override table itself (should be
-added to the RLS-protected table list — confirm it is in `V20`'s `household_scoped_tables` array).
+**Authorization/privacy:** Workspace-scoped read/write on the override table itself (should be
+added to the RLS-protected table list — confirm it is in `V20`'s `workspace_scoped_tables` array).
 **Dependencies:** US-12-01.
 **Priority:** MUST.
-**Definition of Done:** Integration test: two households override the same shared security's
+**Definition of Done:** Integration test: two workspaces override the same shared security's
 field differently and each sees only their own override.
 **Data-quality behaviour:** N/A.

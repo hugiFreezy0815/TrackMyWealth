@@ -48,7 +48,7 @@ forward if a security review flags them as blocking earlier epics.
 - Provider credential storage in a dedicated secret store, never the application database
   (NFR-SEC-001, section 30.1's NFR-LIC-001/002).
 - Outbound request minimisation/batching for price lookups so a provider cannot infer a
-  household's portfolio composition from request patterns (NFR-SEC-006, NFR-DPR-007).
+  workspace's portfolio composition from request patterns (NFR-SEC-006, NFR-DPR-007).
 - Manual-price-only degraded mode is documented and fully functional with zero external
   entitlement (NFR-LIC-004/008, NFR-CON-004) — largely already true of the schema; this story is
   the end-to-end verification and documentation pass.
@@ -119,7 +119,7 @@ epics rather than deferring the whole of EPIC 30.
 - Scheduled price/FX refresh and daily-valuation-series build as Quartz-backed jobs
   (`spring-boot-starter-quartz` is already a `pom.xml` dependency), idempotent and resumable
   (FR-JOB-002), never blocking interactive reads (FR-JOB-004).
-- Tenant fairness under Quartz/job load — one household's large import must not degrade another's
+- Tenant fairness under Quartz/job load — one workspace's large import must not degrade another's
   interactive response (FR-JOB-003).
 - Production role split for row-level security (the commented-out template at the bottom of
   `V20__tenancy_row_level_security.sql`) — migration-owner role vs. runtime role, wired into the
@@ -136,10 +136,10 @@ epics rather than deferring the whole of EPIC 30.
 `V10`/`V15`'s append-only/rollback triggers), section 57 (FR-AUD-*, tables already exist in V17).
 **Sizing:** Medium. Much of the *data model* for this epic already exists (V10's append-only
 trigger, V15's batch rollback status machine, V17's three audit tables) — this epic is primarily
-about the service-layer orchestration and the household-erasure flow that doesn't exist yet.
+about the service-layer orchestration and the workspace-erasure flow that doesn't exist yet.
 **Starter stories:**
-- Household (tenant) erasure: the *only* hard delete in the system (section 52.1) — removes all
-  household data including from backups within the published retention window (NFR-DPR-004),
+- Workspace (tenant) erasure: the *only* hard delete in the system (section 52.1) — removes all
+  workspace data including from backups within the published retention window (NFR-DPR-004),
   requires recent re-authentication, explicit confirmation and a cancellable grace period
   (FR-LIF-023).
 - Financial-change audit log population wired into every service-layer write path

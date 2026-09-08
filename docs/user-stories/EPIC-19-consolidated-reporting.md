@@ -7,13 +7,13 @@ essentially all migrations and all prior epics — sequence this near the end of
 
 ## US-19-01 — Consolidated view in the user's reporting currency, with consistent scope
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-CON-001..006, FR-NAV-20..26.
-**Story:** As a household member, I want one top-level view showing net worth, assets and
+**Story:** As a workspace member, I want one top-level view showing net worth, assets and
 liabilities, cash flow, investments, allocation, performance and dividends, all converted to my
 personal reporting currency, with a clearly visible and consistently-applied scope filter, so
 that I never wonder whether the number on screen includes my pension or not.
-**Preconditions:** A household with accounts across multiple institutions and currencies (the
+**Preconditions:** A workspace with accounts across multiple institutions and currencies (the
 representative scenario in specification section 43).
 **Acceptance criteria:**
 - Given the representative acceptance scenario (PostFinance CHF, DKB EUR, Broker X USD, VIAC CHF
@@ -29,7 +29,7 @@ representative scenario in specification section 43).
 **Data requirements:** Outputs of every prior epic.
 **Error/edge cases:** A currency with no direct FX pair available for the requested date — falls
 back per FR-CUR-010/012 rules (EPIC 06), visibly flagged.
-**Authorization/privacy:** Household-scoped, respects per-member sharing grants for person-scoped
+**Authorization/privacy:** Workspace-scoped, respects per-member sharing grants for person-scoped
 consolidated views (FR-TEN-011).
 **Dependencies:** All prior epics (01-18).
 **Priority:** MUST.
@@ -71,7 +71,7 @@ added to the golden-dataset suite (EPIC 27) so a future change that breaks this 
 
 ## US-19-03 — Beginner vs. advanced progressive disclosure
 
-**Actor:** Beginner household member / Advanced household member
+**Actor:** Beginner workspace member / Advanced workspace member
 **Objective:** PR-006, NFR-UX-001.
 **Story:** As a beginner investor, I want a clear, understandable summary by default (simple
 return, plain-language net worth), and as an advanced investor I want the same screen to let me
@@ -79,7 +79,7 @@ drill into TWR/MWR, currency attribution and GICS-level allocation, so that the 
 both without overwhelming either.
 **Preconditions:** US-19-01.
 **Acceptance criteria:**
-- Given a household member with no explicit preference set, when the consolidated view loads,
+- Given a workspace member with no explicit preference set, when the consolidated view loads,
   then the default headline performance figure is simple absolute return/P&L (FR-PERF-013), not
   TWR/MWR.
 - Given the same member expands "advanced metrics," when shown, then TWR, MWR, currency

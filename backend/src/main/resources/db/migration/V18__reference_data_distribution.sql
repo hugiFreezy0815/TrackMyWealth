@@ -80,7 +80,7 @@ CREATE TABLE trading_calendar_holiday (
 
 -- Wires the deferred FK from V3 institution_catalogue.reference_package_version and V13
 -- category_source_mapping.reference_package_version, V15 import_template implicitly tracked via
--- template_version (free text, intentionally not FK'd to allow household-authored templates).
+-- template_version (free text, intentionally not FK'd to allow workspace-authored templates).
 ALTER TABLE institution_catalogue ADD CONSTRAINT fk_institution_catalogue_reference_package
     FOREIGN KEY (reference_package_version) REFERENCES reference_package(package_version);
 ALTER TABLE category_source_mapping ADD CONSTRAINT fk_category_source_mapping_reference_package

@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 
 /**
  * Request body for {@code POST /api/v1/admin/users} (US-02-01). No email/invite infrastructure
- * exists in this project, and it targets self-hosted, single-household use - the administrator sets
+ * exists in this project, and it targets self-hosted, single-workspace use - the administrator sets
  * the new user's initial password directly, the same way the setup flow's own bootstrap
  * administrator gets one.
  */

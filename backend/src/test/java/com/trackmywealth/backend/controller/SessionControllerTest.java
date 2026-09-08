@@ -67,7 +67,7 @@ class SessionControllerTest {
         Statement statement = connection.createStatement()) {
       statement.execute(
           "TRUNCATE TABLE admin_audit_log, user_session, refresh_token, app_user,"
-              + " household_member, financial_institution, household RESTART IDENTITY CASCADE");
+              + " workspace_member, financial_institution, workspace RESTART IDENTITY CASCADE");
     }
   }
 
@@ -271,7 +271,7 @@ class SessionControllerTest {
         .uri("/api/v1/setup/administrator")
         .header("User-Agent", deviceLabel)
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Household", "CHF"))
+        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "Test Workspace", "CHF"))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

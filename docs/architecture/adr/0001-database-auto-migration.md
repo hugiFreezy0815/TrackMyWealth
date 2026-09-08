@@ -73,9 +73,9 @@ topologies run the identical application, database schema and migration path; NF
   review discipline for future migrations, not something the tooling enforces automatically.
 - Row-level security (`V20__tenancy_row_level_security.sql`) is enabled with `FORCE ROW LEVEL
   SECURITY`. In this scaffold, the same database role runs both migrations and the running
-  application, which is adequate for local development and for a single-household self-hosted
+  application, which is adequate for local development and for a single-workspace self-hosted
   deployment, but should be split into a migration-owner role and a lower-privilege runtime role
-  before a multi-household hosted deployment goes live - see the commented-out role split at the
+  before a multi-workspace hosted deployment goes live - see the commented-out role split at the
   bottom of that migration file and `docs/architecture/database-schema.md`.
 
 ## Alternatives considered

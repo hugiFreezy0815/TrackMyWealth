@@ -6,9 +6,9 @@ Covers `account` and its extension tables (V4, V5). Section 10, FR-ACC-*, G1-G6.
 
 ## US-05-01 — Create an account of any supported type under a container
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-ACC-001/002, G1/G3.
-**Story:** As a household member, I want to create an account of any supported type (cash,
+**Story:** As a workspace member, I want to create an account of any supported type (cash,
 savings, securities, managed mandate, pension, vested benefits, credit card, mortgage, loan,
 crypto, custom asset) under a chosen institution, so that every real-world product I hold is
 representable.
@@ -26,11 +26,11 @@ representable.
   `nature` is correctly `ASSET` or `LIABILITY` per the `GENERATED ALWAYS AS` column (DB-12).
 **Applicable business rules:** FR-ACC-001/002/010/012/013, G1-G4, DB-09..12.
 **Data requirements:** `name`, `account_type`, `native_currency` required;
-`financial_institution_id` must belong to the caller's household.
+`financial_institution_id` must belong to the caller's workspace.
 **Error/edge cases:** Attempting to create an account with no `financial_institution_id` must be
-rejected (C2 — every account has exactly one container; use the household's Personal Assets
+rejected (C2 — every account has exactly one container; use the workspace's Personal Assets
 container as the default when the user has not chosen one, per FR-INS-011).
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** EPIC 04.
 **Priority:** MUST.
 **Definition of Done:** Parameterised integration test creates one account of every
@@ -41,9 +41,9 @@ container as the default when the user has not chosen one, per FR-INS-011).
 
 ## US-05-02 — Account type is immutable after creation
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-ACC-005/G5.
-**Story:** As a household member, I want the system to prevent me from changing an account's type
+**Story:** As a workspace member, I want the system to prevent me from changing an account's type
 after creation, and instead guide me to close-and-recreate with an explicit migration, so that
 historical figures computed under the old type are never silently reinterpreted.
 **Preconditions:** An existing account.
@@ -58,7 +58,7 @@ historical figures computed under the old type are never silently reinterpreted.
 **Applicable business rules:** FR-ACC-005, G5, DB-11.
 **Data requirements:** None.
 **Error/edge cases:** None beyond the above.
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** US-05-01.
 **Priority:** MUST.
 **Definition of Done:** Integration test attempts the forbidden update and asserts a structured
@@ -69,9 +69,9 @@ historical figures computed under the old type are never silently reinterpreted.
 
 ## US-05-03 — Archive and restore an account without losing history
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-ACC-003/006, FR-LIF-005, FR-STA-001.
-**Story:** As a household member, I want to archive a closed account, so that it disappears from
+**Story:** As a workspace member, I want to archive a closed account, so that it disappears from
 current totals and selection lists but remains fully present in every historical report covering
 the period it was active.
 **Preconditions:** An existing `ACTIVE` account.
@@ -88,7 +88,7 @@ the period it was active.
 **Data requirements:** None.
 **Error/edge cases:** Archiving an account with an open reconciliation difference — allowed, but
 the difference stays visible in history rather than being silently dropped.
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** US-05-01.
 **Priority:** MUST.
 **Definition of Done:** Integration test archives, verifies exclusion from current totals and
@@ -136,13 +136,13 @@ service layer must perform (positions may only be recorded for an account with
 
 ## US-05-05 — Custom asset with dated manual valuations
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-NW-003/004, section 10 custom-asset row (real estate, vehicles, precious
 metals, collectibles).
-**Story:** As a household member, I want to record a custom asset (e.g. a car or jewellery) with
+**Story:** As a workspace member, I want to record a custom asset (e.g. a car or jewellery) with
 a manually entered, dated valuation, so that it contributes to net worth even though no
 institution or market price exists for it.
-**Preconditions:** A `CUSTOM_ASSET` account exists under an institution (typically the household's
+**Preconditions:** A `CUSTOM_ASSET` account exists under an institution (typically the workspace's
 Personal Assets container).
 **Acceptance criteria:**
 - Given a new custom asset, when a valuation is entered for today's date, then a
@@ -155,7 +155,7 @@ Personal Assets container).
 **Data requirements:** `valuation_date`, `value`, `currency` required.
 **Error/edge cases:** No valuation has ever been entered — the account's value must be shown as
 unknown/estimated rather than zero (PR-011), never silently treated as €0 net worth.
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** US-05-01.
 **Priority:** MUST.
 **Definition of Done:** Integration test enters two valuations at different dates and asserts

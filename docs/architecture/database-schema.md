@@ -21,7 +21,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | The ledger is append-only | RULE-024, FR-TRX-007 | `transaction` has a `BEFORE UPDATE` trigger that rejects any change to a financial field; corrections are void-and-replace |
 | A Snapshot and a Transaction are different things | RULE-025, FR-REC-001 | `account_snapshot`/`snapshot_holding` vs `transaction` are separate tables; `reconciliation_result` compares the two |
 | Everything derived is rebuildable from source | FR-DAT-008 | `position`, `tax_lot`, `daily_valuation` are all documented as rebuild targets, never written to directly by an API request |
-| Tenant isolation is enforced in the database | FR-TEN-003 | PostgreSQL row-level security on every household-scoped table (`V20`), not just service-layer filtering |
+| Tenant isolation is enforced in the database | FR-TEN-003 | PostgreSQL row-level security on every workspace-scoped table (`V20`), not just service-layer filtering |
 | A user override is never silently overwritten | RULE-031 | Provenance tables (`security_field_provenance`, `transaction_categorization_log`) record `is_user_override` and the refresh jobs must check it |
 | Estimates are always visibly marked | PR-011 | `is_estimated` columns on `position`, `daily_valuation`, `security_asset_class_weight`, `tax_lot`, `snapshot_holding` |
 
@@ -30,12 +30,12 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | File | Contents |
 |---|---|
 | `V1` | Extensions, `updated_at`/optimistic-locking trigger helpers |
-| `V2` | `household`, `household_member`, `app_user` (System User vs Household Member, RULE-018) |
+| `V2` | `workspace`, `workspace_member`, `app_user` (System User vs Workspace Member, RULE-018) |
 | `V3` | `institution_catalogue` (shared seed data) and `financial_institution` (the container) |
 | `V4` | `account` — the class-table-inheritance parent, capability flags, generated `nature` column |
 | `V5` | Account subtype extension tables: securities, credit card, mortgage, loan, pension, vested benefits, custom asset |
 | `V6` | `account_ownership` (dated, fractional) and `sharing_grant` (explicit, revocable) |
-| `V7` | Security Master: `issuer`, `security`, `security_identifier`, `security_asset_class_weight`, provenance and per-household overrides |
+| `V7` | Security Master: `issuer`, `security`, `security_identifier`, `security_asset_class_weight`, provenance and per-workspace overrides |
 | `V8` | `listing` (Security ≠ Listing, DM-26), `price` and `fx_rate` — both range-partitioned by date |
 | `V9` | `corporate_action` and successor linkage |
 | `V10` | `transaction` — the append-only ledger, with an idempotency unique index and a split-category table |
@@ -48,7 +48,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V17` | `financial_audit_log`, `admin_audit_log`, `auth_audit_log` — three separate audit surfaces by design |
 | `V18` | `reference_package`, `pension_scheme_rule`, `gics_structure_version`, `fallback_sector_taxonomy`, `trading_calendar` |
 | `V19` | Baseline reference-data seed (categories, institution catalogue, fallback taxonomy) — **must run before V20** |
-| `V20` | Row-level security: `current_household_id()`, per-table policies, the household bootstrap sequence |
+| `V20` | Row-level security: `current_workspace_id()`, per-table policies, the workspace bootstrap sequence |
 | `V21` | Fixes `trg_transaction_append_only` (V10) to also cover `fee_amount`/`fx_rate_to_account_currency`/`fx_rate_date`, which the original trigger omitted |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
@@ -62,7 +62,7 @@ non-superuser role); see the commit history for the fixes that came out of that 
 
 `V90` (Quartz's own job-store schema) is deliberately numbered far above the domain migrations so
 it reads as visually distinct framework-owned schema rather than another `V21`, `V22`, ... in the
-same sequence as `household`/`account`/`transaction`. That only works because
+same sequence as `workspace`/`account`/`transaction`. That only works because
 `spring.flyway.out-of-order` is `true` (`application.yml`): once `V90` has been applied to a
 database, Flyway's default (`out-of-order: false`) would refuse every subsequent domain migration
 numbered below it (`V21`-`V89`) as "not applied in order." `V21` (the append-only trigger fix
@@ -104,32 +104,30 @@ specific bug DM-12 calls out ("a mortgage being added to rather than subtracted 
 
 ## 4. Tenancy enforcement
 
-The isolation boundary is the household (FR-TEN-001). Every household-scoped table carries a
-`household_id` column and a row-level-security policy comparing it to a PostgreSQL session
-variable, `app.current_household_id`, set once per request/transaction by the application via
-`SELECT set_config('app.current_household_id', ?, true)` — the `true` (is_local) argument scopes
+The isolation boundary is the workspace (FR-TEN-001). Every workspace-scoped table carries a
+`workspace_id` column and a row-level-security policy comparing it to a PostgreSQL session
+variable, `app.current_workspace_id`, set once per request/transaction by the application via
+`SELECT set_config('app.current_workspace_id', ?, true)` — the `true` (is_local) argument scopes
 it to the current transaction, so it can never leak across two requests sharing a pooled
 connection. `FORCE ROW LEVEL SECURITY` is set on every one of those tables so that even an
 elevated database role is bound by policy (NFR-DEP-004 — a deployment believed to have one
-household is not permitted to relax any control).
+workspace is not permitted to relax any control).
 
-The actual mechanism is `com.trackmywealth.backend.config.HouseholdContextTransactionExecutionListener`
-(US-28-01, see `docs/architecture/adr/0002-household-context-propagation.md`) — not
-`HouseholdContextExample`, the placeholder name `V20__tenancy_row_level_security.sql`'s own header
-comment still references. That migration is already applied and immutable (Flyway checksums its content; see
-`docs/architecture/development-standards.md`'s "an already-applied migration is never edited"
-rule), so the stale name can't be corrected in place — this note is the pointer to the real class
-for anyone who follows that comment and finds nothing under the name it gives.
+The actual mechanism is `com.trackmywealth.backend.config.WorkspaceContextTransactionExecutionListener`
+(US-28-01, see `docs/architecture/adr/0002-workspace-context-propagation.md`) — `V20__tenancy_row_level_security.sql`'s
+own header comment now names it directly (originally a placeholder forward-reference predating the
+class's own implementation, corrected in place under the household→workspace rename's one-time
+exception to the "never edit an applied migration" rule - see `development-standards.md`).
 
-Tables that hang off a household-scoped table but do not carry `household_id` directly
+Tables that hang off a workspace-scoped table but do not carry `workspace_id` directly
 (`account_credit_card`, `tax_lot`, `price`, `snapshot_holding`, ...) are protected **transitively**
 through a join to `account`/`security`/`account_snapshot`. `security`, `listing`, `price`,
 `fx_rate`, `issuer`, `institution_catalogue` and the reference-data tables in `V18` carry **no**
-`household_id` at all and are **not** RLS-protected — this is deliberate: they are shared,
+`workspace_id` at all and are **not** RLS-protected — this is deliberate: they are shared,
 global reference data (DM-25, NFR-LIC-006/007), not tenant data.
 
 **Production hardening not yet wired up:** this scaffold runs migrations and the application
-under the same database role for local-development simplicity. Before a multi-household hosted
+under the same database role for local-development simplicity. Before a multi-workspace hosted
 deployment goes live, split this into a migration-owner role (used only by Flyway, at deploy
 time) and a `NOSUPERUSER`, non-owner runtime role (used only by the running application, granted
 `SELECT/INSERT/UPDATE/DELETE` but not `CREATEDB`/`ALTER`) — the commented-out template at the
@@ -167,7 +165,7 @@ Post-MVP list (section 38) and open decisions (section 42):
   is present as free-text columns pending **OPEN-007/D12** (exact SNB taxonomy TBD).
 - **GICS/constituent look-through data licensing** (OPEN-006/OPEN-019) — the schema supports it
   (`gics_sub_industry_code`, `fallback_sector_taxonomy`) but no license is assumed.
-- **Household splitting** (section 53) is not built, but `account_ownership`/`sharing_grant` are
+- **Workspace splitting** (section 53) is not built, but `account_ownership`/`sharing_grant` are
   already dated relations rather than static columns specifically so it can be added later
   without rewriting history (FR-HHL-001..005).
 - **User-facing data export** (OOS-008) is out of scope per the specification; the schema

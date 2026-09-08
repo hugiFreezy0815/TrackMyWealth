@@ -15,7 +15,7 @@
 --   * Timestamps are TIMESTAMPTZ; calendar-bound financial dates (trade date, booking date,
 --     value date) are DATE. Mixing the two is called out repeatedly in the requirements as a
 --     source of off-by-one errors (DB-03, NFR-TEC-002).
---   * household_id is the tenant column on every household-scoped table and is enforced by
+--   * workspace_id is the tenant column on every workspace-scoped table and is enforced by
 --     row-level security, not by application code alone (FR-TEN-001..003) - see
 --     V19__tenancy_row_level_security.sql.
 --   * PostgreSQL table inheritance (INHERITS) is never used (DB-13). Where the requirements

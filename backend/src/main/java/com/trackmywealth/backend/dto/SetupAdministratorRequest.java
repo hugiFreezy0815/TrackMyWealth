@@ -15,5 +15,5 @@ public record SetupAdministratorRequest(
     @NotBlank @Email String email,
     // FR-AUT-007: minimum-length-led policy, not composition rules.
     @NotBlank @Size(min = 12) String password,
-    @NotBlank String householdName,
+    @NotBlank String workspaceName,
     @NotBlank @Pattern(regexp = "[A-Z]{3}") String currencyCode) {}
