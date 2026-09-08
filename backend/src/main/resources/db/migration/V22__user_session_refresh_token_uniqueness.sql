@@ -12,5 +12,4 @@
 -- treats NULLs as distinct for uniqueness purposes.
 -- =============================================================================================
 
-ALTER TABLE user_session
-    ADD CONSTRAINT uq_user_session_refresh_token_id UNIQUE (refresh_token_id);
+ALTER TABLE user_session ADD CONSTRAINT uq_user_session_refresh_token_id UNIQUE (refresh_token_id);
