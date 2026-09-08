@@ -5,10 +5,13 @@ import com.trackmywealth.backend.dto.EditUserRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.entity.AdminAuditLog;
 import com.trackmywealth.backend.entity.AppUser;
+import com.trackmywealth.backend.entity.Workspace;
+import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AdminAuditLogRepository;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.RefreshTokenRepository;
 import com.trackmywealth.backend.repository.UserSessionRepository;
+import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -23,9 +26,19 @@ import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * US-02-01: administrator-driven user lifecycle management. Deliberately touches only {@code
- * app_user}/{@code refresh_token}/{@code admin_audit_log} - never a workspace-scoped table, per
- * FR-TEN-007's separation between administration rights and financial-data access.
+ * US-02-01: administrator-driven user lifecycle management. Edit/disable/reactivate deliberately
+ * touch only {@code app_user}/{@code refresh_token}/{@code admin_audit_log} - never a
+ * workspace-scoped table, per FR-TEN-007's separation between administration rights and
+ * financial-data access.
+ *
+ * <p>{@link #createUser} is the one deliberate, narrow exception: every login-capable person needs
+ * both an {@code app_user} row (authentication) and a {@code workspace_member} row (financial-data
+ * ownership, RULE-018) - {@code SetupService} creates both together for the bootstrap
+ * administrator, and this mirrors that for every user created afterward (#47). Without it, the new
+ * user authenticates successfully but {@code app.current_workspace_id} never resolves for their
+ * requests ({@code WorkspaceContextTransactionExecutionListener}), so every workspace-scoped table
+ * denies them by default - a strictly worse outcome for FR-TEN-007 than creating an identity/
+ * membership stub row that carries no financial transaction data of its own.
  */
 @Service
 public class AdminUserService {
@@ -38,6 +51,7 @@ public class AdminUserService {
   private static final long MINIMUM_ACTIVE_ADMINISTRATORS = 1;
 
   private final AppUserRepository appUserRepository;
+  private final WorkspaceMemberRepository workspaceMemberRepository;
   private final RefreshTokenRepository refreshTokenRepository;
   private final UserSessionRepository userSessionRepository;
   private final AdminAuditLogRepository adminAuditLogRepository;
@@ -46,12 +60,14 @@ public class AdminUserService {
 
   public AdminUserService(
       AppUserRepository appUserRepository,
+      WorkspaceMemberRepository workspaceMemberRepository,
       RefreshTokenRepository refreshTokenRepository,
       UserSessionRepository userSessionRepository,
       AdminAuditLogRepository adminAuditLogRepository,
       PasswordEncoder passwordEncoder,
       ObjectMapper objectMapper) {
     this.appUserRepository = appUserRepository;
+    this.workspaceMemberRepository = workspaceMemberRepository;
     this.refreshTokenRepository = refreshTokenRepository;
     this.userSessionRepository = userSessionRepository;
     this.adminAuditLogRepository = adminAuditLogRepository;
@@ -62,11 +78,28 @@ public class AdminUserService {
   @Transactional
   public UserSummaryResponse createUser(CreateUserRequest request, UUID actorUserId) {
     assertEmailAvailable(request.email());
+
+    // The acting administrator's own workspace, not a fresh lookup of "the" workspace: `workspace`
+    // itself is RLS-scoped by its own id (V20's tenant_isolation_read policy), so a blind query
+    // would return zero rows unless app.current_workspace_id already equals it - which it does
+    // here only because WorkspaceContextTransactionExecutionListener already resolved it from
+    // this same actor's own authenticated principal before this method ever ran. Navigating the
+    // actor's already-loaded association reuses that same value rather than re-deriving it.
+    Workspace workspace = actorWorkspaceOrThrow(actorUserId);
+    WorkspaceMember member = new WorkspaceMember();
+    member.setWorkspace(workspace);
+    // No display-name field exists on this request - same fallback SetupService uses for the
+    // bootstrap administrator's own member row.
+    member.setDisplayName(request.email().split("@", 2)[0]);
+    member.setDependent(false);
+    member = workspaceMemberRepository.save(member);
+
     AppUser user = new AppUser();
     user.setEmail(request.email());
     user.setPasswordHash(passwordEncoder.encode(request.password()));
     user.setRole(request.role());
     user.setLanguage(request.language());
+    user.setWorkspaceMember(member);
     user = saveOrRejectDuplicateEmail(user);
 
     writeAuditLog(actorUserId, "USER_CREATED", user.getId(), Map.of("role", request.role()));
@@ -148,6 +181,20 @@ public class AdminUserService {
 
     writeAuditLog(actorUserId, "USER_REACTIVATED", targetUserId, null);
     return toSummary(target);
+  }
+
+  private Workspace actorWorkspaceOrThrow(UUID actorUserId) {
+    WorkspaceMember actorMember =
+        appUserRepository.findById(actorUserId).map(AppUser::getWorkspaceMember).orElse(null);
+    if (actorMember == null) {
+      // Only reachable for an administrator created before this fix landed (or the pre-fix
+      // bootstrap-only administrator's own account somehow losing its link) - no such state can
+      // arise going forward, and no persistent deployment predates this fix.
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "Acting administrator has no workspace of their own to link the new user to.");
+    }
+    return actorMember.getWorkspace();
   }
 
   private void assertEmailAvailable(String email) {
