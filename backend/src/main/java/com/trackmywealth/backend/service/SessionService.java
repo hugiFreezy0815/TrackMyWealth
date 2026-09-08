@@ -8,28 +8,33 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * US-02-03: list and revoke the caller's own {@code user_session} rows. Every lookup here is scoped
  * to the caller's own {@code userId} in the query itself (FR-TEN-006/FR-AUT-002: a session
- * belonging to someone else must look exactly like a nonexistent one, never a distinguishable 403).
+ * belonging to someone else must look exactly like a nonexistent one, never a distinguishable 403)
+ * - and, per US-28-02, that denial is routed through {@link AuthorizationDenialAuditService} so
+ * it's logged the same uniform way every other object-level authorization denial will be.
  */
 @Service
 public class SessionService {
 
   private static final String ACTIVE = "ACTIVE";
+  private static final String USER_SESSION_ENTITY_TYPE = "UserSession";
 
   private final UserSessionRepository userSessionRepository;
   private final RefreshTokenRepository refreshTokenRepository;
+  private final AuthorizationDenialAuditService authorizationDenialAuditService;
 
   public SessionService(
-      UserSessionRepository userSessionRepository, RefreshTokenRepository refreshTokenRepository) {
+      UserSessionRepository userSessionRepository,
+      RefreshTokenRepository refreshTokenRepository,
+      AuthorizationDenialAuditService authorizationDenialAuditService) {
     this.userSessionRepository = userSessionRepository;
     this.refreshTokenRepository = refreshTokenRepository;
+    this.authorizationDenialAuditService = authorizationDenialAuditService;
   }
 
   public List<SessionSummaryResponse> listSessions(UUID callerUserId, UUID callerSessionId) {
@@ -52,7 +57,10 @@ public class SessionService {
     UserSession session =
         userSessionRepository
             .findByIdAndUser_Id(sessionId, callerUserId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+            .orElseThrow(
+                () ->
+                    authorizationDenialAuditService.denyAsNotFound(
+                        callerUserId, USER_SESSION_ENTITY_TYPE, sessionId));
 
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
     // Revokes whichever refresh token the session CURRENTLY points at (read inside the same

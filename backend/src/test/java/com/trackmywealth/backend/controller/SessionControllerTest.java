@@ -10,10 +10,15 @@ import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SessionSummaryResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.entity.AuthorizationDenialLog;
+import com.trackmywealth.backend.repository.AuthorizationDenialLogRepository;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -60,14 +65,16 @@ class SessionControllerTest {
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
+  @Autowired AuthorizationDenialLogRepository authorizationDenialLogRepository;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE admin_audit_log, user_session, refresh_token, app_user,"
-              + " workspace_member, financial_institution, workspace RESTART IDENTITY CASCADE");
+          "TRUNCATE TABLE authorization_denial_log, admin_audit_log, user_session, refresh_token,"
+              + " app_user, workspace_member, financial_institution, workspace RESTART IDENTITY"
+              + " CASCADE");
     }
   }
 
@@ -212,6 +219,78 @@ class SessionControllerTest {
   }
 
   @Test
+  void revokingAnotherUsersSessionWritesAnAuthorizationDenialLogRow() throws Exception {
+    String adminToken = bootstrapAdministrator("admin-device");
+    createStandardUser(adminToken, "charlie@example.com");
+    AuthTokensResponse charlieTokens = login("charlie@example.com", "charlie-device");
+    UUID charlieSessionId = onlySessionWith(charlieTokens.accessToken(), "charlie-device").id();
+    UUID adminUserId = userIdByEmail("admin@example.com");
+
+    revoke(adminToken, charlieSessionId).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+
+    List<AuthorizationDenialLog> denials = denialLogsFor(charlieSessionId);
+    assertThat(denials).hasSize(1);
+    assertThat(denials.get(0).getPrincipalUserId()).isEqualTo(adminUserId);
+    assertThat(denials.get(0).getRequestedEntityType()).isEqualTo("UserSession");
+    assertThat(denials.get(0).getReason()).isEqualTo("NOT_FOUND");
+  }
+
+  @Test
+  void revokingAGenuinelyNonexistentSessionWritesTheSameKindOfDenialLogRow() throws Exception {
+    String adminToken = bootstrapAdministrator("admin-device");
+    UUID adminUserId = userIdByEmail("admin@example.com");
+    UUID nonexistentSessionId = UUID.randomUUID();
+
+    revoke(adminToken, nonexistentSessionId).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+
+    List<AuthorizationDenialLog> denials = denialLogsFor(nonexistentSessionId);
+    assertThat(denials).hasSize(1);
+    assertThat(denials.get(0).getPrincipalUserId()).isEqualTo(adminUserId);
+    assertThat(denials.get(0).getRequestedEntityType()).isEqualTo("UserSession");
+    // Same reason as the cross-user case above, deliberately: a caller-visible (or even
+    // audit-log-visible) distinction between "not yours" and "doesn't exist" is exactly what
+    // FR-TEN-006 forbids.
+    assertThat(denials.get(0).getReason()).isEqualTo("NOT_FOUND");
+  }
+
+  @Test
+  void nonexistentAndCrossUserSessionRevokesAreIndistinguishableInTiming() {
+    String adminToken = bootstrapAdministrator("admin-device");
+    createStandardUser(adminToken, "charlie@example.com");
+    AuthTokensResponse charlieTokens = login("charlie@example.com", "charlie-device");
+    UUID charlieSessionId = onlySessionWith(charlieTokens.accessToken(), "charlie-device").id();
+
+    // Warm-up so JIT/connection-pool startup cost doesn't skew the very first measured calls.
+    timeRevoke(adminToken, UUID.randomUUID());
+    timeRevoke(adminToken, charlieSessionId);
+
+    int iterations = 20;
+    List<Duration> nonexistentTimings = new ArrayList<>();
+    List<Duration> crossUserTimings = new ArrayList<>();
+    for (int i = 0; i < iterations; i++) {
+      nonexistentTimings.add(timeRevoke(adminToken, UUID.randomUUID()));
+      crossUserTimings.add(timeRevoke(adminToken, charlieSessionId));
+    }
+
+    double nonexistentAvgMillis = averageMillis(nonexistentTimings);
+    double crossUserAvgMillis = averageMillis(crossUserTimings);
+
+    // FR-TEN-006's "indistinguishable... in response and in timing": both paths run the exact
+    // same code (a single scoped SELECT that finds zero rows either way, then the identical
+    // denial-audit write and 404), so their timing should be close by construction, not because
+    // of artificial padding. A 1ms floor keeps the ratio meaningful even when both averages are
+    // very small (sub-millisecond noise shouldn't blow up the ratio), and a generous 3x tolerance
+    // avoids flaking on a loaded CI runner while still catching a genuine future regression (e.g.
+    // an extra lookup added to only one of the two paths that would let a caller distinguish
+    // them).
+    double floorMillis = 1.0;
+    double ratio =
+        (Math.max(nonexistentAvgMillis, crossUserAvgMillis) + floorMillis)
+            / (Math.min(nonexistentAvgMillis, crossUserAvgMillis) + floorMillis);
+    assertThat(ratio).isLessThan(3.0);
+  }
+
+  @Test
   void listSessionsRequiresAuthentication() {
     listSessionsRaw(null).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
   }
@@ -222,6 +301,32 @@ class SessionControllerTest {
         .uri("/api/v1/sessions/" + sessionId + "/revoke")
         .header("Authorization", "Bearer " + accessToken)
         .exchange();
+  }
+
+  private Duration timeRevoke(String accessToken, UUID sessionId) {
+    Instant start = Instant.now();
+    revoke(accessToken, sessionId).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+    return Duration.between(start, Instant.now());
+  }
+
+  private double averageMillis(List<Duration> timings) {
+    return timings.stream().mapToLong(Duration::toNanos).average().orElseThrow() / 1_000_000.0;
+  }
+
+  private List<AuthorizationDenialLog> denialLogsFor(UUID requestedEntityId) {
+    return authorizationDenialLogRepository.findByRequestedEntityId(requestedEntityId);
+  }
+
+  private UUID userIdByEmail(String email) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("SELECT id FROM app_user WHERE email = ?")) {
+      statement.setString(1, email);
+      try (ResultSet rs = statement.executeQuery()) {
+        assertThat(rs.next()).isTrue();
+        return (UUID) rs.getObject("id");
+      }
+    }
   }
 
   private List<SessionSummaryResponse> listSessions(String accessToken) {
