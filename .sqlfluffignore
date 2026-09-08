@@ -3,12 +3,16 @@
 # reproducible from that source rather than being reformatted.
 backend/src/main/resources/db/migration/V90__quartz_schema.sql
 
-# V1-V21 predate the household->workspace rename (see git history) and were never sqlfluff-clean
-# to begin with - the CI sql-lint job only ever lints new/changed migrations (see its own comment
-# in backend-ci.yml), so these were never actually checked before this refactor touched their
-# bytes via a pure find-and-replace. Bringing them up to the current style would mean reformatting
-# ~19 files' column alignment as an unrelated side effect of a naming rename - out of scope and
-# genuinely risky for files this size. New migrations (V22 onward) are still linted in full.
+# V1-V21 predate this project's sql-lint CI gate and were never sqlfluff-clean to begin with - the
+# gate only ever lints new/changed migrations (see its own comment in backend-ci.yml), so these
+# were never actually checked. 16 of them (V1-V4, V6, V7, V10-V15, V17-V20) had their bytes touched
+# by the household->workspace rename's find-and-replace (see git history); V5, V8, V9, V16 and V21
+# did not (no "household" text ever existed in them) and are listed here only so a rename-adjacent
+# PR touching one of them for an unrelated reason doesn't unexpectedly trip ~150 pre-existing
+# formatting violations (column-alignment padding, long lines, etc.) that have nothing to do with
+# that PR. Bringing all of these up to the current style would mean reformatting ~19 files' column
+# alignment - out of scope for a naming rename and genuinely risky for files this size. New
+# migrations (V22 onward) are still linted in full.
 backend/src/main/resources/db/migration/V1__extensions_and_conventions.sql
 backend/src/main/resources/db/migration/V2__workspace_and_users.sql
 backend/src/main/resources/db/migration/V3__financial_institution.sql

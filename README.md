@@ -193,7 +193,7 @@ to build. The web app is real and independently deployable (static export, own C
 is exactly the mobile scaffold's screens reflowed into a browser, not a web-native layout — that's
 a deliberate simplification, not yet revisited.
 
-Deployment target is self-hosted, single-household (a laptop or a home NAS) — not a multi-tenant
+Deployment target is self-hosted, single-workspace (a laptop or a home NAS) — not a multi-tenant
 hosted service, per current scope. `docker compose up -d --build` runs the whole backend + database
 stack this way today, verified end-to-end (built the image, started both containers, confirmed
 `/actuator/health` returns `200 UP` through the containerized backend talking to the containerized

@@ -35,8 +35,8 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   // degrade to sessionStatus == null (treated as "not authenticated"), not a query failure.
   @Query(
       "SELECT new com.trackmywealth.backend.security.AppUserAuthSnapshot("
-          + "u.id, u.role, u.status, u.tokenVersion, h.id, s.status) "
-          + "FROM AppUser u LEFT JOIN u.workspaceMember hm LEFT JOIN hm.workspace h "
+          + "u.id, u.role, u.status, u.tokenVersion, w.id, s.status) "
+          + "FROM AppUser u LEFT JOIN u.workspaceMember wm LEFT JOIN wm.workspace w "
           + "LEFT JOIN UserSession s ON s.user = u AND s.id = :sessionId "
           + "WHERE u.id = :userId")
   Optional<AppUserAuthSnapshot> findAuthSnapshot(

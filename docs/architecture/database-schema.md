@@ -114,12 +114,10 @@ elevated database role is bound by policy (NFR-DEP-004 — a deployment believed
 workspace is not permitted to relax any control).
 
 The actual mechanism is `com.trackmywealth.backend.config.WorkspaceContextTransactionExecutionListener`
-(US-28-01, see `docs/architecture/adr/0002-workspace-context-propagation.md`) — not
-`WorkspaceContextExample`, the placeholder name `V20__tenancy_row_level_security.sql`'s own header
-comment still references. That migration is already applied and immutable (Flyway checksums its content; see
-`docs/architecture/development-standards.md`'s "an already-applied migration is never edited"
-rule), so the stale name can't be corrected in place — this note is the pointer to the real class
-for anyone who follows that comment and finds nothing under the name it gives.
+(US-28-01, see `docs/architecture/adr/0002-workspace-context-propagation.md`) — `V20__tenancy_row_level_security.sql`'s
+own header comment now names it directly (originally a placeholder forward-reference predating the
+class's own implementation, corrected in place under the household→workspace rename's one-time
+exception to the "never edit an applied migration" rule - see `development-standards.md`).
 
 Tables that hang off a workspace-scoped table but do not carry `workspace_id` directly
 (`account_credit_card`, `tax_lot`, `price`, `snapshot_holding`, ...) are protected **transitively**

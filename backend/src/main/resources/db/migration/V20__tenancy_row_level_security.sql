@@ -10,7 +10,7 @@
 -- Mechanism: every workspace-scoped table gets an RLS policy comparing its workspace_id column
 -- against the PostgreSQL session variable `app.current_workspace_id`. The application sets this
 -- variable once per request/transaction (see
--- com.trackmywealth.backend.config.WorkspaceContextExample for the pattern) using
+-- com.trackmywealth.backend.config.WorkspaceContextTransactionExecutionListener for the pattern) using
 -- `SELECT set_config('app.current_workspace_id', ?, true)` - the `true` makes it
 -- transaction-local, so it can never leak between two requests sharing a pooled connection.
 --

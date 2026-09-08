@@ -652,7 +652,7 @@ Confirmed in scope. Implemented as jurisdiction rule plugins (DM-07).
 | FR-USR-02 | TOTP MFA | M |
 | FR-USR-03 | Optional OIDC/SSO (relevant for self-host and B2B; Ghostfolio's precedent) | C |
 | FR-USR-04 | App-level PIN/biometric lock on mobile | S |
-| FR-USR-05 | Household/shared household with roles: owner, member, view-only | S |
+| FR-USR-05 | Household/shared workspace with roles: owner, member, view-only | S |
 | FR-USR-06 | Read-only share link for a portfolio, with configurable masking of absolute values | S |
 | FR-NOT-01 | Configurable notifications: daily/weekly summary, budget threshold, dividend received, connector failure, 3a deadline | S |
 | FR-NOT-02 | Notifications must be individually disableable; no dark-pattern engagement loops | M |
