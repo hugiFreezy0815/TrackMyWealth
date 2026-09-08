@@ -55,28 +55,34 @@ public class SessionService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-    userSessionRepository.revokeById(session.getId(), now);
     // Revokes whichever refresh token the session CURRENTLY points at (read inside the same
     // statement), not session.getRefreshToken().getId() captured before this method's own
     // updates - a concurrent /auth/refresh rotating this same session between the load above and
     // here would otherwise leave the token it just issued un-revoked while this call kills only
     // the now-superseded one, so the session would show REVOKED while its refresh-token family
     // kept working.
+    //
+    // Deliberately revokes the refresh_token row BEFORE the user_session row - the same order
+    // TokenRotationService.rotate() locks them in (its refresh_token update, then its
+    // user_session repoint). A concurrent rotate() and revoke() on the same session otherwise
+    // lock these two rows in opposite order and deadlock (Postgres aborts one side with an
+    // unhandled 500) - confirmed by reproducing the exact interleaving during review. Lock
+    // ordering must stay consistent with rotate() if either method's statement order ever
+    // changes again.
     refreshTokenRepository.revokeCurrentTokenForSession(session.getId(), now);
+    userSessionRepository.revokeById(session.getId(), now);
 
-    return toSummary(session, "REVOKED", callerSessionId);
+    // Not persisted - session is never save()'d again in this method - just reused to build the
+    // response without a second, near-identical toSummary() overload.
+    session.setStatus("REVOKED");
+    return toSummary(session, callerSessionId);
   }
 
   private SessionSummaryResponse toSummary(UserSession session, UUID callerSessionId) {
-    return toSummary(session, session.getStatus(), callerSessionId);
-  }
-
-  private SessionSummaryResponse toSummary(
-      UserSession session, String status, UUID callerSessionId) {
     return new SessionSummaryResponse(
         session.getId(),
         session.getDeviceLabel(),
-        status,
+        session.getStatus(),
         session.getCreatedAt(),
         session.getLastSeenAt(),
         session.getId().equals(callerSessionId));
