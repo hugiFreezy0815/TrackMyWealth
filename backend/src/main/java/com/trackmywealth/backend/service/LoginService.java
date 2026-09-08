@@ -68,6 +68,16 @@ public class LoginService {
       throw invalidCredentials();
     }
 
+    // Checked - and rejected generically, without ever comparing the real password hash - before
+    // the lockout/password checks below: a disabled account must never become a password-validity
+    // oracle. Reaching a status-specific error only after the real hash comparison would let a
+    // caller who already has (or is brute-forcing) the password confirm it was correct purely
+    // from the response differing for a disabled account.
+    if (!ACTIVE.equals(user.getStatus())) {
+      passwordEncoder.matches(request.password(), dummyPasswordHash);
+      throw invalidCredentials();
+    }
+
     if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(now())) {
       throw new ResponseStatusException(
           HttpStatus.LOCKED, "Account is temporarily locked. Try again later.");
@@ -76,10 +86,6 @@ public class LoginService {
     if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
       registerFailedAttempt(user);
       throw invalidCredentials();
-    }
-
-    if (!ACTIVE.equals(user.getStatus())) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account is disabled.");
     }
 
     registerSuccessfulLogin(user);
@@ -91,19 +97,20 @@ public class LoginService {
     return new LoginResponse(false, tokens);
   }
 
+  // Atomic increment (AppUserRepository.registerFailedLoginAttempt), not a save() of a mutated
+  // entity - AppUser carries a real @Version column, and two concurrent wrong-password attempts
+  // loading the same row would otherwise have one lose to an uncaught
+  // ObjectOptimisticLockingFailureException (a 500) instead of both correctly counting toward the
+  // lockout.
   private void registerFailedAttempt(AppUser user) {
-    user.setFailedLoginCount(user.getFailedLoginCount() + 1);
-    if (user.getFailedLoginCount() >= MAX_FAILED_ATTEMPTS_BEFORE_LOCKOUT) {
-      user.setLockedUntil(now().plus(LOCKOUT_DURATION));
-    }
-    appUserRepository.save(user);
+    appUserRepository.registerFailedLoginAttempt(
+        user.getId(), MAX_FAILED_ATTEMPTS_BEFORE_LOCKOUT, now().plus(LOCKOUT_DURATION));
   }
 
+  // Same reasoning as registerFailedAttempt above - an atomic reset rather than a save() that a
+  // concurrent login (e.g. two devices signing in at once) could lose to a version conflict.
   private void registerSuccessfulLogin(AppUser user) {
-    user.setFailedLoginCount(0);
-    user.setLockedUntil(null);
-    user.setLastLoginAt(now());
-    appUserRepository.save(user);
+    appUserRepository.registerSuccessfulLogin(user.getId(), now());
   }
 
   private ResponseStatusException invalidCredentials() {

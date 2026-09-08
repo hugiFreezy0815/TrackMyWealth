@@ -27,6 +27,22 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
   // - the plaintext itself is never persisted or queryable.
   Optional<RefreshToken> findByTokenHash(String tokenHash);
 
+  // US-02-02 refresh rotation: an atomic, conditional revoke rather than a read-then-save() of the
+  // loaded entity - two concurrent rotate() calls for the same still-valid token would otherwise
+  // both pass an in-memory "not yet revoked" check before either commits, both mint a child token,
+  // and silently fork the family (last-writer-wins on the plain save(), no exception, no theft
+  // flagged - exactly the reuse FR-AUT-004 exists to catch). The WHERE clause means only one
+  // concurrent caller can ever win; TokenRotationService treats the other one (0 rows affected) as
+  // a reuse attempt.
+  @Modifying
+  @Query(
+      "UPDATE RefreshToken r SET r.replacedByTokenId = :replacementTokenId, "
+          + "r.revokedAt = :revokedAt WHERE r.id = :id AND r.revokedAt IS NULL")
+  int markRotatedOutByIfStillActive(
+      @Param("id") UUID id,
+      @Param("replacementTokenId") UUID replacementTokenId,
+      @Param("revokedAt") OffsetDateTime revokedAt);
+
   // US-02-02 FR-AUT-004 theft detection: reuse of an already-rotated-away token invalidates every
   // token in its family, not just the reused one - a bulk update across the whole family rather
   // than fetch-then-loop, since sibling tokens (already revoked or not) never need to be loaded as
@@ -38,4 +54,14 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
           + "r.revokedAt = COALESCE(r.revokedAt, :revokedAt) WHERE r.familyId = :familyId")
   int markFamilyAsTheftSuspected(
       @Param("familyId") UUID familyId, @Param("revokedAt") OffsetDateTime revokedAt);
+
+  // US-02-01 reactivate: without this, a client that still holds its pre-disable refresh token
+  // and presents it again after reactivation would fall into TokenRotationService's reuse/"theft"
+  // branch (the token is legitimately already revoked from disable's own
+  // revokeAllActiveTokensForUser) - a spurious theft_suspected flag for what is really just a
+  // stale client needing to log in again. Only ever-revoked tokens are removed; a currently-active
+  // token can't exist for a disabled user in the first place (disable revokes all of them).
+  @Modifying
+  @Query("DELETE FROM RefreshToken r WHERE r.user.id = :userId AND r.revokedAt IS NOT NULL")
+  int deleteRevokedTokensForUser(@Param("userId") UUID userId);
 }

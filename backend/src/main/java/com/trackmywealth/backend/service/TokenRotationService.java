@@ -69,10 +69,7 @@ public class TokenRotationService {
       // Both are indistinguishable from here, so the safe response is the same either way: kill
       // every token in the family and force a fresh login.
       refreshTokenRepository.markFamilyAsTheftSuspected(current.getFamilyId(), now);
-      throw new ResponseStatusException(
-          HttpStatus.UNAUTHORIZED,
-          "Refresh token has already been used. All sessions in this family have been revoked -"
-              + " please log in again.");
+      throw refreshTokenAlreadyUsed();
     }
 
     if (current.getExpiresAt().isBefore(now)) {
@@ -89,8 +86,19 @@ public class TokenRotationService {
     next.setExpiresAt(now.plus(jwtProperties.refreshTokenTtlDays(), ChronoUnit.DAYS));
     RefreshToken savedNext = refreshTokenRepository.save(next);
 
-    current.markRotatedOutBy(savedNext.getId(), now);
-    refreshTokenRepository.save(current);
+    int rotated =
+        refreshTokenRepository.markRotatedOutByIfStillActive(
+            current.getId(), savedNext.getId(), now);
+    if (rotated == 0) {
+      // Lost a race: another transaction revoked `current` between the read above and this
+      // conditional update (a concurrent rotate() of the same token, or a concurrent
+      // theft-detection sweep). `savedNext` must not be left behind as an extra live token for
+      // this family, and the safe response to "this exact race just happened" is the same as any
+      // other reuse: kill the whole family.
+      refreshTokenRepository.delete(savedNext);
+      refreshTokenRepository.markFamilyAsTheftSuspected(current.getFamilyId(), now);
+      throw refreshTokenAlreadyUsed();
+    }
 
     userSessionRepository
         .findByRefreshToken_Id(current.getId())
@@ -108,5 +116,12 @@ public class TokenRotationService {
 
   private ResponseStatusException invalidRefreshToken() {
     return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token.");
+  }
+
+  private ResponseStatusException refreshTokenAlreadyUsed() {
+    return new ResponseStatusException(
+        HttpStatus.UNAUTHORIZED,
+        "Refresh token has already been used. All sessions in this family have been revoked -"
+            + " please log in again.");
   }
 }

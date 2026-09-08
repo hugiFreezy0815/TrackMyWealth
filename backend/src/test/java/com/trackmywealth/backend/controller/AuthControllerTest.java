@@ -21,6 +21,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -165,7 +170,7 @@ class AuthControllerTest {
   }
 
   @Test
-  void loginOnADisabledAccountIsForbidden() {
+  void loginOnADisabledAccountIsRejectedGenericallyEvenWithTheCorrectPassword() {
     String adminToken = bootstrapAdministrator();
     createStandardUser(adminToken, "charlie@example.com");
     AppUser charlie = onlyStandardUser();
@@ -178,6 +183,9 @@ class AuthControllerTest {
         .expectStatus()
         .isOk();
 
+    // Generic 401, the same as a wrong password or an unknown email - not a distinguishable 403 -
+    // so a disabled account's status is never confirmable from the response to a login attempt,
+    // even one using the account's real, correct password.
     client()
         .post()
         .uri("/api/v1/auth/login")
@@ -185,7 +193,36 @@ class AuthControllerTest {
         .body(new LoginRequest("charlie@example.com", "another-strong-password"))
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.FORBIDDEN);
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void reactivatingAUserDropsItsStaleRevokedTokensSoAReplayIsNotMisflaggedAsTheft() {
+    String adminToken = bootstrapAdministrator();
+    createStandardUser(adminToken, "charlie@example.com");
+    AuthTokensResponse charlieTokens = login("charlie@example.com", "another-strong-password");
+    AppUser charlie = onlyStandardUser();
+
+    client()
+        .post()
+        .uri("/api/v1/admin/users/" + charlie.getId() + "/disable")
+        .header("Authorization", "Bearer " + adminToken)
+        .exchange()
+        .expectStatus()
+        .isOk();
+    client()
+        .post()
+        .uri("/api/v1/admin/users/" + charlie.getId() + "/reactivate")
+        .header("Authorization", "Bearer " + adminToken)
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    // The client's old refresh token (revoked by disable) is gone entirely, not merely revoked -
+    // a plain "invalid token" 401, never the theft-flagged family-wide response reuse gets.
+    refresh(charlieTokens.refreshToken()).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    assertThat(refreshTokenRepository.findAll())
+        .noneMatch(token -> token.getUser().getId().equals(charlie.getId()));
   }
 
   @Test
@@ -248,6 +285,40 @@ class AuthControllerTest {
   @Test
   void refreshWithAnUnknownTokenIsRejected() {
     refresh("not-a-real-refresh-token").expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void concurrentRefreshOfTheSameTokenOnlyEverLetsOneWinAndStillKillsTheWholeFamily()
+      throws Exception {
+    bootstrapAdministrator();
+    AuthTokensResponse initial = login("admin@example.com", PASSWORD);
+    UUID familyId = familyIdOf(initial.refreshToken());
+
+    Callable<Integer> attempt =
+        () -> refresh(initial.refreshToken()).returnResult().getStatus().value();
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<Integer> first = executor.submit(attempt);
+      Future<Integer> second = executor.submit(attempt);
+      List<Integer> statusCodes =
+          List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
+
+      // Exactly one request wins the race; the loser is rejected as reuse - never two successes,
+      // which would mean the family silently forked (RefreshTokenRepository's atomic
+      // markRotatedOutByIfStillActive is what makes this deterministic rather than a coin flip
+      // dependent on statement timing).
+      assertThat(statusCodes)
+          .containsExactlyInAnyOrder(HttpStatus.OK.value(), HttpStatus.UNAUTHORIZED.value());
+
+      // Whichever one won, the whole family - including the token it just issued - is
+      // theft-suspected: a race on a valid token's single use is indistinguishable from an actual
+      // reuse attempt, so the safe response is the same either way.
+      assertThat(tokensInFamily(familyId))
+          .allSatisfy(token -> assertThat(token.isTheftSuspected()).isTrue());
+    } finally {
+      executor.shutdownNow();
+    }
   }
 
   @Test

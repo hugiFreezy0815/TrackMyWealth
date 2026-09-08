@@ -8,6 +8,7 @@ import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.repository.AdminAuditLogRepository;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.RefreshTokenRepository;
+import com.trackmywealth.backend.repository.UserSessionRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -38,6 +39,7 @@ public class AdminUserService {
 
   private final AppUserRepository appUserRepository;
   private final RefreshTokenRepository refreshTokenRepository;
+  private final UserSessionRepository userSessionRepository;
   private final AdminAuditLogRepository adminAuditLogRepository;
   private final PasswordEncoder passwordEncoder;
   private final ObjectMapper objectMapper;
@@ -45,11 +47,13 @@ public class AdminUserService {
   public AdminUserService(
       AppUserRepository appUserRepository,
       RefreshTokenRepository refreshTokenRepository,
+      UserSessionRepository userSessionRepository,
       AdminAuditLogRepository adminAuditLogRepository,
       PasswordEncoder passwordEncoder,
       ObjectMapper objectMapper) {
     this.appUserRepository = appUserRepository;
     this.refreshTokenRepository = refreshTokenRepository;
+    this.userSessionRepository = userSessionRepository;
     this.adminAuditLogRepository = adminAuditLogRepository;
     this.passwordEncoder = passwordEncoder;
     this.objectMapper = objectMapper;
@@ -127,6 +131,15 @@ public class AdminUserService {
     target.setFailedLoginCount(0);
     target.setLockedUntil(null);
     target = appUserRepository.save(target);
+
+    // Without this, a client that still holds its pre-disable refresh token and presents it after
+    // reactivation would fall into TokenRotationService's reuse/"theft" branch - the token really
+    // is already revoked (disable's own revokeAllActiveTokensForUser), but that's an expected,
+    // benign state here, not an attack; a spurious theft_suspected flag would only pollute any
+    // future monitoring built on that column. Sessions must be detached from those tokens first -
+    // user_session.refresh_token_id has its own FK, and a still-referenced row can't be deleted.
+    userSessionRepository.detachRevokedRefreshTokensForUser(targetUserId);
+    refreshTokenRepository.deleteRevokedTokensForUser(targetUserId);
 
     writeAuditLog(actorUserId, "USER_REACTIVATED", targetUserId, null);
     return toSummary(target);
