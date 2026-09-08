@@ -149,4 +149,65 @@ class SchemaConventionsTest {
         .as("FR-TEN-005: every domain table's primary key must include a UUID identifier column")
         .isEmpty();
   }
+
+  @Test
+  void everyUuidPrimaryKeyColumnDefaultsToGenRandomUuid() throws Exception {
+    // US-28-03's second acceptance criterion is stricter than "is UUID-typed": it must be UUIDv4
+    // (random), not a time-based (v1) variant that would leak creation order. gen_random_uuid()
+    // (pgcrypto pre-PG13, built into core from PG13 onward - see V1's extension comment) is
+    // documented by PostgreSQL to generate exactly that: "a version 4 (random) UUID." Pinning
+    // every UUID PK column's default to this one specific function is what actually verifies
+    // v4-ness at the schema level, rather than merely "some UUID."
+    //
+    // Excludes PK columns that are also a foreign key (e.g. account_securities.account_id,
+    // savings_rate_methodology.household_id - a "shared primary key" 1:1 extension table, or
+    // security_identifier.security_id as part of a composite PK): these don't generate a new
+    // identity, they inherit the referenced row's already-v4 UUID, so requiring their own
+    // gen_random_uuid() default would be wrong, not merely redundant.
+    String sql =
+        """
+        SELECT n.nspname AS schema, c.relname AS table_name, a.attname AS column_name,
+               pg_get_expr(ad.adbin, ad.adrelid) AS default_expr
+        FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(i.indkey)
+        JOIN pg_type t ON t.oid = a.atttypid
+        LEFT JOIN pg_attrdef ad ON ad.adrelid = c.oid AND ad.adnum = a.attnum
+        WHERE i.indisprimary
+          AND c.relkind IN ('r', 'p') -- 'p' = partitioned table
+          AND n.nspname = 'public'
+          AND t.typname = 'uuid'
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint fk
+            WHERE fk.conrelid = c.oid AND fk.contype = 'f' AND a.attnum = ANY(fk.conkey)
+          )
+        """;
+
+    List<String> offendingColumns = new ArrayList<>();
+    try (Statement stmt = connection.createStatement();
+        ResultSet rs = stmt.executeQuery(sql)) {
+      while (rs.next()) {
+        String defaultExpr = rs.getString("default_expr");
+        if (!"gen_random_uuid()".equals(defaultExpr)) {
+          offendingColumns.add(
+              rs.getString("schema")
+                  + "."
+                  + rs.getString("table_name")
+                  + "."
+                  + rs.getString("column_name")
+                  + " (default: "
+                  + defaultExpr
+                  + ")");
+        }
+      }
+    }
+
+    assertThat(offendingColumns)
+        .as(
+            "FR-TEN-005: every UUID primary key column must default to gen_random_uuid() (a"
+                + " version 4/random UUID), never a time-based or externally-supplied-only"
+                + " generator")
+        .isEmpty();
+  }
 }
