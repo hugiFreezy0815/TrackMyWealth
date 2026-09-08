@@ -110,9 +110,11 @@ public class TokenRotationService {
         userSessionRepository
             .findByRefreshToken_Id(current.getId())
             .orElseThrow(this::invalidRefreshToken);
-    session.setRefreshToken(savedNext);
-    session.setLastSeenAt(now);
-    userSessionRepository.save(session);
+    // A targeted bulk update, not session.setRefreshToken(savedNext) + save() - UserSession has
+    // no @Version, and US-02-03's revoke can concurrently flip this same row's status/revokedAt
+    // via its own bulk update; a plain save() here would write back this method's in-memory
+    // (pre-revoke) status, silently resurrecting a session someone just revoked.
+    userSessionRepository.repointRefreshToken(session.getId(), savedNext, now);
 
     String accessToken =
         jwtService.issueAccessToken(user.getId(), user.getTokenVersion(), session.getId());

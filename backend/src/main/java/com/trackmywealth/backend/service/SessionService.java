@@ -56,24 +56,27 @@ public class SessionService {
 
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
     userSessionRepository.revokeById(session.getId(), now);
-    if (session.getRefreshToken() != null) {
-      refreshTokenRepository.revokeById(session.getRefreshToken().getId(), now);
-    }
+    // Revokes whichever refresh token the session CURRENTLY points at (read inside the same
+    // statement), not session.getRefreshToken().getId() captured before this method's own
+    // updates - a concurrent /auth/refresh rotating this same session between the load above and
+    // here would otherwise leave the token it just issued un-revoked while this call kills only
+    // the now-superseded one, so the session would show REVOKED while its refresh-token family
+    // kept working.
+    refreshTokenRepository.revokeCurrentTokenForSession(session.getId(), now);
 
-    return new SessionSummaryResponse(
-        session.getId(),
-        session.getDeviceLabel(),
-        "REVOKED",
-        session.getCreatedAt(),
-        session.getLastSeenAt(),
-        session.getId().equals(callerSessionId));
+    return toSummary(session, "REVOKED", callerSessionId);
   }
 
   private SessionSummaryResponse toSummary(UserSession session, UUID callerSessionId) {
+    return toSummary(session, session.getStatus(), callerSessionId);
+  }
+
+  private SessionSummaryResponse toSummary(
+      UserSession session, String status, UUID callerSessionId) {
     return new SessionSummaryResponse(
         session.getId(),
         session.getDeviceLabel(),
-        session.getStatus(),
+        status,
         session.getCreatedAt(),
         session.getLastSeenAt(),
         session.getId().equals(callerSessionId));

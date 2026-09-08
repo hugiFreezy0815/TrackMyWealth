@@ -67,14 +67,21 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
   @Query("DELETE FROM RefreshToken r WHERE r.user.id = :userId AND r.revokedAt IS NOT NULL")
   int deleteRevokedTokensForUser(@Param("userId") UUID userId);
 
-  // US-02-03 session revoke: a targeted, single-column bulk update rather than a read-then-save()
-  // of the loaded entity - RefreshToken has no @Version, so a plain save() would write back every
-  // mapped column from whatever was in memory when it was loaded, silently clobbering
-  // replacedByTokenId if a concurrent rotation had already set it in the meantime. COALESCE
-  // preserves an existing revocation timestamp (e.g. one already set by that same concurrent
-  // rotation) rather than overwriting it with this call's own.
+  // US-02-03 session revoke: revokes whichever refresh token the session CURRENTLY points at,
+  // read via a subquery evaluated at UPDATE time rather than a UUID captured earlier in the
+  // request - SessionService only ever holds a UserSession entity loaded before this statement
+  // runs, and RefreshTokenRepository has no @Version, so trusting that entity's
+  // (possibly-stale-by-now) refreshToken reference would let a refresh-token rotation racing this
+  // revoke leave the *new* (still-live) token un-revoked while this call kills the *old*
+  // (already-dead) one - the session would show REVOKED while its refresh-token family keeps
+  // working. Reading "whichever token this session points to right now" inside the same
+  // statement that revokes it closes that window regardless of which side wins the race.
   @Modifying
   @Query(
-      "UPDATE RefreshToken r SET r.revokedAt = COALESCE(r.revokedAt, :revokedAt) WHERE r.id = :id")
-  int revokeById(@Param("id") UUID id, @Param(REVOKED_AT_PARAM) OffsetDateTime revokedAt);
+      value =
+          "UPDATE refresh_token SET revoked_at = COALESCE(revoked_at, :revokedAt) "
+              + "WHERE id = (SELECT refresh_token_id FROM user_session WHERE id = :sessionId)",
+      nativeQuery = true)
+  int revokeCurrentTokenForSession(
+      @Param("sessionId") UUID sessionId, @Param(REVOKED_AT_PARAM) OffsetDateTime revokedAt);
 }

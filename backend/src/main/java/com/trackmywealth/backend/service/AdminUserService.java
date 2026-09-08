@@ -115,8 +115,13 @@ public class AdminUserService {
     target.setStatus("DISABLED");
     target.incrementTokenVersion();
     target = appUserRepository.save(target);
-    refreshTokenRepository.revokeAllActiveTokensForUser(
-        targetUserId, OffsetDateTime.now(ZoneOffset.UTC));
+    OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+    refreshTokenRepository.revokeAllActiveTokensForUser(targetUserId, now);
+    // user_session.status is a security-relevant signal now (US-02-03's per-session
+    // JwtAuthenticationFilter check), not just a display field - without this, a disabled user's
+    // sessions stayed ACTIVE in the DB (unusable in practice since AppUser.status is checked
+    // first, but wrong for anything that trusts user_session.status directly).
+    userSessionRepository.revokeAllActiveSessionsForUser(targetUserId, now);
 
     writeAuditLog(actorUserId, "USER_DISABLED", targetUserId, null);
     return toSummary(target);

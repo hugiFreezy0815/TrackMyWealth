@@ -288,6 +288,26 @@ class AuthControllerTest {
   }
 
   @Test
+  void refreshWithNoBackingSessionIsRejectedRatherThanIssuingAnUnrevocableAccessToken()
+      throws Exception {
+    bootstrapAdministrator();
+    AuthTokensResponse initial = login("admin@example.com", PASSWORD);
+
+    // Every access token is bound to a session id (US-02-03) - a refresh token whose backing
+    // user_session row is gone must not silently succeed anyway.
+    deleteUserSessionsDirectlyInDatabase();
+
+    refresh(initial.refreshToken()).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  private void deleteUserSessionsDirectlyInDatabase() throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement()) {
+      statement.execute("DELETE FROM user_session");
+    }
+  }
+
+  @Test
   void concurrentRefreshOfTheSameTokenOnlyEverLetsOneWinAndStillKillsTheWholeFamily()
       throws Exception {
     bootstrapAdministrator();
