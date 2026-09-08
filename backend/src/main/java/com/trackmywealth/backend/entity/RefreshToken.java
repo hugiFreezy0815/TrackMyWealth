@@ -53,6 +53,12 @@ public class RefreshToken {
   @Column(name = "revoked_at")
   private OffsetDateTime revokedAt;
 
+  // Set together with revokedAt, only ever by markRotatedOutBy() below - the rotation chain
+  // (US-02-02) that lets a family be walked forward from any of its tokens, distinct from
+  // familyId which only says "these all belong together," not "in what order."
+  @Column(name = "replaced_by_token_id", columnDefinition = "uuid")
+  private UUID replacedByTokenId;
+
   @Column(name = "theft_suspected", nullable = false)
   private boolean theftSuspected;
 
@@ -106,6 +112,19 @@ public class RefreshToken {
 
   public OffsetDateTime getRevokedAt() {
     return revokedAt;
+  }
+
+  public UUID getReplacedByTokenId() {
+    return replacedByTokenId;
+  }
+
+  // US-02-02: the only way a token is ever revoked as an individual entity (as opposed to the
+  // bulk revocations in RefreshTokenRepository) - rotation always marks both fields together,
+  // since one without the other would either leave a dangling chain pointer or a "revoked but
+  // still the session's current token" contradiction.
+  public void markRotatedOutBy(UUID replacementTokenId, OffsetDateTime revokedAt) {
+    this.replacedByTokenId = replacementTokenId;
+    this.revokedAt = revokedAt;
   }
 
   public boolean isTheftSuspected() {

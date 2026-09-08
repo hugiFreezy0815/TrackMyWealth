@@ -7,24 +7,17 @@ import com.trackmywealth.backend.entity.RefreshToken;
 import com.trackmywealth.backend.entity.UserSession;
 import com.trackmywealth.backend.repository.RefreshTokenRepository;
 import com.trackmywealth.backend.repository.UserSessionRepository;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 /**
  * Issues a full access+refresh token pair and records the {@code user_session} it belongs to -
- * shared by any flow that logs a user in (the setup flow's auto-login today, {@code POST /login}
- * once US-02-02 exists). Deliberately does not implement rotation or family-reuse detection: this
- * story only ever issues a brand-new family's first token, never rotates one - that logic belongs
- * to US-02-02.
+ * shared by any flow that logs a user in (the setup flow's auto-login, {@link LoginService}).
+ * Deliberately does not implement rotation or family-reuse detection: this always issues a
+ * brand-new family's first token, never rotates one - that is {@link TokenRotationService}'s job.
  */
 @Service
 public class TokenIssuanceService {
@@ -33,17 +26,19 @@ public class TokenIssuanceService {
   private final JwtProperties jwtProperties;
   private final RefreshTokenRepository refreshTokenRepository;
   private final UserSessionRepository userSessionRepository;
-  private final SecureRandom secureRandom = new SecureRandom();
+  private final TokenHashingService tokenHashingService;
 
   public TokenIssuanceService(
       JwtService jwtService,
       JwtProperties jwtProperties,
       RefreshTokenRepository refreshTokenRepository,
-      UserSessionRepository userSessionRepository) {
+      UserSessionRepository userSessionRepository,
+      TokenHashingService tokenHashingService) {
     this.jwtService = jwtService;
     this.jwtProperties = jwtProperties;
     this.refreshTokenRepository = refreshTokenRepository;
     this.userSessionRepository = userSessionRepository;
+    this.tokenHashingService = tokenHashingService;
   }
 
   /**
@@ -51,7 +46,7 @@ public class TokenIssuanceService {
    *     persisted as-is; only its hash is stored (NFR-OPS-005). May be {@code null}.
    */
   public AuthTokensResponse issueTokens(AppUser user, String deviceLabel, String rawIpAddress) {
-    String plaintextRefreshToken = generateOpaqueToken();
+    String plaintextRefreshToken = tokenHashingService.generateOpaqueToken();
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
     RefreshToken refreshToken = new RefreshToken();
@@ -59,7 +54,7 @@ public class TokenIssuanceService {
     // A brand-new login always starts its own rotation family (FR-AUT-004) - nothing to rotate
     // away from yet.
     refreshToken.setFamilyId(UUID.randomUUID());
-    refreshToken.setTokenHash(hash(plaintextRefreshToken));
+    refreshToken.setTokenHash(tokenHashingService.sha256Hex(plaintextRefreshToken));
     refreshToken.setDeviceLabel(deviceLabel);
     refreshToken.setExpiresAt(now.plus(jwtProperties.refreshTokenTtlDays(), ChronoUnit.DAYS));
     refreshToken = refreshTokenRepository.save(refreshToken);
@@ -68,34 +63,13 @@ public class TokenIssuanceService {
     session.setUser(user);
     session.setRefreshToken(refreshToken);
     session.setDeviceLabel(deviceLabel);
-    session.setIpAddressHash(rawIpAddress == null ? null : hash(rawIpAddress));
+    session.setIpAddressHash(
+        rawIpAddress == null ? null : tokenHashingService.sha256Hex(rawIpAddress));
     session.setLastSeenAt(now);
     userSessionRepository.save(session);
 
     String accessToken = jwtService.issueAccessToken(user.getId(), user.getTokenVersion());
     return new AuthTokensResponse(
         accessToken, plaintextRefreshToken, "Bearer", jwtService.accessTokenTtlSeconds());
-  }
-
-  private String generateOpaqueToken() {
-    byte[] bytes = new byte[32];
-    secureRandom.nextBytes(bytes);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-  }
-
-  // Refresh tokens are high-entropy (256 random bits) already, so a fast cryptographic hash is
-  // the right tool here - unlike a user-chosen password, brute-forcing the hash preimage is
-  // infeasible regardless of hash speed. Argon2id (see PasswordEncoder) is reserved for
-  // human-chosen secrets.
-  private String hash(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hashed = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-      return HexFormat.of().formatHex(hashed);
-    } catch (NoSuchAlgorithmException e) {
-      // SHA-256 is a JVM-mandatory algorithm (JLS/JCA baseline) - this cannot happen on any
-      // conforming JVM.
-      throw new IllegalStateException("SHA-256 unavailable", e);
-    }
   }
 }

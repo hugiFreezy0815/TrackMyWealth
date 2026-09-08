@@ -2,9 +2,11 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.security.AppUserAuthSnapshot;
+import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -21,6 +23,11 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
       value = "SELECT EXISTS(SELECT 1 FROM app_user WHERE email = CAST(:email AS citext))",
       nativeQuery = true)
   boolean existsByEmail(@Param("email") String email);
+
+  // US-02-02 login: same citext/JDBC parameter-binding caveat as existsByEmail above applies
+  // here too - the explicit cast is what actually makes this case-insensitive.
+  @Query(value = "SELECT * FROM app_user WHERE email = CAST(:email AS citext)", nativeQuery = true)
+  Optional<AppUser> findByEmail(@Param("email") String email);
 
   @Query(
       "SELECT new com.trackmywealth.backend.security.AppUserAuthSnapshot("
@@ -42,4 +49,30 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
               + " status = 'ACTIVE' FOR UPDATE) locked_active_administrators",
       nativeQuery = true)
   long countActiveAdministratorsForUpdate();
+
+  // US-02-02: an atomic increment, not a read-modify-write via save() - AppUser carries a real
+  // @Version column, and two concurrent wrong-password attempts loading the same row would
+  // otherwise have one lose an ObjectOptimisticLockingFailureException (uncaught, an unhandled
+  // 500) instead of both attempts correctly counting toward the lockout. failedLoginCount is
+  // referenced twice in this SET clause - standard SQL UPDATE semantics evaluate every SET
+  // expression against the row's pre-update value, so both reads see the same (correct) number.
+  @Modifying
+  @Query(
+      "UPDATE AppUser u SET u.failedLoginCount = u.failedLoginCount + 1, "
+          + "u.lockedUntil = CASE WHEN u.failedLoginCount + 1 >= :lockoutThreshold "
+          + "THEN :lockedUntil ELSE u.lockedUntil END "
+          + "WHERE u.id = :userId")
+  void registerFailedLoginAttempt(
+      @Param("userId") UUID userId,
+      @Param("lockoutThreshold") int lockoutThreshold,
+      @Param("lockedUntil") OffsetDateTime lockedUntil);
+
+  // Same reasoning as registerFailedLoginAttempt above - an atomic reset rather than a
+  // save() that a concurrent login (e.g. two devices at once) could lose to a version conflict.
+  @Modifying
+  @Query(
+      "UPDATE AppUser u SET u.failedLoginCount = 0, u.lockedUntil = null, u.lastLoginAt = :loginAt"
+          + " WHERE u.id = :userId")
+  void registerSuccessfulLogin(
+      @Param("userId") UUID userId, @Param("loginAt") OffsetDateTime loginAt);
 }
