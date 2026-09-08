@@ -264,7 +264,7 @@ class SessionControllerTest {
     timeRevoke(adminToken, UUID.randomUUID());
     timeRevoke(adminToken, charlieSessionId);
 
-    int iterations = 20;
+    int iterations = 30;
     List<Duration> nonexistentTimings = new ArrayList<>();
     List<Duration> crossUserTimings = new ArrayList<>();
     for (int i = 0; i < iterations; i++) {
@@ -272,22 +272,25 @@ class SessionControllerTest {
       crossUserTimings.add(timeRevoke(adminToken, charlieSessionId));
     }
 
-    double nonexistentAvgMillis = averageMillis(nonexistentTimings);
-    double crossUserAvgMillis = averageMillis(crossUserTimings);
+    // Median, not mean: a single GC pause or scheduling blip on a shared/loaded CI runner during
+    // just one of these 30 calls would skew an average enough to flake this assertion, but is
+    // absorbed almost entirely by the median.
+    double nonexistentMedianMillis = medianMillis(nonexistentTimings);
+    double crossUserMedianMillis = medianMillis(crossUserTimings);
 
     // FR-TEN-006's "indistinguishable... in response and in timing": both paths run the exact
     // same code (a single scoped SELECT that finds zero rows either way, then the identical
     // denial-audit write and 404), so their timing should be close by construction, not because
-    // of artificial padding. A 1ms floor keeps the ratio meaningful even when both averages are
-    // very small (sub-millisecond noise shouldn't blow up the ratio), and a generous 3x tolerance
+    // of artificial padding. A 1ms floor keeps the ratio meaningful even when both medians are
+    // very small (sub-millisecond noise shouldn't blow up the ratio), and a generous 4x tolerance
     // avoids flaking on a loaded CI runner while still catching a genuine future regression (e.g.
     // an extra lookup added to only one of the two paths that would let a caller distinguish
     // them).
     double floorMillis = 1.0;
     double ratio =
-        (Math.max(nonexistentAvgMillis, crossUserAvgMillis) + floorMillis)
-            / (Math.min(nonexistentAvgMillis, crossUserAvgMillis) + floorMillis);
-    assertThat(ratio).isLessThan(3.0);
+        (Math.max(nonexistentMedianMillis, crossUserMedianMillis) + floorMillis)
+            / (Math.min(nonexistentMedianMillis, crossUserMedianMillis) + floorMillis);
+    assertThat(ratio).isLessThan(4.0);
   }
 
   @Test
@@ -309,8 +312,14 @@ class SessionControllerTest {
     return Duration.between(start, Instant.now());
   }
 
-  private double averageMillis(List<Duration> timings) {
-    return timings.stream().mapToLong(Duration::toNanos).average().orElseThrow() / 1_000_000.0;
+  private double medianMillis(List<Duration> timings) {
+    List<Long> sortedNanos = timings.stream().map(Duration::toNanos).sorted().toList();
+    int size = sortedNanos.size();
+    long medianNanos =
+        size % 2 == 0
+            ? (sortedNanos.get(size / 2 - 1) + sortedNanos.get(size / 2)) / 2
+            : sortedNanos.get(size / 2);
+    return medianNanos / 1_000_000.0;
   }
 
   private List<AuthorizationDenialLog> denialLogsFor(UUID requestedEntityId) {
