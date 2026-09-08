@@ -11,6 +11,7 @@ import com.trackmywealth.backend.entity.AdminAuditLog;
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.repository.AdminAuditLogRepository;
 import com.trackmywealth.backend.repository.AppUserRepository;
+import com.trackmywealth.backend.repository.UserSessionRepository;
 import com.trackmywealth.backend.service.TokenIssuanceService;
 import java.sql.Connection;
 import java.sql.Statement;
@@ -60,6 +61,7 @@ class AdminUserControllerTest {
 
   @Autowired AppUserRepository appUserRepository;
   @Autowired AdminAuditLogRepository adminAuditLogRepository;
+  @Autowired UserSessionRepository userSessionRepository;
   @Autowired TokenIssuanceService tokenIssuanceService;
   @Autowired PasswordEncoder passwordEncoder;
   @Autowired DataSource dataSource;
@@ -217,6 +219,13 @@ class AdminUserControllerTest {
     AppUser disabledCharlie = appUserRepository.findById(charlie.getId()).orElseThrow();
     assertThat(disabledCharlie.getStatus()).isEqualTo("DISABLED");
     assertThat(disabledCharlie.getTokenVersion()).isEqualTo(charlie.getTokenVersion() + 1);
+
+    // US-02-03: user_session.status is a security-relevant signal now, not just a display field -
+    // disable must not leave stale ACTIVE rows behind.
+    assertThat(userSessionRepository.findAll())
+        .filteredOn(session -> session.getUser().getId().equals(charlie.getId()))
+        .isNotEmpty()
+        .allSatisfy(session -> assertThat(session.getStatus()).isEqualTo("REVOKED"));
 
     // Same token as above, only now the user is disabled and token_version has moved on: no
     // longer authenticates at all - 401 (FR-AUT-005's "immediately", not "when the JWT expires").

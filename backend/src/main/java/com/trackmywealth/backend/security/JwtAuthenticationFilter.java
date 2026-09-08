@@ -23,9 +23,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * allow/deny decision (a protected endpoint denies it; a {@code permitAll} one still works).
  *
  * <p>Only this - JWT signature/expiry validation, plus the {@code token_version} staleness check
- * that makes revocation real (FR-AUT-005) - not login or refresh-token rotation, which is
- * US-02-02's job. Every downstream story that needs to know who is calling (US-02-01's admin
- * endpoints today) depends on this filter having already populated {@link
+ * that makes user-wide revocation real (FR-AUT-005), and the per-session {@code
+ * user_session.status} check that makes single-session revocation real (US-02-03) - not login or
+ * refresh-token rotation, which is US-02-02's job. Every downstream story that needs to know who is
+ * calling (US-02-01's admin endpoints today) depends on this filter having already populated {@link
  * AuthenticatedUserPrincipal}.
  */
 @Component
@@ -61,20 +62,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         .flatMap(
             claims ->
                 appUserRepository
-                    .findAuthSnapshot(claims.userId())
+                    .findAuthSnapshot(claims.userId(), claims.sessionId())
                     .flatMap(snapshot -> toToken(claims, snapshot)));
   }
 
   private Optional<UsernamePasswordAuthenticationToken> toToken(
       AccessTokenClaims claims, AppUserAuthSnapshot snapshot) {
-    if (!"ACTIVE".equals(snapshot.status()) || snapshot.tokenVersion() != claims.tokenVersion()) {
-      // Disabled since the token was issued, or the token predates a revocation event
-      // (logout-all, password change, role change, ...) that bumped token_version - either way,
-      // this token no longer authenticates, regardless of its own unexpired signature.
+    if (!"ACTIVE".equals(snapshot.status())
+        || snapshot.tokenVersion() != claims.tokenVersion()
+        || !"ACTIVE".equals(snapshot.sessionStatus())) {
+      // Disabled since the token was issued, the token predates a revocation event (logout-all,
+      // password change, role change, ...) that bumped token_version, or this specific session
+      // (US-02-03) was individually revoked - either way, this token no longer authenticates,
+      // regardless of its own unexpired signature.
       return Optional.empty();
     }
     AuthenticatedUserPrincipal principal =
-        new AuthenticatedUserPrincipal(snapshot.userId(), snapshot.role(), snapshot.householdId());
+        new AuthenticatedUserPrincipal(
+            snapshot.userId(), snapshot.role(), snapshot.householdId(), claims.sessionId());
     List<SimpleGrantedAuthority> authorities =
         List.of(new SimpleGrantedAuthority("ROLE_" + snapshot.role()));
     return Optional.of(new UsernamePasswordAuthenticationToken(principal, null, authorities));

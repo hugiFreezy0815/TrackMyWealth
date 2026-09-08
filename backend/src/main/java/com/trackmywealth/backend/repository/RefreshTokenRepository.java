@@ -13,6 +13,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
 
+  String REVOKED_AT_PARAM = "revokedAt";
+
   // US-02-01 disable (FR-AUT-005): every one of the disabled user's still-live refresh tokens
   // must stop working, not just future access-token issuance - a bulk update, not fetch-then-loop,
   // since only revoked_at changes and no entity-level business logic needs to run per row.
@@ -21,7 +23,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
       "UPDATE RefreshToken r SET r.revokedAt = :revokedAt "
           + "WHERE r.user.id = :userId AND r.revokedAt IS NULL")
   int revokeAllActiveTokensForUser(
-      @Param("userId") UUID userId, @Param("revokedAt") OffsetDateTime revokedAt);
+      @Param("userId") UUID userId, @Param(REVOKED_AT_PARAM) OffsetDateTime revokedAt);
 
   // US-02-02 refresh rotation: the incoming plaintext token is hashed and looked up by that hash
   // - the plaintext itself is never persisted or queryable.
@@ -41,7 +43,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
   int markRotatedOutByIfStillActive(
       @Param("id") UUID id,
       @Param("replacementTokenId") UUID replacementTokenId,
-      @Param("revokedAt") OffsetDateTime revokedAt);
+      @Param(REVOKED_AT_PARAM) OffsetDateTime revokedAt);
 
   // US-02-02 FR-AUT-004 theft detection: reuse of an already-rotated-away token invalidates every
   // token in its family, not just the reused one - a bulk update across the whole family rather
@@ -53,7 +55,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
       "UPDATE RefreshToken r SET r.theftSuspected = true, "
           + "r.revokedAt = COALESCE(r.revokedAt, :revokedAt) WHERE r.familyId = :familyId")
   int markFamilyAsTheftSuspected(
-      @Param("familyId") UUID familyId, @Param("revokedAt") OffsetDateTime revokedAt);
+      @Param("familyId") UUID familyId, @Param(REVOKED_AT_PARAM) OffsetDateTime revokedAt);
 
   // US-02-01 reactivate: without this, a client that still holds its pre-disable refresh token
   // and presents it again after reactivation would fall into TokenRotationService's reuse/"theft"
@@ -64,4 +66,22 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
   @Modifying
   @Query("DELETE FROM RefreshToken r WHERE r.user.id = :userId AND r.revokedAt IS NOT NULL")
   int deleteRevokedTokensForUser(@Param("userId") UUID userId);
+
+  // US-02-03 session revoke: revokes whichever refresh token the session CURRENTLY points at,
+  // read via a subquery evaluated at UPDATE time rather than a UUID captured earlier in the
+  // request - SessionService only ever holds a UserSession entity loaded before this statement
+  // runs, and RefreshTokenRepository has no @Version, so trusting that entity's
+  // (possibly-stale-by-now) refreshToken reference would let a refresh-token rotation racing this
+  // revoke leave the *new* (still-live) token un-revoked while this call kills the *old*
+  // (already-dead) one - the session would show REVOKED while its refresh-token family keeps
+  // working. Reading "whichever token this session points to right now" inside the same
+  // statement that revokes it closes that window regardless of which side wins the race.
+  @Modifying
+  @Query(
+      value =
+          "UPDATE refresh_token SET revoked_at = COALESCE(revoked_at, :revokedAt) "
+              + "WHERE id = (SELECT refresh_token_id FROM user_session WHERE id = :sessionId)",
+      nativeQuery = true)
+  int revokeCurrentTokenForSession(
+      @Param("sessionId") UUID sessionId, @Param(REVOKED_AT_PARAM) OffsetDateTime revokedAt);
 }

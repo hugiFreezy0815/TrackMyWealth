@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 public class JwtService {
 
   private static final String TOKEN_VERSION_CLAIM = "tokenVersion";
+  private static final String SESSION_ID_CLAIM = "sessionId";
 
   private final JwtProperties properties;
   private final SecretKey signingKey;
@@ -43,12 +44,16 @@ public class JwtService {
    *     embedded so {@link #parseAccessToken} can detect a since-revoked token (FR-AUT-005:
    *     incrementing token_version must invalidate every previously issued access token
    *     immediately, not wait for JWT expiry).
+   * @param sessionId the {@code user_session} this token belongs to (US-02-03) - embedded so a
+   *     single session can be revoked without affecting a user's other active sessions, which
+   *     {@code tokenVersion} alone (a per-user, not per-session, counter) cannot express.
    */
-  public String issueAccessToken(UUID userId, int tokenVersion) {
+  public String issueAccessToken(UUID userId, int tokenVersion, UUID sessionId) {
     Instant now = Instant.now();
     return Jwts.builder()
         .subject(userId.toString())
         .claim(TOKEN_VERSION_CLAIM, tokenVersion)
+        .claim(SESSION_ID_CLAIM, sessionId.toString())
         .issuer(properties.issuer())
         .issuedAt(Date.from(now))
         .expiration(Date.from(now.plus(properties.accessTokenTtlMinutes(), ChronoUnit.MINUTES)))
@@ -56,17 +61,22 @@ public class JwtService {
         .compact();
   }
 
-  /** Empty if the token is malformed, expired, or signed with a different key - never throws. */
+  /**
+   * Empty if the token is malformed, expired, missing an expected claim, or signed with a different
+   * key - never throws.
+   */
   public Optional<AccessTokenClaims> parseAccessToken(String token) {
     try {
       Claims claims =
           Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token).getPayload();
       UUID userId = UUID.fromString(claims.getSubject());
       Integer tokenVersion = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
-      if (tokenVersion == null) {
+      String sessionIdClaim = claims.get(SESSION_ID_CLAIM, String.class);
+      if (tokenVersion == null || sessionIdClaim == null) {
         return Optional.empty();
       }
-      return Optional.of(new AccessTokenClaims(userId, tokenVersion));
+      UUID sessionId = UUID.fromString(sessionIdClaim);
+      return Optional.of(new AccessTokenClaims(userId, tokenVersion, sessionId));
     } catch (JwtException | IllegalArgumentException e) {
       return Optional.empty();
     }
