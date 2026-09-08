@@ -72,7 +72,7 @@ public class TokenIssuanceService {
     session.setLastSeenAt(now);
     userSessionRepository.save(session);
 
-    String accessToken = jwtService.issueAccessToken(user.getId());
+    String accessToken = jwtService.issueAccessToken(user.getId(), user.getTokenVersion());
     return new AuthTokensResponse(
         accessToken, plaintextRefreshToken, "Bearer", jwtService.accessTokenTtlSeconds());
   }
