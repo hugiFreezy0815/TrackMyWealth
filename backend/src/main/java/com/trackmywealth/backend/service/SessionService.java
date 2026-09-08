@@ -72,17 +72,31 @@ public class SessionService {
     refreshTokenRepository.revokeCurrentTokenForSession(session.getId(), now);
     userSessionRepository.revokeById(session.getId(), now);
 
-    // Not persisted - session is never save()'d again in this method - just reused to build the
-    // response without a second, near-identical toSummary() overload.
-    session.setStatus("REVOKED");
-    return toSummary(session, callerSessionId);
+    // Deliberately NOT session.setStatus("REVOKED") on the entity: `session` is still a
+    // JPA-managed entity (loaded via the repository within this open transaction, never
+    // detached), and the two bulk updates above bypass the persistence context entirely - they
+    // don't touch its in-memory field values or its dirty-checking snapshot. Mutating a mapped
+    // field here would make Hibernate's implicit pre-commit flush dirty-check it and reissue a
+    // full-column UPDATE from the entity's STALE in-memory state (still revokedAt=null,
+    // refreshToken=<pre-revoke value> from the original load) - clobbering the bulk updates'
+    // effect right back, and under the exact concurrent rotate()-vs-revoke() race this fix exists
+    // for, reverting a concurrent rotation's refreshToken repoint too. Confirmed empirically: an
+    // earlier version of this method did exactly that, and revoked_at came back NULL in the
+    // database despite status='REVOKED'. Passing the status in explicitly, rather than mutating
+    // the entity, is what avoids re-triggering that.
+    return toSummary(session, "REVOKED", callerSessionId);
   }
 
   private SessionSummaryResponse toSummary(UserSession session, UUID callerSessionId) {
+    return toSummary(session, session.getStatus(), callerSessionId);
+  }
+
+  private SessionSummaryResponse toSummary(
+      UserSession session, String status, UUID callerSessionId) {
     return new SessionSummaryResponse(
         session.getId(),
         session.getDeviceLabel(),
-        session.getStatus(),
+        status,
         session.getCreatedAt(),
         session.getLastSeenAt(),
         session.getId().equals(callerSessionId));

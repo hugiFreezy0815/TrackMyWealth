@@ -11,6 +11,8 @@ import com.trackmywealth.backend.dto.SessionSummaryResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
 import java.util.UUID;
@@ -152,6 +154,32 @@ class SessionControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void revokingASessionPersistsRevokedAtInTheDatabase() throws Exception {
+    // Regression test: an earlier version of SessionService.revokeSession() mutated the loaded
+    // (still JPA-managed) UserSession entity's status field to build the response, which made
+    // Hibernate's implicit pre-commit flush dirty-check it and reissue a full-column UPDATE from
+    // its stale in-memory state - silently clobbering revoked_at back to NULL right after the
+    // bulk update above had set it. status ended up correctly 'REVOKED' (so JwtAuthenticationFilter
+    // still denied the token), but the DB's revoked_at was wrong - checked directly here since
+    // the API response alone can't reveal this class of bug.
+    bootstrapAdministrator("laptop");
+    AuthTokensResponse phone = login("admin@example.com", "phone");
+    UUID phoneSessionId = onlySessionWith(phone.accessToken(), "phone").id();
+
+    revoke(phone.accessToken(), phoneSessionId).expectStatus().isOk();
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("SELECT revoked_at FROM user_session WHERE id = ?")) {
+      statement.setObject(1, phoneSessionId);
+      try (ResultSet rs = statement.executeQuery()) {
+        assertThat(rs.next()).isTrue();
+        assertThat(rs.getTimestamp("revoked_at")).isNotNull();
+      }
+    }
   }
 
   @Test
