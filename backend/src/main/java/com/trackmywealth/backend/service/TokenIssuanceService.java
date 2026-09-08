@@ -66,9 +66,10 @@ public class TokenIssuanceService {
     session.setIpAddressHash(
         rawIpAddress == null ? null : tokenHashingService.sha256Hex(rawIpAddress));
     session.setLastSeenAt(now);
-    userSessionRepository.save(session);
+    UserSession savedSession = userSessionRepository.save(session);
 
-    String accessToken = jwtService.issueAccessToken(user.getId(), user.getTokenVersion());
+    String accessToken =
+        jwtService.issueAccessToken(user.getId(), user.getTokenVersion(), savedSession.getId());
     return new AuthTokensResponse(
         accessToken, plaintextRefreshToken, "Bearer", jwtService.accessTokenTtlSeconds());
   }

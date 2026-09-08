@@ -4,6 +4,7 @@ import com.trackmywealth.backend.config.JwtProperties;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.entity.RefreshToken;
+import com.trackmywealth.backend.entity.UserSession;
 import com.trackmywealth.backend.repository.RefreshTokenRepository;
 import com.trackmywealth.backend.repository.UserSessionRepository;
 import java.time.OffsetDateTime;
@@ -100,16 +101,21 @@ public class TokenRotationService {
       throw refreshTokenAlreadyUsed();
     }
 
-    userSessionRepository
-        .findByRefreshToken_Id(current.getId())
-        .ifPresent(
-            session -> {
-              session.setRefreshToken(savedNext);
-              session.setLastSeenAt(now);
-              userSessionRepository.save(session);
-            });
+    // US-02-03: every access token is now bound to a session id, so - unlike before, when the
+    // session lookup was best-effort (ifPresent) - a refresh token with no backing session is
+    // treated as invalid rather than silently issuing an access token nothing can ever revoke
+    // individually. In practice a session always exists here: TokenIssuanceService creates one for
+    // every login, and this is the only place a session's refreshToken pointer ever moves.
+    UserSession session =
+        userSessionRepository
+            .findByRefreshToken_Id(current.getId())
+            .orElseThrow(this::invalidRefreshToken);
+    session.setRefreshToken(savedNext);
+    session.setLastSeenAt(now);
+    userSessionRepository.save(session);
 
-    String accessToken = jwtService.issueAccessToken(user.getId(), user.getTokenVersion());
+    String accessToken =
+        jwtService.issueAccessToken(user.getId(), user.getTokenVersion(), session.getId());
     return new AuthTokensResponse(
         accessToken, plaintextNext, "Bearer", jwtService.accessTokenTtlSeconds());
   }

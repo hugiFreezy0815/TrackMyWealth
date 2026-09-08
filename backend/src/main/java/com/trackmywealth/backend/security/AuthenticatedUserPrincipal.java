@@ -10,7 +10,9 @@ import java.util.UUID;
  * access), which {@link
  * com.trackmywealth.backend.config.HouseholdContextTransactionExecutionListener} already handles
  * correctly - a {@code null} household id leaves {@code app.current_household_id} unset, and every
- * RLS policy then denies by default.
+ * RLS policy then denies by default. {@code sessionId} is the {@code user_session} the presented
+ * access token belongs to (US-02-03) - what lets a caller list/revoke "my sessions" and know which
+ * one is the one making the current request.
  */
-public record AuthenticatedUserPrincipal(UUID userId, String role, UUID householdId)
+public record AuthenticatedUserPrincipal(UUID userId, String role, UUID householdId, UUID sessionId)
     implements HouseholdPrincipal {}
