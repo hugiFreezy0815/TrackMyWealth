@@ -262,21 +262,28 @@ class CrossTenantIsolationTest {
     }
   }
 
+  // Queries pg_class.relrowsecurity directly - the actual ground truth for "is RLS enabled on
+  // this table" - rather than matching policy names against the `tenant_isolation%` naming
+  // convention, which a future migration could depart from (that convention lives only in a SQL
+  // comment, not anything enforced) and silently escape this check.
   private Set<String> rlsProtectedTableNames() throws Exception {
     Set<String> tables = new HashSet<>();
     try (Connection connection = adminConnection();
         Statement statement = connection.createStatement();
         ResultSet resultSet =
             statement.executeQuery(
-                "SELECT DISTINCT tablename FROM pg_policies "
-                    + "WHERE schemaname = 'public' AND policyname LIKE 'tenant_isolation%'")) {
+                "SELECT c.relname FROM pg_class c "
+                    + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    + "WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity")) {
       while (resultSet.next()) {
-        tables.add(resultSet.getString("tablename"));
+        tables.add(resultSet.getString("relname"));
       }
     }
     return tables;
   }
 
+  // Scans the whole application base package, not just `.entity` - the coverage guarantee below
+  // must hold regardless of which package a future entity lands in.
   private Set<String> mappedEntityTableNames() {
     ClassPathScanningCandidateComponentProvider scanner =
         new ClassPathScanningCandidateComponentProvider(false);
@@ -284,15 +291,23 @@ class CrossTenantIsolationTest {
 
     Set<String> tables = new HashSet<>();
     scanner
-        .findCandidateComponents("com.trackmywealth.backend.entity")
+        .findCandidateComponents("com.trackmywealth.backend")
         .forEach(
             beanDefinition -> {
               try {
                 Class<?> entityClass = Class.forName(beanDefinition.getBeanClassName());
                 Table table = entityClass.getAnnotation(Table.class);
-                if (table != null && !table.name().isBlank()) {
-                  tables.add(table.name());
-                }
+                // An entity without an explicit @Table would fall back to Hibernate's implicit
+                // naming strategy, which this suite doesn't replicate - rather than silently
+                // omitting such an entity from coverage, fail loudly so the gap can't hide.
+                assertThat(table != null && !table.name().isBlank())
+                    .as(
+                        entityClass.getName()
+                            + " must declare an explicit @Table(name = ...): this suite resolves"
+                            + " RLS coverage from that annotation, and silently skipping an"
+                            + " entity without one would defeat the coverage check below")
+                    .isTrue();
+                tables.add(table.name());
               } catch (ClassNotFoundException e) {
                 throw new IllegalStateException(e);
               }
