@@ -20,13 +20,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 /**
  * Public surface: the liveness/readiness endpoints, the one-time setup bootstrap ({@code
  * /api/v1/setup/**}, US-01-03 - which must be reachable before any credential exists, and rejects
- * itself once one does, see {@code SetupService}), and {@code /error}. Everything else requires a
- * valid {@link JwtAuthenticationFilter}-authenticated request; {@code /api/v1/admin/**}
+ * itself once one does, see {@code SetupService}), login/refresh ({@code /api/v1/auth/**}, US-02-02
+ * - must be reachable by a caller who has no token yet), and {@code /error}. Everything else
+ * requires a valid {@link JwtAuthenticationFilter}-authenticated request; {@code /api/v1/admin/**}
  * additionally requires the {@code SYSTEM_ADMINISTRATOR} role (US-02-01).
- *
- * <p>Still a placeholder in one sense: {@link JwtAuthenticationFilter} validates a token already
- * issued elsewhere (the setup flow's auto-login today), but nothing yet issues one via an ordinary
- * login call - that's US-02-02.
  *
  * <p>CORS is configured here because the web build of {@code mobile/} (an Expo Router app exported
  * for web, see its README) calls this API from a browser on a different origin - unlike the
@@ -52,6 +49,8 @@ public class SecurityConfig {
                     .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info")
                     .permitAll()
                     .requestMatchers("/api/v1/setup/**")
+                    .permitAll()
+                    .requestMatchers("/api/v1/auth/**")
                     .permitAll()
                     // Spring MVC's default handling of a thrown ResponseStatusException (e.g.
                     // US-01-03's "setup already completed" 409) forwards internally to /error to

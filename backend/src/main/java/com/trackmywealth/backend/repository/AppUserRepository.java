@@ -22,6 +22,11 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
       nativeQuery = true)
   boolean existsByEmail(@Param("email") String email);
 
+  // US-02-02 login: same citext/JDBC parameter-binding caveat as existsByEmail above applies
+  // here too - the explicit cast is what actually makes this case-insensitive.
+  @Query(value = "SELECT * FROM app_user WHERE email = CAST(:email AS citext)", nativeQuery = true)
+  Optional<AppUser> findByEmail(@Param("email") String email);
+
   @Query(
       "SELECT new com.trackmywealth.backend.security.AppUserAuthSnapshot("
           + "u.id, u.role, u.status, u.tokenVersion, h.id) "
