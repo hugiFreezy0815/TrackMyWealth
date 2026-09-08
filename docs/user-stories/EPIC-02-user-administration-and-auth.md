@@ -30,7 +30,7 @@ accounts, so that I can manage who can authenticate to this deployment.
 reset `failed_login_count`/`locked_until`).
 **Authorization/privacy:** FR-TEN-007 — this endpoint touches administration rights only; it must
 never be usable to read or grant financial-data access. FR-USR-011 — disabling a user must never
-delete or orphan the linked `household_member`'s financial data.
+delete or orphan the linked `workspace_member`'s financial data.
 **Dependencies:** US-01-03.
 **Priority:** MUST.
 **Definition of Done:** Unit + integration tests for last-admin protection and for token
@@ -131,19 +131,19 @@ TOTP code.
 
 ## US-02-05 — Administration rights never confer financial-data access
 
-**Actor:** System Administrator who is also a household member (common in a self-hosted,
-single-household deployment)
+**Actor:** System Administrator who is also a workspace member (common in a self-hosted,
+single-workspace deployment)
 **Objective:** FR-TEN-007 — a hard separation between the two permission domains.
-**Story:** As a System Administrator who is also a household member, I want my administrative
-role to grant me zero implicit access to any household's financial data — including my own —
-beyond what my household membership already grants, so that the separation holds even when the
+**Story:** As a System Administrator who is also a workspace member, I want my administrative
+role to grant me zero implicit access to any workspace's financial data — including my own —
+beyond what my workspace membership already grants, so that the separation holds even when the
 same person occupies both roles.
-**Preconditions:** A `SYSTEM_ADMINISTRATOR` user linked to a `household_member`.
+**Preconditions:** A `SYSTEM_ADMINISTRATOR` user linked to a `workspace_member`.
 **Acceptance criteria:**
-- Given a `SYSTEM_ADMINISTRATOR` with no `household_member` link, when they call any
-  financial-data endpoint, then every request is denied (no household context resolves for them
+- Given a `SYSTEM_ADMINISTRATOR` with no `workspace_member` link, when they call any
+  financial-data endpoint, then every request is denied (no workspace context resolves for them
   at all).
-- Given a `SYSTEM_ADMINISTRATOR` linked to household A, when they attempt to read household B's
+- Given a `SYSTEM_ADMINISTRATOR` linked to workspace A, when they attempt to read workspace B's
   accounts, then the request is denied identically to a `STANDARD_USER` attempting the same
   (FR-TEN-004/006 — indistinguishable denial).
 - This is asserted by the FR-TEN-010 automated cross-tenant test suite (EPIC 28), which must

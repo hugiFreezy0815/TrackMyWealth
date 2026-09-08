@@ -7,12 +7,12 @@ classification rules on `transaction` (V10). Section 15-16, FR-CF-*, FR-BUD-*.
 
 ## US-10-01 — Internal transfers never count as income or expense
 
-**Actor:** System / Household member confirming a match
+**Actor:** System / Workspace member confirming a match
 **Objective:** RULE-007, FR-CF-001/005, DM-05 — the classic failure mode of combined trackers.
-**Story:** As a household member, I want a transfer between two of my own accounts to be excluded
+**Story:** As a workspace member, I want a transfer between two of my own accounts to be excluded
 from income/expense totals entirely, so that moving money to savings or into a brokerage account
 is never misread as spending.
-**Preconditions:** Two accounts owned by the same household.
+**Preconditions:** Two accounts owned by the same workspace.
 **Acceptance criteria:**
 - Given a CHF 500 transfer from a current account to a savings account, when both legs are
   imported, then the matching service links them via `counterparty_account_id`, sets
@@ -27,7 +27,7 @@ is never misread as spending.
 **Error/edge cases:** A same-amount, same-day coincidence between two unrelated transactions in
 different accounts — must be presented as a *candidate* match requiring confirmation for
 ambiguous cases, not auto-applied silently when confidence is low.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** EPIC 07.
 **Priority:** MUST.
 **Definition of Done:** Integration test for the transfer-to-savings and transfer-to-investment
@@ -38,9 +38,9 @@ scenarios, asserting exclusion from cash-flow totals.
 
 ## US-10-02 — Mortgage/loan payment splits into interest (expense) and principal (balance-sheet)
 
-**Actor:** System / Household member
-**Objective:** FR-CF-006, FR-NW-005 — a common and material household-budgeting error otherwise.
-**Story:** As a household member, I want a mortgage or loan payment to be automatically separated
+**Actor:** System / Workspace member
+**Objective:** FR-CF-006, FR-NW-005 — a common and material workspace-budgeting error otherwise.
+**Story:** As a workspace member, I want a mortgage or loan payment to be automatically separated
 into its interest component (a real expense) and principal component (a balance-sheet movement,
 not consumption), so that my spending and savings-rate figures are not distorted.
 **Preconditions:** A `MORTGAGE` or `LOAN` account with an amortisation schedule
@@ -58,7 +58,7 @@ not consumption), so that my spending and savings-rate figures are not distorted
 **Error/edge cases:** No amortisation schedule has been entered yet — the whole payment must be
 flagged as an estimate (interest/principal split unknown) rather than silently treated as 100%
 interest or 100% principal (PR-011).
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** EPIC 05 (mortgage/loan accounts), EPIC 11 (amortisation schedule).
 **Priority:** SHOULD.
 **Definition of Done:** This is V-14 in the golden verification dataset (EPIC 27) — implement as
@@ -70,10 +70,10 @@ guessed with full confidence.
 
 ## US-10-03 — Budget proposal derived from actual transaction history
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-BUD-007 — budgets entered as intentions fail; budgets derived from observed
 behaviour hold (BlueBudget's validated design thesis).
-**Story:** As a household member creating my first budget, I want the system to propose category
+**Story:** As a workspace member creating my first budget, I want the system to propose category
 amounts based on my own historical spending rather than presenting empty fields, so that I start
 from something realistic.
 **Preconditions:** At least a few months of categorized transaction history.
@@ -81,26 +81,26 @@ from something realistic.
 - Given 3+ months of categorized spending, when a new budget is created, then each `budget_line`
   is pre-populated with a proposed amount (e.g. a trailing average) per category, and
   `budget.derived_from_history = true`.
-- Given insufficient history exists (a brand-new household), when a budget is created, then the
+- Given insufficient history exists (a brand-new workspace), when a budget is created, then the
   proposal step is skipped gracefully and empty fields are presented instead — never a proposal
   computed from too little data presented with unwarranted confidence (PR-011).
 **Applicable business rules:** FR-BUD-001..004/007.
 **Data requirements:** Categorized transactions across at least one full period.
 **Error/edge cases:** Irregular/annual costs skewing the trailing average — see US-10-04.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** EPIC 08.
 **Priority:** SHOULD.
 **Definition of Done:** Integration test with synthetic multi-month history asserts sensible
-proposed amounts; a fresh-household test asserts graceful empty-field fallback.
+proposed amounts; a fresh-workspace test asserts graceful empty-field fallback.
 **Data-quality behaviour:** As above.
 
 ---
 
 ## US-10-04 — Irregular and annual costs do not read as a monthly overspend
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-BUD-008.
-**Story:** As a household member, I want an annual cost (insurance premium, Serafe fee, tax
+**Story:** As a workspace member, I want an annual cost (insurance premium, Serafe fee, tax
 instalment) to be amortised across months or flagged as upcoming rather than blowing out a single
 month's budget line, so that one large annual bill is not misread as suddenly overspending.
 **Preconditions:** A `budget_line` marked `is_irregular = true` with `amortised_over_months` set.
@@ -115,7 +115,7 @@ month's budget line, so that one large annual bill is not misread as suddenly ov
 **Data requirements:** `budget_line.is_irregular`, `amortised_over_months`.
 **Error/edge cases:** A payment that recurs irregularly (not exactly annual) — amortisation is
 best-effort and documented as such, not a promise of exactness.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** US-10-03.
 **Priority:** SHOULD.
 **Definition of Done:** Integration test for the amortised vs. non-amortised comparison above.
@@ -125,23 +125,23 @@ best-effort and documented as such, not a promise of exactness.
 
 ## US-10-05 — Savings rate with a documented, configurable methodology
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-BUD-009 — every published savings-rate definition differs; an undocumented
 choice makes the figure unusable.
-**Story:** As a household member, I want to see and control whether employer pension
+**Story:** As a workspace member, I want to see and control whether employer pension
 contributions, mortgage principal and unrealised investment gains count toward my savings rate,
 so that the headline number means what I think it means.
-**Preconditions:** A household with income/expense/investment activity.
+**Preconditions:** A workspace with income/expense/investment activity.
 **Acceptance criteria:**
-- Given the default `savings_rate_methodology` row (created per household), when savings rate is
+- Given the default `savings_rate_methodology` row (created per workspace), when savings rate is
   displayed, then the three toggles' current settings are shown alongside the figure (not just
   buried in settings), and changing a toggle immediately recomputes the displayed rate.
 - Given `include_unrealised_gains = false` (the default), when a portfolio gains value without
   any new contribution, then savings rate is unaffected by that gain.
 **Applicable business rules:** FR-BUD-009.
-**Data requirements:** `savings_rate_methodology` per household.
+**Data requirements:** `savings_rate_methodology` per workspace.
 **Error/edge cases:** None beyond correct toggle application.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** US-10-02, EPIC 16 (unrealised gains).
 **Priority:** MUST.
 **Definition of Done:** Unit test for each of the eight toggle combinations' effect on a fixed

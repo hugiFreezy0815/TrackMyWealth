@@ -51,33 +51,33 @@ class TransactionAppendOnlyTriggerTest {
 
     // The Testcontainers-provisioned role is the Postgres bootstrap (superuser) role, so it
     // bypasses row-level security regardless of V20's FORCE ROW LEVEL SECURITY - no
-    // app.current_household_id session variable needs to be set for this fixture setup.
+    // app.current_workspace_id session variable needs to be set for this fixture setup.
     connection =
         DriverManager.getConnection(
             postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
     connection.setAutoCommit(true);
 
-    UUID householdId =
-        insertReturningId("INSERT INTO household(name) VALUES (?) RETURNING id", "Test Household");
+    UUID workspaceId =
+        insertReturningId("INSERT INTO workspace(name) VALUES (?) RETURNING id", "Test Workspace");
     UUID institutionId =
         insertReturningId(
-            "INSERT INTO financial_institution(household_id, name, container_currency) VALUES (?, ?, ?) RETURNING id",
-            householdId,
+            "INSERT INTO financial_institution(workspace_id, name, container_currency) VALUES (?, ?, ?) RETURNING id",
+            workspaceId,
             "Test Bank",
             "CHF");
     UUID accountId =
         insertReturningId(
-            "INSERT INTO account(household_id, financial_institution_id, account_type, name, native_currency) VALUES (?, ?, ?, ?, ?) RETURNING id",
-            householdId,
+            "INSERT INTO account(workspace_id, financial_institution_id, account_type, name, native_currency) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            workspaceId,
             institutionId,
             "CASH",
             "Test Account",
             "CHF");
     transactionId =
         insertReturningId(
-            "INSERT INTO transaction(household_id, account_id, transaction_type, booking_date, amount, currency, fee_amount, fx_rate_to_account_currency, fx_rate_date) "
+            "INSERT INTO transaction(workspace_id, account_id, transaction_type, booking_date, amount, currency, fee_amount, fx_rate_to_account_currency, fx_rate_date) "
                 + "VALUES (?, ?, 'EXPENSE', CURRENT_DATE, 45.00, 'CHF', 5.00, 1.0000000000, CURRENT_DATE) RETURNING id",
-            householdId,
+            workspaceId,
             accountId);
   }
 

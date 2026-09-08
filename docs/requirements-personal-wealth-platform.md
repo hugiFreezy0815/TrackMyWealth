@@ -218,7 +218,7 @@ The subtype answers *what it is*. Capabilities answer *what it can do* — and t
 #### Entity model
  
 ```
-User ──< Household >── User            (P6: shared finances)
+User ──< Workspace >── User            (P6: shared finances)
   │
   └──< Institution >                   e.g. PostFinance, Yuh, Sparkasse, VIAC
          │  type: BANK | BROKER | PENSION_PROVIDER | PENSION_FUND |
@@ -310,7 +310,7 @@ Goal               (e.g. 3a max-out, house deposit, FIRE target)
 | DB-03 | All timestamps `timestamptz`; trade/settlement dates as `date` in the instrument's market timezone context. Mixing these is a classic source of off-by-one performance errors. | Must |
 | DB-04 | Unique constraint on `(account_id, external_id, source)` to make imports **idempotent**; plus a fuzzy duplicate-detection pass for document/CSV imports lacking stable IDs | Must |
 | DB-05 | Soft delete + `created_at` / `updated_at` / `version` on all user-owned entities | Must |
-| DB-06 | Row-level security or equivalent enforced tenancy on `household_id` / `user_id` | Must |
+| DB-06 | Row-level security or equivalent enforced tenancy on `workspace_id` / `user_id` | Must |
 | DB-07 | Derived data (tax lots, daily valuations, aggregates) in separate tables/materialised views, fully rebuildable from the activity log | Must |
 | DB-08 | Schema migrations must be forward-only and reversible-by-compensation; no destructive migration of user-visible balances without an in-app explanation | Must |
  
@@ -652,7 +652,7 @@ Confirmed in scope. Implemented as jurisdiction rule plugins (DM-07).
 | FR-USR-02 | TOTP MFA | M |
 | FR-USR-03 | Optional OIDC/SSO (relevant for self-host and B2B; Ghostfolio's precedent) | C |
 | FR-USR-04 | App-level PIN/biometric lock on mobile | S |
-| FR-USR-05 | Household/shared workspace with roles: owner, member, view-only | S |
+| FR-USR-05 | Household/shared household with roles: owner, member, view-only | S |
 | FR-USR-06 | Read-only share link for a portfolio, with configurable masking of absolute values | S |
 | FR-NOT-01 | Configurable notifications: daily/weekly summary, budget threshold, dividend received, connector failure, 3a deadline | S |
 | FR-NOT-02 | Notifications must be individually disableable; no dark-pattern engagement loops | M |
@@ -716,7 +716,7 @@ Scope discipline is the lesson from Ghostfolio, which stays useful and well-rega
 - Retirement/FIRE projections with scenario ranges
 - Fund look-through / X-Ray
 - Public API
-- Household sharing
+- Workspace sharing
 Deliberately deferred: social/community, group expense splitting, native apps, advisor multi-tenancy, AI agent.
  
 ---

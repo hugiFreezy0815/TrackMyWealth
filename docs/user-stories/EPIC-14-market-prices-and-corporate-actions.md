@@ -9,7 +9,7 @@ Covers `price` (V8, partitioned), `corporate_action` (V9). Section 22, FR-PRC-*.
 **Actor:** System
 **Objective:** FR-PRC-002/010 — without this, TWR, historical net worth and allocation charts have
 no data before the user joined.
-**Story:** As the system, when a security is first referenced by a household's activity, I want
+**Story:** As the system, when a security is first referenced by a workspace's activity, I want
 to backfill its price history from an external provider back to the earliest transaction date
 that references it, so that historical charts are populated from day one rather than starting
 blank.
@@ -26,7 +26,7 @@ blank.
 **Data requirements:** Listing with a resolvable external identifier for the provider.
 **Error/edge cases:** Provider has no history that far back — backfill as far as available and
 flag the earlier period as having no price data (affects TWR — see US-16-04/FR-PERF-018).
-**Authorization/privacy:** Global data, no household scoping.
+**Authorization/privacy:** Global data, no workspace scoping.
 **Dependencies:** EPIC 13, EPIC 30 (background jobs).
 **Priority:** MUST.
 **Definition of Done:** Integration test with a mocked provider asserting the backfilled date
@@ -107,15 +107,15 @@ in the master (should trigger lazy creation per EPIC 12's US-12-01, not fail).
 
 ## US-14-04 — Staleness threshold and provider failover
 
-**Actor:** System / Household member
+**Actor:** System / Workspace member
 **Objective:** FR-PRC-012/014, NFR-CON-003, PR-012.
-**Story:** As a household member, I want to be told clearly when a price I'm looking at is stale
+**Story:** As a workspace member, I want to be told clearly when a price I'm looking at is stale
 or when the market-data provider is unreachable, rather than seeing a confident but out-of-date
 number with no indication, and I want the system to keep working from stored data regardless.
 **Preconditions:** A configured staleness threshold; a scenario where the provider is
 unreachable.
 **Acceptance criteria:**
-- Given the provider is unreachable for a scheduled refresh, when a household views a position's
+- Given the provider is unreachable for a scheduled refresh, when a workspace views a position's
   value, then the last stored price is shown, clearly marked stale, and access to all other
   stored data is unaffected (PR-012 — a failed dependency degrades only the affected feature).
 - Given a price exceeds the configured staleness threshold (default: flag stale at 24h for

@@ -8,22 +8,22 @@ contribution-limit tracking is a savings-goal feature.
 
 ## US-26-01 — Multiple Pillar 3a accounts, one provider or several
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-PEN-002, C4 — standard Swiss practice for staggered withdrawal.
-**Story:** As a Swiss household member, I want to hold and track several Pillar 3a accounts (at
+**Story:** As a Swiss workspace member, I want to hold and track several Pillar 3a accounts (at
 one provider or across several), so that staggered-withdrawal planning is representable.
 **Preconditions:** A `PENSION_PROVIDER` institution (e.g. VIAC) exists.
 **Acceptance criteria:**
 - Given two `PENSION` accounts with `pension_scheme = 'CH_PILLAR_3A'` under the same institution,
   when both are created with distinct user-defined names, then both coexist without conflict
   (same pattern as EPIC 04's US-04-02, applied specifically to 3a).
-- Given a household holds 3a accounts at two different institutions (e.g. VIAC and PostFinance),
+- Given a workspace holds 3a accounts at two different institutions (e.g. VIAC and PostFinance),
   when consolidated pension totals are viewed, then both are summed correctly regardless of
   provider.
 **Applicable business rules:** FR-PEN-002, C4, RULE-022.
 **Data requirements:** `account_pension.pension_scheme`.
 **Error/edge cases:** None beyond the general account-creation rules (EPIC 05).
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** EPIC 04, EPIC 05.
 **Priority:** MUST.
 **Definition of Done:** Integration test creates two 3a accounts at two institutions and confirms
@@ -34,10 +34,10 @@ correct consolidated totals.
 
 ## US-26-02 — Annual contribution-limit tracking against effective-dated configuration
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-PEN-003/006 — a savings-goal feature; the limit is configuration data, never
 hard-coded.
-**Story:** As a Swiss household member, I want to see how much I've contributed to my Pillar 3a
+**Story:** As a Swiss workspace member, I want to see how much I've contributed to my Pillar 3a
 this year against the applicable annual limit, with a reminder before the year-end deadline, so
 that I can decide whether to top up before the deadline.
 **Preconditions:** A `pension_scheme_rule` row exists for `CH_PILLAR_3A` covering the current
@@ -51,7 +51,7 @@ figure changes annually and must never require a code release, per FR-PEN-006).
 - Given no `pension_scheme_rule` row covers the current year (the reference data has gone stale),
   when the tracking view is requested, then it shows a clear staleness warning rather than
   silently applying a prior year's limit as current (FR-REF-011).
-- Given the year-end deadline approaches (a configurable lead time), when a household member has
+- Given the year-end deadline approaches (a configurable lead time), when a workspace member has
   remaining contribution capacity, then an optional reminder notification is available
   (FR-PEN-004) — off by default per NFR-NOT-02-style "no dark-pattern engagement loops," on by
   opt-in.
@@ -60,7 +60,7 @@ never tax advice).
 **Data requirements:** `pension_contribution_tracking` per account/year;
 `pension_scheme_rule.annual_contribution_limit` effective-dated.
 **Error/edge cases:** As above — stale/missing reference data must warn, never silently misapply.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** US-26-01, EPIC 32 (reference-data import for the limit itself).
 **Priority:** SHOULD.
 **Definition of Done:** Integration test for the normal case and the stale-reference-data case.
@@ -70,10 +70,10 @@ never tax advice).
 
 ## US-26-03 — Occupational pension (Pillar 2 / bAV) as balance-and-entitlement, not a portfolio
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-ACC-030, FR-PEN (v0.1 doc)-14/DM-16 — forcing it into a holdings model produces
 meaningless performance figures.
-**Story:** As a household member, I want to record my occupational pension (CH Pillar 2 vested
+**Story:** As a workspace member, I want to record my occupational pension (CH Pillar 2 vested
 benefits, or DE bAV) as a balance updated from my annual certificate — vested benefit, interest
 credit, employer/employee contributions — with no synthetic performance figure computed from it,
 so that it contributes correctly to net worth without a misleading "return" attached.
@@ -93,7 +93,7 @@ so that it contributes correctly to net worth without a misleading "return" atta
 `VESTED_BENEFITS` account — must be rejected; this account type has `has_transactions = false`,
 `holds_positions = false` by convention (confirm defaults in the account-creation service from
 US-05-01).
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** EPIC 05.
 **Priority:** SHOULD.
 **Definition of Done:** Integration test enters a certificate update and confirms no performance

@@ -12,7 +12,7 @@
 -- data.
 CREATE TABLE financial_audit_log (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id          UUID NOT NULL REFERENCES household(id),
+    workspace_id          UUID NOT NULL REFERENCES workspace(id),
     entity_type               TEXT NOT NULL,
     entity_id                     UUID NOT NULL,
     action                            TEXT NOT NULL CHECK (action IN ('CREATE', 'UPDATE', 'VOID', 'RESTORE', 'DELETE')),
@@ -22,7 +22,7 @@ CREATE TABLE financial_audit_log (
     occurred_at                                   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_financial_audit_log_entity ON financial_audit_log(entity_type, entity_id);
-CREATE INDEX idx_financial_audit_log_household ON financial_audit_log(household_id, occurred_at DESC);
+CREATE INDEX idx_financial_audit_log_workspace ON financial_audit_log(workspace_id, occurred_at DESC);
 
 -- FR-DAT-005/FR-USR administration actions - who created/disabled/promoted a user, catalogue and
 -- reference-data package imports, etc. Deliberately separate from financial_audit_log

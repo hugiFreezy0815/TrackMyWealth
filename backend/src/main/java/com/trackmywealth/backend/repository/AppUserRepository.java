@@ -36,7 +36,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   @Query(
       "SELECT new com.trackmywealth.backend.security.AppUserAuthSnapshot("
           + "u.id, u.role, u.status, u.tokenVersion, h.id, s.status) "
-          + "FROM AppUser u LEFT JOIN u.householdMember hm LEFT JOIN hm.household h "
+          + "FROM AppUser u LEFT JOIN u.workspaceMember hm LEFT JOIN hm.workspace h "
           + "LEFT JOIN UserSession s ON s.user = u AND s.id = :sessionId "
           + "WHERE u.id = :userId")
   Optional<AppUserAuthSnapshot> findAuthSnapshot(

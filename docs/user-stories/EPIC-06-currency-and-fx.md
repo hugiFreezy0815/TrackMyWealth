@@ -10,7 +10,7 @@ Covers `fx_rate` (V8) and the currency-conversion rules in section 11. FR-CUR-*.
 **Objective:** FR-CUR-007, FR-PRC-013 — FX rates are a parallel time series with the same
 provenance rules as prices.
 **Story:** As the system, I want to fetch and store daily FX rates for every currency pair
-actually needed by a household's accounts/securities, so that historical and current conversions
+actually needed by a workspace's accounts/securities, so that historical and current conversions
 are always available from stored data.
 **Preconditions:** At least one account/security exists in a non-reporting currency.
 **Acceptance criteria:**
@@ -26,7 +26,7 @@ are always available from stored data.
 (FR-CUR-009).
 **Error/edge cases:** Provider unavailable — degrade to last stored value, mark stale
 (NFR-CON-003), never block access to already-stored data (PR-012).
-**Authorization/privacy:** `fx_rate` carries no household_id (shared data, NFR-LIC-006/007); no
+**Authorization/privacy:** `fx_rate` carries no workspace_id (shared data, NFR-LIC-006/007); no
 tenant check needed on read.
 **Dependencies:** EPIC 30 background jobs (for the scheduled fetch); this story's storage/read
 contract can be built and tested independently with manually inserted rates.

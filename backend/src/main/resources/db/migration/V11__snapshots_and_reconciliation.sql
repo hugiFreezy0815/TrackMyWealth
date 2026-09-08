@@ -10,7 +10,7 @@
 
 CREATE TABLE account_snapshot (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id         UUID NOT NULL REFERENCES household(id),
+    workspace_id         UUID NOT NULL REFERENCES workspace(id),
     account_id              UUID NOT NULL REFERENCES account(id),
     snapshot_date               DATE NOT NULL,
     balance                        NUMERIC(20,4),
@@ -38,7 +38,7 @@ CREATE INDEX idx_snapshot_holding_snapshot ON snapshot_holding(snapshot_id);
 
 CREATE TABLE reconciliation_result (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id         UUID NOT NULL REFERENCES household(id),
+    workspace_id         UUID NOT NULL REFERENCES workspace(id),
     account_id              UUID NOT NULL REFERENCES account(id),
     snapshot_id                 UUID NOT NULL REFERENCES account_snapshot(id),
     affected_security_id           UUID REFERENCES security(id),
@@ -62,7 +62,7 @@ CREATE TABLE reconciliation_result (
     created_at                                                   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_reconciliation_result_account ON reconciliation_result(account_id, status);
-CREATE INDEX idx_reconciliation_result_household ON reconciliation_result(household_id);
+CREATE INDEX idx_reconciliation_result_workspace ON reconciliation_result(workspace_id);
 
 COMMENT ON TABLE reconciliation_result IS
     'FR-REC-005/FR-CON-007: an account''s reconciliation status (has an OPEN row here?) drives the visible data-quality flag shown at the account and at the consolidated headline figure (PR-011).';
@@ -105,7 +105,7 @@ CREATE INDEX idx_tax_lot_disposal_transaction ON tax_lot_disposal(disposal_trans
 
 -- RULE-030/FR-PERF-010: the daily valuation series is an architectural prerequisite for TWR, not
 -- a reporting feature, and must exist from the MVP - retrofitting it means a full historical
--- recomputation per household. Partitioned like price/fx_rate (NFR-TEC-003).
+-- recomputation per workspace. Partitioned like price/fx_rate (NFR-TEC-003).
 -- Composite (account_id, valuation_date) is the primary key (partitioning requires the partition
 -- column to be part of it). `id` is a convenience surrogate column only - PostgreSQL also
 -- requires a UNIQUE constraint on a partitioned table to include the partition column, so `id`

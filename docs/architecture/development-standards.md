@@ -86,8 +86,8 @@ verbatim from the `quartz-2.3.2.jar` and must track that source exactly, not thi
 - Primary keys: `UUID PRIMARY KEY DEFAULT gen_random_uuid()`. Exceptions require the same
   reasoning `SchemaConventionsTest` documents for shared, non-tenant reference data
   (`trading_calendar`, `gics_structure_version`) — a natural key for genuinely global, non-tenant,
-  non-enumerable-concern lookup data, never for anything household/user-owned.
-- `household_id` on every household-scoped table, protected by row-level security (`V20`) —
+  non-enumerable-concern lookup data, never for anything workspace/user-owned.
+- `workspace_id` on every workspace-scoped table, protected by row-level security (`V20`) —
   directly, or transitively via a join where the table doesn't carry the column itself (see
   `database-schema.md` section 4 for which tables are transitive and why they need explicit
   cross-tenant test coverage of their own).

@@ -24,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * US-02-01: administrator-driven user lifecycle management. Deliberately touches only {@code
- * app_user}/{@code refresh_token}/{@code admin_audit_log} - never a household-scoped table, per
+ * app_user}/{@code refresh_token}/{@code admin_audit_log} - never a workspace-scoped table, per
  * FR-TEN-007's separation between administration rights and financial-data access.
  */
 @Service
@@ -33,7 +33,7 @@ public class AdminUserService {
   private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
   private static final String ACTIVE = "ACTIVE";
 
-  // FR-USR-005: a household/deployment must always retain at least this many active
+  // FR-USR-005: a workspace/deployment must always retain at least this many active
   // administrators - disabling/demoting one is only rejected when it would drop below this.
   private static final long MINIMUM_ACTIVE_ADMINISTRATORS = 1;
 

@@ -6,7 +6,7 @@ Covers `listing` (V8). Section 20, FR-LST-*, DM-26.
 
 ## US-13-01 — A security may have multiple listings across exchanges and currencies
 
-**Actor:** Household member / System
+**Actor:** Workspace member / System
 **Objective:** FR-LST-001, DM-26 — one ISIN, several exchange listings in different currencies.
 **Story:** As the system, I want a security to support multiple exchange listings, each with its
 own MIC, ticker and trading currency, so that an Irish-domiciled ETF quoted on SIX in CHF and on
@@ -32,10 +32,10 @@ still be usable for manual pricing (EPIC 14).
 
 ## US-13-02 — Valuation listing selection is explicit and inspectable
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-LST-004 — the same ETF quoted on two exchanges in two currencies is common in
 the target market; the rule for which price values a given position must be explicit.
-**Story:** As a household member holding the same ETF bought on two different exchanges in two
+**Story:** As a workspace member holding the same ETF bought on two different exchanges in two
 depots, I want each position to be valued using the listing it was actually acquired on (falling
 back to the primary listing when that is not known), so that my valuation is not silently wrong
 because the "other" listing's price was used.

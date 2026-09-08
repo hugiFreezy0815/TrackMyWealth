@@ -16,10 +16,10 @@ import java.util.UUID;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
-/** Maps {@code household_member} (V2) - a person represented financially; may have no login. */
+/** Maps {@code workspace_member} (V2) - a person represented financially; may have no login. */
 @Entity
-@Table(name = "household_member")
-public class HouseholdMember {
+@Table(name = "workspace_member")
+public class WorkspaceMember {
 
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
@@ -27,8 +27,8 @@ public class HouseholdMember {
   private UUID id;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
-  @JoinColumn(name = "household_id", nullable = false)
-  private Household household;
+  @JoinColumn(name = "workspace_id", nullable = false)
+  private Workspace workspace;
 
   @Column(name = "display_name", nullable = false)
   private String displayName;
@@ -62,12 +62,12 @@ public class HouseholdMember {
     return id;
   }
 
-  public Household getHousehold() {
-    return household;
+  public Workspace getWorkspace() {
+    return workspace;
   }
 
-  public void setHousehold(Household household) {
-    this.household = household;
+  public void setWorkspace(Workspace workspace) {
+    this.workspace = workspace;
   }
 
   public String getDisplayName() {

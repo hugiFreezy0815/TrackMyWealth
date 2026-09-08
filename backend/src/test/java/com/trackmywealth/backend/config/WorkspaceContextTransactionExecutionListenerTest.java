@@ -2,7 +2,7 @@ package com.trackmywealth.backend.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.trackmywealth.backend.security.HouseholdPrincipal;
+import com.trackmywealth.backend.security.WorkspacePrincipal;
 import com.zaxxer.hikari.HikariDataSource;
 import jakarta.persistence.EntityManager;
 import java.sql.Connection;
@@ -29,7 +29,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /**
  * US-28-01's Definition of Done: the pooled-connection-leakage scenario (a test pool sized to 1,
  * two sequential transactions, assert no leakage), plus the story's explicit "no resolvable
- * household context" edge case actually causing every RLS policy to deny by default - not just that
+ * workspace context" edge case actually causing every RLS policy to deny by default - not just that
  * the session variable happens to be unset, but that a real, RLS-restricted database role sees
  * nothing without it. That second half can't be demonstrated through the application's own
  * datasource today: this project's runtime role is still the migration-owning superuser (see
@@ -42,7 +42,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @Testcontainers
 @SpringBootTest
-class HouseholdContextTransactionExecutionListenerTest {
+class WorkspaceContextTransactionExecutionListenerTest {
 
   @Container
   static PostgreSQLContainer<?> postgres =
@@ -68,30 +68,30 @@ class HouseholdContextTransactionExecutionListenerTest {
   }
 
   @Test
-  void noAuthenticationLeavesHouseholdContextUnset() {
+  void noAuthenticationLeavesWorkspaceContextUnset() {
     TransactionTemplate tx = new TransactionTemplate(transactionManager);
-    String setting = tx.execute(status -> currentHouseholdIdSetting());
-    // A pooled connection that has never had app.current_household_id touched reports true NULL;
+    String setting = tx.execute(status -> currentWorkspaceIdSetting());
+    // A pooled connection that has never had app.current_workspace_id touched reports true NULL;
     // one where a prior transaction set it (then reverted at commit, per is_local=true semantics)
     // reports '' rather than NULL - a Postgres quirk of custom (extension-namespaced) GUCs, not a
-    // leak: either way, no other household's real id is observable. isNullOrEmpty() asserts the
+    // leak: either way, no other workspace's real id is observable. isNullOrEmpty() asserts the
     // actual security property (nothing leaked through) rather than one specific representation.
     assertThat(setting).isNullOrEmpty();
   }
 
   @Test
-  void householdContextIsSetForAnAuthenticatedPrincipal() {
-    UUID householdId = UUID.randomUUID();
-    authenticateAs(householdId);
+  void workspaceContextIsSetForAnAuthenticatedPrincipal() {
+    UUID workspaceId = UUID.randomUUID();
+    authenticateAs(workspaceId);
 
     TransactionTemplate tx = new TransactionTemplate(transactionManager);
-    String setting = tx.execute(status -> currentHouseholdIdSetting());
+    String setting = tx.execute(status -> currentWorkspaceIdSetting());
 
-    assertThat(setting).isEqualTo(householdId.toString());
+    assertThat(setting).isEqualTo(workspaceId.toString());
   }
 
   @Test
-  void householdContextDoesNotLeakAcrossTwoTransactionsSharingOnePooledConnection() {
+  void workspaceContextDoesNotLeakAcrossTwoTransactionsSharingOnePooledConnection() {
     // Forcing the pool to size 1 at the datasource-bean level (e.g. via a @DynamicPropertySource
     // override) causes the full application context to fail to start: Quartz's JobStore, Flyway,
     // and JPA's own JDBC metadata inspection all need a connection close together during startup
@@ -103,24 +103,24 @@ class HouseholdContextTransactionExecutionListenerTest {
     int originalMaximumPoolSize = hikariDataSource.getMaximumPoolSize();
     hikariDataSource.setMaximumPoolSize(1);
     try {
-      UUID householdA = UUID.randomUUID();
-      UUID householdB = UUID.randomUUID();
+      UUID workspaceA = UUID.randomUUID();
+      UUID workspaceB = UUID.randomUUID();
       TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-      authenticateAs(householdA);
-      String firstSetting = tx.execute(status -> currentHouseholdIdSetting());
-      assertThat(firstSetting).isEqualTo(householdA.toString());
+      authenticateAs(workspaceA);
+      String firstSetting = tx.execute(status -> currentWorkspaceIdSetting());
+      assertThat(firstSetting).isEqualTo(workspaceA.toString());
 
       // A completed transaction's is_local=true setting must not survive into the next one, even
       // though (pool size 1, forced above) this is physically the same JDBC connection.
-      authenticateAs(householdB);
-      String secondSetting = tx.execute(status -> currentHouseholdIdSetting());
-      assertThat(secondSetting).isEqualTo(householdB.toString()).isNotEqualTo(firstSetting);
+      authenticateAs(workspaceB);
+      String secondSetting = tx.execute(status -> currentWorkspaceIdSetting());
+      assertThat(secondSetting).isEqualTo(workspaceB.toString()).isNotEqualTo(firstSetting);
 
       // And the same for falling back to no context at all on that same reused connection - see
-      // noAuthenticationLeavesHouseholdContextUnset for why isNullOrEmpty(), not isNull().
+      // noAuthenticationLeavesWorkspaceContextUnset for why isNullOrEmpty(), not isNull().
       SecurityContextHolder.clearContext();
-      String thirdSetting = tx.execute(status -> currentHouseholdIdSetting());
+      String thirdSetting = tx.execute(status -> currentWorkspaceIdSetting());
       assertThat(thirdSetting).isNotEqualTo(secondSetting);
       assertThat(thirdSetting).isNullOrEmpty();
     } finally {
@@ -129,42 +129,42 @@ class HouseholdContextTransactionExecutionListenerTest {
   }
 
   @Test
-  void noHouseholdContextMeansRowLevelSecurityDeniesByDefault() throws Exception {
-    UUID otherHouseholdId;
-    UUID ownHouseholdId;
+  void noWorkspaceContextMeansRowLevelSecurityDeniesByDefault() throws Exception {
+    UUID otherWorkspaceId;
+    UUID ownWorkspaceId;
     try (Connection superuser = superuserConnection();
         Statement statement = superuser.createStatement()) {
       createRestrictedRuntimeRole(statement);
-      otherHouseholdId = insertHousehold(statement, "Other Household");
-      ownHouseholdId = insertHousehold(statement, "Own Household");
+      otherWorkspaceId = insertWorkspace(statement, "Other Workspace");
+      ownWorkspaceId = insertWorkspace(statement, "Own Workspace");
     }
 
     try (Connection restricted = restrictedRoleConnection()) {
-      // No app.current_household_id set at all: current_household_id() is NULL, so
-      // "household_id = current_household_id()" is NULL (falsy) for every row - RLS denies by
+      // No app.current_workspace_id set at all: current_workspace_id() is NULL, so
+      // "workspace_id = current_workspace_id()" is NULL (falsy) for every row - RLS denies by
       // default, per FR-TEN-001..003, rather than requiring an explicit deny rule anywhere.
-      assertThat(visibleHouseholdIds(restricted)).isEmpty();
+      assertThat(visibleWorkspaceIds(restricted)).isEmpty();
 
       // Confirms that's RLS actually filtering (not e.g. the role lacking SELECT entirely, which
       // would also show zero rows for the wrong reason): setting the context reveals exactly the
-      // household in context, never the other one that also exists in the same table.
-      setHouseholdContext(restricted, ownHouseholdId);
-      assertThat(visibleHouseholdIds(restricted)).containsExactly(ownHouseholdId);
+      // workspace in context, never the other one that also exists in the same table.
+      setWorkspaceContext(restricted, ownWorkspaceId);
+      assertThat(visibleWorkspaceIds(restricted)).containsExactly(ownWorkspaceId);
 
-      setHouseholdContext(restricted, otherHouseholdId);
-      assertThat(visibleHouseholdIds(restricted)).containsExactly(otherHouseholdId);
+      setWorkspaceContext(restricted, otherWorkspaceId);
+      assertThat(visibleWorkspaceIds(restricted)).containsExactly(otherWorkspaceId);
     }
   }
 
-  private String currentHouseholdIdSetting() {
+  private String currentWorkspaceIdSetting() {
     return (String)
         entityManager
-            .createNativeQuery("SELECT current_setting('app.current_household_id', true)")
+            .createNativeQuery("SELECT current_setting('app.current_workspace_id', true)")
             .getSingleResult();
   }
 
-  private void authenticateAs(UUID householdId) {
-    HouseholdPrincipal principal = () -> householdId;
+  private void authenticateAs(UUID workspaceId) {
+    WorkspacePrincipal principal = () -> workspaceId;
     var authentication = new TestingAuthenticationToken(principal, null, "ROLE_STANDARD_USER");
     authentication.setAuthenticated(true);
     SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -199,9 +199,9 @@ class HouseholdContextTransactionExecutionListenerTest {
         "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tenancy_test_runtime");
   }
 
-  private UUID insertHousehold(Statement statement, String name) throws Exception {
+  private UUID insertWorkspace(Statement statement, String name) throws Exception {
     UUID id = UUID.randomUUID();
-    statement.execute("INSERT INTO household (id, name) VALUES ('%s', '%s')".formatted(id, name));
+    statement.execute("INSERT INTO workspace (id, name) VALUES ('%s', '%s')".formatted(id, name));
     return id;
   }
 
@@ -210,10 +210,10 @@ class HouseholdContextTransactionExecutionListenerTest {
         postgres.getJdbcUrl(), "tenancy_test_runtime", "tenancy_test_runtime");
   }
 
-  private List<UUID> visibleHouseholdIds(Connection connection) throws Exception {
+  private List<UUID> visibleWorkspaceIds(Connection connection) throws Exception {
     var ids = new ArrayList<UUID>();
     try (Statement statement = connection.createStatement();
-        var resultSet = statement.executeQuery("SELECT id FROM household")) {
+        var resultSet = statement.executeQuery("SELECT id FROM workspace")) {
       while (resultSet.next()) {
         ids.add(UUID.fromString(resultSet.getString(1)));
       }
@@ -221,10 +221,10 @@ class HouseholdContextTransactionExecutionListenerTest {
     return ids;
   }
 
-  private void setHouseholdContext(Connection connection, UUID householdId) throws Exception {
+  private void setWorkspaceContext(Connection connection, UUID workspaceId) throws Exception {
     try (var preparedStatement =
-        connection.prepareStatement("SELECT set_config('app.current_household_id', ?, false)")) {
-      preparedStatement.setString(1, householdId.toString());
+        connection.prepareStatement("SELECT set_config('app.current_workspace_id', ?, false)")) {
+      preparedStatement.setString(1, workspaceId.toString());
       preparedStatement.execute();
     }
   }

@@ -18,7 +18,7 @@
 -- Numbered V90 (rather than following on from V20) to keep this framework-owned schema visually
 -- separate from the project's own domain migrations (V1-V20, V21+).
 --
--- Deliberately not household-scoped / RLS-protected: these are shared scheduler-infrastructure
+-- Deliberately not workspace-scoped / RLS-protected: these are shared scheduler-infrastructure
 -- tables (job definitions and trigger state for the application's own background jobs), not
 -- tenant data - the same category as the reference-data tables in V18 (see
 -- docs/architecture/database-schema.md section 4).

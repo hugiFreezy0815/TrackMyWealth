@@ -9,10 +9,10 @@ summary view, which depends on EPIC 15/16/17 being built first.
 
 ## US-18-01 — Institution summary includes investment performance for its accounts
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** Section 9.1's Institution Summary View content list — "investment performance,
 TWR, MWR and asset allocation for investment accounts."
-**Story:** As a household member, I want an institution's summary page to show TWR, MWR and asset
+**Story:** As a workspace member, I want an institution's summary page to show TWR, MWR and asset
 allocation aggregated across just that institution's investment accounts, so that I can compare
 "how is my DKB depot doing" against "how is my Broker X depot doing" without switching to the
 global consolidated view.
@@ -30,7 +30,7 @@ global consolidated view.
 **Error/edge cases:** An institution with zero investment accounts (e.g. a pure banking
 relationship) — the performance/allocation section is simply omitted or shown as "not
 applicable," not an error.
-**Authorization/privacy:** Household-scoped.
+**Authorization/privacy:** Workspace-scoped.
 **Dependencies:** EPIC 04 (US-04-03), EPIC 15, EPIC 16, EPIC 17.
 **Priority:** SHOULD.
 **Definition of Done:** Integration test computes institution-scoped TWR and compares it against

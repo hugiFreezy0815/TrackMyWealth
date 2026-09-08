@@ -109,7 +109,7 @@ your deployed web app's real origin there in every other environment.
 
 ## Running on a NAS (or any single-machine self-hosted setup)
 
-This project targets self-hosted, single-household use (a laptop or a home NAS), not a
+This project targets self-hosted, single-workspace use (a laptop or a home NAS), not a
 multi-tenant hosted service — see `docs/architecture/adr/0001-database-auto-migration.md` for what
 that does and doesn't simplify (the production DB role split it describes is a hosted-multi-tenant
 concern; not needed here).
@@ -160,7 +160,7 @@ automatically vs. convention-only, per language, and how to run each check local
 
 Read `docs/user-stories/README.md` first — it lists every epic with development-ready stories,
 which migrations each depends on, and a suggested build sequence (foundation → tenancy/auth →
-household/institution/account → transaction ledger/imports/reconciliation → investment
+workspace/institution/account → transaction ledger/imports/reconciliation → investment
 core → budgeting/net worth/consolidated reporting).
 
 ## Loading the backlog into GitHub Issues

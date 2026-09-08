@@ -9,8 +9,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface FinancialInstitutionRepository extends JpaRepository<FinancialInstitution, UUID> {
 
-  // V19's household_create_personal_assets_container trigger creates exactly one of these per
-  // household immediately after the household row is inserted; SetupService reads it back to
-  // correct its placeholder CHF currency to the household's actual chosen currency.
-  Optional<FinancialInstitution> findByHouseholdIdAndPersonalAssetsDefaultTrue(UUID householdId);
+  // V19's workspace_create_personal_assets_container trigger creates exactly one of these per
+  // workspace immediately after the workspace row is inserted; SetupService reads it back to
+  // correct its placeholder CHF currency to the workspace's actual chosen currency.
+  Optional<FinancialInstitution> findByWorkspaceIdAndPersonalAssetsDefaultTrue(UUID workspaceId);
 }

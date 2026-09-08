@@ -9,9 +9,9 @@
 CREATE TABLE import_template (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     institution_catalogue_id  UUID REFERENCES institution_catalogue(id),
-    -- NULL household_id = shipped system template (FR-IMP-009); non-NULL = a household's own
+    -- NULL workspace_id = shipped system template (FR-IMP-009); non-NULL = a workspace's own
     -- user-defined template for an institution with no shipped support (FR-IMP-024/FR-INS-010).
-    household_id                UUID REFERENCES household(id),
+    workspace_id                UUID REFERENCES workspace(id),
     name                            TEXT NOT NULL,
     template_class                     TEXT NOT NULL DEFAULT 'CASH_TRANSACTIONS' CHECK (template_class IN ('CASH_TRANSACTIONS', 'SECURITIES_TRANSACTIONS', 'SNAPSHOT')), -- INPUT-004
     -- FR-IMP-023: versioned with an effective date so a historical import remains reproducible
@@ -48,12 +48,12 @@ CREATE TABLE import_template (
     updated_at                                                                                          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_import_template_institution ON import_template(institution_catalogue_id);
-CREATE INDEX idx_import_template_household ON import_template(household_id);
+CREATE INDEX idx_import_template_workspace ON import_template(workspace_id);
 CREATE TRIGGER import_template_set_updated_at BEFORE UPDATE ON import_template FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 
 CREATE TABLE import_batch (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id          UUID NOT NULL REFERENCES household(id),
+    workspace_id          UUID NOT NULL REFERENCES workspace(id),
     account_id                UUID NOT NULL REFERENCES account(id),
     template_id                   UUID REFERENCES import_template(id),
     template_version_used             TEXT, -- FR-IMP-023: recorded even if the template later changes
@@ -77,7 +77,7 @@ CREATE TABLE import_batch (
     rolled_back_at                                                          TIMESTAMPTZ,
     uploaded_by                                                                UUID REFERENCES app_user(id)
 );
-CREATE INDEX idx_import_batch_household ON import_batch(household_id);
+CREATE INDEX idx_import_batch_workspace ON import_batch(workspace_id);
 CREATE INDEX idx_import_batch_account ON import_batch(account_id);
 
 -- Now that import_batch exists, wire up the deferred FK from V10.

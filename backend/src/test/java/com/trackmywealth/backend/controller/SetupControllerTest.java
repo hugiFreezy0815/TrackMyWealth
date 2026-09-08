@@ -5,12 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.entity.FinancialInstitution;
-import com.trackmywealth.backend.entity.Household;
-import com.trackmywealth.backend.entity.HouseholdMember;
+import com.trackmywealth.backend.entity.Workspace;
+import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
-import com.trackmywealth.backend.repository.HouseholdMemberRepository;
-import com.trackmywealth.backend.repository.HouseholdRepository;
+import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
+import com.trackmywealth.backend.repository.WorkspaceRepository;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.List;
@@ -62,8 +62,8 @@ class SetupControllerTest {
 
   @LocalServerPort int port;
 
-  @Autowired HouseholdRepository householdRepository;
-  @Autowired HouseholdMemberRepository householdMemberRepository;
+  @Autowired WorkspaceRepository workspaceRepository;
+  @Autowired WorkspaceMemberRepository workspaceMemberRepository;
   @Autowired FinancialInstitutionRepository financialInstitutionRepository;
   @Autowired AppUserRepository appUserRepository;
   @Autowired PasswordEncoder passwordEncoder;
@@ -73,15 +73,15 @@ class SetupControllerTest {
   // cost is real - a fresh Postgres per test would make this suite slow); each test needs a clean
   // slate for US-01-03's "no app_user exists yet" precondition, so truncate explicitly rather than
   // relying on test execution order. The default Testcontainers Postgres user is a superuser, so
-  // this bypasses RLS regardless of app.current_household_id - appropriate for test cleanup, never
+  // this bypasses RLS regardless of app.current_workspace_id - appropriate for test cleanup, never
   // application code.
   @BeforeEach
   void cleanDatabase() throws Exception {
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE user_session, refresh_token, app_user, household_member,"
-              + " financial_institution, household RESTART IDENTITY CASCADE");
+          "TRUNCATE TABLE user_session, refresh_token, app_user, workspace_member,"
+              + " financial_institution, workspace RESTART IDENTITY CASCADE");
     }
   }
 
@@ -89,7 +89,7 @@ class SetupControllerTest {
   void firstAttemptSucceedsAndSecondIsRejected() {
     SetupAdministratorRequest request =
         new SetupAdministratorRequest(
-            "admin@example.com", "correct-horse-battery-staple", "The Example Household", "CHF");
+            "admin@example.com", "correct-horse-battery-staple", "The Example Workspace", "CHF");
 
     client()
         .post()
@@ -121,17 +121,17 @@ class SetupControllerTest {
     // administrator is detached (returned by a repository call whose own transaction has already
     // closed), so its lazy associations are uninitialized proxies - .getId() is safe without a
     // session (Hibernate resolves it from the owning row's own FK column), but navigating further
-    // (.getHousehold(), .getName()) is not, hence the fresh, independent repository lookups below
+    // (.getWorkspace(), .getName()) is not, hence the fresh, independent repository lookups below
     // rather than walking the association chain directly.
-    UUID memberId = administrator.getHouseholdMember().getId();
-    HouseholdMember member = householdMemberRepository.findById(memberId).orElseThrow();
-    UUID householdId = member.getHousehold().getId();
-    Household household = householdRepository.findById(householdId).orElseThrow();
-    assertThat(household.getName()).isEqualTo("The Example Household");
+    UUID memberId = administrator.getWorkspaceMember().getId();
+    WorkspaceMember member = workspaceMemberRepository.findById(memberId).orElseThrow();
+    UUID workspaceId = member.getWorkspace().getId();
+    Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
+    assertThat(workspace.getName()).isEqualTo("The Example Workspace");
 
     FinancialInstitution personalAssets =
         financialInstitutionRepository
-            .findByHouseholdIdAndPersonalAssetsDefaultTrue(household.getId())
+            .findByWorkspaceIdAndPersonalAssetsDefaultTrue(workspace.getId())
             .orElseThrow();
     assertThat(personalAssets.getContainerCurrency()).isEqualTo("CHF");
     assertThat(personalAssets.getInstitutionType()).isEqualTo("PERSONAL_ASSETS");
@@ -139,7 +139,7 @@ class SetupControllerTest {
     // Second attempt: setup is a one-time bootstrap, not a general "create admin" endpoint.
     SetupAdministratorRequest secondRequest =
         new SetupAdministratorRequest(
-            "second-admin@example.com", "another-correct-battery", "A Second Household", "EUR");
+            "second-admin@example.com", "another-correct-battery", "A Second Workspace", "EUR");
 
     client()
         .post()
@@ -157,7 +157,7 @@ class SetupControllerTest {
   void concurrentSetupAttemptsOnlyEverProduceOneAdministrator() throws Exception {
     SetupAdministratorRequest request =
         new SetupAdministratorRequest(
-            "racer@example.com", "does-not-matter-which-wins", "Race Household", "CHF");
+            "racer@example.com", "does-not-matter-which-wins", "Race Workspace", "CHF");
 
     Callable<Integer> attempt =
         () ->

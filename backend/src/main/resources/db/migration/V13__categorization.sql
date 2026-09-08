@@ -11,9 +11,9 @@
 -- L2: canonical, hierarchical (<=3 levels), user-extensible reporting taxonomy.
 CREATE TABLE category (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    -- NULL household_id = shipped system default category, visible to every household
-    -- (FR-CAT-002); non-NULL = a household's own custom category (FR-CAT-003).
-    household_id          UUID REFERENCES household(id),
+    -- NULL workspace_id = shipped system default category, visible to every workspace
+    -- (FR-CAT-002); non-NULL = a workspace's own custom category (FR-CAT-003).
+    workspace_id          UUID REFERENCES workspace(id),
     parent_category_id       UUID REFERENCES category(id),
     -- FR-CAT-008: stable internal code, independent of the localized labels below, so relabelling
     -- EN/DE never touches historical classification.
@@ -27,9 +27,9 @@ CREATE TABLE category (
     is_active                                BOOLEAN NOT NULL DEFAULT TRUE,
     created_at                                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                                     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (household_id, code)
+    UNIQUE (workspace_id, code)
 );
-CREATE INDEX idx_category_household ON category(household_id);
+CREATE INDEX idx_category_workspace ON category(workspace_id);
 CREATE INDEX idx_category_parent ON category(parent_category_id);
 CREATE TRIGGER category_set_updated_at BEFORE UPDATE ON category FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 
@@ -48,10 +48,10 @@ CREATE TABLE category_source_mapping (
     UNIQUE (source_standard, source_code)
 );
 
--- FR-CAT-007/012/015: household-defined, retroactively-applicable categorisation rules.
+-- FR-CAT-007/012/015: workspace-defined, retroactively-applicable categorisation rules.
 CREATE TABLE categorization_rule (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id          UUID NOT NULL REFERENCES household(id),
+    workspace_id          UUID NOT NULL REFERENCES workspace(id),
     match_type                TEXT NOT NULL CHECK (match_type IN ('MERCHANT', 'COUNTERPARTY_IBAN', 'AMOUNT_PATTERN', 'SOURCE_CODE')),
     match_value                   TEXT NOT NULL,
     category_id                       UUID NOT NULL REFERENCES category(id),
@@ -60,7 +60,7 @@ CREATE TABLE categorization_rule (
     created_at                                 TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                                    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_categorization_rule_household ON categorization_rule(household_id, priority);
+CREATE INDEX idx_categorization_rule_workspace ON categorization_rule(workspace_id, priority);
 CREATE TRIGGER categorization_rule_set_updated_at BEFORE UPDATE ON categorization_rule FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 
 -- FR-CAT-002/006: provenance of how a transaction ended up with its current category, and

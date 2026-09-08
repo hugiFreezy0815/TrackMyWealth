@@ -11,10 +11,10 @@ import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
 /**
- * Maps {@code household} (V2). The id is deliberately NOT {@code @GeneratedValue}: the bootstrap
+ * Maps {@code workspace} (V2). The id is deliberately NOT {@code @GeneratedValue}: the bootstrap
  * sequence documented in {@code V19__seed_reference_data.sql} requires the application to know this
- * row's id before the INSERT is issued, so it can set {@code app.current_household_id} to that
- * value first (required for the row-level-security policies in V20 to allow the household's own
+ * row's id before the INSERT is issued, so it can set {@code app.current_workspace_id} to that
+ * value first (required for the row-level-security policies in V20 to allow the workspace's own
  * first rows to be written) - see {@code SetupService}.
  *
  * <p>{@code updated_at} and {@code version} are owned by the database ({@code
@@ -24,8 +24,8 @@ import org.hibernate.generator.EventType;
  * every INSERT/UPDATE and refreshes them from the database afterward instead.
  */
 @Entity
-@Table(name = "household")
-public class Household {
+@Table(name = "workspace")
+public class Workspace {
 
   @Id
   @Column(columnDefinition = "uuid")

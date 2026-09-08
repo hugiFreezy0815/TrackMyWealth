@@ -2,14 +2,14 @@
 -- V7: Security Master
 -- =============================================================================================
 -- Section 19 / DM-25..28, RULE-012/013/017: one global, shared security master record per
--- instrument, referenced by every position across every household - never duplicated per
+-- instrument, referenced by every position across every workspace - never duplicated per
 -- portfolio (DM-25). Created only on first reference (FR-SMD-001, lazy instantiation) and
 -- retained forever once referenced by any historical activity (FR-SMD-002/005).
 --
--- This table carries NO household_id / tenant column by design: it is shared reference data,
+-- This table carries NO workspace_id / tenant column by design: it is shared reference data,
 -- not tenant data (NFR-LIC-007), and is therefore excluded from the row-level security policies
 -- in V19. Per-user overrides of a shared field are modelled as a separate table keyed by
--- (household_id, security_id) so an override never leaks into another household's view (DM-25).
+-- (workspace_id, security_id) so an override never leaks into another workspace's view (DM-25).
 -- =============================================================================================
 
 CREATE TABLE issuer (
@@ -84,7 +84,7 @@ CREATE INDEX idx_security_gics ON security(gics_sub_industry_code);
 CREATE TRIGGER security_set_updated_at BEFORE UPDATE ON security FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
 
 COMMENT ON TABLE security IS
-    'DM-25: global and shared across all households. FR-SMD-005: deletable only when no transaction or position in any household portfolio references it - never merely because nobody currently holds it.';
+    'DM-25: global and shared across all workspaces. FR-SMD-005: deletable only when no transaction or position in any workspace portfolio references it - never merely because nobody currently holds it.';
 
 -- FR-IMD-02/FR-SMD-008: additional identifiers, one row per (security, identifier_type). ISIN
 -- stays on the security row itself since it is the primary key candidate; everything else here.
@@ -126,15 +126,15 @@ CREATE TABLE security_field_provenance (
     UNIQUE (security_id, field_name)
 );
 
--- DM-25: household-scoped override of a shared security-master field. Never merged back into
+-- DM-25: workspace-scoped override of a shared security-master field. Never merged back into
 -- the shared `security` row; read as an overlay at query time so it cannot leak between tenants.
-CREATE TABLE household_security_override (
+CREATE TABLE workspace_security_override (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    household_id         UUID NOT NULL REFERENCES household(id),
+    workspace_id         UUID NOT NULL REFERENCES workspace(id),
     security_id            UUID NOT NULL REFERENCES security(id),
     field_name                TEXT NOT NULL,
     override_value               TEXT NOT NULL,
     created_at                     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (household_id, security_id, field_name)
+    UNIQUE (workspace_id, security_id, field_name)
 );
-CREATE INDEX idx_household_security_override_household ON household_security_override(household_id);
+CREATE INDEX idx_workspace_security_override_workspace ON workspace_security_override(workspace_id);

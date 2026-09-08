@@ -19,7 +19,7 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Maps {@code app_user} (V2, {@code token_version} added by V16) - a person who can authenticate.
- * Deliberately separate from {@link HouseholdMember} (RULE-018): {@code role} here governs
+ * Deliberately separate from {@link WorkspaceMember} (RULE-018): {@code role} here governs
  * administration rights only, never financial-data access (FR-USR-010, FR-TEN-007).
  */
 @Entity
@@ -55,8 +55,8 @@ public class AppUser {
   private String reportingCurrency = "CHF";
 
   @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "household_member_id")
-  private HouseholdMember householdMember;
+  @JoinColumn(name = "workspace_member_id")
+  private WorkspaceMember workspaceMember;
 
   @Column(name = "mfa_totp_secret")
   private String mfaTotpSecret;
@@ -144,12 +144,12 @@ public class AppUser {
     this.reportingCurrency = reportingCurrency;
   }
 
-  public HouseholdMember getHouseholdMember() {
-    return householdMember;
+  public WorkspaceMember getWorkspaceMember() {
+    return workspaceMember;
   }
 
-  public void setHouseholdMember(HouseholdMember householdMember) {
-    this.householdMember = householdMember;
+  public void setWorkspaceMember(WorkspaceMember workspaceMember) {
+    this.workspaceMember = workspaceMember;
   }
 
   public boolean isMfaEnabled() {

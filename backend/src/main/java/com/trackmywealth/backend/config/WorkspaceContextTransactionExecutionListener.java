@@ -1,6 +1,6 @@
 package com.trackmywealth.backend.config;
 
-import com.trackmywealth.backend.security.HouseholdPrincipal;
+import com.trackmywealth.backend.security.WorkspacePrincipal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -17,10 +17,10 @@ import org.springframework.transaction.TransactionExecution;
 import org.springframework.transaction.TransactionExecutionListener;
 
 /**
- * US-28-01: sets {@code app.current_household_id} exactly once per database transaction, derived
+ * US-28-01: sets {@code app.current_workspace_id} exactly once per database transaction, derived
  * server-side from the authenticated principal - never from a request parameter - so the
  * row-level-security policies in {@code V20__tenancy_row_level_security.sql} have a trustworthy
- * value to check. See {@code docs/architecture/adr/0002-household-context-propagation.md} for why
+ * value to check. See {@code docs/architecture/adr/0002-workspace-context-propagation.md} for why
  * this hooks the transaction lifecycle ({@link TransactionExecutionListener#afterBegin}) rather
  * than an AOP aspect around service methods or a Servlet Filter/HandlerInterceptor.
  *
@@ -38,14 +38,14 @@ import org.springframework.transaction.TransactionExecutionListener;
  * JpaTransactionManager} at startup, since no autoconfiguration does this on its own.
  */
 @Component
-public class HouseholdContextTransactionExecutionListener implements TransactionExecutionListener {
+public class WorkspaceContextTransactionExecutionListener implements TransactionExecutionListener {
 
   private static final Logger log =
-      LoggerFactory.getLogger(HouseholdContextTransactionExecutionListener.class);
+      LoggerFactory.getLogger(WorkspaceContextTransactionExecutionListener.class);
 
   private final DataSource dataSource;
 
-  public HouseholdContextTransactionExecutionListener(DataSource dataSource) {
+  public WorkspaceContextTransactionExecutionListener(DataSource dataSource) {
     this.dataSource = dataSource;
   }
 
@@ -54,35 +54,35 @@ public class HouseholdContextTransactionExecutionListener implements Transaction
     if (beginFailure != null) {
       return;
     }
-    UUID householdId = resolveHouseholdId();
-    if (householdId == null) {
-      // No resolvable household context (anonymous caller, or an authenticated principal with no
-      // household link at all - e.g. a SYSTEM_ADMINISTRATOR per US-02-05). Left unset: every RLS
+    UUID workspaceId = resolveWorkspaceId();
+    if (workspaceId == null) {
+      // No resolvable workspace context (anonymous caller, or an authenticated principal with no
+      // workspace link at all - e.g. a SYSTEM_ADMINISTRATOR per US-02-05). Left unset: every RLS
       // policy then denies by default (FR-TEN-001..003), which is the intended fail-closed
       // behaviour, not an error condition for this listener to report.
       return;
     }
-    setHouseholdContext(householdId);
+    setWorkspaceContext(workspaceId);
   }
 
-  private UUID resolveHouseholdId() {
+  private UUID resolveWorkspaceId() {
     Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
     if (authentication == null
         || !authentication.isAuthenticated()
         || authentication instanceof AnonymousAuthenticationToken) {
       return null;
     }
-    if (authentication.getPrincipal() instanceof HouseholdPrincipal householdPrincipal) {
-      return householdPrincipal.householdId();
+    if (authentication.getPrincipal() instanceof WorkspacePrincipal workspacePrincipal) {
+      return workspacePrincipal.workspaceId();
     }
     return null;
   }
 
-  private void setHouseholdContext(UUID householdId) {
+  private void setWorkspaceContext(UUID workspaceId) {
     Connection connection = DataSourceUtils.getConnection(dataSource);
     try (PreparedStatement statement =
-        connection.prepareStatement("SELECT set_config('app.current_household_id', ?, true)")) {
-      statement.setString(1, householdId.toString());
+        connection.prepareStatement("SELECT set_config('app.current_workspace_id', ?, true)")) {
+      statement.setString(1, workspaceId.toString());
       statement.execute();
     } catch (SQLException e) {
       // Deliberately swallowed, not rethrown: afterBegin(..., null) - the success path this
@@ -93,13 +93,13 @@ public class HouseholdContextTransactionExecutionListener implements Transaction
       // listener exception thrown from here. Throwing would leave the connection and
       // TransactionSynchronizationManager's thread-bound "transaction active" state permanently
       // stuck for whatever thread happens to be running this - a pool-poisoning resource leak,
-      // not a contained failure. Leaving the household context unset instead means RLS denies by
+      // not a contained failure. Leaving the workspace context unset instead means RLS denies by
       // default (FR-TEN-001..003) - the caller gets a wrong-but-safe authorization failure rather
       // than a corrupted worker thread, and the underlying connection problem (if real, not
       // transient) still surfaces normally when the business logic's own query runs next.
       log.warn(
-          "Failed to set household context for household {}; RLS will deny by default",
-          householdId,
+          "Failed to set workspace context for workspace {}; RLS will deny by default",
+          workspaceId,
           e);
     } finally {
       DataSourceUtils.releaseConnection(connection, dataSource);

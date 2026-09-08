@@ -9,9 +9,9 @@ at the bottom.
 
 ## US-07-01 — Manually record a transaction of any supported type
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-DAT-01 (v0.1 doc numbering) / FR-IMP-001, FR-TRX-002.
-**Story:** As a household member, I want to manually enter a transaction (income, expense,
+**Story:** As a workspace member, I want to manually enter a transaction (income, expense,
 transfer, buy, sell, dividend, interest, fee, tax, deposit, withdrawal, ...) against an account,
 so that I have full data quality before, or instead of, any import.
 **Preconditions:** An account exists.
@@ -32,7 +32,7 @@ so that I have full data quality before, or instead of, any import.
 **Error/edge cases:** Negative quantity on a `BUY` — rejected by validation. Currency mismatched
 against the account's native currency without an FX rate supplied — the service layer must
 require/derive an `fx_rate_to_account_currency` (DM-06).
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** EPIC 05, EPIC 12 (security lookup for investment transactions).
 **Priority:** MUST.
 **Definition of Done:** Integration test covers a cash expense and a security buy end to end.
@@ -42,11 +42,11 @@ require/derive an `fx_rate_to_account_currency` (DM-06).
 
 ## US-07-02 — Void a transaction and record a compensating entry (append-only)
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** RULE-024, FR-TRX-007, FR-LIF-002/002a/004 — the ledger is append-only; corrections
 are new entries, and the permitted operation depends on provenance (T1 soft-delete / T2 void-only
 / T3 void-reopens-reconciliation).
-**Story:** As a household member, I want to correct or remove a transaction in a way appropriate
+**Story:** As a workspace member, I want to correct or remove a transaction in a way appropriate
 to its origin, so that manually-entered typos are cheap to fix while imported/reconciled records
 retain a full audit trail.
 **Preconditions:** A transaction exists.
@@ -71,7 +71,7 @@ retain a full audit trail.
 **Error/edge cases:** Bulk removal of imported records must go through import-batch rollback
 (FR-LIF-002c), never multi-select delete — the API must not expose a bulk-void endpoint for
 imported transactions outside batch rollback.
-**Authorization/privacy:** Household-scoped write; voiding requires the same access level as
+**Authorization/privacy:** Workspace-scoped write; voiding requires the same access level as
 editing.
 **Dependencies:** US-07-01, EPIC 25 (reconciliation).
 **Priority:** MUST.
@@ -84,9 +84,9 @@ silently omitted (FR-LIF-003).
 
 ## US-07-03 — Define a reusable CSV import template for one institution's export format
 
-**Actor:** Household member or administrator
+**Actor:** Workspace member or administrator
 **Objective:** FR-IMP-020/021 — support for one institution is a declarative template, not code.
-**Story:** As a household member whose bank has no shipped template, I want to define a CSV
+**Story:** As a workspace member whose bank has no shipped template, I want to define a CSV
 mapping (delimiter, encoding, decimal/thousands separators, date format, column mapping, type
 mapping) once and save it for reuse, so that no institution is ever unsupported — only more or
 less convenient (FR-IMP-024).
@@ -94,7 +94,7 @@ less convenient (FR-IMP-024).
 **Acceptance criteria:**
 - Given a raw CSV sample, when the user configures delimiter=`;`, decimal separator=`,`, date
   format=`dd.MM.yyyy` and maps columns to `booking_date`/`amount`/`description`, then an
-  `import_template` row is created with `household_id` set (a household-authored template, not a
+  `import_template` row is created with `workspace_id` set (a workspace-authored template, not a
   shipped one) and `column_mapping`/`type_mapping` populated as JSON.
 - Given the template is saved, when a second file from the same institution is imported later,
   the user can select the saved template instead of re-configuring the mapping.
@@ -107,8 +107,8 @@ decimal/thousands separators, date format, preamble/trailing row counts, amount 
 currency mode, column mapping, type mapping, account identification strategy.
 **Error/edge cases:** A template that no longer matches the institution's current export format
 must fail with a clear diagnostic (US-07-05), not silently misalign columns.
-**Authorization/privacy:** Household-scoped for user-defined templates; system-provided templates
-(`household_id IS NULL`) are read-only to households (visible via the `category`/`import_template`
+**Authorization/privacy:** Workspace-scoped for user-defined templates; system-provided templates
+(`workspace_id IS NULL`) are read-only to workspaces (visible via the `category`/`import_template`
 shared-or-own RLS policy in V20).
 **Dependencies:** US-07-01.
 **Priority:** MUST.
@@ -120,9 +120,9 @@ successfully re-uses it for a second file.
 
 ## US-07-04 — Import preview with deduplication before commit
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-IMP-004, FR-DAT-004 — nothing is written without explicit confirmation.
-**Story:** As a household member, I want to preview exactly what an import will do — new records,
+**Story:** As a workspace member, I want to preview exactly what an import will do — new records,
 detected duplicates, rows with errors — before anything is committed to the ledger, so that I
 never accidentally double-import a file.
 **Preconditions:** A file and a matching (or manually selected) `import_template`.
@@ -143,8 +143,8 @@ never accidentally double-import a file.
 **Data requirements:** None beyond the template's own fields.
 **Error/edge cases:** A file with some unparseable rows must still preview/import the valid rows
 and report the rest (FR-IMP-012) — partial success, not all-or-nothing failure.
-**Authorization/privacy:** Household-scoped write; the account being imported into must belong to
-the caller's household.
+**Authorization/privacy:** Workspace-scoped write; the account being imported into must belong to
+the caller's workspace.
 **Dependencies:** US-07-03.
 **Priority:** MUST.
 **Definition of Done:** Integration test using the V-18/V-19/V-20/V-21 golden-dataset fixtures
@@ -157,11 +157,11 @@ with a trailing summary row, and a template-version change between two imports.
 
 ## US-07-05 — Roll back an import batch
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-IMP-005, FR-LIF-010/011 — an import is identifiable and reversible as a batch;
 whether rollback hard-deletes or voids depends on whether any of its records has been modified
 since commit.
-**Story:** As a household member, I want to roll back an entire import batch if I imported the
+**Story:** As a workspace member, I want to roll back an entire import batch if I imported the
 wrong file or the wrong account, so that I can cleanly undo the mistake.
 **Preconditions:** A `COMMITTED` `import_batch` exists.
 **Acceptance criteria:**
@@ -179,7 +179,7 @@ wrong file or the wrong account, so that I can cleanly undo the mistake.
 **Data requirements:** None beyond the batch reference.
 **Error/edge cases:** Rollback of a batch that is itself mid-recomputation (a concurrent
 background job touching the same transactions) must be serialised, not race (FR-CNC-005/007).
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** US-07-04.
 **Priority:** MUST.
 **Definition of Done:** Two integration tests — clean rollback (hard delete) and rollback after

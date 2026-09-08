@@ -18,13 +18,13 @@ explains *why* the schema is shaped the way it is; this backlog is *what to buil
 This is the dependency order the stories themselves encode (see each story's **Dependencies**
 line), not an arbitrary priority call:
 
-1. **Foundation** — `EPIC-01` (bootstrap, migrations, initial admin/household, reference-data
+1. **Foundation** — `EPIC-01` (bootstrap, migrations, initial admin/workspace, reference-data
    baseline).
 2. **Tenancy & auth** — `EPIC-02` (login, sessions, MFA) and `EPIC-28` (the
-   `app.current_household_id` request-scoping mechanism the row-level-security policies in every
+   `app.current_workspace_id` request-scoping mechanism the row-level-security policies in every
    later epic assume exists). Nothing past this point can be honestly implemented without it —
-   `US-28-01` is a hard dependency of every other household-scoped story in the backlog.
-3. **Household / institution / account** — `EPIC-03`, `EPIC-04`, `EPIC-05`, `EPIC-06` (FX, needed
+   `US-28-01` is a hard dependency of every other workspace-scoped story in the backlog.
+3. **Workspace / institution / account** — `EPIC-03`, `EPIC-04`, `EPIC-05`, `EPIC-06` (FX, needed
    as soon as more than one currency is in play), `EPIC-09` (credit cards, an account extension).
 4. **Transaction ledger, imports, categorization, reconciliation** — `EPIC-07`, `EPIC-08`,
    `EPIC-25`.
@@ -48,7 +48,7 @@ line), not an arbitrary priority call:
 |---|---|---|---|---|
 | 01 | Application Foundation & Configuration | V19, V20, ADR-0001 | 4 | 3 MUST, 1 SHOULD |
 | 02 | User Administration & Authorization | V2, V16 | 5 | 5 MUST |
-| 03 | Household & Ownership | V2, V6 | 4 | 4 MUST |
+| 03 | Workspace & Ownership | V2, V6 | 4 | 4 MUST |
 | 04 | Financial Institutions | V3 | 4 | 3 MUST, 1 SHOULD |
 | 05 | Account Management | V4, V5 | 5 | 5 MUST |
 | 06 | Currency & FX Management | V8 | 3 | 3 MUST |

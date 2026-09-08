@@ -30,28 +30,28 @@ transactions never need manual categorization.
 **Error/edge cases:** A source code present but unmapped — falls through to the merchant-name
 fallback, not to "Uncategorized" directly, since a mapping gap is common (FR-CAT-011: MCC is
 "frequently absent, wrong, or reflects the acquirer rather than the merchant").
-**Authorization/privacy:** Runs within the household-scoped import/creation transaction.
+**Authorization/privacy:** Runs within the workspace-scoped import/creation transaction.
 **Dependencies:** EPIC 07.
 **Priority:** MUST.
 **Definition of Done:** Table-driven test covering source-code match, rule match, and
 uncategorized fallback.
 **Data-quality behaviour:** Uncategorized transactions are queryable as a distinct, visible list
-(FR-CAT-013), and the household's category-report totals show an explicit "Uncategorized" line
+(FR-CAT-013), and the workspace's category-report totals show an explicit "Uncategorized" line
 rather than omitting it.
 
 ---
 
 ## US-08-02 — User override always wins and is never silently replaced
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-CAT-003/006/014, RULE-031.
-**Story:** As a household member, I want my manual category correction on a transaction to stick
+**Story:** As a workspace member, I want my manual category correction on a transaction to stick
 permanently, so that a later automatic re-categorization run (e.g. after a rule change) never
 quietly reverts my choice.
 **Preconditions:** A transaction has been automatically categorized.
 **Acceptance criteria:**
 - Given a transaction currently categorized "Groceries" by a source-code match, when the user
-  changes it to "Household," then `category_id` updates, a `transaction_categorization_log` row
+  changes it to "Workspace," then `category_id` updates, a `transaction_categorization_log` row
   is written with `assigned_by = 'USER'` and `is_user_override = true`.
 - Given the user-overridden transaction, when the bulk re-categorization job runs (e.g. after a
   new `categorization_rule` is added), then the transaction is skipped — its category is
@@ -61,7 +61,7 @@ quietly reverts my choice.
 **Data requirements:** None beyond the log table.
 **Error/edge cases:** A user "undoes" their own override back to automatic — this should be an
 explicit action (e.g. "reset to automatic"), not achievable by accident.
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** US-08-01.
 **Priority:** MUST.
 **Definition of Done:** Integration test overrides a category, re-runs the automatic job, and
@@ -72,9 +72,9 @@ asserts the override persists.
 
 ## US-08-03 — Retroactive rule application with preview
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-CAT-007/012, FR-CSH-02.
-**Story:** As a household member, I want a newly created categorization rule to optionally apply
+**Story:** As a workspace member, I want a newly created categorization rule to optionally apply
 to my existing historical transactions, with a preview of exactly what would change before I
 confirm, so that I can fix a whole category of past mis-categorizations in one action without
 surprises.
@@ -90,7 +90,7 @@ surprises.
 **Error/edge cases:** A rule that would match an extremely large number of transactions — the
 preview/apply operation should run as an asynchronous job (FR-JOB-001/008) rather than block the
 request, consistent with EPIC 30/31's background-processing pattern.
-**Authorization/privacy:** Household-scoped write.
+**Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** US-08-01, US-08-02.
 **Priority:** MUST.
 **Definition of Done:** Integration test creates a rule, previews, applies, and confirms
@@ -101,17 +101,17 @@ user-overridden transactions are skipped.
 
 ## US-08-04 — Custom, hierarchical, user-extensible category taxonomy
 
-**Actor:** Household member
+**Actor:** Workspace member
 **Objective:** FR-CAT-001..003, section 13.
-**Story:** As a household member, I want to create, rename, reorganize and deactivate my own
+**Story:** As a workspace member, I want to create, rename, reorganize and deactivate my own
 categories (up to Category > Subcategory), keeping the shipped defaults available but editable,
-so that the taxonomy fits how my household actually thinks about spending.
+so that the taxonomy fits how my workspace actually thinks about spending.
 **Preconditions:** Shipped default categories exist (`V19` seed).
 **Acceptance criteria:**
-- Given the shipped default "Leisure" category, when a household adds a subcategory "Streaming
-  Subscriptions" under it, then a new `category` row is created with `household_id` set and
+- Given the shipped default "Leisure" category, when a workspace adds a subcategory "Streaming
+  Subscriptions" under it, then a new `category` row is created with `workspace_id` set and
   `parent_category_id` pointing at the default "Leisure" row.
-- Given a household attempts to hard-delete a default category that has existing mappings/rules
+- Given a workspace attempts to hard-delete a default category that has existing mappings/rules
   depending on it, when the request is made, then it is rejected in favour of deactivation
   (`is_active = false`) — historical assignments are preserved (FR-LIF-001: "deactivate,
   historical assignments preserved. Only if never used" for hard delete).
@@ -119,14 +119,14 @@ so that the taxonomy fits how my household actually thinks about spending.
   they are unaffected because classification is keyed to the category's stable `code`, not its
   label (FR-CAT-008).
 **Applicable business rules:** FR-CAT-001..003/008/014, section 13.
-**Data requirements:** `code` unique per household (or NULL-household default), EN/DE labels
+**Data requirements:** `code` unique per workspace (or NULL-workspace default), EN/DE labels
 required.
 **Error/edge cases:** Depth beyond Category > Subcategory (3 levels total per FR-CAT-001, "at
 least Category > Subcategory") — service-layer validation, not currently a DB constraint (the
 `category` table's `parent_category_id` self-reference has no enforced depth limit; document this
 as a validation the service layer owns).
-**Authorization/privacy:** Household-scoped write for household-owned categories; default
-categories (`household_id IS NULL`) are read-only to households, writable only via a reference
+**Authorization/privacy:** Workspace-scoped write for workspace-owned categories; default
+categories (`workspace_id IS NULL`) are read-only to workspaces, writable only via a reference
 package import (EPIC 32).
 **Dependencies:** US-08-01.
 **Priority:** MUST.
