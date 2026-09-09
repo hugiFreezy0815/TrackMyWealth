@@ -110,14 +110,8 @@ public class SetupService {
     personalAssets.setContainerCurrency(request.currencyCode());
     financialInstitutionRepository.save(personalAssets);
 
-    WorkspaceMember administratorMember = new WorkspaceMember();
-    administratorMember.setWorkspace(workspace);
-    // No separate "your name" field exists in this story's request - the workspace display name
-    // and credentials are all it collects. Falling back to the email's local part is a reasonable
-    // placeholder; revisit if a later story adds an explicit display-name field to setup.
-    administratorMember.setDisplayName(request.email().split("@", 2)[0]);
-    administratorMember.setDependent(false);
-    administratorMember = workspaceMemberRepository.save(administratorMember);
+    WorkspaceMember administratorMember =
+        workspaceMemberRepository.save(WorkspaceMember.newLoginMember(workspace, request.email()));
 
     AppUser administrator = new AppUser();
     administrator.setEmail(request.email());

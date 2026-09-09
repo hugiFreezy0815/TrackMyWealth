@@ -12,6 +12,7 @@ import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.RefreshTokenRepository;
 import com.trackmywealth.backend.repository.UserSessionRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
+import com.trackmywealth.backend.repository.WorkspaceRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -37,8 +38,11 @@ import tools.jackson.databind.ObjectMapper;
  * administrator, and this mirrors that for every user created afterward (#47). Without it, the new
  * user authenticates successfully but {@code app.current_workspace_id} never resolves for their
  * requests ({@code WorkspaceContextTransactionExecutionListener}), so every workspace-scoped table
- * denies them by default - a strictly worse outcome for FR-TEN-007 than creating an identity/
- * membership stub row that carries no financial transaction data of its own.
+ * denies them by default. This is not the FR-TEN-007 boundary US-02-05 protects: that story is
+ * about the {@code role} column itself never granting implicit financial access beyond what
+ * workspace membership already grants (an administrator who is also a member gets exactly a
+ * member's access, no more) - it does not forbid an administrator from creating that membership in
+ * the first place, which is the entire point of this endpoint existing.
  */
 @Service
 public class AdminUserService {
@@ -51,6 +55,7 @@ public class AdminUserService {
   private static final long MINIMUM_ACTIVE_ADMINISTRATORS = 1;
 
   private final AppUserRepository appUserRepository;
+  private final WorkspaceRepository workspaceRepository;
   private final WorkspaceMemberRepository workspaceMemberRepository;
   private final RefreshTokenRepository refreshTokenRepository;
   private final UserSessionRepository userSessionRepository;
@@ -60,6 +65,7 @@ public class AdminUserService {
 
   public AdminUserService(
       AppUserRepository appUserRepository,
+      WorkspaceRepository workspaceRepository,
       WorkspaceMemberRepository workspaceMemberRepository,
       RefreshTokenRepository refreshTokenRepository,
       UserSessionRepository userSessionRepository,
@@ -67,6 +73,7 @@ public class AdminUserService {
       PasswordEncoder passwordEncoder,
       ObjectMapper objectMapper) {
     this.appUserRepository = appUserRepository;
+    this.workspaceRepository = workspaceRepository;
     this.workspaceMemberRepository = workspaceMemberRepository;
     this.refreshTokenRepository = refreshTokenRepository;
     this.userSessionRepository = userSessionRepository;
@@ -76,23 +83,26 @@ public class AdminUserService {
   }
 
   @Transactional
-  public UserSummaryResponse createUser(CreateUserRequest request, UUID actorUserId) {
+  public UserSummaryResponse createUser(
+      CreateUserRequest request, UUID actorUserId, UUID actorWorkspaceId) {
     assertEmailAvailable(request.email());
 
-    // The acting administrator's own workspace, not a fresh lookup of "the" workspace: `workspace`
-    // itself is RLS-scoped by its own id (V20's tenant_isolation_read policy), so a blind query
-    // would return zero rows unless app.current_workspace_id already equals it - which it does
-    // here only because WorkspaceContextTransactionExecutionListener already resolved it from
-    // this same actor's own authenticated principal before this method ever ran. Navigating the
-    // actor's already-loaded association reuses that same value rather than re-deriving it.
-    Workspace workspace = actorWorkspaceOrThrow(actorUserId);
-    WorkspaceMember member = new WorkspaceMember();
-    member.setWorkspace(workspace);
-    // No display-name field exists on this request - same fallback SetupService uses for the
-    // bootstrap administrator's own member row.
-    member.setDisplayName(request.email().split("@", 2)[0]);
-    member.setDependent(false);
-    member = workspaceMemberRepository.save(member);
+    if (actorWorkspaceId == null) {
+      // Only reachable for an administrator created before this fix landed (or the pre-fix
+      // bootstrap-only administrator's own account somehow losing its link) - no such state can
+      // arise going forward, and no persistent deployment predates this fix.
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "Acting administrator has no workspace of their own to link the new user to.");
+    }
+    // A reference, not a fetch: `workspace` itself is RLS-scoped by its own id (V20's
+    // tenant_isolation_read policy), so a real SELECT here would need app.current_workspace_id
+    // already set to this exact id to return anything - which JwtAuthenticationFilter already
+    // established for actorWorkspaceId when it authenticated this same request, so a second
+    // round trip to re-confirm it would be redundant, not more correct.
+    Workspace workspace = workspaceRepository.getReferenceById(actorWorkspaceId);
+    WorkspaceMember member =
+        workspaceMemberRepository.save(WorkspaceMember.newLoginMember(workspace, request.email()));
 
     AppUser user = new AppUser();
     user.setEmail(request.email());
@@ -181,20 +191,6 @@ public class AdminUserService {
 
     writeAuditLog(actorUserId, "USER_REACTIVATED", targetUserId, null);
     return toSummary(target);
-  }
-
-  private Workspace actorWorkspaceOrThrow(UUID actorUserId) {
-    WorkspaceMember actorMember =
-        appUserRepository.findById(actorUserId).map(AppUser::getWorkspaceMember).orElse(null);
-    if (actorMember == null) {
-      // Only reachable for an administrator created before this fix landed (or the pre-fix
-      // bootstrap-only administrator's own account somehow losing its link) - no such state can
-      // arise going forward, and no persistent deployment predates this fix.
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT,
-          "Acting administrator has no workspace of their own to link the new user to.");
-    }
-    return actorMember.getWorkspace();
   }
 
   private void assertEmailAvailable(String email) {

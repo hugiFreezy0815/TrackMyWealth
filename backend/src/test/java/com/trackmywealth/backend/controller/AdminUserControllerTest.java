@@ -145,6 +145,37 @@ class AdminUserControllerTest {
   }
 
   @Test
+  void administratorWithNoWorkspaceLinkCannotCreateAUser() throws Exception {
+    // Simulates the pre-fix state #47 describes: an administrator with no workspace_member link
+    // of their own. Not reachable via any current API path (every account-creation path now
+    // links one), but createUser must still fail safely - a clear 409, not an NPE - if it were
+    // ever to occur again.
+    String adminToken = bootstrapAdministrator();
+    AppUser admin = onlyAppUser();
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "UPDATE app_user SET workspace_member_id = NULL WHERE id = ?")) {
+      statement.setObject(1, admin.getId());
+      statement.executeUpdate();
+    }
+
+    adminClient(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateUserRequest(
+                "nobody@example.com", "another-strong-password", "STANDARD_USER", "EN"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+
+    assertThat(appUserRepository.findAll()).hasSize(1);
+  }
+
+  @Test
   void creatingAUserWithAnAlreadyUsedEmailIsRejected() {
     String adminToken = bootstrapAdministrator();
     createStandardUser(adminToken, "bob@example.com");
