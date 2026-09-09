@@ -58,6 +58,10 @@ class SetupControllerTest {
     registry.add("spring.datasource.url", postgres::getJdbcUrl);
     registry.add("spring.datasource.username", postgres::getUsername);
     registry.add("spring.datasource.password", postgres::getPassword);
+    // FR-AUT-010's per-source rate limiter is on by default (application.yml) - these
+    // tests exercise login/setup/revoke repeatedly within one continuous run and aren't
+    // testing rate limiting itself, so it would otherwise trip spuriously.
+    registry.add("app.rate-limit.enabled", () -> "false");
   }
 
   @LocalServerPort int port;

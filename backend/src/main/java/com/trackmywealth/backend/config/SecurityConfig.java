@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.security.JwtAuthenticationFilter;
+import com.trackmywealth.backend.security.RateLimitFilter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -41,7 +42,10 @@ public class SecurityConfig {
 
   @Bean
   SecurityFilterChain filterChain(
-      HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+      HttpSecurity http,
+      JwtAuthenticationFilter jwtAuthenticationFilter,
+      RateLimitFilter rateLimitFilter)
+      throws Exception {
     http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
         .authorizeHttpRequests(
             authorize ->
@@ -67,6 +71,11 @@ public class SecurityConfig {
                     .anyRequest()
                     .authenticated())
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+        // FR-AUT-010: rejected before it costs a JWT parse or a findAuthSnapshot query, not just
+        // before the endpoint's own business logic. JwtAuthenticationFilter's own position must
+        // already be registered (the call above) before another filter can be placed relative to
+        // it - Spring Security's filter comparator resolves this per call, not by final order.
+        .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class)
         // A missing/invalid/expired token gets a plain 401, distinct from the 403 an
         // authenticated-but-wrong-role caller gets (Spring Security's own AccessDeniedHandler,
         // unchanged) - without this, both cases fall back to the same Http403ForbiddenEntryPoint,

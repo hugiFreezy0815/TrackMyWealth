@@ -91,6 +91,24 @@ app:
     # Comma-separated; localhost with any port covers `expo start --web`'s dev server out of the
     # box. Add the deployed web app's real origin here in every non-local environment.
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGINS:http://localhost:*}
+  rate-limit:
+    # FR-AUT-010 (#48): per-source (IP) limits on authentication-adjacent endpoints, independent
+    # of app_user's own per-account lockout (US-02-02). "capacity" tokens refill every
+    # "refill-period" - see RateLimitFilter. On by default (a security control shouldn't need
+    # opt-in); every functional test that isn't specifically testing this disables it explicitly.
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    login:
+      capacity: ${RATE_LIMIT_LOGIN_CAPACITY:10}
+      refill-period: ${RATE_LIMIT_LOGIN_REFILL_PERIOD:1m}
+    refresh:
+      capacity: ${RATE_LIMIT_REFRESH_CAPACITY:30}
+      refill-period: ${RATE_LIMIT_REFRESH_REFILL_PERIOD:1m}
+    setup:
+      capacity: ${RATE_LIMIT_SETUP_CAPACITY:5}
+      refill-period: ${RATE_LIMIT_SETUP_REFILL_PERIOD:1m}
+    session-revoke:
+      capacity: ${RATE_LIMIT_SESSION_REVOKE_CAPACITY:30}
+      refill-period: ${RATE_LIMIT_SESSION_REVOKE_REFILL_PERIOD:1m}
 
 management:
   endpoints:

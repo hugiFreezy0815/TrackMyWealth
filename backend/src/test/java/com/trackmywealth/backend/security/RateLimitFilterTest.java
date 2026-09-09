@@ -1,0 +1,133 @@
+package com.trackmywealth.backend.security;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.trackmywealth.backend.dto.LoginRequest;
+import com.trackmywealth.backend.dto.RefreshTokenRequest;
+import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.client.RestTestClient;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+/**
+ * FR-AUT-010 (#48): per-source (IP) request limits, exercised end to end through the real Spring
+ * Security filter chain since the whole point is to reject a request before it ever reaches {@link
+ * JwtAuthenticationFilter} or the controller (see {@link RateLimitFilter}).
+ *
+ * <p>Overrides tight capacities via {@code @DynamicPropertySource} rather than using the production
+ * defaults (application.yml): a 60-second refill window at production capacity would make this test
+ * either slow (waiting out the window) or need 10+ rapid requests to prove anything. Every other
+ * full-context test in this project explicitly disables rate limiting instead, since it isn't what
+ * they're testing - that split is what makes production's secure-by-default {@code enabled: true}
+ * safe to ship without breaking them.
+ */
+@Testcontainers
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class RateLimitFilterTest {
+
+  private static final String PASSWORD = "correct-horse-battery-staple";
+  private static final int CAPACITY = 3;
+
+  @Container
+  static PostgreSQLContainer<?> postgres =
+      new PostgreSQLContainer<>("postgres:16")
+          .withDatabaseName("trackmywealth")
+          .withUsername("trackmywealth")
+          .withPassword("trackmywealth");
+
+  @DynamicPropertySource
+  static void properties(DynamicPropertyRegistry registry) {
+    registry.add("spring.datasource.url", postgres::getJdbcUrl);
+    registry.add("spring.datasource.username", postgres::getUsername);
+    registry.add("spring.datasource.password", postgres::getPassword);
+    registry.add("app.rate-limit.enabled", () -> "true");
+    registry.add("app.rate-limit.login.capacity", () -> String.valueOf(CAPACITY));
+    registry.add("app.rate-limit.login.refill-period", () -> "1m");
+    registry.add("app.rate-limit.refresh.capacity", () -> String.valueOf(CAPACITY));
+    registry.add("app.rate-limit.refresh.refill-period", () -> "1m");
+    registry.add("app.rate-limit.setup.capacity", () -> String.valueOf(CAPACITY));
+    registry.add("app.rate-limit.setup.refill-period", () -> "1m");
+    registry.add("app.rate-limit.session-revoke.capacity", () -> String.valueOf(CAPACITY));
+    registry.add("app.rate-limit.session-revoke.refill-period", () -> "1m");
+  }
+
+  @LocalServerPort int port;
+
+  // A single test method, deliberately: @SpringBootTest shares one application context (and so
+  // one RateLimitFilter singleton, with its own bucket map) across every test method in this
+  // class, so splitting login/refresh/setup assertions into separate methods would have each
+  // one's calls silently consume from the same still-warm buckets the previous method already
+  // spent down, rather than each starting fresh.
+  @Test
+  void perSourceRateLimitingIsEnforcedIndependentlyPerRuleAndAccount() {
+    // login: a spray attack targets many different (here, nonexistent) accounts from one IP,
+    // never tripping any single account's own lockout - the limiter must still catch it, keyed by
+    // source IP alone, independent of which account is targeted. No administrator needs to exist
+    // for this - a nonexistent email already returns 401 (see LoginService).
+    for (int i = 0; i < CAPACITY; i++) {
+      login("nobody" + i + "@example.com").expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    login("one-more@example.com")
+        .expectStatus()
+        .isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        .expectHeader()
+        .exists("Retry-After");
+
+    // refresh: a completely separate rule's bucket - login's being exhausted above must not bleed
+    // into it (an invalid token still gets its normal 401, not a 429).
+    client()
+        .post()
+        .uri("/api/v1/auth/refresh")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new RefreshTokenRequest("not-a-real-token"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+
+    // setup: succeeds at most once (it self-disables) - every call after the first is a business
+    // 409, not a 429, until the rate limit itself is exhausted.
+    for (int i = 0; i < CAPACITY; i++) {
+      client()
+          .post()
+          .uri("/api/v1/setup/administrator")
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(
+              new SetupAdministratorRequest(
+                  "admin" + i + "@example.com", PASSWORD, "Test Workspace", "CHF"))
+          .exchange()
+          .expectStatus()
+          .value(status -> assertThat(status).isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value()));
+    }
+    client()
+        .post()
+        .uri("/api/v1/setup/administrator")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new SetupAdministratorRequest(
+                "one-more@example.com", PASSWORD, "Test Workspace", "CHF"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  private RestTestClient.ResponseSpec login(String email) {
+    return client()
+        .post()
+        .uri("/api/v1/auth/login")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new LoginRequest(email, PASSWORD))
+        .exchange();
+  }
+
+  private RestTestClient client() {
+    return RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build();
+  }
+}
