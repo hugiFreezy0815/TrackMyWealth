@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import java.net.URI;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -75,7 +77,21 @@ class RateLimitFilterTest {
     for (int i = 0; i < CAPACITY; i++) {
       login("nobody" + i + "@example.com").expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
     }
-    login("one-more@example.com")
+    // Percent-encoded path ("i" -> "%69"), deliberately: request.getRequestURI() is never
+    // decoded per the Servlet spec, so if the filter matched against it directly this call would
+    // sail through unrate-limited (a fresh, un-throttled implicit pass) while still reaching
+    // AuthController normally, since Spring MVC routes on the decoded path regardless. Getting a
+    // 429 here instead of a 401 proves the filter matches on the same decoded path Spring MVC
+    // does.
+    client()
+        .post()
+        // A raw URI, not a String template: .uri(String) treats its argument as a template and
+        // would re-encode the literal "%" itself (producing "%2569n", which decodes back to the
+        // harmless literal text "%69n" - not what this assertion needs to prove).
+        .uri(URI.create("http://localhost:%d/api/v1/auth/log%%69n".formatted(port)))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new LoginRequest("one-more@example.com", PASSWORD))
+        .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
         .expectHeader()
@@ -116,6 +132,19 @@ class RateLimitFilterTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+    // session-revoke: the filter runs before authentication (SecurityConfig), so an entirely
+    // unauthenticated call still consumes from this rule's bucket - proving issue #57's cheap-
+    // hammer scenario (each denial doubling DB writes via AuthorizationDenialAuditService's
+    // REQUIRES_NEW write) is throttled independent of whether the caller ever authenticates.
+    for (int i = 0; i < CAPACITY; i++) {
+      revokeSession(UUID.randomUUID()).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    revokeSession(UUID.randomUUID()).expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  private RestTestClient.ResponseSpec revokeSession(UUID id) {
+    return client().post().uri("/api/v1/sessions/" + id + "/revoke").exchange();
   }
 
   private RestTestClient.ResponseSpec login(String email) {

@@ -16,13 +16,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class SetupController {
 
+  // Referenced by RateLimitFilter (FR-AUT-010) so the two can never silently drift apart - the
+  // mapping annotation below is the single source of truth for both.
+  public static final String ADMINISTRATOR_PATH = "/api/v1/setup/administrator";
+
   private final SetupService setupService;
 
   public SetupController(SetupService setupService) {
     this.setupService = setupService;
   }
 
-  @PostMapping("/api/v1/setup/administrator")
+  @PostMapping(ADMINISTRATOR_PATH)
   public ResponseEntity<AuthTokensResponse> bootstrapAdministrator(
       @Valid @RequestBody SetupAdministratorRequest request,
       @RequestHeader(value = "User-Agent", required = false) String userAgent,
