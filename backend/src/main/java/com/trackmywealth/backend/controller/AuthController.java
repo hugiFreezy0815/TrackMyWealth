@@ -21,6 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class AuthController {
 
+  // Referenced by RateLimitFilter (FR-AUT-010) so the two can never silently drift apart - the
+  // mapping annotation below is the single source of truth for both.
+  public static final String LOGIN_PATH = "/api/v1/auth/login";
+  public static final String REFRESH_PATH = "/api/v1/auth/refresh";
+
   private final LoginService loginService;
   private final TokenRotationService tokenRotationService;
 
@@ -29,7 +34,7 @@ public class AuthController {
     this.tokenRotationService = tokenRotationService;
   }
 
-  @PostMapping("/api/v1/auth/login")
+  @PostMapping(LOGIN_PATH)
   public ResponseEntity<LoginResponse> login(
       @Valid @RequestBody LoginRequest request,
       @RequestHeader(value = "User-Agent", required = false) String userAgent,
@@ -38,7 +43,7 @@ public class AuthController {
     return ResponseEntity.ok(response);
   }
 
-  @PostMapping("/api/v1/auth/refresh")
+  @PostMapping(REFRESH_PATH)
   public ResponseEntity<AuthTokensResponse> refresh(
       @Valid @RequestBody RefreshTokenRequest request) {
     return ResponseEntity.ok(tokenRotationService.rotate(request.refreshToken()));

@@ -16,6 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class SessionController {
 
+  // Referenced by RateLimitFilter (FR-AUT-010) so the two can never silently drift apart - the
+  // mapping annotation below is the single source of truth for both. AntPathMatcher (used by the
+  // filter) supports the same {id} placeholder syntax as Spring MVC's own mapping, so this one
+  // literal works unmodified in both places - no hand-translated wildcard to keep in sync.
+  public static final String REVOKE_PATH = "/api/v1/sessions/{id}/revoke";
+
   private final SessionService sessionService;
 
   public SessionController(SessionService sessionService) {
@@ -29,7 +35,7 @@ public class SessionController {
         sessionService.listSessions(principal.userId(), principal.sessionId()));
   }
 
-  @PostMapping("/api/v1/sessions/{id}/revoke")
+  @PostMapping(REVOKE_PATH)
   public ResponseEntity<SessionSummaryResponse> revokeSession(
       @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal principal) {
     return ResponseEntity.ok(

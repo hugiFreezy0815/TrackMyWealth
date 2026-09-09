@@ -27,8 +27,9 @@ public class LoginService {
 
   // FR-AUT-010: architect decision for this story - a fixed lockout window, not a rolling one,
   // since app_user has no "attempts in the last N minutes" column, only a cumulative
-  // failed_login_count plus locked_until. Per-source (IP) rate limiting is explicitly deferred
-  // (tracked as a follow-up issue) - this only ever limits per account.
+  // failed_login_count plus locked_until. This only ever limits per account - complemented by
+  // RateLimitFilter's per-source (IP) limiting (#48), added later, which catches an attacker
+  // spraying different accounts from one IP without ever tripping any single account's lockout.
   private static final int MAX_FAILED_ATTEMPTS_BEFORE_LOCKOUT = 5;
   private static final Duration LOCKOUT_DURATION = Duration.ofMinutes(15);
   private static final String ACTIVE = "ACTIVE";

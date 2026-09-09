@@ -100,6 +100,14 @@
             <version>0.13.0</version>
             <scope>runtime</scope>
         </dependency>
+        <!-- FR-AUT-010: per-source (IP) rate limiting on authentication-adjacent endpoints
+             (#48). In-memory token-bucket implementation - sufficient for this project's
+             current single-instance self-hosted deployment target; see RateLimitFilter. -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j_jdk17-core</artifactId>
+            <version>8.19.0</version>
+        </dependency>
 
         <!-- OpenAPI contract - FR-API-001: the spec is generated from and validated
              against the implementation, and is a release deliverable. -->
