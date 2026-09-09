@@ -152,7 +152,7 @@ public class AdminUserService {
 
   @Transactional
   public UserSummaryResponse disableUser(UUID targetUserId, UUID actorUserId) {
-    AppUser target = findUserOrThrow(targetUserId);
+    AppUser target = findUserForUpdateOrThrow(targetUserId);
     assertNotLastActiveAdministrator(target, "disable");
 
     target.setStatus("DISABLED");
@@ -172,7 +172,7 @@ public class AdminUserService {
 
   @Transactional
   public UserSummaryResponse reactivateUser(UUID targetUserId, UUID actorUserId) {
-    AppUser target = findUserOrThrow(targetUserId);
+    AppUser target = findUserForUpdateOrThrow(targetUserId);
     target.setStatus(ACTIVE);
     // FR-AUT-010: re-enabling a previously locked-out/disabled user must not carry over a stale
     // lockout from before they were disabled.
@@ -214,6 +214,16 @@ public class AdminUserService {
   private AppUser findUserOrThrow(UUID userId) {
     return appUserRepository
         .findById(userId)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+  }
+
+  // #62: disableUser/reactivateUser use this instead of findUserOrThrow - see
+  // AppUserRepository.findByIdForUpdate for why locking the target row first, before either
+  // method does anything else, is what actually closes the deadlock those two can otherwise hit
+  // racing each other on the same target.
+  private AppUser findUserForUpdateOrThrow(UUID userId) {
+    return appUserRepository
+        .findByIdForUpdate(userId)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
   }
 

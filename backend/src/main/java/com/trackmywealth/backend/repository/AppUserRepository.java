@@ -2,10 +2,12 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.security.AppUserAuthSnapshot;
+import jakarta.persistence.LockModeType;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -81,4 +83,18 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
           + " WHERE u.id = :userId")
   void registerSuccessfulLogin(
       @Param("userId") UUID userId, @Param("loginAt") OffsetDateTime loginAt);
+
+  // #62: AdminUserService.disableUser()/reactivateUser() both mutate this row and then - in
+  // opposite order, forced by a real FK constraint on reactivateUser()'s side - mutate
+  // refresh_token/user_session for the same user. Two concurrent admin actions on the same
+  // target raced under high enough concurrency and deadlocked, not on refresh_token/user_session
+  // directly but on this row itself (confirmed against a real Postgres instance: several
+  // concurrent optimistic-locked UPDATEs to one row can produce a genuine wait-for cycle via
+  // Postgres's tuple-lock queueing, not just a plain serialize-and-wait). Locking this row FIRST,
+  // before either method does anything else, fully serializes the two transactions - the second
+  // can't even read the row until the first commits - so whatever order the rest of each
+  // method's statements run in can no longer race a concurrent call to the other.
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT u FROM AppUser u WHERE u.id = :id")
+  Optional<AppUser> findByIdForUpdate(@Param("id") UUID id);
 }
