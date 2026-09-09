@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -41,14 +42,25 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>Runs many concurrent (rotate, revoke) pairs, each pair racing on its own session/token, with
  * every thread released simultaneously via a {@link CountDownLatch} to maximize the chance that at
  * least one pair's two threads genuinely overlap at the vulnerable moment. With the current,
- * correctly-ordered code this can never deadlock regardless of timing - a total lock order across
- * every transaction touching these two tables is a textbook sufficient condition for
- * deadlock-freedom (whichever thread reaches {@code refresh_token} first simply makes the other
- * wait for it there, so neither can ever be found holding {@code user_session} while blocked on
- * {@code refresh_token}, which is the only shape a cycle here could take). So this test's real job
- * is to fail the moment that invariant is broken again, not to prove it holds today - it does not
- * assert *how* the two methods order their statements, only that racing them repeatedly never
- * produces the failure mode that ordering exists to prevent.
+ * correctly-ordered code this can never deadlock regardless of timing, for these two methods
+ * specifically - a consistent lock order between exactly these two call paths is a textbook
+ * sufficient condition for deadlock-freedom between them (whichever thread reaches {@code
+ * refresh_token} first simply makes the other wait for it there, so neither can ever be found
+ * holding {@code user_session} while blocked on {@code refresh_token}). So this test's real job is
+ * to fail the moment that invariant is broken again for rotate()/revokeSession(), not to prove it
+ * holds today - it does not assert *how* the two methods order their statements, only that racing
+ * them repeatedly never produces the failure mode that ordering exists to prevent.
+ *
+ * <p><b>Scope, precisely:</b> this guards only {@code rotate()} and {@code revokeSession()} - the
+ * two methods #53 named. It is not a claim that every transaction touching {@code refresh_token}
+ * and {@code user_session} is mutually deadlock-free: {@code AdminUserService.disableUser()} and
+ * {@code reactivateUser()} also touch both tables, in an order that mismatches between the two of
+ * them, and a concurrency probe built the same way as this test confirmed a real (if differently
+ * shaped - see #62) deadlock racing those two on the same target user. That gap is tracked
+ * separately in #62 rather than folded into this class, since its actual mechanism turned out to
+ * involve contention on the shared {@code app_user} row as well, not just {@code
+ * refresh_token}/{@code user_session} ordering, and deserves its own properly-scoped fix rather
+ * than a rushed one bolted on here.
  */
 @Testcontainers
 @SpringBootTest
@@ -126,9 +138,15 @@ class TokenRotationSessionRevocationConcurrencyTest {
                             pair.sessionId(), admin.getId(), UUID.randomUUID()))));
       }
 
-      assertThat(ready.await(10, TimeUnit.SECONDS))
-          .as("every racing thread must reach the start line before any is released")
-          .isTrue();
+      if (!ready.await(10, TimeUnit.SECONDS)) {
+        // Interrupt and abandon every still-parked thread now, rather than falling through to
+        // go.countDown() below - if not every thread even reached the start line, releasing the
+        // ones that did would let them run unsupervised (the test is about to fail regardless)
+        // against a Postgres instance the next round, or a later test class sharing the
+        // Testcontainers-per-class lifecycle, might still depend on being in a clean state.
+        executor.shutdownNow();
+        fail("every racing thread must reach the start line before any is released");
+      }
       go.countDown();
 
       for (Future<?> future : futures) {
