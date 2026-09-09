@@ -37,7 +37,7 @@ public class AdminUserController {
       @Valid @RequestBody CreateUserRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return ResponseEntity.status(HttpStatus.CREATED)
-        .body(adminUserService.createUser(request, actor.userId()));
+        .body(adminUserService.createUser(request, actor.userId(), actor.workspaceId()));
   }
 
   @PatchMapping("/{id}")

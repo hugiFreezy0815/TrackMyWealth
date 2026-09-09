@@ -58,6 +58,18 @@ public class WorkspaceMember {
   @Column(name = "version", insertable = false, updatable = false)
   private Integer version;
 
+  // No display-name field exists yet on either SetupAdministratorRequest or CreateUserRequest -
+  // both a newly bootstrapped administrator (SetupService) and every user an administrator
+  // creates afterward (AdminUserService) fall back to this same rule, kept in one place so the
+  // two call sites can't silently drift apart.
+  public static WorkspaceMember newLoginMember(Workspace workspace, String email) {
+    WorkspaceMember member = new WorkspaceMember();
+    member.setWorkspace(workspace);
+    member.setDisplayName(email.split("@", 2)[0]);
+    member.setDependent(false);
+    return member;
+  }
+
   public UUID getId() {
     return id;
   }

@@ -14,6 +14,8 @@ import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.UserSessionRepository;
 import com.trackmywealth.backend.service.TokenIssuanceService;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -111,6 +113,66 @@ class AdminUserControllerTest {
               assertThat(log.getActorUserId()).isEqualTo(admin.getId());
               assertThat(log.getTargetUserId()).isEqualTo(bob.getId());
             });
+  }
+
+  @Test
+  void createdUserIsLinkedToAWorkspaceMember() throws Exception {
+    // Regression test for #47: AdminUserService.createUser used to insert only the app_user row,
+    // leaving workspace_member_id NULL - the account authenticated fine but could never access
+    // any workspace-scoped data (WorkspaceContextTransactionExecutionListener never resolves a
+    // workspace context for it, so RLS denies every workspace-scoped table by default).
+    String adminToken = bootstrapAdministrator();
+    AppUser bob = createStandardUser(adminToken, "bob@example.com");
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT wm.display_name FROM app_user u "
+                    + "JOIN workspace_member wm ON wm.id = u.workspace_member_id "
+                    + "WHERE u.id = ?")) {
+      statement.setObject(1, bob.getId());
+      try (ResultSet rs = statement.executeQuery()) {
+        assertThat(rs.next())
+            .as(
+                "bob's app_user row must have a resolvable workspace_member link - before this"
+                    + " fix, workspace_member_id was NULL and this join returned nothing")
+            .isTrue();
+        // No display-name field exists on CreateUserRequest - same email-local-part fallback
+        // SetupService uses for the bootstrap administrator's own member row.
+        assertThat(rs.getString("display_name")).isEqualTo("bob");
+      }
+    }
+  }
+
+  @Test
+  void administratorWithNoWorkspaceLinkCannotCreateAUser() throws Exception {
+    // Simulates the pre-fix state #47 describes: an administrator with no workspace_member link
+    // of their own. Not reachable via any current API path (every account-creation path now
+    // links one), but createUser must still fail safely - a clear 409, not an NPE - if it were
+    // ever to occur again.
+    String adminToken = bootstrapAdministrator();
+    AppUser admin = onlyAppUser();
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "UPDATE app_user SET workspace_member_id = NULL WHERE id = ?")) {
+      statement.setObject(1, admin.getId());
+      statement.executeUpdate();
+    }
+
+    adminClient(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateUserRequest(
+                "nobody@example.com", "another-strong-password", "STANDARD_USER", "EN"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+
+    assertThat(appUserRepository.findAll()).hasSize(1);
   }
 
   @Test

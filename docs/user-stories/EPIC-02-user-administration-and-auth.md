@@ -29,7 +29,11 @@ accounts, so that I can manage who can authenticate to this deployment.
 **Error/edge cases:** Disabling yourself as the sole admin; re-enabling a disabled user (must
 reset `failed_login_count`/`locked_until`).
 **Authorization/privacy:** FR-TEN-007 — this endpoint touches administration rights only; it must
-never be usable to read or grant financial-data access. FR-USR-011 — disabling a user must never
+never be usable to read or grant financial-data access *beyond ordinary workspace membership* -
+see US-02-05: the `role` column must never itself grant extra financial access, but creating the
+`workspace_member` link every login-capable user needs (the same one `SetupService` creates for
+the bootstrap administrator) is exactly this endpoint's job, not a violation of it (#47). FR-USR-011
+— disabling a user must never
 delete or orphan the linked `workspace_member`'s financial data.
 **Dependencies:** US-01-03.
 **Priority:** MUST.
