@@ -18,7 +18,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** US-04-01. Reachable by any authenticated caller with an active workspace membership. */
+/**
+ * US-04-01. Reachable by any authenticated caller (catalogue search needs no workspace at all -
+ * it's shared, non-tenant-scoped reference data); creating an institution needs one, which {@link
+ * InstitutionService#createInstitution} itself checks for.
+ */
 @RestController
 @RequestMapping("/api/v1/institutions")
 public class InstitutionController {
@@ -31,10 +35,8 @@ public class InstitutionController {
 
   @GetMapping("/catalogue")
   public Page<InstitutionCatalogueEntrySummaryResponse> searchCatalogue(
-      @RequestParam(required = false) String query,
-      Pageable pageable,
-      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return institutionService.searchCatalogue(actor.userId(), query, pageable);
+      @RequestParam(required = false) String query, Pageable pageable) {
+    return institutionService.searchCatalogue(query, pageable);
   }
 
   @PostMapping
@@ -42,6 +44,6 @@ public class InstitutionController {
       @Valid @RequestBody CreateFinancialInstitutionRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return ResponseEntity.status(HttpStatus.CREATED)
-        .body(institutionService.createInstitution(request, actor.userId(), actor.workspaceId()));
+        .body(institutionService.createInstitution(request, actor.workspaceId()));
   }
 }

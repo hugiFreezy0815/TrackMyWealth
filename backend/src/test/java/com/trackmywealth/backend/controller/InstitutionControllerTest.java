@@ -266,11 +266,14 @@ class InstitutionControllerTest {
   }
 
   @Test
-  void aDeactivatedWorkspaceMemberCannotSearchOrCreate() throws Exception {
+  void aDeactivatedWorkspaceMemberCannotAuthenticateAtAll() throws Exception {
     // No code path deactivates a workspace_member yet (US-03-04 is later in this sprint) - this
-    // simulates that future state directly at the DB level to prove InstitutionService's
-    // baseline "RLS + active member" authorization check (see its class Javadoc) actually holds,
-    // ahead of US-03-04 landing for real.
+    // simulates that future state directly at the DB level to prove JwtAuthenticationFilter's
+    // workspace_member.status check (added alongside this story - see its class Javadoc) actually
+    // holds, ahead of US-03-04 landing for real. This is enforced globally (401, the token simply
+    // no longer authenticates - the same treatment a disabled AppUser already gets), not as a
+    // per-endpoint 403, so every workspace-scoped endpoint is covered automatically, not just
+    // this one.
     String token = bootstrapAdministrator();
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
@@ -282,7 +285,7 @@ class InstitutionControllerTest {
         .uri("/api/v1/institutions/catalogue")
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.FORBIDDEN);
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
 
     client(token)
         .post()
@@ -293,7 +296,42 @@ class InstitutionControllerTest {
                 null, "Should Not Be Created", null, null, null, null, "CHF"))
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.FORBIDDEN);
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void blankOptionalFieldsAreTreatedAsOmittedWhenLinkingACatalogueEntry() {
+    // A client that reuses one form model for both create flows and defaults unset fields to ""
+    // rather than null must not have that fail validation for fields the catalogue path ignores.
+    String token = bootstrapAdministrator();
+    var postFinance = searchCatalogue(token, "Post").content().get(0);
+
+    FinancialInstitutionSummaryResponse created =
+        createInstitution(
+            token, new CreateFinancialInstitutionRequest(postFinance.id(), "", "", "", "", "", ""));
+
+    assertThat(created.name()).isEqualTo("PostFinance");
+    // containerCurrency="" normalizes to null too, so the country-derived default still applies.
+    assertThat(created.containerCurrency()).isEqualTo("CHF");
+  }
+
+  @Test
+  void malformedCountryCodeIsRejected() {
+    String token = bootstrapAdministrator();
+
+    client(token)
+        .post()
+        .uri("/api/v1/institutions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateFinancialInstitutionRequest(
+                null, "Bad Country Bank", "USA", null, null, null, "CHF"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+
+    assertThat(financialInstitutionRepository.findAll())
+        .noneMatch(institution -> "Bad Country Bank".equals(institution.getName()));
   }
 
   @SuppressWarnings("unchecked")

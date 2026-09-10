@@ -1,8 +1,8 @@
 package com.trackmywealth.backend.dto;
 
+import com.trackmywealth.backend.validation.ValidCurrencyCode;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -16,4 +16,7 @@ public record SetupAdministratorRequest(
     // FR-AUT-007: minimum-length-led policy, not composition rules.
     @NotBlank @Size(min = 12) String password,
     @NotBlank String workspaceName,
-    @NotBlank @Pattern(regexp = "[A-Z]{3}") String currencyCode) {}
+    // US-04-01: validated against java.util.Currency (via @ValidCurrencyCode), not just
+    // "3 uppercase letters" - the two currency-accepting endpoints in the app would otherwise
+    // disagree on what a valid currency code is.
+    @NotBlank @ValidCurrencyCode String currencyCode) {}

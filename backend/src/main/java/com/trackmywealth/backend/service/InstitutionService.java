@@ -6,7 +6,6 @@ import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
 import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.entity.InstitutionCatalogue;
 import com.trackmywealth.backend.entity.Workspace;
-import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
@@ -23,37 +22,33 @@ import org.springframework.web.server.ResponseStatusException;
  * US-04-01: search the shared institution catalogue and create a workspace's own {@link
  * FinancialInstitution} container from a catalogue entry or as a custom one.
  *
- * <p>This is the first member-facing (non-admin) workspace-scoped write in the codebase - RLS
+ * <p>This is the first member-facing (non-admin) workspace-scoped write in the codebase. RLS
  * ({@code app.current_workspace_id}, set per-request by {@code
- * WorkspaceContextTransactionExecutionListener}) already confines every read/write here to the
- * caller's own workspace, but says nothing about whether the caller's own {@code workspace_member}
- * row has itself been deactivated. {@link #assertActiveMember} is the baseline check this
- * establishes for every workspace-scoped write to follow: RLS plus "the caller is still an active
- * member of this workspace." Fine-grained per-account/per-institution access levels (FR-HOU-004's
- * {@code sharing_grant}) have no Java implementation yet (EPIC-03's US-03-03 is still schema-only)
- * - this story deliberately does not attempt to enforce that layer.
+ * WorkspaceContextTransactionExecutionListener}) confines every read/write here to the caller's own
+ * workspace; {@code JwtAuthenticationFilter} additionally refuses to authenticate a request at all
+ * when the caller's linked {@code workspace_member} exists but isn't {@code ACTIVE} - so by the
+ * time a request reaches this service, a workspace context is either absent entirely (a {@code
+ * SYSTEM_ADMINISTRATOR} with no membership, handled by the {@code actorWorkspaceId == null} check
+ * in {@link #createInstitution}) or genuinely active. Fine-grained per-account/ per-institution
+ * access levels (FR-HOU-004's {@code sharing_grant}) have no Java implementation yet (EPIC-03's
+ * US-03-03 is still schema-only) - this story deliberately does not attempt to enforce that layer.
  */
 @Service
 public class InstitutionService {
-
-  private static final String ACTIVE = "ACTIVE";
 
   // The institution_catalogue.country CHECK constraint (V3) currently allows only these two
   // values - this map covers exactly that, not a general-purpose country/currency registry.
   private static final Map<String, String> DEFAULT_CURRENCY_BY_COUNTRY =
       Map.of("CH", "CHF", "DE", "EUR");
 
-  private final AppUserRepository appUserRepository;
   private final WorkspaceRepository workspaceRepository;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final InstitutionCatalogueRepository institutionCatalogueRepository;
 
   public InstitutionService(
-      AppUserRepository appUserRepository,
       WorkspaceRepository workspaceRepository,
       FinancialInstitutionRepository financialInstitutionRepository,
       InstitutionCatalogueRepository institutionCatalogueRepository) {
-    this.appUserRepository = appUserRepository;
     this.workspaceRepository = workspaceRepository;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.institutionCatalogueRepository = institutionCatalogueRepository;
@@ -61,8 +56,7 @@ public class InstitutionService {
 
   @Transactional(readOnly = true)
   public Page<InstitutionCatalogueEntrySummaryResponse> searchCatalogue(
-      UUID actorUserId, String query, Pageable pageable) {
-    assertActiveMember(actorUserId);
+      String query, Pageable pageable) {
     Page<InstitutionCatalogue> page =
         (query == null || query.isBlank())
             ? institutionCatalogueRepository.findByActiveTrue(pageable)
@@ -73,8 +67,10 @@ public class InstitutionService {
 
   @Transactional
   public FinancialInstitutionSummaryResponse createInstitution(
-      CreateFinancialInstitutionRequest request, UUID actorUserId, UUID actorWorkspaceId) {
-    assertActiveMember(actorUserId);
+      CreateFinancialInstitutionRequest request, UUID actorWorkspaceId) {
+    // Reachable for a SYSTEM_ADMINISTRATOR with no linked workspace_member - see the class
+    // Javadoc. Anyone with an active membership always has a non-null workspaceId by the time
+    // JwtAuthenticationFilter authenticates the request.
     if (actorWorkspaceId == null) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "Caller has no workspace of their own to create an institution in.");
@@ -134,7 +130,7 @@ public class InstitutionService {
 
   private void applyCustomEntry(
       FinancialInstitution institution, CreateFinancialInstitutionRequest request) {
-    if (request.name() == null || request.name().isBlank()) {
+    if (request.name() == null) {
       throw new ResponseStatusException(
           HttpStatus.BAD_REQUEST, "name is required for a custom institution.");
     }
@@ -150,16 +146,6 @@ public class InstitutionService {
     institution.setIdentifier(request.identifier());
     institution.setLogoUrl(request.logoUrl());
     institution.setContainerCurrency(request.containerCurrency());
-  }
-
-  // US-04-01's baseline authorization check - see the class Javadoc. Empty when the caller has
-  // no linked workspace_member at all (e.g. a SYSTEM_ADMINISTRATOR with no membership).
-  private void assertActiveMember(UUID actorUserId) {
-    String status = appUserRepository.findWorkspaceMemberStatus(actorUserId).orElse(null);
-    if (!ACTIVE.equals(status)) {
-      throw new ResponseStatusException(
-          HttpStatus.FORBIDDEN, "Caller has no active workspace membership.");
-    }
   }
 
   private InstitutionCatalogueEntrySummaryResponse toCatalogueSummary(

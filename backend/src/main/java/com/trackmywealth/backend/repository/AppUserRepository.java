@@ -42,7 +42,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   // degrade to sessionStatus == null (treated as "not authenticated"), not a query failure.
   @Query(
       "SELECT new com.trackmywealth.backend.security.AppUserAuthSnapshot("
-          + "u.id, u.role, u.status, u.tokenVersion, w.id, s.status) "
+          + "u.id, u.role, u.status, u.tokenVersion, w.id, wm.status, s.status) "
           + "FROM AppUser u LEFT JOIN u.workspaceMember wm LEFT JOIN wm.workspace w "
           + "LEFT JOIN UserSession s ON s.user = u AND s.id = :sessionId "
           + "WHERE u.id = :userId")
@@ -145,12 +145,4 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("SELECT u FROM AppUser u WHERE u.id = :id")
   Optional<AppUser> findByIdForUpdate(@Param("id") UUID id);
-
-  // US-04-01: the first member-facing workspace-scoped write establishes this as the baseline
-  // authorization check every one after it should reuse - RLS already confines a request to its
-  // own workspace, but says nothing about whether the caller's own workspace_member has since
-  // been deactivated (no code path does that yet, but US-03-04 will). Empty when the caller has
-  // no linked workspace_member at all (e.g. a SYSTEM_ADMINISTRATOR with no membership).
-  @Query("SELECT wm.status FROM AppUser u JOIN u.workspaceMember wm WHERE u.id = :userId")
-  Optional<String> findWorkspaceMemberStatus(@Param(USER_ID) UUID userId);
 }
