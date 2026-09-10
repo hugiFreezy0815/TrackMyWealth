@@ -108,6 +108,13 @@
             <artifactId>bucket4j_jdk17-core</artifactId>
             <version>8.19.0</version>
         </dependency>
+        <!-- #60: bounds RateLimitFilter's in-memory bucket store so a caller spread across many
+             source addresses (e.g. a routed IPv6 block) can't grow it unboundedly between sweeps. -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>3.2.4</version>
+        </dependency>
 
         <!-- OpenAPI contract - FR-API-001: the spec is generated from and validated
              against the implementation, and is a release deliverable. -->

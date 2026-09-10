@@ -97,6 +97,23 @@ class RateLimitFilterTest {
         .expectHeader()
         .exists("Retry-After");
 
+    // #60: no server.tomcat.remoteip.internal-proxies is configured in this context (the
+    // application.yml default - nobody is trusted), so a spoofed X-Forwarded-For claiming a
+    // fresh source must NOT be honored - this request is still every caller's real address
+    // (127.0.0.1, since the test client connects over loopback), which the block above already
+    // exhausted. A fresh 401 here instead of 429 would mean the header was trusted with no
+    // allowlist configured at all - exactly the unconditional-trust regression #60 avoids by
+    // deferring to Tomcat's own allowlisted RemoteIpValve instead of reading the header directly.
+    client()
+        .post()
+        .uri("/api/v1/auth/login")
+        .header("X-Forwarded-For", "203.0.113.99")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new LoginRequest("still-should-be-limited@example.com", PASSWORD))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
     // refresh: a completely separate rule's bucket - login's being exhausted above must not bleed
     // into it (an invalid token still gets its normal 401, not a 429).
     client()

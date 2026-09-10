@@ -8,10 +8,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * limits on authentication-adjacent endpoints. {@code capacity} tokens refill every {@code
  * refill-period}, independently per endpoint group. See {@link
  * com.trackmywealth.backend.security.RateLimitFilter} for how these are applied.
+ *
+ * <p>{@code maxBuckets} (#60) caps the total number of distinct (rule, source) buckets held in
+ * memory at once, across all four rules combined - without it, a caller spread across many source
+ * addresses (e.g. a routed IPv6 block) could grow the bucket store unboundedly between eviction
+ * sweeps.
  */
 @ConfigurationProperties(prefix = "app.rate-limit")
 public record RateLimitProperties(
-    boolean enabled, Rule login, Rule refresh, Rule setup, Rule sessionRevoke) {
+    boolean enabled, int maxBuckets, Rule login, Rule refresh, Rule setup, Rule sessionRevoke) {
 
   public record Rule(int capacity, Duration refillPeriod) {}
 }

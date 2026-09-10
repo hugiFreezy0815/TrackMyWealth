@@ -46,6 +46,9 @@ services:
       # application.yml is left as-is here. Override with a real secret via a `.env` file
       # (docker compose reads one automatically) once auth exists:
       #   JWT_SECRET: ${JWT_SECRET}
+      # If you put a reverse proxy in front of this stack, see the root README's "Running behind
+      # a reverse proxy" section before setting this:
+      #   TRUSTED_PROXIES: ${TRUSTED_PROXIES}
     ports:
       - "8080:8080"
     restart: unless-stopped

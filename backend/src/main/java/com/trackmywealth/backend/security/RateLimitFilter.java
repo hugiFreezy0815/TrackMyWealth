@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.security;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.trackmywealth.backend.config.RateLimitProperties;
 import com.trackmywealth.backend.controller.AuthController;
 import com.trackmywealth.backend.controller.SessionController;
@@ -12,14 +14,14 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import org.springframework.http.HttpStatus;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -49,23 +51,30 @@ import org.springframework.web.util.UrlPathHelper;
  * /api/v1/auth/log%69n}) reach the real, decoded-path-routed controller while sailing past every
  * check here unrate-limited.
  *
- * <p>Identifies a source purely by {@link HttpServletRequest#getRemoteAddr()}, with no
- * X-Forwarded-For/trusted-proxy support - correct for a bare, directly-exposed deployment, but
- * every client behind a shared reverse proxy (a near-universal way to add TLS in front of this
- * project's documented NAS deployment path) would collapse into one shared bucket per rule,
- * silently defeating the isolation this filter exists to provide. Not fixed here: a naive
- * X-Forwarded-For trust would let any direct caller spoof a different header value per request and
- * bypass the limiter entirely, which is a worse regression than the current gap - a correct fix
- * needs an explicit trusted-proxy allowlist, tracked as a follow-up (see #48's own "deployment
- * shape" note and the PR #59 review that flagged this).
+ * <p>Identifies a source via {@link HttpServletRequest#getRemoteAddr()} - as of #60, that is no
+ * longer necessarily the direct TCP peer: {@code server.forward-headers-strategy=native}
+ * (application.yml) enables Tomcat's {@code RemoteIpValve}, which rewrites it from X-Forwarded-For,
+ * but *only* when the direct peer's address matches the configured {@code
+ * server.tomcat.remoteip.internal-proxies} allowlist (the {@code TRUSTED_PROXIES} env var - empty
+ * by default, meaning nobody is trusted and every client's own direct address is used, exactly as
+ * before #60). This is deliberately configured at the container level rather than by hand-parsing
+ * the header in this class: a naive, untrusted X-Forwarded-For read would let any direct caller
+ * spoof a fresh value per request and bypass the limiter entirely - worse than not reading the
+ * header at all - and Tomcat's valve already implements the trusted-proxy check correctly.
  *
- * <p>One in-memory token bucket per (rule, source IP) pair, via bucket4j - sufficient for this
+ * <p>IPv6 addresses are bucketed by their /64 network prefix, not the full 128-bit address ({@link
+ * #sourceKey}) - an attacker with a routed IPv6 /64 (trivially obtainable from most ISP
+ * allocations) could otherwise mint an unlimited number of fresh, full-capacity buckets by using a
+ * different address within that /64 on every request. IPv4 addresses are used in full, since IPv4
+ * allocations of that scale aren't handed to individual end users.
+ *
+ * <p>One in-memory token bucket per (rule, source key) pair, via bucket4j - sufficient for this
  * project's current single-instance self-hosted deployment target (see #48's own open question;
  * revisit with a shared/Redis-backed bucket store if multi-instance deployment ever becomes a
- * goal). {@link #evictStaleBuckets()} bounds the map's memory growth for a fixed population of
- * callers, but has no hard cap on total distinct entries between sweeps - also tracked as a
- * follow-up, since a caller with many source IPs (e.g. a routed IPv6 block) could otherwise grow it
- * significantly before the next sweep.
+ * goal). The bucket store ({@link #buckets}) is a Caffeine cache bounded by {@code
+ * app.rate-limit.max-buckets} (total across all four rules) with time-based eviction of idle
+ * entries - #60's fix for the unbounded-growth gap the IPv6 bucketing above would otherwise make
+ * easy to trigger deliberately.
  */
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
@@ -77,7 +86,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
   // this never evicts a bucket that's still actively limiting someone, only ones truly idle.
   private static final Duration STALE_AFTER = Duration.ofHours(1);
 
-  private final Map<String, TrackedBucket> buckets = new ConcurrentHashMap<>();
+  private final Cache<String, Bucket> buckets;
   private final boolean enabled;
   private final Rule loginRule;
   private final Rule refreshRule;
@@ -95,6 +104,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
     this.refreshRule = new Rule("refresh", properties.refresh());
     this.setupRule = new Rule("setup", properties.setup());
     this.sessionRevokeRule = new Rule("sessionRevoke", properties.sessionRevoke());
+    this.buckets =
+        Caffeine.newBuilder()
+            .maximumSize(properties.maxBuckets())
+            .expireAfterAccess(STALE_AFTER)
+            .build();
   }
 
   @Override
@@ -152,18 +166,30 @@ public class RateLimitFilter extends OncePerRequestFilter {
   }
 
   private Bucket bucketFor(Rule rule, String sourceIp) {
-    String key = rule.name() + ':' + sourceIp;
-    TrackedBucket existing = buckets.get(key);
-    if (existing != null) {
-      existing.touch();
-      return existing.getBucket();
+    String key = rule.name() + ':' + sourceKey(sourceIp);
+    // get(key, mappingFunction) computes at most once per key even under concurrent first
+    // access - no manual putIfAbsent race-handling needed, unlike a plain ConcurrentHashMap.
+    return buckets.get(key, k -> newBucket(rule.config()));
+  }
+
+  // IPv6: collapse to the /64 network prefix (the top 8 of 16 address bytes) so an attacker
+  // rotating through a single routed /64 can't mint an unlimited number of fresh buckets: one
+  // per distinct address. IPv4: used as-is - allocations large enough for the same trick aren't
+  // handed to individual end users.
+  private static String sourceKey(String remoteAddr) {
+    InetAddress address;
+    try {
+      // A literal IP address (always what getRemoteAddr()/RemoteIpValve produce) is only
+      // format-validated here, never resolved via DNS.
+      address = InetAddress.getByName(remoteAddr);
+    } catch (UnknownHostException e) {
+      return remoteAddr;
     }
-    // Racing the very first request for a brand-new key is harmless: at most one of the two
-    // freshly-built buckets is kept (putIfAbsent), the other discarded unused - never touched, so
-    // never mistaken for state that needs preserving.
-    TrackedBucket created = new TrackedBucket(newBucket(rule.config()));
-    TrackedBucket winner = buckets.putIfAbsent(key, created);
-    return (winner != null ? winner : created).getBucket();
+    if (!(address instanceof Inet6Address)) {
+      return remoteAddr;
+    }
+    byte[] prefix = Arrays.copyOf(address.getAddress(), 8);
+    return HexFormat.of().formatHex(prefix);
   }
 
   private Bucket newBucket(RateLimitProperties.Rule config) {
@@ -175,32 +201,5 @@ public class RateLimitFilter extends OncePerRequestFilter {
     return Bucket.builder().addLimit(limit).build();
   }
 
-  @Scheduled(fixedDelay = 30, timeUnit = TimeUnit.MINUTES)
-  void evictStaleBuckets() {
-    Instant cutoff = Instant.now().minus(STALE_AFTER);
-    buckets.values().removeIf(tracked -> tracked.getLastAccess().isBefore(cutoff));
-  }
-
   private record Rule(String name, RateLimitProperties.Rule config) {}
-
-  private static final class TrackedBucket {
-    private final Bucket bucket;
-    private volatile Instant lastAccess = Instant.now();
-
-    TrackedBucket(Bucket bucket) {
-      this.bucket = bucket;
-    }
-
-    Bucket getBucket() {
-      return bucket;
-    }
-
-    void touch() {
-      lastAccess = Instant.now();
-    }
-
-    Instant getLastAccess() {
-      return lastAccess;
-    }
-  }
 }

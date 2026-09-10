@@ -129,6 +129,27 @@ The web build (`mobile/`, see above) is not part of this compose file - export i
 (`npx expo export -p web`) and serve `mobile/dist/` from any static file host, including one
 running on the same NAS if you want everything on one box.
 
+## Running behind a reverse proxy
+
+`docker-compose.yml` above exposes the backend directly on `:8080` - no reverse proxy is part of
+this project's deployment by default. If you put one in front (e.g. to add TLS - a NAS reverse-
+proxy feature like Synology's, or your own nginx/Caddy/Traefik), two things need the proxy's
+address configured, or the backend can't tell your proxy apart from any other caller:
+
+- `TRUSTED_PROXIES` (`server.tomcat.remoteip.internal-proxies`, unset by default): a regex the
+  proxy's own address must match, e.g. `192\.168\.1\.10` for a single host or `10\.0\.0\.\d+` for
+  a subnet. Once set, X-Forwarded-For/X-Forwarded-Proto from that address are honored - restoring
+  the real client's IP for `RateLimitFilter`'s per-source limiting (#60) and the real client's
+  scheme for anything that checks `isSecure()`.
+- Never set this to a pattern broad enough to match a real client's own address - a client that
+  the backend trusts as "the proxy" can set its own X-Forwarded-For and pick whichever rate-limit
+  bucket it likes, defeating the limiter entirely. Only the proxy's own fixed address(es) should
+  match.
+
+Without `TRUSTED_PROXIES` set, every caller behind a shared proxy collapses into one IP as far as
+the backend can tell - correct as a safe default (nothing is trusted until configured), but it
+means one client's failed logins can throttle every other client behind the same proxy too.
+
 ## Testing & CI
 
 ```bash
