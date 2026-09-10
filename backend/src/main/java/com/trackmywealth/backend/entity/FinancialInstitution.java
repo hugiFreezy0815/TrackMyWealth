@@ -37,11 +37,28 @@ public class FinancialInstitution {
   @JoinColumn(name = "workspace_id", nullable = false)
   private Workspace workspace;
 
+  // US-04-01: null for a custom institution not backed by any catalogue entry (FR-INS-003).
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "catalogue_institution_id")
+  private InstitutionCatalogue catalogueInstitution;
+
   @Column(nullable = false)
   private String name;
 
+  // ISO 3166-1 alpha-2, unlike institution_catalogue.country - no CHECK constraint restricts
+  // this to CH/DE, since a custom (non-catalogue) institution may be anywhere. V3 declares this
+  // CHAR(2) (fixed-width), not varchar, same as containerCurrency below.
+  @JdbcTypeCode(SqlTypes.CHAR)
+  @Column(length = 2)
+  private String country;
+
   @Column(name = "institution_type", nullable = false)
   private String institutionType;
+
+  @Column private String identifier;
+
+  @Column(name = "logo_url")
+  private String logoUrl;
 
   // V3 declares this CHAR(3) (fixed-width ISO 4217 code), not varchar.
   @JdbcTypeCode(SqlTypes.CHAR)
@@ -79,6 +96,14 @@ public class FinancialInstitution {
     this.workspace = workspace;
   }
 
+  public InstitutionCatalogue getCatalogueInstitution() {
+    return catalogueInstitution;
+  }
+
+  public void setCatalogueInstitution(InstitutionCatalogue catalogueInstitution) {
+    this.catalogueInstitution = catalogueInstitution;
+  }
+
   public String getName() {
     return name;
   }
@@ -87,12 +112,36 @@ public class FinancialInstitution {
     this.name = name;
   }
 
+  public String getCountry() {
+    return country;
+  }
+
+  public void setCountry(String country) {
+    this.country = country;
+  }
+
   public String getInstitutionType() {
     return institutionType;
   }
 
   public void setInstitutionType(String institutionType) {
     this.institutionType = institutionType;
+  }
+
+  public String getIdentifier() {
+    return identifier;
+  }
+
+  public void setIdentifier(String identifier) {
+    this.identifier = identifier;
+  }
+
+  public String getLogoUrl() {
+    return logoUrl;
+  }
+
+  public void setLogoUrl(String logoUrl) {
+    this.logoUrl = logoUrl;
   }
 
   public String getContainerCurrency() {
