@@ -2,10 +2,13 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.security.AppUserAuthSnapshot;
+import jakarta.persistence.LockModeType;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -48,13 +51,52 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   // the disable/demote, so the lock is held until that method's own commit. PostgreSQL rejects
   // FOR UPDATE directly on an aggregate query ("FOR UPDATE is not allowed with aggregate
   // functions") - the inner subquery locks the actual rows, the outer aggregate then just counts
-  // the (already-locked) result.
+  // the (already-locked) result. ORDER BY id on the inner subquery: this and {@code
+  // lockTargetAndActiveAdministrators} below both lock overlapping sets of these same rows from
+  // different call sites (editUser's demote path calls this one directly; disableUser calls the
+  // other) - without both acquiring them in the same deterministic order, two concurrent callers
+  // could each lock a different row in this set first and then deadlock reaching for the other's
+  // (see #62's follow-up finding: id is a random UUID, not sequential, so relying on the
+  // planner's unordered scan order to happen to agree between two different query texts is not
+  // safe).
   @Query(
       value =
           "SELECT count(*) FROM (SELECT id FROM app_user WHERE role = 'SYSTEM_ADMINISTRATOR' AND"
-              + " status = 'ACTIVE' FOR UPDATE) locked_active_administrators",
+              + " status = 'ACTIVE' ORDER BY id FOR UPDATE) locked_active_administrators",
       nativeQuery = true)
   long countActiveAdministratorsForUpdate();
+
+  // #62 follow-up: disableUser() must lock its target row AND (if applicable) every other
+  // currently active administrator in ONE statement, not two separate ones - an earlier version
+  // of this fix locked the target first via a standalone findByIdForUpdate, then conditionally
+  // took countActiveAdministratorsForUpdate's broader lock; two concurrent disableUser() calls on
+  // *different* active-administrator targets could then each hold their own target's lock first
+  // and deadlock reaching for the other's (confirmed empirically). ORDER BY id gives this query
+  // the same deterministic acquisition order as countActiveAdministratorsForUpdate above for
+  // whatever rows the two queries both end up matching, which is what actually rules a cycle out
+  // - not merely that this is "one query" per call.
+  //
+  // The second OR-branch is deliberately gated by the EXISTS check, not just "role/status =
+  // active" unconditionally: an earlier version of this query always matched every active
+  // administrator regardless of the target, which correctly avoided the two-step deadlock above
+  // but introduced a *different* one - every disableUser() call, even for an ordinary
+  // STANDARD_USER target, ended up locking every unrelated active administrator too, so any
+  // admin account frequently used as an acting administrator elsewhere became an unintended
+  // point of contention between otherwise-unrelated disableUser() calls (confirmed empirically:
+  // enough concurrent disableUser() calls sharing one such actor deadlocked on it). Gating the
+  // second branch on the target itself currently being an active administrator - evaluated in
+  // the same atomic statement, not a separate preceding read - means a non-administrator target
+  // locks only itself, while an administrator target still gets the full protection, with no
+  // race window between "check the role" and "take the lock."
+  @Query(
+      value =
+          "SELECT * FROM app_user WHERE id = :targetId OR ("
+              + "role = 'SYSTEM_ADMINISTRATOR' AND status = 'ACTIVE' AND EXISTS ("
+              + "SELECT 1 FROM app_user t WHERE t.id = :targetId "
+              + "AND t.role = 'SYSTEM_ADMINISTRATOR' AND t.status = 'ACTIVE')"
+              + ") ORDER BY id FOR UPDATE",
+      nativeQuery = true)
+  List<AppUser> lockTargetAndActiveAdministrators(@Param("targetId") UUID targetId);
 
   // US-02-02: an atomic increment, not a read-modify-write via save() - AppUser carries a real
   // @Version column, and two concurrent wrong-password attempts loading the same row would
@@ -81,4 +123,22 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
           + " WHERE u.id = :userId")
   void registerSuccessfulLogin(
       @Param("userId") UUID userId, @Param("loginAt") OffsetDateTime loginAt);
+
+  // #62: reactivateUser() mutates this row and then mutates user_session/refresh_token (for the
+  // same user) in an order forced by a real FK constraint. Racing it against disableUser() on
+  // the *same* target user could otherwise deadlock, not on user_session/refresh_token directly
+  // but on this row itself (confirmed against a real Postgres instance: several concurrent
+  // optimistic-locked UPDATEs to one row can produce a genuine wait-for cycle via Postgres's
+  // tuple-lock queueing, not just a plain serialize-and-wait). Locking this row FIRST, before
+  // reactivateUser() does anything else, fully serializes it against any concurrent call
+  // touching the same target - the other can't even read the row until this one commits.
+  //
+  // reactivateUser() never needs the broader active-administrator lock disableUser() sometimes
+  // does (reactivating can never drop the active-administrator count), so a single-row lock here
+  // is safe on its own - unlike disableUser(), which must go through {@code
+  // lockTargetAndActiveAdministrators} instead precisely because pairing this method with that
+  // broader lock as two separate statements is what caused #62's follow-up deadlock.
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT u FROM AppUser u WHERE u.id = :id")
+  Optional<AppUser> findByIdForUpdate(@Param("id") UUID id);
 }

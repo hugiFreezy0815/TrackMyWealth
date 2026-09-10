@@ -16,6 +16,7 @@ import com.trackmywealth.backend.repository.WorkspaceRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -152,8 +153,16 @@ public class AdminUserService {
 
   @Transactional
   public UserSummaryResponse disableUser(UUID targetUserId, UUID actorUserId) {
-    AppUser target = findUserOrThrow(targetUserId);
-    assertNotLastActiveAdministrator(target, "disable");
+    // Locks the target and every active administrator in one statement - see
+    // AppUserRepository.lockTargetAndActiveAdministrators for why this must not be split into a
+    // standalone target-row lock followed by a separate assertNotLastActiveAdministrator query
+    // (#62's follow-up finding: two concurrent disableUser() calls on different active-admin
+    // targets deadlocked doing exactly that).
+    List<AppUser> lockedTargetAndAdministrators =
+        appUserRepository.lockTargetAndActiveAdministrators(targetUserId);
+    AppUser target = extractTargetOrThrow(lockedTargetAndAdministrators, targetUserId);
+    long activeAdministratorCount = countActiveAdministrators(lockedTargetAndAdministrators);
+    assertNotLastActiveAdministrator(target, activeAdministratorCount, "disable");
 
     target.setStatus("DISABLED");
     target.incrementTokenVersion();
@@ -172,7 +181,7 @@ public class AdminUserService {
 
   @Transactional
   public UserSummaryResponse reactivateUser(UUID targetUserId, UUID actorUserId) {
-    AppUser target = findUserOrThrow(targetUserId);
+    AppUser target = findUserForUpdateOrThrow(targetUserId);
     target.setStatus(ACTIVE);
     // FR-AUT-010: re-enabling a previously locked-out/disabled user must not carry over a stale
     // lockout from before they were disabled.
@@ -217,16 +226,64 @@ public class AdminUserService {
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
   }
 
+  // #62: reactivateUser uses this instead of findUserOrThrow - see
+  // AppUserRepository.findByIdForUpdate for why locking the target row first, before that method
+  // does anything else, is what actually closes the deadlock it can otherwise hit racing
+  // disableUser() on the same target. disableUser() itself does NOT use this - see
+  // lockTargetAndActiveAdministrators and disableUser()'s own comment for why it needs a
+  // different, unified lock instead.
+  private AppUser findUserForUpdateOrThrow(UUID userId) {
+    return appUserRepository
+        .findByIdForUpdate(userId)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+  }
+
+  private AppUser extractTargetOrThrow(List<AppUser> lockedRows, UUID targetUserId) {
+    return lockedRows.stream()
+        .filter(user -> user.getId().equals(targetUserId))
+        .findFirst()
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+  }
+
+  private long countActiveAdministrators(List<AppUser> lockedRows) {
+    return lockedRows.stream().filter(this::isCurrentlyActiveAdministrator).count();
+  }
+
+  private boolean isCurrentlyActiveAdministrator(AppUser user) {
+    return SYSTEM_ADMINISTRATOR.equals(user.getRole()) && ACTIVE.equals(user.getStatus());
+  }
+
+  // editUser's demote path: no pre-locked active-administrator count is available here (editUser
+  // only locks the target itself, via a plain, non-locking findUserOrThrow, and only reaches for
+  // the broader lock at all when actually demoting an active administrator) - unlike
+  // disableUser(), that single-query-per-call shape has no two-step lock-order hazard, so it's
+  // safe for this overload to take its own lock here via countActiveAdministratorsForUpdate,
+  // which uses the same id-ordered acquisition as lockTargetAndActiveAdministrators below.
   private void assertNotLastActiveAdministrator(AppUser target, String actionVerb) {
-    boolean targetIsCurrentlyActiveAdministrator =
-        SYSTEM_ADMINISTRATOR.equals(target.getRole()) && ACTIVE.equals(target.getStatus());
-    if (!targetIsCurrentlyActiveAdministrator) {
+    if (!isCurrentlyActiveAdministrator(target)) {
       return;
     }
     // FR-USR-005: enforced here via a row-level lock over every active administrator, not a DB
     // constraint - a natural-key uniqueness/count constraint can't express "at least one," and
     // this must hold under concurrent requests, hence FOR UPDATE rather than a plain count().
-    long activeAdministratorCount = appUserRepository.countActiveAdministratorsForUpdate();
+    assertAtLeastOneOtherActiveAdministrator(
+        appUserRepository.countActiveAdministratorsForUpdate(), actionVerb);
+  }
+
+  // disableUser's path: the caller has already locked the target and every active administrator
+  // in one statement (lockTargetAndActiveAdministrators) - this overload reuses that count
+  // instead of taking a second, separate lock here, which is exactly the pattern #62's follow-up
+  // deadlock came from.
+  private void assertNotLastActiveAdministrator(
+      AppUser target, long activeAdministratorCount, String actionVerb) {
+    if (!isCurrentlyActiveAdministrator(target)) {
+      return;
+    }
+    assertAtLeastOneOtherActiveAdministrator(activeAdministratorCount, actionVerb);
+  }
+
+  private void assertAtLeastOneOtherActiveAdministrator(
+      long activeAdministratorCount, String actionVerb) {
     if (activeAdministratorCount <= MINIMUM_ACTIVE_ADMINISTRATORS) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "Cannot " + actionVerb + " the last active administrator.");
