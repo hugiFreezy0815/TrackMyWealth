@@ -43,7 +43,12 @@ public class TokenIssuanceService {
 
   /**
    * @param rawIpAddress the caller's address, as reported by the servlet container - never
-   *     persisted as-is; only its hash is stored (NFR-OPS-005). May be {@code null}.
+   *     persisted as-is; only its hash is stored (NFR-OPS-005). May be {@code null}. As of #60,
+   *     this is {@code getRemoteAddr()}, which {@code TRUSTED_PROXIES}/{@code RemoteIpValve} can
+   *     rewrite from X-Forwarded-For when the direct peer is a configured trusted proxy - the same
+   *     trust boundary {@code RateLimitFilter} documents for rate limiting applies here too:
+   *     trusting a proxy that doesn't sanitize/overwrite the header lets a client forge the address
+   *     hashed into this session.
    */
   public AuthTokensResponse issueTokens(AppUser user, String deviceLabel, String rawIpAddress) {
     String plaintextRefreshToken = tokenHashingService.generateOpaqueToken();

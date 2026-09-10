@@ -22,9 +22,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * spoofed header must be ignored - a separate context is needed here since this property can only
  * be set once, at context startup.
  *
- * <p>Piggybacks on this to also prove {@link RateLimitFilter}'s IPv6 /64 bucketing: once the filter
- * is looking at an X-Forwarded-For-supplied address at all, two addresses in the same /64 must
- * share a bucket, and two addresses in different /64s must not.
+ * <p>Piggybacks on this to also prove {@link RateLimitFilter}'s IPv6 /64 bucketing (two addresses
+ * in the same /64 share a bucket, two in different /64s don't - including when "::" compression
+ * overlaps the prefix itself) and its hand-rolled, DNS-free parsing of the forwarded value (a
+ * malformed one degrades to an opaque bucket key rather than erroring or blocking).
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -92,6 +93,43 @@ class RateLimitFilterTrustedProxyTest {
     login("2001:db8:1:2::1", "still-fine-b@example.com")
         .expectStatus()
         .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void compressedLeadingZeroGroupsCollapseToTheSameSlash64() {
+    // "::1" and "::2" both expand with an all-zero /64 prefix (the "::" falls entirely within
+    // the first four groups) - proves the hand-rolled parser (#60) correctly resolves the
+    // prefix when compression overlaps it, not just when it's confined to the host bits, as in
+    // ipv6AddressesInTheSameSlash64ShareABucketButADifferentSlash64DoesNot above.
+    for (int i = 0; i < CAPACITY; i++) {
+      login("::" + (i + 1), "d" + i + "@example.com")
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    login("::" + (CAPACITY + 1), "one-more-d@example.com")
+        .expectStatus()
+        .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+    // A fully-expanded (no "::" at all), unrelated /64 must be unaffected.
+    login("2001:0db8:0002:0000:0000:0000:0000:0001", "still-fine-d@example.com")
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void malformedForwardedValueDegradesSafelyToAnOpaqueBucketKey() {
+    // Contains a colon but isn't a valid IPv6 literal. Proves the hand-rolled parser (#60) falls
+    // back to using it as an opaque string key rather than throwing - and, since this request
+    // completes at all instead of hanging, that nothing here ever attempts to resolve it as a
+    // hostname (the DNS-blocking risk a java.net.InetAddress-based parse would have had).
+    for (int i = 0; i < CAPACITY; i++) {
+      login("not:a:valid:ipv6:address", "e" + i + "@example.com")
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    login("not:a:valid:ipv6:address", "one-more-e@example.com")
+        .expectStatus()
+        .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
   }
 
   private RestTestClient.ResponseSpec login(String forwardedFor, String email) {

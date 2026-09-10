@@ -143,8 +143,12 @@ address configured, or the backend can't tell your proxy apart from any other ca
   scheme for anything that checks `isSecure()`.
 - Never set this to a pattern broad enough to match a real client's own address - a client that
   the backend trusts as "the proxy" can set its own X-Forwarded-For and pick whichever rate-limit
-  bucket it likes, defeating the limiter entirely. Only the proxy's own fixed address(es) should
-  match.
+  bucket it likes, defeating the limiter entirely. It can also forge the address hashed into
+  `UserSession.ipAddressHash` at login/setup (`TokenIssuanceService`) the same way. Only the
+  proxy's own fixed address(es) should match.
+- Your proxy must itself set (or overwrite, never blindly append/forward) X-Forwarded-For to its
+  own view of the real client address - if it passes through whatever a client sent unmodified,
+  trusting it is equivalent to not having this allowlist at all.
 
 Without `TRUSTED_PROXIES` set, every caller behind a shared proxy collapses into one IP as far as
 the backend can tell - correct as a safe default (nothing is trusted until configured), but it

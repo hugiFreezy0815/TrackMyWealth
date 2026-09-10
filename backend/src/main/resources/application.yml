@@ -113,8 +113,9 @@ app:
     # opt-in); every functional test that isn't specifically testing this disables it explicitly.
     enabled: ${RATE_LIMIT_ENABLED:true}
     # #60: total distinct (rule, source) buckets held in memory at once, across all four rules
-    # combined - bounds memory growth against a caller spread across many source addresses (e.g.
-    # a routed IPv6 block, each collapsed to its own /64 bucket - see RateLimitFilter).
+    # combined (split evenly into each rule's own cache, not one shared by all four) - bounds
+    # memory growth against a caller spread across many source addresses (e.g. a routed IPv6
+    # block, each collapsed to its own /64 bucket - see RateLimitFilter).
     max-buckets: ${RATE_LIMIT_MAX_BUCKETS:50000}
     login:
       capacity: ${RATE_LIMIT_LOGIN_CAPACITY:10}
