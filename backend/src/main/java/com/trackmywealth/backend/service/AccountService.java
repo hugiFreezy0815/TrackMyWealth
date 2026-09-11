@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
+import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.AccountCustomAsset;
@@ -123,6 +124,36 @@ public class AccountService {
     account = accountRepository.saveAndFlush(account);
 
     createExtensionRowIfNeeded(account, request);
+
+    return toSummary(account);
+  }
+
+  // US-05-02: full-replacement update over the account's ordinary mutable attributes (see
+  // UpdateAccountRequest's own Javadoc for exactly which fields, and why financialInstitutionId/
+  // status/the capability flags are deliberately excluded - each has its own story). accountType
+  // and nativeCurrency are written unconditionally too, same as every other field here: when the
+  // caller's value matches what's already persisted this is a no-op UPDATE, and when it doesn't,
+  // V4's trg_account_type_immutable / V24's trg_account_currency_immutable reject it at the DB
+  // level, translated to a clean 409 by GlobalExceptionHandler - the same "let the DB enforce the
+  // invariant, translate its rejection" pattern createAccount's own extension-row triggers rely on.
+  @Transactional
+  public AccountSummaryResponse updateAccount(UUID accountId, UpdateAccountRequest request) {
+    Account account =
+        accountRepository
+            .findById(accountId)
+            .orElseThrow(
+                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found."));
+
+    account.setName(request.name());
+    account.setAccountType(request.accountType());
+    account.setNativeCurrency(request.nativeCurrency());
+    account.setIdentifierMasked(request.identifierMasked());
+    account.setJurisdiction(request.jurisdiction());
+    account.setOpenedAt(request.openedAt());
+    account.setClosedAt(request.closedAt());
+    // flush, not a plain save: forces the UPDATE (and any trigger rejection) to happen here,
+    // inside this method, rather than deferred to end-of-transaction commit.
+    account = accountRepository.saveAndFlush(account);
 
     return toSummary(account);
   }
