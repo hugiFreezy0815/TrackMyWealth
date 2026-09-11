@@ -21,7 +21,7 @@ import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.AccountSecuritiesRepository;
 import com.trackmywealth.backend.repository.AccountVestedBenefitsRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
-import com.trackmywealth.backend.repository.WorkspaceRepository;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -34,9 +34,13 @@ import org.springframework.web.server.ResponseStatusException;
  * table row - both in the same transaction.
  *
  * <p>This is the one place {@code accountType} itself is allowed to drive behaviour ({@link
- * #applyCapabilityDefaults}, {@link #createExtensionRowIfNeeded}) - every other layer of the app
- * (consolidation, allocation, net worth, navigation) must branch only on the capability flags this
- * method computes, never on {@code accountType} again (DM-17, US-05-04).
+ * #applyCapabilityDefaults}, {@link #validateExtensionFields}, {@link #createExtensionRowIfNeeded}
+ * - kept as three passes over the same 11-value switch rather than one, since validation must run
+ * before {@link Account} is persisted but extension-row creation needs the persisted account's id;
+ * if a 12th account type is ever added, all three, plus {@link CreateAccountRequest}'s own {@code
+ * accountType} pattern, need updating together) - every other layer of the app (consolidation,
+ * allocation, net worth, navigation) must branch only on the capability flags this method computes,
+ * never on {@code accountType} again (DM-17, US-05-04).
  *
  * <p>Like {@code InstitutionService}, relies on RLS for workspace isolation and on {@code
  * JwtAuthenticationFilter} having already refused to authenticate a request whose linked {@code
@@ -49,8 +53,17 @@ public class AccountService {
   // Named once and reused everywhere below - PMD's AvoidDuplicateLiterals flags the same string
   // literal appearing 4+ times in one file.
   private static final String MORTGAGE = "MORTGAGE";
+  private static final String LOAN = "LOAN";
+  private static final String PENSION = "PENSION";
+  private static final String CUSTOM_ASSET = "CUSTOM_ASSET";
 
-  private final WorkspaceRepository workspaceRepository;
+  // FR-ACC-030: occupational-by-definition pension schemes (CH Pillar 2 / DE bAV) - not a
+  // per-account choice the way holdsPositions is, since occupational-ness is inherent to which
+  // scheme is being described, not to the provider.
+  private static final Set<String> OCCUPATIONAL_PENSION_SCHEMES =
+      Set.of("CH_PILLAR_2_VESTED_BENEFITS", "DE_BAV");
+
+  private final WorkspaceAccessService workspaceAccessService;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final AccountRepository accountRepository;
   private final AccountSecuritiesRepository accountSecuritiesRepository;
@@ -62,7 +75,7 @@ public class AccountService {
   private final AccountCustomAssetRepository accountCustomAssetRepository;
 
   public AccountService(
-      WorkspaceRepository workspaceRepository,
+      WorkspaceAccessService workspaceAccessService,
       FinancialInstitutionRepository financialInstitutionRepository,
       AccountRepository accountRepository,
       AccountSecuritiesRepository accountSecuritiesRepository,
@@ -72,7 +85,7 @@ public class AccountService {
       AccountPensionRepository accountPensionRepository,
       AccountVestedBenefitsRepository accountVestedBenefitsRepository,
       AccountCustomAssetRepository accountCustomAssetRepository) {
-    this.workspaceRepository = workspaceRepository;
+    this.workspaceAccessService = workspaceAccessService;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.accountRepository = accountRepository;
     this.accountSecuritiesRepository = accountSecuritiesRepository;
@@ -86,13 +99,12 @@ public class AccountService {
 
   @Transactional
   public AccountSummaryResponse createAccount(CreateAccountRequest request, UUID actorWorkspaceId) {
-    // Reachable for a SYSTEM_ADMINISTRATOR with no linked workspace_member (see
-    // InstitutionService's identical guard/comment for the full reasoning).
-    if (actorWorkspaceId == null) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Caller has no workspace of their own to create an account in.");
-    }
-    Workspace workspace = workspaceRepository.getReferenceById(actorWorkspaceId);
+    // Validated first, before any DB write (or the institution lookup below) - none of these
+    // checks need anything from either, so a request that's going to be rejected fails fast
+    // instead of paying for an institution SELECT and an account INSERT+refresh it will never
+    // keep.
+    validateExtensionFields(request);
+    Workspace workspace = workspaceAccessService.requireWorkspace(actorWorkspaceId, "an account");
     FinancialInstitution institution =
         resolveInstitution(request.financialInstitutionId(), actorWorkspaceId);
 
@@ -138,6 +150,27 @@ public class AccountService {
                     HttpStatus.CONFLICT, "Workspace has no Personal Assets container."));
   }
 
+  // Extension-table-required fields that have no type-wide default (see CreateAccountRequest's
+  // Javadoc for why these four, specifically, can't just be left null the way e.g.
+  // account_securities' columns can). Runs before anything is persisted - see createAccount's own
+  // comment on why this ordering matters.
+  private void validateExtensionFields(CreateAccountRequest request) {
+    switch (request.accountType()) {
+      case MORTGAGE -> {
+        requireForType(request.originalPrincipal(), "originalPrincipal", MORTGAGE);
+        requireForType(request.interestRatePercent(), "interestRatePercent", MORTGAGE);
+      }
+      case LOAN -> requireForType(request.originalPrincipal(), "originalPrincipal", LOAN);
+      case PENSION -> requireForType(request.pensionScheme(), "pensionScheme", PENSION);
+      case CUSTOM_ASSET ->
+          requireForType(request.customAssetType(), "customAssetType", CUSTOM_ASSET);
+      default -> {
+        // Every other type either has no extension table or has one with no NOT NULL columns
+        // lacking a default (account_securities, account_vested_benefits) - nothing to validate.
+      }
+    }
+  }
+
   // FR-ACC-010/011/012: the account_type -> capability-flag mapping. Two of these (SECURITIES,
   // CASH) come directly from the story's own acceptance criteria; the rest are this service's own
   // considered defaults, since neither the schema nor the docs enumerate them - each is driven by
@@ -168,7 +201,7 @@ public class AccountService {
         hasTransactions = true;
         discretionary = true;
       }
-      case "PENSION" -> {
+      case PENSION -> {
         holdsPositions = false;
         hasTransactions = true;
         hasContributionLimit = true;
@@ -182,7 +215,7 @@ public class AccountService {
         hasTransactions = true;
         hasStatementCycle = true;
       }
-      case MORTGAGE, "LOAN" -> {
+      case MORTGAGE, LOAN -> {
         holdsPositions = false;
         hasTransactions = true;
         hasAmortisation = true;
@@ -191,7 +224,7 @@ public class AccountService {
         holdsPositions = true;
         hasTransactions = true;
       }
-      case "CUSTOM_ASSET" -> {
+      case CUSTOM_ASSET -> {
         holdsPositions = false;
         hasTransactions = false;
         manualValuation = true;
@@ -217,6 +250,8 @@ public class AccountService {
   // DB-09/DB-10: one extension table per subtype that has distinct, constrained attributes -
   // CASH/SAVINGS/CRYPTO get none (V5's own comment). trg_extension_type_guard (V5, V23) enforces
   // the account_type/extension-table pairing at the DB level regardless of what this method does.
+  // Required-field checks already happened in validateExtensionFields, before account was ever
+  // persisted - none are repeated here.
   private void createExtensionRowIfNeeded(Account account, CreateAccountRequest request) {
     switch (account.getAccountType()) {
       case "SECURITIES", "MANAGED_MANDATE" -> {
@@ -236,27 +271,24 @@ public class AccountService {
         accountCreditCardRepository.save(extension);
       }
       case MORTGAGE -> {
-        requireForType(request.originalPrincipal(), "originalPrincipal", MORTGAGE);
-        requireForType(request.interestRatePercent(), "interestRatePercent", MORTGAGE);
         AccountMortgage extension = new AccountMortgage();
         extension.setAccount(account);
         extension.setOriginalPrincipal(request.originalPrincipal());
         extension.setInterestRatePercent(request.interestRatePercent());
         accountMortgageRepository.save(extension);
       }
-      case "LOAN" -> {
-        requireForType(request.originalPrincipal(), "originalPrincipal", "LOAN");
+      case LOAN -> {
         AccountLoan extension = new AccountLoan();
         extension.setAccount(account);
         extension.setOriginalPrincipal(request.originalPrincipal());
         extension.setInterestRatePercent(request.interestRatePercent());
         accountLoanRepository.save(extension);
       }
-      case "PENSION" -> {
-        requireForType(request.pensionScheme(), "pensionScheme", "PENSION");
+      case PENSION -> {
         AccountPension extension = new AccountPension();
         extension.setAccount(account);
         extension.setPensionScheme(request.pensionScheme());
+        extension.setOccupational(OCCUPATIONAL_PENSION_SCHEMES.contains(request.pensionScheme()));
         accountPensionRepository.save(extension);
       }
       case "VESTED_BENEFITS" -> {
@@ -264,8 +296,7 @@ public class AccountService {
         extension.setAccount(account);
         accountVestedBenefitsRepository.save(extension);
       }
-      case "CUSTOM_ASSET" -> {
-        requireForType(request.customAssetType(), "customAssetType", "CUSTOM_ASSET");
+      case CUSTOM_ASSET -> {
         AccountCustomAsset extension = new AccountCustomAsset();
         extension.setAccount(account);
         extension.setCustomAssetType(request.customAssetType());

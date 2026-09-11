@@ -3,7 +3,6 @@ package com.trackmywealth.backend.dto;
 import com.trackmywealth.backend.validation.ValidCurrencyCode;
 import jakarta.validation.constraints.Pattern;
 import java.util.UUID;
-import org.springframework.util.StringUtils;
 
 /**
  * Request body for {@code POST /api/v1/institutions} (US-04-01).
@@ -17,11 +16,7 @@ import org.springframework.util.StringUtils;
  * default from.
  *
  * <p>Every optional {@code String} field is normalized blank-to-{@code null} in the compact
- * constructor - Jakarta Validation's built-in constraints (like {@code @Pattern}/{@link
- * ValidCurrencyCode} below) already treat {@code null} as valid by convention, deferring "required"
- * to a separate {@code @NotNull}/{@code @NotBlank}, but a client that sends {@code ""} instead of
- * omitting an ignored-in-this-flow field (a common default for an unset form field) would otherwise
- * fail validation for a value the request contract says doesn't matter.
+ * constructor via {@link RequestStrings#blankToNull} - see its Javadoc for why.
  */
 public record CreateFinancialInstitutionRequest(
     UUID catalogueInstitutionId,
@@ -42,15 +37,11 @@ public record CreateFinancialInstitutionRequest(
     @ValidCurrencyCode String containerCurrency) {
 
   public CreateFinancialInstitutionRequest {
-    name = blankToNull(name);
-    country = blankToNull(country);
-    institutionType = blankToNull(institutionType);
-    identifier = blankToNull(identifier);
-    logoUrl = blankToNull(logoUrl);
-    containerCurrency = blankToNull(containerCurrency);
-  }
-
-  private static String blankToNull(String value) {
-    return StringUtils.hasText(value) ? value : null;
+    name = RequestStrings.blankToNull(name);
+    country = RequestStrings.blankToNull(country);
+    institutionType = RequestStrings.blankToNull(institutionType);
+    identifier = RequestStrings.blankToNull(identifier);
+    logoUrl = RequestStrings.blankToNull(logoUrl);
+    containerCurrency = RequestStrings.blankToNull(containerCurrency);
   }
 }

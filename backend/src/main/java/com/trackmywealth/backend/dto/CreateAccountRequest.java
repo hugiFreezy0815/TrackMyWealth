@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import java.math.BigDecimal;
 import java.util.UUID;
-import org.springframework.util.StringUtils;
 
 /**
  * Request body for {@code POST /api/v1/accounts} (US-05-01).
@@ -27,11 +26,14 @@ import org.springframework.util.StringUtils;
  * validated in {@code AccountService}, not here, since requiredness depends on {@code accountType}.
  *
  * <p>Every optional {@code String} field is normalized blank-to-{@code null} in the compact
- * constructor - see {@code CreateFinancialInstitutionRequest} for why.
+ * constructor via {@link RequestStrings#blankToNull} - see its Javadoc for why.
  */
 public record CreateAccountRequest(
     UUID financialInstitutionId,
     @NotBlank String name,
+    // Kept in sync by hand with AccountService's applyCapabilityDefaults/
+    // createExtensionRowIfNeeded switches and V4's account_type CHECK constraint - all three (plus
+    // this regex) must be updated together when a 12th account type is ever added.
     @NotBlank
         @Pattern(
             regexp =
@@ -49,15 +51,11 @@ public record CreateAccountRequest(
         String customAssetType) {
 
   public CreateAccountRequest {
-    name = blankToNull(name);
-    accountType = blankToNull(accountType);
-    nativeCurrency = blankToNull(nativeCurrency);
-    billingCurrency = blankToNull(billingCurrency);
-    pensionScheme = blankToNull(pensionScheme);
-    customAssetType = blankToNull(customAssetType);
-  }
-
-  private static String blankToNull(String value) {
-    return StringUtils.hasText(value) ? value : null;
+    name = RequestStrings.blankToNull(name);
+    accountType = RequestStrings.blankToNull(accountType);
+    nativeCurrency = RequestStrings.blankToNull(nativeCurrency);
+    billingCurrency = RequestStrings.blankToNull(billingCurrency);
+    pensionScheme = RequestStrings.blankToNull(pensionScheme);
+    customAssetType = RequestStrings.blankToNull(customAssetType);
   }
 }

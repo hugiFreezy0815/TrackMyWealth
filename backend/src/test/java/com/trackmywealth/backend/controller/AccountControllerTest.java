@@ -276,6 +276,45 @@ class AccountControllerTest {
   }
 
   @Test
+  void occupationalPensionSchemesAreMarkedOccupationalAndOthersAreNot() throws Exception {
+    // FR-ACC-030: is_occupational is inherent to which scheme is chosen (CH Pillar 2 / DE bAV are
+    // occupational-by-definition), not a per-account override like holdsPositions above.
+    String token = bootstrapAdministrator();
+
+    AccountSummaryResponse occupational =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null,
+                "Company Pension",
+                "PENSION",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                "CH_PILLAR_2_VESTED_BENEFITS",
+                null));
+    AccountSummaryResponse nonOccupational =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null,
+                "Private Pillar 3a",
+                "PENSION",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                "CH_PILLAR_3A",
+                null));
+
+    assertThat(isOccupational(occupational.id())).isTrue();
+    assertThat(isOccupational(nonOccupational.id())).isFalse();
+  }
+
+  @Test
   void creditCardBillingCurrencyDefaultsToNativeCurrencyWhenOmitted() throws Exception {
     String token = bootstrapAdministrator();
 
@@ -417,6 +456,19 @@ class AccountControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  private boolean isOccupational(UUID accountId) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT is_occupational FROM account_pension WHERE account_id = ?")) {
+      statement.setObject(1, accountId);
+      try (ResultSet rs = statement.executeQuery()) {
+        assertThat(rs.next()).isTrue();
+        return rs.getBoolean("is_occupational");
+      }
+    }
   }
 
   private boolean extensionRowExists(String table, UUID accountId) throws Exception {

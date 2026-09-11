@@ -2,15 +2,9 @@ package com.trackmywealth.backend.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.MapsId;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.UUID;
 
 /**
  * Maps {@code account_vested_benefits} (V5) - extension of {@link Account} for {@code
@@ -19,16 +13,7 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "account_vested_benefits")
-public class AccountVestedBenefits {
-
-  @Id
-  @Column(name = "account_id")
-  private UUID accountId;
-
-  @OneToOne(fetch = FetchType.LAZY, optional = false)
-  @MapsId
-  @JoinColumn(name = "account_id")
-  private Account account;
+public class AccountVestedBenefits extends AccountExtension {
 
   @Column(name = "vested_benefit_amount")
   private BigDecimal vestedBenefitAmount;
@@ -38,18 +23,6 @@ public class AccountVestedBenefits {
 
   @Column(name = "last_certificate_date")
   private LocalDate lastCertificateDate;
-
-  public UUID getAccountId() {
-    return accountId;
-  }
-
-  public Account getAccount() {
-    return account;
-  }
-
-  public void setAccount(Account account) {
-    this.account = account;
-  }
 
   public BigDecimal getVestedBenefitAmount() {
     return vestedBenefitAmount;
