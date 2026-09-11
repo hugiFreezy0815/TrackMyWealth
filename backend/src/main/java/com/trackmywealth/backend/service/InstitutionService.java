@@ -8,7 +8,6 @@ import com.trackmywealth.backend.entity.InstitutionCatalogue;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
-import com.trackmywealth.backend.repository.WorkspaceRepository;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -41,15 +40,15 @@ public class InstitutionService {
   private static final Map<String, String> DEFAULT_CURRENCY_BY_COUNTRY =
       Map.of("CH", "CHF", "DE", "EUR");
 
-  private final WorkspaceRepository workspaceRepository;
+  private final WorkspaceAccessService workspaceAccessService;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final InstitutionCatalogueRepository institutionCatalogueRepository;
 
   public InstitutionService(
-      WorkspaceRepository workspaceRepository,
+      WorkspaceAccessService workspaceAccessService,
       FinancialInstitutionRepository financialInstitutionRepository,
       InstitutionCatalogueRepository institutionCatalogueRepository) {
-    this.workspaceRepository = workspaceRepository;
+    this.workspaceAccessService = workspaceAccessService;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.institutionCatalogueRepository = institutionCatalogueRepository;
   }
@@ -71,15 +70,8 @@ public class InstitutionService {
     // Reachable for a SYSTEM_ADMINISTRATOR with no linked workspace_member - see the class
     // Javadoc. Anyone with an active membership always has a non-null workspaceId by the time
     // JwtAuthenticationFilter authenticates the request.
-    if (actorWorkspaceId == null) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Caller has no workspace of their own to create an institution in.");
-    }
-    // A reference, not a fetch: RLS's tenant_isolation_read policy already confines a real SELECT
-    // to app.current_workspace_id, which JwtAuthenticationFilter set to this exact id when it
-    // authenticated this request - re-fetching it here would be redundant, not more correct (same
-    // reasoning as AdminUserService.createUser).
-    Workspace workspace = workspaceRepository.getReferenceById(actorWorkspaceId);
+    Workspace workspace =
+        workspaceAccessService.requireWorkspace(actorWorkspaceId, "an institution");
 
     FinancialInstitution institution = new FinancialInstitution();
     institution.setWorkspace(workspace);

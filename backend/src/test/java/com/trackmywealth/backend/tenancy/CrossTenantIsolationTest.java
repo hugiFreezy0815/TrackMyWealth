@@ -68,7 +68,7 @@ class CrossTenantIsolationTest {
   // here and a corresponding test in the same PR - this IS the enforcement mechanism, not just
   // documentation of one.
   private static final Set<String> COVERED_TABLES =
-      Set.of("workspace", "workspace_member", "financial_institution");
+      Set.of("workspace", "workspace_member", "financial_institution", "account");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -76,6 +76,8 @@ class CrossTenantIsolationTest {
   private UUID memberBId;
   private UUID institutionAId;
   private UUID institutionBId;
+  private UUID accountAId;
+  private UUID accountBId;
 
   @BeforeAll
   static void migrateAndCreateNonSuperuserRole() throws Exception {
@@ -109,8 +111,8 @@ class CrossTenantIsolationTest {
     try (Connection admin = adminConnection();
         Statement statement = admin.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE financial_institution, workspace_member, workspace RESTART IDENTITY"
-              + " CASCADE");
+          "TRUNCATE TABLE account, financial_institution, workspace_member, workspace RESTART"
+              + " IDENTITY CASCADE");
     }
 
     try (Connection connection = testRoleConnection()) {
@@ -121,12 +123,14 @@ class CrossTenantIsolationTest {
       insertWorkspace(connection, workspaceAId, "Cross-Tenant Test Workspace A");
       memberAId = insertMember(connection, workspaceAId, "Member A");
       institutionAId = personalAssetsId(connection, workspaceAId);
+      accountAId = insertAccount(connection, workspaceAId, institutionAId, "Account A");
 
       workspaceBId = UUID.randomUUID();
       setWorkspaceContext(connection, workspaceBId);
       insertWorkspace(connection, workspaceBId, "Cross-Tenant Test Workspace B");
       memberBId = insertMember(connection, workspaceBId, "Member B");
       institutionBId = personalAssetsId(connection, workspaceBId);
+      accountBId = insertAccount(connection, workspaceBId, institutionBId, "Account B");
 
       connection.commit();
     }
@@ -152,6 +156,12 @@ class CrossTenantIsolationTest {
         .isFalse();
   }
 
+  @Test
+  void accountRowIsInvisibleAcrossWorkspaces() throws Exception {
+    assertThat(rowVisibleUnderContext(workspaceAId, "account", accountBId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceBId, "account", accountAId)).isFalse();
+  }
+
   // A cross-tenant suite that only ever asserts "denied" can pass vacuously if RLS is
   // accidentally denying everyone, including a workspace reading its own data - this is the
   // false-negative guard against that.
@@ -161,10 +171,12 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceAId, "workspace_member", memberAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "financial_institution", institutionAId))
         .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceAId, "account", accountAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace", workspaceBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace_member", memberBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "financial_institution", institutionBId))
         .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "account", accountBId)).isTrue();
   }
 
   @Test
@@ -240,6 +252,23 @@ class CrossTenantIsolationTest {
         return (UUID) resultSet.getObject("id");
       }
     }
+  }
+
+  private UUID insertAccount(
+      Connection connection, UUID workspaceId, UUID financialInstitutionId, String name)
+      throws Exception {
+    UUID accountId = UUID.randomUUID();
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO account (id, workspace_id, financial_institution_id, account_type,"
+                + " name, native_currency) VALUES (?, ?, ?, 'CASH', ?, 'CHF')")) {
+      statement.setObject(1, accountId);
+      statement.setObject(2, workspaceId);
+      statement.setObject(3, financialInstitutionId);
+      statement.setString(4, name);
+      statement.executeUpdate();
+    }
+    return accountId;
   }
 
   // `table` only ever comes from this class's own small set of hardcoded constant call sites
