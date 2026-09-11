@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.web;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -18,6 +19,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * (V4's {@code trg_account_type_immutable}, V24's {@code trg_account_currency_immutable}) so the
  * response can name the actual requirement violated; any other integrity violation still gets a
  * clean, generic 409 rather than a 500, but without echoing the raw DB message to the caller.
+ *
+ * <p>Also handles {@link OptimisticLockingFailureException}: every entity in this codebase carries
+ * a real {@code @Version} column (see {@code AppUserRepository}'s own comment on the same pitfall),
+ * so any read-modify-{@code saveAndFlush} write path - {@code AccountService.updateAccount} being
+ * the first one to do a genuine read-modify-write rather than an atomic UPDATE or a fresh INSERT -
+ * can lose this race and must not surface it as an unhandled 500 either.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -39,17 +46,24 @@ public class GlobalExceptionHandler {
     return conflict("The request conflicts with an existing data constraint.");
   }
 
+  @ExceptionHandler(OptimisticLockingFailureException.class)
+  public ProblemDetail handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
+    return conflict(
+        "This record was changed by another request in the meantime. Reload it and retry your"
+            + " update.");
+  }
+
   private ProblemDetail conflict(String detail) {
     return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, detail);
   }
 
   private String rootCauseMessage(Throwable throwable) {
     Throwable root = throwable;
-    // Throwable's own cause-chain convention: a Throwable with no explicit cause has its cause
-    // set to itself (see Throwable(String) javadoc), so equals() (Object's default, i.e. identity
-    // for a class that doesn't override it) is the correct loop guard here, not just a style
-    // preference - this stops at the first self-referencing cause instead of never terminating.
-    while (root.getCause() != null && !root.getCause().equals(root)) {
+    // Throwable.getCause() is specified to return null, never the throwable itself, when no
+    // cause was set (the self-reference Throwable uses internally to mark "no cause yet" is a
+    // private implementation detail getCause() already unwraps) - so a plain null check
+    // terminates this loop with no separate self-reference guard needed.
+    while (root.getCause() != null) {
       root = root.getCause();
     }
     return root.getMessage() == null ? "" : root.getMessage();

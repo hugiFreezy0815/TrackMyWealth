@@ -24,12 +24,8 @@ import java.time.LocalDate;
  */
 public record UpdateAccountRequest(
     @NotBlank String name,
-    @NotBlank
-        @Pattern(
-            regexp =
-                "CASH|SAVINGS|SECURITIES|MANAGED_MANDATE|PENSION|VESTED_BENEFITS|CREDIT_CARD"
-                    + "|MORTGAGE|LOAN|CRYPTO|CUSTOM_ASSET")
-        String accountType,
+    // See AccountTypeValues' Javadoc for the full list of places a 12th account type touches.
+    @NotBlank @Pattern(regexp = AccountTypeValues.PATTERN) String accountType,
     @NotBlank @ValidCurrencyCode String nativeCurrency,
     String identifierMasked,
     @Pattern(regexp = "[A-Z]{2}") String jurisdiction,
