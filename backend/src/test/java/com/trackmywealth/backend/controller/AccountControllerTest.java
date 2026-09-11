@@ -6,11 +6,13 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -36,6 +38,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * US-05-01: create an account of every supported type under a container, applying the correct
  * capability defaults and (where the type has one) the matching extension table row - the DoD's
  * parameterized test is {@link #createsCorrectCapabilitiesAndExtensionRowForEveryAccountType}.
+ *
+ * <p>US-05-02: {@code account_type} and {@code native_currency} are immutable after creation - the
+ * DoD's tests are {@link #changingAccountTypeIsRejectedWithAStructuredConflict} and {@link
+ * #changingNativeCurrencyIsRejectedWithAStructuredConflict}.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -453,6 +459,120 @@ class AccountControllerTest {
         .body(
             new CreateAccountRequest(
                 UUID.randomUUID(), "Orphan", "CASH", "CHF", null, null, null, null, null, null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void changingAccountTypeIsRejectedWithAStructuredConflict() {
+    // AC #1 / DoD: the DB's trg_account_type_immutable (V4) rejection must surface as a clean
+    // 409, referencing FR-ACC-005, never a raw 500.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + created.id())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new UpdateAccountRequest("Everyday Checking", "SAVINGS", "CHF", null, null, null, null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo(
+            "An account's type cannot be changed after creation (FR-ACC-005/G5). To convert this"
+                + " account, archive it and create a new one with the correct type.");
+  }
+
+  @Test
+  void changingNativeCurrencyIsRejectedWithAStructuredConflict() {
+    // Same immutability guarantee extended to native_currency (V24) - not explicit in FR-ACC-002
+    // itself, but the same historical-reinterpretation risk as account_type (US-05-02).
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + created.id())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new UpdateAccountRequest("Everyday Checking", "CASH", "EUR", null, null, null, null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo(
+            "An account's currency cannot be changed after creation (FR-ACC-002). To convert this"
+                + " account, archive it and create a new one with the correct currency.");
+  }
+
+  @Test
+  void updateAppliesMutableFieldChanges() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+
+    AccountSummaryResponse updated =
+        client(token)
+            .put()
+            .uri("/api/v1/accounts/" + created.id())
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(
+                new UpdateAccountRequest(
+                    "Renamed Checking",
+                    "CASH",
+                    "CHF",
+                    "**** 1234",
+                    "CH",
+                    LocalDate.of(2020, 1, 1),
+                    null))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(updated.name()).isEqualTo("Renamed Checking");
+    assertThat(updated.accountType()).isEqualTo("CASH");
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT identifier_masked, jurisdiction, opened_at FROM account WHERE id = ?")) {
+      statement.setObject(1, created.id());
+      try (ResultSet rs = statement.executeQuery()) {
+        assertThat(rs.next()).isTrue();
+        assertThat(rs.getString("identifier_masked")).isEqualTo("**** 1234");
+        assertThat(rs.getString("jurisdiction")).isEqualTo("CH");
+        assertThat(rs.getObject("opened_at", LocalDate.class)).isEqualTo(LocalDate.of(2020, 1, 1));
+      }
+    }
+  }
+
+  @Test
+  void updatingAnUnknownAccountIsNotFound() {
+    String token = bootstrapAdministrator();
+
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + UUID.randomUUID())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new UpdateAccountRequest("Name", "CASH", "CHF", null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
