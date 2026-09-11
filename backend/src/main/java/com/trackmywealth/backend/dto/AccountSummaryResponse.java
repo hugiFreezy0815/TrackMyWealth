@@ -1,0 +1,19 @@
+package com.trackmywealth.backend.dto;
+
+import java.util.UUID;
+
+public record AccountSummaryResponse(
+    UUID id,
+    UUID financialInstitutionId,
+    String name,
+    String accountType,
+    String nativeCurrency,
+    String nature,
+    boolean holdsPositions,
+    boolean hasTransactions,
+    boolean hasStatementCycle,
+    boolean hasAmortisation,
+    boolean hasContributionLimit,
+    boolean discretionary,
+    boolean manualValuation,
+    String status) {}
