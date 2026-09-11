@@ -23,11 +23,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * allow/deny decision (a protected endpoint denies it; a {@code permitAll} one still works).
  *
  * <p>Only this - JWT signature/expiry validation, plus the {@code token_version} staleness check
- * that makes user-wide revocation real (FR-AUT-005), and the per-session {@code
- * user_session.status} check that makes single-session revocation real (US-02-03) - not login or
- * refresh-token rotation, which is US-02-02's job. Every downstream story that needs to know who is
- * calling (US-02-01's admin endpoints today) depends on this filter having already populated {@link
- * AuthenticatedUserPrincipal}.
+ * that makes user-wide revocation real (FR-AUT-005), the per-session {@code user_session.status}
+ * check that makes single-session revocation real (US-02-03), and (US-04-01) a linked {@code
+ * workspace_member}'s own {@code status} - not login or refresh-token rotation, which is US-02-02's
+ * job. Every downstream story that needs to know who is calling (US-02-01's admin endpoints today)
+ * depends on this filter having already populated {@link AuthenticatedUserPrincipal}.
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -70,11 +70,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       AccessTokenClaims claims, AppUserAuthSnapshot snapshot) {
     if (!"ACTIVE".equals(snapshot.status())
         || snapshot.tokenVersion() != claims.tokenVersion()
-        || !"ACTIVE".equals(snapshot.sessionStatus())) {
+        || !"ACTIVE".equals(snapshot.sessionStatus())
+        || (snapshot.workspaceMemberStatus() != null
+            && !"ACTIVE".equals(snapshot.workspaceMemberStatus()))) {
       // Disabled since the token was issued, the token predates a revocation event (logout-all,
-      // password change, role change, ...) that bumped token_version, or this specific session
-      // (US-02-03) was individually revoked - either way, this token no longer authenticates,
-      // regardless of its own unexpired signature.
+      // password change, role change, ...) that bumped token_version, this specific session
+      // (US-02-03) was individually revoked, or (US-04-01) a linked workspace_member has itself
+      // been deactivated - either way, this token no longer authenticates, regardless of its own
+      // unexpired signature. A null workspaceMemberStatus (no membership at all) is deliberately
+      // NOT rejected here - a SYSTEM_ADMINISTRATOR with no linked workspace_member is a normal
+      // state (see AuthenticatedUserPrincipal's Javadoc) that must still authenticate for
+      // admin-only endpoints; RLS then denies every workspace-scoped table by default for them.
       return Optional.empty();
     }
     AuthenticatedUserPrincipal principal =

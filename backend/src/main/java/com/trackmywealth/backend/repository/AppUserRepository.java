@@ -17,6 +17,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
 
+  // Named once and reused across every @Param(USER_ID) below - PMD's AvoidDuplicateLiterals
+  // flags the same string literal appearing 4+ times in one file.
+  String USER_ID = "userId";
+
   // A derived `email = ?` query is NOT case-insensitive here despite the column being citext:
   // JDBC binds the parameter as `text`, and Postgres's operator resolution then picks the exact
   // `text = text` match (silently casting the citext column down to text) over the citext
@@ -38,12 +42,12 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   // degrade to sessionStatus == null (treated as "not authenticated"), not a query failure.
   @Query(
       "SELECT new com.trackmywealth.backend.security.AppUserAuthSnapshot("
-          + "u.id, u.role, u.status, u.tokenVersion, w.id, s.status) "
+          + "u.id, u.role, u.status, u.tokenVersion, w.id, wm.status, s.status) "
           + "FROM AppUser u LEFT JOIN u.workspaceMember wm LEFT JOIN wm.workspace w "
           + "LEFT JOIN UserSession s ON s.user = u AND s.id = :sessionId "
           + "WHERE u.id = :userId")
   Optional<AppUserAuthSnapshot> findAuthSnapshot(
-      @Param("userId") UUID userId, @Param("sessionId") UUID sessionId);
+      @Param(USER_ID) UUID userId, @Param("sessionId") UUID sessionId);
 
   // US-02-01's last-active-administrator guard (FR-USR-005): a row-level lock over every
   // currently active administrator, not a DB constraint - see the comment on this rule in V2 and
@@ -111,7 +115,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
           + "THEN :lockedUntil ELSE u.lockedUntil END "
           + "WHERE u.id = :userId")
   void registerFailedLoginAttempt(
-      @Param("userId") UUID userId,
+      @Param(USER_ID) UUID userId,
       @Param("lockoutThreshold") int lockoutThreshold,
       @Param("lockedUntil") OffsetDateTime lockedUntil);
 
@@ -122,7 +126,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
       "UPDATE AppUser u SET u.failedLoginCount = 0, u.lockedUntil = null, u.lastLoginAt = :loginAt"
           + " WHERE u.id = :userId")
   void registerSuccessfulLogin(
-      @Param("userId") UUID userId, @Param("loginAt") OffsetDateTime loginAt);
+      @Param(USER_ID) UUID userId, @Param("loginAt") OffsetDateTime loginAt);
 
   // #62: reactivateUser() mutates this row and then mutates user_session/refresh_token (for the
   // same user) in an order forced by a real FK constraint. Racing it against disableUser() on
