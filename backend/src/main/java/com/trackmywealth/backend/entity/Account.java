@@ -10,6 +10,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.hibernate.annotations.Generated;
@@ -80,6 +81,19 @@ public class Account {
 
   @Column(name = "manual_valuation", nullable = false)
   private boolean manualValuation;
+
+  @Column(name = "identifier_masked")
+  private String identifierMasked;
+
+  @JdbcTypeCode(SqlTypes.CHAR)
+  @Column(length = 2)
+  private String jurisdiction;
+
+  @Column(name = "opened_at")
+  private LocalDate openedAt;
+
+  @Column(name = "closed_at")
+  private LocalDate closedAt;
 
   @Column(nullable = false)
   private String status = "ACTIVE";
@@ -207,6 +221,38 @@ public class Account {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public String getIdentifierMasked() {
+    return identifierMasked;
+  }
+
+  public void setIdentifierMasked(String identifierMasked) {
+    this.identifierMasked = identifierMasked;
+  }
+
+  public String getJurisdiction() {
+    return jurisdiction;
+  }
+
+  public void setJurisdiction(String jurisdiction) {
+    this.jurisdiction = jurisdiction;
+  }
+
+  public LocalDate getOpenedAt() {
+    return openedAt;
+  }
+
+  public void setOpenedAt(LocalDate openedAt) {
+    this.openedAt = openedAt;
+  }
+
+  public LocalDate getClosedAt() {
+    return closedAt;
+  }
+
+  public void setClosedAt(LocalDate closedAt) {
+    this.closedAt = closedAt;
   }
 
   public OffsetDateTime getCreatedAt() {
