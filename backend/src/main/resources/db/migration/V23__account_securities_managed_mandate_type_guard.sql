@@ -27,4 +27,4 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE TRIGGER account_securities_type_guard BEFORE INSERT ON account_securities
-    FOR EACH ROW EXECUTE FUNCTION trg_extension_type_guard('SECURITIES', 'MANAGED_MANDATE');
+FOR EACH ROW EXECUTE FUNCTION trg_extension_type_guard('SECURITIES', 'MANAGED_MANDATE');
