@@ -665,6 +665,28 @@ class AccountControllerTest {
   }
 
   @Test
+  void archivingADeletedAccountIsRejectedWithAStructuredConflict() throws Exception {
+    // FR-STA-001: DELETED is terminal - reachable from ACTIVE only, reachable from nowhere once
+    // there. There's no delete-account endpoint yet (that's its own future story), so this sets
+    // status directly via SQL to exercise the guard against whatever eventually produces a
+    // DELETED account - archiveAccount must reject "not ACTIVE", not just "not already ARCHIVED".
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+    setStatusDirectly(created.id(), "DELETED");
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + created.id() + "/archive")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
   void restoringAnActiveAccountIsRejectedWithAStructuredConflict() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse created =
@@ -703,6 +725,16 @@ class AccountControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  private void setStatusDirectly(UUID accountId, String status) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("UPDATE account SET status = ? WHERE id = ?")) {
+      statement.setString(1, status);
+      statement.setObject(2, accountId);
+      statement.executeUpdate();
+    }
   }
 
   private void backdateArchivedAt(UUID accountId, int daysAgo) throws Exception {

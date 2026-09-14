@@ -169,8 +169,14 @@ public class AccountService {
   @Transactional
   public AccountSummaryResponse archiveAccount(UUID accountId) {
     Account account = findAccountOrThrow(accountId);
-    if (ARCHIVED.equals(account.getStatus())) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "Account is already archived.");
+    // Checking specifically for "not ACTIVE" rather than "already ARCHIVED": status also admits
+    // DELETED (V4's own CHECK constraint), which FR-STA-001 defines as terminal - reachable from
+    // ACTIVE only, and reachable from nowhere once there. An "already ARCHIVED" check alone would
+    // let this method resurrect a DELETED account by silently accepting a DELETED -> ARCHIVED
+    // transition FR-STA-001 doesn't list.
+    if (!ACTIVE.equals(account.getStatus())) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "Only an active account can be archived.");
     }
 
     account.setStatus(ARCHIVED);
@@ -190,6 +196,9 @@ public class AccountService {
     if (!ARCHIVED.equals(account.getStatus())) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Account is not archived.");
     }
+    // isBefore, not isBefore-or-equal: FR-LIF-006 says "restorable for 30 days", read as
+    // inclusive of the 30th day itself - the cutoff is the instant *after* archivedAt + 30 days,
+    // not that instant itself.
     if (account.getArchivedAt().isBefore(now().minusDays(RESTORE_WINDOW_DAYS))) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT,
