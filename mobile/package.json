@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~57.0.17",
-    "expo": "~57.0.20",
+    "expo": "~57.0.22",
     "expo-constants": "~57.0.17",
     "expo-device": "~57.0.1",
     "expo-font": "~57.0.3",
