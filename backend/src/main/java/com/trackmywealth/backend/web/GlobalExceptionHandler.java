@@ -16,9 +16,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * Done).
  *
  * <p>Recognizes specific immutability-guard triggers by the distinct message prefix each one raises
- * (V4's {@code trg_account_type_immutable}, V24's {@code trg_account_currency_immutable}) so the
- * response can name the actual requirement violated; any other integrity violation still gets a
- * clean, generic 409 rather than a 500, but without echoing the raw DB message to the caller.
+ * (V4's {@code trg_account_type_immutable}, V24's {@code trg_account_currency_immutable}, V26's
+ * {@code trg_custom_asset_valuation_currency_guard}) so the response can name the actual
+ * requirement violated; any other integrity violation - including V5/V26's generic {@code
+ * trg_extension_type_guard} reuse - still gets a clean, generic 409 rather than a 500, but without
+ * echoing the raw DB message to the caller.
  *
  * <p>Also handles {@link OptimisticLockingFailureException}: every entity in this codebase carries
  * a real {@code @Version} column (see {@code AppUserRepository}'s own comment on the same pitfall),
@@ -42,6 +44,9 @@ public class GlobalExceptionHandler {
       return conflict(
           "An account's currency cannot be changed after creation (FR-ACC-002). To convert this"
               + " account, archive it and create a new one with the correct currency.");
+    }
+    if (rootMessage.contains("custom_asset_valuation_currency_mismatch")) {
+      return conflict("A valuation's currency must match the account's own currency (FR-ACC-002).");
     }
     return conflict("The request conflicts with an existing data constraint.");
   }

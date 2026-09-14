@@ -16,7 +16,8 @@ import org.springframework.http.ProblemDetail;
  * OptimisticLockingFailureException} branch - {@code AccountControllerTest} only exercises the
  * {@code account_type_immutable} and {@code account_currency_immutable} branches end-to-end (a
  * genuine concurrent-write race and an arbitrary other constraint violation aren't practical to
- * force deterministically over HTTP).
+ * force deterministically over HTTP). {@code custom_asset_valuation_currency_mismatch} (V26) is
+ * also exercised end-to-end, by {@code CustomAssetValuationControllerTest}.
  */
 class GlobalExceptionHandlerTest {
 
@@ -41,6 +42,18 @@ class GlobalExceptionHandlerTest {
             violationWithRootMessage(
                 "ERROR: account_currency_immutable: account 1 native_currency cannot change from"
                     + " CHF to EUR (FR-ACC-002)"));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getDetail()).contains("FR-ACC-002");
+  }
+
+  @Test
+  void customAssetValuationCurrencyMismatchIsTranslatedToAConflictNamingFrAcc002() {
+    ProblemDetail problem =
+        handler.handleDataIntegrityViolation(
+            violationWithRootMessage(
+                "ERROR: custom_asset_valuation_currency_mismatch: account 1 native_currency is CHF"
+                    + " but a valuation in EUR was attempted (FR-ACC-002)"));
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getDetail()).contains("FR-ACC-002");
