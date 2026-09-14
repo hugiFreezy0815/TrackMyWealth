@@ -31,15 +31,8 @@ import java.util.UUID;
 public record CreateAccountRequest(
     UUID financialInstitutionId,
     @NotBlank String name,
-    // Kept in sync by hand with AccountService's applyCapabilityDefaults/
-    // createExtensionRowIfNeeded switches and V4's account_type CHECK constraint - all three (plus
-    // this regex) must be updated together when a 12th account type is ever added.
-    @NotBlank
-        @Pattern(
-            regexp =
-                "CASH|SAVINGS|SECURITIES|MANAGED_MANDATE|PENSION|VESTED_BENEFITS|CREDIT_CARD"
-                    + "|MORTGAGE|LOAN|CRYPTO|CUSTOM_ASSET")
-        String accountType,
+    // See AccountTypeValues' Javadoc for the full list of places a 12th account type touches.
+    @NotBlank @Pattern(regexp = AccountTypeValues.PATTERN) String accountType,
     @NotBlank @ValidCurrencyCode String nativeCurrency,
     Boolean holdsPositions,
     @ValidCurrencyCode String billingCurrency,
