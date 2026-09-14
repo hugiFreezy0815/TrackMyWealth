@@ -26,4 +26,4 @@
 ALTER TABLE account ADD COLUMN archived_at TIMESTAMPTZ;
 
 ALTER TABLE account ADD CONSTRAINT account_archived_at_matches_status
-    CHECK ((status = 'ARCHIVED') = (archived_at IS NOT NULL));
+CHECK ((status = 'ARCHIVED') = (archived_at IS NOT NULL));
