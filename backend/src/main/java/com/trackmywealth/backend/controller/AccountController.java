@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** US-05-01, US-05-02. */
+/** US-05-01, US-05-02, US-05-03. */
 @RestController
 @RequestMapping("/api/v1/accounts")
 public class AccountController {
@@ -40,5 +40,15 @@ public class AccountController {
   public AccountSummaryResponse updateAccount(
       @PathVariable UUID accountId, @Valid @RequestBody UpdateAccountRequest request) {
     return accountService.updateAccount(accountId, request);
+  }
+
+  @PostMapping("/{accountId}/archive")
+  public AccountSummaryResponse archiveAccount(@PathVariable UUID accountId) {
+    return accountService.archiveAccount(accountId);
+  }
+
+  @PostMapping("/{accountId}/restore")
+  public AccountSummaryResponse restoreAccount(@PathVariable UUID accountId) {
+    return accountService.restoreAccount(accountId);
   }
 }

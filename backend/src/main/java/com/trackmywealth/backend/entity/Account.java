@@ -98,6 +98,13 @@ public class Account {
   @Column(nullable = false)
   private String status = "ACTIVE";
 
+  // US-05-03: when this account most recently became ARCHIVED - null while ACTIVE. Anchors the
+  // FR-LIF-006 30-day restore window; deliberately not closedAt (see V25's own comment on why the
+  // two must stay separate). V25's account_archived_at_matches_status CHECK enforces this is
+  // non-null exactly when status is ARCHIVED, at the DB level, regardless of what this class does.
+  @Column(name = "archived_at")
+  private OffsetDateTime archivedAt;
+
   @Generated(event = EventType.INSERT)
   @Column(name = "created_at", insertable = false, updatable = false)
   private OffsetDateTime createdAt;
@@ -221,6 +228,14 @@ public class Account {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public OffsetDateTime getArchivedAt() {
+    return archivedAt;
+  }
+
+  public void setArchivedAt(OffsetDateTime archivedAt) {
+    this.archivedAt = archivedAt;
   }
 
   public String getIdentifierMasked() {
