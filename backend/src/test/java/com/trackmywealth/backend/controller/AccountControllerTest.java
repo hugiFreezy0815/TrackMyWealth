@@ -42,6 +42,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>US-05-02: {@code account_type} and {@code native_currency} are immutable after creation - the
  * DoD's tests are {@link #changingAccountTypeIsRejectedWithAStructuredConflict} and {@link
  * #changingNativeCurrencyIsRejectedWithAStructuredConflict}.
+ *
+ * <p>US-05-03: archive and restore an account - the DoD's test is {@link
+ * #archivingThenRestoringWithinTheWindowReturnsTheAccountToActive}; {@link
+ * #restoringAfterTheWindowIsRejectedWithAStructuredConflict} covers FR-LIF-006's 30-day cutoff.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -576,6 +580,141 @@ class AccountControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void archivingThenRestoringWithinTheWindowReturnsTheAccountToActive() {
+    // DoD: archives, verifies status/archivedAt, then restores within the window.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+
+    AccountSummaryResponse archived =
+        client(token)
+            .post()
+            .uri("/api/v1/accounts/" + created.id() + "/archive")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(archived.status()).isEqualTo("ARCHIVED");
+    assertThat(archived.archivedAt()).isNotNull();
+
+    AccountSummaryResponse restored =
+        client(token)
+            .post()
+            .uri("/api/v1/accounts/" + created.id() + "/restore")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(restored.status()).isEqualTo("ACTIVE");
+    assertThat(restored.archivedAt()).isNull();
+  }
+
+  @Test
+  void restoringAfterTheWindowIsRejectedWithAStructuredConflict() throws Exception {
+    // FR-LIF-006: the 30-day restore window is enforced by the API itself, not left to the UI to
+    // stop offering the button. Backdates archived_at directly (there's no way to fast-forward 30
+    // real days), mirroring how this test class already reaches into the DB for state the API
+    // itself has no way to set up (e.g. isOccupational below).
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+    client(token).post().uri("/api/v1/accounts/" + created.id() + "/archive").exchange();
+    backdateArchivedAt(created.id(), 31);
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + created.id() + "/restore")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void archivingAnAlreadyArchivedAccountIsRejectedWithAStructuredConflict() {
+    // FR-STA-001 lists ACTIVE -> ARCHIVED, not ARCHIVED -> ARCHIVED - transitions not listed are
+    // prohibited.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+    client(token).post().uri("/api/v1/accounts/" + created.id() + "/archive").exchange();
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + created.id() + "/archive")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void restoringAnActiveAccountIsRejectedWithAStructuredConflict() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + created.id() + "/restore")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void archivingAnUnknownAccountIsNotFound() {
+    String token = bootstrapAdministrator();
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + UUID.randomUUID() + "/archive")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void restoringAnUnknownAccountIsNotFound() {
+    String token = bootstrapAdministrator();
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + UUID.randomUUID() + "/restore")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  private void backdateArchivedAt(UUID accountId, int daysAgo) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "UPDATE account SET archived_at = archived_at - (? * INTERVAL '1 day') WHERE id ="
+                    + " ?")) {
+      statement.setInt(1, daysAgo);
+      statement.setObject(2, accountId);
+      statement.executeUpdate();
+    }
   }
 
   private boolean isOccupational(UUID accountId) throws Exception {

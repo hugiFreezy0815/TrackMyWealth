@@ -22,6 +22,8 @@ import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.AccountSecuritiesRepository;
 import com.trackmywealth.backend.repository.AccountVestedBenefitsRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -57,6 +59,12 @@ public class AccountService {
   private static final String LOAN = "LOAN";
   private static final String PENSION = "PENSION";
   private static final String CUSTOM_ASSET = "CUSTOM_ASSET";
+  private static final String ACTIVE = "ACTIVE";
+  private static final String ARCHIVED = "ARCHIVED";
+
+  // FR-LIF-006: archived accounts are restorable through the interface for 30 days; thereafter
+  // they remain in the data but are no longer user-restorable.
+  private static final int RESTORE_WINDOW_DAYS = 30;
 
   // FR-ACC-030: occupational-by-definition pension schemes (CH Pillar 2 / DE bAV) - not a
   // per-account choice the way holdsPositions is, since occupational-ness is inherent to which
@@ -138,11 +146,7 @@ public class AccountService {
   // invariant, translate its rejection" pattern createAccount's own extension-row triggers rely on.
   @Transactional
   public AccountSummaryResponse updateAccount(UUID accountId, UpdateAccountRequest request) {
-    Account account =
-        accountRepository
-            .findById(accountId)
-            .orElseThrow(
-                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found."));
+    Account account = findAccountOrThrow(accountId);
 
     account.setName(request.name());
     account.setAccountType(request.accountType());
@@ -156,6 +160,58 @@ public class AccountService {
     account = accountRepository.saveAndFlush(account);
 
     return toSummary(account);
+  }
+
+  // US-05-03/FR-STA-001: ACTIVE -> ARCHIVED is the only transition out of ACTIVE this method
+  // allows; archiving an already-ARCHIVED account is a transition FR-STA-001's state table doesn't
+  // list, so it's rejected the same way an out-of-table transition anywhere else in this codebase
+  // is (see e.g. V4/V24's immutability triggers) - a structured 409, not a silent no-op.
+  @Transactional
+  public AccountSummaryResponse archiveAccount(UUID accountId) {
+    Account account = findAccountOrThrow(accountId);
+    if (ARCHIVED.equals(account.getStatus())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "Account is already archived.");
+    }
+
+    account.setStatus(ARCHIVED);
+    account.setArchivedAt(now());
+    account = accountRepository.saveAndFlush(account);
+
+    return toSummary(account);
+  }
+
+  // US-05-03/FR-LIF-006: the 30-day restore window is enforced here, not just left to the UI to
+  // stop offering the button - a caller that goes straight to the API after the window has closed
+  // must be rejected the same structured way the UI-hidden path would have been, rather than
+  // silently succeeding forever.
+  @Transactional
+  public AccountSummaryResponse restoreAccount(UUID accountId) {
+    Account account = findAccountOrThrow(accountId);
+    if (!ARCHIVED.equals(account.getStatus())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "Account is not archived.");
+    }
+    if (account.getArchivedAt().isBefore(now().minusDays(RESTORE_WINDOW_DAYS))) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "This account was archived more than 30 days ago (FR-LIF-006) and can no longer be"
+              + " restored.");
+    }
+
+    account.setStatus(ACTIVE);
+    account.setArchivedAt(null);
+    account = accountRepository.saveAndFlush(account);
+
+    return toSummary(account);
+  }
+
+  private Account findAccountOrThrow(UUID accountId) {
+    return accountRepository
+        .findById(accountId)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found."));
+  }
+
+  private OffsetDateTime now() {
+    return OffsetDateTime.now(ZoneOffset.UTC);
   }
 
   // C2/FR-INS-011: every account has exactly one container; when the caller hasn't chosen one,
@@ -361,6 +417,7 @@ public class AccountService {
         account.isHasContributionLimit(),
         account.isDiscretionary(),
         account.isManualValuation(),
-        account.getStatus());
+        account.getStatus(),
+        account.getArchivedAt());
   }
 }

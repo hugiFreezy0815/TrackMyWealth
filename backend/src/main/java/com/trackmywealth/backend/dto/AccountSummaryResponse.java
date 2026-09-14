@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.dto;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record AccountSummaryResponse(
@@ -16,4 +17,5 @@ public record AccountSummaryResponse(
     boolean hasContributionLimit,
     boolean discretionary,
     boolean manualValuation,
-    String status) {}
+    String status,
+    OffsetDateTime archivedAt) {}
