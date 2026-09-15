@@ -14,14 +14,18 @@ import java.time.LocalDate;
  * @param requestedDate the date that was asked for
  * @param rateDate the date the returned rate actually applies to - equal to {@code requestedDate}
  *     for an exact match, earlier when carried forward
- * @param carriedForward true when no rate was stored for {@code requestedDate} itself and the last
- *     available prior rate was used instead (FR-CUR-012/PR-011) - callers must visibly mark any
- *     figure derived from this the same way, never display it with the same authority as an exact
- *     rate
  */
 public record FxRateLookupResult(
-    BigDecimal rate,
-    LocalDate requestedDate,
-    LocalDate rateDate,
-    boolean carriedForward,
-    String source) {}
+    BigDecimal rate, LocalDate requestedDate, LocalDate rateDate, String source) {
+
+  /**
+   * True when no rate was stored for {@code requestedDate} itself and the last available prior rate
+   * was used instead (FR-CUR-012/PR-011) - callers must visibly mark any figure derived from this
+   * the same way, never display it with the same authority as an exact rate. Derived rather than
+   * stored: {@code rateDate} and {@code requestedDate} are the only facts a caller can actually
+   * supply, and keeping this as a second, independently-settable field would let the two disagree.
+   */
+  public boolean carriedForward() {
+    return !rateDate.equals(requestedDate);
+  }
+}

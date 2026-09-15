@@ -8,8 +8,13 @@ import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.stream.Stream;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -140,27 +145,23 @@ class FxRateServiceTest {
     assertThatBadRequest(() -> fxRateService.getRate("usd", "CHF", today, SOURCE));
   }
 
-  @Test
-  void malformedCurrencyCodeIsRejectedAsBadRequest() {
-    assertThatBadRequest(() -> fxRateService.getRate("USD", "NOTACODE", LocalDate.now(), SOURCE));
+  @ParameterizedTest
+  @MethodSource("invalidArguments")
+  void invalidArgumentsAreRejectedAsBadRequestNotAnAlwaysFalseQuery(
+      String base, String quote, LocalDate date, String source) {
+    assertThatBadRequest(() -> fxRateService.getRate(base, quote, date, source));
   }
 
-  @Test
-  void nullCurrencyIsRejectedAsBadRequest() {
-    assertThatBadRequest(() -> fxRateService.getRate(null, "CHF", LocalDate.now(), SOURCE));
+  private static Stream<Arguments> invalidArguments() {
+    LocalDate today = LocalDate.now();
+    return Stream.of(
+        Arguments.of("USD", "NOTACODE", today, SOURCE), // malformed currency code
+        Arguments.of(null, "CHF", today, SOURCE), // null currency
+        Arguments.of("USD", "CHF", null, SOURCE), // null date
+        Arguments.of("USD", "CHF", today, " ")); // blank source
   }
 
-  @Test
-  void nullDateIsRejectedAsBadRequestNotAnAlwaysFalseQuery() {
-    assertThatBadRequest(() -> fxRateService.getRate("USD", "CHF", null, SOURCE));
-  }
-
-  @Test
-  void blankSourceIsRejectedAsBadRequest() {
-    assertThatBadRequest(() -> fxRateService.getRate("USD", "CHF", LocalDate.now(), " "));
-  }
-
-  private void assertThatBadRequest(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+  private void assertThatBadRequest(ThrowingCallable call) {
     assertThatThrownBy(call)
         .isInstanceOf(ResponseStatusException.class)
         .satisfies(

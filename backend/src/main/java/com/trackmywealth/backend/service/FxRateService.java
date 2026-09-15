@@ -33,7 +33,7 @@ public class FxRateService {
   /**
    * The rate for {@code baseCurrency}/{@code quoteCurrency} effective on {@code date} from {@code
    * source} - the stored rate for that exact date if one exists, otherwise the most recent prior
-   * one, marked {@link FxRateLookupResult#carriedForward}} (FR-CUR-012).
+   * one, marked {@link FxRateLookupResult#carriedForward} (FR-CUR-012).
    *
    * @throws ResponseStatusException 400 if any argument is missing or {@code baseCurrency}/{@code
    *     quoteCurrency} isn't a valid ISO 4217 code (same check as {@code @ValidCurrencyCode} uses
@@ -48,12 +48,8 @@ public class FxRateService {
       String baseCurrency, String quoteCurrency, LocalDate date, String source) {
     requireValidCurrencyCode(baseCurrency, "baseCurrency");
     requireValidCurrencyCode(quoteCurrency, "quoteCurrency");
-    if (date == null) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "date is required.");
-    }
-    if (source == null || source.isBlank()) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "source is required.");
-    }
+    requireNonNull(date, "date");
+    requireNonBlank(source, "source");
 
     FxRate fxRate =
         fxRateRepository
@@ -73,21 +69,14 @@ public class FxRateService {
                             + date
                             + "."));
 
-    return new FxRateLookupResult(
-        fxRate.getRate(),
-        date,
-        fxRate.getRateDate(),
-        !fxRate.getRateDate().equals(date),
-        fxRate.getSource());
+    return new FxRateLookupResult(fxRate.getRate(), date, fxRate.getRateDate(), fxRate.getSource());
   }
 
   // Mirrors CurrencyCodeValidator's own check (java.util.Currency.getInstance, which is
   // case-sensitive/uppercase-only) rather than depending on jakarta.validation here: this is a
   // plain service method, not a request DTO field @ValidCurrencyCode can annotate.
   private static void requireValidCurrencyCode(String currencyCode, String fieldName) {
-    if (currencyCode == null) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required.");
-    }
+    requireNonNull(currencyCode, fieldName);
     try {
       Currency.getInstance(currencyCode);
     } catch (IllegalArgumentException e) {
@@ -95,6 +84,19 @@ public class FxRateService {
           HttpStatus.BAD_REQUEST,
           fieldName + " '" + currencyCode + "' is not a valid ISO 4217 currency code.",
           e);
+    }
+  }
+
+  private static void requireNonNull(Object value, String fieldName) {
+    if (value == null) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required.");
+    }
+  }
+
+  private static void requireNonBlank(String value, String fieldName) {
+    requireNonNull(value, fieldName);
+    if (value.isBlank()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required.");
     }
   }
 }

@@ -16,12 +16,10 @@ import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Maps {@code fx_rate} (V8) - a dated parallel series to {@link
- * com.trackmywealth.backend.entity.Account} currency prices, under the same provenance rules
- * (FR-PRC-013, US-06-01). A row's {@code rate} converts an amount in {@code baseCurrency} to {@code
- * quoteCurrency} (multiply by {@code rate}); the DB's {@code UNIQUE(base_currency, quote_currency,
- * rate_date, source)} constraint - not this entity - is what prevents duplicate rows for the same
- * pair/date/source (US-06-01 AC#2).
+ * Maps {@code fx_rate} (V8) - a dated parallel series under the same provenance rules as {@code
+ * price} (FR-PRC-013, US-06-01). A row's {@code rate} converts an amount in {@code baseCurrency} to
+ * {@code quoteCurrency} (multiply by {@code rate}); duplicate rows for the same pair/date/source
+ * are prevented by the DB's {@code UNIQUE} constraint, not this entity.
  *
  * <p>{@code id} is mapped as the sole {@code @Id} even though the table's actual primary key is the
  * composite {@code (id, rate_date)} required by range partitioning: {@code id} alone is already
@@ -29,8 +27,7 @@ import org.hibernate.type.SqlTypes;
  * used for stays correct without Hibernate needing to know about the composite key - see {@code
  * docs/architecture/database-schema.md} §5.
  *
- * <p>Global reference data, not tenant data: no {@code workspace_id}, no row-level security (see
- * {@code CLAUDE.md}'s multi-tenancy section).
+ * <p>Global reference data, not tenant data - see {@code CLAUDE.md}'s multi-tenancy section.
  */
 @Entity
 @Table(name = "fx_rate")
