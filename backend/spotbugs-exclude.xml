@@ -26,6 +26,18 @@ holds itself to for its own exemption list.
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- AssignAccountOwnershipRequest's compact constructor already defensively copies owners via
+         List.copyOf (an immutable list) before the field is ever set - SpotBugs' EI_EXPOSE_REP
+         doesn't do the dataflow analysis to see that, and flags the record's auto-generated
+         accessor as if it returned the caller's own mutable list directly. There is no unsafe
+         mutability here to fix; List.copyOf is the safe alternative SpotBugs is normally pointing
+         toward, already applied. -->
+    <Match>
+        <Class name="com.trackmywealth.backend.dto.AssignAccountOwnershipRequest"/>
+        <Method name="owners"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
     <!-- JwtService's constructor derives its signing key from configuration and has nothing to
          clean up if that fails - a malformed/missing secret should fail application startup
          immediately (fail-fast), not construct a partially-usable service. No finalizer exists
