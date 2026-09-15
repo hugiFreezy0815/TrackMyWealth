@@ -10,6 +10,8 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.library.Architectures;
 import com.tngtech.archunit.library.Architectures.LayeredArchitecture;
 import com.tngtech.archunit.library.GeneralCodingRules;
+import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.service.AccountService;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RestController;
@@ -86,6 +88,26 @@ class ArchitectureTest {
           .andShould()
           .beAnnotatedWith(Repository.class)
           .allowEmptyShould(true);
+
+  // US-05-04/DM-17/20/21/FR-ACC-010/011/012: account_type may drive behaviour only inside
+  // AccountService, which translates it into the capability flags (Account.holdsPositions etc.)
+  // - not account_type itself - every other layer (consolidation, allocation, net worth,
+  // navigation) must branch on instead. Neither the consolidation nor allocation package exists
+  // yet (EPIC 15/17 haven't started), so this rule is checked against the whole codebase rather
+  // than scoped to one not-yet-existent package - it already has real classes to check today (every
+  // class other than AccountService), so unlike the vacuously-true rules above it doesn't need
+  // allowEmptyShould(true), and it will keep covering EPIC 15/17's code the moment it's added,
+  // wherever it lands.
+  @ArchTest
+  static final ArchRule only_account_service_branches_on_account_type =
+      noClasses()
+          .that()
+          .areNotAssignableTo(AccountService.class)
+          .should()
+          .callMethod(Account.class, "getAccountType")
+          .because(
+              "account_type must drive behaviour only inside AccountService (US-05-04) - branch on"
+                  + " the capability flags it computes instead");
 
   @ArchTest
   static final ArchRule no_standard_streams =
