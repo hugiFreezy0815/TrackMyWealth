@@ -12,20 +12,24 @@ import org.springframework.stereotype.Repository;
 public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember, UUID> {
 
   // US-03-04/FR-HHL-015: locks the target row plus every other currently-ACTIVE member of the
-  // same workspace, in one statement - mirrors AppUserRepository.lockTargetAndActiveAdministrators
-  // (FR-USR-005's analogous "last active administrator" guard), including the ORDER BY id: two
-  // concurrent deactivation calls touching overlapping members of the same (small, household-sized)
-  // workspace must acquire these locks in the same deterministic order or they can deadlock instead
-  // of one simply waiting for the other. Unlike that query, there is no EXISTS-gated second branch
-  // here - a workspace's membership is small by design (this is a household, not a multi-tenant
-  // table), so locking every active member whenever any one of them is touched is not the
-  // contention concern it would be for the global app_user table.
+  // caller's own workspace, in one statement - mirrors
+  // AppUserRepository.lockTargetAndActiveAdministrators (FR-USR-005's analogous "last active
+  // administrator" guard), including both the ORDER BY id (two concurrent deactivation calls
+  // touching overlapping members of the same workspace must acquire these locks in the same
+  // deterministic order or they can deadlock instead of one simply waiting for the other) and the
+  // EXISTS-gated second branch: the broader active-member set is only locked when the target
+  // itself is currently ACTIVE, so a call against an already-INACTIVE target locks just that one
+  // row instead of every active member of the workspace for no reason. workspaceId is passed in
+  // directly (the caller's own AuthenticatedUserPrincipal.workspaceId(), since this is
+  // self-service-only - see WorkspaceMemberService) rather than re-derived from the target row via
+  // a subquery.
   @Query(
       value =
           "SELECT * FROM workspace_member WHERE id = :targetId OR ("
-              + "status = 'ACTIVE' AND workspace_id = "
-              + "(SELECT workspace_id FROM workspace_member WHERE id = :targetId)"
+              + "status = 'ACTIVE' AND workspace_id = :workspaceId AND EXISTS ("
+              + "SELECT 1 FROM workspace_member t WHERE t.id = :targetId AND t.status = 'ACTIVE')"
               + ") ORDER BY id FOR UPDATE",
       nativeQuery = true)
-  List<WorkspaceMember> lockTargetAndActiveMembersInWorkspace(@Param("targetId") UUID targetId);
+  List<WorkspaceMember> lockTargetAndActiveMembersInWorkspace(
+      @Param("targetId") UUID targetId, @Param("workspaceId") UUID workspaceId);
 }

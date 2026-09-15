@@ -31,6 +31,12 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
       nativeQuery = true)
   boolean existsByEmail(@Param("email") String email);
 
+  // WorkspaceMemberService's "who is making this request" lookup - a single query against the
+  // FK column itself, not app_user's full column set followed by a lazy-association round trip
+  // (findById(...).map(AppUser::getWorkspaceMember) triggers exactly that second query).
+  @Query("SELECT u.workspaceMember.id FROM AppUser u WHERE u.id = :userId")
+  Optional<UUID> findWorkspaceMemberId(@Param(USER_ID) UUID userId);
+
   // US-02-02 login: same citext/JDBC parameter-binding caveat as existsByEmail above applies
   // here too - the explicit cast is what actually makes this case-insensitive.
   @Query(value = "SELECT * FROM app_user WHERE email = CAST(:email AS citext)", nativeQuery = true)

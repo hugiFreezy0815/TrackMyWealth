@@ -37,7 +37,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>The DoD's two scenarios are {@link #deactivatingTheLastActiveMemberIsRejected} (one active
  * member) and {@link #deactivatingSelfWithAnotherActiveMemberRemainingSucceeds} (two active
  * members). Self-service only for now (see {@code WorkspaceMemberService}'s own Javadoc for why) -
- * {@link #deactivatingAnotherMembersAccountIsNotFound} covers that boundary.
+ * {@link #deactivatingAnotherMembersAccountIsNotFound} and {@link
+ * #deactivatingARandomUnrelatedIdIsNotFound} both cover that boundary via {@code
+ * WorkspaceMemberService.requireSelf} (one with a real id belonging to someone else, one with an id
+ * that doesn't exist at all - both rejected identically, which is the point). Neither reaches
+ * {@code extractTargetOrThrow}'s own not-found branch, which self-service-only scope makes
+ * unreachable via this API today (it would need the acting member's own row to disappear between
+ * authentication and the lock query).
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -72,6 +78,7 @@ class WorkspaceMemberControllerTest {
         Statement statement = connection.createStatement()) {
       for (String table :
           List.of(
+              "authorization_denial_log",
               "admin_audit_log",
               "user_session",
               "refresh_token",
@@ -132,8 +139,11 @@ class WorkspaceMemberControllerTest {
   void deactivatingAnotherMembersAccountIsNotFound() {
     // Self-service only for now: an active member with no grant mechanism yet available (US-03-03
     // is not merged - see WorkspaceMemberService's Javadoc) must not be able to deactivate someone
-    // else, even another member of their own workspace.
+    // else, even another member of their own workspace. Also verifies FR-TEN-006/US-28-02: this
+    // denial must be audited via AuthorizationDenialAuditService, the same as every other
+    // single-resource authorization denial in the app (see SessionService.revokeSession).
     String adminToken = bootstrapAdministrator();
+    UUID adminUserId = appUserIdForEmail("admin@example.com");
     UUID partnerMemberId = createSecondMember("partner@example.com");
 
     client(adminToken)
@@ -144,10 +154,16 @@ class WorkspaceMemberControllerTest {
         .isEqualTo(HttpStatus.NOT_FOUND);
 
     assertThat(memberStatus(partnerMemberId)).isEqualTo("ACTIVE");
+    assertThat(authorizationDenialLogged(adminUserId, partnerMemberId)).isTrue();
   }
 
   @Test
-  void deactivatingAnUnknownMemberIsNotFound() {
+  void deactivatingARandomUnrelatedIdIsNotFound() {
+    // Same requireSelf mismatch branch as deactivatingAnotherMembersAccountIsNotFound above, not
+    // WorkspaceMemberService.extractTargetOrThrow's own not-found branch - see this class's own
+    // Javadoc for why that branch isn't reachable via this API today. Still worth pinning
+    // separately: a syntactically-valid-but-nonexistent id must be rejected exactly as uniformly
+    // as a real other member's id, never distinguishably.
     String token = bootstrapAdministrator();
 
     client(token)
@@ -193,6 +209,39 @@ class WorkspaceMemberControllerTest {
       try (ResultSet resultSet = statement.executeQuery()) {
         assertThat(resultSet.next()).as("app_user with email " + email).isTrue();
         return (UUID) resultSet.getObject("workspace_member_id");
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private UUID appUserIdForEmail(String email) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("SELECT id FROM app_user WHERE email = ?")) {
+      statement.setString(1, email);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        assertThat(resultSet.next()).as("app_user with email " + email).isTrue();
+        return (UUID) resultSet.getObject("id");
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  // FR-TEN-006/US-28-02: confirms WorkspaceMemberService's denial actually reached
+  // AuthorizationDenialAuditService, not just that the caller saw a 404 - the two are only
+  // guaranteed to coincide because this test exercises the real service, not a mock of it.
+  private boolean authorizationDenialLogged(UUID principalUserId, UUID requestedEntityId) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT 1 FROM authorization_denial_log WHERE principal_user_id = ? AND"
+                    + " requested_entity_type = 'WorkspaceMember' AND requested_entity_id = ?")) {
+      statement.setObject(1, principalUserId);
+      statement.setObject(2, requestedEntityId);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        return resultSet.next();
       }
     } catch (Exception e) {
       throw new IllegalStateException(e);

@@ -1,7 +1,6 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
-import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
@@ -31,6 +30,7 @@ public class WorkspaceMemberService {
 
   private static final String ACTIVE = "ACTIVE";
   private static final String INACTIVE = "INACTIVE";
+  private static final String WORKSPACE_MEMBER_ENTITY_TYPE = "WorkspaceMember";
 
   // FR-HHL-015: a workspace must always retain at least this many active members - deactivating
   // one is only rejected when it would drop below this. Named for the same reason
@@ -40,25 +40,30 @@ public class WorkspaceMemberService {
 
   private final AppUserRepository appUserRepository;
   private final WorkspaceMemberRepository workspaceMemberRepository;
+  private final AuthorizationDenialAuditService authorizationDenialAuditService;
 
   public WorkspaceMemberService(
-      AppUserRepository appUserRepository, WorkspaceMemberRepository workspaceMemberRepository) {
+      AppUserRepository appUserRepository,
+      WorkspaceMemberRepository workspaceMemberRepository,
+      AuthorizationDenialAuditService authorizationDenialAuditService) {
     this.appUserRepository = appUserRepository;
     this.workspaceMemberRepository = workspaceMemberRepository;
+    this.authorizationDenialAuditService = authorizationDenialAuditService;
   }
 
   @Transactional
   public WorkspaceMemberSummaryResponse deactivateMember(
       UUID targetMemberId, AuthenticatedUserPrincipal actor) {
     UUID actingMemberId = requireActingMember(actor);
-    requireSelf(targetMemberId, actingMemberId);
+    requireSelf(targetMemberId, actingMemberId, actor.userId());
 
     // Locks the target plus every other currently-ACTIVE member of the same workspace in one
     // statement - see the repository query's own comment for why this must happen atomically
     // rather than as a separate count query.
     List<WorkspaceMember> lockedMembers =
-        workspaceMemberRepository.lockTargetAndActiveMembersInWorkspace(targetMemberId);
-    WorkspaceMember target = extractTargetOrThrow(lockedMembers, targetMemberId);
+        workspaceMemberRepository.lockTargetAndActiveMembersInWorkspace(
+            targetMemberId, actor.workspaceId());
+    WorkspaceMember target = extractTargetOrThrow(lockedMembers, targetMemberId, actor.userId());
 
     // FR-STA-007 only lists ACTIVE -> INACTIVE as a valid transition out of ACTIVE; rejecting
     // "already not ACTIVE" here the same structured way AccountService.archiveAccount rejects an
@@ -85,33 +90,42 @@ public class WorkspaceMemberService {
   // making this request" as a workspace_member id - but is deliberately not a call to that class:
   // it does not exist on this branch yet (see class Javadoc). This is a narrow identity lookup,
   // not a reimplementation of access-level computation, so duplicating it here is not the
-  // per-service authorization reimplementation AccessControlService exists to prevent.
+  // per-service authorization reimplementation AccessControlService exists to prevent. Not routed
+  // through AuthorizationDenialAuditService below: that service's own Javadoc scopes it to a
+  // caller-supplied id that doesn't resolve to a row the caller is entitled to - this is the
+  // caller's own identity failing to resolve at all, a different situation (mirrored by
+  // AccessControlService.requireActingMember, which doesn't route through it either).
   private UUID requireActingMember(AuthenticatedUserPrincipal actor) {
-    UUID memberId =
-        appUserRepository
-            .findById(actor.userId())
-            .map(AppUser::getWorkspaceMember)
-            .map(WorkspaceMember::getId)
-            .orElse(null);
-    if (memberId == null) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found.");
-    }
-    return memberId;
+    return appUserRepository
+        .findWorkspaceMemberId(actor.userId())
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
   }
 
-  private void requireSelf(UUID targetMemberId, UUID actingMemberId) {
+  // FR-TEN-006/US-28-02: the same audit-logged 404 every other single-resource authorization
+  // denial in the app uses (see SessionService.revokeSession for the textually identical case) -
+  // a caller who cannot act on this member must not be able to tell "not yours" from "does not
+  // exist", and this exact probing pattern is what authorization_denial_log exists to catch.
+  private void requireSelf(UUID targetMemberId, UUID actingMemberId, UUID actorUserId) {
     if (!actingMemberId.equals(targetMemberId)) {
-      // Same 404-for-denied convention AccessControlService uses (FR-TEN-006/US-28-02): a caller
-      // who cannot act on this member must not be able to tell "not yours" from "does not exist".
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace member not found.");
+      throw authorizationDenialAuditService.denyAsNotFound(
+          actorUserId, WORKSPACE_MEMBER_ENTITY_TYPE, targetMemberId);
     }
   }
 
-  private WorkspaceMember extractTargetOrThrow(List<WorkspaceMember> lockedRows, UUID targetId) {
+  // Same convention as requireSelf above - reachable today only if the acting member's own row is
+  // deleted between requireActingMember and this lock query (targetMemberId == actingMemberId by
+  // this point, so a miss here means the row briefly disappeared from under the caller, not that
+  // someone else's id was guessed) - still a caller-supplied id failing to resolve, so still
+  // belongs on the same audit trail.
+  private WorkspaceMember extractTargetOrThrow(
+      List<WorkspaceMember> lockedRows, UUID targetId, UUID actorUserId) {
     return lockedRows.stream()
         .filter(member -> member.getId().equals(targetId))
         .findFirst()
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+        .orElseThrow(
+            () ->
+                authorizationDenialAuditService.denyAsNotFound(
+                    actorUserId, WORKSPACE_MEMBER_ENTITY_TYPE, targetId));
   }
 
   private long countActive(List<WorkspaceMember> members) {
