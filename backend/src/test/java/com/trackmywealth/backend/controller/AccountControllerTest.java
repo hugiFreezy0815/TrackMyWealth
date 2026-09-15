@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
+import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
+import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import java.math.BigDecimal;
@@ -46,6 +48,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>US-05-03: archive and restore an account - the DoD's test is {@link
  * #archivingThenRestoringWithinTheWindowReturnsTheAccountToActive}; {@link
  * #restoringAfterTheWindowIsRejectedWithAStructuredConflict} covers FR-LIF-006's 30-day cutoff.
+ *
+ * <p>US-04-02: {@code institution_type} never restricts which {@code account_type} may be added
+ * under it - the DoD's test is {@link #everyAccountTypeCanBeAddedUnderAPensionProviderInstitution}.
+ * The architecture-test half of the same story ({@code
+ * only_institution_service_reads_institution_type}) lives in {@code ArchitectureTest}, not here,
+ * matching where every other such rule in this codebase lives.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -727,6 +735,82 @@ class AccountControllerTest {
         .isEqualTo(HttpStatus.NOT_FOUND);
   }
 
+  @Test
+  void everyAccountTypeCanBeAddedUnderAPensionProviderInstitution() {
+    // DoD/FR-INS-008/RULE-020: institution_type never restricts account_type - a pension provider
+    // (VIAC-like) can hold a plain cash balance, a securities depot, and more than one pension
+    // account side by side, with no validation error referencing institution type for any of them.
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse pensionProvider =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "VIAC", "CH", "PENSION_PROVIDER", null, null, "CHF"));
+
+    AccountSummaryResponse cash =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                pensionProvider.id(),
+                "Cash Sleeve",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+    AccountSummaryResponse securities =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                pensionProvider.id(),
+                "Fund Depot",
+                "SECURITIES",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+    AccountSummaryResponse pillar3aFirst =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                pensionProvider.id(),
+                "Pillar 3a - Account 1",
+                "PENSION",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                "CH_PILLAR_3A",
+                null));
+    AccountSummaryResponse pillar3aSecond =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                pensionProvider.id(),
+                "Pillar 3a - Account 2",
+                "PENSION",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                "CH_PILLAR_3A",
+                null));
+
+    assertThat(List.of(cash, securities, pillar3aFirst, pillar3aSecond))
+        .extracting(AccountSummaryResponse::accountType)
+        .containsExactly("CASH", "SECURITIES", "PENSION", "PENSION");
+    // Distinct user-defined names for both otherwise-identical pension accounts (AC #2).
+    assertThat(List.of(pillar3aFirst.id(), pillar3aSecond.id())).doesNotHaveDuplicates();
+  }
+
   private void setStatusDirectly(UUID accountId, String status) throws Exception {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
@@ -771,6 +855,21 @@ class AccountControllerTest {
         return rs.next();
       }
     }
+  }
+
+  private FinancialInstitutionSummaryResponse createInstitution(
+      String token, CreateFinancialInstitutionRequest request) {
+    return client(token)
+        .post()
+        .uri("/api/v1/institutions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(FinancialInstitutionSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private AccountSummaryResponse createAccount(String token, CreateAccountRequest request) {

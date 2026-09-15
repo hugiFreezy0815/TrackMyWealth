@@ -11,7 +11,9 @@ import com.tngtech.archunit.library.Architectures;
 import com.tngtech.archunit.library.Architectures.LayeredArchitecture;
 import com.tngtech.archunit.library.GeneralCodingRules;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.service.AccountService;
+import com.trackmywealth.backend.service.InstitutionService;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RestController;
@@ -108,6 +110,29 @@ class ArchitectureTest {
           .because(
               "account_type must drive behaviour only inside AccountService (US-05-04) - branch on"
                   + " the capability flags it computes instead");
+
+  // US-04-02/FR-INS-008/012, RULE-020/022: institution_type must never restrict or otherwise
+  // drive which account_type may be added under a financial_institution - a securities depot
+  // under a "Bank" and a cash account under a "Pension Provider" are both exactly as valid as any
+  // other combination. Unlike account_type (which legitimately drives behaviour inside
+  // AccountService, translated into capability flags), institution_type has no sanctioned
+  // exception at all for account creation - InstitutionService reads it only to manage the
+  // institution itself (e.g. rendering its own summary), never to gate what account_type a
+  // caller may create. Same reasoning as only_account_service_branches_on_account_type for why
+  // this doesn't need allowEmptyShould(true): InstitutionService already has real classes to
+  // check against today.
+  @ArchTest
+  static final ArchRule only_institution_service_reads_institution_type =
+      noClasses()
+          .that()
+          .areNotAssignableTo(InstitutionService.class)
+          .should()
+          .callMethod(FinancialInstitution.class, "getInstitutionType")
+          .because(
+              "institution_type must never restrict which account_type may be added under it"
+                  + " (US-04-02/FR-INS-008/012, RULE-020/022) - AccountService must never read"
+                  + " institution_type at all, not even inside the one sanctioned exception"
+                  + " account_type itself gets");
 
   @ArchTest
   static final ArchRule no_standard_streams =
