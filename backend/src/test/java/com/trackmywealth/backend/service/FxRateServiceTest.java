@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.FxRateLookupResult;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
@@ -32,6 +33,15 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * seeded directly via {@link FxRateRepository}, matching this story's own Dependencies note that
  * the storage/read contract is testable with manually inserted rates ahead of EPIC 30's scheduled
  * fetch job.
+ *
+ * <p>US-06-02's Definition of Done: {@link
+ * #directPairIsUsedEvenWhenChainingThroughTheContainerCurrencyWouldGiveADifferentAnswer} is the
+ * three-currency (USD account, EUR container, CHF user) scenario the story's own DoD names,
+ * re-scoped to the primitive level per the standing project decision to defer real institution
+ * summary/consolidated reporting integration to EPIC-18/19 (neither exists yet): it proves {@link
+ * FxRateService#convert} produces the direct-pair figure, not what naively chaining through the
+ * container currency would have produced, by seeding rates where the two disagree. The remaining
+ * new tests cover the chain-fallback path (AC #2) and its own edge cases.
  */
 @Testcontainers
 @SpringBootTest
@@ -193,5 +203,107 @@ class FxRateServiceTest {
         .isEqualByComparingTo("0.9100000000");
     assertThat(fxRateService.getRate("USD", "CHF", today, "PROVIDER_B").rate())
         .isEqualByComparingTo("0.9150000000");
+  }
+
+  @Test
+  void directPairIsUsedEvenWhenChainingThroughTheContainerCurrencyWouldGiveADifferentAnswer() {
+    // US-06-02/FR-CUR-010's DoD scenario: a USD account inside a EUR container, reported in CHF.
+    // Deliberately seeded so the direct USD/CHF rate and the naive USD->EUR->CHF chain disagree
+    // (0.8850 vs 0.92 * 0.96 = 0.8832) - real-world triangulation is never perfectly consistent,
+    // which is exactly why FR-CUR-010 exists. convert() must return the direct-pair figure.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("USD", "CHF", today, "0.8850000000", SOURCE);
+    seedRate("USD", "EUR", today, "0.9200000000", SOURCE);
+    seedRate("EUR", "CHF", today, "0.9600000000", SOURCE);
+    BigDecimal usdAmount = new BigDecimal("1000.00");
+
+    BigDecimal consolidatedViewAmount =
+        fxRateService.convert(usdAmount, "USD", "CHF", today, SOURCE);
+    CurrencyConversionResult conversion =
+        fxRateService.getConversionRate("USD", "CHF", today, SOURCE);
+
+    assertThat(consolidatedViewAmount).isEqualByComparingTo("885.0000");
+    assertThat(conversion.direct()).isTrue();
+    assertThat(conversion.intermediateCurrency()).isNull();
+    assertThat(conversion.carriedForward()).isFalse();
+    // The naive chain a container-currency-intermediated implementation would have produced -
+    // proving convert() did NOT take this path, not just that it returned some value.
+    BigDecimal naiveChainedAmount =
+        usdAmount.multiply(new BigDecimal("0.9200000000")).multiply(new BigDecimal("0.9600000000"));
+    assertThat(consolidatedViewAmount).isNotEqualByComparingTo(naiveChainedAmount);
+  }
+
+  @Test
+  void noDirectPairChainsThroughTheDocumentedIntermediateCurrency() {
+    // AC #2: no direct GBP/EUR rate exists, but both legs to USD (this codebase's documented
+    // fallback intermediate) do - chosen so the chained rate is a clean round number.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("GBP", "USD", today, "2.0000000000", SOURCE);
+    seedRate("USD", "EUR", today, "0.5000000000", SOURCE);
+
+    CurrencyConversionResult conversion =
+        fxRateService.getConversionRate("GBP", "EUR", today, SOURCE);
+
+    assertThat(conversion.direct()).isFalse();
+    assertThat(conversion.intermediateCurrency()).isEqualTo("USD");
+    assertThat(conversion.rate()).isEqualByComparingTo("1.0000000000");
+    assertThat(conversion.carriedForward()).isFalse();
+    assertThat(fxRateService.convert(new BigDecimal("100"), "GBP", "EUR", today, SOURCE))
+        .isEqualByComparingTo("100.0000");
+  }
+
+  @Test
+  void chainedConversionIsMarkedCarriedForwardWhenEitherLegIs() {
+    LocalDate monday = LocalDate.of(2026, 9, 14);
+    LocalDate tuesday = monday.plusDays(1);
+    seedRate("GBP", "USD", monday, "2.0000000000", SOURCE); // stale by one day
+    seedRate("USD", "EUR", tuesday, "0.5000000000", SOURCE); // exact
+
+    CurrencyConversionResult conversion =
+        fxRateService.getConversionRate("GBP", "EUR", tuesday, SOURCE);
+
+    assertThat(conversion.carriedForward()).isTrue();
+  }
+
+  @Test
+  void chainFallbackFailsClosedWhenOnlyOneLegExists() {
+    // Refuse rather than silently compute with a missing rate defaulted to 1.0 (PR-011) - even
+    // though one leg (GBP/USD) is available, EUR/USD is not, so no complete chain exists.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("GBP", "USD", today, "2.0000000000", SOURCE);
+
+    assertThatThrownBy(() -> fxRateService.getConversionRate("GBP", "EUR", today, SOURCE))
+        .isInstanceOf(ResponseStatusException.class)
+        .satisfies(
+            e ->
+                assertThat(((ResponseStatusException) e).getStatusCode())
+                    .isEqualTo(HttpStatus.NOT_FOUND));
+  }
+
+  @Test
+  void missingDirectPairInvolvingTheIntermediateItselfCannotBeRecoveredByChaining() {
+    // USD is this codebase's own fallback intermediate (see FxRateService's class Javadoc) - a
+    // missing USD/JPY pair can't be recovered by "chaining via USD" since USD is already one side
+    // of the request; there is no third currency to chain through.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("USD", "EUR", today, "0.9200000000", SOURCE); // present, but irrelevant here
+
+    assertThatThrownBy(() -> fxRateService.getConversionRate("USD", "JPY", today, SOURCE))
+        .isInstanceOf(ResponseStatusException.class)
+        .satisfies(
+            e ->
+                assertThat(((ResponseStatusException) e).getStatusCode())
+                    .isEqualTo(HttpStatus.NOT_FOUND));
+  }
+
+  @Test
+  void convertRoundsToFourDecimalPlacesHalfUpPerTheDocumentedMoneyPolicy() {
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("USD", "CHF", today, "0.3333333333", SOURCE);
+
+    BigDecimal converted = fxRateService.convert(BigDecimal.ONE, "USD", "CHF", today, SOURCE);
+
+    assertThat(converted).isEqualByComparingTo("0.3333");
+    assertThat(converted.scale()).isEqualTo(4);
   }
 }
