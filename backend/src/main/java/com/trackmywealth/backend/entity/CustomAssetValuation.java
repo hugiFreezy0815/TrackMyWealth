@@ -27,12 +27,16 @@ import org.hibernate.type.SqlTypes;
  *
  * <p>Not an {@link AccountExtension}: this is a 1:many child of {@link Account}, not the 1:1
  * class-table-inheritance row {@code AccountExtension}'s subtypes are. V26's {@code
- * custom_asset_valuation_type_guard} trigger (reusing V5's generic {@code
+ * custom_asset_valuation_guard_1_type} trigger (reusing V5's generic {@code
  * trg_extension_type_guard}) still enforces that {@code account} is actually a {@code CUSTOM_ASSET}
- * account, and its {@code custom_asset_valuation_currency_guard} enforces {@code currency} matches
+ * account, and {@code custom_asset_valuation_guard_2_currency} enforces {@code currency} matches
  * the account's own {@code native_currency} - both at the DB level, translated to a clean 409 by
  * {@code GlobalExceptionHandler} rather than a raw 500, the same pattern this codebase uses for
- * every other DB-enforced invariant.
+ * every other DB-enforced invariant. V27 renamed both triggers (originally {@code
+ * custom_asset_valuation_type_guard}/{@code custom_asset_valuation_currency_guard}) so the type
+ * guard - the more fundamental check - fires first: PostgreSQL fires same-timing triggers in
+ * alphabetical order by name, and the old names put the currency check first, so a row violating
+ * both was always reported as a currency mismatch, masking the wrong-account-type problem.
  */
 @Entity
 @Table(name = "custom_asset_valuation")
