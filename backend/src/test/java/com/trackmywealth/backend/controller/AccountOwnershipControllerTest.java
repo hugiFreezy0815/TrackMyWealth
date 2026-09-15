@@ -11,14 +11,23 @@ import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.entity.AccountOwnership;
+import com.trackmywealth.backend.repository.AccountOwnershipRepository;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,6 +77,7 @@ class AccountOwnershipControllerTest {
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
+  @Autowired AccountOwnershipRepository accountOwnershipRepository;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -141,7 +151,7 @@ class AccountOwnershipControllerTest {
   }
 
   @Test
-  void buyingOutAPartnersShareClosesTheOldRowsAndOpensANewOne() throws Exception {
+  void buyingOutAPartnersShareClosesTheOldRowsAndOpensANewOne() {
     // AC #3/FR-HOU-006: the old rows are closed (effectiveTo set), not overwritten in place.
     String token = bootstrapAdministrator();
     AccountSummaryResponse account = createAccount(token);
@@ -167,6 +177,80 @@ class AccountOwnershipControllerTest {
     assertThat(afterBuyout.get(0).share()).isEqualByComparingTo("1");
 
     assertThat(closedRowCount(account.id())).isEqualTo(2);
+  }
+
+  @Test
+  void concurrentAssignmentsToDisjointMembersNeverLeaveTwoRowsSimultaneouslyEffective()
+      throws Exception {
+    // Regression test for the race this class's own Javadoc documents: without
+    // AccountRepository.findByIdForUpdate's lock, two concurrent full-replacement PUTs for
+    // *disjoint* members (neither collides with V6's uq_account_ownership_current, since that
+    // index is keyed per member) could both read the same pre-change state and both commit a new
+    // open row, leaving the account simultaneously "owned" by both - silently over-allocated with
+    // no error anywhere. The fix forces the second writer to block until the first commits and
+    // then read its result, so exactly one row must be left effective afterward, regardless of
+    // which request happened to win.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token);
+    UUID memberA = workspaceMemberIdForEmail("admin@example.com");
+    UUID memberB = createSecondMember(token, "partner@example.com");
+    assignOwnership(
+        token,
+        account.id(),
+        new AssignAccountOwnershipRequest(List.of(new OwnerAllocation(memberA, BigDecimal.ONE))));
+
+    CountDownLatch ready = new CountDownLatch(2);
+    CountDownLatch go = new CountDownLatch(1);
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> reassertA =
+          executor.submit(
+              raceTask(
+                  ready,
+                  go,
+                  () ->
+                      assignOwnership(
+                          token,
+                          account.id(),
+                          new AssignAccountOwnershipRequest(
+                              List.of(new OwnerAllocation(memberA, BigDecimal.ONE))))));
+      Future<?> buyoutB =
+          executor.submit(
+              raceTask(
+                  ready,
+                  go,
+                  () ->
+                      assignOwnership(
+                          token,
+                          account.id(),
+                          new AssignAccountOwnershipRequest(
+                              List.of(new OwnerAllocation(memberB, BigDecimal.ONE))))));
+
+      assertThat(ready.await(10, TimeUnit.SECONDS))
+          .as("both racing threads must reach the start line before either is released")
+          .isTrue();
+      go.countDown();
+
+      reassertA.get(20, TimeUnit.SECONDS);
+      buyoutB.get(20, TimeUnit.SECONDS);
+    } finally {
+      executor.shutdown();
+    }
+
+    List<AccountOwnership> stillEffective =
+        accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(account.id());
+    assertThat(stillEffective)
+        .as("exactly one row must be effective after two racing disjoint-member assignments")
+        .hasSize(1);
+  }
+
+  private static Callable<Void> raceTask(CountDownLatch ready, CountDownLatch go, Runnable action) {
+    return () -> {
+      ready.countDown();
+      go.await(15, TimeUnit.SECONDS);
+      action.run();
+      return null;
+    };
   }
 
   @Test
@@ -262,7 +346,127 @@ class AccountOwnershipControllerTest {
         .isEqualTo(HttpStatus.NOT_FOUND);
   }
 
-  private int closedRowCount(UUID accountId) throws Exception {
+  @Test
+  void gettingCurrentOwnershipReturnsTheCurrentlyEffectiveRows() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token);
+    UUID memberA = workspaceMemberIdForEmail("admin@example.com");
+    assignOwnership(
+        token,
+        account.id(),
+        new AssignAccountOwnershipRequest(List.of(new OwnerAllocation(memberA, BigDecimal.ONE))));
+
+    List<AccountOwnershipResponse> ownership =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + account.id() + "/ownership")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<List<AccountOwnershipResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(ownership).hasSize(1);
+    assertThat(ownership.get(0).workspaceMemberId()).isEqualTo(memberA);
+    assertThat(ownership.get(0).effectiveTo()).isNull();
+  }
+
+  @Test
+  void gettingCurrentOwnershipForAnUnknownAccountIsNotFound() {
+    String token = bootstrapAdministrator();
+
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + UUID.randomUUID() + "/ownership")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void assigningAnEmptyOwnerListRemovesAllOwnership() {
+    // AssignAccountOwnershipRequest's own Javadoc: an empty owners list is valid and removes all
+    // ownership.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token);
+    UUID memberA = workspaceMemberIdForEmail("admin@example.com");
+    assignOwnership(
+        token,
+        account.id(),
+        new AssignAccountOwnershipRequest(List.of(new OwnerAllocation(memberA, BigDecimal.ONE))));
+
+    List<AccountOwnershipResponse> ownership =
+        assignOwnership(token, account.id(), new AssignAccountOwnershipRequest(List.of()));
+
+    assertThat(ownership).isEmpty();
+    assertThat(closedRowCount(account.id())).isEqualTo(1);
+  }
+
+  @Test
+  void reassigningTheSameShareStillClosesTheOldRowAndOpensANewOne() {
+    // FR-HOU-006/AccountOwnership's own Javadoc: never an in-place edit, even when the share is
+    // unchanged - a second row with a new id must be created, not the original row left as-is.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token);
+    UUID memberA = workspaceMemberIdForEmail("admin@example.com");
+    List<AccountOwnershipResponse> first =
+        assignOwnership(
+            token,
+            account.id(),
+            new AssignAccountOwnershipRequest(
+                List.of(new OwnerAllocation(memberA, BigDecimal.ONE))));
+
+    List<AccountOwnershipResponse> second =
+        assignOwnership(
+            token,
+            account.id(),
+            new AssignAccountOwnershipRequest(
+                List.of(new OwnerAllocation(memberA, BigDecimal.ONE))));
+
+    assertThat(second.get(0).id()).isNotEqualTo(first.get(0).id());
+    assertThat(closedRowCount(account.id())).isEqualTo(1);
+  }
+
+  @Test
+  void aShareWithMoreThanFiveDecimalPlacesIsRejected() {
+    // V6's ownership_share is NUMERIC(6,5) - more fractional digits than that must be rejected,
+    // not silently rounded by Postgres on insert.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token);
+    UUID memberA = workspaceMemberIdForEmail("admin@example.com");
+
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + account.id() + "/ownership")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new AssignAccountOwnershipRequest(
+                List.of(new OwnerAllocation(memberA, new BigDecimal("0.123456")))))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+  }
+
+  @Test
+  void aNullElementInTheOwnersListIsRejectedWithAStructured400() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token);
+    UUID memberA = workspaceMemberIdForEmail("admin@example.com");
+
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + account.id() + "/ownership")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new AssignAccountOwnershipRequest(
+                Arrays.asList(null, new OwnerAllocation(memberA, BigDecimal.ONE))))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+  }
+
+  private int closedRowCount(UUID accountId) {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
@@ -273,6 +477,8 @@ class AccountOwnershipControllerTest {
         resultSet.next();
         return resultSet.getInt(1);
       }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
     }
   }
 
