@@ -807,8 +807,12 @@ class AccountControllerTest {
     assertThat(List.of(cash, securities, pillar3aFirst, pillar3aSecond))
         .extracting(AccountSummaryResponse::accountType)
         .containsExactly("CASH", "SECURITIES", "PENSION", "PENSION");
-    // Distinct user-defined names for both otherwise-identical pension accounts (AC #2).
-    assertThat(List.of(pillar3aFirst.id(), pillar3aSecond.id())).doesNotHaveDuplicates();
+    // Distinct user-defined names for both otherwise-identical pension accounts (AC #2) - checked
+    // on name(), not id(): two independently-created resources always get distinct server-
+    // generated ids regardless of whether their names collide, so an id-based check here would be
+    // tautological and would not actually verify this AC.
+    assertThat(List.of(pillar3aFirst.name(), pillar3aSecond.name()))
+        .containsExactly("Pillar 3a - Account 1", "Pillar 3a - Account 2");
   }
 
   private void setStatusDirectly(UUID accountId, String status) throws Exception {
