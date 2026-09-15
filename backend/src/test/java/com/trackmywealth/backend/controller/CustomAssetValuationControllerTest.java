@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
@@ -44,10 +45,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * expose it through an endpoint (the same gap US-05-03/#68 already documented).
  *
  * <p>{@code currency} is deliberately not settable through the API ({@link
- * CreateCustomAssetValuationRequest}'s own Javadoc) - {@link
- * #theTypeGuardFiresBeforeTheCurrencyGuardWhenARowViolatesBoth} is the only place a currency
- * mismatch is still reachable at all, by inserting directly via JDBC the way the service never
- * does, to verify V27's trigger-ordering fix.
+ * CreateCustomAssetValuationRequest}'s own Javadoc), so {@link
+ * #recordingAValuationWithAMismatchedCurrencyOnACorrectlyTypedAccountIsRejected} and {@link
+ * #theTypeGuardFiresBeforeTheCurrencyGuardWhenARowViolatesBoth} both insert directly via JDBC the
+ * way the service never does, to verify V26/V27's currency guard - alone, and in combination with
+ * the type guard - still rejects correctly. Neither goes through {@code GlobalExceptionHandler}: a
+ * request the service itself builds can no longer trigger either guard, so the
+ * currency-mismatch-to-409 translation is unit-tested only (see {@code
+ * GlobalExceptionHandlerTest}'s own note on this), not exercised end-to-end any more.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -215,20 +220,7 @@ class CustomAssetValuationControllerTest {
   @Test
   void recordingAValuationForANonCustomAssetAccountIsRejectedWithAStructuredConflict() {
     String token = bootstrapAdministrator();
-    AccountSummaryResponse cashAccount =
-        client(token)
-            .post()
-            .uri("/api/v1/accounts")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(
-                new CreateAccountRequest(
-                    null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null))
-            .exchange()
-            .expectStatus()
-            .isEqualTo(HttpStatus.CREATED)
-            .expectBody(AccountSummaryResponse.class)
-            .returnResult()
-            .getResponseBody();
+    AccountSummaryResponse cashAccount = createCashAccount(token, "CHF");
 
     client(token)
         .post()
@@ -271,6 +263,25 @@ class CustomAssetValuationControllerTest {
   }
 
   @Test
+  void recordingAValuationWithAMismatchedCurrencyOnACorrectlyTypedAccountIsRejected()
+      throws Exception {
+    // Isolates the currency guard alone (correct CUSTOM_ASSET type, wrong currency) - the type
+    // guard never fires here, unlike the combined-violation test below - so this is the only
+    // remaining check that custom_asset_valuation_guard_2_currency's own predicate/message are
+    // still correct on their own, now that the service can never construct this input itself.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            insertValuationStatement(connection, account.id(), LocalDate.of(2026, 1, 1), "EUR")) {
+      assertThatThrownBy(statement::executeUpdate)
+          .isInstanceOf(SQLException.class)
+          .hasMessageContaining("custom_asset_valuation_currency_mismatch");
+    }
+  }
+
+  @Test
   void theTypeGuardFiresBeforeTheCurrencyGuardWhenARowViolatesBoth() throws Exception {
     // V27: PostgreSQL fires same-timing triggers alphabetically, so the two triggers were renamed
     // to guarantee the type guard (the more fundamental check) fires first. The service can never
@@ -278,43 +289,31 @@ class CustomAssetValuationControllerTest {
     // reaches the DB directly the way a future non-service caller of this table might, to verify
     // the ordering fix itself rather than anything the API surface can still exercise.
     String token = bootstrapAdministrator();
-    AccountSummaryResponse cashAccount =
-        client(token)
-            .post()
-            .uri("/api/v1/accounts")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(
-                new CreateAccountRequest(
-                    null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null))
-            .exchange()
-            .expectStatus()
-            .isEqualTo(HttpStatus.CREATED)
-            .expectBody(AccountSummaryResponse.class)
-            .returnResult()
-            .getResponseBody();
+    AccountSummaryResponse cashAccount = createCashAccount(token, "CHF");
 
-    SQLException violation =
-        org.junit.jupiter.api.Assertions.assertThrows(
-            SQLException.class,
-            () -> insertValuationDirectly(cashAccount.id(), LocalDate.of(2026, 1, 1), "EUR"));
-
-    assertThat(violation.getMessage()).contains("account_extension_type_mismatch");
-    assertThat(violation.getMessage()).doesNotContain("custom_asset_valuation_currency_mismatch");
-  }
-
-  private void insertValuationDirectly(UUID accountId, LocalDate valuationDate, String currency)
-      throws SQLException {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
-            connection.prepareStatement(
-                "INSERT INTO custom_asset_valuation (account_id, valuation_date, value, currency)"
-                    + " VALUES (?, ?, ?, ?)")) {
-      statement.setObject(1, accountId);
-      statement.setObject(2, valuationDate);
-      statement.setBigDecimal(3, new BigDecimal("100.0000"));
-      statement.setString(4, currency);
-      statement.executeUpdate();
+            insertValuationStatement(
+                connection, cashAccount.id(), LocalDate.of(2026, 1, 1), "EUR")) {
+      assertThatThrownBy(statement::executeUpdate)
+          .isInstanceOf(SQLException.class)
+          .hasMessageContaining("account_extension_type_mismatch")
+          .hasMessageNotContaining("custom_asset_valuation_currency_mismatch");
     }
+  }
+
+  private PreparedStatement insertValuationStatement(
+      Connection connection, UUID accountId, LocalDate valuationDate, String currency)
+      throws SQLException {
+    PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO custom_asset_valuation (account_id, valuation_date, value, currency)"
+                + " VALUES (?, ?, ?, ?)");
+    statement.setObject(1, accountId);
+    statement.setObject(2, valuationDate);
+    statement.setBigDecimal(3, new BigDecimal("100.0000"));
+    statement.setString(4, currency);
+    return statement;
   }
 
   private CustomAssetValuationResponse recordValuation(
@@ -349,6 +348,31 @@ class CustomAssetValuationControllerTest {
                 null,
                 null,
                 "VEHICLE"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private AccountSummaryResponse createCashAccount(String token, String nativeCurrency) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateAccountRequest(
+                null,
+                "Everyday Checking",
+                "CASH",
+                nativeCurrency,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
