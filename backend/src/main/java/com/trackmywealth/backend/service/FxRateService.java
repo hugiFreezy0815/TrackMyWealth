@@ -4,6 +4,7 @@ import com.trackmywealth.backend.dto.FxRateLookupResult;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import java.time.LocalDate;
+import java.util.Currency;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,12 +35,26 @@ public class FxRateService {
    * source} - the stored rate for that exact date if one exists, otherwise the most recent prior
    * one, marked {@link FxRateLookupResult#carriedForward}} (FR-CUR-012).
    *
+   * @throws ResponseStatusException 400 if any argument is missing or {@code baseCurrency}/{@code
+   *     quoteCurrency} isn't a valid ISO 4217 code (same check as {@code @ValidCurrencyCode} uses
+   *     elsewhere in this codebase) - callers must not be able to mistake a rejected request for a
+   *     404's "nothing stored for this pair" (a lowercase or malformed code would otherwise just
+   *     never match any stored row)
    * @throws ResponseStatusException 404 if no rate exists for this pair/source on or before {@code
    *     date} at all (PR-011: refuse rather than silently default to 1.0)
    */
   @Transactional(readOnly = true)
   public FxRateLookupResult getRate(
       String baseCurrency, String quoteCurrency, LocalDate date, String source) {
+    requireValidCurrencyCode(baseCurrency, "baseCurrency");
+    requireValidCurrencyCode(quoteCurrency, "quoteCurrency");
+    if (date == null) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "date is required.");
+    }
+    if (source == null || source.isBlank()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "source is required.");
+    }
+
     FxRate fxRate =
         fxRateRepository
             .findFirstByBaseCurrencyAndQuoteCurrencyAndSourceAndRateDateLessThanEqualOrderByRateDateDesc(
@@ -64,5 +79,22 @@ public class FxRateService {
         fxRate.getRateDate(),
         !fxRate.getRateDate().equals(date),
         fxRate.getSource());
+  }
+
+  // Mirrors CurrencyCodeValidator's own check (java.util.Currency.getInstance, which is
+  // case-sensitive/uppercase-only) rather than depending on jakarta.validation here: this is a
+  // plain service method, not a request DTO field @ValidCurrencyCode can annotate.
+  private static void requireValidCurrencyCode(String currencyCode, String fieldName) {
+    if (currencyCode == null) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required.");
+    }
+    try {
+      Currency.getInstance(currencyCode);
+    } catch (IllegalArgumentException e) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          fieldName + " '" + currencyCode + "' is not a valid ISO 4217 currency code.",
+          e);
+    }
   }
 }

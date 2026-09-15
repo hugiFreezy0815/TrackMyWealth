@@ -133,6 +133,43 @@ class FxRateServiceTest {
   }
 
   @Test
+  void lowercaseCurrencyCodeIsRejectedAsBadRequestNotSilentlyNoMatch() {
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("USD", "CHF", today, "0.9100000000", SOURCE);
+
+    assertThatBadRequest(() -> fxRateService.getRate("usd", "CHF", today, SOURCE));
+  }
+
+  @Test
+  void malformedCurrencyCodeIsRejectedAsBadRequest() {
+    assertThatBadRequest(() -> fxRateService.getRate("USD", "NOTACODE", LocalDate.now(), SOURCE));
+  }
+
+  @Test
+  void nullCurrencyIsRejectedAsBadRequest() {
+    assertThatBadRequest(() -> fxRateService.getRate(null, "CHF", LocalDate.now(), SOURCE));
+  }
+
+  @Test
+  void nullDateIsRejectedAsBadRequestNotAnAlwaysFalseQuery() {
+    assertThatBadRequest(() -> fxRateService.getRate("USD", "CHF", null, SOURCE));
+  }
+
+  @Test
+  void blankSourceIsRejectedAsBadRequest() {
+    assertThatBadRequest(() -> fxRateService.getRate("USD", "CHF", LocalDate.now(), " "));
+  }
+
+  private void assertThatBadRequest(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+    assertThatThrownBy(call)
+        .isInstanceOf(ResponseStatusException.class)
+        .satisfies(
+            e ->
+                assertThat(((ResponseStatusException) e).getStatusCode())
+                    .isEqualTo(HttpStatus.BAD_REQUEST));
+  }
+
+  @Test
   void duplicatePairDateSourceIsRejectedByTheDatabase() {
     LocalDate today = LocalDate.of(2026, 9, 15);
     seedRate("USD", "CHF", today, "0.9100000000", SOURCE);
