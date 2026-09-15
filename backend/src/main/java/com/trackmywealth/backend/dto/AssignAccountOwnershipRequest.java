@@ -21,10 +21,10 @@ import java.util.UUID;
  * 100% is rejected ({@code AccountOwnershipService}).
  *
  * <p>Does not itself check that the acting member has {@code EDIT}/{@code FULL} access to this
- * account (the story's own stated requirement) - no per-member access-level enforcement exists
- * anywhere in this codebase yet (that's US-03-03/#74's {@code sharing_grant} mechanism); any member
- * of the account's own workspace may call this for now, the same way every other current write
- * endpoint only scopes by workspace, not by member.
+ * account (the story's own stated requirement) - US-03-03/#74's {@code sharing_grant} mechanism
+ * ({@code AccessControlService}) now exists and gates {@code AccountController}'s read/write
+ * endpoints, but ownership assignment was outside that story's own acceptance criteria; any member
+ * of the account's own workspace may still call this for now.
  */
 public record AssignAccountOwnershipRequest(@NotNull List<@NotNull @Valid OwnerAllocation> owners) {
 

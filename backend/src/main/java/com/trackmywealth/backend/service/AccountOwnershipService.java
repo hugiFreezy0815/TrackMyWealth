@@ -27,7 +27,11 @@ import org.springframework.web.server.ResponseStatusException;
  * US-03-02: assign fractional or joint ownership of an account (FR-HOU-002/003/005/006). {@link
  * #assignOwnership} is a full replacement of the account's currently-effective ownership set, not a
  * per-member add/remove - see {@link AssignAccountOwnershipRequest}'s own Javadoc for why,
- * including why this deliberately doesn't check for EDIT/FULL access (US-03-03/#74 not built yet).
+ * including why this still deliberately doesn't check for EDIT/FULL access: US-03-03/#74's {@code
+ * AccessControlService} now exists, but ownership assignment was never in that story's own
+ * acceptance criteria (which cover {@code AccountController}'s read/write endpoints), so any member
+ * of the account's own workspace may still call this - not yet gated the way {@code
+ * AccountService.updateAccount} etc. are.
  *
  * <p>Relies on RLS for workspace isolation the same way {@code AccountService}/{@code
  * InstitutionService} do: both {@code accountId} and every {@code workspaceMemberId} in the request

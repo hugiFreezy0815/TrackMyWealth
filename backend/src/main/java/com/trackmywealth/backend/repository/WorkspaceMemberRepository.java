@@ -6,4 +6,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember, UUID> {}
+public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember, UUID> {
+
+  // US-03-03/AccessControlService's bootstrap rule: the sole active member of a workspace has
+  // implicit FULL access to everything in it, since with only one member no sharing_grant could
+  // possibly exist yet to grant them access to their own workspace's data (AppUser.role
+  // deliberately confers no financial-data access - see its own Javadoc - so this structural
+  // check, not the SYSTEM_ADMINISTRATOR role, is what breaks the chicken-and-egg problem). Once a
+  // second member joins, this stops applying and access reverts to ownership/explicit grants only.
+  long countByWorkspaceIdAndStatus(UUID workspaceId, String status);
+}

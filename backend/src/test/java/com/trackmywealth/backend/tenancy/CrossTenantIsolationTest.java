@@ -68,7 +68,7 @@ class CrossTenantIsolationTest {
   // here and a corresponding test in the same PR - this IS the enforcement mechanism, not just
   // documentation of one.
   private static final Set<String> COVERED_TABLES =
-      Set.of("workspace", "workspace_member", "financial_institution", "account");
+      Set.of("workspace", "workspace_member", "financial_institution", "account", "sharing_grant");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -78,6 +78,8 @@ class CrossTenantIsolationTest {
   private UUID institutionBId;
   private UUID accountAId;
   private UUID accountBId;
+  private UUID sharingGrantAId;
+  private UUID sharingGrantBId;
 
   @BeforeAll
   static void migrateAndCreateNonSuperuserRole() throws Exception {
@@ -111,8 +113,8 @@ class CrossTenantIsolationTest {
     try (Connection admin = adminConnection();
         Statement statement = admin.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE account, financial_institution, workspace_member, workspace RESTART"
-              + " IDENTITY CASCADE");
+          "TRUNCATE TABLE sharing_grant, account, financial_institution, workspace_member,"
+              + " workspace RESTART IDENTITY CASCADE");
     }
 
     try (Connection connection = testRoleConnection()) {
@@ -124,6 +126,7 @@ class CrossTenantIsolationTest {
       memberAId = insertMember(connection, workspaceAId, "Member A");
       institutionAId = personalAssetsId(connection, workspaceAId);
       accountAId = insertAccount(connection, workspaceAId, institutionAId, "Account A");
+      sharingGrantAId = insertSharingGrant(connection, workspaceAId, memberAId);
 
       workspaceBId = UUID.randomUUID();
       setWorkspaceContext(connection, workspaceBId);
@@ -131,6 +134,7 @@ class CrossTenantIsolationTest {
       memberBId = insertMember(connection, workspaceBId, "Member B");
       institutionBId = personalAssetsId(connection, workspaceBId);
       accountBId = insertAccount(connection, workspaceBId, institutionBId, "Account B");
+      sharingGrantBId = insertSharingGrant(connection, workspaceBId, memberBId);
 
       connection.commit();
     }
@@ -162,6 +166,15 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceBId, "account", accountAId)).isFalse();
   }
 
+  // US-03-03: sharing_grant is RLS-protected the same way account/financial_institution are
+  // (carries its own workspace_id, see V20) - a workspace must never see another workspace's
+  // grants, the same isolation boundary the grant/revoke mechanism itself relies on.
+  @Test
+  void sharingGrantRowIsInvisibleAcrossWorkspaces() throws Exception {
+    assertThat(rowVisibleUnderContext(workspaceAId, "sharing_grant", sharingGrantBId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceBId, "sharing_grant", sharingGrantAId)).isFalse();
+  }
+
   // A cross-tenant suite that only ever asserts "denied" can pass vacuously if RLS is
   // accidentally denying everyone, including a workspace reading its own data - this is the
   // false-negative guard against that.
@@ -172,11 +185,13 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceAId, "financial_institution", institutionAId))
         .isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "account", accountAId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceAId, "sharing_grant", sharingGrantAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace", workspaceBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace_member", memberBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "financial_institution", institutionBId))
         .isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "account", accountBId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "sharing_grant", sharingGrantBId)).isTrue();
   }
 
   @Test
@@ -269,6 +284,27 @@ class CrossTenantIsolationTest {
       statement.executeUpdate();
     }
     return accountId;
+  }
+
+  // WORKSPACE scope needs no scope_account_id/scope_institution_id (V6's own CHECK constraint) -
+  // the simplest shape that still exercises sharing_grant's own workspace_id RLS policy, which is
+  // all this suite cares about; granting a member access to their own workspace isn't meaningful
+  // product behaviour, just a minimal valid row.
+  private UUID insertSharingGrant(Connection connection, UUID workspaceId, UUID memberId)
+      throws Exception {
+    UUID grantId = UUID.randomUUID();
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO sharing_grant (id, workspace_id, granted_to_member_id, scope_type,"
+                + " access_level, granted_by_member_id) VALUES (?, ?, ?, 'WORKSPACE', 'READ',"
+                + " ?)")) {
+      statement.setObject(1, grantId);
+      statement.setObject(2, workspaceId);
+      statement.setObject(3, memberId);
+      statement.setObject(4, memberId);
+      statement.executeUpdate();
+    }
+    return grantId;
   }
 
   // `table` only ever comes from this class's own small set of hardcoded constant call sites

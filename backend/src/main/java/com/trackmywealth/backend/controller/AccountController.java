@@ -10,6 +10,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -17,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** US-05-01, US-05-02, US-05-03. */
+/** US-05-01, US-05-02, US-05-03, US-03-03 (read/edit gated by {@code AccessControlService}). */
 @RestController
 @RequestMapping("/api/v1/accounts")
 public class AccountController {
@@ -36,19 +37,29 @@ public class AccountController {
         .body(accountService.createAccount(request, actor.workspaceId()));
   }
 
+  @GetMapping("/{accountId}")
+  public AccountSummaryResponse getAccount(
+      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return accountService.getAccount(accountId, actor);
+  }
+
   @PutMapping("/{accountId}")
   public AccountSummaryResponse updateAccount(
-      @PathVariable UUID accountId, @Valid @RequestBody UpdateAccountRequest request) {
-    return accountService.updateAccount(accountId, request);
+      @PathVariable UUID accountId,
+      @Valid @RequestBody UpdateAccountRequest request,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return accountService.updateAccount(accountId, request, actor);
   }
 
   @PostMapping("/{accountId}/archive")
-  public AccountSummaryResponse archiveAccount(@PathVariable UUID accountId) {
-    return accountService.archiveAccount(accountId);
+  public AccountSummaryResponse archiveAccount(
+      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return accountService.archiveAccount(accountId, actor);
   }
 
   @PostMapping("/{accountId}/restore")
-  public AccountSummaryResponse restoreAccount(@PathVariable UUID accountId) {
-    return accountService.restoreAccount(accountId);
+  public AccountSummaryResponse restoreAccount(
+      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return accountService.restoreAccount(accountId, actor);
   }
 }

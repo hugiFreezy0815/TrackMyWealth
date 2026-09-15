@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
@@ -22,6 +23,7 @@ import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.AccountSecuritiesRepository;
 import com.trackmywealth.backend.repository.AccountVestedBenefitsRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Set;
@@ -73,6 +75,7 @@ public class AccountService {
       Set.of("CH_PILLAR_2_VESTED_BENEFITS", "DE_BAV");
 
   private final WorkspaceAccessService workspaceAccessService;
+  private final AccessControlService accessControlService;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final AccountRepository accountRepository;
   private final AccountSecuritiesRepository accountSecuritiesRepository;
@@ -85,6 +88,7 @@ public class AccountService {
 
   public AccountService(
       WorkspaceAccessService workspaceAccessService,
+      AccessControlService accessControlService,
       FinancialInstitutionRepository financialInstitutionRepository,
       AccountRepository accountRepository,
       AccountSecuritiesRepository accountSecuritiesRepository,
@@ -95,6 +99,7 @@ public class AccountService {
       AccountVestedBenefitsRepository accountVestedBenefitsRepository,
       AccountCustomAssetRepository accountCustomAssetRepository) {
     this.workspaceAccessService = workspaceAccessService;
+    this.accessControlService = accessControlService;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.accountRepository = accountRepository;
     this.accountSecuritiesRepository = accountSecuritiesRepository;
@@ -136,6 +141,14 @@ public class AccountService {
     return toSummary(account);
   }
 
+  // US-03-03: read-only access, gated at READ - the AC's "B can view it but not edit it" half.
+  @Transactional(readOnly = true)
+  public AccountSummaryResponse getAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
+    Account account = findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
+    return toSummary(account);
+  }
+
   // US-05-02: full-replacement update over the account's ordinary mutable attributes (see
   // UpdateAccountRequest's own Javadoc for exactly which fields, and why financialInstitutionId/
   // status/the capability flags are deliberately excluded - each has its own story). accountType
@@ -144,9 +157,15 @@ public class AccountService {
   // V4's trg_account_type_immutable / V24's trg_account_currency_immutable reject it at the DB
   // level, translated to a clean 409 by GlobalExceptionHandler - the same "let the DB enforce the
   // invariant, translate its rejection" pattern createAccount's own extension-row triggers rely on.
+  //
+  // US-03-03: gated at EDIT - the AC's "B can view it but not edit it" half. Checked after
+  // findAccountOrThrow (so a nonexistent/cross-workspace id still degrades to the same 404 it
+  // always has) but before any field is mutated.
   @Transactional
-  public AccountSummaryResponse updateAccount(UUID accountId, UpdateAccountRequest request) {
+  public AccountSummaryResponse updateAccount(
+      UUID accountId, UpdateAccountRequest request, AuthenticatedUserPrincipal actor) {
     Account account = findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
 
     account.setName(request.name());
     account.setAccountType(request.accountType());
@@ -167,8 +186,9 @@ public class AccountService {
   // list, so it's rejected the same way an out-of-table transition anywhere else in this codebase
   // is (see e.g. V4/V24's immutability triggers) - a structured 409, not a silent no-op.
   @Transactional
-  public AccountSummaryResponse archiveAccount(UUID accountId) {
+  public AccountSummaryResponse archiveAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     // Checking specifically for "not ACTIVE" rather than "already ARCHIVED": status also admits
     // DELETED (V4's own CHECK constraint), which FR-STA-001 defines as terminal - reachable from
     // ACTIVE only, and reachable from nowhere once there. An "already ARCHIVED" check alone would
@@ -191,8 +211,9 @@ public class AccountService {
   // must be rejected the same structured way the UI-hidden path would have been, rather than
   // silently succeeding forever.
   @Transactional
-  public AccountSummaryResponse restoreAccount(UUID accountId) {
+  public AccountSummaryResponse restoreAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     if (!ARCHIVED.equals(account.getStatus())) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Account is not archived.");
     }
