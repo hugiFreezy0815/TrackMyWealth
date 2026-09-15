@@ -17,7 +17,10 @@ import org.springframework.http.ProblemDetail;
  * {@code account_type_immutable} and {@code account_currency_immutable} branches end-to-end (a
  * genuine concurrent-write race and an arbitrary other constraint violation aren't practical to
  * force deterministically over HTTP). {@code custom_asset_valuation_currency_mismatch} (V26) is
- * also exercised end-to-end, by {@code CustomAssetValuationControllerTest}.
+ * this branch's other case: {@code CustomAssetValuationControllerTest} exercises the trigger
+ * itself, via direct JDBC (since {@code CustomAssetValuationService} derives currency itself, no
+ * request the service builds can trigger it any more) - but not this translation, so this unit test
+ * is that branch's only coverage of the 409/FR-ACC-002 mapping.
  */
 class GlobalExceptionHandlerTest {
 
