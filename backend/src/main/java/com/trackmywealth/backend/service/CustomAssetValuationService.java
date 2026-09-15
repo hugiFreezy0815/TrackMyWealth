@@ -17,10 +17,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * US-05-05: dated manual valuations for {@code CUSTOM_ASSET} accounts (FR-NW-003). {@code
- * account_type} and currency matching are enforced by V26's DB triggers, translated by {@code
+ * account_type} is validated only by V26/V27's DB trigger, translated by {@code
  * GlobalExceptionHandler}, the same "let the DB enforce the invariant" pattern {@code
- * AccountService} relies on for {@code account_type}/{@code native_currency} immutability - neither
- * is re-checked here.
+ * AccountService} relies on for {@code account_type}/{@code native_currency} immutability. Currency
+ * isn't client input at all - {@link #recordValuation} derives it from the account's own {@code
+ * native_currency} - so the matching DB trigger only ever fires as defense-in-depth.
  *
  * <p>Net worth itself - reflecting a valuation in current totals, or in a historical net-worth
  * chart - is out of scope: no net-worth/reporting feature exists anywhere in this codebase yet (a
@@ -50,7 +51,11 @@ public class CustomAssetValuationService {
     valuation.setAccount(account);
     valuation.setValuationDate(request.valuationDate());
     valuation.setValue(request.value());
-    valuation.setCurrency(request.currency());
+    // Not client-supplied: a valuation's currency is the account's own native_currency, not an
+    // independent choice (see CreateCustomAssetValuationRequest's Javadoc). V26/V27's DB trigger
+    // still guards this as defense-in-depth, matching how this codebase treats every other
+    // DB-enforced invariant the application also gets right on its own.
+    valuation.setCurrency(account.getNativeCurrency());
     // flush, not a plain save: forces the INSERT (and any trigger rejection, or the UNIQUE(
     // account_id, valuation_date) violation for a duplicate date) to happen here, inside this
     // method, rather than deferred to end-of-transaction commit - same reasoning as

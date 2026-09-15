@@ -11,6 +11,8 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.CustomAssetValuationService;
 import java.math.BigDecimal;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.List;
@@ -40,6 +42,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * interpolation" requirement (PR-011), verified directly against {@link
  * CustomAssetValuationService#getValuationAsOf} since no net-worth/reporting feature exists yet to
  * expose it through an endpoint (the same gap US-05-03/#68 already documented).
+ *
+ * <p>{@code currency} is deliberately not settable through the API ({@link
+ * CreateCustomAssetValuationRequest}'s own Javadoc) - {@link
+ * #theTypeGuardFiresBeforeTheCurrencyGuardWhenARowViolatesBoth} is the only place a currency
+ * mismatch is still reachable at all, by inserting directly via JDBC the way the service never
+ * does, to verify V27's trigger-ordering fix.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -98,11 +106,12 @@ class CustomAssetValuationControllerTest {
             token,
             account.id(),
             new CreateCustomAssetValuationRequest(
-                LocalDate.of(2026, 1, 15), new BigDecimal("50000.0000"), "CHF"));
+                LocalDate.of(2026, 1, 15), new BigDecimal("50000.0000")));
 
     assertThat(created.accountId()).isEqualTo(account.id());
     assertThat(created.valuationDate()).isEqualTo(LocalDate.of(2026, 1, 15));
     assertThat(created.value()).isEqualByComparingTo("50000.0000");
+    // Not client-supplied - derived from the account's own native_currency.
     assertThat(created.currency()).isEqualTo("CHF");
     assertThat(created.source()).isEqualTo("MANUAL");
   }
@@ -116,12 +125,12 @@ class CustomAssetValuationControllerTest {
         token,
         account.id(),
         new CreateCustomAssetValuationRequest(
-            LocalDate.of(2026, 1, 1), new BigDecimal("40000.0000"), "CHF"));
+            LocalDate.of(2026, 1, 1), new BigDecimal("40000.0000")));
     recordValuation(
         token,
         account.id(),
         new CreateCustomAssetValuationRequest(
-            LocalDate.of(2026, 6, 1), new BigDecimal("45000.0000"), "CHF"));
+            LocalDate.of(2026, 6, 1), new BigDecimal("45000.0000")));
 
     List<CustomAssetValuationResponse> valuations =
         client(token)
@@ -149,12 +158,12 @@ class CustomAssetValuationControllerTest {
         token,
         account.id(),
         new CreateCustomAssetValuationRequest(
-            LocalDate.of(2026, 1, 1), new BigDecimal("40000.0000"), "CHF"));
+            LocalDate.of(2026, 1, 1), new BigDecimal("40000.0000")));
     recordValuation(
         token,
         account.id(),
         new CreateCustomAssetValuationRequest(
-            LocalDate.of(2026, 6, 1), new BigDecimal("45000.0000"), "CHF"));
+            LocalDate.of(2026, 6, 1), new BigDecimal("45000.0000")));
 
     // Between the two known points: the earlier valuation carries forward, not a straight-line
     // interpolated ~42500.
@@ -189,7 +198,7 @@ class CustomAssetValuationControllerTest {
         token,
         account.id(),
         new CreateCustomAssetValuationRequest(
-            LocalDate.of(2026, 1, 1), new BigDecimal("40000.0000"), "CHF"));
+            LocalDate.of(2026, 1, 1), new BigDecimal("40000.0000")));
 
     client(token)
         .post()
@@ -197,30 +206,10 @@ class CustomAssetValuationControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateCustomAssetValuationRequest(
-                LocalDate.of(2026, 1, 1), new BigDecimal("41000.0000"), "CHF"))
+                LocalDate.of(2026, 1, 1), new BigDecimal("41000.0000")))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
-  }
-
-  @Test
-  void recordingAValuationWithAMismatchedCurrencyIsRejectedWithAStructuredConflict() {
-    String token = bootstrapAdministrator();
-    AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
-
-    client(token)
-        .post()
-        .uri("/api/v1/accounts/" + account.id() + "/valuations")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateCustomAssetValuationRequest(
-                LocalDate.of(2026, 1, 1), new BigDecimal("40000.0000"), "EUR"))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT)
-        .expectBody()
-        .jsonPath("$.detail")
-        .isEqualTo("A valuation's currency must match the account's own currency (FR-ACC-002).");
   }
 
   @Test
@@ -247,7 +236,7 @@ class CustomAssetValuationControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateCustomAssetValuationRequest(
-                LocalDate.of(2026, 1, 1), new BigDecimal("100.0000"), "CHF"))
+                LocalDate.of(2026, 1, 1), new BigDecimal("100.0000")))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -263,7 +252,7 @@ class CustomAssetValuationControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateCustomAssetValuationRequest(
-                LocalDate.of(2026, 1, 1), new BigDecimal("100.0000"), "CHF"))
+                LocalDate.of(2026, 1, 1), new BigDecimal("100.0000")))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
@@ -279,6 +268,53 @@ class CustomAssetValuationControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void theTypeGuardFiresBeforeTheCurrencyGuardWhenARowViolatesBoth() throws Exception {
+    // V27: PostgreSQL fires same-timing triggers alphabetically, so the two triggers were renamed
+    // to guarantee the type guard (the more fundamental check) fires first. The service can never
+    // actually construct a row violating both - currency isn't client input any more - so this
+    // reaches the DB directly the way a future non-service caller of this table might, to verify
+    // the ordering fix itself rather than anything the API surface can still exercise.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cashAccount =
+        client(token)
+            .post()
+            .uri("/api/v1/accounts")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(
+                new CreateAccountRequest(
+                    null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null))
+            .exchange()
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    SQLException violation =
+        org.junit.jupiter.api.Assertions.assertThrows(
+            SQLException.class,
+            () -> insertValuationDirectly(cashAccount.id(), LocalDate.of(2026, 1, 1), "EUR"));
+
+    assertThat(violation.getMessage()).contains("account_extension_type_mismatch");
+    assertThat(violation.getMessage()).doesNotContain("custom_asset_valuation_currency_mismatch");
+  }
+
+  private void insertValuationDirectly(UUID accountId, LocalDate valuationDate, String currency)
+      throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO custom_asset_valuation (account_id, valuation_date, value, currency)"
+                    + " VALUES (?, ?, ?, ?)")) {
+      statement.setObject(1, accountId);
+      statement.setObject(2, valuationDate);
+      statement.setBigDecimal(3, new BigDecimal("100.0000"));
+      statement.setString(4, currency);
+      statement.executeUpdate();
+    }
   }
 
   private CustomAssetValuationResponse recordValuation(
