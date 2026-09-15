@@ -12,4 +12,5 @@
 -- project's migration convention rather than edited in place.
 -- =============================================================================================
 
-CREATE INDEX idx_fx_rate_pair_source_date ON fx_rate(base_currency, quote_currency, source, rate_date DESC);
+CREATE INDEX idx_fx_rate_pair_source_date
+ON fx_rate (base_currency, quote_currency, source, rate_date DESC);
