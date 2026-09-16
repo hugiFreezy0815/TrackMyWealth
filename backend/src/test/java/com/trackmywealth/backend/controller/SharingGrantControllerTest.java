@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest.OwnerAllocation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
+import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
@@ -23,6 +24,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -84,6 +86,8 @@ class SharingGrantControllerTest {
           List.of(
               "sharing_grant",
               "account_ownership",
+              "custom_asset_valuation",
+              "account_custom_asset",
               "account",
               "admin_audit_log",
               "user_session",
@@ -274,6 +278,139 @@ class SharingGrantControllerTest {
     assignOwnership(adminToken, account.id(), bobMemberId);
 
     getAccount(bobToken, account.id()).expectStatus().isOk();
+  }
+
+  @Test
+  void grantingBalanceOnlyAccessAllowsViewingTheAccountSummaryInsteadOfBeingANoOp() {
+    // Before this fix, getAccount required READ, one rung above BALANCE_ONLY in AccessLevelValues
+    // - a BALANCE_ONLY grant was then indistinguishable from no grant at all (both 404 here).
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com", PASSWORD);
+
+    SharingGrantResponse grant =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId,
+                ScopeTypeValues.ACCOUNT,
+                account.id(),
+                null,
+                AccessLevelValues.BALANCE_ONLY));
+    assertThat(grant.accessLevel()).isEqualTo(AccessLevelValues.BALANCE_ONLY);
+
+    getAccount(bobToken, account.id()).expectStatus().isOk();
+  }
+
+  @Test
+  void ownershipReadAndValuationEndpointsAreGatedByAccessControlServiceToo() {
+    // Not just AccountController's own GET/PUT: currentOwnership and the CUSTOM_ASSET valuation
+    // endpoints expose account-scoped financial data (ownership shares, dollar-valued valuations)
+    // through the very same accountId, and must deny/allow exactly in step with it.
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse account = createCustomAssetAccount(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com", PASSWORD);
+    recordValuation(adminToken, account.id()).expectStatus().isEqualTo(HttpStatus.CREATED);
+
+    currentOwnership(bobToken, account.id()).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+    listValuations(bobToken, account.id()).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+    recordValuation(bobToken, account.id()).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+
+    grant(
+        adminToken,
+        new CreateSharingGrantRequest(
+            bobMemberId, ScopeTypeValues.ACCOUNT, account.id(), null, AccessLevelValues.READ));
+
+    currentOwnership(bobToken, account.id()).expectStatus().isOk();
+    listValuations(bobToken, account.id()).expectStatus().isOk();
+    // READ, not EDIT: recording a new valuation is a write and must still be denied.
+    recordValuation(bobToken, account.id()).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void dependentMembersDoNotCountTowardTheSoleActiveMemberRule() {
+    // A dependent workspace_member (is_dependent=true) can never log in, so it must never count
+    // toward "am I the only person who could possibly be making this request" - otherwise adding
+    // one would strip the one real login user of their own implicit FULL access.
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(adminToken);
+    insertDependentMember(workspaceIdForEmail("admin@example.com"), "Family Dog Fund");
+
+    getAccount(adminToken, account.id()).expectStatus().isOk();
+  }
+
+  private RestTestClient.ResponseSpec currentOwnership(String token, UUID accountId) {
+    return client(token).get().uri("/api/v1/accounts/" + accountId + "/ownership").exchange();
+  }
+
+  private RestTestClient.ResponseSpec listValuations(String token, UUID accountId) {
+    return client(token).get().uri("/api/v1/accounts/" + accountId + "/valuations").exchange();
+  }
+
+  private RestTestClient.ResponseSpec recordValuation(String token, UUID accountId) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/valuations")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("1000.00")))
+        .exchange();
+  }
+
+  private AccountSummaryResponse createCustomAssetAccount(String token) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateAccountRequest(
+                null,
+                "Vintage Car",
+                "CUSTOM_ASSET",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "VEHICLE"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private void insertDependentMember(UUID workspaceId, String displayName) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO workspace_member (id, workspace_id, display_name, is_dependent,"
+                    + " status) VALUES (gen_random_uuid(), ?, ?, true, 'ACTIVE')")) {
+      statement.setObject(1, workspaceId);
+      statement.setString(2, displayName);
+      statement.executeUpdate();
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private UUID workspaceIdForEmail(String email) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT w.id FROM workspace w JOIN workspace_member m ON m.workspace_id = w.id"
+                    + " JOIN app_user u ON u.workspace_member_id = m.id WHERE u.email = ?")) {
+      statement.setString(1, email);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        assertThat(resultSet.next()).as("workspace for app_user with email " + email).isTrue();
+        return (UUID) resultSet.getObject("id");
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
   }
 
   private RestTestClient.ResponseSpec getAccount(String token, UUID accountId) {

@@ -9,7 +9,6 @@ import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.entity.SharingGrant;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.entity.WorkspaceMember;
-import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.SharingGrantRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
@@ -30,10 +29,18 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>Granting (or revoking) access to a scope requires the caller to themselves currently have
  * {@code FULL} access to that same scope (the story's own error/edge case: "a member cannot share
- * what they cannot fully see") - checked via {@link AccessControlService}, the same mechanism that
- * will enforce the grant once created, so "can grant" and "can access" can never drift apart.
- * Rejected the same way any other deny-by-default lookup in this codebase is: a {@code 404}, not a
- * {@code 403} - indistinguishable from the scope target not existing at all (FR-TEN-006).
+ * what they cannot fully see") - both funnel through {@link #requireFullAccessToScope}, which calls
+ * {@link AccessControlService}, the same mechanism that will enforce the grant once created, so
+ * "can grant"/"can revoke" and "can access" can never drift apart. Rejected the same way any other
+ * deny-by-default lookup in this codebase is: a {@code 404}, not a {@code 403} - indistinguishable
+ * from the scope target not existing at all (FR-TEN-006).
+ *
+ * <p>{@link #revoke} locks the grant row for its read-check-write sequence ({@code
+ * SharingGrantRepository#findByIdForUpdate}, the same {@code @Lock(PESSIMISTIC_WRITE)} pattern
+ * {@code AccountRepository}/{@code AppUserRepository} already use) - without it, two concurrent
+ * revokes of the same grant would both read {@code revokedAt == null}, both pass the conflict
+ * check, and both succeed, instead of the second one correctly hitting {@code 409 CONFLICT} (the
+ * same race {@code AccountOwnershipService}'s own {@code findByIdForUpdate} was added to close).
  *
  * <p>Relies on RLS for workspace isolation the same way {@code AccountOwnershipService} does:
  * {@code scopeAccountId}/{@code scopeInstitutionId}/{@code grantedToMemberId} are all looked up
@@ -44,22 +51,22 @@ public class SharingGrantService {
 
   private final WorkspaceAccessService workspaceAccessService;
   private final AccessControlService accessControlService;
+  private final AccountLookupService accountLookupService;
   private final WorkspaceMemberRepository workspaceMemberRepository;
-  private final AccountRepository accountRepository;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final SharingGrantRepository sharingGrantRepository;
 
   public SharingGrantService(
       WorkspaceAccessService workspaceAccessService,
       AccessControlService accessControlService,
+      AccountLookupService accountLookupService,
       WorkspaceMemberRepository workspaceMemberRepository,
-      AccountRepository accountRepository,
       FinancialInstitutionRepository financialInstitutionRepository,
       SharingGrantRepository sharingGrantRepository) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
+    this.accountLookupService = accountLookupService;
     this.workspaceMemberRepository = workspaceMemberRepository;
-    this.accountRepository = accountRepository;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.sharingGrantRepository = sharingGrantRepository;
   }
@@ -84,18 +91,19 @@ public class SharingGrantService {
     grant.setScopeType(request.scopeType());
     switch (request.scopeType()) {
       case ScopeTypeValues.ACCOUNT -> {
-        Account account = findAccountOrThrow(request.scopeAccountId());
-        accessControlService.requireAccountAccess(actor, account, AccessLevelValues.FULL);
+        Account account = accountLookupService.findAccountOrThrow(request.scopeAccountId());
+        requireFullAccessToScope(granterMemberId, ScopeTypeValues.ACCOUNT, account, null, null);
         grant.setScopeAccount(account);
       }
       case ScopeTypeValues.INSTITUTION -> {
         FinancialInstitution institution = findInstitutionOrThrow(request.scopeInstitutionId());
-        accessControlService.requireInstitutionAccess(actor, institution, AccessLevelValues.FULL);
+        requireFullAccessToScope(
+            granterMemberId, ScopeTypeValues.INSTITUTION, null, institution, null);
         grant.setScopeInstitution(institution);
       }
       case ScopeTypeValues.WORKSPACE ->
-          accessControlService.requireWorkspaceAccess(
-              actor, actor.workspaceId(), AccessLevelValues.FULL);
+          requireFullAccessToScope(
+              granterMemberId, ScopeTypeValues.WORKSPACE, null, null, actor.workspaceId());
       default ->
           throw new ResponseStatusException(
               HttpStatus.BAD_REQUEST, "Unsupported scopeType: " + request.scopeType());
@@ -113,7 +121,7 @@ public class SharingGrantService {
   public SharingGrantResponse revoke(UUID grantId, AuthenticatedUserPrincipal actor) {
     SharingGrant grant =
         sharingGrantRepository
-            .findById(grantId)
+            .findByIdForUpdate(grantId)
             .orElseThrow(
                 () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Grant not found."));
 
@@ -121,7 +129,12 @@ public class SharingGrantService {
     // granter may revoke": household membership changes over time (a granter could themselves be
     // deactivated later), and anyone who currently has FULL access to a scope is, by definition,
     // trusted to manage sharing for it.
-    requireFullAccessToGrantScope(grant, actor);
+    requireFullAccessToScope(
+        accessControlService.requireActingMember(actor),
+        grant.getScopeType(),
+        grant.getScopeAccount(),
+        grant.getScopeInstitution(),
+        grant.getWorkspace().getId());
 
     if (grant.getRevokedAt() != null) {
       throw new ResponseStatusException(
@@ -133,20 +146,29 @@ public class SharingGrantService {
     return toResponse(grant);
   }
 
-  private void requireFullAccessToGrantScope(SharingGrant grant, AuthenticatedUserPrincipal actor) {
-    switch (grant.getScopeType()) {
+  // Shared by grant() and revoke() - previously two independently-maintained copies of the same
+  // scopeType -> AccessControlService dispatch, one per call site. account/institution/workspaceId
+  // are only ever populated for the branch matching scopeType; the other two are null and unused
+  // by design (a caller passes whichever one its own scope resolution already produced). Takes the
+  // already-resolved acting member id, not the actor, so grant() (which already resolved it for
+  // grantedByMemberId) doesn't pay for AccessControlService.requireActingMember's
+  // AppUserRepository lookup a second time - revoke() resolves it once itself instead.
+  private void requireFullAccessToScope(
+      UUID memberId,
+      String scopeType,
+      Account account,
+      FinancialInstitution institution,
+      UUID workspaceId) {
+    switch (scopeType) {
       case ScopeTypeValues.ACCOUNT ->
-          accessControlService.requireAccountAccess(
-              actor, grant.getScopeAccount(), AccessLevelValues.FULL);
+          accessControlService.requireAccountAccess(memberId, account, AccessLevelValues.FULL);
       case ScopeTypeValues.INSTITUTION ->
           accessControlService.requireInstitutionAccess(
-              actor, grant.getScopeInstitution(), AccessLevelValues.FULL);
+              memberId, institution, AccessLevelValues.FULL);
       case ScopeTypeValues.WORKSPACE ->
           accessControlService.requireWorkspaceAccess(
-              actor, grant.getWorkspace().getId(), AccessLevelValues.FULL);
-      default ->
-          throw new IllegalStateException(
-              "Unexpected persisted scopeType: " + grant.getScopeType());
+              memberId, workspaceId, AccessLevelValues.FULL);
+      default -> throw new IllegalStateException("Unexpected scopeType: " + scopeType);
     }
   }
 
@@ -175,12 +197,12 @@ public class SharingGrantService {
     }
   }
 
-  private Account findAccountOrThrow(UUID accountId) {
-    return accountRepository
-        .findById(accountId)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found."));
-  }
-
+  // Not folded into AccountLookupService alongside findAccountOrThrow: unlike the account lookup
+  // (three byte-identical copies across AccountService/CustomAssetValuationService/this class),
+  // AccountService's only other institution lookup is embedded inside resolveInstitution's larger
+  // two-branch method (an explicit id vs. the workspace's default container), not a standalone unit
+  // - extracting a shared helper would mean restructuring that already-shipped method for a single
+  // caller here, a larger change than this fix warrants.
   private FinancialInstitution findInstitutionOrThrow(UUID institutionId) {
     return financialInstitutionRepository
         .findById(institutionId)

@@ -88,6 +88,7 @@ class CustomAssetValuationControllerTest {
           List.of(
               "custom_asset_valuation",
               "account_custom_asset",
+              "account_ownership",
               "account",
               "admin_audit_log",
               "user_session",

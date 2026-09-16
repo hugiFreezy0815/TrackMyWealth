@@ -94,6 +94,7 @@ class AccountControllerTest {
               "account_pension",
               "account_vested_benefits",
               "account_custom_asset",
+              "account_ownership",
               "account",
               "admin_audit_log",
               "user_session",

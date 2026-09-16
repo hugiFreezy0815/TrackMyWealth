@@ -2,13 +2,16 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountOwnershipResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest.OwnerAllocation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
+import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
+import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.entity.AccountOwnership;
@@ -87,6 +90,7 @@ class AccountOwnershipControllerTest {
         Statement statement = connection.createStatement()) {
       for (String table :
           List.of(
+              "sharing_grant",
               "account_ownership",
               "account",
               "admin_audit_log",
@@ -176,7 +180,10 @@ class AccountOwnershipControllerTest {
     assertThat(afterBuyout.get(0).workspaceMemberId()).isEqualTo(memberA);
     assertThat(afterBuyout.get(0).share()).isEqualByComparingTo("1");
 
-    assertThat(closedRowCount(account.id())).isEqualTo(2);
+    // 3, not 2: createAccount's own auto-created row (US-03-03/AccountService's own Javadoc) is
+    // closed by the first assignOwnership call above too, before the 50/50 split and the buyout
+    // each close a row of their own.
+    assertThat(closedRowCount(account.id())).isEqualTo(3);
   }
 
   @Test
@@ -193,6 +200,22 @@ class AccountOwnershipControllerTest {
     String token = bootstrapAdministrator();
     AccountSummaryResponse account = createAccount(token);
     UUID memberA = workspaceMemberIdForEmail("admin@example.com");
+    // A standing ACCOUNT-scope FULL grant to the admin themselves, created while still the sole
+    // active member (so it needs no further authorization of its own) - both racing calls below
+    // are made as this same admin, and assignOwnership is now gated at EDIT (US-03-03 follow-up).
+    // Without this, whichever of the two calls' findByIdForUpdate lock is granted second would
+    // correctly - but for this test, unhelpfully - see that the other call already transferred
+    // ownership away from the admin, and 404 instead of racing to completion at all.
+    client(token)
+        .post()
+        .uri("/api/v1/sharing-grants")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateSharingGrantRequest(
+                memberA, ScopeTypeValues.ACCOUNT, account.id(), null, AccessLevelValues.FULL))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
     UUID memberB = createSecondMember(token, "partner@example.com");
     assignOwnership(
         token,
@@ -400,7 +423,9 @@ class AccountOwnershipControllerTest {
         assignOwnership(token, account.id(), new AssignAccountOwnershipRequest(List.of()));
 
     assertThat(ownership).isEmpty();
-    assertThat(closedRowCount(account.id())).isEqualTo(1);
+    // 2, not 1: createAccount's own auto-created row (US-03-03/AccountService's own Javadoc) is
+    // closed by the assignOwnership call above too, before the empty-list call closes that one.
+    assertThat(closedRowCount(account.id())).isEqualTo(2);
   }
 
   @Test
@@ -425,7 +450,9 @@ class AccountOwnershipControllerTest {
                 List.of(new OwnerAllocation(memberA, BigDecimal.ONE))));
 
     assertThat(second.get(0).id()).isNotEqualTo(first.get(0).id());
-    assertThat(closedRowCount(account.id())).isEqualTo(1);
+    // 2, not 1: createAccount's own auto-created row (US-03-03/AccountService's own Javadoc) is
+    // closed by the first assignOwnership call above too, before the second call closes "first".
+    assertThat(closedRowCount(account.id())).isEqualTo(2);
   }
 
   @Test

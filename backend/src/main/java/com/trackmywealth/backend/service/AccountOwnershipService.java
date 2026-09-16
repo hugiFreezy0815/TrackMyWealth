@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountOwnershipResponse;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest.OwnerAllocation;
@@ -9,6 +10,7 @@ import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AccountOwnershipRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashSet;
@@ -26,12 +28,14 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * US-03-02: assign fractional or joint ownership of an account (FR-HOU-002/003/005/006). {@link
  * #assignOwnership} is a full replacement of the account's currently-effective ownership set, not a
- * per-member add/remove - see {@link AssignAccountOwnershipRequest}'s own Javadoc for why,
- * including why this still deliberately doesn't check for EDIT/FULL access: US-03-03/#74's {@code
- * AccessControlService} now exists, but ownership assignment was never in that story's own
- * acceptance criteria (which cover {@code AccountController}'s read/write endpoints), so any member
- * of the account's own workspace may still call this - not yet gated the way {@code
- * AccountService.updateAccount} etc. are.
+ * per-member add/remove - see {@link AssignAccountOwnershipRequest}'s own Javadoc for why.
+ *
+ * <p>US-03-03 follow-up: now gated via {@link AccessControlService} - {@code EDIT} for {@link
+ * #assignOwnership} (this story's own Actor line: "workspace member with edit access"), {@code
+ * READ} for {@link #currentOwnership}. Safe to add without stranding the very first caller: {@code
+ * AccountService.createAccount} now gives every account's creator immediate ownership (see its own
+ * Javadoc), so an actor calling either method here always already has at least {@code EDIT} on an
+ * account they just created, even as the sole active member.
  *
  * <p>Relies on RLS for workspace isolation the same way {@code AccountService}/{@code
  * InstitutionService} do: both {@code accountId} and every {@code workspaceMemberId} in the request
@@ -55,26 +59,33 @@ import org.springframework.web.server.ResponseStatusException;
 public class AccountOwnershipService {
 
   private final AccountRepository accountRepository;
+  private final AccountLookupService accountLookupService;
+  private final AccessControlService accessControlService;
   private final WorkspaceMemberRepository workspaceMemberRepository;
   private final AccountOwnershipRepository accountOwnershipRepository;
 
   public AccountOwnershipService(
       AccountRepository accountRepository,
+      AccountLookupService accountLookupService,
+      AccessControlService accessControlService,
       WorkspaceMemberRepository workspaceMemberRepository,
       AccountOwnershipRepository accountOwnershipRepository) {
     this.accountRepository = accountRepository;
+    this.accountLookupService = accountLookupService;
+    this.accessControlService = accessControlService;
     this.workspaceMemberRepository = workspaceMemberRepository;
     this.accountOwnershipRepository = accountOwnershipRepository;
   }
 
   @Transactional
   public List<AccountOwnershipResponse> assignOwnership(
-      UUID accountId, AssignAccountOwnershipRequest request) {
+      UUID accountId, AssignAccountOwnershipRequest request, AuthenticatedUserPrincipal actor) {
     Account account =
         accountRepository
             .findByIdForUpdate(accountId)
             .orElseThrow(
                 () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found."));
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     List<OwnerAllocation> owners = request.owners();
 
     requireNoDuplicateMembers(owners);
@@ -117,10 +128,10 @@ public class AccountOwnershipService {
   }
 
   @Transactional(readOnly = true)
-  public List<AccountOwnershipResponse> currentOwnership(UUID accountId) {
-    if (!accountRepository.existsById(accountId)) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found.");
-    }
+  public List<AccountOwnershipResponse> currentOwnership(
+      UUID accountId, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     return accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(accountId).stream()
         .map(this::toResponse)
         .toList();

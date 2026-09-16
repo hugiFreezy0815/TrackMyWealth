@@ -34,7 +34,7 @@ public class AccountController {
       @Valid @RequestBody CreateAccountRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return ResponseEntity.status(HttpStatus.CREATED)
-        .body(accountService.createAccount(request, actor.workspaceId()));
+        .body(accountService.createAccount(request, actor));
   }
 
   @GetMapping("/{accountId}")
