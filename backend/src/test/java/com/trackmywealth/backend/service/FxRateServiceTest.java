@@ -306,4 +306,48 @@ class FxRateServiceTest {
     assertThat(converted).isEqualByComparingTo("0.3333");
     assertThat(converted.scale()).isEqualTo(4);
   }
+
+  @Test
+  void sameCurrencyConversionIsAlwaysRateOneWithNoRateLookupNeeded() {
+    // Code review finding on this PR: with no short-circuit, a same-currency pair with no direct
+    // row stored would fall into the chain-fallback logic below and either 404 or silently
+    // multiply mismatched reciprocal rates - neither is correct for what is definitionally a
+    // rate of exactly 1.0. No rate seeded at all here, proving no lookup is even attempted.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+
+    CurrencyConversionResult conversion =
+        fxRateService.getConversionRate("EUR", "EUR", today, SOURCE);
+
+    assertThat(conversion.rate()).isEqualByComparingTo("1");
+    assertThat(conversion.direct()).isTrue();
+    assertThat(conversion.intermediateCurrency()).isNull();
+    assertThat(conversion.carriedForward()).isFalse();
+    assertThat(fxRateService.convert(new BigDecimal("250.00"), "CHF", "CHF", today, SOURCE))
+        .isEqualByComparingTo("250.0000");
+  }
+
+  @Test
+  void usdToUsdConversionSucceedsRatherThanFailingAsIfUsdCouldNotChainThroughItself() {
+    // The specific case the review flagged: USD is this codebase's own fallback intermediate, so
+    // before the same-currency short-circuit existed, USD/USD hit the "can't chain through
+    // yourself" guard and 404'd instead of trivially succeeding.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+
+    assertThat(fxRateService.getConversionRate("USD", "USD", today, SOURCE).rate())
+        .isEqualByComparingTo("1");
+  }
+
+  @Test
+  void sameCurrencyShortCircuitWinsEvenWhenMismatchedReciprocalRatesAreStored() {
+    // Proves the fix, not just its absence of failure: with EUR/USD and USD/EUR stored as
+    // non-reciprocal values (realistic - independently sourced, not derived from each other), the
+    // old code computed 0.9200000000 * 1.0900000000 = 1.0028000000 as "the EUR/EUR rate" instead
+    // of 1.0. This must return exactly 1, not that chained product.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("EUR", "USD", today, "0.9200000000", SOURCE);
+    seedRate("USD", "EUR", today, "1.0900000000", SOURCE);
+
+    assertThat(fxRateService.getConversionRate("EUR", "EUR", today, SOURCE).rate())
+        .isEqualByComparingTo("1");
+  }
 }

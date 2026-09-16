@@ -118,6 +118,19 @@ public class FxRateService {
     requireNonNull(date, "date");
     requireNonBlank(source, "source");
 
+    // Converting a currency to itself is always rate 1.0, by definition - checked before any rate
+    // lookup at all (not just before the chain fallback below), since neither a direct pair nor a
+    // chain is a correct way to answer this: a same-currency pair with no direct row stored would
+    // otherwise either 404 (when that currency is INTERMEDIATE_CURRENCY itself, e.g. USD/USD - the
+    // very next check below would catch it, but by throwing, not by succeeding) or, worse, silently
+    // chain through INTERMEDIATE_CURRENCY and return whatever rate(base,USD) * rate(USD,base)
+    // happens to multiply to - correct only if those two independently-sourced rates are exact
+    // reciprocals, which real FX data has no reason to be (found by review on this PR).
+    if (baseCurrency.equals(quoteCurrency)) {
+      return new CurrencyConversionResult(
+          BigDecimal.ONE, baseCurrency, quoteCurrency, date, true, null, false);
+    }
+
     Optional<FxRate> direct = findOnOrBefore(baseCurrency, quoteCurrency, source, date);
     if (direct.isPresent()) {
       FxRate fxRate = direct.get();
