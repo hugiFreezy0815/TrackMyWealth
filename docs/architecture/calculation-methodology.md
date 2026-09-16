@@ -1,0 +1,108 @@
+# TrackMyWealth — Calculation Methodology
+
+This document is the authoritative answer to "how is this actually computed" for every
+calculation-adjacent rule in the platform (NFR-CALC-003, specification section 46) — never to be
+reverse-engineered from the implementation. **US-27-02** is the story that completes it: all eleven
+items in section 46 (net worth, TWR, MWR, Modified Dietz, savings rate, cost basis, realised gain,
+FX conversion, position valuation, currency attribution, reconciliation difference), each with
+inputs, edge-case treatment, and a worked example matching its golden-dataset fixture (EPIC 27).
+
+This file is seeded ahead of that story by **US-06-03** with the one methodology EPIC 06 already
+has the machinery to state precisely: the FX conversion date convention (FR-CUR-011). The other ten
+rows are `docs/user-stories/EPIC-27-calculation-verification.md`'s to fill in once the calculation
+engines they document (transactions/EPIC 07, positions/EPIC 15, net worth/EPIC 11, performance/EPIC
+16) exist — writing their sections here now would be documenting code that doesn't exist yet.
+
+## FX conversion date convention (US-06-03, FR-CUR-011)
+
+Every cross-currency figure needs an FX rate, and every FX rate is dated (`fx_rate.rate_date`,
+`FxRateService`, US-06-01/US-06-02). Mixing date conventions silently — using today's rate for a
+transaction from three months ago, or a transaction's rate for today's position value — is a common
+source of "why doesn't this number match what I calculated by hand," per the story's own framing.
+The convention is not "use the newest rate" or "use one rate per report"; it is: **the rate date
+follows the figure's class**, one of exactly three:
+
+| Figure class | Rate date used | Examples |
+|---|---|---|
+| **Realised flow** | The transaction's own booking/value date | A dividend received, a realised gain from a sale, any cash-flow-reporting figure |
+| **Current balance / holding** | The valuation date (today, or the report's as-of date) | An account balance, a position's current market value |
+| **Period-end / closing figure** | The period's closing date | A month-end net-worth figure, any historical point-in-time snapshot |
+
+The acquisition date of a position is never the right answer for the second or third row — a
+USD position bought two years ago and still held today is valued at **today's** (or the report
+date's) rate, not the rate on the day it was purchased. That distinction is the specific mistake
+this convention exists to prevent.
+
+### Mechanism
+
+All three rows resolve to the same underlying call: `FxRateService.getRate` /
+`FxRateService.getConversionRate` (US-06-01/US-06-02), given the currency pair and **the date the
+figure's class says to use** — never a date chosen ad hoc by the calling code. That call already
+guarantees, independently of which figure class is asking:
+
+- **Direct pair preferred, chaining only as a documented fallback** (FR-CUR-010, US-06-02): the
+  direct `baseCurrency`/`quoteCurrency` rate is used whenever one is stored; only when none exists
+  at all does resolution fall back to chaining through USD, this codebase's documented common
+  intermediate.
+- **Carry-forward on gaps** (FR-CUR-012, US-06-01): if no rate is stored for the exact date asked
+  for (a weekend, a holiday, a provider outage), the most recent prior rate is used and the result
+  is marked `carriedForward` — visible on inspection, never silently presented as an exact rate for
+  that date (PR-011).
+- **Refusal, never a silent default to 1.0** (PR-011): if no rate exists at all, on or before the
+  requested date, directly or via the chain, the caller gets a 404, not a fabricated figure.
+
+This means the date convention below is purely about **which date to pass in** — every other
+correctness guarantee (which pair, which fallback, how staleness is marked) already lives in
+`FxRateService` and does not need restating per figure class.
+
+### Rounding
+
+Per NFR-CALC-007 (documented in full here once US-27-02 covers every calculation; stated here for
+the one calculation this section owns): the converted money amount is rounded **HALF_UP to 4
+decimal places** — matching this codebase's `NUMERIC(20,4)` money-storage convention — applied once,
+at the point the figure is converted, never accumulated through intermediate steps. `FxRateService`
+implements this in `convert()`; the rate itself is kept at full precision (`fx_rate.rate`'s
+`NUMERIC(20,10)`) throughout resolution, including through a chained conversion's two legs.
+
+### Worked examples
+
+**Realised flow** — a CHF-reporting user receives a USD 500.00 dividend, booked 2026-03-14 (a
+Saturday; no rate published that day, so `FxRateService` carries forward Friday 2026-03-13's rate
+of 0.8910):
+
+```
+getConversionRate("USD", "CHF", 2026-03-14, source)
+  -> rate = 0.8910000000, direct = true, carriedForward = true (rate dated 2026-03-13)
+convert(500.00, "USD", "CHF", 2026-03-14, source)
+  -> 500.00 * 0.8910000000 = 445.5000
+```
+
+The cash-flow report shows CHF 445.5000, marked as carried-forward — never re-derived later using
+today's rate, since the flow is dated to when it was actually received, not to when it's later
+displayed.
+
+**Current holding** — the same USD position is still held on 2026-09-16 (the report's as-of date),
+by which point USD/CHF has moved to 0.8850 (an exact rate for that date):
+
+```
+getConversionRate("USD", "CHF", 2026-09-16, source)
+  -> rate = 0.8850000000, direct = true, carriedForward = false
+```
+
+The position's current value uses **this** rate — dated to today, not to 2026-03-14 (when the
+dividend happened to be booked) and not to whatever date the position was originally acquired.
+
+**Period-end / closing figure** — a net-worth figure for the close of August 2026 uses the rate
+dated 2026-08-31 (the period's own closing date), consistently for every account balance rolled
+into that figure, regardless of which date each account's data happens to have last been reconciled
+or updated. Two accounts contributing to the same August closing figure must never end up converted
+at two different dates' rates.
+
+### What this section deliberately does not cover yet
+
+`Transaction` (EPIC 07), `Position` (EPIC 15) and the net-worth/snapshot machinery (EPIC 11/25) do
+not exist in code yet — this section documents the *rule* those future call sites must follow, not
+an API surface for them, since designing that surface now would be guessing at shapes those stories
+haven't defined. When each of those epics lands, its own service is expected to call
+`FxRateService` with the date this convention specifies, not to reopen the question of which date
+to use.
