@@ -1,19 +1,18 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.CustomAssetValuation;
-import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.CustomAssetValuationRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * US-05-05: dated manual valuations for {@code CUSTOM_ASSET} accounts (FR-NW-003). {@code
@@ -27,25 +26,36 @@ import org.springframework.web.server.ResponseStatusException;
  * chart - is out of scope: no net-worth/reporting feature exists anywhere in this codebase yet (a
  * gap this story shares with US-05-03/#68). {@link #getValuationAsOf} is this story's complete
  * answer to "which valuation applies as of a given date" - the query a future net-worth feature
- * would call - verified directly here rather than through a reporting endpoint that doesn't exist.
+ * would call - verified directly here rather than through a reporting endpoint that doesn't exist,
+ * so it deliberately has no {@link AccessControlService} check of its own yet either.
+ *
+ * <p>US-03-03 follow-up: {@link #recordValuation}/{@link #listValuations} are now gated via {@code
+ * AccessControlService} ({@code EDIT}/{@code READ} respectively) - a dollar-valued valuation is
+ * exactly the kind of account-scoped financial data the story's own "visibility is never an
+ * implicit merge of another member's private data" line is about, the same as any other
+ * account-scoped read/write.
  */
 @Service
 public class CustomAssetValuationService {
 
-  private final AccountRepository accountRepository;
+  private final AccountLookupService accountLookupService;
+  private final AccessControlService accessControlService;
   private final CustomAssetValuationRepository customAssetValuationRepository;
 
   public CustomAssetValuationService(
-      AccountRepository accountRepository,
+      AccountLookupService accountLookupService,
+      AccessControlService accessControlService,
       CustomAssetValuationRepository customAssetValuationRepository) {
-    this.accountRepository = accountRepository;
+    this.accountLookupService = accountLookupService;
+    this.accessControlService = accessControlService;
     this.customAssetValuationRepository = customAssetValuationRepository;
   }
 
   @Transactional
   public CustomAssetValuationResponse recordValuation(
-      UUID accountId, CreateCustomAssetValuationRequest request) {
-    Account account = findAccountOrThrow(accountId);
+      UUID accountId, CreateCustomAssetValuationRequest request, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
 
     CustomAssetValuation valuation = new CustomAssetValuation();
     valuation.setAccount(account);
@@ -66,8 +76,10 @@ public class CustomAssetValuationService {
   }
 
   @Transactional(readOnly = true)
-  public List<CustomAssetValuationResponse> listValuations(UUID accountId) {
-    findAccountOrThrow(accountId);
+  public List<CustomAssetValuationResponse> listValuations(
+      UUID accountId, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     return customAssetValuationRepository
         .findByAccountIdOrderByValuationDateDesc(accountId)
         .stream()
@@ -82,17 +94,11 @@ public class CustomAssetValuationService {
   @Transactional(readOnly = true)
   public Optional<CustomAssetValuationResponse> getValuationAsOf(
       UUID accountId, LocalDate asOfDate) {
-    findAccountOrThrow(accountId);
+    accountLookupService.findAccountOrThrow(accountId);
     return customAssetValuationRepository
         .findFirstByAccountIdAndValuationDateLessThanEqualOrderByValuationDateDesc(
             accountId, asOfDate)
         .map(this::toResponse);
-  }
-
-  private Account findAccountOrThrow(UUID accountId) {
-    return accountRepository
-        .findById(accountId)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found."));
   }
 
   private CustomAssetValuationResponse toResponse(CustomAssetValuation valuation) {

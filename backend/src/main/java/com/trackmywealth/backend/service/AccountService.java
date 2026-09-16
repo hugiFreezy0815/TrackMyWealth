@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
@@ -8,6 +9,7 @@ import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.AccountCustomAsset;
 import com.trackmywealth.backend.entity.AccountLoan;
 import com.trackmywealth.backend.entity.AccountMortgage;
+import com.trackmywealth.backend.entity.AccountOwnership;
 import com.trackmywealth.backend.entity.AccountPension;
 import com.trackmywealth.backend.entity.AccountSecurities;
 import com.trackmywealth.backend.entity.AccountVestedBenefits;
@@ -17,11 +19,16 @@ import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.AccountCustomAssetRepository;
 import com.trackmywealth.backend.repository.AccountLoanRepository;
 import com.trackmywealth.backend.repository.AccountMortgageRepository;
+import com.trackmywealth.backend.repository.AccountOwnershipRepository;
 import com.trackmywealth.backend.repository.AccountPensionRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.AccountSecuritiesRepository;
 import com.trackmywealth.backend.repository.AccountVestedBenefitsRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
+import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Set;
@@ -49,6 +56,14 @@ import org.springframework.web.server.ResponseStatusException;
  * JwtAuthenticationFilter} having already refused to authenticate a request whose linked {@code
  * workspace_member} exists but isn't {@code ACTIVE} - no local "active member" check is needed here
  * either.
+ *
+ * <p>US-03-03 follow-up: {@link #createAccount} now gives the creating member immediate {@code
+ * FULL} ownership of the new account (an {@code account_ownership} row, share 1.0) in the same
+ * transaction - closing the gap {@link AccessControlService}'s own Javadoc used to document as a
+ * "known interaction, not a bug": an account left unowned became inaccessible to everyone,
+ * including its own creator, the moment the workspace gained a second active member. This is a
+ * default, not a guarantee - a later full-replacement call to {@code AccountOwnershipController}'s
+ * {@code PUT .../ownership} can still reassign or remove it, same as for any other account.
  */
 @Service
 public class AccountService {
@@ -73,8 +88,12 @@ public class AccountService {
       Set.of("CH_PILLAR_2_VESTED_BENEFITS", "DE_BAV");
 
   private final WorkspaceAccessService workspaceAccessService;
+  private final AccessControlService accessControlService;
+  private final AccountLookupService accountLookupService;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final AccountRepository accountRepository;
+  private final AccountOwnershipRepository accountOwnershipRepository;
+  private final WorkspaceMemberRepository workspaceMemberRepository;
   private final AccountSecuritiesRepository accountSecuritiesRepository;
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final AccountMortgageRepository accountMortgageRepository;
@@ -85,8 +104,12 @@ public class AccountService {
 
   public AccountService(
       WorkspaceAccessService workspaceAccessService,
+      AccessControlService accessControlService,
+      AccountLookupService accountLookupService,
       FinancialInstitutionRepository financialInstitutionRepository,
       AccountRepository accountRepository,
+      AccountOwnershipRepository accountOwnershipRepository,
+      WorkspaceMemberRepository workspaceMemberRepository,
       AccountSecuritiesRepository accountSecuritiesRepository,
       AccountCreditCardRepository accountCreditCardRepository,
       AccountMortgageRepository accountMortgageRepository,
@@ -95,8 +118,12 @@ public class AccountService {
       AccountVestedBenefitsRepository accountVestedBenefitsRepository,
       AccountCustomAssetRepository accountCustomAssetRepository) {
     this.workspaceAccessService = workspaceAccessService;
+    this.accessControlService = accessControlService;
+    this.accountLookupService = accountLookupService;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.accountRepository = accountRepository;
+    this.accountOwnershipRepository = accountOwnershipRepository;
+    this.workspaceMemberRepository = workspaceMemberRepository;
     this.accountSecuritiesRepository = accountSecuritiesRepository;
     this.accountCreditCardRepository = accountCreditCardRepository;
     this.accountMortgageRepository = accountMortgageRepository;
@@ -107,15 +134,17 @@ public class AccountService {
   }
 
   @Transactional
-  public AccountSummaryResponse createAccount(CreateAccountRequest request, UUID actorWorkspaceId) {
+  public AccountSummaryResponse createAccount(
+      CreateAccountRequest request, AuthenticatedUserPrincipal actor) {
     // Validated first, before any DB write (or the institution lookup below) - none of these
     // checks need anything from either, so a request that's going to be rejected fails fast
     // instead of paying for an institution SELECT and an account INSERT+refresh it will never
     // keep.
     validateExtensionFields(request);
-    Workspace workspace = workspaceAccessService.requireWorkspace(actorWorkspaceId, "an account");
+    Workspace workspace =
+        workspaceAccessService.requireWorkspace(actor.workspaceId(), "an account");
     FinancialInstitution institution =
-        resolveInstitution(request.financialInstitutionId(), actorWorkspaceId);
+        resolveInstitution(request.financialInstitutionId(), actor.workspaceId());
 
     Account account = new Account();
     account.setWorkspace(workspace);
@@ -132,7 +161,36 @@ public class AccountService {
     account = accountRepository.saveAndFlush(account);
 
     createExtensionRowIfNeeded(account, request);
+    assignInitialOwnershipToCreator(account, actor);
 
+    return toSummary(account);
+  }
+
+  // US-03-03: see this class's own Javadoc for why this exists - share 1.0, effective today,
+  // mirrors AccountOwnershipController's own "assign full ownership to oneself" shape.
+  private void assignInitialOwnershipToCreator(Account account, AuthenticatedUserPrincipal actor) {
+    UUID creatorMemberId = accessControlService.requireActingMember(actor);
+    AccountOwnership ownership = new AccountOwnership();
+    ownership.setAccount(account);
+    ownership.setWorkspaceMember(workspaceMemberRepository.getReferenceById(creatorMemberId));
+    ownership.setOwnershipShare(BigDecimal.ONE);
+    ownership.setEffectiveFrom(LocalDate.now());
+    accountOwnershipRepository.saveAndFlush(ownership);
+  }
+
+  // US-03-03: read-only access, gated at BALANCE_ONLY - not READ. AccountSummaryResponse carries
+  // no monetary figures yet (no balance/valuation field exists anywhere in this codebase - that's
+  // EPIC 11/16), so a BALANCE_ONLY grant would otherwise be indistinguishable from NO_ACCESS: both
+  // returned 404 here, since READ was the floor. Gating at BALANCE_ONLY - the weakest tier above
+  // NO_ACCESS - makes the level meaningful today (its holder can at least see this basic summary)
+  // without granting it anything READ-specific doesn't already cover, since there's no
+  // finer-grained data on this endpoint yet to withhold from a BALANCE_ONLY caller; a future
+  // endpoint that actually exposes transaction-level detail is where the two levels would first
+  // diverge in practice.
+  @Transactional(readOnly = true)
+  public AccountSummaryResponse getAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.BALANCE_ONLY);
     return toSummary(account);
   }
 
@@ -144,9 +202,15 @@ public class AccountService {
   // V4's trg_account_type_immutable / V24's trg_account_currency_immutable reject it at the DB
   // level, translated to a clean 409 by GlobalExceptionHandler - the same "let the DB enforce the
   // invariant, translate its rejection" pattern createAccount's own extension-row triggers rely on.
+  //
+  // US-03-03: gated at EDIT - the AC's "B can view it but not edit it" half. Checked after
+  // findAccountOrThrow (so a nonexistent/cross-workspace id still degrades to the same 404 it
+  // always has) but before any field is mutated.
   @Transactional
-  public AccountSummaryResponse updateAccount(UUID accountId, UpdateAccountRequest request) {
-    Account account = findAccountOrThrow(accountId);
+  public AccountSummaryResponse updateAccount(
+      UUID accountId, UpdateAccountRequest request, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
 
     account.setName(request.name());
     account.setAccountType(request.accountType());
@@ -167,8 +231,9 @@ public class AccountService {
   // list, so it's rejected the same way an out-of-table transition anywhere else in this codebase
   // is (see e.g. V4/V24's immutability triggers) - a structured 409, not a silent no-op.
   @Transactional
-  public AccountSummaryResponse archiveAccount(UUID accountId) {
-    Account account = findAccountOrThrow(accountId);
+  public AccountSummaryResponse archiveAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     // Checking specifically for "not ACTIVE" rather than "already ARCHIVED": status also admits
     // DELETED (V4's own CHECK constraint), which FR-STA-001 defines as terminal - reachable from
     // ACTIVE only, and reachable from nowhere once there. An "already ARCHIVED" check alone would
@@ -191,8 +256,9 @@ public class AccountService {
   // must be rejected the same structured way the UI-hidden path would have been, rather than
   // silently succeeding forever.
   @Transactional
-  public AccountSummaryResponse restoreAccount(UUID accountId) {
-    Account account = findAccountOrThrow(accountId);
+  public AccountSummaryResponse restoreAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     if (!ARCHIVED.equals(account.getStatus())) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Account is not archived.");
     }
@@ -211,12 +277,6 @@ public class AccountService {
     account = accountRepository.saveAndFlush(account);
 
     return toSummary(account);
-  }
-
-  private Account findAccountOrThrow(UUID accountId) {
-    return accountRepository
-        .findById(accountId)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found."));
   }
 
   private OffsetDateTime now() {
