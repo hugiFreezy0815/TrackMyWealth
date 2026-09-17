@@ -176,17 +176,27 @@ public class FxRateService {
    * {@code amount} in {@code baseCurrency} converted to {@code quoteCurrency}, using {@link
    * #getConversionRate}'s direct-pair-first resolution, rounded per this class's documented
    * NFR-CALC-007 money policy - applied once, here, never accumulated through the rate resolution
-   * itself. A caller that needs to know whether the underlying figure should be visibly marked as
-   * carried-forward or chained (PR-011) calls {@link #getConversionRate} for that metadata
-   * alongside this - no consumer needs both together yet, so this deliberately isn't bundled into
-   * one richer return type (see class Javadoc: no controller/consumer exists this sprint).
+   * itself. A caller that also needs the resolution's own metadata (whether it was carried-forward
+   * or chained, PR-011) alongside the converted amount - as {@code InstitutionService.getSummary}
+   * does - should call {@link #getConversionRate} once and pass its result to {@link #applyRate}
+   * instead, rather than calling this method a second time and re-resolving the same rate.
    */
   @Transactional(readOnly = true)
   public BigDecimal convert(
       BigDecimal amount, String baseCurrency, String quoteCurrency, LocalDate date, String source) {
+    return applyRate(amount, getConversionRate(baseCurrency, quoteCurrency, date, source));
+  }
+
+  /**
+   * Applies an already-resolved {@link CurrencyConversionResult} to {@code amount}, rounded per
+   * this class's documented NFR-CALC-007 money policy - the other half of {@link #convert}, split
+   * out so a caller that already called {@link #getConversionRate} for its metadata (carried-
+   * forward/chained marking, PR-011) doesn't pay for a second, identical rate resolution just to
+   * also get the converted amount.
+   */
+  public BigDecimal applyRate(BigDecimal amount, CurrencyConversionResult conversion) {
     requireNonNull(amount, "amount");
-    CurrencyConversionResult conversion =
-        getConversionRate(baseCurrency, quoteCurrency, date, source);
+    requireNonNull(conversion, "conversion");
     return amount.multiply(conversion.rate()).setScale(MONEY_SCALE, MONEY_ROUNDING);
   }
 

@@ -38,6 +38,15 @@ holds itself to for its own exemption list.
         <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
 
+    <!-- Same false positive as AssignAccountOwnershipRequest above: InstitutionSummaryResponse's
+         compact constructor already defensively copies accounts via List.copyOf before the field
+         is ever set. -->
+    <Match>
+        <Class name="com.trackmywealth.backend.dto.InstitutionSummaryResponse"/>
+        <Method name="accounts"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
     <!-- JwtService's constructor derives its signing key from configuration and has nothing to
          clean up if that fails - a malformed/missing secret should fail application startup
          immediately (fail-fast), not construct a partially-usable service. No finalizer exists

@@ -100,6 +100,12 @@ app:
       secret: ${JWT_SECRET:CHANGE_ME_IN_ENVIRONMENT_CONFIG_MIN_32_BYTES}
   deployment:
     topology: ${DEPLOYMENT_TOPOLOGY:self-hosted} # self-hosted | hosted (NFR-DEP-002)
+  fx:
+    # US-04-03: the fx_rate.source every currency-conversion caller queries against when no
+    # automated fetch job exists yet (EPIC 30) to make that choice moot - matches
+    # custom_asset_valuation.source's own "MANUAL" default for the same reason (self-hosted, no
+    # real data provider wired up yet). Revisit once EPIC 30 picks a real provider name.
+    default-source: ${FX_DEFAULT_SOURCE:MANUAL}
   cors:
     # Origins the browser-based web build of mobile/ is allowed to call this API from (see
     # SecurityConfig). Supports Spring's AntPathMatcher-style patterns (e.g. https://*.example.com).

@@ -3,15 +3,18 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
 import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
+import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.InstitutionService;
 import jakarta.validation.Valid;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -45,5 +48,11 @@ public class InstitutionController {
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(institutionService.createInstitution(request, actor.workspaceId()));
+  }
+
+  @GetMapping("/{institutionId}/summary")
+  public InstitutionSummaryResponse getSummary(
+      @PathVariable UUID institutionId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return institutionService.getSummary(institutionId, actor);
   }
 }

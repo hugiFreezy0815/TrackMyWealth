@@ -308,6 +308,25 @@ class FxRateServiceTest {
   }
 
   @Test
+  void applyRateGivesTheSameResultAsConvertWithoutReResolvingTheRate() {
+    // InstitutionService's own case: a caller that already called getConversionRate for its
+    // metadata (carriedForward/direct/intermediateCurrency) applies the same resolution's rate
+    // via applyRate instead of calling convert() a second time - must agree exactly with what
+    // convert() itself would have produced from scratch.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("USD", "CHF", today, "0.3333333333", SOURCE);
+
+    CurrencyConversionResult conversion =
+        fxRateService.getConversionRate("USD", "CHF", today, SOURCE);
+    BigDecimal applied = fxRateService.applyRate(BigDecimal.ONE, conversion);
+
+    assertThat(applied).isEqualByComparingTo("0.3333");
+    assertThat(applied.scale()).isEqualTo(4);
+    assertThat(applied)
+        .isEqualByComparingTo(fxRateService.convert(BigDecimal.ONE, "USD", "CHF", today, SOURCE));
+  }
+
+  @Test
   void sameCurrencyConversionIsAlwaysRateOneWithNoRateLookupNeeded() {
     // Code review finding on this PR: with no short-circuit, a same-currency pair with no direct
     // row stored would fall into the chain-fallback logic below and either 404 or silently
