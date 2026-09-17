@@ -12,12 +12,15 @@ import java.util.UUID;
  * <p><b>Scoped to what this codebase can actually resolve today:</b> a per-account current value
  * only exists for {@code CUSTOM_ASSET} accounts ({@code custom_asset_valuation}, US-05-05) - no
  * transaction ledger, position, price or daily-valuation feature has landed yet (EPIC 07/12/14/15
- * /16), so every other account type has no source to compute a value from. Such accounts still
- * appear in {@link #accounts()} (FR-INS-SUM-002's drill-down applies to every account in the
- * container, not only the ones currently priced) with {@code valueResolvable = false} and null
- * value fields, and are excluded from {@link #totalAssets()}/{@link #totalLiabilities()} rather
- * than silently counted as zero (PR-011, matching US-11-01's own documented edge case). {@link
- * #hasUnresolvedValues()} surfaces this at the headline level (FR-CON-007) whenever it happens.
+ * /16), so every other account type has no source to compute a value from. A resolvable account
+ * whose currency has no FX rate into the container currency yet is treated the same way (see {@code
+ * InstitutionSummaryService}'s own Javadoc). Both cases still appear in {@link #accounts()}
+ * (FR-INS-SUM-002's drill-down applies to every account in the container, not only the ones
+ * currently priced) with {@code valueResolvable = false} - see {@link
+ * AccountLine#valueResolvable()} for exactly which fields are still populated - and are excluded
+ * from {@link #totalAssets()}/{@link #totalLiabilities()} rather than silently counted as zero
+ * (PR-011, matching US-11-01's own documented edge case). {@link #hasUnresolvedValues()} surfaces
+ * this at the headline level (FR-CON-007) whenever it happens.
  *
  * <p>Also does not attempt to surface "unreconciled" status (FR-CON-007's other named condition):
  * no reconciliation feature exists yet either (EPIC 25) - only the FX-staleness half of that
@@ -55,19 +58,25 @@ public record InstitutionSummaryResponse(
   /**
    * One contributing (or would-be contributing) account (FR-INS-SUM-002's drill-down).
    *
-   * @param nativeValue the account's own current value in {@code nativeCurrency}; {@code null} when
-   *     {@code valueResolvable} is false
+   * @param nativeValue the account's own current value in {@code nativeCurrency}; {@code null} only
+   *     when no value is known for this account at all (see {@code valueResolvable}) - still
+   *     populated even when {@code valueResolvable} is false because the value is known but not
+   *     currently convertible to the container currency (no FX rate exists for the pair yet)
    * @param convertedValue {@code nativeValue} converted to the summary's container currency; {@code
-   *     null} when {@code valueResolvable} is false
+   *     null} whenever {@code valueResolvable} is false, including the known-but-unconvertible case
+   *     above
    * @param fxRateUsed the rate applied to convert {@code nativeValue}; {@code null} when {@code
    *     nativeCurrency} already equals the container currency (no conversion was needed, so there
-   *     is no rate to inspect) or the value itself is unresolvable
+   *     is no rate to inspect) or {@code convertedValue} is null
    * @param fxRateDate the date {@code fxRateUsed} actually carries (FR-INS-SUM-004) - null under
    *     the same conditions as {@code fxRateUsed}
    * @param carriedForward true when {@code fxRateUsed} was carried forward rather than exact for
    *     today (FR-CUR-012/PR-011); always false when no conversion was needed
-   * @param valueResolvable false when this account's type has no implemented value source yet (see
-   *     class Javadoc) or it does but no valuation has been recorded for it
+   * @param valueResolvable true only when {@code convertedValue} is present - i.e. this account has
+   *     a known native value AND a usable rate into the container currency. False when: the
+   *     account's type has no implemented value source yet (see class Javadoc), it does but no
+   *     valuation has been recorded for it, or a value is known but no FX rate exists yet for its
+   *     currency pair into the container currency.
    */
   public record AccountLine(
       UUID accountId,

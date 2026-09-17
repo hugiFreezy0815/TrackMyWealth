@@ -185,6 +185,28 @@ class InstitutionSummaryControllerTest {
   }
 
   @Test
+  void aResolvedAccountWithNoFxRateAtAllIsUnresolvedNotAFailedRequest() {
+    // Regression: FxRateService.getConversionRate() 404s when no direct or chained rate exists at
+    // all (not merely stale) - that must degrade to an unresolved line, the same as no valuation
+    // ever having been recorded, never abort the whole summary request.
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(token, "CHF");
+    AccountSummaryResponse account = createCustomAssetAccount(token, institution.id(), "USD");
+    recordValuation(token, account.id(), new BigDecimal("1000.00"));
+    // Deliberately no seedFxRate call - USD/CHF has no rate at all, not even a stale one.
+
+    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+
+    assertThat(summary.hasUnresolvedValues()).isTrue();
+    assertThat(summary.totalAssets()).isEqualByComparingTo("0");
+    InstitutionSummaryResponse.AccountLine line = summary.accounts().get(0);
+    assertThat(line.valueResolvable()).isFalse();
+    // The native value is still known and shown - only the conversion into CHF is missing.
+    assertThat(line.nativeValue()).isEqualByComparingTo("1000.00");
+    assertThat(line.convertedValue()).isNull();
+  }
+
+  @Test
   void anUnresolvableAccountIsExcludedFromTotalsButStillListedForDrillDown() {
     // CASH has no implemented value source yet (no transaction ledger, EPIC 07) - it must appear
     // in the drill-down so a user can see why, not be silently treated as worth zero (PR-011).

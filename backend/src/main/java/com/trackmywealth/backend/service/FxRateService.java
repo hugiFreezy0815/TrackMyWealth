@@ -48,9 +48,13 @@ public class FxRateService {
   // accumulated through intermediate steps (getConversionRate below multiplies two full-precision
   // fx_rate.rate values, NUMERIC(20,10), with no rounding in between; only convert() rounds, and
   // only the final money amount, never the rate itself). Matches this codebase's existing
-  // NUMERIC(20,4) money-storage convention (see CLAUDE.md).
-  private static final int MONEY_SCALE = 4;
-  private static final RoundingMode MONEY_ROUNDING = RoundingMode.HALF_UP;
+  // NUMERIC(20,4) money-storage convention (see CLAUDE.md). Package-private, not private: any
+  // other service in this package (e.g. InstitutionSummaryService) that rounds a
+  // getConversionRate()-derived amount itself, rather than calling convert(), must apply this
+  // exact policy too - referencing these constants directly instead of re-declaring them is what
+  // keeps the two from silently drifting apart.
+  static final int MONEY_SCALE = 4;
+  static final RoundingMode MONEY_ROUNDING = RoundingMode.HALF_UP;
 
   private final FxRateRepository fxRateRepository;
 
@@ -108,10 +112,32 @@ public class FxRateService {
    * @throws ResponseStatusException 400, same as {@link #getRate}
    * @throws ResponseStatusException 404 if neither a direct pair nor a complete chain through
    *     {@value #INTERMEDIATE_CURRENCY} exists (PR-011: refuse rather than silently default to 1.0,
-   *     in any chain)
+   *     in any chain) - a caller that would rather treat "no rate exists" as one possible outcome
+   *     among several (e.g. an unresolvable line in a larger aggregation, not a failed request)
+   *     should call {@link #tryGetConversionRate} instead of catching this: catching a
+   *     {@code @Transactional} method's exception does not undo Spring's rollback-only marking of
+   *     the enclosing transaction if the caller shares it (the two run in the same physical
+   *     transaction by default, {@code REQUIRED} propagation) - the caller's own commit would then
+   *     fail with {@code UnexpectedRollbackException} regardless of the catch.
    */
   @Transactional(readOnly = true)
   public CurrencyConversionResult getConversionRate(
+      String baseCurrency, String quoteCurrency, LocalDate date, String source) {
+    return tryGetConversionRate(baseCurrency, quoteCurrency, date, source)
+        .orElseThrow(() -> noConversionRateAvailable(baseCurrency, quoteCurrency, source, date));
+  }
+
+  /**
+   * Non-throwing counterpart of {@link #getConversionRate} - {@link Optional#empty()} instead of a
+   * 404 when neither a direct pair nor a complete chain exists, for a caller that needs to treat
+   * "no rate exists" as a value to branch on rather than an exception to propagate (see {@link
+   * #getConversionRate}'s own Javadoc for why catching the throwing form doesn't safely substitute
+   * for this within a shared transaction). Still throws for a genuinely malformed request (400) -
+   * that is a defect in the caller, not an ordinary "not found yet" outcome, and must not be
+   * swallowed the same way.
+   */
+  @Transactional(readOnly = true)
+  public Optional<CurrencyConversionResult> tryGetConversionRate(
       String baseCurrency, String quoteCurrency, LocalDate date, String source) {
     requireValidCurrencyCode(baseCurrency, "baseCurrency");
     requireValidCurrencyCode(quoteCurrency, "quoteCurrency");
@@ -127,55 +153,55 @@ public class FxRateService {
     // happens to multiply to - correct only if those two independently-sourced rates are exact
     // reciprocals, which real FX data has no reason to be (found by review on this PR).
     if (baseCurrency.equals(quoteCurrency)) {
-      return new CurrencyConversionResult(
-          BigDecimal.ONE, baseCurrency, quoteCurrency, date, true, null, false, date);
+      return Optional.of(
+          new CurrencyConversionResult(
+              BigDecimal.ONE, baseCurrency, quoteCurrency, date, true, null, false, date));
     }
 
     Optional<FxRate> direct = findOnOrBefore(baseCurrency, quoteCurrency, source, date);
     if (direct.isPresent()) {
       FxRate fxRate = direct.get();
-      return new CurrencyConversionResult(
-          fxRate.getRate(),
-          baseCurrency,
-          quoteCurrency,
-          date,
-          true,
-          null,
-          !fxRate.getRateDate().equals(date),
-          fxRate.getRateDate());
+      return Optional.of(
+          new CurrencyConversionResult(
+              fxRate.getRate(),
+              baseCurrency,
+              quoteCurrency,
+              date,
+              true,
+              null,
+              !fxRate.getRateDate().equals(date),
+              fxRate.getRateDate()));
     }
 
     // One side is already the fallback intermediate - there is no third currency left to chain
     // through, so a missing direct pair here can never be recovered by chaining via itself.
     if (INTERMEDIATE_CURRENCY.equals(baseCurrency) || INTERMEDIATE_CURRENCY.equals(quoteCurrency)) {
-      throw noConversionRateAvailable(baseCurrency, quoteCurrency, source, date);
+      return Optional.empty();
     }
 
-    FxRate firstLeg =
-        findOnOrBefore(baseCurrency, INTERMEDIATE_CURRENCY, source, date)
-            .orElseThrow(
-                () -> noConversionRateAvailable(baseCurrency, quoteCurrency, source, date));
-    FxRate secondLeg =
-        findOnOrBefore(INTERMEDIATE_CURRENCY, quoteCurrency, source, date)
-            .orElseThrow(
-                () -> noConversionRateAvailable(baseCurrency, quoteCurrency, source, date));
+    Optional<FxRate> firstLeg = findOnOrBefore(baseCurrency, INTERMEDIATE_CURRENCY, source, date);
+    Optional<FxRate> secondLeg = findOnOrBefore(INTERMEDIATE_CURRENCY, quoteCurrency, source, date);
+    if (firstLeg.isEmpty() || secondLeg.isEmpty()) {
+      return Optional.empty();
+    }
 
-    BigDecimal chainedRate = firstLeg.getRate().multiply(secondLeg.getRate());
+    BigDecimal chainedRate = firstLeg.get().getRate().multiply(secondLeg.get().getRate());
     boolean carriedForward =
-        !firstLeg.getRateDate().equals(date) || !secondLeg.getRateDate().equals(date);
+        !firstLeg.get().getRateDate().equals(date) || !secondLeg.get().getRateDate().equals(date);
     LocalDate chainRateDate =
-        firstLeg.getRateDate().isBefore(secondLeg.getRateDate())
-            ? firstLeg.getRateDate()
-            : secondLeg.getRateDate();
-    return new CurrencyConversionResult(
-        chainedRate,
-        baseCurrency,
-        quoteCurrency,
-        date,
-        false,
-        INTERMEDIATE_CURRENCY,
-        carriedForward,
-        chainRateDate);
+        firstLeg.get().getRateDate().isBefore(secondLeg.get().getRateDate())
+            ? firstLeg.get().getRateDate()
+            : secondLeg.get().getRateDate();
+    return Optional.of(
+        new CurrencyConversionResult(
+            chainedRate,
+            baseCurrency,
+            quoteCurrency,
+            date,
+            false,
+            INTERMEDIATE_CURRENCY,
+            carriedForward,
+            chainRateDate));
   }
 
   /**

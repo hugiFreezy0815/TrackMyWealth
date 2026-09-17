@@ -14,10 +14,12 @@ import com.trackmywealth.backend.repository.CustomAssetValuationRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,7 +31,12 @@ import org.springframework.web.server.ResponseStatusException;
  * net value in the container currency (FR-INS-006/FR-INS-SUM-001..004). See {@link
  * InstitutionSummaryResponse}'s own Javadoc for the current, deliberate scope limit - only {@code
  * CUSTOM_ASSET} accounts (the one account type with an implemented value source, US-05-05) ever
- * contribute a resolved value; every other account type appears in the drill-down unresolved.
+ * contribute a resolved value; every other account type appears in the drill-down unresolved. A
+ * resolvable account whose native currency has no FX rate (direct or chained) into the container
+ * currency yet is treated the same way - {@link AccountLine#nativeValue()} is still shown (we do
+ * know it), but {@link AccountLine#valueResolvable()} is false and it is excluded from the totals,
+ * never allowed to fail the whole request the way an uncaught 404 from {@link
+ * FxRateService#getConversionRate} otherwise would.
  *
  * <p>Authorization is per-account, not a single institution-level gate: unlike {@code
  * AccountController}'s endpoints (gated by {@link AccessControlService#requireInstitutionAccess}
@@ -42,6 +49,12 @@ import org.springframework.web.server.ResponseStatusException;
  * BALANCE_ONLY}) is silently dropped from both the totals and the drill-down list - the same
  * treatment as an unresolvable value, not a partial-denial error, since a summary is inherently a
  * "show me everything I can see" view rather than a single indivisible resource.
+ *
+ * <p>Valuations for every visible {@code manualValuation} account are fetched in one bulk query,
+ * and each distinct native/container currency pair is resolved via {@link FxRateService} at most
+ * once and reused across every account sharing it - one query per <em>distinct currency</em>
+ * needing conversion, not one per account, since an institution can plausibly hold several accounts
+ * in the same non-container currency.
  */
 @Service
 public class InstitutionSummaryService {
@@ -53,7 +66,6 @@ public class InstitutionSummaryService {
   private static final String FX_SOURCE = "MANUAL";
   private static final String ACTIVE = "ACTIVE";
   private static final String ASSET = "ASSET";
-  private static final int MONEY_SCALE = 4;
 
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final AccountRepository accountRepository;
@@ -90,24 +102,37 @@ public class InstitutionSummaryService {
     String containerCurrency = institution.getContainerCurrency();
     LocalDate today = LocalDate.now();
 
+    List<Account> visibleAccounts = new ArrayList<>();
+    for (Account account :
+        accountRepository.findByFinancialInstitutionIdAndStatus(institutionId, ACTIVE)) {
+      if (!AccessLevelValues.NO_ACCESS.equals(
+          accessControlService.accountAccessLevel(memberId, account))) {
+        visibleAccounts.add(account);
+      }
+    }
+
+    Map<UUID, BigDecimal> nativeValuesByAccountId = bulkResolveNativeValues(visibleAccounts, today);
+    Map<String, Optional<CurrencyConversionResult>> conversionsByNativeCurrency =
+        bulkResolveConversions(visibleAccounts, nativeValuesByAccountId, containerCurrency, today);
+
     List<AccountLine> lines = new ArrayList<>();
     List<InstitutionSummaryContribution> contributions = new ArrayList<>();
     boolean hasUnresolvedValues = false;
     boolean hasCarriedForwardFxRate = false;
 
-    for (Account account :
-        accountRepository.findByFinancialInstitutionIdAndStatus(institutionId, ACTIVE)) {
-      if (!AccessLevelValues.NO_ACCESS.equals(
-          accessControlService.accountAccessLevel(memberId, account))) {
-        AccountLine line = toLine(account, containerCurrency, today);
-        lines.add(line);
-        if (line.valueResolvable()) {
-          contributions.add(
-              new InstitutionSummaryContribution(line.nature(), line.convertedValue()));
-          hasCarriedForwardFxRate = hasCarriedForwardFxRate || line.carriedForward();
-        } else {
-          hasUnresolvedValues = true;
-        }
+    for (Account account : visibleAccounts) {
+      AccountLine line =
+          toLine(
+              account,
+              containerCurrency,
+              nativeValuesByAccountId.get(account.getId()),
+              conversionsByNativeCurrency);
+      lines.add(line);
+      if (line.valueResolvable()) {
+        contributions.add(new InstitutionSummaryContribution(line.nature(), line.convertedValue()));
+        hasCarriedForwardFxRate = hasCarriedForwardFxRate || line.carriedForward();
+      } else {
+        hasUnresolvedValues = true;
       }
     }
 
@@ -123,20 +148,62 @@ public class InstitutionSummaryService {
         lines);
   }
 
-  private AccountLine toLine(Account account, String containerCurrency, LocalDate asOf) {
-    BigDecimal nativeValue = resolveNativeValue(account, asOf);
+  // One bulk query instead of one per account (see class Javadoc). US-04-03's current scope limit
+  // (see InstitutionSummaryResponse's Javadoc): only manualValuation (CUSTOM_ASSET-capability)
+  // accounts have any implemented value source. Branches on the capability flag, never on
+  // accountType itself (ArchitectureTest's only_account_service_branches_on_account_type rule
+  // forbids calling Account.getAccountType() outside AccountService at all, not just switching on
+  // it).
+  private Map<UUID, BigDecimal> bulkResolveNativeValues(List<Account> accounts, LocalDate asOf) {
+    List<UUID> manualValuationAccountIds =
+        accounts.stream().filter(Account::isManualValuation).map(Account::getId).toList();
+    if (manualValuationAccountIds.isEmpty()) {
+      return Map.of();
+    }
+
+    Map<UUID, BigDecimal> nativeValuesByAccountId = new HashMap<>();
+    for (CustomAssetValuation valuation :
+        customAssetValuationRepository
+            .findByAccountIdInAndValuationDateLessThanEqualOrderByValuationDateDesc(
+                manualValuationAccountIds, asOf)) {
+      // See the repository method's own Javadoc: the global valuationDate-DESC ordering
+      // guarantees the first row seen for a given accountId is already its latest one.
+      nativeValuesByAccountId.putIfAbsent(valuation.getAccount().getId(), valuation.getValue());
+    }
+    return nativeValuesByAccountId;
+  }
+
+  // Resolves at most one CurrencyConversionResult per distinct native currency actually needing
+  // conversion (native currency present, resolved, and different from the container currency) -
+  // reused across every account sharing that currency, rather than one FxRateService call per
+  // account. A missing rate (404) is recorded as Optional.empty() here, not thrown: toLine() below
+  // must be able to render an unresolved line for it rather than the whole request failing.
+  private Map<String, Optional<CurrencyConversionResult>> bulkResolveConversions(
+      List<Account> accounts,
+      Map<UUID, BigDecimal> nativeValuesByAccountId,
+      String containerCurrency,
+      LocalDate asOf) {
+    Map<String, Optional<CurrencyConversionResult>> conversionsByNativeCurrency = new HashMap<>();
+    for (Account account : accounts) {
+      String nativeCurrency = account.getNativeCurrency();
+      if (nativeValuesByAccountId.containsKey(account.getId())
+          && !nativeCurrency.equals(containerCurrency)) {
+        conversionsByNativeCurrency.computeIfAbsent(
+            nativeCurrency,
+            currency ->
+                fxRateService.tryGetConversionRate(currency, containerCurrency, asOf, FX_SOURCE));
+      }
+    }
+    return conversionsByNativeCurrency;
+  }
+
+  private AccountLine toLine(
+      Account account,
+      String containerCurrency,
+      BigDecimal nativeValue,
+      Map<String, Optional<CurrencyConversionResult>> conversionsByNativeCurrency) {
     if (nativeValue == null) {
-      return new AccountLine(
-          account.getId(),
-          account.getName(),
-          account.getNature(),
-          account.getNativeCurrency(),
-          null,
-          null,
-          null,
-          null,
-          false,
-          false);
+      return unresolvedLine(account, null);
     }
 
     if (account.getNativeCurrency().equals(containerCurrency)) {
@@ -155,11 +222,19 @@ public class InstitutionSummaryService {
           true);
     }
 
-    CurrencyConversionResult conversion =
-        fxRateService.getConversionRate(
-            account.getNativeCurrency(), containerCurrency, asOf, FX_SOURCE);
+    Optional<CurrencyConversionResult> conversion =
+        conversionsByNativeCurrency.get(account.getNativeCurrency());
+    if (conversion == null || conversion.isEmpty()) {
+      // The value itself is known - just not convertible to the container currency right now
+      // (see class Javadoc) - so the native figure is still worth showing.
+      return unresolvedLine(account, nativeValue);
+    }
+
+    CurrencyConversionResult rate = conversion.get();
     BigDecimal convertedValue =
-        nativeValue.multiply(conversion.rate()).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        nativeValue
+            .multiply(rate.rate())
+            .setScale(FxRateService.MONEY_SCALE, FxRateService.MONEY_ROUNDING);
     return new AccountLine(
         account.getId(),
         account.getName(),
@@ -167,26 +242,24 @@ public class InstitutionSummaryService {
         account.getNativeCurrency(),
         nativeValue,
         convertedValue,
-        conversion.rate(),
-        conversion.rateDate(),
-        conversion.carriedForward(),
+        rate.rate(),
+        rate.rateDate(),
+        rate.carriedForward(),
         true);
   }
 
-  // US-04-03's current scope limit (see InstitutionSummaryResponse's Javadoc): only manualValuation
-  // (CUSTOM_ASSET-capability) accounts have any implemented value source. Branches on the
-  // capability flag, never on accountType itself (ArchitectureTest's
-  // only_account_service_branches_on_account_type rule forbids calling Account.getAccountType()
-  // outside AccountService at all, not just switching on it).
-  private BigDecimal resolveNativeValue(Account account, LocalDate asOf) {
-    if (!account.isManualValuation()) {
-      return null;
-    }
-    return customAssetValuationRepository
-        .findFirstByAccountIdAndValuationDateLessThanEqualOrderByValuationDateDesc(
-            account.getId(), asOf)
-        .map(CustomAssetValuation::getValue)
-        .orElse(null);
+  private AccountLine unresolvedLine(Account account, BigDecimal nativeValue) {
+    return new AccountLine(
+        account.getId(),
+        account.getName(),
+        account.getNature(),
+        account.getNativeCurrency(),
+        nativeValue,
+        null,
+        null,
+        null,
+        false,
+        false);
   }
 
   // Package-private and dependency-free (no Spring, no DB) specifically so the negative-net-value

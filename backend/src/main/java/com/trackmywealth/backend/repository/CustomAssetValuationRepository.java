@@ -19,4 +19,14 @@ public interface CustomAssetValuationRepository extends JpaRepository<CustomAsse
   Optional<CustomAssetValuation>
       findFirstByAccountIdAndValuationDateLessThanEqualOrderByValuationDateDesc(
           UUID accountId, LocalDate asOfDate);
+
+  // US-04-03: the bulk equivalent of the single-account query above, for a caller (
+  // InstitutionSummaryService) resolving many accounts' current values in one summary request - one
+  // query instead of one per account. Globally ordered by valuationDate DESC (not grouped by
+  // account first), so a caller must pick, per accountId, only the first row it encounters while
+  // iterating - by that same global ordering, the first row seen for any given accountId is
+  // necessarily that account's own latest valuation on or before asOfDate, regardless of how other
+  // accounts' rows are interleaved.
+  List<CustomAssetValuation> findByAccountIdInAndValuationDateLessThanEqualOrderByValuationDateDesc(
+      List<UUID> accountIds, LocalDate asOfDate);
 }
