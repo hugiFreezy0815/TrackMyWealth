@@ -40,9 +40,15 @@ public record InstitutionSummaryResponse(
    *     {@code containerCurrency} (FR-INS-SUM-004) - {@code null} when no conversion was needed
    *     ({@code nativeCurrency} already equals the container currency) or when {@code valueKnown}
    *     is {@code false}
-   * @param conversionRateDate the date that rate was resolved for (FR-CUR-011: the valuation-date
-   *     convention - see {@code docs/architecture/calculation-methodology.md}) - {@code null} under
-   *     the same conditions as {@code conversionRate}
+   * @param conversionRateDate the date the conversion was requested for (today - FR-CUR-011's
+   *     valuation-date convention, see {@code docs/architecture/calculation-methodology.md}), not
+   *     necessarily the date the underlying stored rate is itself dated to - see {@code
+   *     conversionRateCarriedForward} for that. {@code null} under the same conditions as {@code
+   *     conversionRate}
+   * @param conversionRateCarriedForward {@code true} when the rate used was carried forward from an
+   *     earlier date rather than resolved exactly for {@code conversionRateDate} (FR-CUR-012/PR-011
+   *     - {@code FxRateService.CurrencyConversionResult#carriedForward()}) - always {@code false}
+   *     when {@code conversionRate} is {@code null}
    * @param valueKnown {@code false} when this account's type has no value source yet in this
    *     codebase (every type except {@code CUSTOM_ASSET}, {@code MORTGAGE} and {@code LOAN}, or a
    *     {@code CUSTOM_ASSET} account with no valuation recorded at all) - excluded from the
@@ -56,5 +62,6 @@ public record InstitutionSummaryResponse(
       BigDecimal valueInContainerCurrency,
       BigDecimal conversionRate,
       LocalDate conversionRateDate,
+      boolean conversionRateCarriedForward,
       boolean valueKnown) {}
 }

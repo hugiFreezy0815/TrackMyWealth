@@ -391,6 +391,46 @@ class InstitutionControllerTest {
     assertThat(contribution.valueInContainerCurrency()).isEqualByComparingTo("900.0000");
     assertThat(contribution.conversionRate()).isEqualByComparingTo("0.9000000000");
     assertThat(contribution.conversionRateDate()).isEqualTo(LocalDate.now());
+    assertThat(contribution.conversionRateCarriedForward()).isFalse();
+  }
+
+  @Test
+  void aCarriedForwardFxRateIsVisiblyMarkedNotPresentedAsFresh() {
+    // FR-CUR-012/PR-011, and the specific bug a code review of this PR found: the only stored
+    // USD/CHF rate is a week old (no row for today) - convert() must still succeed via
+    // carry-forward, but the summary must say so, not present the resulting figure identically to
+    // one backed by an exact same-day rate.
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "US Broker", null, null, null, null, "CHF"));
+    AccountSummaryResponse account =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                institution.id(),
+                "US Property",
+                "CUSTOM_ASSET",
+                "USD",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "REAL_ESTATE"));
+    recordValuation(
+        token,
+        account.id(),
+        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("1000")));
+    seedFxRate("USD", "CHF", LocalDate.now().minusWeeks(1), "0.9000000000");
+
+    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+
+    InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
+    assertThat(contribution.valueInContainerCurrency()).isEqualByComparingTo("900.0000");
+    assertThat(contribution.conversionRateCarriedForward()).isTrue();
   }
 
   @Test

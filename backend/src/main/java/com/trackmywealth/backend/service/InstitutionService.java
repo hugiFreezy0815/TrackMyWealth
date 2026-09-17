@@ -160,7 +160,8 @@ public class InstitutionService {
         actor, institution, AccessLevelValues.BALANCE_ONLY);
 
     List<Account> accounts =
-        accountRepository.findByFinancialInstitutionIdAndStatus(institutionId, ACTIVE);
+        accountRepository.findByFinancialInstitutionIdAndStatusOrderByCreatedAtAsc(
+            institutionId, ACTIVE);
     LocalDate asOf = LocalDate.now();
 
     BigDecimal totalAssets = BigDecimal.ZERO;
@@ -206,6 +207,7 @@ public class InstitutionService {
           null,
           null,
           null,
+          false,
           false);
     }
 
@@ -218,23 +220,21 @@ public class InstitutionService {
           nativeValue.get(),
           null,
           null,
+          false,
           true);
     }
 
     // FR-CUR-011/US-06-03: a current holding's value converts at the valuation date (today), not
     // at any date tied to when the account or its value was originally recorded - see
-    // docs/architecture/calculation-methodology.md.
+    // docs/architecture/calculation-methodology.md. Resolved once, via getConversionRate, then
+    // applied via applyRate - not FxRateService.convert(), which would re-resolve the same rate a
+    // second time (a prior review round found this doubling every foreign-currency account's FX
+    // lookups for no reason).
     try {
       CurrencyConversionResult conversion =
           fxRateService.getConversionRate(
               account.getNativeCurrency(), containerCurrency, asOf, fxDefaultSource);
-      BigDecimal convertedValue =
-          fxRateService.convert(
-              nativeValue.get(),
-              account.getNativeCurrency(),
-              containerCurrency,
-              asOf,
-              fxDefaultSource);
+      BigDecimal convertedValue = fxRateService.applyRate(nativeValue.get(), conversion);
       return new AccountContribution(
           account.getId(),
           account.getName(),
@@ -243,6 +243,7 @@ public class InstitutionService {
           convertedValue,
           conversion.rate(),
           asOf,
+          conversion.carriedForward(),
           true);
     } catch (ResponseStatusException e) {
       // PR-012: no FX rate available for this pair at all - degrade this one account to unknown
@@ -257,6 +258,7 @@ public class InstitutionService {
             null,
             null,
             null,
+            false,
             false);
       }
       throw e;
