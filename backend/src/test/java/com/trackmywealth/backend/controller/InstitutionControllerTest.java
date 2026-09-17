@@ -2,16 +2,30 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
+import com.trackmywealth.backend.dto.CreateAccountRequest;
+import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
+import com.trackmywealth.backend.dto.CreateUserRequest;
+import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
 import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
+import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
+import com.trackmywealth.backend.dto.LoginRequest;
+import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
+import com.trackmywealth.backend.repository.FxRateRepository;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +46,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * institution, both from a catalogue entry and as a custom one. {@code institution_catalogue} is
  * shared, non-tenant-scoped seed data (V19) - never truncated between tests, unlike every
  * workspace-scoped table below.
+ *
+ * <p>US-04-03's DoD scenario ({@link #summaryAggregatesAssetsAndLiabilitiesIntoANegativeNetValue})
+ * substitutes a {@code CUSTOM_ASSET} for the story's own "current account" example and a {@code
+ * MORTGAGE} for its liability, since neither cash-account balances (EPIC 07) nor amortized loan
+ * balances (EPIC 10) exist in this codebase yet - see {@code InstitutionService.getSummary}'s own
+ * Javadoc. The numbers (EUR 2,000 asset, EUR 300,000 liability, EUR -298,000 net) are the story's
+ * own, so this is still the literal scenario, just backed by the two account types that actually
+ * have a real value source today.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -52,9 +74,12 @@ class InstitutionControllerTest {
     registry.add("app.rate-limit.enabled", () -> "false");
   }
 
+  private static final String SECOND_MEMBER_PASSWORD = "correct-horse-battery-staple";
+
   @LocalServerPort int port;
 
   @Autowired FinancialInstitutionRepository financialInstitutionRepository;
+  @Autowired FxRateRepository fxRateRepository;
   @Autowired DataSource dataSource;
 
   @BeforeEach
@@ -72,6 +97,13 @@ class InstitutionControllerTest {
         Statement statement = connection.createStatement()) {
       for (String table :
           List.of(
+              "fx_rate",
+              "sharing_grant",
+              "account_ownership",
+              "custom_asset_valuation",
+              "account_custom_asset",
+              "account_mortgage",
+              "account",
               "admin_audit_log",
               "user_session",
               "refresh_token",
@@ -254,6 +286,236 @@ class InstitutionControllerTest {
   }
 
   @Test
+  void summaryOfAnInstitutionWithNoAccountsIsValidAndAllZero() {
+    // C7: a container with zero accounts must show a valid, empty summary, not an error.
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "Empty Bank", null, null, null, null, "CHF"));
+
+    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+
+    assertThat(summary.totalAssets()).isEqualByComparingTo("0");
+    assertThat(summary.totalLiabilities()).isEqualByComparingTo("0");
+    assertThat(summary.netValue()).isEqualByComparingTo("0");
+    assertThat(summary.complete()).isTrue();
+    assertThat(summary.accounts()).isEmpty();
+  }
+
+  @Test
+  void summaryAggregatesAssetsAndLiabilitiesIntoANegativeNetValue() {
+    // The story's own DoD scenario, exact numbers - see this class's own Javadoc for why a
+    // CUSTOM_ASSET and a MORTGAGE stand in for its "current account" and "mortgage" examples.
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "Sparkasse", "DE", "BANK", null, null, "EUR"));
+    AccountSummaryResponse asset =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                institution.id(),
+                "Family Home",
+                "CUSTOM_ASSET",
+                "EUR",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "REAL_ESTATE"));
+    recordValuation(
+        token,
+        asset.id(),
+        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("2000")));
+    createAccount(
+        token,
+        new CreateAccountRequest(
+            institution.id(),
+            "Home Mortgage",
+            "MORTGAGE",
+            "EUR",
+            null,
+            null,
+            new BigDecimal("300000"),
+            new BigDecimal("1.5"),
+            null,
+            null));
+
+    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+
+    assertThat(summary.totalAssets()).isEqualByComparingTo("2000");
+    assertThat(summary.totalLiabilities()).isEqualByComparingTo("300000");
+    assertThat(summary.netValue()).isEqualByComparingTo("-298000");
+    assertThat(summary.complete()).isTrue();
+    assertThat(summary.accounts()).hasSize(2);
+  }
+
+  @Test
+  void foreignCurrencyAccountsConvertUsingTheDirectPairAndExposeTheRateUsed() {
+    // AC #2: FR-INS-SUM-004/FR-CUR-011 - the rate/date used must be inspectable.
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "US Broker", null, null, null, null, "CHF"));
+    AccountSummaryResponse account =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                institution.id(),
+                "US Property",
+                "CUSTOM_ASSET",
+                "USD",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "REAL_ESTATE"));
+    recordValuation(
+        token,
+        account.id(),
+        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("1000")));
+    seedFxRate("USD", "CHF", LocalDate.now(), "0.9000000000");
+
+    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+
+    assertThat(summary.totalAssets()).isEqualByComparingTo("900.0000");
+    InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
+    assertThat(contribution.valueInContainerCurrency()).isEqualByComparingTo("900.0000");
+    assertThat(contribution.conversionRate()).isEqualByComparingTo("0.9000000000");
+    assertThat(contribution.conversionRateDate()).isEqualTo(LocalDate.now());
+  }
+
+  @Test
+  void accountsWithNoValueSourceAreExcludedFromTotalsAndMarkTheSummaryIncomplete() {
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "Mixed Bank", null, null, null, null, "CHF"));
+    createAccount(
+        token,
+        new CreateAccountRequest(
+            institution.id(),
+            "Everyday Checking",
+            "CASH",
+            "CHF",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null));
+    AccountSummaryResponse asset =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                institution.id(),
+                "Watch Collection",
+                "CUSTOM_ASSET",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "COLLECTIBLE"));
+    recordValuation(
+        token,
+        asset.id(),
+        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("5000")));
+
+    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+
+    assertThat(summary.complete()).isFalse();
+    assertThat(summary.totalAssets()).isEqualByComparingTo("5000");
+    assertThat(summary.accounts())
+        .hasSize(2)
+        .anySatisfy(
+            contribution -> {
+              assertThat(contribution.name()).isEqualTo("Everyday Checking");
+              assertThat(contribution.valueKnown()).isFalse();
+              assertThat(contribution.valueInContainerCurrency()).isNull();
+            });
+  }
+
+  @Test
+  void archivedAccountsAreExcludedFromTheSummaryEntirely() {
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "Archiving Bank", null, null, null, null, "CHF"));
+    AccountSummaryResponse asset =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                institution.id(),
+                "Old Watch",
+                "CUSTOM_ASSET",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "COLLECTIBLE"));
+    recordValuation(
+        token,
+        asset.id(),
+        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("1000")));
+    client(token).post().uri("/api/v1/accounts/" + asset.id() + "/archive").exchange();
+
+    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+
+    assertThat(summary.accounts()).isEmpty();
+    assertThat(summary.totalAssets()).isEqualByComparingTo("0");
+    assertThat(summary.complete()).isTrue();
+  }
+
+  @Test
+  void summaryOfAnUnknownInstitutionIsNotFound() {
+    String token = bootstrapAdministrator();
+
+    client(token)
+        .get()
+        .uri("/api/v1/institutions/" + UUID.randomUUID() + "/summary")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void aMemberWithNoGrantCannotSeeAnotherMembersInstitutionSummary() {
+    // Proves AccessControlService is actually wired in, not just compiling: once a second member
+    // exists, the admin's institution is no longer implicitly visible to them (US-03-03).
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution =
+        createInstitution(
+            adminToken,
+            new CreateFinancialInstitutionRequest(
+                null, "Admin's Bank", null, null, null, null, "CHF"));
+    createSecondMember(adminToken, "partner@example.com");
+    String partnerToken = login("partner@example.com", SECOND_MEMBER_PASSWORD);
+
+    client(partnerToken)
+        .get()
+        .uri("/api/v1/institutions/" + institution.id() + "/summary")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
   void anonymousRequestIsUnauthorized() {
     RestTestClient.bindToServer()
         .baseUrl("http://localhost:%d".formatted(port))
@@ -369,6 +631,87 @@ class InstitutionControllerTest {
   }
 
   private record PageResult<T>(List<T> content, long totalElements) {}
+
+  private InstitutionSummaryResponse getSummary(String token, UUID institutionId) {
+    return client(token)
+        .get()
+        .uri("/api/v1/institutions/" + institutionId + "/summary")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(InstitutionSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private AccountSummaryResponse createAccount(String token, CreateAccountRequest request) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private CustomAssetValuationResponse recordValuation(
+      String token, UUID accountId, CreateCustomAssetValuationRequest request) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/valuations")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(CustomAssetValuationResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private void seedFxRate(String base, String quote, LocalDate date, String rate) {
+    FxRate fxRate = new FxRate();
+    fxRate.setBaseCurrency(base);
+    fxRate.setQuoteCurrency(quote);
+    fxRate.setRateDate(date);
+    fxRate.setRate(new BigDecimal(rate));
+    fxRate.setSource("MANUAL"); // matches app.fx.default-source's test-time default
+    fxRateRepository.save(fxRate);
+  }
+
+  private void createSecondMember(String adminToken, String email) {
+    client(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new CreateUserRequest(email, SECOND_MEMBER_PASSWORD, "STANDARD_USER", "EN"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(UserSummaryResponse.class);
+  }
+
+  private String login(String email, String password) {
+    return RestTestClient.bindToServer()
+        .baseUrl("http://localhost:%d".formatted(port))
+        .build()
+        .post()
+        .uri("/api/v1/auth/login")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new LoginRequest(email, password))
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(LoginResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .tokens()
+        .accessToken();
+  }
 
   private FinancialInstitutionSummaryResponse createInstitution(
       String token, CreateFinancialInstitutionRequest request) {
