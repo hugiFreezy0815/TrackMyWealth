@@ -21,6 +21,12 @@ import java.time.LocalDate;
  *     chain) used a carried-forward rate rather than an exact match for {@code requestedDate}
  *     (FR-CUR-012/PR-011) - callers must mark any figure derived from this the same way they would
  *     for {@link FxRateLookupResult#carriedForward()}
+ * @param rateDate the date the applied rate actually carries (FR-INS-SUM-004/FR-CUR-011: "the
+ *     applied FX rate and its date shall be inspectable," not just whether it happens to be
+ *     current) - equal to {@code requestedDate} whenever {@code carriedForward} is false; for a
+ *     same-currency conversion, {@code requestedDate} itself (no rate is actually looked up); for a
+ *     chained conversion, the earlier (more conservative) of the two legs' own dates, since the two
+ *     legs are independently-sourced rows that need not share one
  */
 public record CurrencyConversionResult(
     BigDecimal rate,
@@ -29,4 +35,5 @@ public record CurrencyConversionResult(
     LocalDate requestedDate,
     boolean direct,
     String intermediateCurrency,
-    boolean carriedForward) {}
+    boolean carriedForward,
+    LocalDate rateDate) {}

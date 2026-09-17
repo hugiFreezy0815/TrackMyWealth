@@ -2,6 +2,7 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.Account;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -21,4 +22,9 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("SELECT a FROM Account a WHERE a.id = :id")
   Optional<Account> findByIdForUpdate(@Param("id") UUID id);
+
+  // US-04-03: the contributing accounts for an institution summary - ARCHIVED/DELETED accounts
+  // are excluded, matching the "current" framing of a live summary (an archived account no longer
+  // contributes to what the institution holds today).
+  List<Account> findByFinancialInstitutionIdAndStatus(UUID financialInstitutionId, String status);
 }

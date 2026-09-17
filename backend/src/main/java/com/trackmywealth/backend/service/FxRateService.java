@@ -128,7 +128,7 @@ public class FxRateService {
     // reciprocals, which real FX data has no reason to be (found by review on this PR).
     if (baseCurrency.equals(quoteCurrency)) {
       return new CurrencyConversionResult(
-          BigDecimal.ONE, baseCurrency, quoteCurrency, date, true, null, false);
+          BigDecimal.ONE, baseCurrency, quoteCurrency, date, true, null, false, date);
     }
 
     Optional<FxRate> direct = findOnOrBefore(baseCurrency, quoteCurrency, source, date);
@@ -141,7 +141,8 @@ public class FxRateService {
           date,
           true,
           null,
-          !fxRate.getRateDate().equals(date));
+          !fxRate.getRateDate().equals(date),
+          fxRate.getRateDate());
     }
 
     // One side is already the fallback intermediate - there is no third currency left to chain
@@ -162,6 +163,10 @@ public class FxRateService {
     BigDecimal chainedRate = firstLeg.getRate().multiply(secondLeg.getRate());
     boolean carriedForward =
         !firstLeg.getRateDate().equals(date) || !secondLeg.getRateDate().equals(date);
+    LocalDate chainRateDate =
+        firstLeg.getRateDate().isBefore(secondLeg.getRateDate())
+            ? firstLeg.getRateDate()
+            : secondLeg.getRateDate();
     return new CurrencyConversionResult(
         chainedRate,
         baseCurrency,
@@ -169,7 +174,8 @@ public class FxRateService {
         date,
         false,
         INTERMEDIATE_CURRENCY,
-        carriedForward);
+        carriedForward,
+        chainRateDate);
   }
 
   /**
