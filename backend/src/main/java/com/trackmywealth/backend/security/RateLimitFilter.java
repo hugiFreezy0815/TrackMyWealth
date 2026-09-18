@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.trackmywealth.backend.config.RateLimitProperties;
 import com.trackmywealth.backend.controller.AuthController;
+import com.trackmywealth.backend.controller.MfaController;
 import com.trackmywealth.backend.controller.SessionController;
 import com.trackmywealth.backend.controller.SetupController;
 import io.github.bucket4j.Bandwidth;
@@ -33,12 +34,15 @@ import org.springframework.web.util.UrlPathHelper;
  * single account's lockout.
  *
  * <p>Covers {@link AuthController#LOGIN_PATH}, {@link AuthController#REFRESH_PATH}, {@link
- * SetupController#ADMINISTRATOR_PATH} (unauthenticated and brute-forceable until first use), and
- * {@link SessionController#REVOKE_PATH} (authenticated, but issue #57 noted a caller can already
- * cheaply hammer it - each denial doubles DB connection usage via {@code
- * AuthorizationDenialAuditService}'s {@code REQUIRES_NEW} write). Referencing each controller's own
- * constant, rather than a re-typed literal, means the two can never silently drift apart the way a
- * second hardcoded copy of the same path could.
+ * SetupController#ADMINISTRATOR_PATH} (unauthenticated and brute-forceable until first use), {@link
+ * SessionController#REVOKE_PATH} (authenticated, but issue #57 noted a caller can already cheaply
+ * hammer it - each denial doubles DB connection usage via {@code AuthorizationDenialAuditService}'s
+ * {@code REQUIRES_NEW} write), {@link AuthController#MFA_VERIFY_PATH} (unauthenticated, and a
+ * 6-digit TOTP code is brute-forceable without a limit here independent of the challenge token's
+ * own short expiry), and {@link MfaController#CONFIRM_PATH} (authenticated, but the same
+ * brute-forceable 6-digit-code reasoning applies to confirming a pending enrollment). Referencing
+ * each controller's own constant, rather than a re-typed literal, means the two can never silently
+ * drift apart the way a second hardcoded copy of the same path could.
  *
  * <p>Runs before {@link JwtAuthenticationFilter} in {@code SecurityConfig} - an excess request is
  * rejected before it costs a JWT parse or an {@code AppUserRepository.findAuthSnapshot} query, not
@@ -81,13 +85,13 @@ import org.springframework.web.util.UrlPathHelper;
  * project's current single-instance self-hosted deployment target (see #48's own open question;
  * revisit with a shared/Redis-backed bucket store if multi-instance deployment ever becomes a
  * goal). Each {@link Rule} owns its own bounded Caffeine cache ({@code app.rate-limit.max-buckets},
- * split evenly across the four rules) rather than the four sharing one - otherwise a burst against
- * one endpoint could evict another, unrelated endpoint's still-active buckets purely on cache
- * pressure. Caffeine's size-based eviction is frequency-aware (not plain LRU), so a bucket a caller
- * keeps actively consuming from is unlikely to be the one it picks when the cap is reached, but
- * eviction here is a memory-bound safety valve, not a guarantee that only truly idle entries are
- * ever reclaimed - the time-based {@link #STALE_AFTER} expiry is what that guarantee actually rests
- * on, for populations that stay under the cap.
+ * split evenly across every rule, see {@link #RULE_COUNT}) rather than all of them sharing one -
+ * otherwise a burst against one endpoint could evict another, unrelated endpoint's still-active
+ * buckets purely on cache pressure. Caffeine's size-based eviction is frequency-aware (not plain
+ * LRU), so a bucket a caller keeps actively consuming from is unlikely to be the one it picks when
+ * the cap is reached, but eviction here is a memory-bound safety valve, not a guarantee that only
+ * truly idle entries are ever reclaimed - the time-based {@link #STALE_AFTER} expiry is what that
+ * guarantee actually rests on, for populations that stay under the cap.
  */
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
@@ -101,22 +105,30 @@ public class RateLimitFilter extends OncePerRequestFilter {
   // reclaimed once truly idle (see the class javadoc's note on size-based eviction).
   private static final Duration STALE_AFTER = Duration.ofHours(1);
 
+  // The divisor perRuleMaxBuckets below splits app.rate-limit.max-buckets across - keep in sync
+  // with the number of *Rule fields/newRule(...) calls in the constructor.
+  private static final int RULE_COUNT = 6;
+
   private final boolean enabled;
   private final Rule loginRule;
   private final Rule refreshRule;
   private final Rule setupRule;
   private final Rule sessionRevokeRule;
+  private final Rule mfaVerifyRule;
+  private final Rule mfaConfirmRule;
 
   public RateLimitFilter(RateLimitProperties properties) {
     this.enabled = properties.enabled();
-    // Split (not duplicated) across the four rules, so app.rate-limit.max-buckets still bounds
-    // total worst-case memory across all of them combined, matching its own documented meaning.
-    int perRuleMaxBuckets = Math.max(1, properties.maxBuckets() / 4);
+    // Split (not duplicated) across every rule, so app.rate-limit.max-buckets still bounds total
+    // worst-case memory across all of them combined, matching its own documented meaning.
+    int perRuleMaxBuckets = Math.max(1, properties.maxBuckets() / RULE_COUNT);
     this.loginRule = newRule("login", properties.login(), perRuleMaxBuckets);
     this.refreshRule = newRule("refresh", properties.refresh(), perRuleMaxBuckets);
     this.setupRule = newRule("setup", properties.setup(), perRuleMaxBuckets);
     this.sessionRevokeRule =
         newRule("sessionRevoke", properties.sessionRevoke(), perRuleMaxBuckets);
+    this.mfaVerifyRule = newRule("mfaVerify", properties.mfaVerify(), perRuleMaxBuckets);
+    this.mfaConfirmRule = newRule("mfaConfirm", properties.mfaConfirm(), perRuleMaxBuckets);
   }
 
   private static Rule newRule(String name, RateLimitProperties.Rule config, int maxBuckets) {
@@ -176,12 +188,18 @@ public class RateLimitFilter extends OncePerRequestFilter {
     if (PATH_MATCHER.match(SessionController.REVOKE_PATH, path)) {
       return Optional.of(sessionRevokeRule);
     }
+    if (AuthController.MFA_VERIFY_PATH.equals(path)) {
+      return Optional.of(mfaVerifyRule);
+    }
+    if (MfaController.CONFIRM_PATH.equals(path)) {
+      return Optional.of(mfaConfirmRule);
+    }
     return Optional.empty();
   }
 
   private Bucket bucketFor(Rule rule, String sourceIp) {
     // Each Rule has its own cache, so the key only needs to distinguish sources within it - no
-    // rule-name prefix needed the way a single shared cache across all four would have required.
+    // rule-name prefix needed the way a single shared cache across all rules would have required.
     return rule.buckets().get(sourceKey(sourceIp), key -> newBucket(rule.config()));
   }
 

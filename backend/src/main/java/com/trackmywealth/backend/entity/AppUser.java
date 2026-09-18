@@ -156,6 +156,13 @@ public class AppUser {
     return mfaEnabled;
   }
 
+  // Read-only on purpose: every MFA write goes through AppUserRepository's targeted UPDATEs
+  // (never a save() of this entity), so a stale in-memory copy can't overwrite MFA state.
+  /** The encrypted secret (see {@code MfaEncryptionService}) - {@code null} until enrollment. */
+  public String getMfaTotpSecret() {
+    return mfaTotpSecret;
+  }
+
   public int getFailedLoginCount() {
     return failedLoginCount;
   }

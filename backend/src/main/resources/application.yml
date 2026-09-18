@@ -98,6 +98,17 @@ app:
       access-token-ttl-minutes: ${JWT_ACCESS_TTL_MIN:15}
       refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
       secret: ${JWT_SECRET:CHANGE_ME_IN_ENVIRONMENT_CONFIG_MIN_32_BYTES}
+    mfa:
+      # US-02-04: AES-256 key (Base64, must decode to exactly 32 bytes) encrypting
+      # app_user.mfa_totp_secret at rest (NFR-SEC-001) - deployment configuration, like jwt.secret
+      # above, never checked into source. MfaEncryptionService fails fast at startup if this
+      # doesn't decode to exactly 32 bytes. The placeholder below is deliberately still
+      # well-formed Base64/32 bytes so an unconfigured dev/test environment starts (same
+      # trade-off jwt.secret's own placeholder above makes) - but it is public, so the service
+      # logs a warning when it is in use and refuses it outright when app.deployment.topology is
+      # `hosted`. It is the Base64 of MfaEncryptionService.PLACEHOLDER_PHRASE - keep them in sync
+      # (MfaEncryptionServiceTest fails if they drift).
+      encryption-key: ${MFA_ENCRYPTION_KEY:Q0hBTkdFX01FX0lOX0VOVklST05NRU5UX0NPTkZJRzE=}
   deployment:
     topology: ${DEPLOYMENT_TOPOLOGY:self-hosted} # self-hosted | hosted (NFR-DEP-002)
   fx:
@@ -118,8 +129,8 @@ app:
     # "refill-period" - see RateLimitFilter. On by default (a security control shouldn't need
     # opt-in); every functional test that isn't specifically testing this disables it explicitly.
     enabled: ${RATE_LIMIT_ENABLED:true}
-    # #60: total distinct (rule, source) buckets held in memory at once, across all four rules
-    # combined (split evenly into each rule's own cache, not one shared by all four) - bounds
+    # #60: total distinct (rule, source) buckets held in memory at once, across every rule
+    # combined (split evenly into each rule's own cache, not one shared by all of them) - bounds
     # memory growth against a caller spread across many source addresses (e.g. a routed IPv6
     # block, each collapsed to its own /64 bucket - see RateLimitFilter).
     max-buckets: ${RATE_LIMIT_MAX_BUCKETS:50000}
@@ -135,6 +146,15 @@ app:
     session-revoke:
       capacity: ${RATE_LIMIT_SESSION_REVOKE_CAPACITY:30}
       refill-period: ${RATE_LIMIT_SESSION_REVOKE_REFILL_PERIOD:1m}
+    # US-02-04: a 6-digit TOTP code has only 1,000,000 possible values - both endpoints that check
+    # one against a real secret need their own brute-force limit, tighter than login's (a stolen
+    # password's TOTP companion is a much smaller search space).
+    mfa-verify:
+      capacity: ${RATE_LIMIT_MFA_VERIFY_CAPACITY:5}
+      refill-period: ${RATE_LIMIT_MFA_VERIFY_REFILL_PERIOD:1m}
+    mfa-confirm:
+      capacity: ${RATE_LIMIT_MFA_CONFIRM_CAPACITY:5}
+      refill-period: ${RATE_LIMIT_MFA_CONFIRM_REFILL_PERIOD:1m}
 
 management:
   endpoints:

@@ -1,0 +1,9 @@
+# Known false positive, silenced by exact fingerprint (commit:file:rule:line) - not by path or rule.
+#
+# PR #120 (US-02-04), commit 0c5e25d briefly held `static final String PLACEHOLDER_KEY = "<base64>"`
+# in MfaEncryptionService. That value is the PUBLIC, documented dev/test placeholder default of
+# app.security.mfa.encryption-key (the same string that ships in application.yml and is refused
+# under DEPLOYMENT_TOPOLOGY=hosted) - not a credential, so there is nothing to rotate. The next
+# commit removes the literal from source entirely; the fingerprint below only covers that one
+# historical line, so any new key-shaped literal is still caught.
+0c5e25d20351eadf761f26cac328ca72a544211c:backend/src/main/java/com/trackmywealth/backend/service/MfaEncryptionService.java:generic-api-key:40

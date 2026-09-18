@@ -56,4 +56,19 @@ holds itself to for its own exemption list.
         <Class name="com.trackmywealth.backend.service.JwtService"/>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
+
+    <!-- Same reasoning as JwtService above, for US-02-04's two collaborators of the same shape:
+         MfaChallengeTokenService derives its signing key from the same JWT secret, and
+         MfaEncryptionService decodes and length-checks app.security.mfa.encryption-key - a
+         malformed key must fail application startup immediately rather than yield a
+         partially-usable service that silently mis-encrypts (or cannot decrypt) TOTP secrets.
+         Neither class has a finalizer, so the attack CT_CONSTRUCTOR_THROW warns about is not
+         reachable. -->
+    <Match>
+        <Or>
+            <Class name="com.trackmywealth.backend.service.MfaChallengeTokenService"/>
+            <Class name="com.trackmywealth.backend.service.MfaEncryptionService"/>
+        </Or>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
 </FindBugsFilter>

@@ -3,6 +3,7 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.service.LoginService;
 import com.trackmywealth.backend.service.TokenRotationService;
@@ -25,6 +26,7 @@ public class AuthController {
   // mapping annotation below is the single source of truth for both.
   public static final String LOGIN_PATH = "/api/v1/auth/login";
   public static final String REFRESH_PATH = "/api/v1/auth/refresh";
+  public static final String MFA_VERIFY_PATH = "/api/v1/auth/mfa/verify";
 
   private final LoginService loginService;
   private final TokenRotationService tokenRotationService;
@@ -47,5 +49,15 @@ public class AuthController {
   public ResponseEntity<AuthTokensResponse> refresh(
       @Valid @RequestBody RefreshTokenRequest request) {
     return ResponseEntity.ok(tokenRotationService.rotate(request.refreshToken()));
+  }
+
+  @PostMapping(MFA_VERIFY_PATH)
+  public ResponseEntity<AuthTokensResponse> verifyMfa(
+      @Valid @RequestBody MfaVerifyRequest request,
+      @RequestHeader(value = "User-Agent", required = false) String userAgent,
+      HttpServletRequest servletRequest) {
+    AuthTokensResponse tokens =
+        loginService.verifyMfaChallenge(request, userAgent, servletRequest.getRemoteAddr());
+    return ResponseEntity.ok(tokens);
   }
 }
