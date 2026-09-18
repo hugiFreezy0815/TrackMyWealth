@@ -305,10 +305,14 @@ public class AccountService {
   //
   // FR-STA-001: DELETED is terminal - reachable from ACTIVE only, reachable from nowhere once
   // there (the same principle archiveAccount's own status check documents) - so a DELETED account
-  // is rejected here too, the one status this method doesn't otherwise care about. ACTIVE and
-  // ARCHIVED are both allowed: unlike archive/restore, this isn't a lifecycle transition, it's an
-  // ordinary attribute correction (the same category updateAccount's mutable fields fall into),
-  // so an archived account's mismodelled institution is still worth fixing.
+  // is rejected here, the one status this method doesn't otherwise care about. ACTIVE and ARCHIVED
+  // are both allowed: unlike archive/restore, this isn't a lifecycle transition, so an archived
+  // account's mismodelled institution is still worth fixing.
+  //
+  // Currently the only account write with this guard (updateAccount, ownership and valuations
+  // don't check) - deliberately not centralised yet, since nothing can produce a DELETED account
+  // until account soft-delete exists; enforcing it across every write in one shared place is
+  // tracked under EPIC 31 in docs/user-stories/BACKLOG-remaining-epics.md.
   @Transactional
   public AccountSummaryResponse reassignInstitution(
       UUID accountId, ReassignAccountInstitutionRequest request, AuthenticatedUserPrincipal actor) {
