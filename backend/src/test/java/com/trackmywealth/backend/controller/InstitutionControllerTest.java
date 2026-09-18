@@ -523,6 +523,49 @@ class InstitutionControllerTest {
   }
 
   @Test
+  void aResolvedAccountWithNoFxRateAtAllDegradesToUnknownNotAFailedRequest() {
+    // Regression for #78's follow-up fix: FxRateService.getConversionRate() 404s when no direct
+    // or chained rate exists at all (not merely stale), and getSummary() is itself @Transactional
+    // - catching that 404 does not stop Spring marking the shared transaction rollback-only, so
+    // this request must never reach a try/catch around getConversionRate() in the first place
+    // (InstitutionService now calls tryGetConversionRate() instead). Before the fix this 500'd
+    // with UnexpectedRollbackException instead of returning the degraded contribution below.
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "Foreign Currency Bank", "DE", "BANK", null, null, "CHF"));
+    AccountSummaryResponse asset =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                institution.id(),
+                "Foreign Collectible",
+                "CUSTOM_ASSET",
+                "USD",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "COLLECTIBLE"));
+    recordValuation(
+        token,
+        asset.id(),
+        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("1000")));
+    // Deliberately no seedFxRate call - USD/CHF has no rate at all, not even a stale one.
+
+    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+
+    assertThat(summary.complete()).isFalse();
+    assertThat(summary.totalAssets()).isEqualByComparingTo("0");
+    InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
+    assertThat(contribution.valueKnown()).isFalse();
+    assertThat(contribution.valueInContainerCurrency()).isNull();
+  }
+
+  @Test
   void summaryOfAnUnknownInstitutionIsNotFound() {
     String token = bootstrapAdministrator();
 
