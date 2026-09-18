@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
+import com.trackmywealth.backend.dto.ReassignAccountInstitutionRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
@@ -64,6 +65,9 @@ import org.springframework.web.server.ResponseStatusException;
  * including its own creator, the moment the workspace gained a second active member. This is a
  * default, not a guarantee - a later full-replacement call to {@code AccountOwnershipController}'s
  * {@code PUT .../ownership} can still reassign or remove it, same as for any other account.
+ *
+ * <p>US-04-04: {@link #reassignInstitution} moves an account between institution containers - see
+ * its own Javadoc.
  */
 @Service
 public class AccountService {
@@ -274,6 +278,46 @@ public class AccountService {
 
     account.setStatus(ACTIVE);
     account.setArchivedAt(null);
+    account = accountRepository.saveAndFlush(account);
+
+    return toSummary(account);
+  }
+
+  // US-04-04/FR-INS-009/C2: moves the account to a different container - the FK update is the
+  // entire change. Nothing else about the account is touched, and nothing links
+  // transactions/positions/snapshots to an institution rather than to the account itself, so they
+  // stay attached to account.id with no separate migration step; InstitutionService.getSummary is
+  // computed live from current account state on every read, so both institutions' summaries are
+  // correct "on the next read" purely as a consequence of this update - no cache to invalidate.
+  //
+  // Gated at EDIT on both the account and the destination institution (the story's own
+  // "Authorization/privacy" line - reassignment is as sensitive as editing either side of it).
+  // Cross-workspace reassignment is already excluded by RLS alone (resolveInstitution's own
+  // comment: a cross-workspace id simply isn't found) since both lookups run under the same
+  // request's app.current_workspace_id - but the story's error/edge-case text asks for this
+  // explicitly as a named service-layer check, not just implicit isolation, so it's asserted here
+  // too as deliberate defense-in-depth, one layer beyond this codebase's usual "RLS is sufficient"
+  // convention for cross-tenant integrity.
+  @Transactional
+  public AccountSummaryResponse reassignInstitution(
+      UUID accountId, ReassignAccountInstitutionRequest request, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+
+    FinancialInstitution destination =
+        financialInstitutionRepository
+            .findById(request.financialInstitutionId())
+            .orElseThrow(
+                () ->
+                    new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Financial institution not found."));
+    accessControlService.requireInstitutionAccess(actor, destination, AccessLevelValues.EDIT);
+
+    if (!account.getWorkspace().getId().equals(destination.getWorkspace().getId())) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Financial institution not found.");
+    }
+
+    account.setFinancialInstitution(destination);
     account = accountRepository.saveAndFlush(account);
 
     return toSummary(account);
