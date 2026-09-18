@@ -58,7 +58,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * matching where every other such rule in this codebase lives.
  *
  * <p>US-04-04: reassign an account to a different institution without losing history - the DoD's
- * test is {@link #reassigningInstitutionMovesTheAccountAndBothSummariesRecomputeCorrectly}.
+ * test is {@link #reassigningInstitutionMovesTheAccountAndBothSummariesRecomputeCorrectly}; {@link
+ * #reassigningADeletedAccountIsRejectedWithAStructuredConflict} covers FR-STA-001's terminal
+ * status. The "requires EDIT on the destination institution" half of the story's
+ * Authorization/privacy line lives in {@code SharingGrantControllerTest} instead, alongside every
+ * other {@code AccessControlService}-gated endpoint that needs a second workspace member to test.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -834,6 +838,35 @@ class AccountControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void reassigningADeletedAccountIsRejectedWithAStructuredConflict() throws Exception {
+    // FR-STA-001: DELETED is terminal - reachable from ACTIVE only, reachable from nowhere once
+    // there, the same principle archivingADeletedAccountIsRejectedWithAStructuredConflict already
+    // covers for archiveAccount. There's no delete-account endpoint yet, so status is set directly
+    // via SQL, same as that test.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+    FinancialInstitutionSummaryResponse destination =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "Institution A", "CH", "BANK", null, null, "CHF"));
+    setStatusDirectly(created.id(), "DELETED");
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + created.id() + "/reassign-institution")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new ReassignAccountInstitutionRequest(destination.id()))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
   }
 
   @Test
