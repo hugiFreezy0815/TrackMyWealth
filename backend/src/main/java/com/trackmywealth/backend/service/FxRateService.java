@@ -175,9 +175,17 @@ public class FxRateService {
       return Optional.empty();
     }
 
+    // Two separate isEmpty() checks, not one findOnOrBefore(...).isEmpty() ||
+    // findOnOrBefore(...).isEmpty() - the second leg's query must not run at all when the first
+    // is already missing (the original throwing implementation got this short-circuit for free
+    // via orElseThrow(); this is exactly the fallback path a caller with no direct pair hits, so
+    // it's worth not paying for a second, pointless query on the common "no rate exists" case).
     Optional<FxRate> firstLeg = findOnOrBefore(baseCurrency, INTERMEDIATE_CURRENCY, source, date);
+    if (firstLeg.isEmpty()) {
+      return Optional.empty();
+    }
     Optional<FxRate> secondLeg = findOnOrBefore(INTERMEDIATE_CURRENCY, quoteCurrency, source, date);
-    if (firstLeg.isEmpty() || secondLeg.isEmpty()) {
+    if (secondLeg.isEmpty()) {
       return Optional.empty();
     }
 
