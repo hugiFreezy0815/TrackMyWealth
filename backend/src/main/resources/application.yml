@@ -102,10 +102,11 @@ app:
       # US-02-04: AES-256 key (Base64, must decode to exactly 32 bytes) encrypting
       # app_user.mfa_totp_secret at rest (NFR-SEC-001) - deployment configuration, like jwt.secret
       # above, never checked into source. MfaEncryptionService fails fast at startup if this
-      # doesn't decode to exactly 32 bytes, so a real deployment can't silently run with a
-      # malformed key - but the placeholder below is deliberately still well-formed Base64/32
-      # bytes so an unconfigured dev/test environment still starts (same trade-off jwt.secret's
-      # own placeholder above makes).
+      # doesn't decode to exactly 32 bytes. The placeholder below is deliberately still
+      # well-formed Base64/32 bytes so an unconfigured dev/test environment starts (same
+      # trade-off jwt.secret's own placeholder above makes) - but it is public, so the service
+      # logs a warning when it is in use and refuses it outright when app.deployment.topology is
+      # `hosted`. Keep it in sync with MfaEncryptionService.PLACEHOLDER_KEY.
       encryption-key: ${MFA_ENCRYPTION_KEY:Q0hBTkdFX01FX0lOX0VOVklST05NRU5UX0NPTkZJRzE=}
   deployment:
     topology: ${DEPLOYMENT_TOPOLOGY:self-hosted} # self-hosted | hosted (NFR-DEP-002)
@@ -127,8 +128,8 @@ app:
     # "refill-period" - see RateLimitFilter. On by default (a security control shouldn't need
     # opt-in); every functional test that isn't specifically testing this disables it explicitly.
     enabled: ${RATE_LIMIT_ENABLED:true}
-    # #60: total distinct (rule, source) buckets held in memory at once, across all four rules
-    # combined (split evenly into each rule's own cache, not one shared by all four) - bounds
+    # #60: total distinct (rule, source) buckets held in memory at once, across every rule
+    # combined (split evenly into each rule's own cache, not one shared by all of them) - bounds
     # memory growth against a caller spread across many source addresses (e.g. a routed IPv6
     # block, each collapsed to its own /64 bucket - see RateLimitFilter).
     max-buckets: ${RATE_LIMIT_MAX_BUCKETS:50000}

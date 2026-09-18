@@ -52,7 +52,7 @@ public class MfaController {
   public ResponseEntity<Void> disable(
       @Valid @RequestBody MfaDisableRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal principal) {
-    mfaService.disable(principal.userId(), request.password());
+    mfaService.disable(principal.userId(), request.password(), request.code());
     return ResponseEntity.noContent().build();
   }
 }

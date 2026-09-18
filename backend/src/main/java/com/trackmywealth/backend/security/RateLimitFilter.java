@@ -85,13 +85,13 @@ import org.springframework.web.util.UrlPathHelper;
  * project's current single-instance self-hosted deployment target (see #48's own open question;
  * revisit with a shared/Redis-backed bucket store if multi-instance deployment ever becomes a
  * goal). Each {@link Rule} owns its own bounded Caffeine cache ({@code app.rate-limit.max-buckets},
- * split evenly across the four rules) rather than the four sharing one - otherwise a burst against
- * one endpoint could evict another, unrelated endpoint's still-active buckets purely on cache
- * pressure. Caffeine's size-based eviction is frequency-aware (not plain LRU), so a bucket a caller
- * keeps actively consuming from is unlikely to be the one it picks when the cap is reached, but
- * eviction here is a memory-bound safety valve, not a guarantee that only truly idle entries are
- * ever reclaimed - the time-based {@link #STALE_AFTER} expiry is what that guarantee actually rests
- * on, for populations that stay under the cap.
+ * split evenly across every rule, see {@link #RULE_COUNT}) rather than all of them sharing one -
+ * otherwise a burst against one endpoint could evict another, unrelated endpoint's still-active
+ * buckets purely on cache pressure. Caffeine's size-based eviction is frequency-aware (not plain
+ * LRU), so a bucket a caller keeps actively consuming from is unlikely to be the one it picks when
+ * the cap is reached, but eviction here is a memory-bound safety valve, not a guarantee that only
+ * truly idle entries are ever reclaimed - the time-based {@link #STALE_AFTER} expiry is what that
+ * guarantee actually rests on, for populations that stay under the cap.
  */
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
@@ -199,7 +199,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
   private Bucket bucketFor(Rule rule, String sourceIp) {
     // Each Rule has its own cache, so the key only needs to distinguish sources within it - no
-    // rule-name prefix needed the way a single shared cache across all four would have required.
+    // rule-name prefix needed the way a single shared cache across all rules would have required.
     return rule.buckets().get(sourceKey(sourceIp), key -> newBucket(rule.config()));
   }
 

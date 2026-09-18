@@ -133,7 +133,8 @@ box, but the placeholders are public - override them via a `.env` file next to
 
 - `JWT_SECRET` - signs access tokens and MFA login challenges; at least 32 bytes.
 - `MFA_ENCRYPTION_KEY` - AES-256 key encrypting each user's TOTP secret at rest (US-02-04): the
-  Base64 of exactly 32 random bytes, e.g. `openssl rand -base64 32`. **Back it up with the same
+  Base64 of exactly 32 random bytes, e.g. `openssl rand -base64 32`. Left unset, the backend
+  logs a startup warning (and refuses to start at all when `DEPLOYMENT_TOPOLOGY=hosted`). **Back it up with the same
   care as the database.** There is no key rotation yet: changing or losing it makes every
   already-enrolled user's authenticator secret undecryptable. There is also no lost-device
   recovery path (a known gap, per the story) - no admin reset exists either, so an affected user

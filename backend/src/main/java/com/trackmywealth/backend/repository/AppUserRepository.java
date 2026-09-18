@@ -134,10 +134,79 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   void registerSuccessfulLogin(
       @Param(USER_ID) UUID userId, @Param("loginAt") OffsetDateTime loginAt);
 
-  // US-02-04: disabling MFA discards the secret and clears the flag in one atomic statement, the
-  // same idiom as the login-state writes above (no read-modify-write of the entity).
+  // US-02-04: atomically "reserves" one attempt at a guessable credential (a TOTP code, or the
+  // password re-entered to enroll/disable MFA) BEFORE it is checked, instead of checking first and
+  // counting a failure afterwards. Check-then-count lets N parallel guesses all pass the lockout
+  // check before any of them has been counted; here the WHERE clause is re-evaluated by Postgres
+  // against the freshest committed row once each concurrent UPDATE gets the row lock, so at most
+  // `lockoutThreshold` attempts are ever let through per lockout window. Returns 0 rows when the
+  // account is currently locked. The caller resets the counter on success
+  // (clearFailedLoginAttempts / registerSuccessfulLogin); a failure needs no further write, having
+  // already been counted.
   @Modifying
-  @Query("UPDATE AppUser u SET u.mfaTotpSecret = null, u.mfaEnabled = false WHERE u.id = :userId")
+  @Query(
+      "UPDATE AppUser u SET u.failedLoginCount = u.failedLoginCount + 1, "
+          + "u.lockedUntil = CASE WHEN u.failedLoginCount + 1 >= :lockoutThreshold "
+          + "THEN :lockedUntil ELSE u.lockedUntil END "
+          + "WHERE u.id = :userId AND (u.lockedUntil IS NULL OR u.lockedUntil <= :now)")
+  int reserveLoginAttempt(
+      @Param(USER_ID) UUID userId,
+      @Param("lockoutThreshold") int lockoutThreshold,
+      @Param("lockedUntil") OffsetDateTime lockedUntil,
+      @Param("now") OffsetDateTime now);
+
+  // Resets the failure budget without touching last_login_at - for a credential proven outside a
+  // login (re-authentication for MFA enroll/disable, confirming an enrollment).
+  @Modifying
+  @Query("UPDATE AppUser u SET u.failedLoginCount = 0, u.lockedUntil = null WHERE u.id = :userId")
+  void clearFailedLoginAttempts(@Param(USER_ID) UUID userId);
+
+  // US-02-04: the MFA writes below are targeted UPDATEs of just the MFA columns, never a save() of
+  // the whole entity - a save() writes every column from a snapshot loaded earlier in the
+  // request, and the login-state bulk updates above bump the row version (trigger
+  // app_user_bump_version), so a concurrent login would turn it into an
+  // ObjectOptimisticLockingFailureException (a 500).
+  //
+  // Native queries because mfa_last_used_step (V29) is deliberately not mapped on AppUser: an
+  // unmapped column can never be overwritten with a stale value by some other flow's save().
+
+  // Stores the freshly generated (already encrypted) secret and starts a new code stream (a new
+  // secret invalidates the old one's last-used step). Conditional on MFA not being enabled, in
+  // the statement itself, so enrolling can never replace a live secret even if a confirm raced
+  // it. Returns 0 rows if MFA is enabled.
+  @Modifying
+  @Query(
+      value =
+          "UPDATE app_user SET mfa_totp_secret = :secret, mfa_last_used_step = NULL "
+              + "WHERE id = :userId AND mfa_enabled = false",
+      nativeQuery = true)
+  int startMfaEnrollment(@Param(USER_ID) UUID userId, @Param("secret") String encryptedSecret);
+
+  @Modifying
+  @Query(
+      "UPDATE AppUser u SET u.mfaEnabled = true "
+          + "WHERE u.id = :userId AND u.mfaTotpSecret IS NOT NULL")
+  int confirmMfaEnrollment(@Param(USER_ID) UUID userId);
+
+  // TOTP replay protection (RFC 6238 section 5.2): accepts a time step only if it is strictly
+  // newer than the last accepted one, in a single conditional UPDATE so two concurrent
+  // submissions of the same code cannot both succeed. Returns 0 rows for a replayed (or older)
+  // step.
+  @Modifying
+  @Query(
+      value =
+          "UPDATE app_user SET mfa_last_used_step = :step WHERE id = :userId "
+              + "AND (mfa_last_used_step IS NULL OR mfa_last_used_step < :step)",
+      nativeQuery = true)
+  int markMfaStepUsed(@Param(USER_ID) UUID userId, @Param("step") long step);
+
+  // Disabling MFA discards the secret, the flag and the replay state in one atomic statement.
+  @Modifying
+  @Query(
+      value =
+          "UPDATE app_user SET mfa_totp_secret = NULL, mfa_enabled = false, "
+              + "mfa_last_used_step = NULL WHERE id = :userId",
+      nativeQuery = true)
   void clearMfa(@Param(USER_ID) UUID userId);
 
   // #62: reactivateUser() mutates this row and then mutates user_session/refresh_token (for the

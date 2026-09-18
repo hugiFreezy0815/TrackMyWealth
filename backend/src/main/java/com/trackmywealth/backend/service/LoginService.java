@@ -118,9 +118,12 @@ public class LoginService {
     if (!ACTIVE.equals(user.getStatus())) {
       throw invalidChallenge();
     }
-    loginAttemptService.requireNotLocked(user);
+    // Reserved BEFORE the code is checked, atomically (see LoginAttemptService.reserveAttempt):
+    // checking the lockout first and counting a failure afterwards would let N parallel guesses
+    // all pass the check before any is counted - and a 6-digit code has only 1,000,000 values.
+    // A wrong code needs no further write; success below gives the budget back.
+    loginAttemptService.reserveAttempt(user.getId());
     if (!mfaService.verifyLoginCode(user, request.code())) {
-      loginAttemptService.registerFailedAttempt(user.getId());
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired code.");
     }
 

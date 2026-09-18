@@ -15,16 +15,31 @@ import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -64,10 +79,46 @@ class MfaControllerTest {
     registry.add("app.rate-limit.enabled", () -> "false");
   }
 
+  // A controllable clock in place of the application's real one: TOTP replay protection is about
+  // *which 30-second step* a code belongs to, which can only be tested deterministically by moving
+  // time explicitly rather than sleeping through real steps.
+  static class MutableClock extends Clock {
+    private volatile Instant now = Instant.parse("2026-01-01T00:00:00Z");
+
+    @Override
+    public ZoneId getZone() {
+      return ZoneOffset.UTC;
+    }
+
+    @Override
+    public Clock withZone(ZoneId zone) {
+      return this;
+    }
+
+    @Override
+    public Instant instant() {
+      return now;
+    }
+
+    void advance(Duration duration) {
+      now = now.plus(duration);
+    }
+  }
+
+  @TestConfiguration
+  static class TestClockConfig {
+    @Bean
+    @Primary
+    MutableClock testClock() {
+      return new MutableClock();
+    }
+  }
+
   @LocalServerPort int port;
 
   @Autowired AppUserRepository appUserRepository;
   @Autowired DataSource dataSource;
+  @Autowired MutableClock clock;
 
   private final DefaultCodeGenerator codeGenerator = new DefaultCodeGenerator();
 
@@ -259,7 +310,7 @@ class MfaControllerTest {
     String accessToken = first.accessToken();
     LoginResponse login = login();
 
-    disable(accessToken, PASSWORD).expectStatus().isNoContent();
+    disable(accessToken, PASSWORD, currentCode(firstSecret)).expectStatus().isNoContent();
     MfaEnrollmentResponse second = enroll(accessToken, PASSWORD);
     confirm(accessToken, currentCode(second.secret())).expectStatus().isNoContent();
 
@@ -270,13 +321,23 @@ class MfaControllerTest {
   }
 
   @Test
-  void disablingMfaRequiresThePasswordAndRestoresSingleStepLogin() throws Exception {
-    String accessToken = enrollAndConfirm().accessToken();
+  void disablingMfaRequiresBothThePasswordAndACurrentCodeAndRestoresSingleStepLogin()
+      throws Exception {
+    Enrolled enrolled = enrollAndConfirm();
+    String accessToken = enrolled.accessToken();
 
-    disable(accessToken, "not-the-password").expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    // A password alone is not enough while MFA is on - the code is missing entirely...
+    disable(accessToken, PASSWORD, null).expectStatus().isEqualTo(HttpStatus.BAD_REQUEST);
+    // ...or wrong; and a valid code alone is not enough either.
+    disable(accessToken, PASSWORD, wrongCode(enrolled.secret()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+    disable(accessToken, "not-the-password", currentCode(enrolled.secret()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
     assertThat(admin().isMfaEnabled()).isTrue();
 
-    disable(accessToken, PASSWORD).expectStatus().isNoContent();
+    disable(accessToken, PASSWORD, currentCode(enrolled.secret())).expectStatus().isNoContent();
 
     AppUser admin = admin();
     assertThat(admin.isMfaEnabled()).isFalse();
@@ -284,6 +345,127 @@ class MfaControllerTest {
     LoginResponse login = login();
     assertThat(login.mfaRequired()).isFalse();
     assertThat(login.tokens()).isNotNull();
+  }
+
+  @Test
+  void cancellingAPendingEnrollmentNeedsOnlyThePassword() {
+    String accessToken = bootstrapAdministrator();
+    enroll(accessToken, PASSWORD);
+
+    disable(accessToken, PASSWORD, null).expectStatus().isNoContent();
+
+    assertThat(admin().getMfaTotpSecret()).isNull();
+  }
+
+  @Test
+  void aUsedCodeCannotBeReplayedNotEvenOnAFreshChallenge() throws Exception {
+    String secret = enrollAndConfirm().secret();
+    String code = currentCode(secret);
+    LoginResponse first = login();
+    LoginResponse second = login();
+
+    verify(first.mfaChallengeToken(), code).expectStatus().isOk();
+    assertThat(lastUsedStep()).isEqualTo(currentStep());
+
+    // The same code, replayed on the same challenge and on a brand-new one: both refused.
+    verify(first.mfaChallengeToken(), code).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    verify(second.mfaChallengeToken(), code).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+
+    // The next step's code is a genuinely new code, and works.
+    clock.advance(Duration.ofSeconds(PERIOD_SECONDS));
+    verify(second.mfaChallengeToken(), currentCode(secret)).expectStatus().isOk();
+  }
+
+  @Test
+  void aCodeOlderThanTheLastAcceptedStepIsRejectedEvenWithinTheSkewWindow() throws Exception {
+    String secret = enrollAndConfirm().secret();
+
+    verify(login().mfaChallengeToken(), codeForStepOffset(secret, 1)).expectStatus().isOk();
+
+    // The current step's code is still inside the +-1 skew window, but older than the step just
+    // accepted - accepting it would let a captured earlier code back in.
+    verify(login().mfaChallengeToken(), currentCode(secret))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void theCodeThatConfirmedEnrollmentCannotBeReplayedAtLogin() throws Exception {
+    String accessToken = bootstrapAdministrator();
+    MfaEnrollmentResponse enrollment = enroll(accessToken, PASSWORD);
+    String code = currentCode(enrollment.secret());
+    confirm(accessToken, code).expectStatus().isNoContent();
+
+    verify(login().mfaChallengeToken(), code).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void reEnrollingStartsANewCodeStream() throws Exception {
+    Enrolled first = enrollAndConfirm();
+    // Disabling consumes a code at the current step, leaving that step as the last used...
+    disable(first.accessToken(), PASSWORD, currentCode(first.secret()))
+        .expectStatus()
+        .isNoContent();
+    assertThat(lastUsedStep()).isNull();
+
+    // ...but a new secret is a new code stream: confirming with its code in that very same step
+    // must not be refused as a replay of the old secret's step.
+    MfaEnrollmentResponse second = enroll(first.accessToken(), PASSWORD);
+    confirm(first.accessToken(), currentCode(second.secret())).expectStatus().isNoContent();
+  }
+
+  @Test
+  void wrongConfirmationCodesShareThePerAccountBudget() throws Exception {
+    String accessToken = bootstrapAdministrator();
+    MfaEnrollmentResponse enrollment = enroll(accessToken, PASSWORD);
+
+    for (int attempt = 1; attempt <= 5; attempt++) {
+      confirm(accessToken, wrongCode(enrollment.secret()))
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    assertThat(admin().getFailedLoginCount()).isEqualTo(5);
+    confirm(accessToken, currentCode(enrollment.secret()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.LOCKED);
+    assertThat(admin().isMfaEnabled()).isFalse();
+  }
+
+  @Test
+  void parallelWrongGuessesNeverGetMoreThanTheAttemptBudgetEvaluated() throws Exception {
+    String secret = enrollAndConfirm().secret();
+    String challenge = login().mfaChallengeToken();
+    String wrong = wrongCode(secret);
+    int threads = 8;
+
+    ExecutorService executor = Executors.newFixedThreadPool(threads);
+    try {
+      CountDownLatch start = new CountDownLatch(1);
+      List<Future<Integer>> results = new ArrayList<>();
+      for (int i = 0; i < threads; i++) {
+        results.add(
+            executor.submit(
+                () -> {
+                  start.await();
+                  return verify(challenge, wrong).returnResult().getStatus().value();
+                }));
+      }
+      start.countDown();
+      List<Integer> statuses = new ArrayList<>();
+      for (Future<Integer> result : results) {
+        statuses.add(result.get(30, TimeUnit.SECONDS));
+      }
+
+      // Exactly the 5-attempt budget was evaluated (each a 401); every other request was refused
+      // as locked without its code ever being checked. With check-then-count, all 8 would have
+      // been evaluated before any failure was recorded.
+      assertThat(statuses.stream().filter(status -> status == 401).count()).isEqualTo(5);
+      assertThat(statuses.stream().filter(status -> status == 423).count()).isEqualTo(3);
+      assertThat(admin().getFailedLoginCount()).isEqualTo(5);
+    } finally {
+      executor.shutdownNow();
+    }
   }
 
   @Test
@@ -357,12 +539,14 @@ class MfaControllerTest {
     String accessToken = bootstrapAdministrator();
 
     for (int attempt = 1; attempt <= 5; attempt++) {
-      disable(accessToken, "not-the-password").expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+      disable(accessToken, "not-the-password", null)
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     assertThat(admin().getFailedLoginCount()).isEqualTo(5);
     // Locked out of guessing further - even the correct password is refused at both endpoints...
-    disable(accessToken, PASSWORD).expectStatus().isEqualTo(HttpStatus.LOCKED);
+    disable(accessToken, PASSWORD, null).expectStatus().isEqualTo(HttpStatus.LOCKED);
     client()
         .post()
         .uri("/api/v1/users/me/mfa/enroll")
@@ -391,6 +575,10 @@ class MfaControllerTest {
     String accessToken = bootstrapAdministrator();
     MfaEnrollmentResponse enrollment = enroll(accessToken, PASSWORD);
     confirm(accessToken, currentCode(enrollment.secret())).expectStatus().isNoContent();
+    // Codes are single-use per 30-second step and the confirming code consumed this one, so move
+    // on two steps: what a test does next then uses a genuinely new code, and there is still a
+    // consumed step behind the current one to make the +-1 skew window meaningful.
+    clock.advance(Duration.ofSeconds(2L * PERIOD_SECONDS));
     return new Enrolled(accessToken, enrollment.secret());
   }
 
@@ -419,13 +607,13 @@ class MfaControllerTest {
         .exchange();
   }
 
-  private RestTestClient.ResponseSpec disable(String accessToken, String password) {
+  private RestTestClient.ResponseSpec disable(String accessToken, String password, String code) {
     return client()
         .post()
         .uri("/api/v1/users/me/mfa/disable")
         .header("Authorization", "Bearer " + accessToken)
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new MfaDisableRequest(password))
+        .body(new MfaDisableRequest(password, code))
         .exchange();
   }
 
@@ -467,6 +655,15 @@ class MfaControllerTest {
         .accessToken();
   }
 
+  private Long lastUsedStep() throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement();
+        ResultSet rows = statement.executeQuery("SELECT mfa_last_used_step FROM app_user")) {
+      rows.next();
+      return rows.getObject(1, Long.class);
+    }
+  }
+
   private AppUser admin() {
     return appUserRepository.findByEmail(EMAIL).orElseThrow();
   }
@@ -480,7 +677,7 @@ class MfaControllerTest {
   }
 
   private long currentStep() {
-    return Math.floorDiv(Instant.now().getEpochSecond(), PERIOD_SECONDS);
+    return Math.floorDiv(clock.instant().getEpochSecond(), PERIOD_SECONDS);
   }
 
   // Codes the server accepts right now: the current step and one either side (RFC 6238 default
