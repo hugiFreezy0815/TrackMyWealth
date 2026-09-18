@@ -71,6 +71,7 @@ public class InstitutionService {
 
   private final WorkspaceAccessService workspaceAccessService;
   private final AccessControlService accessControlService;
+  private final InstitutionLookupService institutionLookupService;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final InstitutionCatalogueRepository institutionCatalogueRepository;
   private final AccountRepository accountRepository;
@@ -83,6 +84,7 @@ public class InstitutionService {
   public InstitutionService(
       WorkspaceAccessService workspaceAccessService,
       AccessControlService accessControlService,
+      InstitutionLookupService institutionLookupService,
       FinancialInstitutionRepository financialInstitutionRepository,
       InstitutionCatalogueRepository institutionCatalogueRepository,
       AccountRepository accountRepository,
@@ -93,6 +95,7 @@ public class InstitutionService {
       @Value("${app.fx.default-source}") String fxDefaultSource) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
+    this.institutionLookupService = institutionLookupService;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.institutionCatalogueRepository = institutionCatalogueRepository;
     this.accountRepository = accountRepository;
@@ -152,10 +155,7 @@ public class InstitutionService {
   public InstitutionSummaryResponse getSummary(
       UUID institutionId, AuthenticatedUserPrincipal actor) {
     FinancialInstitution institution =
-        financialInstitutionRepository
-            .findById(institutionId)
-            .orElseThrow(
-                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Institution not found."));
+        institutionLookupService.findInstitutionOrThrow(institutionId);
     accessControlService.requireInstitutionAccess(
         actor, institution, AccessLevelValues.BALANCE_ONLY);
 

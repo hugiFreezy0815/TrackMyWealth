@@ -359,6 +359,20 @@ class SharingGrantControllerTest {
     assignOwnership(adminToken, account.id(), bobMemberId);
     FinancialInstitutionSummaryResponse destination = createInstitution(adminToken);
 
+    // Every denial on this endpoint is an identical bare 404 (error messages aren't exposed in
+    // response bodies), so the 404 below could otherwise pass for the wrong reason. Proving first
+    // that Bob really does have EDIT on the account (updateAccount requires EDIT) and that the
+    // destination institution exists (admin just created it) leaves the destination-institution
+    // check as the only possible cause.
+    client(bobToken)
+        .put()
+        .uri("/api/v1/accounts/" + account.id())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(updateRequestBody(account))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
     reassignInstitution(bobToken, account.id(), destination.id())
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
