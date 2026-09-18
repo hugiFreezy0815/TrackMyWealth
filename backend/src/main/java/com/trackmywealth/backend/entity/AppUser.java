@@ -156,6 +156,22 @@ public class AppUser {
     return mfaEnabled;
   }
 
+  /** The encrypted secret (see {@code MfaEncryptionService}) - {@code null} until enrollment. */
+  public String getMfaTotpSecret() {
+    return mfaTotpSecret;
+  }
+
+  // US-02-04: stores the (already-encrypted) secret for a pending enrollment. mfa_enabled
+  // deliberately stays false here - only confirmMfaEnrollment() below, called after the caller
+  // proves they can generate a valid code with it, actually starts gating login on it.
+  public void startMfaEnrollment(String encryptedSecret) {
+    this.mfaTotpSecret = encryptedSecret;
+  }
+
+  public void confirmMfaEnrollment() {
+    this.mfaEnabled = true;
+  }
+
   public int getFailedLoginCount() {
     return failedLoginCount;
   }

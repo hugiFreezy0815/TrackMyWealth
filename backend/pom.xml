@@ -124,6 +124,15 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- US-02-04: RFC 6238 TOTP secret generation, otpauth:// URI building, and code
+             verification (with the library's own clock-skew tolerance). No QR-image rendering
+             module pulled in - the mobile client renders the QR from the returned otpauth:// URI. -->
+        <dependency>
+            <groupId>dev.samstevens.totp</groupId>
+            <artifactId>totp</artifactId>
+            <version>1.7.1</version>
+        </dependency>
+
         <!-- Background jobs (price refresh, daily valuation build, reconciliation runs -
              FR-JOB-001..007) -->
         <dependency>

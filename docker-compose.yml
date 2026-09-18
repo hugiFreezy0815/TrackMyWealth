@@ -46,6 +46,11 @@ services:
       # application.yml is left as-is here. Override with a real secret via a `.env` file
       # (docker compose reads one automatically) once auth exists:
       #   JWT_SECRET: ${JWT_SECRET}
+      # US-02-04: AES-256 key encrypting each user's TOTP secret at rest - Base64 of exactly 32
+      # bytes (e.g. `openssl rand -base64 32`). Same override mechanism as JWT_SECRET. Changing or
+      # losing it makes every already-enrolled user's stored secret undecryptable (no key rotation
+      # yet), so back it up with the same care as the database itself:
+      #   MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY}
       # If you put a reverse proxy in front of this stack, see the root README's "Running behind
       # a reverse proxy" section before setting this:
       #   TRUSTED_PROXIES: ${TRUSTED_PROXIES}

@@ -251,6 +251,7 @@ class AuthControllerTest {
     assertThat(response).isNotNull();
     assertThat(response.mfaRequired()).isTrue();
     assertThat(response.tokens()).isNull();
+    assertThat(response.mfaChallengeToken()).isNotBlank();
   }
 
   @Test

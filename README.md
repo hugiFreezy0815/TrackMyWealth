@@ -125,6 +125,21 @@ amd64, arm64, and 32-bit ARM variants), so this should run unchanged regardless 
 NAS is Intel/AMD or ARM-based - point Synology's Container Manager (or any Docker host) at this
 `docker-compose.yml` the same way.
 
+### Secrets to set before real use
+
+Both have a well-formed placeholder default in `application.yml` so the stack starts out of the
+box, but the placeholders are public - override them via a `.env` file next to
+`docker-compose.yml` (uncomment the matching lines under `backend.environment`):
+
+- `JWT_SECRET` - signs access tokens and MFA login challenges; at least 32 bytes.
+- `MFA_ENCRYPTION_KEY` - AES-256 key encrypting each user's TOTP secret at rest (US-02-04): the
+  Base64 of exactly 32 random bytes, e.g. `openssl rand -base64 32`. **Back it up with the same
+  care as the database.** There is no key rotation yet: changing or losing it makes every
+  already-enrolled user's authenticator secret undecryptable. There is also no lost-device
+  recovery path (a known gap, per the story) - no admin reset exists either, so an affected user
+  can only be unlocked directly in the database:
+  `UPDATE app_user SET mfa_enabled = false, mfa_totp_secret = NULL WHERE email = '...';`
+
 The web build (`mobile/`, see above) is not part of this compose file - export it
 (`npx expo export -p web`) and serve `mobile/dist/` from any static file host, including one
 running on the same NAS if you want everything on one box.

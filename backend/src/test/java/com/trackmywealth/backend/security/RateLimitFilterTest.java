@@ -3,6 +3,8 @@ package com.trackmywealth.backend.security;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.LoginRequest;
+import com.trackmywealth.backend.dto.MfaConfirmRequest;
+import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import java.net.URI;
@@ -59,6 +61,10 @@ class RateLimitFilterTest {
     registry.add("app.rate-limit.setup.refill-period", () -> "1m");
     registry.add("app.rate-limit.session-revoke.capacity", () -> String.valueOf(CAPACITY));
     registry.add("app.rate-limit.session-revoke.refill-period", () -> "1m");
+    registry.add("app.rate-limit.mfa-verify.capacity", () -> String.valueOf(CAPACITY));
+    registry.add("app.rate-limit.mfa-verify.refill-period", () -> "1m");
+    registry.add("app.rate-limit.mfa-confirm.capacity", () -> String.valueOf(CAPACITY));
+    registry.add("app.rate-limit.mfa-confirm.refill-period", () -> "1m");
   }
 
   @LocalServerPort int port;
@@ -158,6 +164,38 @@ class RateLimitFilterTest {
       revokeSession(UUID.randomUUID()).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
     }
     revokeSession(UUID.randomUUID()).expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+    // US-02-04's two TOTP-code endpoints: a 6-digit code is brute-forceable, so each has its own
+    // bucket. mfa-verify is reachable with no token at all; mfa-confirm is authenticated, but as
+    // with session-revoke the filter runs before authentication, so an unauthenticated call still
+    // consumes from its bucket.
+    for (int i = 0; i < CAPACITY; i++) {
+      mfaVerify().expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    mfaVerify().expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+    for (int i = 0; i < CAPACITY; i++) {
+      mfaConfirm().expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    mfaConfirm().expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  private RestTestClient.ResponseSpec mfaVerify() {
+    return client()
+        .post()
+        .uri("/api/v1/auth/mfa/verify")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new MfaVerifyRequest("not-a-real-challenge", "123456"))
+        .exchange();
+  }
+
+  private RestTestClient.ResponseSpec mfaConfirm() {
+    return client()
+        .post()
+        .uri("/api/v1/users/me/mfa/confirm")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new MfaConfirmRequest("123456"))
+        .exchange();
   }
 
   private RestTestClient.ResponseSpec revokeSession(UUID id) {

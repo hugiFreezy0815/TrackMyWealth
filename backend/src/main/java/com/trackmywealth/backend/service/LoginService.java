@@ -3,11 +3,9 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.repository.AppUserRepository;
-import java.time.Duration;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,27 +14,22 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-02-02: email+password login, issuing tokens via {@link TokenIssuanceService} on success.
- *
- * <p>Architect decision for this story: MFA verification (US-02-04) is deliberately not implemented
- * here - only the branch point for it exists, gated on {@code mfa_enabled}, which every user
- * created so far always has {@code false}, so the branch never actually triggers yet.
+ * US-02-02: email+password login, issuing tokens via {@link TokenIssuanceService} on success. For
+ * an MFA-enabled user (US-02-04), password success alone does not issue tokens - it issues an
+ * {@link MfaChallengeTokenService} challenge instead; {@code POST /api/v1/auth/mfa/verify} (backed
+ * by {@link MfaService#verifyLoginCode}) completes the login with a valid TOTP code.
  */
 @Service
 public class LoginService {
 
-  // FR-AUT-010: architect decision for this story - a fixed lockout window, not a rolling one,
-  // since app_user has no "attempts in the last N minutes" column, only a cumulative
-  // failed_login_count plus locked_until. This only ever limits per account - complemented by
-  // RateLimitFilter's per-source (IP) limiting (#48), added later, which catches an attacker
-  // spraying different accounts from one IP without ever tripping any single account's lockout.
-  private static final int MAX_FAILED_ATTEMPTS_BEFORE_LOCKOUT = 5;
-  private static final Duration LOCKOUT_DURATION = Duration.ofMinutes(15);
   private static final String ACTIVE = "ACTIVE";
 
   private final AppUserRepository appUserRepository;
   private final PasswordEncoder passwordEncoder;
   private final TokenIssuanceService tokenIssuanceService;
+  private final MfaChallengeTokenService mfaChallengeTokenService;
+  private final MfaService mfaService;
+  private final LoginAttemptService loginAttemptService;
 
   // A password nobody can ever have chosen, hashed once at startup so a login attempt against a
   // nonexistent email still pays the same Argon2 cost as one that finds a real account - otherwise
@@ -47,10 +40,16 @@ public class LoginService {
   public LoginService(
       AppUserRepository appUserRepository,
       PasswordEncoder passwordEncoder,
-      TokenIssuanceService tokenIssuanceService) {
+      TokenIssuanceService tokenIssuanceService,
+      MfaChallengeTokenService mfaChallengeTokenService,
+      MfaService mfaService,
+      LoginAttemptService loginAttemptService) {
     this.appUserRepository = appUserRepository;
     this.passwordEncoder = passwordEncoder;
     this.tokenIssuanceService = tokenIssuanceService;
+    this.mfaChallengeTokenService = mfaChallengeTokenService;
+    this.mfaService = mfaService;
+    this.loginAttemptService = loginAttemptService;
     this.dummyPasswordHash = passwordEncoder.encode(UUID.randomUUID().toString());
   }
 
@@ -79,46 +78,61 @@ public class LoginService {
       throw invalidCredentials();
     }
 
-    if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(now())) {
-      throw new ResponseStatusException(
-          HttpStatus.LOCKED, "Account is temporarily locked. Try again later.");
-    }
+    loginAttemptService.requireNotLocked(user);
 
     if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-      registerFailedAttempt(user);
+      loginAttemptService.registerFailedAttempt(user.getId());
       throw invalidCredentials();
     }
 
-    registerSuccessfulLogin(user);
-
     if (user.isMfaEnabled()) {
-      return new LoginResponse(true, null);
+      // Deliberately does NOT reset the failure counter yet (US-02-04): a correct password alone
+      // isn't a completed login, and resetting here would let an attacker who has the password
+      // re-run this step between batches of wrong TOTP guesses to keep their budget topped up.
+      // verifyMfaChallenge resets it only once the second factor is proven too.
+      return new LoginResponse(true, mfaChallengeTokenService.issue(user.getId()), null);
     }
+    loginAttemptService.registerSuccessfulLogin(user.getId());
     AuthTokensResponse tokens = tokenIssuanceService.issueTokens(user, deviceLabel, rawIpAddress);
-    return new LoginResponse(false, tokens);
+    return new LoginResponse(false, null, tokens);
   }
 
-  // Atomic increment (AppUserRepository.registerFailedLoginAttempt), not a save() of a mutated
-  // entity - AppUser carries a real @Version column, and two concurrent wrong-password attempts
-  // loading the same row would otherwise have one lose to an uncaught
-  // ObjectOptimisticLockingFailureException (a 500) instead of both correctly counting toward the
-  // lockout.
-  private void registerFailedAttempt(AppUser user) {
-    appUserRepository.registerFailedLoginAttempt(
-        user.getId(), MAX_FAILED_ATTEMPTS_BEFORE_LOCKOUT, now().plus(LOCKOUT_DURATION));
-  }
+  /**
+   * Step 2 of login for an MFA-enabled user (US-02-04) - completes what {@link #login} started,
+   * exchanging a still-valid challenge token plus a correct TOTP code for real tokens. A user whose
+   * status or MFA state changed since step 1 (disabled, MFA turned off) is rejected here too, not
+   * just re-checked at the next ordinary login - the challenge token alone must never be
+   * sufficient.
+   */
+  // noRollbackFor: same reason as login() - a wrong code's failed-attempt increment must persist
+  // even though the method throws to report it.
+  @Transactional(noRollbackFor = ResponseStatusException.class)
+  public AuthTokensResponse verifyMfaChallenge(
+      MfaVerifyRequest request, String deviceLabel, String rawIpAddress) {
+    UUID userId =
+        mfaChallengeTokenService
+            .parse(request.challengeToken())
+            .orElseThrow(this::invalidChallenge);
+    AppUser user = appUserRepository.findById(userId).orElseThrow(this::invalidChallenge);
 
-  // Same reasoning as registerFailedAttempt above - an atomic reset rather than a save() that a
-  // concurrent login (e.g. two devices signing in at once) could lose to a version conflict.
-  private void registerSuccessfulLogin(AppUser user) {
-    appUserRepository.registerSuccessfulLogin(user.getId(), now());
+    if (!ACTIVE.equals(user.getStatus())) {
+      throw invalidChallenge();
+    }
+    loginAttemptService.requireNotLocked(user);
+    if (!mfaService.verifyLoginCode(user, request.code())) {
+      loginAttemptService.registerFailedAttempt(user.getId());
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired code.");
+    }
+
+    loginAttemptService.registerSuccessfulLogin(user.getId());
+    return tokenIssuanceService.issueTokens(user, deviceLabel, rawIpAddress);
   }
 
   private ResponseStatusException invalidCredentials() {
     return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password.");
   }
 
-  private OffsetDateTime now() {
-    return OffsetDateTime.now(ZoneOffset.UTC);
+  private ResponseStatusException invalidChallenge() {
+    return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired challenge.");
   }
 }

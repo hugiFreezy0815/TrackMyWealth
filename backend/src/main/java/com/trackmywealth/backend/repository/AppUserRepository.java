@@ -134,6 +134,12 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   void registerSuccessfulLogin(
       @Param(USER_ID) UUID userId, @Param("loginAt") OffsetDateTime loginAt);
 
+  // US-02-04: disabling MFA discards the secret and clears the flag in one atomic statement, the
+  // same idiom as the login-state writes above (no read-modify-write of the entity).
+  @Modifying
+  @Query("UPDATE AppUser u SET u.mfaTotpSecret = null, u.mfaEnabled = false WHERE u.id = :userId")
+  void clearMfa(@Param(USER_ID) UUID userId);
+
   // #62: reactivateUser() mutates this row and then mutates user_session/refresh_token (for the
   // same user) in an order forced by a real FK constraint. Racing it against disableUser() on
   // the *same* target user could otherwise deadlock, not on user_session/refresh_token directly
