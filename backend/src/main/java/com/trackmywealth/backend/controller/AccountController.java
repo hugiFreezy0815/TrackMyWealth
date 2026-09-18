@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
+import com.trackmywealth.backend.dto.ReassignAccountInstitutionRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountService;
@@ -18,7 +19,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** US-05-01, US-05-02, US-05-03, US-03-03 (read/edit gated by {@code AccessControlService}). */
+/**
+ * US-05-01, US-05-02, US-05-03, US-04-04, US-03-03 (read/edit gated by {@code
+ * AccessControlService}).
+ */
 @RestController
 @RequestMapping("/api/v1/accounts")
 public class AccountController {
@@ -61,5 +65,13 @@ public class AccountController {
   public AccountSummaryResponse restoreAccount(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return accountService.restoreAccount(accountId, actor);
+  }
+
+  @PostMapping("/{accountId}/reassign-institution")
+  public AccountSummaryResponse reassignInstitution(
+      @PathVariable UUID accountId,
+      @Valid @RequestBody ReassignAccountInstitutionRequest request,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return accountService.reassignInstitution(accountId, request, actor);
   }
 }

@@ -7,6 +7,8 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
 import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
+import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
+import com.trackmywealth.backend.dto.ReassignAccountInstitutionRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import java.math.BigDecimal;
@@ -54,6 +56,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * The architecture-test half of the same story ({@code
  * only_institution_service_reads_institution_type}) lives in {@code ArchitectureTest}, not here,
  * matching where every other such rule in this codebase lives.
+ *
+ * <p>US-04-04: reassign an account to a different institution without losing history - the DoD's
+ * test is {@link #reassigningInstitutionMovesTheAccountAndBothSummariesRecomputeCorrectly}.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -737,6 +742,101 @@ class AccountControllerTest {
   }
 
   @Test
+  void reassigningInstitutionMovesTheAccountAndBothSummariesRecomputeCorrectly() {
+    // DoD: reassigns an account with a known value (a MORTGAGE's original_principal is the
+    // simplest existing value source that needs no extra setup call - see InstitutionService's
+    // resolveNativeValue) and confirms both institutions' summaries are correct before and after.
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institutionA =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "Institution A", "CH", "BANK", null, null, "CHF"));
+    FinancialInstitutionSummaryResponse institutionB =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "Institution B", "CH", "BANK", null, null, "CHF"));
+    AccountSummaryResponse account =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                institutionA.id(),
+                "Home Mortgage",
+                "MORTGAGE",
+                "CHF",
+                null,
+                null,
+                BigDecimal.valueOf(500000),
+                BigDecimal.valueOf(1.5),
+                null,
+                null));
+
+    InstitutionSummaryResponse beforeA = getInstitutionSummary(token, institutionA.id());
+    InstitutionSummaryResponse beforeB = getInstitutionSummary(token, institutionB.id());
+    assertThat(beforeA.totalLiabilities()).isEqualByComparingTo(BigDecimal.valueOf(500000));
+    assertThat(beforeB.totalLiabilities()).isEqualByComparingTo(BigDecimal.ZERO);
+
+    AccountSummaryResponse reassigned =
+        client(token)
+            .post()
+            .uri("/api/v1/accounts/" + account.id() + "/reassign-institution")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(new ReassignAccountInstitutionRequest(institutionB.id()))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(reassigned.financialInstitutionId()).isEqualTo(institutionB.id());
+
+    InstitutionSummaryResponse afterA = getInstitutionSummary(token, institutionA.id());
+    InstitutionSummaryResponse afterB = getInstitutionSummary(token, institutionB.id());
+    assertThat(afterA.totalLiabilities()).isEqualByComparingTo(BigDecimal.ZERO);
+    assertThat(afterB.totalLiabilities()).isEqualByComparingTo(BigDecimal.valueOf(500000));
+  }
+
+  @Test
+  void reassigningToAnUnknownInstitutionIsNotFound() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(
+            token,
+            new CreateAccountRequest(
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + created.id() + "/reassign-institution")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new ReassignAccountInstitutionRequest(UUID.randomUUID()))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void reassigningAnUnknownAccountIsNotFound() {
+    String token = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution =
+        createInstitution(
+            token,
+            new CreateFinancialInstitutionRequest(
+                null, "Institution A", "CH", "BANK", null, null, "CHF"));
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + UUID.randomUUID() + "/reassign-institution")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new ReassignAccountInstitutionRequest(institution.id()))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
   void everyAccountTypeCanBeAddedUnderAPensionProviderInstitution() {
     // DoD/FR-INS-008/RULE-020: institution_type never restricts account_type - a pension provider
     // (VIAC-like) can hold a plain cash balance, a securities depot, and more than one pension
@@ -873,6 +973,18 @@ class AccountControllerTest {
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
         .expectBody(FinancialInstitutionSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private InstitutionSummaryResponse getInstitutionSummary(String token, UUID institutionId) {
+    return client(token)
+        .get()
+        .uri("/api/v1/institutions/" + institutionId + "/summary")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(InstitutionSummaryResponse.class)
         .returnResult()
         .getResponseBody();
   }
