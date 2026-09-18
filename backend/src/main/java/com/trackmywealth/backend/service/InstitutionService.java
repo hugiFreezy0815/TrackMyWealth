@@ -226,43 +226,48 @@ public class InstitutionService {
 
     // FR-CUR-011/US-06-03: a current holding's value converts at the valuation date (today), not
     // at any date tied to when the account or its value was originally recorded - see
-    // docs/architecture/calculation-methodology.md. Resolved once, via getConversionRate, then
-    // applied via applyRate - not FxRateService.convert(), which would re-resolve the same rate a
-    // second time (a prior review round found this doubling every foreign-currency account's FX
-    // lookups for no reason).
-    try {
-      CurrencyConversionResult conversion =
-          fxRateService.getConversionRate(
-              account.getNativeCurrency(), containerCurrency, asOf, fxDefaultSource);
-      BigDecimal convertedValue = fxRateService.applyRate(nativeValue.get(), conversion);
+    // docs/architecture/calculation-methodology.md.
+    //
+    // PR-012/#78 follow-up: uses tryGetConversionRate, not a try/catch around getConversionRate.
+    // FxRateService's methods are themselves @Transactional and, absent a caller-supplied
+    // propagation override, join this method's own physical transaction (Spring's default
+    // REQUIRED propagation) - so getConversionRate() throwing marks that shared transaction
+    // rollback-only the moment it happens, and no catch here can undo that. The original version
+    // of this fix caught the exception and built exactly the "unknown" AccountContribution below,
+    // which looked correct and passed every functional assertion in isolation, but still failed
+    // the request: getSummary()'s own commit then threw UnexpectedRollbackException regardless of
+    // the catch, turning "one account has no FX rate" into a 500 for the whole summary - verified
+    // by reproducing it against this exact code before writing this fix.
+    Optional<CurrencyConversionResult> conversion =
+        fxRateService.tryGetConversionRate(
+            account.getNativeCurrency(), containerCurrency, asOf, fxDefaultSource);
+    if (conversion.isEmpty()) {
+      // No FX rate available for this pair at all - degrade this one account to unknown rather
+      // than failing the whole summary just because one foreign-currency account among several
+      // has no stored rate.
       return new AccountContribution(
           account.getId(),
           account.getName(),
           account.getNature(),
           account.getNativeCurrency(),
-          convertedValue,
-          conversion.rate(),
-          asOf,
-          conversion.carriedForward(),
-          true);
-    } catch (ResponseStatusException e) {
-      // PR-012: no FX rate available for this pair at all - degrade this one account to unknown
-      // rather than failing the whole summary just because one foreign-currency account among
-      // several has no stored rate.
-      if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
-        return new AccountContribution(
-            account.getId(),
-            account.getName(),
-            account.getNature(),
-            account.getNativeCurrency(),
-            null,
-            null,
-            null,
-            false,
-            false);
-      }
-      throw e;
+          null,
+          null,
+          null,
+          false,
+          false);
     }
+
+    BigDecimal convertedValue = fxRateService.applyRate(nativeValue.get(), conversion.get());
+    return new AccountContribution(
+        account.getId(),
+        account.getName(),
+        account.getNature(),
+        account.getNativeCurrency(),
+        convertedValue,
+        conversion.get().rate(),
+        asOf,
+        conversion.get().carriedForward(),
+        true);
   }
 
   // US-05-04/ArchitectureTest's only_account_service_branches_on_account_type: never reads
