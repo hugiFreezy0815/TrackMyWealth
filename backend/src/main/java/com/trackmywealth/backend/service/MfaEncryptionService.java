@@ -4,6 +4,7 @@ import com.trackmywealth.backend.config.MfaProperties;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
@@ -36,8 +37,12 @@ public class MfaEncryptionService {
   private static final int TAG_LENGTH_BITS = 128;
   private static final int KEY_LENGTH_BYTES = 32;
 
-  /** Must match the default of {@code app.security.mfa.encryption-key} in application.yml. */
-  static final String PLACEHOLDER_KEY = "Q0hBTkdFX01FX0lOX0VOVklST05NRU5UX0NPTkZJRzE=";
+  /**
+   * The text whose Base64 is the public placeholder default of {@code
+   * app.security.mfa.encryption-key} in application.yml - compared by decoded bytes rather than
+   * kept as a Base64 literal here, so no key-shaped literal lives in source.
+   */
+  static final String PLACEHOLDER_PHRASE = "CHANGE_ME_IN_ENVIRONMENT_CONFIG1";
 
   private static final String HOSTED_TOPOLOGY = "hosted";
 
@@ -49,7 +54,12 @@ public class MfaEncryptionService {
   public MfaEncryptionService(
       MfaProperties properties,
       @Value("${app.deployment.topology:self-hosted}") String deploymentTopology) {
-    if (PLACEHOLDER_KEY.equals(properties.encryptionKey())) {
+    byte[] keyBytes = Base64.getDecoder().decode(properties.encryptionKey());
+    if (keyBytes.length != KEY_LENGTH_BYTES) {
+      throw new IllegalStateException(
+          "app.security.mfa.encryption-key must decode (Base64) to exactly 32 bytes for AES-256");
+    }
+    if (MessageDigest.isEqual(keyBytes, PLACEHOLDER_PHRASE.getBytes(StandardCharsets.UTF_8))) {
       if (HOSTED_TOPOLOGY.equals(deploymentTopology)) {
         throw new IllegalStateException(
             "app.security.mfa.encryption-key is still the public placeholder - set MFA_ENCRYPTION_KEY"
@@ -59,11 +69,6 @@ public class MfaEncryptionService {
           "MFA_ENCRYPTION_KEY is not set: TOTP secrets are being encrypted with a publicly known"
               + " placeholder key, so at-rest encryption is ineffective. Set MFA_ENCRYPTION_KEY"
               + " (Base64 of 32 random bytes, e.g. `openssl rand -base64 32`) before real use.");
-    }
-    byte[] keyBytes = Base64.getDecoder().decode(properties.encryptionKey());
-    if (keyBytes.length != KEY_LENGTH_BYTES) {
-      throw new IllegalStateException(
-          "app.security.mfa.encryption-key must decode (Base64) to exactly 32 bytes for AES-256");
     }
     this.key = new SecretKeySpec(keyBytes, "AES");
   }

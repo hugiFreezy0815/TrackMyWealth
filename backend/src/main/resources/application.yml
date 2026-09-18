@@ -106,7 +106,8 @@ app:
       # well-formed Base64/32 bytes so an unconfigured dev/test environment starts (same
       # trade-off jwt.secret's own placeholder above makes) - but it is public, so the service
       # logs a warning when it is in use and refuses it outright when app.deployment.topology is
-      # `hosted`. Keep it in sync with MfaEncryptionService.PLACEHOLDER_KEY.
+      # `hosted`. It is the Base64 of MfaEncryptionService.PLACEHOLDER_PHRASE - keep them in sync
+      # (MfaEncryptionServiceTest fails if they drift).
       encryption-key: ${MFA_ENCRYPTION_KEY:Q0hBTkdFX01FX0lOX0VOVklST05NRU5UX0NPTkZJRzE=}
   deployment:
     topology: ${DEPLOYMENT_TOPOLOGY:self-hosted} # self-hosted | hosted (NFR-DEP-002)

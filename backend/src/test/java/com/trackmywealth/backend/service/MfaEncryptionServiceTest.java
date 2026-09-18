@@ -65,9 +65,7 @@ class MfaEncryptionServiceTest {
   @Test
   void theHostedTopologyRefusesThePublicPlaceholderKey() {
     assertThatThrownBy(
-            () ->
-                new MfaEncryptionService(
-                    new MfaProperties(MfaEncryptionService.PLACEHOLDER_KEY), "hosted"))
+            () -> new MfaEncryptionService(new MfaProperties(placeholderKey()), "hosted"))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("placeholder");
   }
@@ -75,8 +73,7 @@ class MfaEncryptionServiceTest {
   @Test
   void aSelfHostedInstallStillStartsOnThePlaceholderKeyButItIsWorkable() {
     MfaEncryptionService service =
-        new MfaEncryptionService(
-            new MfaProperties(MfaEncryptionService.PLACEHOLDER_KEY), SELF_HOSTED);
+        new MfaEncryptionService(new MfaProperties(placeholderKey()), SELF_HOSTED);
 
     assertThat(service.decrypt(service.encrypt("JBSWY3DPEHPK3PXP"))).isEqualTo("JBSWY3DPEHPK3PXP");
   }
@@ -96,11 +93,16 @@ class MfaEncryptionServiceTest {
             getClass().getResourceAsStream("/application.yml").readAllBytes(),
             StandardCharsets.UTF_8);
 
-    assertThat(yml).contains(MfaEncryptionService.PLACEHOLDER_KEY);
+    assertThat(yml).contains(placeholderKey());
   }
 
   private static MfaEncryptionService serviceWithKey(String base64Key) {
     return new MfaEncryptionService(new MfaProperties(base64Key), SELF_HOSTED);
+  }
+
+  private static String placeholderKey() {
+    return Base64.getEncoder()
+        .encodeToString(MfaEncryptionService.PLACEHOLDER_PHRASE.getBytes(StandardCharsets.UTF_8));
   }
 
   private static String randomKey() {
