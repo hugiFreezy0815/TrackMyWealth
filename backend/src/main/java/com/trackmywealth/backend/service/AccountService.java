@@ -80,6 +80,7 @@ public class AccountService {
   private static final String CUSTOM_ASSET = "CUSTOM_ASSET";
   private static final String ACTIVE = "ACTIVE";
   private static final String ARCHIVED = "ARCHIVED";
+  private static final String DELETED = "DELETED";
 
   // FR-LIF-006: archived accounts are restorable through the interface for 30 days; thereafter
   // they remain in the data but are no longer user-restorable.
@@ -94,6 +95,7 @@ public class AccountService {
   private final WorkspaceAccessService workspaceAccessService;
   private final AccessControlService accessControlService;
   private final AccountLookupService accountLookupService;
+  private final InstitutionLookupService institutionLookupService;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final AccountRepository accountRepository;
   private final AccountOwnershipRepository accountOwnershipRepository;
@@ -110,6 +112,7 @@ public class AccountService {
       WorkspaceAccessService workspaceAccessService,
       AccessControlService accessControlService,
       AccountLookupService accountLookupService,
+      InstitutionLookupService institutionLookupService,
       FinancialInstitutionRepository financialInstitutionRepository,
       AccountRepository accountRepository,
       AccountOwnershipRepository accountOwnershipRepository,
@@ -124,6 +127,7 @@ public class AccountService {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.accountLookupService = accountLookupService;
+    this.institutionLookupService = institutionLookupService;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.accountRepository = accountRepository;
     this.accountOwnershipRepository = accountOwnershipRepository;
@@ -298,19 +302,26 @@ public class AccountService {
   // explicitly as a named service-layer check, not just implicit isolation, so it's asserted here
   // too as deliberate defense-in-depth, one layer beyond this codebase's usual "RLS is sufficient"
   // convention for cross-tenant integrity.
+  //
+  // FR-STA-001: DELETED is terminal - reachable from ACTIVE only, reachable from nowhere once
+  // there (the same principle archiveAccount's own status check documents) - so a DELETED account
+  // is rejected here too, the one status this method doesn't otherwise care about. ACTIVE and
+  // ARCHIVED are both allowed: unlike archive/restore, this isn't a lifecycle transition, it's an
+  // ordinary attribute correction (the same category updateAccount's mutable fields fall into),
+  // so an archived account's mismodelled institution is still worth fixing.
   @Transactional
   public AccountSummaryResponse reassignInstitution(
       UUID accountId, ReassignAccountInstitutionRequest request, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    if (DELETED.equals(account.getStatus())) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "A deleted account cannot be reassigned to a different institution.");
+    }
 
     FinancialInstitution destination =
-        financialInstitutionRepository
-            .findById(request.financialInstitutionId())
-            .orElseThrow(
-                () ->
-                    new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Financial institution not found."));
+        institutionLookupService.findInstitutionOrThrow(request.financialInstitutionId());
     accessControlService.requireInstitutionAccess(actor, destination, AccessLevelValues.EDIT);
 
     if (!account.getWorkspace().getId().equals(destination.getWorkspace().getId())) {
@@ -332,15 +343,11 @@ public class AccountService {
   // V19's workspace_create_personal_assets_container trigger). When an id IS supplied, RLS's
   // tenant_isolation_read policy already confines the SELECT to the caller's own workspace - a
   // cross-workspace id simply isn't found, degrading safely to 404 rather than needing a
-  // separate equality check (same reasoning as AdminUserService/InstitutionService).
+  // separate equality check (same reasoning as AdminUserService/InstitutionService) - delegated to
+  // InstitutionLookupService, shared with reassignInstitution/SharingGrantService.
   private FinancialInstitution resolveInstitution(UUID financialInstitutionId, UUID workspaceId) {
     if (financialInstitutionId != null) {
-      return financialInstitutionRepository
-          .findById(financialInstitutionId)
-          .orElseThrow(
-              () ->
-                  new ResponseStatusException(
-                      HttpStatus.NOT_FOUND, "Financial institution not found."));
+      return institutionLookupService.findInstitutionOrThrow(financialInstitutionId);
     }
     return financialInstitutionRepository
         .findByWorkspaceIdAndPersonalAssetsDefaultTrue(workspaceId)
