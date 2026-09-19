@@ -9,7 +9,6 @@ import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.entity.SharingGrant;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.entity.WorkspaceMember;
-import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.SharingGrantRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -52,22 +51,22 @@ public class SharingGrantService {
   private final WorkspaceAccessService workspaceAccessService;
   private final AccessControlService accessControlService;
   private final AccountLookupService accountLookupService;
+  private final InstitutionLookupService institutionLookupService;
   private final WorkspaceMemberRepository workspaceMemberRepository;
-  private final FinancialInstitutionRepository financialInstitutionRepository;
   private final SharingGrantRepository sharingGrantRepository;
 
   public SharingGrantService(
       WorkspaceAccessService workspaceAccessService,
       AccessControlService accessControlService,
       AccountLookupService accountLookupService,
+      InstitutionLookupService institutionLookupService,
       WorkspaceMemberRepository workspaceMemberRepository,
-      FinancialInstitutionRepository financialInstitutionRepository,
       SharingGrantRepository sharingGrantRepository) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.accountLookupService = accountLookupService;
+    this.institutionLookupService = institutionLookupService;
     this.workspaceMemberRepository = workspaceMemberRepository;
-    this.financialInstitutionRepository = financialInstitutionRepository;
     this.sharingGrantRepository = sharingGrantRepository;
   }
 
@@ -96,7 +95,8 @@ public class SharingGrantService {
         grant.setScopeAccount(account);
       }
       case ScopeTypeValues.INSTITUTION -> {
-        FinancialInstitution institution = findInstitutionOrThrow(request.scopeInstitutionId());
+        FinancialInstitution institution =
+            institutionLookupService.findInstitutionOrThrow(request.scopeInstitutionId());
         requireFullAccessToScope(
             granterMemberId, ScopeTypeValues.INSTITUTION, null, institution, null);
         grant.setScopeInstitution(institution);
@@ -195,21 +195,6 @@ public class SharingGrantService {
               + " requires exactly the matching scope id field to be set (ACCOUNT ->"
               + " scopeAccountId, INSTITUTION -> scopeInstitutionId, WORKSPACE -> neither).");
     }
-  }
-
-  // Not folded into AccountLookupService alongside findAccountOrThrow: unlike the account lookup
-  // (three byte-identical copies across AccountService/CustomAssetValuationService/this class),
-  // AccountService's only other institution lookup is embedded inside resolveInstitution's larger
-  // two-branch method (an explicit id vs. the workspace's default container), not a standalone unit
-  // - extracting a shared helper would mean restructuring that already-shipped method for a single
-  // caller here, a larger change than this fix warrants.
-  private FinancialInstitution findInstitutionOrThrow(UUID institutionId) {
-    return financialInstitutionRepository
-        .findById(institutionId)
-        .orElseThrow(
-            () ->
-                new ResponseStatusException(
-                    HttpStatus.NOT_FOUND, "Financial institution not found."));
   }
 
   private SharingGrantResponse toResponse(SharingGrant grant) {

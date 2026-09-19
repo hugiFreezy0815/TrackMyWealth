@@ -10,10 +10,13 @@ import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest.OwnerAllocati
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
+import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
+import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.ReassignAccountInstitutionRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SharingGrantResponse;
@@ -45,10 +48,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * US-03-03's Definition of Done: grants, verifies access, revokes, and verifies immediate denial on
- * the next request. Scoped to {@code ACCOUNT}-scope grants only, proven against {@code
- * AccountController}'s new {@code GET}/{@code PUT} endpoints - the only endpoints that consult
- * {@code AccessControlService} today (see the class's own Javadoc: {@code INSTITUTION}/{@code
- * WORKSPACE} scope have no consuming endpoint yet).
+ * the next request. Originally scoped to {@code ACCOUNT}-scope grants only, proven against {@code
+ * AccountController}'s {@code GET}/{@code PUT} endpoints - at the time, the only endpoints that
+ * consulted {@code AccessControlService} at all. US-04-03's institution summary and US-04-04's
+ * {@code reassign-institution} both now gate on {@code INSTITUTION}-scope access too ({@link
+ * #reassigningInstitutionRequiresEditAccessToTheDestinationInstitution}), though only the deny side
+ * is provable through the public API today - see that test's own comment for why no test here
+ * grants {@code INSTITUTION}/{@code WORKSPACE}-scope access and then proves it works.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -330,6 +336,49 @@ class SharingGrantControllerTest {
   }
 
   @Test
+  void reassigningInstitutionRequiresEditAccessToTheDestinationInstitution() {
+    // US-04-04's own Authorization/privacy line: EDIT is required on the destination institution,
+    // not just the account being moved. Bob owns the account (implicit FULL access to it, no
+    // grant needed) but has no grant at all on the destination institution, which admin created
+    // and never shared with him - proving the destination-institution check is a real, separate
+    // gate, not subsumed by the account-side EDIT check that already passes for Bob here.
+    //
+    // Deny-only: proving the allow side would need an INSTITUTION-scope grant to Bob, but
+    // AccessControlService gives no one but the sole active member implicit FULL institution
+    // access (unlike accounts, an institution has no ownership fallback) - so once Bob exists as
+    // a second active member, admin's own FULL institution access (the one thing grant() itself
+    // requires of its caller) is already gone too, with no path through the public API to ever
+    // establish it again. That's a pre-existing gap in US-03-03's sharing model, not something
+    // this story introduces or is scoped to fix - noted here rather than worked around, since a
+    // raw-SQL-inserted grant would test AccessControlService's read side only, not anything a real
+    // caller could ever reach.
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com", PASSWORD);
+    assignOwnership(adminToken, account.id(), bobMemberId);
+    FinancialInstitutionSummaryResponse destination = createInstitution(adminToken);
+
+    // Every denial on this endpoint is an identical bare 404 (error messages aren't exposed in
+    // response bodies), so the 404 below could otherwise pass for the wrong reason. Proving first
+    // that Bob really does have EDIT on the account (updateAccount requires EDIT) and that the
+    // destination institution exists (admin just created it) leaves the destination-institution
+    // check as the only possible cause.
+    client(bobToken)
+        .put()
+        .uri("/api/v1/accounts/" + account.id())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(updateRequestBody(account))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    reassignInstitution(bobToken, account.id(), destination.id())
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
   void dependentMembersDoNotCountTowardTheSoleActiveMemberRule() {
     // A dependent workspace_member (is_dependent=true) can never log in, so it must never count
     // toward "am I the only person who could possibly be making this request" - otherwise adding
@@ -415,6 +464,32 @@ class SharingGrantControllerTest {
 
   private RestTestClient.ResponseSpec getAccount(String token, UUID accountId) {
     return client(token).get().uri("/api/v1/accounts/" + accountId).exchange();
+  }
+
+  private RestTestClient.ResponseSpec reassignInstitution(
+      String token, UUID accountId, UUID institutionId) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/reassign-institution")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new ReassignAccountInstitutionRequest(institutionId))
+        .exchange();
+  }
+
+  private FinancialInstitutionSummaryResponse createInstitution(String token) {
+    return client(token)
+        .post()
+        .uri("/api/v1/institutions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateFinancialInstitutionRequest(
+                null, "Second Institution", "CH", "BANK", null, null, "CHF"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(FinancialInstitutionSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private UpdateAccountRequest updateRequestBody(AccountSummaryResponse account) {

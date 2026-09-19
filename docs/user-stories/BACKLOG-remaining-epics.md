@@ -145,6 +145,11 @@ about the service-layer orchestration and the workspace-erasure flow that doesn'
 - Financial-change audit log population wired into every service-layer write path
   (FR-AUD-001) — the `financial_audit_log` table (V17) exists; nothing writes to it yet.
 - Soft-delete purge job for the 30-day restore window (FR-LIF-006, OPEN-032's proposed 30 days).
+- Account soft-delete (`ACTIVE` → `DELETED`, FR-STA-001) — no endpoint produces a `DELETED` account
+  yet. Include enforcing "no writes to a `DELETED` account" in one shared place (e.g. a guard in
+  `AccountLookupService`) across `updateAccount`, ownership changes, valuations and
+  `reassignInstitution`; today only `reassignInstitution` rejects `DELETED` (US-04-04), so the
+  guard is inconsistent until this lands.
 - Cascade preview before any action affecting dependent records (FR-LIF-007) — e.g. archiving an
   institution with accounts still under it.
 
