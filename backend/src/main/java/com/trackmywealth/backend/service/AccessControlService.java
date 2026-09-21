@@ -11,8 +11,11 @@ import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.SharingGrantRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -84,6 +87,31 @@ public class AccessControlService {
   @Transactional(readOnly = true)
   public void requireAccountAccess(UUID memberId, Account account, String requiredLevel) {
     denyUnless(atLeast(accountAccessLevel(memberId, account), requiredLevel), "Account not found.");
+  }
+
+  // Non-throwing, bulk counterpart of requireAccountAccess, for an aggregation (e.g. net worth)
+  // that
+  // must silently leave out the accounts the member cannot see rather than 404 the whole request.
+  // Bulk on purpose: the sole-active-member rule is a per-workspace count, identical for every
+  // account in that workspace, so it is resolved once per workspace here instead of once per
+  // account.
+  @Transactional(readOnly = true)
+  public List<Account> accountsWithAccess(
+      UUID memberId, Collection<Account> accounts, String requiredLevel) {
+    Map<UUID, Boolean> soleActiveMemberByWorkspace = new HashMap<>();
+    return accounts.stream()
+        .filter(
+            account ->
+                atLeast(
+                    effectiveAccessLevel(
+                        memberId,
+                        soleActiveMemberByWorkspace.computeIfAbsent(
+                            account.getWorkspace().getId(), this::isSoleActiveMember),
+                        account.getId(),
+                        account.getFinancialInstitution().getId(),
+                        true),
+                    requiredLevel))
+        .toList();
   }
 
   @Transactional(readOnly = true)
@@ -164,8 +192,20 @@ public class AccessControlService {
   // Javadoc), so no separate query shape is needed per scope.
   private String effectiveAccessLevel(
       UUID memberId, UUID workspaceId, UUID accountId, UUID institutionId, boolean checkOwnership) {
+    return effectiveAccessLevel(
+        memberId, isSoleActiveMember(workspaceId), accountId, institutionId, checkOwnership);
+  }
+
+  // The same computation with the (per-workspace) sole-active-member answer already in hand, for a
+  // bulk caller that would otherwise re-run the same count for every resource.
+  private String effectiveAccessLevel(
+      UUID memberId,
+      boolean soleActiveMember,
+      UUID accountId,
+      UUID institutionId,
+      boolean checkOwnership) {
     boolean implicitFull =
-        isSoleActiveMember(workspaceId)
+        soleActiveMember
             || (checkOwnership
                 && accountOwnershipRepository
                     .existsByAccountIdAndWorkspaceMemberIdAndEffectiveToIsNull(

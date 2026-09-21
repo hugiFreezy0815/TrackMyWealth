@@ -54,6 +54,10 @@ services:
       # If you put a reverse proxy in front of this stack, see the root README's "Running behind
       # a reverse proxy" section before setting this:
       #   TRUSTED_PROXIES: ${TRUSTED_PROXIES}
+      # The zone whose calendar date is "today" for balances and net worth (default Europe/Zurich,
+      # which has the same offsets as Germany's zone). The container itself runs in UTC, so leave
+      # this alone unless you are outside Switzerland/Germany - see the root README:
+      #   BUSINESS_ZONE: ${BUSINESS_ZONE}
     ports:
       - "8080:8080"
     restart: unless-stopped

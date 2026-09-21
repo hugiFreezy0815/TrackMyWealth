@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -329,9 +330,7 @@ class InstitutionControllerTest {
                 null,
                 "REAL_ESTATE"));
     recordValuation(
-        token,
-        asset.id(),
-        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("2000")));
+        token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("2000")));
     createAccount(
         token,
         new CreateAccountRequest(
@@ -381,8 +380,8 @@ class InstitutionControllerTest {
     recordValuation(
         token,
         account.id(),
-        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("1000")));
-    seedFxRate("USD", "CHF", LocalDate.now(), "0.9000000000");
+        new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
+    seedFxRate("USD", "CHF", today(), "0.9000000000");
 
     InstitutionSummaryResponse summary = getSummary(token, institution.id());
 
@@ -390,7 +389,7 @@ class InstitutionControllerTest {
     InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
     assertThat(contribution.valueInContainerCurrency()).isEqualByComparingTo("900.0000");
     assertThat(contribution.conversionRate()).isEqualByComparingTo("0.9000000000");
-    assertThat(contribution.conversionRateDate()).isEqualTo(LocalDate.now());
+    assertThat(contribution.conversionRateDate()).isEqualTo(today());
     assertThat(contribution.conversionRateCarriedForward()).isFalse();
   }
 
@@ -423,8 +422,8 @@ class InstitutionControllerTest {
     recordValuation(
         token,
         account.id(),
-        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("1000")));
-    seedFxRate("USD", "CHF", LocalDate.now().minusWeeks(1), "0.9000000000");
+        new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
+    seedFxRate("USD", "CHF", today().minusWeeks(1), "0.9000000000");
 
     InstitutionSummaryResponse summary = getSummary(token, institution.id());
 
@@ -469,9 +468,7 @@ class InstitutionControllerTest {
                 null,
                 "COLLECTIBLE"));
     recordValuation(
-        token,
-        asset.id(),
-        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("5000")));
+        token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("5000")));
 
     InstitutionSummaryResponse summary = getSummary(token, institution.id());
 
@@ -510,9 +507,7 @@ class InstitutionControllerTest {
                 null,
                 "COLLECTIBLE"));
     recordValuation(
-        token,
-        asset.id(),
-        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("1000")));
+        token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
     client(token).post().uri("/api/v1/accounts/" + asset.id() + "/archive").exchange();
 
     InstitutionSummaryResponse summary = getSummary(token, institution.id());
@@ -551,9 +546,7 @@ class InstitutionControllerTest {
                 null,
                 "COLLECTIBLE"));
     recordValuation(
-        token,
-        asset.id(),
-        new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal("1000")));
+        token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
     // Deliberately no seedFxRate call - USD/CHF has no rate at all, not even a stale one.
 
     InstitutionSummaryResponse summary = getSummary(token, institution.id());
@@ -754,6 +747,12 @@ class InstitutionControllerTest {
         .expectBody(CustomAssetValuationResponse.class)
         .returnResult()
         .getResponseBody();
+  }
+
+  // app.business-zone's default: the service's "today" is Zurich's date, not this JVM's (CI is
+  // UTC).
+  private static LocalDate today() {
+    return LocalDate.now(ZoneId.of("Europe/Zurich"));
   }
 
   private void seedFxRate(String base, String quote, LocalDate date, String rate) {
