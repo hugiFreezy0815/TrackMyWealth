@@ -37,4 +37,9 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
   // US-09-01: net worth spans every currently-active account in the workspace (FR-LIF-005 - an
   // archived account is excluded from current totals, same as the institution summary above).
   List<Account> findByWorkspaceIdAndStatusOrderByCreatedAtAsc(UUID workspaceId, String status);
+
+  // US-09-02: spending spans every account in the workspace, archived ones included - a past
+  // month's spending on an account archived since must still count (FR-LIF-005 only excludes an
+  // archived account from *current* totals).
+  List<Account> findByWorkspaceId(UUID workspaceId);
 }

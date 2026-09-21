@@ -3,6 +3,7 @@ package com.trackmywealth.backend.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -15,6 +16,20 @@ public class AccountCreditCard extends AccountExtension {
   @JdbcTypeCode(SqlTypes.CHAR)
   @Column(name = "billing_currency", nullable = false, length = 3)
   private String billingCurrency;
+
+  // FR-CC-007: the current account expected to pay this card's statement. Null until set;
+  // settlement
+  // matching only runs for a card that has one.
+  @Column(name = "settlement_source_account_id", columnDefinition = "uuid")
+  private UUID settlementSourceAccountId;
+
+  public UUID getSettlementSourceAccountId() {
+    return settlementSourceAccountId;
+  }
+
+  public void setSettlementSourceAccountId(UUID settlementSourceAccountId) {
+    this.settlementSourceAccountId = settlementSourceAccountId;
+  }
 
   public String getBillingCurrency() {
     return billingCurrency;

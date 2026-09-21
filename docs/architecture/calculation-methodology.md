@@ -190,3 +190,82 @@ account's foreign currency is converted at the business date's rate, resolved on
 pair per request). Each account's sign comes from its `nature` (the DB-generated column), never from application-side
 `account_type` logic. Accounts with no resolvable value (types with no value source yet) are listed but excluded from the totals and
 flagged (`complete = false`) rather than counted as zero.
+
+## Card settlement matching and spending (US-09-02, FR-CC-004/005/007, FR-CF-001/004/005)
+
+The single most important correctness rule for cards: a purchase counts as spending **once**, when
+it is made - never again when the statement is paid. The monthly payment out of the current account
+is an internal transfer (DM-05), not a second expense.
+
+**What is matched.** For a card with a `settlement_source_account_id`, a *payment* is a negative,
+non-voided `WITHDRAWAL` or `SETTLEMENT` row on that account and a *card credit* is a positive,
+non-voided `SETTLEMENT` row on the card. Both must be in the card's currency (cross-currency is
+US-09-04). They pair when the amounts are exactly equal and the booking dates are at most 5 days
+apart.
+
+| Situation | Outcome |
+|---|---|
+| exactly one credit fits the payment, and the payment is that credit's only fit | applied automatically (`CONFIRMED`, decided by the system): both legs flagged `is_internal_transfer`, each pointing at the other's account |
+| several payments/credits fit each other (identical amounts) | every pair only `PROPOSED` - never applied on a guess |
+| payment with no card credit, equal to the card's balance on the payment date | `PROPOSED` as `BALANCE_EQUALS_PAYMENT` - only one leg is recorded yet (FR-CF-005); never auto-applied, since an ordinary debit can equal the balance by coincidence |
+| payment equal to neither | ordinary spending |
+
+**Cost.** A write costs a handful of queries however long the ledger is. Pairing looks only at the
+card's few unmatched credits, each fetching just the payments of the same amount within the window;
+the one-sided check is one query that compares balances inside the database, and for a write covers
+only payments the new row can affect (booked within the window before it, or after it). Only an
+on-demand run, a newly set settlement source or an undone match scans the full history. A test
+counts the SQL statements of a write with 10 versus 410 historic withdrawals and requires them not
+to grow.
+
+A `PROPOSED` one-sided match that is later completed by its card credit becomes the pair
+(`LEG_PAIR`) in place. Confirming a proposal rejects any competing proposal for the same payment or
+credit. Matching never re-types a leg (`transaction_type` is frozen by the ledger trigger) - it only
+sets the two mutable link columns, so undoing a match is clearing them.
+
+**Decisions are sticky.** A `REJECTED` match is final: the same pair (or a payment whose one-sided
+proposal was rejected) is never proposed again, and matching can be re-run any number of times
+without adding anything. Rejecting a payment *as a settlement* (its one-sided candidate) also stops
+the system from later applying it to a credit of its own accord: a credit of the same amount that
+arrives afterwards is only *proposed* against it, for the member to decide. Rejecting a `CONFIRMED` match reverts both legs to ordinary transactions
+and re-runs matching, since a freed credit may now fit a different payment. Deciding a match needs
+`EDIT` on **both** accounts; a caller without it sees the match as nonexistent. The work queue
+(`GET /settlement-matches`, newest first, at most 200) and `POST .../settlement-matches/run` return
+only matches whose card *and* payment account the caller may edit - the filter is part of the query,
+so another member's matches cannot crowd the caller's own out of the page, and a card's earlier
+settlement source is never revealed through its current one. Ties on `created_at` (one run's
+proposals share it) are ordered by `id`.
+
+**Concurrency.** Everything that applies or decides a match for a card first takes that card's
+account row lock (`SettlementDetectionService#lockCard`), so two writes racing on a card, or two
+members confirming competing proposals, queue instead of proposing the same pair twice or
+deadlocking. Taking it *after* inserting a ledger row is safe because Hibernate emits `FOR NO KEY
+UPDATE` for a pessimistic write on PostgreSQL, which - unlike `FOR UPDATE` - does not conflict with
+the `FOR KEY SHARE` the insert takes on the card row through its foreign key; a test races writers on
+one card and its source account to guard that.
+
+**Monthly spending (partial, until EPIC 10)** - `GET /api/v1/cash-flow?month=yyyy-MM`:
+
+- **Spending** is `CREDIT_CARD_PURCHASE` and `WITHDRAWAL` rows, summed per currency by **booking
+  date** (FR-CC-009) - so August purchases stay in August whenever the statement is paid. It leaves
+  out `SETTLEMENT` rows (never spending, matched or not), any row flagged an internal transfer, and
+  any payment awaiting a decision.
+- **`pendingReview`** reports that awaiting-a-decision amount (a `PROPOSED` payment, or an
+  unmatched `SETTLEMENT`-typed debit) - neither counted as spending nor silently dropped - and
+  `complete` is `false` while it is non-empty, because `spending` may then be missing a payment that
+  turns out to be a real expense (PR-011, the story's data-quality rule).
+- Like the balance, it sums signed amounts including voided rows, so a void's reversing row nets
+  against its original. A voided payment is therefore never "awaiting a decision" - a proposal on a
+  row voided since is moot, and a voided payment stays in the sum where its reversing row cancels it
+  (excluding the original while counting the reversal would understate spending by the payment).
+  Confirming a proposal on a voided payment or credit is a 409. Only accounts the caller may `READ` contribute (transaction-level detail is
+  not shown at `BALANCE_ONLY`). Currencies are not converted: a realised-flow FX conversion belongs
+  to EPIC 10.
+
+**Worked example (golden case V-13).** Purchases of CHF 700 (10 Aug) and CHF 500 (28 Aug) on the
+card; on 3 Sep CHF 1,200 leaves the current account and a CHF 1,200 credit is booked on the card.
+
+| | Aug spending | Sep spending | Card balance |
+|---|---|---|---|
+| CHF 1,200 payment matched | 1,200 | **0** | 0 |
+| no settlement source (control) | 1,200 | 1,200 (double count) | 0 |
