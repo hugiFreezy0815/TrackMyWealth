@@ -75,6 +75,26 @@ recognition; transaction-date attribution." Implement it as an automated regress
 **Data-quality behaviour:** An unmatched settlement-looking payment sitting unresolved must be
 surfaced to the user as an item needing review, not silently counted as a regular expense.
 
+> **Implementation notes (US-09-02) — where the built behaviour departs from the wording above.**
+>
+> - **`transaction_type` is not rewritten by matching.** `trg_transaction_append_only` (V21) freezes
+>   `transaction_type`, so a payment recorded as a `WITHDRAWAL` cannot become a `SETTLEMENT` in place
+>   (that would need void-and-replace, US-07-02). Matching sets only `is_internal_transfer` and
+>   `counterparty_account_id`, both mutable, which is also what lets a rejected match revert cleanly.
+>   A leg is typed `SETTLEMENT` only if it was recorded that way.
+> - **"An open card statement" is not modelled** (the statement cycle is US-09-03). A payment is
+>   matched to a card-side `SETTLEMENT` credit of the same amount within 5 days, or — as a
+>   proposal only — recognised when it equals what the card owed on the payment date.
+> - **"The matching job"** is an idempotent service (`SettlementDetectionService`) run after each
+>   relevant write, after the settlement source is set, and on demand
+>   (`POST /accounts/{id}/settlement-matches/run`). A scheduled Quartz wrapper is EPIC 30's.
+> - **The settlement source is set explicitly**; inferring it "from repeated payment patterns" is not
+>   built.
+> - **The spending total** is a thin, partial `GET /cash-flow?month=` (per currency, booking-date
+>   attribution) that EPIC 10 supersedes.
+> - **V-13** runs as an ordinary integration test (`SettlementMatchControllerTest`); the
+>   golden-dataset framework (US-27-01) does not exist yet.
+
 ---
 
 ## US-09-03 — Statement cycle and transaction-date attribution

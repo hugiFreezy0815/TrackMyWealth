@@ -9,6 +9,8 @@ import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -22,16 +24,22 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * US-09-01: records individual credit-card purchases on the append-only ledger (FR-CC-001, DM-11).
- * This is deliberately the narrow slice of US-07-01 ("manually record a transaction of any
- * supported type") that the card story needs: only {@code CREDIT_CARD_PURCHASE} is accepted so far,
- * and US-07-01 widens the accepted set rather than replacing this method.
+ * Records individual transactions on the append-only ledger. This is deliberately the narrow slice
+ * of US-07-01 ("manually record a transaction of any supported type") that the credit-card stories
+ * need: US-09-01's {@code CREDIT_CARD_PURCHASE}, and US-09-02's {@code SETTLEMENT} (either leg of a
+ * card payment) and {@code WITHDRAWAL} (money out of an ordinary account). US-07-01 widens the
+ * accepted set rather than replacing this method.
  *
- * <p>Whether an account is a credit card is decided by its {@code hasStatementCycle} capability
- * flag, never by {@code account_type} ({@code ArchitectureTest}, US-05-04). No DB trigger guards
- * {@code transaction.account_id} against the account's type - {@code trg_extension_type_guard} (V5)
- * only fires on inserts into the extension tables - so this service check is the only thing
- * standing between a card purchase and, say, a cash account.
+ * <p>Every amount is cash-direction signed and stored as sent (see {@link Transaction}); the sign
+ * each type must carry is checked in {@link #validate}. Whether an account is a credit card is
+ * decided by its {@code hasStatementCycle} capability flag, never by {@code account_type} ({@code
+ * ArchitectureTest}, US-05-04). No DB trigger guards {@code transaction.account_id} against the
+ * account's type - {@code trg_extension_type_guard} (V5) only fires on inserts into the extension
+ * tables - so these service checks are the only thing standing between a card purchase and, say, a
+ * cash account.
+ *
+ * <p>After every new row, {@link SettlementDetectionService} re-checks the cards it can affect, so
+ * a payment and its card-side credit are linked (and kept out of spending) as soon as both exist.
  *
  * <p>The balance a purchase changes is read through {@link AccountValuationService}, not computed
  * here: recording and valuing are separate concerns, and the balance is always derived from the
@@ -41,6 +49,10 @@ import tools.jackson.databind.ObjectMapper;
 public class TransactionService {
 
   private static final String CREDIT_CARD_PURCHASE = "CREDIT_CARD_PURCHASE";
+  private static final String SETTLEMENT = "SETTLEMENT";
+  private static final String WITHDRAWAL = "WITHDRAWAL";
+  private static final Set<String> SUPPORTED_TYPES =
+      Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT, WITHDRAWAL);
   private static final String ACTIVE = "ACTIVE";
   private static final String MANUAL = "MANUAL";
   private static final String MCC_KEY = "mcc";
@@ -55,16 +67,19 @@ public class TransactionService {
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final TransactionRepository transactionRepository;
+  private final SettlementDetectionService settlementDetectionService;
   private final ObjectMapper objectMapper;
 
   public TransactionService(
       AccountLookupService accountLookupService,
       AccessControlService accessControlService,
       TransactionRepository transactionRepository,
+      SettlementDetectionService settlementDetectionService,
       ObjectMapper objectMapper) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
+    this.settlementDetectionService = settlementDetectionService;
     this.objectMapper = objectMapper;
   }
 
@@ -111,7 +126,11 @@ public class TransactionService {
     // flush, not a plain save: forces the INSERT (and any constraint/trigger rejection) to happen
     // here, inside this method, rather than deferred to end-of-transaction commit - same reasoning
     // as AccountService's own saveAndFlush calls.
-    return toResponse(transactionRepository.saveAndFlush(transaction));
+    Transaction saved = transactionRepository.saveAndFlush(transaction);
+    // Same transaction, so the response below already shows the internal-transfer flag if this row
+    // just completed a settlement pair.
+    settlementDetectionService.detectAfterWrite(account);
+    return toResponse(saved);
   }
 
   @Transactional(readOnly = true)
@@ -156,15 +175,28 @@ public class TransactionService {
   }
 
   private static void validate(Account account, CreateTransactionRequest request) {
-    if (!CREDIT_CARD_PURCHASE.equals(request.transactionType())) {
+    String type = request.transactionType();
+    if (!SUPPORTED_TYPES.contains(type)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
-          "Only " + CREDIT_CARD_PURCHASE + " transactions can be recorded so far.");
+          "Only "
+              + String.join(", ", new TreeSet<>(SUPPORTED_TYPES))
+              + " transactions can be recorded so far.");
     }
-    if (!account.isHasStatementCycle()) {
+    if (!account.isHasTransactions()) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT, "This account does not hold transactions.");
+    }
+    boolean card = account.isHasStatementCycle();
+    if (CREDIT_CARD_PURCHASE.equals(type) && !card) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           CREDIT_CARD_PURCHASE + " can only be recorded against a credit-card account.");
+    }
+    if (WITHDRAWAL.equals(type) && card) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          "A credit card is paid down by a " + SETTLEMENT + ", not a " + WITHDRAWAL + ".");
     }
     if (!ACTIVE.equals(account.getStatus())) {
       throw new ResponseStatusException(
@@ -177,14 +209,22 @@ public class TransactionService {
           HttpStatus.UNPROCESSABLE_CONTENT,
           "currency must match the account's currency ("
               + account.getNativeCurrency()
-              + "); foreign-currency card purchases are not supported yet.");
+              + "); foreign-currency transactions are not supported yet.");
     }
-    // Cash-direction signed ledger: a purchase is money leaving the card's headroom, so it is
-    // negative. Rejecting rather than flipping the sign keeps "what you send is what is stored".
-    if (request.amount().signum() >= 0) {
+    // Cash-direction signed ledger: rejecting a wrong sign rather than flipping it keeps "what you
+    // send is what is stored". Money leaves the account for a purchase, a withdrawal, and the
+    // payment side of a settlement; it enters the card for the card side of a settlement.
+    boolean mustBePositive = SETTLEMENT.equals(type) && card;
+    if (mustBePositive ? request.amount().signum() <= 0 : request.amount().signum() >= 0) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
-          "amount must be negative for a " + CREDIT_CARD_PURCHASE + " (e.g. -85.00).");
+          mustBePositive
+              ? "amount must be positive for the card side of a "
+                  + SETTLEMENT
+                  + " (e.g. 1200.00): it reduces what the card owes."
+              : "amount must be negative for a "
+                  + type
+                  + " (e.g. -85.00): money leaves the account.");
     }
   }
 
@@ -201,6 +241,7 @@ public class TransactionService {
         transaction.getNotes(),
         transaction.getSource(),
         transaction.getExternalId(),
+        transaction.isInternalTransfer(),
         transaction.getCreatedAt());
   }
 

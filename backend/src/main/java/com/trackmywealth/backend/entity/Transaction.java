@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.generator.EventType;
@@ -30,7 +31,12 @@ import org.hibernate.type.SqlTypes;
  * positive. A financial field is never updated in place - {@code trg_transaction_append_only}
  * rejects it at the DB level.
  */
+// Only the columns that actually changed are written: the ledger's financial fields are frozen by
+// trg_transaction_append_only, so an UPDATE that re-sent every mapped column would be one careless
+// mapping change away from tripping it. Settlement matching (US-09-02) updates only the two link
+// columns below.
 @Entity
+@DynamicUpdate
 @Table(name = "transaction")
 public class Transaction {
 
@@ -78,6 +84,21 @@ public class Transaction {
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "raw_source_data", columnDefinition = "jsonb")
   private String rawSourceData;
+
+  // DM-05/FR-CF-001: an internal transfer (e.g. a card settlement) is excluded from income and
+  // expense. Set together with counterpartyAccountId by settlement matching; both columns stay
+  // mutable under the append-only trigger, which is what lets a wrong match be undone cleanly.
+  @Column(name = "is_internal_transfer", nullable = false)
+  private boolean internalTransfer;
+
+  // FR-CF-005: the account holding the other leg of a matched transfer. Null until matched.
+  @Column(name = "counterparty_account_id", columnDefinition = "uuid")
+  private UUID counterpartyAccountId;
+
+  // FR-LIF-002: set when the row is voided (US-07-02). Read-only here - no code path in this
+  // codebase voids yet - so a matching query can leave voided rows out.
+  @Column(name = "voided_at", insertable = false, updatable = false)
+  private OffsetDateTime voidedAt;
 
   @Column(name = "created_by", columnDefinition = "uuid")
   private UUID createdBy;
@@ -176,6 +197,26 @@ public class Transaction {
 
   public void setRawSourceData(String rawSourceData) {
     this.rawSourceData = rawSourceData;
+  }
+
+  public boolean isInternalTransfer() {
+    return internalTransfer;
+  }
+
+  public void setInternalTransfer(boolean internalTransfer) {
+    this.internalTransfer = internalTransfer;
+  }
+
+  public UUID getCounterpartyAccountId() {
+    return counterpartyAccountId;
+  }
+
+  public void setCounterpartyAccountId(UUID counterpartyAccountId) {
+    this.counterpartyAccountId = counterpartyAccountId;
+  }
+
+  public OffsetDateTime getVoidedAt() {
+    return voidedAt;
   }
 
   public UUID getCreatedBy() {
