@@ -46,21 +46,55 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param("accountId") UUID accountId, @Param("asOf") LocalDate asOf);
 
   /**
-   * Candidate settlement payments (US-09-02): the negative, non-voided rows of {@code types} on the
-   * card's settlement-source account, in {@code currency}, that are not already half of a CONFIRMED
-   * <em>pair</em>. A payment with only a CONFIRMED one-sided match stays a candidate on purpose, so
-   * the card-side leg can complete it when it is recorded later (FR-CF-005).
+   * Payments that can pair with a card credit of {@code -amount} (US-09-02): the non-voided rows of
+   * {@code types} on the card's settlement-source account, in {@code currency}, of exactly {@code
+   * amount}, booked in [{@code from}, {@code to}] and not already half of a CONFIRMED
+   * <em>pair</em>. Bounded by amount and date, so its cost follows the handful of unmatched credits
+   * and not the account's whole history. A payment with only a CONFIRMED one-sided match stays a
+   * candidate on purpose, so the card-side leg can complete it when it is recorded later
+   * (FR-CF-005).
    */
   @Query(
-      "select t from Transaction t where t.account.id = :accountId and t.amount < 0"
+      "select t from Transaction t where t.account.id = :accountId and t.amount = :amount"
+          + " and t.bookingDate between :from and :to"
           + " and t.voidedAt is null and t.currency = :currency and t.transactionType in :types"
           + " and not exists (select 1 from SettlementMatch m where m.status = 'CONFIRMED'"
           + " and m.cardTransaction is not null and m.paymentTransaction = t)"
           + " order by t.bookingDate, t.createdAt, t.id")
-  List<Transaction> findSettlementPaymentCandidates(
+  List<Transaction> findPairablePayments(
       @Param("accountId") UUID accountId,
       @Param("currency") String currency,
-      @Param("types") Collection<String> types);
+      @Param("types") Collection<String> types,
+      @Param("amount") BigDecimal amount,
+      @Param("from") LocalDate from,
+      @Param("to") LocalDate to);
+
+  /**
+   * One-sided settlement candidates (US-09-02, FR-CF-005): payments booked on or after {@code
+   * since} that equal exactly what the card owed on their booking date and have no match of any
+   * status for this card yet. The balance comparison runs in the database - one query, not one per
+   * payment - and a payment with any earlier match row (proposed, confirmed or rejected) is never
+   * returned, so a decision already made is not revisited. {@code since} bounds the scan for a
+   * write, which can only change the outcome for payments booked on or after it.
+   *
+   * <p>The card's balance is the signed sum of its rows to that date (a purchase is negative), so a
+   * payment of {@code -1200} equals a card that owed 1,200.
+   */
+  @Query(
+      "select t from Transaction t where t.account.id = :sourceAccountId and t.amount < 0"
+          + " and t.voidedAt is null and t.currency = :currency and t.transactionType in :types"
+          + " and t.bookingDate >= :since"
+          + " and not exists (select 1 from SettlementMatch m"
+          + " where m.cardAccount.id = :cardAccountId and m.paymentTransaction = t)"
+          + " and (select sum(c.amount) from Transaction c where c.account.id = :cardAccountId"
+          + " and c.bookingDate <= t.bookingDate) = t.amount"
+          + " order by t.bookingDate, t.createdAt, t.id")
+  List<Transaction> findPaymentsEqualToCardBalance(
+      @Param("sourceAccountId") UUID sourceAccountId,
+      @Param("cardAccountId") UUID cardAccountId,
+      @Param("currency") String currency,
+      @Param("types") Collection<String> types,
+      @Param("since") LocalDate since);
 
   /**
    * Card-side credits (positive, non-voided {@code SETTLEMENT} rows) not yet in a CONFIRMED match.
@@ -82,14 +116,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * element is {@code [currency, sum]}.
    *
    * <p>Like the balance query, this includes voided rows: a void's reversing row nets against the
-   * original only if both are summed.
+   * original only if both are summed. For the same reason a voided payment is never "awaiting a
+   * decision" here - a proposal on a row that has since been voided is moot - so it stays in the
+   * sum, where its reversing row cancels it, instead of being excluded while the reversal is
+   * counted.
    */
   @Query(
       "select t.currency, sum(t.amount) from Transaction t where t.account.id in :accountIds"
           + " and t.transactionType in :types and t.internalTransfer = false"
           + " and t.bookingDate between :from and :to"
-          + " and not exists (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
-          + " and m.paymentTransaction = t)"
+          + " and (t.voidedAt is not null or not exists (select 1 from SettlementMatch m"
+          + " where m.status = 'PROPOSED' and m.paymentTransaction = t))"
           + " group by t.currency order by t.currency")
   List<Object[]> sumSpendingByCurrency(
       @Param("accountIds") Collection<UUID> accountIds,
@@ -100,11 +137,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /**
    * Signed sum per currency of payments that look like a card settlement but are not resolved: a
    * negative row typed {@code SETTLEMENT}, or one with a PROPOSED match, that is not yet flagged an
-   * internal transfer (FR-CF-004/005 data-quality rule). Each element is {@code [currency, sum]}.
+   * internal transfer (FR-CF-004/005 data-quality rule). A voided row is no longer unresolved, so
+   * it is left out (its reversing row is positive and outside the sum anyway). Each element is
+   * {@code [currency, sum]}.
    */
   @Query(
       "select t.currency, sum(t.amount) from Transaction t where t.account.id in :accountIds"
-          + " and t.internalTransfer = false and t.amount < 0"
+          + " and t.internalTransfer = false and t.amount < 0 and t.voidedAt is null"
           + " and t.bookingDate between :from and :to"
           + " and (t.transactionType = 'SETTLEMENT' or exists (select 1 from SettlementMatch m"
           + " where m.status = 'PROPOSED' and m.paymentTransaction = t))"

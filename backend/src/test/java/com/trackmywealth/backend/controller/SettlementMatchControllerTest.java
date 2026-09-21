@@ -22,6 +22,7 @@ import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -30,7 +31,13 @@ import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import javax.sql.DataSource;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -79,11 +86,15 @@ class SettlementMatchControllerTest {
     registry.add("spring.datasource.username", postgres::getUsername);
     registry.add("spring.datasource.password", postgres::getPassword);
     registry.add("app.rate-limit.enabled", () -> "false");
+    // Lets the tests count the SQL statements a request issues (see statementsFor).
+    registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
   }
 
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
+
+  @Autowired EntityManagerFactory entityManagerFactory;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -604,6 +615,357 @@ class SettlementMatchControllerTest {
             "/api/v1/cash-flow?month=2026-13",
             "/api/v1/settlement-matches?status=BOGUS")) {
       client(token).get().uri(uri).exchange().expectStatus().isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  // --- Concurrency -----------------------------------------------------------------------------
+
+  @Test
+  void concurrentWritesToOneCardAndItsSourceAccountAllSucceed() throws Exception {
+    // Every write re-runs matching for the card. Two writes racing on the same card must serialise
+    // cleanly - not deadlock (a 500 on a valid purchase) and not lose a row.
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    int rounds = 6;
+    int writers = 16;
+    ExecutorService pool = Executors.newFixedThreadPool(writers);
+    try {
+      int expectedPurchases = 0;
+      for (int round = 0; round < rounds; round++) {
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Integer>> statuses = new java.util.ArrayList<>();
+        for (int i = 0; i < writers; i++) {
+          boolean onCard = i % 4 != 3; // mostly the card: that is where the writes contend
+          String amount = "-" + (10 + i + round * writers) + ".00";
+          expectedPurchases += onCard ? 1 : 0;
+          statuses.add(
+              pool.submit(
+                  () -> {
+                    start.await();
+                    return postOn(
+                            token,
+                            onCard ? a.card() : a.current(),
+                            onCard ? "CREDIT_CARD_PURCHASE" : "WITHDRAWAL",
+                            amount,
+                            SEP_3,
+                            "CHF")
+                        .returnResult(String.class)
+                        .getStatus()
+                        .value();
+                  }));
+        }
+        start.countDown();
+        for (Future<Integer> status : statuses) {
+          assertThat(status.get()).isEqualTo(201);
+        }
+      }
+      // Counted in the DB, not through the paged endpoint, which caps a page at 200 rows.
+      assertThat(countLedgerRows(a.card())).isEqualTo(expectedPurchases);
+      assertThat(countLedgerRows(a.current())).isEqualTo(rounds * writers - expectedPurchases);
+    } finally {
+      pool.shutdownNow();
+    }
+  }
+
+  // --- Cost of a write does not grow with the ledger's history --------------------------------
+
+  @Test
+  void theCostOfAWriteDoesNotGrowWithTheHistoryOnTheSourceAccount() {
+    // Each write re-runs matching. Years of ordinary withdrawals that never pair must not turn that
+    // into one query per historical payment.
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    purchase(token, a.card(), "-1200.00", AUG_10);
+    insertHistoricWithdrawals(a.current(), 10);
+    long withFew = statementsFor(() -> purchase(token, a.card(), "-5.00", SEP_3));
+
+    insertHistoricWithdrawals(a.current(), 400);
+    long withMany = statementsFor(() -> purchase(token, a.card(), "-6.00", SEP_4));
+
+    assertThat(withMany)
+        .as("statements for one write with 10 vs 410 historic withdrawals")
+        .isLessThanOrEqualTo(withFew + 3);
+  }
+
+  private long statementsFor(Runnable action) {
+    Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+    statistics.clear();
+    action.run();
+    return statistics.getPrepareStatementCount();
+  }
+
+  private int countLedgerRows(UUID accountId) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("SELECT count(*) FROM transaction WHERE account_id = ?")) {
+      statement.setObject(1, accountId);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        resultSet.next();
+        return resultSet.getInt(1);
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  // Old, ordinary debits that equal nothing: each amount is unique and never the card's balance.
+  private void insertHistoricWithdrawals(UUID accountId, int count) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+                    + " amount, currency) SELECT a.workspace_id, a.id, 'WITHDRAWAL',"
+                    + " DATE '2026-01-01' + (g % 200),"
+                    + " -(g + 0.37 + (SELECT count(*) FROM transaction) / 100000.0), 'CHF'"
+                    + " FROM account a, generate_series(1, ?) g WHERE a.id = ?")) {
+      statement.setInt(1, count);
+      statement.setObject(2, accountId);
+      statement.executeUpdate();
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  // --- Review follow-ups -----------------------------------------------------------------------
+
+  @Test
+  void aRejectedOneSidedProposalIsNotOverriddenByALaterMatchingCredit() {
+    // A member said "this payment is not a card settlement". A credit of the same amount arriving
+    // later is new information, but it must not let the system decide against that on its own.
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    purchase(token, a.card(), "-1200.00", AUG_10);
+    TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
+    decide(token, matches(token, null).get(0).id(), "reject", HttpStatus.OK);
+
+    TransactionResponse credit = cardCredit(token, a.card(), "1200.00", SEP_4);
+
+    assertThat(credit.internalTransfer()).isFalse();
+    assertThat(matches(token, "CONFIRMED")).isEmpty();
+    SettlementMatchResponse proposal = matches(token, null).get(0);
+    assertThat(proposal.matchBasis()).isEqualTo(SettlementMatchValues.LEG_PAIR);
+    assertThat(proposal.paymentTransactionId()).isEqualTo(payment.id());
+    assertThat(proposal.cardTransactionId()).isEqualTo(credit.id());
+    // The member can still decide it either way.
+    decide(token, proposal.id(), "confirm", HttpStatus.OK);
+    assertThat(matches(token, "CONFIRMED")).hasSize(1);
+  }
+
+  @Test
+  void runningMatchingNeverRevealsAnEarlierSettlementSourcesMatches() {
+    String adminToken = bootstrapAdministrator();
+    Accounts a = accountsWithSource(adminToken);
+    UUID savings = createAccount(adminToken, "Savings", "SAVINGS", "CHF").id();
+    withdrawal(adminToken, a.current(), "-1200.00", SEP_3);
+    cardCredit(adminToken, a.card(), "1200.00", SEP_3);
+    assertThat(matches(adminToken, "CONFIRMED")).hasSize(1); // a match made while the source was A
+
+    // The source changes to another account. Bob may edit the card and the new source, not the old.
+    setSource(adminToken, a.card(), savings, HttpStatus.OK);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com");
+    grant(adminToken, bobMemberId, a.card(), AccessLevelValues.EDIT);
+    grant(adminToken, bobMemberId, savings, AccessLevelValues.EDIT);
+
+    assertThat(run(bobToken, a.card())).isEmpty();
+    assertThat(run(adminToken, a.card()))
+        .singleElement()
+        .satisfies(m -> assertThat(m.paymentAccountId()).isEqualTo(a.current()));
+  }
+
+  @Test
+  void anotherMembersMatchesCannotCrowdTheCallersOwnOutOfTheWorkQueue() {
+    String adminToken = bootstrapAdministrator();
+    Accounts mine = accountsWithSource(adminToken);
+    purchase(adminToken, mine.card(), "-1200.00", AUG_10);
+    withdrawal(adminToken, mine.current(), "-1200.00", SEP_3);
+    UUID bobsProposal = matches(adminToken, null).get(0).id();
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com");
+    grant(adminToken, bobMemberId, mine.card(), AccessLevelValues.EDIT);
+    grant(adminToken, bobMemberId, mine.current(), AccessLevelValues.EDIT);
+
+    // More proposals than one page, all newer, all on accounts Bob cannot see.
+    Accounts hidden = accountsWithoutSource(adminToken);
+    insertProposedMatches(
+        hidden.card(), hidden.current(), SettlementMatchControllerTestLimits.PAGE + 5);
+
+    assertThat(matches(bobToken, null))
+        .extracting(SettlementMatchResponse::id)
+        .contains(bobsProposal);
+    assertThat(matches(adminToken, null)).hasSize(SettlementMatchControllerTestLimits.PAGE);
+  }
+
+  @Test
+  void matchesAreListedNewestFirstWithAStableTieBreak() throws Exception {
+    // Rows created in one statement share created_at (now() is the transaction's start), so the
+    // order among them must come from a tie-breaker, not from whatever order the database returns.
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    insertProposedMatches(a.card(), a.current(), 40);
+
+    List<UUID> expected = matchIdsNewestFirst("PROPOSED");
+    assertThat(matches(token, "PROPOSED"))
+        .extracting(SettlementMatchResponse::id)
+        .containsExactlyElementsOf(expected);
+    assertThat(run(token, a.card()))
+        .extracting(SettlementMatchResponse::id)
+        .containsExactlyElementsOf(expected);
+  }
+
+  @Test
+  void listingMatchesDoesNotIssueAQueryPerMatch() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    insertProposedMatches(a.card(), a.current(), 3);
+    long withFew = statementsFor(() -> matches(token, null));
+
+    insertProposedMatches(a.card(), a.current(), 30);
+    long withMany = statementsFor(() -> matches(token, null));
+
+    assertThat(withMany).as("statements to list 3 vs 33 matches").isLessThanOrEqualTo(withFew + 2);
+  }
+
+  @Test
+  void aVoidedPaymentWithAProposalIsNotHeldOutOfSpendingWhileItsReversalCounts() {
+    // The proposal on a payment that was later voided is moot. Excluding the voided original as
+    // "pending" while still counting its reversing row would understate spending by the payment.
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    purchase(token, a.card(), "-1200.00", SEP_3);
+    TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
+    assertThat(matches(token, null)).hasSize(1);
+
+    voidWithReversal(payment.id(), a.current(), "WITHDRAWAL", "1200.00");
+
+    CashFlowResponse september = cashFlow(token, "2026-09");
+    assertThat(september.spending())
+        .singleElement()
+        .satisfies(s -> assertThat(s.amount()).isEqualByComparingTo("1200.00")); // the purchase
+    assertThat(september.pendingReview()).isEmpty();
+    assertThat(september.complete()).isTrue();
+  }
+
+  @Test
+  void aVoidedSettlementTypedPaymentIsNoLongerPendingReview() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    TransactionResponse payment = settlementPayment(token, a.current(), "-500.00", SEP_3);
+    assertThat(cashFlow(token, "2026-09").pendingReview()).hasSize(1);
+
+    voidWithReversal(payment.id(), a.current(), "SETTLEMENT", "500.00");
+
+    CashFlowResponse september = cashFlow(token, "2026-09");
+    assertThat(september.pendingReview()).isEmpty();
+    assertThat(september.complete()).isTrue();
+  }
+
+  @Test
+  void aProposalOnAVoidedPaymentCannotBeConfirmed() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    purchase(token, a.card(), "-1200.00", AUG_10);
+    TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
+    UUID proposalId = matches(token, null).get(0).id();
+
+    voidWithReversal(payment.id(), a.current(), "WITHDRAWAL", "1200.00");
+
+    decide(token, proposalId, "confirm", HttpStatus.CONFLICT);
+  }
+
+  // The page size of the work queue (SettlementMatchService.MAX_LISTED), spelled out for the tests.
+  private static final class SettlementMatchControllerTestLimits {
+    static final int PAGE = 200;
+  }
+
+  // PROPOSED one-sided matches on fresh withdrawals, made directly (as detection would), all in one
+  // statement so they share created_at.
+  private void insertProposedMatches(UUID cardId, UUID sourceId, int count) {
+    try (Connection connection = dataSource.getConnection()) {
+      UUID workspaceId = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", cardId);
+      String marker = "us0902-" + UUID.randomUUID();
+      try (PreparedStatement statement =
+          connection.prepareStatement(
+              "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+                  + " amount, currency, merchant_description) SELECT ?, ?, 'WITHDRAWAL',"
+                  + " DATE '2026-03-01' + (g % 100), -(g + 0.11), 'CHF', ?"
+                  + " FROM generate_series(1, ?) g")) {
+        statement.setObject(1, workspaceId);
+        statement.setObject(2, sourceId);
+        statement.setString(3, marker);
+        statement.setInt(4, count);
+        statement.executeUpdate();
+      }
+      try (PreparedStatement statement =
+          connection.prepareStatement(
+              "INSERT INTO settlement_match (workspace_id, card_account_id,"
+                  + " payment_transaction_id, status, match_basis) SELECT workspace_id, ?, id,"
+                  + " 'PROPOSED', 'BALANCE_EQUALS_PAYMENT' FROM transaction"
+                  + " WHERE account_id = ? AND merchant_description = ?")) {
+        statement.setObject(1, cardId);
+        statement.setObject(2, sourceId);
+        statement.setString(3, marker);
+        statement.executeUpdate();
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private List<UUID> matchIdsNewestFirst(String status) throws Exception {
+    List<UUID> ids = new java.util.ArrayList<>();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT id FROM settlement_match WHERE status = ?"
+                    + " ORDER BY created_at DESC, id DESC")) {
+      statement.setString(1, status);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        while (resultSet.next()) {
+          ids.add((UUID) resultSet.getObject(1));
+        }
+      }
+    }
+    return ids;
+  }
+
+  // What the (not yet built) void path of US-07-02 leaves behind: the original marked voided, and a
+  // reversing row of the same type and the opposite sign.
+  private void voidWithReversal(UUID transactionId, UUID accountId, String type, String reversal) {
+    UUID workspaceId = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", accountId);
+    try (Connection connection = dataSource.getConnection()) {
+      try (PreparedStatement statement =
+          connection.prepareStatement("UPDATE transaction SET voided_at = now() WHERE id = ?")) {
+        statement.setObject(1, transactionId);
+        statement.executeUpdate();
+      }
+      try (PreparedStatement statement =
+          connection.prepareStatement(
+              "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+                  + " amount, currency, replaces_transaction_id)"
+                  + " SELECT ?, ?, ?, booking_date, ?, 'CHF', id FROM transaction WHERE id = ?")) {
+        statement.setObject(1, workspaceId);
+        statement.setObject(2, accountId);
+        statement.setString(3, type);
+        statement.setBigDecimal(4, new BigDecimal(reversal));
+        statement.setObject(5, transactionId);
+        statement.executeUpdate();
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private UUID jdbcUuid(String sql, Object parameter) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement(sql)) {
+      statement.setObject(1, parameter);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        assertThat(resultSet.next()).as(sql).isTrue();
+        return (UUID) resultSet.getObject(1);
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
     }
   }
 

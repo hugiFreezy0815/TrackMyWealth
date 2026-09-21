@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.dto;
 
+import java.util.Set;
+
 /**
  * The closed value sets of {@code settlement_match} (V30): its lifecycle {@code status} and the
  * {@code match_basis} that produced it. Kept as constants alongside the DB {@code CHECK}s they
@@ -22,7 +24,8 @@ public final class SettlementMatchValues {
   /** Only the payment is recorded, and it equals the card's balance on that date. */
   public static final String BALANCE_EQUALS_PAYMENT = "BALANCE_EQUALS_PAYMENT";
 
-  static final String STATUS_PATTERN = "PROPOSED|CONFIRMED|REJECTED";
+  /** Every status a match can have - the one place the closed set is spelled out. */
+  public static final Set<String> STATUSES = Set.of(PROPOSED, CONFIRMED, REJECTED);
 
   private SettlementMatchValues() {}
 }

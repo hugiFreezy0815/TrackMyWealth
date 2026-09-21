@@ -9,12 +9,12 @@ import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
-import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +53,12 @@ import org.springframework.transaction.annotation.Transactional;
  *       coincidence. When the card-side credit is recorded later, the same row becomes the pair.
  * </ul>
  *
+ * <p>Cost: a write costs a handful of queries however long the ledger is. Pairing looks only at the
+ * card's few unmatched credits, each fetching just the payments of the same amount within {@value
+ * #WINDOW_DAYS} days; the one-sided check is a single query that compares balances inside the
+ * database, and for a write is limited to payments the new row can affect. Only an on-demand run, a
+ * newly set settlement source or an undone match scans the full history.
+ *
  * <p>Matching never re-types a leg: {@code transaction_type} is frozen by {@code
  * trg_transaction_append_only}, so a match only sets {@code is_internal_transfer} and {@code
  * counterparty_account_id} - both mutable, which is also what lets a rejected match revert cleanly.
@@ -90,12 +96,18 @@ public class SettlementDetectionService {
     this.clock = clock;
   }
 
+  // A date early enough to include every ledger row: a scan with no lower bound.
+  private static final LocalDate FULL_HISTORY = LocalDate.of(1900, 1, 1);
+
   /**
-   * Re-runs matching for every card a write to {@code written} can affect: the card itself if it is
-   * one, and every card that names {@code written} as its settlement source.
+   * Re-runs matching for every card a write to {@code written}, booked on {@code bookedOn}, can
+   * affect: the card itself if it is one, and every card that names {@code written} as its
+   * settlement source. Only payments the new row can influence are re-examined for a one-sided
+   * candidate: a row booked on {@code bookedOn} changes the card's balance from that date on, and
+   * can pair with a payment up to {@value #WINDOW_DAYS} days either side.
    */
   @Transactional
-  public void detectAfterWrite(Account written) {
+  public void detectAfterWrite(Account written, LocalDate bookedOn) {
     Set<UUID> cardIds = new LinkedHashSet<>();
     if (written.isHasStatementCycle()) {
       cardIds.add(written.getId());
@@ -104,17 +116,41 @@ public class SettlementDetectionService {
           .findBySettlementSourceAccountId(written.getId())
           .forEach(card -> cardIds.add(card.getAccountId()));
     }
-    cardIds.forEach(this::detectForCard);
+    LocalDate since = bookedOn.minusDays(WINDOW_DAYS);
+    cardIds.forEach(cardId -> detectForCard(cardId, since));
   }
 
-  /** Runs matching for one card. A card with no (usable) settlement source has nothing to do. */
+  /** Runs matching for one card over its whole ledger. */
   @Transactional
   public void detectForCard(UUID cardAccountId) {
-    // Serialise matching per card: two writes racing here would each read the same "nothing
-    // proposed yet" state and both insert the same proposal, and the loser's whole write would be
-    // rolled back by the unique index. Under READ COMMITTED the second run, once it gets the lock,
-    // sees what the first committed and adds nothing.
+    detectForCard(cardAccountId, FULL_HISTORY);
+  }
+
+  /**
+   * Serialises everything that decides or applies a match for one card behind that card's account
+   * row: two writes racing on the same card would each read the same "nothing proposed yet" state
+   * and both insert the same proposal, and two members deciding competing proposals would each hold
+   * one and wait for the other. Under READ COMMITTED the second transaction, once it gets the lock,
+   * sees what the first committed and adds nothing.
+   *
+   * <p>Safe to take <em>after</em> inserting a ledger row: Hibernate emits {@code FOR NO KEY
+   * UPDATE} for a pessimistic write on PostgreSQL, which - unlike {@code FOR UPDATE} - does not
+   * conflict with the {@code FOR KEY SHARE} an insert into {@code transaction} takes on the card
+   * row through its foreign key. So two concurrent inserts, each then taking this lock, queue
+   * behind each other instead of deadlocking (verified: {@code
+   * SettlementMatchControllerTest#concurrentWritesToOneCardAndItsSourceAccountAllSucceed}). A
+   * change to a plain {@code FOR UPDATE} would break that.
+   */
+  @Transactional
+  public void lockCard(UUID cardAccountId) {
     accountRepository.findByIdForUpdate(cardAccountId);
+  }
+
+  // Runs matching for one card. A card with no (usable) settlement source has nothing to do.
+  // oneSidedSince bounds only the one-sided balance check; pairing is bounded by the card's
+  // unmatched credits instead.
+  private void detectForCard(UUID cardAccountId, LocalDate oneSidedSince) {
+    lockCard(cardAccountId);
     AccountCreditCard card = accountCreditCardRepository.findById(cardAccountId).orElse(null);
     if (card == null || card.getSettlementSourceAccountId() == null) {
       return;
@@ -127,37 +163,53 @@ public class SettlementDetectionService {
     }
     String currency = cardAccount.getNativeCurrency();
 
-    List<Transaction> payments =
-        transactionRepository.findSettlementPaymentCandidates(
-            source.getId(), currency, PAYMENT_TYPES);
-    List<Transaction> credits =
-        transactionRepository.findUnmatchedCardCredits(cardAccountId, currency);
-    if (payments.isEmpty()) {
-      return;
-    }
-
     Map<UUID, List<SettlementMatch>> known =
         byPayment(settlementMatchRepository.findByCardAccountId(cardAccountId));
+    List<Transaction> credits =
+        transactionRepository.findUnmatchedCardCredits(cardAccountId, currency);
+
+    // Pairing: each unmatched credit fetches only the payments of its own amount within the window.
+    Map<UUID, Transaction> pairable = new LinkedHashMap<>();
     Map<UUID, List<Transaction>> creditsByPayment = new HashMap<>();
     Map<UUID, List<Transaction>> paymentsByCredit = new HashMap<>();
-    for (Transaction payment : payments) {
-      for (Transaction credit : credits) {
-        if (pairs(payment, credit) && !isRejectedPair(known, payment, credit)) {
-          creditsByPayment.computeIfAbsent(payment.getId(), k -> new ArrayList<>()).add(credit);
-          paymentsByCredit.computeIfAbsent(credit.getId(), k -> new ArrayList<>()).add(payment);
+    for (Transaction credit : credits) {
+      List<Transaction> fitting =
+          transactionRepository.findPairablePayments(
+              source.getId(),
+              currency,
+              PAYMENT_TYPES,
+              credit.getAmount().negate(),
+              credit.getBookingDate().minusDays(WINDOW_DAYS),
+              credit.getBookingDate().plusDays(WINDOW_DAYS));
+      for (Transaction payment : fitting) {
+        if (isRejectedPair(known, payment, credit)) {
+          continue;
         }
+        pairable.putIfAbsent(payment.getId(), payment);
+        creditsByPayment.computeIfAbsent(payment.getId(), k -> new ArrayList<>()).add(credit);
+        paymentsByCredit.computeIfAbsent(credit.getId(), k -> new ArrayList<>()).add(payment);
       }
     }
 
-    for (Transaction payment : payments) {
-      List<Transaction> candidates = creditsByPayment.getOrDefault(payment.getId(), List.of());
-      if (candidates.isEmpty()) {
-        proposeOneSided(cardAccount, payment, known);
-      } else if (candidates.size() == 1
-          && paymentsByCredit.get(candidates.get(0).getId()).size() == 1) {
+    for (Transaction payment : pairable.values()) {
+      List<Transaction> candidates = creditsByPayment.get(payment.getId());
+      boolean unambiguous =
+          candidates.size() == 1 && paymentsByCredit.get(candidates.get(0).getId()).size() == 1;
+      if (unambiguous && !hasRejectedOneSided(known, payment)) {
         applyUnambiguousPair(cardAccount, payment, candidates.get(0), known);
       } else {
-        proposeAmbiguousPairs(cardAccount, payment, candidates, known);
+        // Ambiguous - or unambiguous, but a member has already said this payment is not a
+        // settlement: either way the system does not decide, it proposes.
+        proposePairs(cardAccount, payment, candidates, known);
+      }
+    }
+
+    // One-sided: a payment with no credit to pair with that equals what the card owed that day.
+    for (Transaction payment :
+        transactionRepository.findPaymentsEqualToCardBalance(
+            source.getId(), cardAccountId, currency, PAYMENT_TYPES, oneSidedSince)) {
+      if (!creditsByPayment.containsKey(payment.getId())) {
+        proposeOneSided(cardAccount, payment);
       }
     }
   }
@@ -217,15 +269,15 @@ public class SettlementDetectionService {
     applyFlags(match);
   }
 
-  private void proposeAmbiguousPairs(
+  private void proposePairs(
       Account cardAccount,
       Transaction payment,
       List<Transaction> candidates,
       Map<UUID, List<SettlementMatch>> known) {
-    if (activeOneSided(known, payment) != null
-        && SettlementMatchValues.CONFIRMED.equals(activeOneSided(known, payment).getStatus())) {
-      // A member already confirmed this payment on its own; two equal credits cannot be told apart,
-      // so it stays as confirmed rather than being replaced by a guess.
+    SettlementMatch oneSided = activeOneSided(known, payment);
+    if (oneSided != null && SettlementMatchValues.CONFIRMED.equals(oneSided.getStatus())) {
+      // A member already confirmed this payment on its own; equal credits cannot be told apart, so
+      // it stays as confirmed rather than being replaced by a guess.
       return;
     }
     for (Transaction credit : candidates) {
@@ -240,27 +292,13 @@ public class SettlementDetectionService {
     }
   }
 
-  private void proposeOneSided(
-      Account cardAccount, Transaction payment, Map<UUID, List<SettlementMatch>> known) {
-    if (activeOneSided(known, payment) != null
-        || hasRejection(known, payment)
-        || hasAnyPair(known, payment)) {
-      return;
-    }
-    BigDecimal owedOnPaymentDate =
-        transactionRepository
-            .sumAmountByAccountIdAsOf(cardAccount.getId(), payment.getBookingDate())
-            .orElse(BigDecimal.ZERO)
-            .negate();
-    // Only a positive balance can be settled, and only to the cent: a payment that merely resembles
-    // the balance is not a candidate (an ordinary debit must not vanish from spending on a guess).
-    if (owedOnPaymentDate.signum() > 0
-        && owedOnPaymentDate.compareTo(payment.getAmount().negate()) == 0) {
-      SettlementMatch proposal = newMatch(cardAccount, payment);
-      proposal.setMatchBasis(SettlementMatchValues.BALANCE_EQUALS_PAYMENT);
-      proposal.setStatus(SettlementMatchValues.PROPOSED);
-      settlementMatchRepository.saveAndFlush(proposal);
-    }
+  // The query behind this only returns payments equal to the card's balance that no match of any
+  // status has been made for, so there is nothing left to guard here.
+  private void proposeOneSided(Account cardAccount, Transaction payment) {
+    SettlementMatch proposal = newMatch(cardAccount, payment);
+    proposal.setMatchBasis(SettlementMatchValues.BALANCE_EQUALS_PAYMENT);
+    proposal.setStatus(SettlementMatchValues.PROPOSED);
+    settlementMatchRepository.saveAndFlush(proposal);
   }
 
   private SettlementMatch newMatch(Account cardAccount, Transaction payment) {
@@ -269,12 +307,6 @@ public class SettlementDetectionService {
     match.setCardAccount(cardAccount);
     match.setPaymentTransaction(payment);
     return match;
-  }
-
-  private static boolean pairs(Transaction payment, Transaction credit) {
-    return credit.getAmount().compareTo(payment.getAmount().negate()) == 0
-        && Math.abs(ChronoUnit.DAYS.between(payment.getBookingDate(), credit.getBookingDate()))
-            <= WINDOW_DAYS;
   }
 
   // What has already been decided or proposed for a payment, in any status. Plain static helpers
@@ -321,12 +353,13 @@ public class SettlementDetectionService {
         .orElse(null);
   }
 
-  private static boolean hasRejection(Map<UUID, List<SettlementMatch>> known, Transaction payment) {
+  /** Whether a member rejected this payment as a settlement altogether (no card leg involved). */
+  private static boolean hasRejectedOneSided(
+      Map<UUID, List<SettlementMatch>> known, Transaction payment) {
     return forPayment(known, payment).stream()
-        .anyMatch(m -> SettlementMatchValues.REJECTED.equals(m.getStatus()));
-  }
-
-  private static boolean hasAnyPair(Map<UUID, List<SettlementMatch>> known, Transaction payment) {
-    return forPayment(known, payment).stream().anyMatch(m -> m.getCardTransaction() != null);
+        .anyMatch(
+            m ->
+                m.getCardTransaction() == null
+                    && SettlementMatchValues.REJECTED.equals(m.getStatus()));
   }
 }

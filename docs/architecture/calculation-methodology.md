@@ -210,6 +210,14 @@ apart.
 | payment with no card credit, equal to the card's balance on the payment date | `PROPOSED` as `BALANCE_EQUALS_PAYMENT` - only one leg is recorded yet (FR-CF-005); never auto-applied, since an ordinary debit can equal the balance by coincidence |
 | payment equal to neither | ordinary spending |
 
+**Cost.** A write costs a handful of queries however long the ledger is. Pairing looks only at the
+card's few unmatched credits, each fetching just the payments of the same amount within the window;
+the one-sided check is one query that compares balances inside the database, and for a write covers
+only payments the new row can affect (booked within the window before it, or after it). Only an
+on-demand run, a newly set settlement source or an undone match scans the full history. A test
+counts the SQL statements of a write with 10 versus 410 historic withdrawals and requires them not
+to grow.
+
 A `PROPOSED` one-sided match that is later completed by its card credit becomes the pair
 (`LEG_PAIR`) in place. Confirming a proposal rejects any competing proposal for the same payment or
 credit. Matching never re-types a leg (`transaction_type` is frozen by the ledger trigger) - it only
@@ -217,9 +225,24 @@ sets the two mutable link columns, so undoing a match is clearing them.
 
 **Decisions are sticky.** A `REJECTED` match is final: the same pair (or a payment whose one-sided
 proposal was rejected) is never proposed again, and matching can be re-run any number of times
-without adding anything. Rejecting a `CONFIRMED` match reverts both legs to ordinary transactions
+without adding anything. Rejecting a payment *as a settlement* (its one-sided candidate) also stops
+the system from later applying it to a credit of its own accord: a credit of the same amount that
+arrives afterwards is only *proposed* against it, for the member to decide. Rejecting a `CONFIRMED` match reverts both legs to ordinary transactions
 and re-runs matching, since a freed credit may now fit a different payment. Deciding a match needs
-`EDIT` on **both** accounts; a caller without it sees the match as nonexistent.
+`EDIT` on **both** accounts; a caller without it sees the match as nonexistent. The work queue
+(`GET /settlement-matches`, newest first, at most 200) and `POST .../settlement-matches/run` return
+only matches whose card *and* payment account the caller may edit - the filter is part of the query,
+so another member's matches cannot crowd the caller's own out of the page, and a card's earlier
+settlement source is never revealed through its current one. Ties on `created_at` (one run's
+proposals share it) are ordered by `id`.
+
+**Concurrency.** Everything that applies or decides a match for a card first takes that card's
+account row lock (`SettlementDetectionService#lockCard`), so two writes racing on a card, or two
+members confirming competing proposals, queue instead of proposing the same pair twice or
+deadlocking. Taking it *after* inserting a ledger row is safe because Hibernate emits `FOR NO KEY
+UPDATE` for a pessimistic write on PostgreSQL, which - unlike `FOR UPDATE` - does not conflict with
+the `FOR KEY SHARE` the insert takes on the card row through its foreign key; a test races writers on
+one card and its source account to guard that.
 
 **Monthly spending (partial, until EPIC 10)** - `GET /api/v1/cash-flow?month=yyyy-MM`:
 
@@ -232,7 +255,10 @@ and re-runs matching, since a freed credit may now fit a different payment. Deci
   `complete` is `false` while it is non-empty, because `spending` may then be missing a payment that
   turns out to be a real expense (PR-011, the story's data-quality rule).
 - Like the balance, it sums signed amounts including voided rows, so a void's reversing row nets
-  against its original. Only accounts the caller may `READ` contribute (transaction-level detail is
+  against its original. A voided payment is therefore never "awaiting a decision" - a proposal on a
+  row voided since is moot, and a voided payment stays in the sum where its reversing row cancels it
+  (excluding the original while counting the reversal would understate spending by the payment).
+  Confirming a proposal on a voided payment or credit is a 409. Only accounts the caller may `READ` contribute (transaction-level detail is
   not shown at `BALANCE_ONLY`). Currencies are not converted: a realised-flow FX conversion belongs
   to EPIC 10.
 

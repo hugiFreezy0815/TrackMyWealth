@@ -9,15 +9,15 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.SettlementMatch;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
+import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -42,10 +42,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class SettlementMatchService {
 
   // The list is a work queue, not a history browser: bounded, newest first.
-  private static final int MAX_LISTED = 200;
+  static final int MAX_LISTED = 200;
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
+  private final AccountRepository accountRepository;
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final SettlementMatchRepository settlementMatchRepository;
   private final SettlementDetectionService settlementDetectionService;
@@ -54,12 +55,14 @@ public class SettlementMatchService {
   public SettlementMatchService(
       AccountLookupService accountLookupService,
       AccessControlService accessControlService,
+      AccountRepository accountRepository,
       AccountCreditCardRepository accountCreditCardRepository,
       SettlementMatchRepository settlementMatchRepository,
       SettlementDetectionService settlementDetectionService,
       Clock clock) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
+    this.accountRepository = accountRepository;
     this.accountCreditCardRepository = accountCreditCardRepository;
     this.settlementMatchRepository = settlementMatchRepository;
     this.settlementDetectionService = settlementDetectionService;
@@ -76,6 +79,7 @@ public class SettlementMatchService {
   public SettlementSourceResponse setSettlementSource(
       UUID cardAccountId, SetSettlementSourceRequest request, AuthenticatedUserPrincipal actor) {
     Account card = requireCard(cardAccountId, actor, AccessLevelValues.EDIT);
+    settlementDetectionService.lockCard(cardAccountId);
     AccountCreditCard extension = extensionOf(card);
 
     UUID sourceId = request.settlementSourceAccountId();
@@ -110,8 +114,10 @@ public class SettlementMatchService {
   }
 
   /**
-   * Runs matching for one card on demand and returns every match it has (any status), newest first.
-   * Idempotent: running it again changes nothing.
+   * Runs matching for one card on demand and returns the card's matches (any status) that the
+   * caller may act on, newest first. Idempotent: running it again changes nothing. A match whose
+   * payment account the caller cannot edit is left out - a card's settlement source can change, and
+   * an earlier source's matches must not be revealed through the new one.
    */
   @Transactional
   public List<SettlementMatchResponse> run(UUID cardAccountId, AuthenticatedUserPrincipal actor) {
@@ -125,48 +131,33 @@ public class SettlementMatchService {
         actor, accountLookupService.findAccountOrThrow(sourceId), AccessLevelValues.EDIT);
 
     settlementDetectionService.detectForCard(cardAccountId);
+    Set<UUID> editable = editableAccountIds(actor);
     return settlementMatchRepository.findByCardAccountId(cardAccountId).stream()
-        .sorted(Comparator.comparing(SettlementMatch::getCreatedAt).reversed())
+        .filter(m -> editable.contains(m.getPaymentTransaction().getAccount().getId()))
         .map(this::toResponse)
         .toList();
   }
 
   /**
    * The matches with the given {@code status} (default {@code PROPOSED}, i.e. what needs a
-   * decision) that the caller may act on.
+   * decision) that the caller may act on: newest first, at most {@value #MAX_LISTED}. The access
+   * filter is part of the query, so the cap applies to the caller's own matches and another
+   * member's cannot crowd them out.
    */
   @Transactional(readOnly = true)
   public List<SettlementMatchResponse> list(String status, AuthenticatedUserPrincipal actor) {
     String wanted = status == null ? SettlementMatchValues.PROPOSED : status;
-    if (!Set.of(
-            SettlementMatchValues.PROPOSED,
-            SettlementMatchValues.CONFIRMED,
-            SettlementMatchValues.REJECTED)
-        .contains(wanted)) {
+    if (!SettlementMatchValues.STATUSES.contains(wanted)) {
       throw new ResponseStatusException(
           HttpStatus.BAD_REQUEST, "status must be one of PROPOSED, CONFIRMED, REJECTED.");
     }
-    UUID memberId = accessControlService.requireActingMember(actor);
-    List<SettlementMatch> matches =
-        settlementMatchRepository.findByStatusOrderByCreatedAtDesc(
-            wanted, PageRequest.of(0, MAX_LISTED));
-
-    Set<Account> accounts = new HashSet<>();
-    matches.forEach(
-        m -> {
-          accounts.add(m.getCardAccount());
-          accounts.add(m.getPaymentTransaction().getAccount());
-        });
-    Set<UUID> editable = new HashSet<>();
-    accessControlService
-        .accountsWithAccess(memberId, accounts, AccessLevelValues.EDIT)
-        .forEach(a -> editable.add(a.getId()));
-
-    return matches.stream()
-        .filter(
-            m ->
-                editable.contains(m.getCardAccount().getId())
-                    && editable.contains(m.getPaymentTransaction().getAccount().getId()))
+    Set<UUID> editable = editableAccountIds(actor);
+    if (editable.isEmpty()) {
+      return List.of();
+    }
+    return settlementMatchRepository
+        .findActionable(wanted, editable, PageRequest.of(0, MAX_LISTED))
+        .stream()
         .map(this::toResponse)
         .toList();
   }
@@ -181,6 +172,10 @@ public class SettlementMatchService {
     if (!SettlementMatchValues.PROPOSED.equals(match.getStatus())) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "Only a proposed match can be confirmed.");
+    }
+    if (isVoided(match)) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "A voided transaction cannot be settled.");
     }
     OffsetDateTime now = OffsetDateTime.now(clock);
 
@@ -232,6 +227,13 @@ public class SettlementMatchService {
 
   private SettlementMatch lockActionableMatch(UUID matchId, AuthenticatedUserPrincipal actor) {
     UUID memberId = accessControlService.requireActingMember(actor);
+    // Serialise on the card first, learned from a scalar so the match itself is not loaded (and its
+    // status cached) before the lock is held: a second decision on the same card then sees what the
+    // first committed. Taken before the access check, so a member with no access briefly queues
+    // behind a card's decision at worst - it changes nothing.
+    UUID cardAccountId =
+        settlementMatchRepository.findCardAccountIdById(matchId).orElseThrow(this::matchNotFound);
+    settlementDetectionService.lockCard(cardAccountId);
     SettlementMatch match =
         settlementMatchRepository.findByIdForUpdate(matchId).orElseThrow(this::matchNotFound);
     Set<Account> both = Set.of(match.getCardAccount(), match.getPaymentTransaction().getAccount());
@@ -240,6 +242,25 @@ public class SettlementMatchService {
       throw matchNotFound();
     }
     return match;
+  }
+
+  // The ids of the workspace's accounts the caller may EDIT - the accounts whose matches the caller
+  // may see and decide. Household scale: a workspace holds tens of accounts.
+  private Set<UUID> editableAccountIds(AuthenticatedUserPrincipal actor) {
+    UUID memberId = accessControlService.requireActingMember(actor);
+    return accessControlService
+        .accountsWithAccess(
+            memberId,
+            accountRepository.findByWorkspaceId(actor.workspaceId()),
+            AccessLevelValues.EDIT)
+        .stream()
+        .map(Account::getId)
+        .collect(Collectors.toSet());
+  }
+
+  private static boolean isVoided(SettlementMatch match) {
+    return match.getPaymentTransaction().getVoidedAt() != null
+        || (match.getCardTransaction() != null && match.getCardTransaction().getVoidedAt() != null);
   }
 
   private Account requireCard(UUID cardAccountId, AuthenticatedUserPrincipal actor, String level) {

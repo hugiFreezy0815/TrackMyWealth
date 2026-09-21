@@ -129,7 +129,7 @@ public class TransactionService {
     Transaction saved = transactionRepository.saveAndFlush(transaction);
     // Same transaction, so the response below already shows the internal-transfer flag if this row
     // just completed a settlement pair.
-    settlementDetectionService.detectAfterWrite(account);
+    settlementDetectionService.detectAfterWrite(account, request.bookingDate());
     return toResponse(saved);
   }
 
