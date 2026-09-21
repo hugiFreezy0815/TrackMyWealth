@@ -17,6 +17,14 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 14
+    ignore:
+      # Expo SDK 57 pins react-native 0.86.x (see node_modules/expo/bundledNativeModules.json), and
+      # react-native-reanimated 4.5.x only accepts react-native <=0.86, so a minor/major bump breaks
+      # `npm ci`. Patch releases are still allowed. Remove this once the project moves to Expo SDK 58.
+      - dependency-name: react-native
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
 
   - package-ecosystem: docker
     directory: /backend
