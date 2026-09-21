@@ -69,6 +69,10 @@ public class Transaction {
   @Column(nullable = false)
   private String source = "MANUAL";
 
+  // DB-04/FR-TRX-009: unique per (account_id, source, external_id) - the idempotency key.
+  @Column(name = "external_id")
+  private String externalId;
+
   // FR-CC-002/RULE-011: the source-provided MCC lives here, never in category_id - so a later
   // (re)categorization can only ever touch category_id, not the original source data (FR-TRX-003).
   @JdbcTypeCode(SqlTypes.JSON)
@@ -156,6 +160,14 @@ public class Transaction {
 
   public void setSource(String source) {
     this.source = source;
+  }
+
+  public String getExternalId() {
+    return externalId;
+  }
+
+  public void setExternalId(String externalId) {
+    this.externalId = externalId;
   }
 
   public String getRawSourceData() {

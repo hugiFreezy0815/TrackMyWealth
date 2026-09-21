@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
@@ -19,12 +20,16 @@ import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.dto.ValueBasisValues;
+import com.trackmywealth.backend.entity.FxRate;
+import com.trackmywealth.backend.repository.FxRateRepository;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -79,6 +84,8 @@ class TransactionControllerTest {
 
   @Autowired DataSource dataSource;
 
+  @Autowired FxRateRepository fxRateRepository;
+
   @BeforeEach
   void cleanDatabase() throws Exception {
     // transaction first - it references account/workspace/app_user and must go before its parents.
@@ -86,6 +93,7 @@ class TransactionControllerTest {
     // the app itself rely on.
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
+      statement.execute("DELETE FROM fx_rate");
       statement.execute("DELETE FROM transaction_category_split");
       statement.execute("DELETE FROM transaction");
       statement.execute("DELETE FROM category WHERE code = '" + TEST_CATEGORY_CODE + "'");
@@ -96,6 +104,7 @@ class TransactionControllerTest {
               "custom_asset_valuation",
               "account_custom_asset",
               "account_credit_card",
+              "account_mortgage",
               "account",
               "admin_audit_log",
               "user_session",
@@ -131,7 +140,7 @@ class TransactionControllerTest {
     assertThat(created.merchantDescription()).isEqualTo("Migros");
     assertThat(created.mcc()).isEqualTo("5411");
     assertThat(created.source()).isEqualTo("MANUAL");
-    assertThat(created.bookingDate()).isEqualTo(LocalDate.now());
+    assertThat(created.bookingDate()).isEqualTo(today());
 
     AccountValuation balance = balance(token, card.id());
     assertThat(balance.valueKnown()).isTrue();
@@ -144,21 +153,12 @@ class TransactionControllerTest {
   void severalPurchasesAccumulateIntoTheOutstandingBalanceAndAreListedNewestFirst() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(token);
-    recordPurchaseOn(token, card.id(), "-85.00", LocalDate.now().minusDays(2));
-    recordPurchaseOn(token, card.id(), "-15.50", LocalDate.now());
+    recordPurchaseOn(token, card.id(), "-85.00", today().minusDays(2));
+    recordPurchaseOn(token, card.id(), "-15.50", today());
 
     assertThat(balance(token, card.id()).value()).isEqualByComparingTo("100.50");
 
-    List<TransactionResponse> listed =
-        client(token)
-            .get()
-            .uri("/api/v1/accounts/" + card.id() + "/transactions")
-            .exchange()
-            .expectStatus()
-            .isOk()
-            .expectBody(new ParameterizedTypeReference<List<TransactionResponse>>() {})
-            .returnResult()
-            .getResponseBody();
+    List<TransactionResponse> listed = listTransactions(token, card.id(), "").content();
     assertThat(listed).extracting(TransactionResponse::amount).hasSize(2);
     assertThat(listed.get(0).amount()).isEqualByComparingTo("-15.50");
     assertThat(listed.get(1).amount()).isEqualByComparingTo("-85.00");
@@ -168,8 +168,8 @@ class TransactionControllerTest {
   void aPurchaseBookedInTheFutureDoesNotCountUntilItsBookingDate() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(token);
-    recordPurchaseOn(token, card.id(), "-85.00", LocalDate.now());
-    recordPurchaseOn(token, card.id(), "-40.00", LocalDate.now().plusDays(3));
+    recordPurchaseOn(token, card.id(), "-85.00", today());
+    recordPurchaseOn(token, card.id(), "-40.00", today().plusDays(3));
 
     assertThat(balance(token, card.id()).value()).isEqualByComparingTo("85.00");
   }
@@ -183,7 +183,7 @@ class TransactionControllerTest {
     AccountSummaryResponse card = createCard(token);
     AccountSummaryResponse asset = createCustomAsset(token);
     recordValuation(token, asset.id(), "1000.00");
-    recordPurchaseOn(token, card.id(), "-85.00", LocalDate.now());
+    recordPurchaseOn(token, card.id(), "-85.00", today());
 
     NetWorthResponse netWorth = netWorth(token);
 
@@ -207,7 +207,7 @@ class TransactionControllerTest {
   void aCardOnItsOwnMakesNetWorthNegative() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(token);
-    recordPurchaseOn(token, card.id(), "-85.00", LocalDate.now());
+    recordPurchaseOn(token, card.id(), "-85.00", today());
 
     NetWorthResponse netWorth = netWorth(token);
 
@@ -221,7 +221,7 @@ class TransactionControllerTest {
     // institution now has a value source, and must show up in its liabilities.
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(token);
-    recordPurchaseOn(token, card.id(), "-85.00", LocalDate.now());
+    recordPurchaseOn(token, card.id(), "-85.00", today());
 
     InstitutionSummaryResponse summary =
         client(token)
@@ -322,16 +322,7 @@ class TransactionControllerTest {
       }
     }
     // ...and the API still reports the source MCC after the category was assigned.
-    List<TransactionResponse> listed =
-        client(token)
-            .get()
-            .uri("/api/v1/accounts/" + card.id() + "/transactions")
-            .exchange()
-            .expectStatus()
-            .isOk()
-            .expectBody(new ParameterizedTypeReference<List<TransactionResponse>>() {})
-            .returnResult()
-            .getResponseBody();
+    List<TransactionResponse> listed = listTransactions(token, card.id(), "").content();
     assertThat(listed).singleElement().satisfies(t -> assertThat(t.mcc()).isEqualTo("5411"));
   }
 
@@ -389,10 +380,11 @@ class TransactionControllerTest {
             card.id(),
             new CreateTransactionRequest(
                 CREDIT_CARD_PURCHASE,
-                LocalDate.now(),
+                today(),
                 new BigDecimal("-50.00"),
                 "EUR",
                 "Hotel",
+                null,
                 null,
                 null))
         .expectStatus()
@@ -409,7 +401,7 @@ class TransactionControllerTest {
             token,
             card.id(),
             new CreateTransactionRequest(
-                "EXPENSE", LocalDate.now(), new BigDecimal("-5.00"), "CHF", null, null, null))
+                "EXPENSE", today(), new BigDecimal("-5.00"), "CHF", null, null, null, null))
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
   }
@@ -485,7 +477,7 @@ class TransactionControllerTest {
   void aMemberWithNoGrantCannotSeeOrRecordAnything() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(adminToken);
-    recordPurchaseOn(adminToken, card.id(), "-85.00", LocalDate.now());
+    recordPurchaseOn(adminToken, card.id(), "-85.00", today());
     createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
 
@@ -511,7 +503,7 @@ class TransactionControllerTest {
   void balanceOnlyMaySeeTheBalanceButNeitherTheTransactionsNorRecord() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(adminToken);
-    recordPurchaseOn(adminToken, card.id(), "-85.00", LocalDate.now());
+    recordPurchaseOn(adminToken, card.id(), "-85.00", today());
     UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
     grantOnAccount(adminToken, bobMemberId, card.id(), AccessLevelValues.BALANCE_ONLY);
@@ -558,7 +550,7 @@ class TransactionControllerTest {
     AccountSummaryResponse card = createCard(adminToken);
     AccountSummaryResponse asset = createCustomAsset(adminToken);
     recordValuation(adminToken, asset.id(), "1000.00");
-    recordPurchaseOn(adminToken, card.id(), "-85.00", LocalDate.now());
+    recordPurchaseOn(adminToken, card.id(), "-85.00", today());
     UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
     grantOnAccount(adminToken, bobMemberId, card.id(), AccessLevelValues.BALANCE_ONLY);
@@ -572,6 +564,241 @@ class TransactionControllerTest {
     assertThat(netWorth(adminToken).netWorth()).isEqualByComparingTo("915.00");
   }
 
+  // --- Idempotent recording (a retried request must not double the debt) ----------------------
+
+  @Test
+  void retryingAPurchaseWithTheSameExternalIdReturnsTheOriginalInsteadOfRecordingItTwice() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    String key = UUID.randomUUID().toString();
+
+    TransactionResponse first = recordWithKey(token, card.id(), "-85.00", key);
+    TransactionResponse retry = recordWithKey(token, card.id(), "-85.00", key);
+
+    assertThat(first.externalId()).isEqualTo(key);
+    assertThat(retry.id()).isEqualTo(first.id());
+    assertThat(countTransactions(card.id())).isEqualTo(1);
+    assertThat(balance(token, card.id()).value()).isEqualByComparingTo("85.00");
+  }
+
+  @Test
+  void theSameExternalIdWithDifferentFinancialFieldsIsAConflictNotASilentReplay() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    String key = UUID.randomUUID().toString();
+    recordWithKey(token, card.id(), "-85.00", key);
+
+    postTransaction(token, card.id(), purchaseWithKey("-90.00", key))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(countTransactions(card.id())).isEqualTo(1);
+  }
+
+  @Test
+  void aReplayStillAnswersAfterTheCardHasBeenArchived() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    String key = UUID.randomUUID().toString();
+    TransactionResponse first = recordWithKey(token, card.id(), "-85.00", key);
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + card.id() + "/archive")
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    // The first request succeeded; its retry must not turn into a 409 just because the card was
+    // archived in between.
+    assertThat(recordWithKey(token, card.id(), "-85.00", key).id()).isEqualTo(first.id());
+  }
+
+  @Test
+  void anExternalIdIsScopedToItsAccount() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cardA = createCard(token);
+    AccountSummaryResponse cardB = createCard(token);
+    String key = UUID.randomUUID().toString();
+
+    recordWithKey(token, cardA.id(), "-85.00", key);
+    recordWithKey(token, cardB.id(), "-85.00", key);
+
+    assertThat(countTransactions(cardA.id())).isEqualTo(1);
+    assertThat(countTransactions(cardB.id())).isEqualTo(1);
+  }
+
+  // --- Paging --------------------------------------------------------------------------------
+
+  @Test
+  void theTransactionListIsPagedNewestFirstAndIgnoresAClientSuppliedSort() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    recordPurchaseOn(token, card.id(), "-10.00", today().minusDays(2));
+    recordPurchaseOn(token, card.id(), "-20.00", today().minusDays(1));
+    recordPurchaseOn(token, card.id(), "-30.00", today());
+
+    // sort=bookingDate,asc would put the oldest first if it were honoured.
+    PageOf<TransactionResponse> first =
+        listTransactions(token, card.id(), "?size=2&sort=bookingDate,asc");
+    PageOf<TransactionResponse> second =
+        listTransactions(token, card.id(), "?size=2&page=1&sort=bookingDate,asc");
+
+    assertThat(first.totalElements()).isEqualTo(3);
+    assertThat(first.content())
+        .extracting(TransactionResponse::bookingDate)
+        .containsExactly(today(), today().minusDays(1));
+    assertThat(second.content())
+        .extracting(TransactionResponse::bookingDate)
+        .containsExactly(today().minusDays(2));
+  }
+
+  @Test
+  void aSortOnAnUnknownPropertyIsIgnoredNotA500() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    recordPurchaseOn(token, card.id(), "-10.00", today());
+
+    assertThat(listTransactions(token, card.id(), "?sort=doesNotExist,asc").content()).hasSize(1);
+  }
+
+  @Test
+  void anMccStoredAsANumberByAnImporterStillReadsBackAsAFourDigitCode() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    insertLedgerRowWithSourceData(card.id(), "-1.00", "{\"mcc\": 742}");
+    insertLedgerRowWithSourceData(card.id(), "-2.00", "{\"mcc\": \"5411\"}");
+    insertLedgerRowWithSourceData(card.id(), "-3.00", "{\"other\": true}");
+
+    assertThat(listTransactions(token, card.id(), "").content())
+        .extracting(TransactionResponse::mcc)
+        .containsExactlyInAnyOrder("0742", "5411", null);
+  }
+
+  // --- Where a figure came from / how sure it is ---------------------------------------------
+
+  @Test
+  void theBalanceSaysWhereItsFigureCameFrom() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    AccountSummaryResponse asset = createCustomAsset(token);
+    AccountSummaryResponse cash = createCashAccount(token);
+    recordValuation(token, asset.id(), "1000.00");
+
+    assertThat(balance(token, card.id()).valueBasis()).isEqualTo(ValueBasisValues.LEDGER_EMPTY);
+    recordPurchaseOn(token, card.id(), "-85.00", today());
+    assertThat(balance(token, card.id()).valueBasis()).isEqualTo(ValueBasisValues.LEDGER);
+    assertThat(balance(token, asset.id()).valueBasis())
+        .isEqualTo(ValueBasisValues.MANUAL_VALUATION);
+    // No value source at all: not known, so no basis either.
+    AccountValuation unknown = balance(token, cash.id());
+    assertThat(unknown.valueKnown()).isFalse();
+    assertThat(unknown.valueBasis()).isNull();
+  }
+
+  @Test
+  void netWorthIsApproximateWhileAnIncludedFigureIsAnAssumptionAndExactOnceItIsMeasured() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    AccountSummaryResponse asset = createCustomAsset(token);
+    recordValuation(token, asset.id(), "1000.00");
+
+    // An empty card ledger is an assumed zero: known, so complete - but not exact.
+    NetWorthResponse assumed = netWorth(token);
+    assertThat(assumed.complete()).isTrue();
+    assertThat(assumed.approximate()).isTrue();
+
+    recordPurchaseOn(token, card.id(), "-85.00", today());
+    NetWorthResponse measured = netWorth(token);
+    assertThat(measured.complete()).isTrue();
+    assertThat(measured.approximate()).isFalse();
+  }
+
+  @Test
+  void aLoanCountedAtItsOriginalPrincipalMakesNetWorthApproximate() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse mortgage =
+        client(token)
+            .post()
+            .uri("/api/v1/accounts")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(
+                new CreateAccountRequest(
+                    null,
+                    "Home Mortgage",
+                    "MORTGAGE",
+                    "CHF",
+                    null,
+                    null,
+                    new BigDecimal("500000.00"),
+                    new BigDecimal("1.5"),
+                    null,
+                    null))
+            .exchange()
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    AccountValuation balance = balance(token, mortgage.id());
+    assertThat(balance.valueBasis()).isEqualTo(ValueBasisValues.ORIGINAL_PRINCIPAL);
+    NetWorthResponse netWorth = netWorth(token);
+    assertThat(netWorth.complete()).isTrue();
+    assertThat(netWorth.approximate()).isTrue();
+    assertThat(netWorth.totalLiabilities()).isEqualByComparingTo("500000.00");
+  }
+
+  // --- Net worth across currencies -----------------------------------------------------------
+
+  @Test
+  void aForeignCurrencyCardIsConvertedIntoTheReportingCurrencyInNetWorth() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "EUR Card", "CREDIT_CARD", "EUR", null);
+    recordPurchaseIn(token, card.id(), "-100.00", "EUR");
+    seedFxRate("EUR", "CHF", today(), "0.9500000000");
+
+    // The account's own balance stays in its native currency...
+    AccountValuation balance = balance(token, card.id());
+    assertThat(balance.currency()).isEqualTo("EUR");
+    assertThat(balance.value()).isEqualByComparingTo("100.00");
+
+    // ...and net worth converts it into the caller's reporting currency, subtracting it.
+    NetWorthResponse netWorth = netWorth(token);
+    assertThat(netWorth.reportingCurrency()).isEqualTo("CHF");
+    assertThat(netWorth.totalLiabilities()).isEqualByComparingTo("95.00");
+    assertThat(netWorth.netWorth()).isEqualByComparingTo("-95.00");
+    assertThat(netWorth.complete()).isTrue();
+    assertThat(netWorth.accounts())
+        .singleElement()
+        .satisfies(
+            a -> {
+              assertThat(a.conversionRate()).isEqualByComparingTo("0.95");
+              assertThat(a.conversionRateCarriedForward()).isFalse();
+            });
+  }
+
+  @Test
+  void aForeignCurrencyCardWithNoFxRateDegradesToUnknownNotAFailedRequest() {
+    // The FX-degradation regression (#78) on the new /net-worth path: a missing rate must leave the
+    // one account out and flag the figure incomplete - not roll the shared transaction back and
+    // 500.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "EUR Card", "CREDIT_CARD", "EUR", null);
+    AccountSummaryResponse asset = createCustomAsset(token);
+    recordValuation(token, asset.id(), "1000.00");
+    recordPurchaseIn(token, card.id(), "-100.00", "EUR");
+    // Deliberately no seedFxRate: EUR/CHF has no rate at all.
+
+    NetWorthResponse netWorth = netWorth(token);
+
+    assertThat(netWorth.complete()).isFalse();
+    assertThat(netWorth.totalLiabilities()).isEqualByComparingTo("0");
+    assertThat(netWorth.netWorth()).isEqualByComparingTo("1000.00");
+    assertThat(netWorth.accounts())
+        .filteredOn(a -> a.accountId().equals(card.id()))
+        .singleElement()
+        .satisfies(a -> assertThat(a.valueKnown()).isFalse());
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
 
   private RestTestClient.ResponseSpec recordPurchase(
@@ -581,11 +808,12 @@ class TransactionControllerTest {
         accountId,
         new CreateTransactionRequest(
             CREDIT_CARD_PURCHASE,
-            LocalDate.now(),
+            today(),
             new BigDecimal(amount),
             "CHF",
             merchant,
             mcc,
+            null,
             null));
   }
 
@@ -594,7 +822,7 @@ class TransactionControllerTest {
             token,
             accountId,
             new CreateTransactionRequest(
-                CREDIT_CARD_PURCHASE, date, new BigDecimal(amount), "CHF", null, null, null))
+                CREDIT_CARD_PURCHASE, date, new BigDecimal(amount), "CHF", null, null, null, null))
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);
   }
@@ -647,13 +875,18 @@ class TransactionControllerTest {
 
   private AccountSummaryResponse createAccount(
       String token, String name, String accountType, String customAssetType) {
+    return createAccount(token, name, accountType, "CHF", customAssetType);
+  }
+
+  private AccountSummaryResponse createAccount(
+      String token, String name, String accountType, String currency, String customAssetType) {
     return client(token)
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, name, accountType, "CHF", null, null, null, null, null, customAssetType))
+                null, name, accountType, currency, null, null, null, null, null, customAssetType))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -667,7 +900,7 @@ class TransactionControllerTest {
         .post()
         .uri("/api/v1/accounts/" + accountId + "/valuations")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateCustomAssetValuationRequest(LocalDate.now(), new BigDecimal(value)))
+        .body(new CreateCustomAssetValuationRequest(today(), new BigDecimal(value)))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);
@@ -697,6 +930,89 @@ class TransactionControllerTest {
         .isEqualTo(HttpStatus.CREATED)
         .expectBody(UserSummaryResponse.class);
     return jdbcUuid("SELECT workspace_member_id FROM app_user WHERE email = ?", email);
+  }
+
+  // The zone app.business-zone defaults to: what the service treats as "today", so a test's own
+  // idea of today must not depend on the machine's zone (CI runs in UTC, a laptop in CET).
+  private static LocalDate today() {
+    return LocalDate.now(ZoneId.of("Europe/Zurich"));
+  }
+
+  private CreateTransactionRequest purchaseWithKey(String amount, String externalId) {
+    return new CreateTransactionRequest(
+        CREDIT_CARD_PURCHASE, today(), new BigDecimal(amount), "CHF", null, null, null, externalId);
+  }
+
+  private TransactionResponse recordWithKey(
+      String token, UUID accountId, String amount, String externalId) {
+    return postTransaction(token, accountId, purchaseWithKey(amount, externalId))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(TransactionResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private void recordPurchaseIn(String token, UUID accountId, String amount, String currency) {
+    postTransaction(
+            token,
+            accountId,
+            new CreateTransactionRequest(
+                CREDIT_CARD_PURCHASE,
+                today(),
+                new BigDecimal(amount),
+                currency,
+                null,
+                null,
+                null,
+                null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+  }
+
+  private PageOf<TransactionResponse> listTransactions(String token, UUID accountId, String query) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + accountId + "/transactions" + query)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<PageOf<TransactionResponse>>() {})
+        .returnResult()
+        .getResponseBody();
+  }
+
+  // Only the two members of Spring Data's page JSON these tests read; the rest is ignored.
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  record PageOf<T>(List<T> content, long totalElements) {}
+
+  private void seedFxRate(String base, String quote, LocalDate date, String rate) {
+    FxRate fxRate = new FxRate();
+    fxRate.setBaseCurrency(base);
+    fxRate.setQuoteCurrency(quote);
+    fxRate.setRateDate(date);
+    fxRate.setRate(new BigDecimal(rate));
+    fxRate.setSource("MANUAL"); // matches app.fx.default-source's test-time default
+    fxRateRepository.save(fxRate);
+  }
+
+  // A ledger row whose raw_source_data is whatever an importer (EPIC 07) might have written.
+  private void insertLedgerRowWithSourceData(UUID accountId, String amount, String sourceJson) {
+    UUID workspaceId = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", accountId);
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+                    + " amount, currency, raw_source_data) VALUES (?, ?, 'CREDIT_CARD_PURCHASE',"
+                    + " CURRENT_DATE, ?, 'CHF', CAST(? AS jsonb))")) {
+      statement.setObject(1, workspaceId);
+      statement.setObject(2, accountId);
+      statement.setBigDecimal(3, new BigDecimal(amount));
+      statement.setString(4, sourceJson);
+      statement.executeUpdate();
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
   }
 
   // Direct ledger inserts, the way the (not yet built) void path of US-07-02 would leave the table:

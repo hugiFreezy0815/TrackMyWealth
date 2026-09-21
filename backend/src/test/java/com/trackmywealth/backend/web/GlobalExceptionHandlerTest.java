@@ -51,6 +51,18 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  void aRacingDuplicateExternalIdIsTranslatedToAConflictTellingTheCallerToRetry() {
+    ProblemDetail problem =
+        handler.handleDataIntegrityViolation(
+            violationWithRootMessage(
+                "ERROR: duplicate key value violates unique constraint"
+                    + " \"uq_transaction_external_id\""));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getDetail()).contains("externalId").contains("Retry");
+  }
+
+  @Test
   void customAssetValuationCurrencyMismatchIsTranslatedToAConflictNamingFrAcc002() {
     ProblemDetail problem =
         handler.handleDataIntegrityViolation(

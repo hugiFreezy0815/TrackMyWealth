@@ -22,6 +22,13 @@ import java.time.LocalDate;
  * validated in the service (where the account is known) rather than pinned by a pattern here.
  * {@code mcc} is the ISO 18245 Merchant Category Code, four digits (FR-CC-002).
  *
+ * <p>{@code externalId} is an optional client-generated idempotency key (a UUID is ideal), stored
+ * in {@code transaction.external_id} under source {@code MANUAL}. The ledger is append-only, so a
+ * duplicate purchase cannot be edited away - it can only be voided - and a mobile client retrying a
+ * request whose response was lost would otherwise double the debt. With a key, a retry returns the
+ * originally recorded row instead of inserting a second one; the same key with different financial
+ * fields is rejected (409) rather than silently returning a row that does not match the request.
+ *
  * <p>Every optional {@code String} field is normalized blank-to-{@code null} in the compact
  * constructor via {@link RequestStrings#blankToNull}.
  */
@@ -32,7 +39,8 @@ public record CreateTransactionRequest(
     @NotBlank @ValidCurrencyCode String currency,
     @Size(max = 255) String merchantDescription,
     @Pattern(regexp = "\\d{4}", message = "mcc must be a four-digit ISO 18245 code") String mcc,
-    @Size(max = 2000) String notes) {
+    @Size(max = 2000) String notes,
+    @Size(max = 255) String externalId) {
 
   public CreateTransactionRequest {
     transactionType = RequestStrings.blankToNull(transactionType);
@@ -40,5 +48,6 @@ public record CreateTransactionRequest(
     merchantDescription = RequestStrings.blankToNull(merchantDescription);
     mcc = RequestStrings.blankToNull(mcc);
     notes = RequestStrings.blankToNull(notes);
+    externalId = RequestStrings.blankToNull(externalId);
   }
 }

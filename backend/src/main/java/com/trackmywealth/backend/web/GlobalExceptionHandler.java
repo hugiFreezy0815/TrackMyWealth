@@ -48,6 +48,11 @@ public class GlobalExceptionHandler {
     if (rootMessage.contains("custom_asset_valuation_currency_mismatch")) {
       return conflict("A valuation's currency must match the account's own currency (FR-ACC-002).");
     }
+    if (rootMessage.contains("uq_transaction_external_id")) {
+      return conflict(
+          "A transaction with this externalId is already being recorded. Retry the request: it"
+              + " returns the recorded transaction.");
+    }
     return conflict("The request conflicts with an existing data constraint.");
   }
 

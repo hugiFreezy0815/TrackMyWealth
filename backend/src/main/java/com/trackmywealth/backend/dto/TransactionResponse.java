@@ -8,7 +8,8 @@ import java.util.UUID;
 /**
  * A ledger row as returned by the API (US-09-01). {@code amount} is cash-direction signed, exactly
  * as stored. {@code mcc} is the source-provided Merchant Category Code, {@code null} when the
- * source had none - it is independent of any reporting category (FR-CC-002/RULE-011).
+ * source had none - it is independent of any reporting category (FR-CC-002/RULE-011). {@code
+ * externalId} is the idempotency key the caller supplied, {@code null} if none.
  */
 public record TransactionResponse(
     UUID id,
@@ -21,4 +22,5 @@ public record TransactionResponse(
     String mcc,
     String notes,
     String source,
+    String externalId,
     OffsetDateTime createdAt) {}

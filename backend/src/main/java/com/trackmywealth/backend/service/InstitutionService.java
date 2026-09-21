@@ -68,6 +68,7 @@ public class InstitutionService {
   private final InstitutionCatalogueRepository institutionCatalogueRepository;
   private final AccountRepository accountRepository;
   private final AccountValuationService accountValuationService;
+  private final BusinessDateService businessDateService;
 
   public InstitutionService(
       WorkspaceAccessService workspaceAccessService,
@@ -76,7 +77,8 @@ public class InstitutionService {
       FinancialInstitutionRepository financialInstitutionRepository,
       InstitutionCatalogueRepository institutionCatalogueRepository,
       AccountRepository accountRepository,
-      AccountValuationService accountValuationService) {
+      AccountValuationService accountValuationService,
+      BusinessDateService businessDateService) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.institutionLookupService = institutionLookupService;
@@ -84,6 +86,7 @@ public class InstitutionService {
     this.institutionCatalogueRepository = institutionCatalogueRepository;
     this.accountRepository = accountRepository;
     this.accountValuationService = accountValuationService;
+    this.businessDateService = businessDateService;
   }
 
   @Transactional(readOnly = true)
@@ -140,7 +143,7 @@ public class InstitutionService {
     List<Account> accounts =
         accountRepository.findByFinancialInstitutionIdAndStatusOrderByCreatedAtAsc(
             institutionId, ACTIVE);
-    LocalDate asOf = LocalDate.now();
+    LocalDate asOf = businessDateService.today();
 
     BigDecimal totalAssets = BigDecimal.ZERO;
     BigDecimal totalLiabilities = BigDecimal.ZERO;

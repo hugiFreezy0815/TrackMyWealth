@@ -136,15 +136,57 @@ Three rules are load-bearing and each has a test in `TransactionControllerTest`:
   filtering `voided_at IS NULL` would drop the original and count the reversal alone, misstating the
   balance by the full amount. A voided row is therefore *shown* as voided (FR-LIF-003), never
   excluded from the sum.
-- **An empty ledger is a known zero.** A card with no rows owes exactly 0 and does not make an
-  aggregate incomplete. Known limitation: there is no opening-balance mechanism yet (EPIC 25
-  snapshots), so a card that already carried debt when tracking began reads 0 until that debt is
-  recorded.
+- **An empty ledger is a known zero, flagged as assumed.** A card with no rows owes exactly 0 and
+  does not make an aggregate incomplete - but its `valueBasis` is `LEDGER_EMPTY`, not `LEDGER`, so
+  a client can tell an assumed zero from a measured one. Known limitation: there is no
+  opening-balance mechanism yet (EPIC 25 snapshots), so a card that already carried debt when
+  tracking began reads 0 until that debt is recorded.
 - **Future-dated rows wait.** A row booked after the as-of date does not count until that date,
   matching the valuation-date convention above.
 
+**"Today" is the business date, not the server's.** The as-of date for every date-filtered read is
+`BusinessDateService.today()`: the current date in `app.business-zone` (default `Europe/Zurich`),
+never the JVM's default zone. The container runs in UTC, so between local midnight and 01:00/02:00
+the server's date is still yesterday's; a purchase a user books with their own local date would be
+"future-dated" and missing from the balance until the server caught up. Code that needs today's
+date for a valuation or ledger read uses `BusinessDateService`, not `LocalDate.now()`.
+
+**Where a figure came from (`AccountValuation.valueBasis`).** A known value is not necessarily an
+exact one:
+
+| `valueBasis` | Source | Exact? |
+|---|---|---|
+| `LEDGER` | negated sum of the card's ledger rows | yes |
+| `MANUAL_VALUATION` | latest manual valuation on or before the as-of date (`CUSTOM_ASSET`) | yes, as recorded |
+| `LEDGER_EMPTY` | card with no rows yet - assumed 0 | **no** - approximation |
+| `ORIGINAL_PRINCIPAL` | a loan's/mortgage's *original* principal, not its outstanding balance (no amortisation tracking until EPIC 10) | **no** - approximation |
+
+`valueBasis` is `null` when `valueKnown` is `false`. `NetWorthResponse.approximate` is `true` when
+any included account has an approximate basis. It is independent of `complete`: an approximate
+account is still *known* (counted in the totals), but the figure must not be presented as exact.
+
+**Recording is idempotent on request.** `POST .../transactions` accepts an optional `externalId`
+(a client-generated key, stored in `transaction.external_id` with source `MANUAL`, unique per
+account by `uq_transaction_external_id`). A retry carrying the same key returns the originally
+recorded row (same 201 and body) instead of appending a second one; the same key with a different
+type, date, amount or currency is a 409. The ledger is append-only, so without this a client that
+lost a response and retried would double the debt with no way to undo it until the void path
+(US-07-02) exists. Two requests racing on one new key hit the unique index and one gets a 409 to
+retry.
+
+**Listing is paged.** `GET .../transactions` returns a Spring Data page (`content`,
+`totalElements`, ...), default 50 per page and never more than 200. Its order is fixed - newest
+booking first, `created_at` then `id` as tie-breakers - and a client-supplied `sort` is ignored, so
+paging is stable and cannot order by an unindexed or non-existent column.
+
+**The balance sums `amount` regardless of a row's `currency`.** That is sound only while every
+row on a card is in the account's own currency, which the write path enforces. US-09-04 adds
+foreign-currency rows (amount in the original currency); at that point the balance must sum the
+account-currency figure instead, or it would silently mix currencies.
+
 **Net worth (partial, until US-11-01)** is `Σ value(ASSET) − Σ value(LIABILITY)` over every active
-account the caller may see at `BALANCE_ONLY` or above, in the caller's `reporting_currency`. Each
-account's sign comes from its `nature` (the DB-generated column), never from application-side
+account the caller may see at `BALANCE_ONLY` or above, in the caller's `reporting_currency` (each
+account's foreign currency is converted at the business date's rate, resolved once per currency
+pair per request). Each account's sign comes from its `nature` (the DB-generated column), never from application-side
 `account_type` logic. Accounts with no resolvable value (types with no value source yet) are listed but excluded from the totals and
 flagged (`complete = false`) rather than counted as zero.

@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -10,7 +11,6 @@ import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -35,25 +35,31 @@ public class NetWorthService {
 
   private static final String ACTIVE = "ACTIVE";
   private static final String ASSET = "ASSET";
+  private static final String LIABILITY = "LIABILITY";
 
   private final AccessControlService accessControlService;
   private final AppUserRepository appUserRepository;
   private final AccountRepository accountRepository;
   private final AccountValuationService accountValuationService;
+  private final BusinessDateService businessDateService;
 
   public NetWorthService(
       AccessControlService accessControlService,
       AppUserRepository appUserRepository,
       AccountRepository accountRepository,
-      AccountValuationService accountValuationService) {
+      AccountValuationService accountValuationService,
+      BusinessDateService businessDateService) {
     this.accessControlService = accessControlService;
     this.appUserRepository = appUserRepository;
     this.accountRepository = accountRepository;
     this.accountValuationService = accountValuationService;
+    this.businessDateService = businessDateService;
   }
 
-  // One access-level lookup per account: fine at this project's household scale (self-hosted, tens
-  // of accounts). Batch it if a workspace ever holds enough accounts for this to show in a profile.
+  // Access is resolved in bulk (the per-workspace sole-member count once, not per account) and each
+  // distinct foreign currency's FX rate once. What remains per account is its ownership/grant
+  // lookup and its value-source query - fine at this project's household scale (self-hosted, tens
+  // of accounts); revisit if a workspace ever holds enough accounts for it to show in a profile.
   @Transactional(readOnly = true)
   public NetWorthResponse getNetWorth(AuthenticatedUserPrincipal actor) {
     // 404 for a caller with no workspace membership (a SYSTEM_ADMINISTRATOR with no linked
@@ -64,29 +70,36 @@ public class NetWorthService {
             .findById(actor.userId())
             .map(AppUser::getReportingCurrency)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
-    LocalDate asOf = LocalDate.now();
+    LocalDate asOf = businessDateService.today();
+
+    List<Account> visible =
+        accessControlService.accountsWithAccess(
+            memberId,
+            accountRepository.findByWorkspaceIdAndStatusOrderByCreatedAtAsc(
+                actor.workspaceId(), ACTIVE),
+            AccessLevelValues.BALANCE_ONLY);
+    List<AccountValuation> valuations =
+        accountValuationService.valueAll(visible, reportingCurrency, asOf);
 
     BigDecimal totalAssets = BigDecimal.ZERO;
     BigDecimal totalLiabilities = BigDecimal.ZERO;
     boolean complete = true;
-    List<AccountValuation> valuations = new ArrayList<>();
+    boolean approximate = false;
 
-    for (Account account :
-        accountRepository.findByWorkspaceIdAndStatusOrderByCreatedAtAsc(
-            actor.workspaceId(), ACTIVE)) {
-      if (!accessControlService.hasAccountAccess(
-          memberId, account, AccessLevelValues.BALANCE_ONLY)) {
-        continue;
-      }
-      AccountValuation valuation =
-          accountValuationService.valueIn(account, reportingCurrency, asOf);
-      valuations.add(valuation);
+    for (AccountValuation valuation : valuations) {
       if (!valuation.valueKnown()) {
         complete = false;
-      } else if (ASSET.equals(valuation.nature())) {
+        continue;
+      }
+      approximate |= ValueBasisValues.isApproximate(valuation.valueBasis());
+      // Explicit on both natures: one this code has never heard of must fail loudly rather than
+      // be silently counted as a liability.
+      if (ASSET.equals(valuation.nature())) {
         totalAssets = totalAssets.add(valuation.value());
-      } else {
+      } else if (LIABILITY.equals(valuation.nature())) {
         totalLiabilities = totalLiabilities.add(valuation.value());
+      } else {
+        throw new IllegalStateException("Unexpected account nature '" + valuation.nature() + "'");
       }
     }
 
@@ -97,6 +110,7 @@ public class NetWorthService {
         totalLiabilities,
         totalAssets.subtract(totalLiabilities),
         complete,
+        approximate,
         valuations);
   }
 }

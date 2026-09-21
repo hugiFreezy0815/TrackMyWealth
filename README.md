@@ -125,6 +125,14 @@ amd64, arm64, and 32-bit ARM variants), so this should run unchanged regardless 
 NAS is Intel/AMD or ARM-based - point Synology's Container Manager (or any Docker host) at this
 `docker-compose.yml` the same way.
 
+### Time zone
+
+The backend container runs in UTC, but "today" for a balance or net worth means *your* calendar
+day: a purchase you book at 00:30 on the 15th belongs to the 15th even though it is still the 14th
+in UTC. `BUSINESS_ZONE` (`app.business-zone`, default `Europe/Zurich` - Germany's zone has the
+same offsets) names the zone whose date is used. Set it to another `java.time.ZoneId` only if you
+live outside Switzerland/Germany.
+
 ### Secrets to set before real use
 
 Both have a well-formed placeholder default in `application.yml` so the stack starts out of the

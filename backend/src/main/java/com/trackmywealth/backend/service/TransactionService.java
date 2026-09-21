@@ -7,13 +7,18 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
-import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -37,7 +42,15 @@ public class TransactionService {
 
   private static final String CREDIT_CARD_PURCHASE = "CREDIT_CARD_PURCHASE";
   private static final String ACTIVE = "ACTIVE";
+  private static final String MANUAL = "MANUAL";
   private static final String MCC_KEY = "mcc";
+
+  // A page is never larger than this whatever the client asks for, and its order is fixed here, not
+  // taken from the request: newest booking first, with created_at and id as tie-breakers so paging
+  // is stable across rows booked on the same day.
+  private static final int MAX_PAGE_SIZE = 200;
+  private static final Sort LEDGER_ORDER =
+      Sort.by(Sort.Order.desc("bookingDate"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
@@ -55,11 +68,25 @@ public class TransactionService {
     this.objectMapper = objectMapper;
   }
 
+  /**
+   * Records the purchase. When {@code request.externalId()} is set it is an idempotency key: a
+   * retry of an already-recorded request returns that original row (same 201 and body) instead of
+   * appending a second one, so a client that lost the first response cannot double the debt. Two
+   * requests racing on the same new key hit {@code uq_transaction_external_id}, which {@code
+   * GlobalExceptionHandler} reports as 409 - the caller's retry then finds the winner and replays.
+   */
   @Transactional
   public TransactionResponse recordTransaction(
       UUID accountId, CreateTransactionRequest request, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+
+    // Before validate(): a replay must answer with the original row even if the account has been
+    // archived since, rather than turn a successful earlier request into a 409 on retry.
+    Optional<Transaction> replay = findReplay(accountId, request);
+    if (replay.isPresent()) {
+      return toResponse(replay.get());
+    }
     validate(account, request);
 
     Transaction transaction = new Transaction();
@@ -71,7 +98,8 @@ public class TransactionService {
     transaction.setCurrency(request.currency());
     transaction.setMerchantDescription(request.merchantDescription());
     transaction.setNotes(request.notes());
-    transaction.setSource("MANUAL");
+    transaction.setSource(MANUAL);
+    transaction.setExternalId(request.externalId());
     // FR-CC-002/RULE-011: the MCC is source data, kept in raw_source_data - category_id is a
     // separate column a later categorization writes, so neither can overwrite the other.
     transaction.setRawSourceData(
@@ -87,15 +115,44 @@ public class TransactionService {
   }
 
   @Transactional(readOnly = true)
-  public List<TransactionResponse> listTransactions(
-      UUID accountId, AuthenticatedUserPrincipal actor) {
+  public Page<TransactionResponse> listTransactions(
+      UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
-    return transactionRepository
-        .findByAccountIdOrderByBookingDateDescCreatedAtDesc(accountId)
-        .stream()
-        .map(this::toResponse)
-        .toList();
+    Pageable bounded =
+        PageRequest.of(
+            pageable.getPageNumber(),
+            Math.min(pageable.getPageSize(), MAX_PAGE_SIZE),
+            LEDGER_ORDER);
+    return transactionRepository.findByAccountId(accountId, bounded).map(this::toResponse);
+  }
+
+  private Optional<Transaction> findReplay(UUID accountId, CreateTransactionRequest request) {
+    if (request.externalId() == null) {
+      return Optional.empty();
+    }
+    Optional<Transaction> existing =
+        transactionRepository.findByAccountIdAndSourceAndExternalId(
+            accountId, MANUAL, request.externalId());
+    // The same key must mean the same purchase: only the ledger-frozen financial fields are
+    // compared (notes and merchant text stay editable, so comparing them would turn a later edit
+    // into a false conflict).
+    existing.ifPresent(
+        row -> {
+          boolean samePurchase =
+              row.getTransactionType().equals(request.transactionType())
+                  && row.getBookingDate().equals(request.bookingDate())
+                  && row.getAmount().compareTo(request.amount()) == 0
+                  && row.getCurrency().equals(request.currency());
+          if (!samePurchase) {
+            throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "externalId '"
+                    + request.externalId()
+                    + "' was already used for a different transaction on this account.");
+          }
+        });
+    return existing;
   }
 
   private static void validate(Account account, CreateTransactionRequest request) {
@@ -143,15 +200,25 @@ public class TransactionService {
         extractMcc(transaction.getRawSourceData()),
         transaction.getNotes(),
         transaction.getSource(),
+        transaction.getExternalId(),
         transaction.getCreatedAt());
   }
 
   // raw_source_data may in future carry a richer, import-defined shape (EPIC 07); only the "mcc"
-  // key is this story's contract, so read just that and tolerate anything else being present.
+  // key is this story's contract, so read just that and tolerate anything else being present. An
+  // importer may well write the MCC as a JSON number ({"mcc":5411}) rather than a string; both
+  // read back as the four-digit code (a number loses leading zeros, so it is re-padded).
   private String extractMcc(String rawSourceData) {
     if (rawSourceData == null) {
       return null;
     }
-    return objectMapper.readTree(rawSourceData).path(MCC_KEY).stringValue(null);
+    JsonNode mcc = objectMapper.readTree(rawSourceData).path(MCC_KEY);
+    if (mcc.isString()) {
+      return mcc.stringValue();
+    }
+    if (mcc.isIntegralNumber()) {
+      return String.format("%04d", mcc.longValue());
+    }
+    return null;
   }
 }

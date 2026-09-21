@@ -29,8 +29,13 @@ import java.util.UUID;
  *     earlier date rather than resolved exactly for {@code conversionRateDate} (FR-CUR-012/PR-011)
  *     - always {@code false} when {@code conversionRate} is {@code null}
  * @param valueKnown {@code false} when this account has no resolvable value: its type has no value
- *     source yet, or it has a source but no data (a {@code CUSTOM_ASSET} never valued, a credit
- *     card with no ledger history) - excluded from any total rather than counted as zero (PR-011)
+ *     source yet, or it has a source but no data (a {@code CUSTOM_ASSET} never valued) - excluded
+ *     from any total rather than counted as zero (PR-011)
+ * @param valueBasis where {@code value} came from ({@link ValueBasisValues}) - {@code null} when
+ *     {@code valueKnown} is {@code false}. A known value is not necessarily an exact one: {@code
+ *     LEDGER_EMPTY} (an assumed zero) and {@code ORIGINAL_PRINCIPAL} (not the current outstanding
+ *     balance) are approximations a client should surface as such, see {@link
+ *     ValueBasisValues#isApproximate}
  */
 public record AccountValuation(
     UUID accountId,
@@ -42,4 +47,5 @@ public record AccountValuation(
     BigDecimal conversionRate,
     LocalDate conversionRateDate,
     boolean conversionRateCarriedForward,
-    boolean valueKnown) {}
+    boolean valueKnown,
+    String valueBasis) {}

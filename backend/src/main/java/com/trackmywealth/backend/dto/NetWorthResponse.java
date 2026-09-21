@@ -16,6 +16,11 @@ import java.util.List;
  * @param complete {@code false} when at least one {@link #accounts} entry has {@code valueKnown =
  *     false} - the totals only ever sum the accounts that do, so an incomplete figure is visible on
  *     inspection (PR-011) rather than silently understated
+ * @param approximate {@code true} when at least one included account's value is an approximation or
+ *     an assumption rather than a measured figure - a loan or mortgage counted at its original
+ *     principal, a card with nothing recorded yet counted as owing zero (see {@link
+ *     ValueBasisValues#isApproximate}). Independent of {@link #complete}: an approximate figure is
+ *     still a known one, but must not be presented as exact
  * @param accounts every active account the caller may see (at least {@code BALANCE_ONLY}), present
  *     even when its value is unknown so a caller can see which accounts are excluded from the
  *     totals
@@ -27,6 +32,7 @@ public record NetWorthResponse(
     BigDecimal totalLiabilities,
     BigDecimal netWorth,
     boolean complete,
+    boolean approximate,
     List<AccountValuation> accounts) {
 
   public NetWorthResponse {

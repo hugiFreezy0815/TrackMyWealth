@@ -111,6 +111,11 @@ app:
       encryption-key: ${MFA_ENCRYPTION_KEY:Q0hBTkdFX01FX0lOX0VOVklST05NRU5UX0NPTkZJRzE=}
   deployment:
     topology: ${DEPLOYMENT_TOPOLOGY:self-hosted} # self-hosted | hosted (NFR-DEP-002)
+  # US-09-01: the zone whose calendar date is "today" for date-filtered reads (a card balance counts
+  # rows booked on or before today). The container's own zone is UTC, which is a day behind
+  # Switzerland/Germany for the first hour or two after local midnight - see BusinessDateService.
+  # Any java.time.ZoneId; Europe/Zurich has the same offsets as Germany's zone.
+  business-zone: ${BUSINESS_ZONE:Europe/Zurich}
   fx:
     # US-04-03: the fx_rate.source every currency-conversion caller queries against when no
     # automated fetch job exists yet (EPIC 30) to make that choice moot - matches
