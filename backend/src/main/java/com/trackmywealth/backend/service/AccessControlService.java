@@ -86,6 +86,13 @@ public class AccessControlService {
     denyUnless(atLeast(accountAccessLevel(memberId, account), requiredLevel), "Account not found.");
   }
 
+  // Non-throwing counterpart of requireAccountAccess, for an aggregation (e.g. net worth) that must
+  // silently leave out the accounts the member cannot see rather than 404 the whole request.
+  @Transactional(readOnly = true)
+  public boolean hasAccountAccess(UUID memberId, Account account, String requiredLevel) {
+    return atLeast(accountAccessLevel(memberId, account), requiredLevel);
+  }
+
   @Transactional(readOnly = true)
   public void requireInstitutionAccess(
       AuthenticatedUserPrincipal actor, FinancialInstitution institution, String requiredLevel) {

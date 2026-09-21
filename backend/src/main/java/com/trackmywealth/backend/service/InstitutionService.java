@@ -1,23 +1,17 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
+import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
-import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionSummaryResponse.AccountContribution;
 import com.trackmywealth.backend.entity.Account;
-import com.trackmywealth.backend.entity.AccountLoan;
-import com.trackmywealth.backend.entity.AccountMortgage;
-import com.trackmywealth.backend.entity.CustomAssetValuation;
 import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.entity.InstitutionCatalogue;
 import com.trackmywealth.backend.entity.Workspace;
-import com.trackmywealth.backend.repository.AccountLoanRepository;
-import com.trackmywealth.backend.repository.AccountMortgageRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
-import com.trackmywealth.backend.repository.CustomAssetValuationRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -26,9 +20,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -55,8 +47,8 @@ import org.springframework.web.server.ResponseStatusException;
  * <p>US-04-03: {@link #getSummary} reads only {@code institution_type} to manage the institution
  * itself, never {@code account_type} directly (the sanctioned exception this class's own Javadoc
  * already claims, and the one {@code ArchitectureTest} enforces) - which account's value comes from
- * where is decided by capability flags ({@code Account#isManualValuation}, {@code
- * Account#isHasAmortisation}), not by branching on the type string.
+ * where is decided by {@link AccountValuationService} from capability flags, not by branching on
+ * the type string.
  */
 @Service
 public class InstitutionService {
@@ -75,11 +67,7 @@ public class InstitutionService {
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final InstitutionCatalogueRepository institutionCatalogueRepository;
   private final AccountRepository accountRepository;
-  private final AccountMortgageRepository accountMortgageRepository;
-  private final AccountLoanRepository accountLoanRepository;
-  private final CustomAssetValuationRepository customAssetValuationRepository;
-  private final FxRateService fxRateService;
-  private final String fxDefaultSource;
+  private final AccountValuationService accountValuationService;
 
   public InstitutionService(
       WorkspaceAccessService workspaceAccessService,
@@ -88,22 +76,14 @@ public class InstitutionService {
       FinancialInstitutionRepository financialInstitutionRepository,
       InstitutionCatalogueRepository institutionCatalogueRepository,
       AccountRepository accountRepository,
-      AccountMortgageRepository accountMortgageRepository,
-      AccountLoanRepository accountLoanRepository,
-      CustomAssetValuationRepository customAssetValuationRepository,
-      FxRateService fxRateService,
-      @Value("${app.fx.default-source}") String fxDefaultSource) {
+      AccountValuationService accountValuationService) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.institutionLookupService = institutionLookupService;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.institutionCatalogueRepository = institutionCatalogueRepository;
     this.accountRepository = accountRepository;
-    this.accountMortgageRepository = accountMortgageRepository;
-    this.accountLoanRepository = accountLoanRepository;
-    this.customAssetValuationRepository = customAssetValuationRepository;
-    this.fxRateService = fxRateService;
-    this.fxDefaultSource = fxDefaultSource;
+    this.accountValuationService = accountValuationService;
   }
 
   @Transactional(readOnly = true)
@@ -143,11 +123,9 @@ public class InstitutionService {
    * currently-active account under the institution, in the container currency. C7: an institution
    * with zero accounts returns a valid, all-zero, {@code complete} summary, not an error.
    *
-   * <p>Only {@code CUSTOM_ASSET} (via {@link CustomAssetValuation}) and {@code MORTGAGE}/{@code
-   * LOAN} (via their {@code original_principal} - a real stored number, but the loan's original
-   * amount, not its current outstanding balance; no amortization tracking exists yet, EPIC 10) have
-   * any value source in this codebase today. Every other account type contributes {@code valueKnown
-   * = false} and is excluded from the totals, not counted as zero - {@link
+   * <p>Each account's value comes from {@link AccountValuationService} - see its own Javadoc for
+   * which account types have a value source today. An account with none contributes {@code
+   * valueKnown = false} and is excluded from the totals, not counted as zero - {@link
    * InstitutionSummaryResponse#complete} makes that visible rather than silently understating the
    * totals (PR-011).
    */
@@ -171,7 +149,8 @@ public class InstitutionService {
 
     for (Account account : accounts) {
       AccountContribution contribution =
-          toContribution(account, institution.getContainerCurrency(), asOf);
+          toContribution(
+              accountValuationService.valueIn(account, institution.getContainerCurrency(), asOf));
       contributions.add(contribution);
       if (!contribution.valueKnown()) {
         complete = false;
@@ -195,104 +174,19 @@ public class InstitutionService {
         contributions);
   }
 
-  private AccountContribution toContribution(
-      Account account, String containerCurrency, LocalDate asOf) {
-    Optional<BigDecimal> nativeValue = resolveNativeValue(account, asOf);
-    if (nativeValue.isEmpty()) {
-      return new AccountContribution(
-          account.getId(),
-          account.getName(),
-          account.getNature(),
-          account.getNativeCurrency(),
-          null,
-          null,
-          null,
-          false,
-          false);
-    }
-
-    if (account.getNativeCurrency().equals(containerCurrency)) {
-      return new AccountContribution(
-          account.getId(),
-          account.getName(),
-          account.getNature(),
-          account.getNativeCurrency(),
-          nativeValue.get(),
-          null,
-          null,
-          false,
-          true);
-    }
-
-    // FR-CUR-011/US-06-03: a current holding's value converts at the valuation date (today), not
-    // at any date tied to when the account or its value was originally recorded - see
-    // docs/architecture/calculation-methodology.md.
-    //
-    // PR-012/#78 follow-up: uses tryGetConversionRate, not a try/catch around getConversionRate.
-    // FxRateService's methods are themselves @Transactional and, absent a caller-supplied
-    // propagation override, join this method's own physical transaction (Spring's default
-    // REQUIRED propagation) - so getConversionRate() throwing marks that shared transaction
-    // rollback-only the moment it happens, and no catch here can undo that. The original version
-    // of this fix caught the exception and built exactly the "unknown" AccountContribution below,
-    // which looked correct and passed every functional assertion in isolation, but still failed
-    // the request: getSummary()'s own commit then threw UnexpectedRollbackException regardless of
-    // the catch, turning "one account has no FX rate" into a 500 for the whole summary - verified
-    // by reproducing it against this exact code before writing this fix.
-    Optional<CurrencyConversionResult> conversion =
-        fxRateService.tryGetConversionRate(
-            account.getNativeCurrency(), containerCurrency, asOf, fxDefaultSource);
-    if (conversion.isEmpty()) {
-      // No FX rate available for this pair at all - degrade this one account to unknown rather
-      // than failing the whole summary just because one foreign-currency account among several
-      // has no stored rate.
-      return new AccountContribution(
-          account.getId(),
-          account.getName(),
-          account.getNature(),
-          account.getNativeCurrency(),
-          null,
-          null,
-          null,
-          false,
-          false);
-    }
-
-    BigDecimal convertedValue = fxRateService.applyRate(nativeValue.get(), conversion.get());
+  // AccountValuation is the shared DM-17 result; AccountContribution is this endpoint's own
+  // (FR-INS-SUM-002) wire shape, kept field-for-field so the response contract is unchanged.
+  private static AccountContribution toContribution(AccountValuation valuation) {
     return new AccountContribution(
-        account.getId(),
-        account.getName(),
-        account.getNature(),
-        account.getNativeCurrency(),
-        convertedValue,
-        conversion.get().rate(),
-        asOf,
-        conversion.get().carriedForward(),
-        true);
-  }
-
-  // US-05-04/ArchitectureTest's only_account_service_branches_on_account_type: never reads
-  // account.getAccountType() - which value source applies is decided by capability flags instead.
-  // isHasAmortisation() is true for exactly MORTGAGE and LOAN (US-05-01), so exactly one of the
-  // two lookups below ever finds a row; isManualValuation() is true for exactly CUSTOM_ASSET
-  // (US-05-05).
-  private Optional<BigDecimal> resolveNativeValue(Account account, LocalDate asOf) {
-    if (account.isManualValuation()) {
-      return customAssetValuationRepository
-          .findFirstByAccountIdAndValuationDateLessThanEqualOrderByValuationDateDesc(
-              account.getId(), asOf)
-          .map(CustomAssetValuation::getValue);
-    }
-    if (account.isHasAmortisation()) {
-      return accountMortgageRepository
-          .findById(account.getId())
-          .map(AccountMortgage::getOriginalPrincipal)
-          .or(
-              () ->
-                  accountLoanRepository
-                      .findById(account.getId())
-                      .map(AccountLoan::getOriginalPrincipal));
-    }
-    return Optional.empty();
+        valuation.accountId(),
+        valuation.name(),
+        valuation.nature(),
+        valuation.nativeCurrency(),
+        valuation.value(),
+        valuation.conversionRate(),
+        valuation.conversionRateDate(),
+        valuation.conversionRateCarriedForward(),
+        valuation.valueKnown());
   }
 
   private void applyCatalogueEntry(

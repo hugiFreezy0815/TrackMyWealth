@@ -106,3 +106,45 @@ an API surface for them, since designing that surface now would be guessing at s
 haven't defined. When each of those epics lands, its own service is expected to call
 `FxRateService` with the date this convention specifies, not to reopen the question of which date
 to use.
+
+## Ledger sign convention and credit-card balance (US-09-01, FR-CC-001/003)
+
+Seeded by **US-09-01**, the first story to compute a figure from `transaction`. The full net-worth
+methodology remains **US-11-01**/**US-27-02**'s to write; this section states only what the ledger
+itself already fixes, so the stories that follow don't each re-decide it.
+
+**`transaction.amount` is cash-direction signed, and stored exactly as sent.** Money leaving an
+account is negative, money entering it is positive. For a `CREDIT_CARD` account a purchase is
+therefore negative (it increases what is owed) and a settlement or refund is positive. The API does
+not flip a sign on the caller's behalf: `POST /api/v1/accounts/{id}/transactions` rejects a
+non-negative `CREDIT_CARD_PURCHASE` (HTTP 422) rather than negating it.
+
+**A card's balance is the negated sum of its ledger rows booked on or before the as-of date**,
+expressed as a positive "amount owed" with `nature = LIABILITY`:
+
+| Ledger rows on the card | `sum(amount)` | Balance (`value`) |
+|---|---|---|
+| purchase −85.00 | −85.00 | **85.00** owed |
+| purchases −85.00, −15.50 | −100.50 | **100.50** owed |
+| purchase −50.00, then +50.00 settlement | 0.00 | **0.00** (known zero) |
+| no rows | — | **0.00** (known zero) |
+
+Three rules are load-bearing and each has a test in `TransactionControllerTest`:
+
+- **Voided rows count.** A void leaves the original in the ledger and adds a reversing row of the
+  opposite sign (FR-LIF-002, "both records remain"). The pair nets to zero only if both are summed;
+  filtering `voided_at IS NULL` would drop the original and count the reversal alone, misstating the
+  balance by the full amount. A voided row is therefore *shown* as voided (FR-LIF-003), never
+  excluded from the sum.
+- **An empty ledger is a known zero.** A card with no rows owes exactly 0 and does not make an
+  aggregate incomplete. Known limitation: there is no opening-balance mechanism yet (EPIC 25
+  snapshots), so a card that already carried debt when tracking began reads 0 until that debt is
+  recorded.
+- **Future-dated rows wait.** A row booked after the as-of date does not count until that date,
+  matching the valuation-date convention above.
+
+**Net worth (partial, until US-11-01)** is `Σ value(ASSET) − Σ value(LIABILITY)` over every active
+account the caller may see at `BALANCE_ONLY` or above, in the caller's `reporting_currency`. Each
+account's sign comes from its `nature` (the DB-generated column), never from application-side
+`account_type` logic. Accounts with no resolvable value (types with no value source yet) are listed but excluded from the totals and
+flagged (`complete = false`) rather than counted as zero.

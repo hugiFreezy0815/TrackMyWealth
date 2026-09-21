@@ -25,9 +25,11 @@ but not yet paid" is visible before the statement is settled.
   overwritten by it.
 **Applicable business rules:** FR-CC-001/002/003/006, DM-11, RULE-011.
 **Data requirements:** `transaction.merchant_description`, MCC in `raw_source_data`.
-**Error/edge cases:** A purchase entered against an account with no `account_credit_card`
-extension row — rejected by `trg_extension_type_guard`'s consistency check indirectly (the
-account must actually be `CREDIT_CARD` type to have that extension).
+**Error/edge cases:** A purchase entered against an account that is not a credit card — rejected
+by the service layer (HTTP 422), which decides this from the `has_statement_cycle` capability flag,
+not `account_type`. *(Corrected during implementation: this note originally attributed the
+rejection to `trg_extension_type_guard`, but that trigger only fires on inserts into the extension
+tables — nothing at the DB level guards `transaction.account_id` against the account's type.)*
 **Authorization/privacy:** Workspace-scoped write.
 **Dependencies:** EPIC 05, EPIC 08.
 **Priority:** MUST.

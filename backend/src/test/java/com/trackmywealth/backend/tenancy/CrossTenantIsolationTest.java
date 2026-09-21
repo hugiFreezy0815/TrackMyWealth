@@ -68,7 +68,13 @@ class CrossTenantIsolationTest {
   // here and a corresponding test in the same PR - this IS the enforcement mechanism, not just
   // documentation of one.
   private static final Set<String> COVERED_TABLES =
-      Set.of("workspace", "workspace_member", "financial_institution", "account", "sharing_grant");
+      Set.of(
+          "workspace",
+          "workspace_member",
+          "financial_institution",
+          "account",
+          "sharing_grant",
+          "transaction");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -77,6 +83,8 @@ class CrossTenantIsolationTest {
   private UUID institutionAId;
   private UUID institutionBId;
   private UUID accountAId;
+  private UUID transactionAId;
+  private UUID transactionBId;
   private UUID accountBId;
   private UUID sharingGrantAId;
   private UUID sharingGrantBId;
@@ -113,8 +121,8 @@ class CrossTenantIsolationTest {
     try (Connection admin = adminConnection();
         Statement statement = admin.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE sharing_grant, account, financial_institution, workspace_member,"
-              + " workspace RESTART IDENTITY CASCADE");
+          "TRUNCATE TABLE transaction, sharing_grant, account, financial_institution,"
+              + " workspace_member, workspace RESTART IDENTITY CASCADE");
     }
 
     try (Connection connection = testRoleConnection()) {
@@ -126,6 +134,7 @@ class CrossTenantIsolationTest {
       memberAId = insertMember(connection, workspaceAId, "Member A");
       institutionAId = personalAssetsId(connection, workspaceAId);
       accountAId = insertAccount(connection, workspaceAId, institutionAId, "Account A");
+      transactionAId = insertTransaction(connection, workspaceAId, accountAId);
       sharingGrantAId = insertSharingGrant(connection, workspaceAId, memberAId);
 
       workspaceBId = UUID.randomUUID();
@@ -134,6 +143,7 @@ class CrossTenantIsolationTest {
       memberBId = insertMember(connection, workspaceBId, "Member B");
       institutionBId = personalAssetsId(connection, workspaceBId);
       accountBId = insertAccount(connection, workspaceBId, institutionBId, "Account B");
+      transactionBId = insertTransaction(connection, workspaceBId, accountBId);
       sharingGrantBId = insertSharingGrant(connection, workspaceBId, memberBId);
 
       connection.commit();
@@ -175,6 +185,14 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceBId, "sharing_grant", sharingGrantAId)).isFalse();
   }
 
+  // US-09-01: transaction carries its own workspace_id and is RLS-protected the same way (V20) - a
+  // ledger row, including a card purchase's amount and merchant, must never cross a workspace.
+  @Test
+  void transactionRowIsInvisibleAcrossWorkspaces() throws Exception {
+    assertThat(rowVisibleUnderContext(workspaceAId, "transaction", transactionBId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceBId, "transaction", transactionAId)).isFalse();
+  }
+
   // A cross-tenant suite that only ever asserts "denied" can pass vacuously if RLS is
   // accidentally denying everyone, including a workspace reading its own data - this is the
   // false-negative guard against that.
@@ -186,12 +204,14 @@ class CrossTenantIsolationTest {
         .isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "account", accountAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "sharing_grant", sharingGrantAId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceAId, "transaction", transactionAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace", workspaceBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace_member", memberBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "financial_institution", institutionBId))
         .isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "account", accountBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "sharing_grant", sharingGrantBId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "transaction", transactionBId)).isTrue();
   }
 
   @Test
@@ -284,6 +304,22 @@ class CrossTenantIsolationTest {
       statement.executeUpdate();
     }
     return accountId;
+  }
+
+  private UUID insertTransaction(Connection connection, UUID workspaceId, UUID accountId)
+      throws Exception {
+    UUID transactionId = UUID.randomUUID();
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                + " booking_date, amount, currency) VALUES (?, ?, ?, 'EXPENSE', CURRENT_DATE,"
+                + " -1.00, 'CHF')")) {
+      statement.setObject(1, transactionId);
+      statement.setObject(2, workspaceId);
+      statement.setObject(3, accountId);
+      statement.executeUpdate();
+    }
+    return transactionId;
   }
 
   // WORKSPACE scope needs no scope_account_id/scope_institution_id (V6's own CHECK constraint) -
