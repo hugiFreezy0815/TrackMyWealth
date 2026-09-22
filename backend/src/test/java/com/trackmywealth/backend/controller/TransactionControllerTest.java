@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
+import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
@@ -370,26 +371,192 @@ class TransactionControllerTest {
     assertThat(countTransactions(cash.id())).isZero();
   }
 
+  // --- US-09-04: foreign-currency card purchases -----------------------------------------------
+
   @Test
-  void aForeignCurrencyPurchaseIsRejectedUntilUs0904() {
+  void aForeignCurrencyPurchaseWithAnExplicitRateRetainsTheOriginalAmountAndConvertsTheBalance() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token); // billed in CHF
+    recordPurchaseOn(token, card.id(), "-30.00", today()); // an ordinary CHF purchase too
+
+    TransactionResponse created =
+        postTransaction(
+                token,
+                card.id(),
+                foreignPurchase("-50.00", "EUR", "Hotel", "1.1000000000", null, null))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    // AC1: both the original currency/amount and the applied rate are retained as sent.
+    assertThat(created.currency()).isEqualTo("EUR");
+    assertThat(created.amount()).isEqualByComparingTo("-50.00");
+    assertThat(created.fxRateToAccountCurrency()).isEqualByComparingTo("1.1000000000");
+    assertThat(created.fxRateEstimated()).isFalse();
+
+    // The CHF-billed amount is derivable from the rate (50.00 * 1.10 = 55.00) - and the card's
+    // balance sums the *converted* figure, not the raw EUR amount mixed in with the CHF one
+    // (30.00 CHF + 55.00 CHF-equivalent = 85.00, not a nonsensical 30 + 50 = 80).
+    assertThat(balance(token, card.id()).value()).isEqualByComparingTo("85.00");
+  }
+
+  @Test
+  void aDisclosedBilledAmountDerivesTheRateInstead() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+
+    TransactionResponse created =
+        postTransaction(
+                token, card.id(), foreignPurchase("-50.00", "EUR", "Hotel", null, "-55.00", null))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(created.fxRateToAccountCurrency()).isEqualByComparingTo("1.1000000000");
+    assertThat(created.fxRateEstimated()).isFalse();
+    assertThat(balance(token, card.id()).value()).isEqualByComparingTo("55.00");
+  }
+
+  @Test
+  void withNeitherARateNorABilledAmountAGenericDailyRateIsUsedAndFlaggedEstimated() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    seedFxRate("EUR", "CHF", today(), "1.0500000000");
+
+    TransactionResponse created =
+        postTransaction(
+                token, card.id(), foreignPurchase("-50.00", "EUR", "Hotel", null, null, null))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(created.fxRateToAccountCurrency()).isEqualByComparingTo("1.0500000000");
+    assertThat(created.fxRateEstimated()).isTrue(); // PR-011: a generic fallback, not disclosed
+    assertThat(balance(token, card.id()).value()).isEqualByComparingTo("52.50");
+  }
+
+  @Test
+  void withNoDerivableRateAtAllTheRequestIsRejectedNotSilentlyRecordedWithoutOne() {
+    // The story's own edge case: never leave fx_rate_to_account_currency null with no indication
+    // why. Deliberately no seedFxRate: EUR/CHF has no rate at all to fall back to.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+
+    postTransaction(token, card.id(), foreignPurchase("-50.00", "EUR", "Hotel", null, null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThat(countTransactions(card.id())).isZero();
+  }
+
+  @Test
+  void anExplicitRateAndABilledAmountTogetherIsRejectedAsAmbiguous() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(token);
 
     postTransaction(
-            token,
-            card.id(),
-            new CreateTransactionRequest(
-                CREDIT_CARD_PURCHASE,
-                today(),
-                new BigDecimal("-50.00"),
-                "EUR",
-                "Hotel",
-                null,
-                null,
-                null))
+            token, card.id(), foreignPurchase("-50.00", "EUR", "Hotel", "1.10", "-55.00", null))
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
-    assertThat(countTransactions(card.id())).isZero();
+  }
+
+  @Test
+  void fxFieldsAreRejectedOnAnOrdinarySameCurrencyPurchase() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+
+    postTransaction(
+            token, card.id(), foreignPurchase("-50.00", "CHF", "Migros", "1.10", null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    postTransaction(
+            token, card.id(), foreignPurchase("-50.00", "CHF", "Migros", null, null, "2.00"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+  }
+
+  @Test
+  void aDisclosedForeignTransactionFeeIsItsOwnLinkedFeeRowNotFoldedIntoThePurchase() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+
+    TransactionResponse purchase =
+        postTransaction(
+                token,
+                card.id(),
+                foreignPurchase("-50.00", "EUR", "Hotel", "1.1000000000", null, "2.50"))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    // The purchase itself carries no fee - it stays exactly the disclosed original amount.
+    assertThat(purchase.amount()).isEqualByComparingTo("-50.00");
+
+    List<TransactionResponse> ledger = listTransactions(token, card.id(), "").content();
+    assertThat(ledger).hasSize(2);
+    TransactionResponse fee =
+        ledger.stream().filter(t -> "FEE".equals(t.transactionType())).findFirst().orElseThrow();
+    assertThat(fee.amount()).isEqualByComparingTo("-2.50"); // negated: it increases what is owed
+    assertThat(fee.currency()).isEqualTo("CHF"); // the card's own billing currency, not EUR
+    assertThat(fee.relatedTransactionId()).isEqualTo(purchase.id());
+
+    // Both the converted purchase (55.00) and the fee (2.50) count toward what is owed.
+    assertThat(balance(token, card.id()).value()).isEqualByComparingTo("57.50");
+
+    // The story's own purpose - "see the true cost including any FX fee" - means it shows up in
+    // spending on its own, not silently folded away: two lines, one per currency (US-09-02's
+    // cash-flow view is per-currency, not converted). isEqualByComparingTo, not equals: the DB sum
+    // and a literal "50.00" need not share the same BigDecimal scale to be the same value.
+    CashFlowResponse cashFlow = cashFlow(token, today().toString().substring(0, 7));
+    assertThat(cashFlow.spending()).hasSize(2);
+    assertThat(cashFlow.spending())
+        .filteredOn(s -> s.currency().equals("EUR"))
+        .singleElement()
+        .satisfies(s -> assertThat(s.amount()).isEqualByComparingTo("50.00"));
+    assertThat(cashFlow.spending())
+        .filteredOn(s -> s.currency().equals("CHF"))
+        .singleElement()
+        .satisfies(s -> assertThat(s.amount()).isEqualByComparingTo("2.50"));
+  }
+
+  private CashFlowResponse cashFlow(String token, String month) {
+    return client(token)
+        .get()
+        .uri("/api/v1/cash-flow?month=" + month)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(CashFlowResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private CreateTransactionRequest foreignPurchase(
+      String amount,
+      String currency,
+      String merchant,
+      String fxRateToAccountCurrency,
+      String billedAmount,
+      String feeAmount) {
+    return new CreateTransactionRequest(
+        CREDIT_CARD_PURCHASE,
+        today(),
+        new BigDecimal(amount),
+        currency,
+        merchant,
+        null,
+        null,
+        null,
+        fxRateToAccountCurrency == null ? null : new BigDecimal(fxRateToAccountCurrency),
+        billedAmount == null ? null : new BigDecimal(billedAmount),
+        feeAmount == null ? null : new BigDecimal(feeAmount));
   }
 
   @Test
@@ -401,7 +568,17 @@ class TransactionControllerTest {
             token,
             card.id(),
             new CreateTransactionRequest(
-                "EXPENSE", today(), new BigDecimal("-5.00"), "CHF", null, null, null, null))
+                "EXPENSE",
+                today(),
+                new BigDecimal("-5.00"),
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
   }
@@ -814,6 +991,9 @@ class TransactionControllerTest {
             merchant,
             mcc,
             null,
+            null,
+            null,
+            null,
             null));
   }
 
@@ -822,7 +1002,17 @@ class TransactionControllerTest {
             token,
             accountId,
             new CreateTransactionRequest(
-                CREDIT_CARD_PURCHASE, date, new BigDecimal(amount), "CHF", null, null, null, null))
+                CREDIT_CARD_PURCHASE,
+                date,
+                new BigDecimal(amount),
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);
   }
@@ -940,7 +1130,17 @@ class TransactionControllerTest {
 
   private CreateTransactionRequest purchaseWithKey(String amount, String externalId) {
     return new CreateTransactionRequest(
-        CREDIT_CARD_PURCHASE, today(), new BigDecimal(amount), "CHF", null, null, null, externalId);
+        CREDIT_CARD_PURCHASE,
+        today(),
+        new BigDecimal(amount),
+        "CHF",
+        null,
+        null,
+        null,
+        externalId,
+        null,
+        null,
+        null);
   }
 
   private TransactionResponse recordWithKey(
@@ -962,6 +1162,9 @@ class TransactionControllerTest {
                 today(),
                 new BigDecimal(amount),
                 currency,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,

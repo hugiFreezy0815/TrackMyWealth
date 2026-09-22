@@ -199,11 +199,10 @@ public class AccountValuationService {
       // a client can tell an assumed zero from a measured one. Caveat: with no opening-balance
       // mechanism yet (EPIC 25 snapshots), a card that already carried debt when tracking began
       // reads 0 until that debt is recorded.
-      // Voided rows count, see TransactionRepository#sumAmountByAccountIdAsOf.
-      // The sum is over `amount` regardless of each row's `currency`. That is sound only because
-      // the write path pins a card row's currency to the account's own (immutable, V24). US-09-04
-      // will add foreign-currency rows, whose amount is in the original currency - at that point
-      // this must sum the account-currency figure instead, or it silently mixes currencies.
+      // Voided rows count, see TransactionRepository#sumAmountByAccountIdAsOf. US-09-04: a
+      // foreign-currency card row's `amount` is in its own original currency, not the account's -
+      // that query already converts each row via fxRateToAccountCurrency before summing, so this
+      // call site needs no change of its own.
       return Optional.of(
           transactionRepository
               .sumAmountByAccountIdAsOf(account.getId(), asOf)

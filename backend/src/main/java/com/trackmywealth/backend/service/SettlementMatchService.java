@@ -72,8 +72,10 @@ public class SettlementMatchService {
   /**
    * Sets (or, for a {@code null} id, clears) the account that pays this card's statement, then
    * matches what is already in the ledger. The source must be an active, ordinary account in the
-   * card's own currency - a card cannot be paid by a card, and cross-currency settlement is
-   * US-09-04's - and the caller needs {@code EDIT} on both accounts.
+   * card's own currency - a card cannot be paid by a card, and cross-currency settlement (the
+   * *payment* itself in a different currency than the card) is not built - and the caller needs
+   * {@code EDIT} on both accounts. Not to be confused with US-09-04's foreign-currency card
+   * *purchases*, a different leg entirely.
    */
   @Transactional
   public SettlementSourceResponse setSettlementSource(
@@ -301,7 +303,8 @@ public class SettlementMatchService {
           HttpStatus.UNPROCESSABLE_CONTENT,
           "The settlement source must be in the card's currency ("
               + card.getNativeCurrency()
-              + "); cross-currency settlement is not supported yet.");
+              + "); cross-currency settlement (the payment itself in a different currency than the"
+              + " card) is not supported yet.");
     }
   }
 

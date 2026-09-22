@@ -12,6 +12,13 @@ import java.util.UUID;
  * externalId} is the idempotency key the caller supplied, {@code null} if none. {@code
  * internalTransfer} is {@code true} once settlement matching has linked the row as one leg of a
  * transfer between the caller's own accounts (US-09-02) - such a row is not income or an expense.
+ *
+ * <p>US-09-04: {@code fxRateToAccountCurrency} is the rate that converts {@code amount} (in {@code
+ * currency}) into the account's own currency by multiplication - {@code null} for an ordinary
+ * same-currency row. {@code fxRateEstimated} is {@code true} when that rate is a generic daily-rate
+ * fallback rather than issuer-disclosed or source-derived (PR-011). {@code relatedTransactionId}
+ * links a distinct {@code FEE} row back to the purchase it was charged on - {@code null} on the
+ * purchase itself; list the ledger to find a purchase's fee row, if any.
  */
 public record TransactionResponse(
     UUID id,
@@ -26,4 +33,7 @@ public record TransactionResponse(
     String source,
     String externalId,
     boolean internalTransfer,
+    BigDecimal fxRateToAccountCurrency,
+    boolean fxRateEstimated,
+    UUID relatedTransactionId,
     OffsetDateTime createdAt) {}

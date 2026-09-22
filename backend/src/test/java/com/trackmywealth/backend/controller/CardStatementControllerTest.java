@@ -388,7 +388,17 @@ class CardStatementControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateTransactionRequest(
-                type, date, new BigDecimal(amount), "CHF", null, null, null, null))
+                type,
+                date,
+                new BigDecimal(amount),
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
