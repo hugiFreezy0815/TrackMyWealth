@@ -37,8 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
  * A candidate <em>payment</em> is a negative, non-voided {@code WITHDRAWAL}/{@code SETTLEMENT} row
  * on the card's settlement-source account; a candidate <em>card credit</em> is a positive,
  * non-voided {@code SETTLEMENT} row on the card. Both must be in the card's currency
- * (cross-currency settlement is US-09-04's). A payment and a credit pair up when their amounts are
- * exactly equal and their booking dates are at most {@value #WINDOW_DAYS} days apart.
+ * (cross-currency settlement - the payment itself in a different currency than the card - is not
+ * built). A payment and a credit pair up when their amounts are exactly equal and their booking
+ * dates are at most {@value #WINDOW_DAYS} days apart.
  *
  * <ul>
  *   <li><b>Unambiguous pair</b> - the payment has exactly one credit candidate and that credit has
@@ -157,7 +158,9 @@ public class SettlementDetectionService {
     }
     Account cardAccount = card.getAccount();
     Account source = accountRepository.findById(card.getSettlementSourceAccountId()).orElse(null);
-    // Cross-currency settlement needs the payment converted at the issuer's rate: US-09-04.
+    // Cross-currency settlement (the payment itself in a different currency than the card) would
+    // need the payment converted at some rate; not built. Not to be confused with US-09-04's
+    // foreign-currency card purchases, a different leg entirely.
     if (source == null || !source.getNativeCurrency().equals(cardAccount.getNativeCurrency())) {
       return;
     }

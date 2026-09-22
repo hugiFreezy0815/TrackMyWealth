@@ -16,6 +16,11 @@ import java.util.UUID;
  * account type (US-11-01, DM-12). A liability can be negative only when it is overpaid (a card in
  * credit).
  *
+ * @param nativeCurrency the currency {@code value} is actually denominated in before any conversion
+ *     to {@code currency} - {@code account.native_currency} for every account type except {@code
+ *     CREDIT_CARD}, where it is the card's {@code billing_currency} instead (US-09-04/FR-CC-010):
+ *     the two may legitimately differ, and a card's ledger/balance is always in billing terms,
+ *     never the account's own reporting-currency label
  * @param value {@code null} when {@code valueKnown} is {@code false}
  * @param conversionRate the rate applied to convert {@code nativeCurrency} to {@code currency}
  *     (FR-INS-SUM-004) - {@code null} when no conversion was needed or when {@code valueKnown} is

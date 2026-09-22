@@ -322,6 +322,24 @@ class SettlementMatchControllerTest {
   }
 
   @Test
+  void aOneSidedMatchUsesTheFxConvertedBalanceNotANaiveMixedCurrencySum() {
+    // US-09-04 regression: the card carries one CHF purchase and one EUR purchase. A naive
+    // sum(amount) (mixing CHF and EUR figures) would equal -1780.00, matching no real payment.
+    // The correctly-converted balance is 700.00 (CHF) + 1.10 * 1000.00 (EUR) = 1,800.00 CHF, and
+    // the payment below is exactly that.
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    purchase(token, a.card(), "-700.00", AUG_10);
+    foreignPurchase(token, a.card(), "-1000.00", "EUR", "1.1000000000", AUG_10);
+    TransactionResponse payment = withdrawal(token, a.current(), "-1800.00", SEP_3);
+
+    assertThat(payment.internalTransfer()).isFalse();
+    SettlementMatchResponse proposal = matches(token, null).get(0);
+    assertThat(proposal.matchBasis()).isEqualTo(SettlementMatchValues.BALANCE_EQUALS_PAYMENT);
+    assertThat(proposal.paymentTransactionId()).isEqualTo(payment.id());
+  }
+
+  @Test
   void confirmingAOneSidedProposalFlagsThePaymentAndTheCardCreditLaterCompletesIt() {
     String token = bootstrapAdministrator();
     Accounts a = accountsWithSource(token);
@@ -1021,7 +1039,17 @@ class SettlementMatchControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateTransactionRequest(
-                type, date, new BigDecimal(amount), currency, null, null, null, null))
+                type,
+                date,
+                new BigDecimal(amount),
+                currency,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
         .exchange();
   }
 
@@ -1037,6 +1065,35 @@ class SettlementMatchControllerTest {
 
   private TransactionResponse purchase(String token, UUID card, String amount, LocalDate date) {
     return record(token, card, "CREDIT_CARD_PURCHASE", amount, date);
+  }
+
+  // US-09-04: a card purchase in a currency other than the card's own billing currency, with an
+  // explicit applied rate.
+  private TransactionResponse foreignPurchase(
+      String token, UUID card, String amount, String currency, String rate, LocalDate date) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + card + "/transactions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateTransactionRequest(
+                "CREDIT_CARD_PURCHASE",
+                date,
+                new BigDecimal(amount),
+                currency,
+                null,
+                null,
+                null,
+                null,
+                new BigDecimal(rate),
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(TransactionResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private TransactionResponse withdrawal(

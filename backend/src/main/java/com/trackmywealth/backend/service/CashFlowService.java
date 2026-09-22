@@ -38,8 +38,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class CashFlowService {
 
   // Withdrawal is the only way to record money leaving an ordinary account yet (EXPENSE and the
-  // rest arrive with US-07-01), so it stands in for "uncategorised outgoing" here.
-  private static final Set<String> SPENDING_TYPES = Set.of("CREDIT_CARD_PURCHASE", "WITHDRAWAL");
+  // rest arrive with US-07-01), so it stands in for "uncategorised outgoing" here. FEE (US-09-04):
+  // a disclosed foreign-transaction fee is a real cost the member incurred, not folded into the
+  // purchase amount - the story's own purpose ("see the true cost including any FX fee") is exactly
+  // this: it must show up in spending on its own.
+  private static final Set<String> SPENDING_TYPES =
+      Set.of("CREDIT_CARD_PURCHASE", "WITHDRAWAL", "FEE");
 
   private final AccessControlService accessControlService;
   private final AccountRepository accountRepository;

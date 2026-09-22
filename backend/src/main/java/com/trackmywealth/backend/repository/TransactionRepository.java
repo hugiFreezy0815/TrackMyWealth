@@ -25,14 +25,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   Optional<Transaction> findByAccountIdAndSourceAndExternalId(
       UUID accountId, String source, String externalId);
 
+  // US-09-04: the FEE row (if any) a foreign-currency purchase's replay check compares feeAmount
+  // against - at most one exists per purchase (TransactionService only ever creates one).
+  Optional<Transaction> findByRelatedTransactionId(UUID relatedTransactionId);
+
   /**
-   * The signed sum of every ledger row on {@code accountId} booked on or before {@code asOf} -
-   * {@link Optional#empty()} when there is no such row at all, so a caller can still tell "no
-   * history recorded" from "rows that net to exactly zero" and decide how to treat it.
+   * The signed sum of every ledger row on {@code accountId} booked on or before {@code asOf}, in
+   * the account's own currency - {@link Optional#empty()} when there is no such row at all, so a
+   * caller can still tell "no history recorded" from "rows that net to exactly zero" and decide how
+   * to treat it.
    *
-   * <p>Sums {@code amount} without looking at each row's {@code currency}, which is sound only
-   * while every row on a card is in the account's own currency (enforced on write until US-09-04
-   * adds foreign-currency rows - see {@code AccountValuationService}).
+   * <p>US-09-04: sums {@code amount * fxRateToAccountCurrency} (falling back to a bare {@code
+   * amount} via {@code coalesce} for the common same-currency row, where the rate is {@code null}),
+   * not a bare {@code sum(amount)} - a foreign-currency row's {@code amount} is in its own original
+   * currency, never the account's, so summing it unconverted would silently mix currencies.
    *
    * <p>Deliberately <b>includes voided rows</b>. A void leaves the original in the ledger and adds
    * a reversing row of the opposite sign (FR-LIF-002: "both records remain in the ledger"), so the
@@ -40,7 +46,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * the original and count the reversal on its own, misstating the balance by the full amount.
    */
   @Query(
-      "select sum(t.amount) from Transaction t"
+      "select sum(t.amount * coalesce(t.fxRateToAccountCurrency, 1)) from Transaction t"
           + " where t.account.id = :accountId and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdAsOf(
       @Param("accountId") UUID accountId, @Param("asOf") LocalDate asOf);
@@ -77,8 +83,11 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * returned, so a decision already made is not revisited. {@code since} bounds the scan for a
    * write, which can only change the outcome for payments booked on or after it.
    *
-   * <p>The card's balance is the signed sum of its rows to that date (a purchase is negative), so a
-   * payment of {@code -1200} equals a card that owed 1,200.
+   * <p>The card's balance is the signed sum of its rows to that date, converted into the card's own
+   * currency (US-09-04: {@code amount * fxRateToAccountCurrency}, same as {@link
+   * #sumAmountByAccountIdAsOf}) - a payment is a candidate only in the card's currency itself
+   * ({@code currency = :currency} above, unchanged), so this comparison is already apples-to-apples
+   * once the card side is converted.
    */
   @Query(
       "select t from Transaction t where t.account.id = :sourceAccountId and t.amount < 0"
@@ -86,8 +95,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + " and t.bookingDate >= :since"
           + " and not exists (select 1 from SettlementMatch m"
           + " where m.cardAccount.id = :cardAccountId and m.paymentTransaction = t)"
-          + " and (select sum(c.amount) from Transaction c where c.account.id = :cardAccountId"
-          + " and c.bookingDate <= t.bookingDate) = t.amount"
+          + " and (select sum(c.amount * coalesce(c.fxRateToAccountCurrency, 1)) from Transaction c"
+          + " where c.account.id = :cardAccountId and c.bookingDate <= t.bookingDate) = t.amount"
           + " order by t.bookingDate, t.createdAt, t.id")
   List<Transaction> findPaymentsEqualToCardBalance(
       @Param("sourceAccountId") UUID sourceAccountId,

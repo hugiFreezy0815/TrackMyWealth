@@ -31,6 +31,26 @@ import java.time.LocalDate;
  *
  * <p>Every optional {@code String} field is normalized blank-to-{@code null} in the compact
  * constructor via {@link RequestStrings#blankToNull}.
+ *
+ * <p><b>US-09-04/FR-CC-010</b>: {@code currency} may differ from a {@code CREDIT_CARD_PURCHASE}'s
+ * card's {@code billing_currency} - every other type/account still requires an exact match. The
+ * three fields below are meaningful only for such a foreign-currency card purchase and are rejected
+ * (422) otherwise:
+ *
+ * <ul>
+ *   <li>{@code fxRateToAccountCurrency} - the issuer's applied rate, when the source discloses it
+ *       directly. Mutually exclusive with {@code billedAmount}.
+ *   <li>{@code billedAmount} - the billing-currency amount the source discloses instead of a rate
+ *       (same sign as {@code amount}); the service derives the rate from the two.
+ *   <li>{@code feeAmount} - a disclosed foreign-transaction fee, as a positive magnitude (how much
+ *       was charged) rather than a signed ledger amount - the service records it as its own,
+ *       correctly-signed {@code FEE} row rather than folding it into the purchase.
+ * </ul>
+ *
+ * <p>When neither {@code fxRateToAccountCurrency} nor {@code billedAmount} is given, the service
+ * falls back to {@code FxRateService}'s generic daily rate and flags the row {@code
+ * fx_rate_estimated} (PR-011) - see {@code TransactionService}. It is a 422 if that fallback has no
+ * rate to offer either, rather than recording a row with no derivable rate at all.
  */
 public record CreateTransactionRequest(
     @NotBlank String transactionType,
@@ -40,7 +60,10 @@ public record CreateTransactionRequest(
     @Size(max = 255) String merchantDescription,
     @Pattern(regexp = "\\d{4}", message = "mcc must be a four-digit ISO 18245 code") String mcc,
     @Size(max = 2000) String notes,
-    @Size(max = 255) String externalId) {
+    @Size(max = 255) String externalId,
+    @Digits(integer = 10, fraction = 10) BigDecimal fxRateToAccountCurrency,
+    @Digits(integer = 16, fraction = 4) BigDecimal billedAmount,
+    @Digits(integer = 16, fraction = 4) BigDecimal feeAmount) {
 
   public CreateTransactionRequest {
     transactionType = RequestStrings.blankToNull(transactionType);

@@ -6,14 +6,17 @@ import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.NativeAccountValue;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.AccountLoan;
 import com.trackmywealth.backend.entity.AccountMortgage;
+import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.AccountLoanRepository;
 import com.trackmywealth.backend.repository.AccountMortgageRepository;
 import com.trackmywealth.backend.repository.CustomAssetValuationRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.HashMap;
@@ -43,11 +46,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AccountValuationService {
 
+  // NFR-CALC-007: same money-rounding policy as FxRateService's own MONEY_SCALE - applied to the
+  // same-currency path too (see #ownCurrency's Javadoc for why that path can now need rounding).
+  private static final int MONEY_SCALE = 4;
+
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final AccountMortgageRepository accountMortgageRepository;
   private final AccountLoanRepository accountLoanRepository;
   private final CustomAssetValuationRepository customAssetValuationRepository;
+  private final AccountCreditCardRepository accountCreditCardRepository;
   private final TransactionRepository transactionRepository;
   private final FxRateService fxRateService;
   private final BusinessDateService businessDateService;
@@ -59,6 +67,7 @@ public class AccountValuationService {
       AccountMortgageRepository accountMortgageRepository,
       AccountLoanRepository accountLoanRepository,
       CustomAssetValuationRepository customAssetValuationRepository,
+      AccountCreditCardRepository accountCreditCardRepository,
       TransactionRepository transactionRepository,
       FxRateService fxRateService,
       BusinessDateService businessDateService,
@@ -68,6 +77,7 @@ public class AccountValuationService {
     this.accountMortgageRepository = accountMortgageRepository;
     this.accountLoanRepository = accountLoanRepository;
     this.customAssetValuationRepository = customAssetValuationRepository;
+    this.accountCreditCardRepository = accountCreditCardRepository;
     this.transactionRepository = transactionRepository;
     this.fxRateService = fxRateService;
     this.businessDateService = businessDateService;
@@ -75,15 +85,15 @@ public class AccountValuationService {
   }
 
   /**
-   * US-09-01/FR-CC-001/003: the account's current balance in its own native currency - for a credit
-   * card, the outstanding amount owed, a {@code LIABILITY}. Gated at {@code BALANCE_ONLY}
-   * (US-03-03), the weakest level that may see a figure at all.
+   * US-09-01/FR-CC-001/003: the account's current balance in its own currency - for a credit card,
+   * the outstanding amount owed, a {@code LIABILITY}. Gated at {@code BALANCE_ONLY} (US-03-03), the
+   * weakest level that may see a figure at all.
    */
   @Transactional(readOnly = true)
   public AccountValuation getBalance(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.BALANCE_ONLY);
-    return valueIn(account, account.getNativeCurrency(), businessDateService.today());
+    return valueIn(account, ownCurrency(account), businessDateService.today());
   }
 
   /**
@@ -140,34 +150,64 @@ public class AccountValuationService {
       String targetCurrency,
       LocalDate asOf,
       Function<String, Optional<CurrencyConversionResult>> rateForNativeCurrency) {
+    // US-09-04: for a CREDIT_CARD this is billing_currency, not account.nativeCurrency - see
+    // #ownCurrency. Every other account type's own currency is simply its nativeCurrency, so this
+    // is a no-op change for them.
+    String ownCurrency = ownCurrency(account);
     Optional<NativeAccountValue> nativeValue = resolveNativeAccountValue(account, asOf);
     if (nativeValue.isEmpty()) {
-      return unknown(account, targetCurrency);
+      return unknown(account, ownCurrency, targetCurrency);
     }
     NativeAccountValue resolved = nativeValue.get();
 
-    if (account.getNativeCurrency().equals(targetCurrency)) {
-      return known(account, targetCurrency, resolved, resolved.amount(), null, null, false);
+    if (ownCurrency.equals(targetCurrency)) {
+      // Rounded, not returned raw: resolved.amount() can carry more than money's usual 4 decimal
+      // places once it is a card balance summed via fx_rate_to_account_currency (NUMERIC(20,10)) -
+      // the same NFR-CALC-007 policy the cross-currency path below already applies via applyRate.
+      BigDecimal value = resolved.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+      return known(account, ownCurrency, targetCurrency, resolved, value, null, null, false);
     }
 
     // FR-CUR-011/US-06-03: a current holding's value converts at the valuation date (today), not
     // at any date tied to when the account or its value was originally recorded - see
     // docs/architecture/calculation-methodology.md.
-    Optional<CurrencyConversionResult> conversion =
-        rateForNativeCurrency.apply(account.getNativeCurrency());
+    Optional<CurrencyConversionResult> conversion = rateForNativeCurrency.apply(ownCurrency);
     if (conversion.isEmpty()) {
-      return unknown(account, targetCurrency);
+      return unknown(account, ownCurrency, targetCurrency);
     }
 
     BigDecimal convertedValue = fxRateService.applyRate(resolved.amount(), conversion.get());
     return known(
         account,
+        ownCurrency,
         targetCurrency,
         resolved,
         convertedValue,
         conversion.get().rate(),
         asOf,
         conversion.get().carriedForward());
+  }
+
+  /**
+   * The currency {@code account}'s own value is actually denominated in - {@code
+   * account.nativeCurrency} for everything except a {@code CREDIT_CARD}, where it is the card's
+   * {@code billing_currency} instead (US-09-04/FR-CC-010): {@code CreateAccountRequest} lets the
+   * two legitimately differ, and {@code TransactionRepository}'s balance queries sum a
+   * foreign-currency purchase's {@code amount} converted to {@code billing_currency} (via {@code
+   * fxRateToAccountCurrency}) - never to {@code nativeCurrency}. Treating {@code nativeCurrency} as
+   * the ledger's own currency whenever the two diverge would silently mislabel (and, for the
+   * same-currency fast path above, under-convert) the resulting balance.
+   */
+  private String ownCurrency(Account account) {
+    if (!account.isHasStatementCycle()) {
+      return account.getNativeCurrency();
+    }
+    return accountCreditCardRepository
+        .findById(account.getId())
+        .map(AccountCreditCard::getBillingCurrency)
+        // Defensive only: trg_extension_type_guard (V5) means a CREDIT_CARD account always has
+        // this row in practice.
+        .orElseGet(account::getNativeCurrency);
   }
 
   // Only CUSTOM_ASSET (via CustomAssetValuation), MORTGAGE/LOAN (via original_principal - a real
@@ -199,11 +239,10 @@ public class AccountValuationService {
       // a client can tell an assumed zero from a measured one. Caveat: with no opening-balance
       // mechanism yet (EPIC 25 snapshots), a card that already carried debt when tracking began
       // reads 0 until that debt is recorded.
-      // Voided rows count, see TransactionRepository#sumAmountByAccountIdAsOf.
-      // The sum is over `amount` regardless of each row's `currency`. That is sound only because
-      // the write path pins a card row's currency to the account's own (immutable, V24). US-09-04
-      // will add foreign-currency rows, whose amount is in the original currency - at that point
-      // this must sum the account-currency figure instead, or it silently mixes currencies.
+      // Voided rows count, see TransactionRepository#sumAmountByAccountIdAsOf. US-09-04: a
+      // foreign-currency card row's `amount` is in its own original currency, not the account's -
+      // that query already converts each row via fxRateToAccountCurrency before summing, so this
+      // call site needs no change of its own.
       return Optional.of(
           transactionRepository
               .sumAmountByAccountIdAsOf(account.getId(), asOf)
@@ -214,12 +253,13 @@ public class AccountValuationService {
     return Optional.empty();
   }
 
-  private static AccountValuation unknown(Account account, String targetCurrency) {
+  private static AccountValuation unknown(
+      Account account, String ownCurrency, String targetCurrency) {
     return new AccountValuation(
         account.getId(),
         account.getName(),
         account.getNature(),
-        account.getNativeCurrency(),
+        ownCurrency,
         targetCurrency,
         null,
         null,
@@ -231,6 +271,7 @@ public class AccountValuationService {
 
   private static AccountValuation known(
       Account account,
+      String ownCurrency,
       String targetCurrency,
       NativeAccountValue source,
       BigDecimal value,
@@ -241,7 +282,7 @@ public class AccountValuationService {
         account.getId(),
         account.getName(),
         account.getNature(),
-        account.getNativeCurrency(),
+        ownCurrency,
         targetCurrency,
         value,
         conversionRate,
