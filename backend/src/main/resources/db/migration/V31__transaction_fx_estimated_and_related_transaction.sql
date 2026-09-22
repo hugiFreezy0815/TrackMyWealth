@@ -14,8 +14,8 @@
 -- =============================================================================================
 
 ALTER TABLE transaction
-    ADD COLUMN fx_rate_estimated BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN related_transaction_id UUID REFERENCES transaction (id);
+ADD COLUMN fx_rate_estimated BOOLEAN NOT NULL DEFAULT FALSE,
+ADD COLUMN related_transaction_id UUID REFERENCES transaction (id);
 
 -- Both are financial-provenance fields set once at insert, frozen the same way
 -- fx_rate_to_account_currency/fx_rate_date already are (V21) - the append-only guarantee
