@@ -44,9 +44,39 @@ import org.springframework.web.server.ResponseStatusException;
  * <p>Relies on RLS for workspace isolation the same way {@code AccountOwnershipService} does:
  * {@code scopeAccountId}/{@code scopeInstitutionId}/{@code grantedToMemberId} are all looked up
  * through repositories RLS already confines to the caller's own workspace.
+ *
+ * <p><b>#122's bootstrap exception</b>: unlike an account (which always has an owner, {@code
+ * AccountService#assignInitialOwnershipToCreator}), an institution or the workspace itself has no
+ * ownership fallback - so once a second active member exists, the sole-active-member rule stops
+ * applying and "can't share what you can't fully see" becomes permanently unsatisfiable for {@code
+ * INSTITUTION}/{@code WORKSPACE} scope: no one, including the admin who created the institution,
+ * could ever hold {@code FULL} access to grant from. {@link #isBootstrapping} is the fix: the
+ * workspace's {@code SYSTEM_ADMINISTRATOR} may create the <em>first</em> non-revoked grant of an
+ * {@code INSTITUTION}/{@code WORKSPACE} scope that currently has none, without needing {@code FULL}
+ * access first. This is a deliberately narrow exception to RULE-018/FR-USR-010/FR-TEN-007 (role
+ * confers administration rights only, never financial-data access - see {@code AppUser}'s own
+ * Javadoc, and contrast {@code
+ * WorkspaceMemberRepository#countByWorkspaceIdAndStatusAndDependentFalse}'s comment on why the
+ * *sole-member* bootstrap is deliberately structural, not role-based, for exactly this reason): the
+ * role only ever unlocks creating that one grant, never any financial-data access of its own, and
+ * once any non-revoked grant of the scope exists this exception no longer applies to that scope -
+ * though it re-arms if the workspace is later revoked back down to zero, so it can never durably
+ * re-enter #122's original locked-out state.
+ *
+ * <p>{@link #revoke} gets the symmetric counterpart, {@link #isSoleRemainingGrant}: a {@code
+ * SYSTEM_ADMINISTRATOR} may revoke a scope's <em>sole</em> non-revoked grant without {@code FULL}
+ * access either. Without this, a bootstrap grant made to someone other than the administrator
+ * themselves (the ordinary case - bootstrapping is usually done *for* a second member, not for
+ * oneself) would be permanent: the administrator granted it without ever holding {@code FULL}
+ * access themselves, so they could never revoke a mistake, and no one else could either (they are,
+ * by construction, the only one with any standing on that scope at all).
  */
 @Service
 public class SharingGrantService {
+
+  // No shared role-constants class exists yet (each service that checks a role defines its own,
+  // e.g. AdminUserService) - matching that convention rather than introducing one for a single use.
+  private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
 
   private final WorkspaceAccessService workspaceAccessService;
   private final AccessControlService accessControlService;
@@ -97,13 +127,28 @@ public class SharingGrantService {
       case ScopeTypeValues.INSTITUTION -> {
         FinancialInstitution institution =
             institutionLookupService.findInstitutionOrThrow(request.scopeInstitutionId());
-        requireFullAccessToScope(
-            granterMemberId, ScopeTypeValues.INSTITUTION, null, institution, null);
+        boolean bootstrapping =
+            isBootstrapping(
+                actor,
+                sharingGrantRepository.existsByScopeInstitutionIdAndRevokedAtIsNull(
+                    institution.getId()));
+        if (!bootstrapping) {
+          requireFullAccessToScope(
+              granterMemberId, ScopeTypeValues.INSTITUTION, null, institution, null);
+        }
         grant.setScopeInstitution(institution);
       }
-      case ScopeTypeValues.WORKSPACE ->
+      case ScopeTypeValues.WORKSPACE -> {
+        boolean bootstrapping =
+            isBootstrapping(
+                actor,
+                sharingGrantRepository.existsByScopeTypeAndRevokedAtIsNull(
+                    ScopeTypeValues.WORKSPACE));
+        if (!bootstrapping) {
           requireFullAccessToScope(
               granterMemberId, ScopeTypeValues.WORKSPACE, null, null, actor.workspaceId());
+        }
+      }
       default ->
           throw new ResponseStatusException(
               HttpStatus.BAD_REQUEST, "Unsupported scopeType: " + request.scopeType());
@@ -128,13 +173,16 @@ public class SharingGrantService {
     // Revoking requires the same FULL access the original grant did - not "only the original
     // granter may revoke": household membership changes over time (a granter could themselves be
     // deactivated later), and anyone who currently has FULL access to a scope is, by definition,
-    // trusted to manage sharing for it.
-    requireFullAccessToScope(
-        accessControlService.requireActingMember(actor),
-        grant.getScopeType(),
-        grant.getScopeAccount(),
-        grant.getScopeInstitution(),
-        grant.getWorkspace().getId());
+    // trusted to manage sharing for it. #122: unless this is the scope's sole remaining grant and
+    // the actor is the SYSTEM_ADMINISTRATOR - see this class's own Javadoc.
+    if (!isSoleRemainingGrant(actor, grant)) {
+      requireFullAccessToScope(
+          accessControlService.requireActingMember(actor),
+          grant.getScopeType(),
+          grant.getScopeAccount(),
+          grant.getScopeInstitution(),
+          grant.getWorkspace().getId());
+    }
 
     if (grant.getRevokedAt() != null) {
       throw new ResponseStatusException(
@@ -170,6 +218,33 @@ public class SharingGrantService {
               memberId, workspaceId, AccessLevelValues.FULL);
       default -> throw new IllegalStateException("Unexpected scopeType: " + scopeType);
     }
+  }
+
+  // #122: see this class's own Javadoc for the full rationale. scopeAlreadyGranted is whichever
+  // repository existence check matches the scope being granted (institution- or workspace-wide) -
+  // computed by the caller, not here, so this stays scope-agnostic.
+  private boolean isBootstrapping(AuthenticatedUserPrincipal actor, boolean scopeAlreadyGranted) {
+    return !scopeAlreadyGranted && SYSTEM_ADMINISTRATOR.equals(actor.role());
+  }
+
+  // revoke()'s counterpart to isBootstrapping: ACCOUNT scope never qualifies (it has ownership as
+  // its own permanent fallback, so this exception has no reason to extend to it) - only whether any
+  // *other* non-revoked grant of the same INSTITUTION/WORKSPACE scope exists besides this one.
+  private boolean isSoleRemainingGrant(AuthenticatedUserPrincipal actor, SharingGrant grant) {
+    if (!SYSTEM_ADMINISTRATOR.equals(actor.role())) {
+      return false;
+    }
+    boolean anotherExists =
+        switch (grant.getScopeType()) {
+          case ScopeTypeValues.INSTITUTION ->
+              sharingGrantRepository.existsByScopeInstitutionIdAndRevokedAtIsNullAndIdNot(
+                  grant.getScopeInstitution().getId(), grant.getId());
+          case ScopeTypeValues.WORKSPACE ->
+              sharingGrantRepository.existsByScopeTypeAndRevokedAtIsNullAndIdNot(
+                  ScopeTypeValues.WORKSPACE, grant.getId());
+          default -> true; // ACCOUNT: never eligible, regardless of how many grants exist
+        };
+    return !anotherExists;
   }
 
   // Mirrors V6's own CHECK constraint (scope_type paired with exactly the matching scope_*_id) -
