@@ -25,6 +25,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   Optional<Transaction> findByAccountIdAndSourceAndExternalId(
       UUID accountId, String source, String externalId);
 
+  // US-09-04: the FEE row (if any) a foreign-currency purchase's replay check compares feeAmount
+  // against - at most one exists per purchase (TransactionService only ever creates one).
+  Optional<Transaction> findByRelatedTransactionId(UUID relatedTransactionId);
+
   /**
    * The signed sum of every ledger row on {@code accountId} booked on or before {@code asOf}, in
    * the account's own currency - {@link Optional#empty()} when there is no such row at all, so a

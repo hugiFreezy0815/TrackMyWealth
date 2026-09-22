@@ -80,6 +80,12 @@ public class TransactionService {
   // from a disclosed billedAmount needs an explicit scale (BigDecimal#divide has none by default).
   private static final int FX_RATE_SCALE = 10;
 
+  // fx_rate_to_account_currency's own NUMERIC(20,10) allows at most 10 integer digits - the
+  // explicit-rate path is already bounded by CreateTransactionRequest's matching @Digits
+  // annotation (checked before the service ever runs), but a billedAmount-derived rate is computed
+  // here, after that request-level check, so it needs the same bound applied by hand.
+  private static final BigDecimal MAX_FX_RATE = BigDecimal.TEN.pow(10);
+
   // A page is never larger than this whatever the client asks for, and its order is fixed here, not
   // taken from the request: newest booking first, with created_at and id as tie-breakers so paging
   // is stable across rows booked on the same day.
@@ -134,17 +140,16 @@ public class TransactionService {
     if (replay.isPresent()) {
       return toResponse(replay.get());
     }
-    // Loaded once, up front: validate() needs the card's billing_currency for the currency check,
-    // and recordTransaction needs it again below for the FX resolution and any FEE row.
+    // Only a CREDIT_CARD_PURCHASE ever needs the card's billing_currency (the FX check, resolution
+    // and any FEE row below) - every other card write (e.g. the card-side SETTLEMENT leg)
+    // previously
+    // needed no such lookup, and still doesn't.
+    boolean isCardPurchase = CREDIT_CARD_PURCHASE.equals(request.transactionType());
     AccountCreditCard cardExtension =
-        account.isHasStatementCycle()
+        isCardPurchase && account.isHasStatementCycle()
             ? accountCreditCardRepository.findById(accountId).orElse(null)
             : null;
-    validate(account, cardExtension, request);
-
-    boolean foreignCurrency =
-        CREDIT_CARD_PURCHASE.equals(request.transactionType())
-            && !cardExtension.getBillingCurrency().equals(request.currency());
+    boolean foreignCurrency = validate(account, cardExtension, request);
 
     Transaction transaction = new Transaction();
     transaction.setWorkspace(account.getWorkspace());
@@ -225,23 +230,16 @@ public class TransactionService {
             accountId, MANUAL, request.externalId());
     // The same key must mean the same purchase: only the ledger-frozen financial fields are
     // compared (notes and merchant text stay editable, so comparing them would turn a later edit
-    // into a false conflict). Only an *explicit* fxRateToAccountCurrency is compared - billedAmount
-    // and feeAmount aren't re-derived/re-compared here, a narrow known gap rather than this
-    // already-large story also re-deriving and diffing them on every replay.
+    // into a false conflict) - including the FX/fee fields a foreign-currency purchase adds.
     existing.ifPresent(
         row -> {
-          boolean sameFxRate =
-              request.fxRateToAccountCurrency() == null
-                  || (row.getFxRateToAccountCurrency() != null
-                      && row.getFxRateToAccountCurrency()
-                              .compareTo(request.fxRateToAccountCurrency())
-                          == 0);
           boolean samePurchase =
               row.getTransactionType().equals(request.transactionType())
                   && row.getBookingDate().equals(request.bookingDate())
                   && row.getAmount().compareTo(request.amount()) == 0
                   && row.getCurrency().equals(request.currency())
-                  && sameFxRate;
+                  && sameFxRate(row, request)
+                  && sameFee(row, request);
           if (!samePurchase) {
             throw new ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -253,7 +251,43 @@ public class TransactionService {
     return existing;
   }
 
-  private static void validate(
+  // An explicit fxRateToAccountCurrency is compared directly; a billedAmount is compared by
+  // re-deriving the same rate resolveForeignCurrency would (division by zero can't occur here -
+  // amount == 0 already fails validate()'s own sign check on the *original*, successful request,
+  // and a compareTo-only comparison against a row that could only exist with a nonzero amount is
+  // what's being asked). Neither given on the retry is not itself a conflict signal.
+  private static boolean sameFxRate(Transaction row, CreateTransactionRequest request) {
+    BigDecimal requestedRate;
+    if (request.fxRateToAccountCurrency() != null) {
+      requestedRate = request.fxRateToAccountCurrency();
+    } else if (request.billedAmount() != null && request.amount().signum() != 0) {
+      requestedRate =
+          request.billedAmount().divide(request.amount(), FX_RATE_SCALE, RoundingMode.HALF_UP);
+    } else if (request.billedAmount() != null) {
+      return false; // a zero amount can't derive a comparable rate - not the same request
+    } else {
+      return true;
+    }
+    return row.getFxRateToAccountCurrency() != null
+        && row.getFxRateToAccountCurrency().compareTo(requestedRate) == 0;
+  }
+
+  private boolean sameFee(Transaction row, CreateTransactionRequest request) {
+    if (request.feeAmount() == null) {
+      return true;
+    }
+    return transactionRepository
+        .findByRelatedTransactionId(row.getId())
+        .map(fee -> fee.getAmount().negate().compareTo(request.feeAmount()) == 0)
+        .orElse(false);
+  }
+
+  /**
+   * Structural/business validation, throwing on the first violation. Returns whether this is a
+   * foreign-currency card purchase - the one caller, {@link #recordTransaction}, needs that same
+   * boolean right after and previously recomputed it by hand a second time.
+   */
+  private static boolean validate(
       Account account, AccountCreditCard cardExtension, CreateTransactionRequest request) {
     String type = request.transactionType();
     if (!SUPPORTED_TYPES.contains(type)) {
@@ -268,12 +302,15 @@ public class TransactionService {
           HttpStatus.UNPROCESSABLE_CONTENT, "This account does not hold transactions.");
     }
     boolean card = account.isHasStatementCycle();
-    if (CREDIT_CARD_PURCHASE.equals(type) && !card) {
+    boolean isCardPurchase = CREDIT_CARD_PURCHASE.equals(type);
+    if (isCardPurchase && !card) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           CREDIT_CARD_PURCHASE + " can only be recorded against a credit-card account.");
     }
-    if (card && cardExtension == null) {
+    // Only a card purchase needs cardExtension (the FX/billing_currency logic below) - the caller
+    // deliberately skips the lookup for every other card write, so this must not fire for those.
+    if (isCardPurchase && cardExtension == null) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "Credit-card details are missing.");
     }
@@ -292,10 +329,8 @@ public class TransactionService {
     // (CreateAccountRequest). Any currency is accepted structurally here; resolveForeignCurrency
     // is what actually requires a real, derivable rate. Every other type/account is unchanged.
     boolean foreignCardPurchase =
-        CREDIT_CARD_PURCHASE.equals(type)
-            && !cardExtension.getBillingCurrency().equals(request.currency());
-    if (!CREDIT_CARD_PURCHASE.equals(type)
-        && !account.getNativeCurrency().equals(request.currency())) {
+        isCardPurchase && !cardExtension.getBillingCurrency().equals(request.currency());
+    if (!isCardPurchase && !account.getNativeCurrency().equals(request.currency())) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           "currency must match the account's currency ("
@@ -347,6 +382,7 @@ public class TransactionService {
                   + type
                   + " (e.g. -85.00): money leaves the account.");
     }
+    return foreignCardPurchase;
   }
 
   /**
@@ -365,6 +401,12 @@ public class TransactionService {
     if (request.billedAmount() != null) {
       BigDecimal rate =
           request.billedAmount().divide(request.amount(), FX_RATE_SCALE, RoundingMode.HALF_UP);
+      if (rate.abs().compareTo(MAX_FX_RATE) >= 0) {
+        throw new ResponseStatusException(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "billedAmount implies a rate with too many digits to record"
+                + " (fx_rate_to_account_currency allows at most 10 integer digits).");
+      }
       return new ForeignCurrencyResolution(rate, false);
     }
     String billingCurrency = cardExtension.getBillingCurrency();

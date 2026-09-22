@@ -526,6 +526,104 @@ class TransactionControllerTest {
         .satisfies(s -> assertThat(s.amount()).isEqualByComparingTo("2.50"));
   }
 
+  // --- Review fixes: billing_currency vs nativeCurrency, rounding, overflow, replay -----------
+
+  @Test
+  void aCardsBalanceIsInItsBillingCurrencyEvenWhenItDiffersFromNativeCurrency() {
+    // Regression: the balance used to be reported as if it were in account.nativeCurrency even
+    // when the card's billing_currency (what the ledger is actually converted to) differs.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCardWithBillingCurrency(token, "USD", "EUR");
+
+    // Matches billing_currency (EUR): domestic from the card's own point of view, so no FX rate
+    // is stored at all - exactly the case that used to be silently mislabeled as USD.
+    postTransaction(token, card.id(), foreignPurchase("-100.00", "EUR", "Hotel", null, null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+
+    AccountValuation balance = balance(token, card.id());
+    assertThat(balance.nativeCurrency()).isEqualTo("EUR"); // billing_currency, not USD
+    assertThat(balance.currency()).isEqualTo("EUR");
+    assertThat(balance.value()).isEqualByComparingTo("100.00");
+  }
+
+  @Test
+  void aCardsBalanceNeverCarriesMoreThanFourDecimalPlaces() {
+    // Regression: amount (NUMERIC 20,4) * fxRateToAccountCurrency (NUMERIC 20,10) can carry far
+    // more than 4 decimal places once summed - the same-currency read path must still round.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    postTransaction(
+            token, card.id(), foreignPurchase("-50.00", "EUR", "Hotel", "1.0345678912", null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+
+    AccountValuation balance = balance(token, card.id());
+    assertThat(balance.value()).isEqualByComparingTo("51.7284"); // 50.00 * 1.0345678912, HALF_UP
+    assertThat(balance.value().scale()).isLessThanOrEqualTo(4);
+  }
+
+  @Test
+  void aBilledAmountThatWouldOverflowTheRateColumnIsRejectedNotA500() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+
+    postTransaction(
+            token,
+            card.id(),
+            foreignPurchase("-0.0001", "EUR", "Hotel", null, "-9999999999.9999", null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThat(countTransactions(card.id())).isZero();
+  }
+
+  @Test
+  void aReplayWithADifferentBilledAmountIsAConflictNotASilentReplay() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    String key = UUID.randomUUID().toString();
+    postTransaction(token, card.id(), foreignPurchaseWithKey("-50.00", "EUR", "-55.00", null, key))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+
+    postTransaction(token, card.id(), foreignPurchaseWithKey("-50.00", "EUR", "-60.00", null, key))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(countTransactions(card.id())).isEqualTo(1);
+  }
+
+  @Test
+  void aReplayWithADifferentFeeAmountIsAConflictNotASilentReplay() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    seedFxRate("EUR", "CHF", today(), "1.0500000000"); // neither rate nor billedAmount given below
+    String key = UUID.randomUUID().toString();
+    postTransaction(token, card.id(), foreignPurchaseWithKey("-50.00", "EUR", null, "2.50", key))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+
+    postTransaction(token, card.id(), foreignPurchaseWithKey("-50.00", "EUR", null, "5.00", key))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(countTransactions(card.id())).isEqualTo(2); // the original purchase + its fee row
+  }
+
+  private CreateTransactionRequest foreignPurchaseWithKey(
+      String amount, String currency, String billedAmount, String feeAmount, String externalId) {
+    return new CreateTransactionRequest(
+        CREDIT_CARD_PURCHASE,
+        today(),
+        new BigDecimal(amount),
+        currency,
+        null,
+        null,
+        null,
+        externalId,
+        null,
+        billedAmount == null ? null : new BigDecimal(billedAmount),
+        feeAmount == null ? null : new BigDecimal(feeAmount));
+  }
+
   private CashFlowResponse cashFlow(String token, String month) {
     return client(token)
         .get()
@@ -1053,6 +1151,34 @@ class TransactionControllerTest {
 
   private AccountSummaryResponse createCard(String token) {
     return createAccount(token, "Visa Gold", "CREDIT_CARD", null);
+  }
+
+  // US-09-04: a card whose billing_currency is set independently of its nativeCurrency
+  // (CreateAccountRequest lets the two legitimately differ).
+  private AccountSummaryResponse createCardWithBillingCurrency(
+      String token, String nativeCurrency, String billingCurrency) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateAccountRequest(
+                null,
+                "Business Card",
+                "CREDIT_CARD",
+                nativeCurrency,
+                null,
+                billingCurrency,
+                null,
+                null,
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private AccountSummaryResponse createCashAccount(String token) {
