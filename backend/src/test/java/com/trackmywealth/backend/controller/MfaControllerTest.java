@@ -13,15 +13,13 @@ import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.repository.AppUserRepository;
+import com.trackmywealth.backend.testsupport.MutableClock;
+import com.trackmywealth.backend.testsupport.TestClockConfig;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -36,10 +34,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -56,6 +52,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestClockConfig.class)
 class MfaControllerTest {
 
   private static final String EMAIL = "admin@example.com";
@@ -77,41 +74,6 @@ class MfaControllerTest {
     // Rate limiting has its own coverage (RateLimitFilterTest); these tests hit the MFA endpoints
     // repeatedly within one run and would otherwise trip it spuriously.
     registry.add("app.rate-limit.enabled", () -> "false");
-  }
-
-  // A controllable clock in place of the application's real one: TOTP replay protection is about
-  // *which 30-second step* a code belongs to, which can only be tested deterministically by moving
-  // time explicitly rather than sleeping through real steps.
-  static class MutableClock extends Clock {
-    private volatile Instant now = Instant.parse("2026-01-01T00:00:00Z");
-
-    @Override
-    public ZoneId getZone() {
-      return ZoneOffset.UTC;
-    }
-
-    @Override
-    public Clock withZone(ZoneId zone) {
-      return this;
-    }
-
-    @Override
-    public Instant instant() {
-      return now;
-    }
-
-    void advance(Duration duration) {
-      now = now.plus(duration);
-    }
-  }
-
-  @TestConfiguration
-  static class TestClockConfig {
-    @Bean
-    @Primary
-    MutableClock testClock() {
-      return new MutableClock();
-    }
   }
 
   @LocalServerPort int port;

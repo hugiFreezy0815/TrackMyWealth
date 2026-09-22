@@ -19,12 +19,13 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.StatementConfigResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.testsupport.MutableClock;
+import com.trackmywealth.backend.testsupport.TestClockConfig;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -34,10 +35,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -61,6 +60,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestClockConfig.class)
 class CardStatementControllerTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
@@ -79,42 +79,6 @@ class CardStatementControllerTest {
     registry.add("spring.datasource.username", postgres::getUsername);
     registry.add("spring.datasource.password", postgres::getPassword);
     registry.add("app.rate-limit.enabled", () -> "false");
-  }
-
-  // A controllable "today" in place of the application's real clock: the current-period
-  // computation is a pure function of today's date, only testable deterministically by setting
-  // that date explicitly rather than depending on whenever the suite happens to run.
-  static class MutableClock extends java.time.Clock {
-    private volatile Instant now = Instant.parse("2026-01-01T12:00:00Z");
-
-    @Override
-    public ZoneId getZone() {
-      return java.time.ZoneOffset.UTC;
-    }
-
-    @Override
-    public java.time.Clock withZone(ZoneId zone) {
-      return java.time.Clock.fixed(now, zone);
-    }
-
-    @Override
-    public Instant instant() {
-      return now;
-    }
-
-    // Set "today" unambiguously in the app's own business zone (noon avoids any DST edge).
-    void setBusinessToday(LocalDate date) {
-      now = date.atTime(12, 0).atZone(BUSINESS_ZONE).toInstant();
-    }
-  }
-
-  @TestConfiguration
-  static class TestClockConfig {
-    @Bean
-    @Primary
-    MutableClock testClock() {
-      return new MutableClock();
-    }
   }
 
   @LocalServerPort int port;
@@ -203,7 +167,7 @@ class CardStatementControllerTest {
   void theCurrentStatementIsUnavailableUntilBothFieldsAreConfigured() {
     String token = bootstrapAdministrator();
     UUID card = createCard(token);
-    clock.setBusinessToday(LocalDate.of(2026, 9, 22));
+    setToday(clock, LocalDate.of(2026, 9, 22));
 
     statement(token, card, HttpStatus.UNPROCESSABLE_CONTENT);
 
@@ -224,7 +188,7 @@ class CardStatementControllerTest {
     purchase(token, card, "-700.00", LocalDate.of(2026, 8, 28)); // in the closed period
     purchase(token, card, "-500.00", LocalDate.of(2026, 9, 5)); // on the boundary itself
     purchase(token, card, "-999.00", LocalDate.of(2026, 9, 6)); // in the next, still-open period
-    clock.setBusinessToday(LocalDate.of(2026, 9, 22)); // well after the Sept 5 close
+    setToday(clock, LocalDate.of(2026, 9, 22)); // well after the Sept 5 close
 
     CardStatementResponse current = statement(token, card, HttpStatus.OK);
 
@@ -244,7 +208,7 @@ class CardStatementControllerTest {
     UUID card = createCard(token);
     setConfig(token, card, 5, 10, HttpStatus.OK);
     purchase(token, card, "-50.00", LocalDate.of(2026, 9, 5));
-    clock.setBusinessToday(LocalDate.of(2026, 9, 5)); // today is itself the closing day
+    setToday(clock, LocalDate.of(2026, 9, 5)); // today is itself the closing day
 
     CardStatementResponse current = statement(token, card, HttpStatus.OK);
 
@@ -257,7 +221,7 @@ class CardStatementControllerTest {
     String token = bootstrapAdministrator();
     UUID card = createCard(token);
     setConfig(token, card, 5, 10, HttpStatus.OK);
-    clock.setBusinessToday(LocalDate.of(2026, 9, 4)); // one day before September's close
+    setToday(clock, LocalDate.of(2026, 9, 4)); // one day before September's close
 
     CardStatementResponse current = statement(token, card, HttpStatus.OK);
 
@@ -271,7 +235,7 @@ class CardStatementControllerTest {
     String token = bootstrapAdministrator();
     UUID card = createCard(token);
     setConfig(token, card, 31, 0, HttpStatus.OK);
-    clock.setBusinessToday(LocalDate.of(2027, 3, 15)); // 2027 is not a leap year
+    setToday(clock, LocalDate.of(2027, 3, 15)); // 2027 is not a leap year
 
     CardStatementResponse current = statement(token, card, HttpStatus.OK);
 
@@ -287,7 +251,7 @@ class CardStatementControllerTest {
     String token = bootstrapAdministrator();
     UUID card = createCard(token);
     setConfig(token, card, 5, 20, HttpStatus.OK);
-    clock.setBusinessToday(LocalDate.of(2026, 9, 22));
+    setToday(clock, LocalDate.of(2026, 9, 22));
 
     assertThat(statement(token, card, HttpStatus.OK).paid()).isTrue();
   }
@@ -298,7 +262,7 @@ class CardStatementControllerTest {
     Accounts a = accountsWithSource(token);
     setConfig(token, a.card(), 5, 20, HttpStatus.OK);
     purchase(token, a.card(), "-1200.00", LocalDate.of(2026, 8, 28));
-    clock.setBusinessToday(LocalDate.of(2026, 9, 22));
+    setToday(clock, LocalDate.of(2026, 9, 22));
 
     assertThat(statement(token, a.card(), HttpStatus.OK).paid()).isFalse();
 
@@ -315,12 +279,34 @@ class CardStatementControllerTest {
     Accounts a = accountsWithSource(token);
     setConfig(token, a.card(), 5, 20, HttpStatus.OK);
     purchase(token, a.card(), "-1200.00", LocalDate.of(2026, 8, 28));
-    clock.setBusinessToday(LocalDate.of(2026, 9, 22));
+    setToday(clock, LocalDate.of(2026, 9, 22));
 
     // Not a settlement candidate at all (it doesn't equal the card's balance) - just spending.
     withdrawal(token, a.current(), "-600.00", LocalDate.of(2026, 9, 10));
 
     assertThat(statement(token, a.card(), HttpStatus.OK).paid()).isFalse();
+  }
+
+  @Test
+  void aSettlementBookedAfterTheNextPeriodsCloseDoesNotWronglyMarkThisOneAsPaid() {
+    // Regression: with a generous dueDateOffsetDays, an uncapped window would let a settlement
+    // booked well into the *next* cycle still satisfy this period's paid check just because the
+    // amount happens to match. The window must stay capped short of the next period's own close.
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    setConfig(token, a.card(), 5, 40, HttpStatus.OK); // due date offset exceeds a monthly cycle
+    purchase(token, a.card(), "-1200.00", LocalDate.of(2026, 8, 10));
+    setToday(clock, LocalDate.of(2026, 9, 20)); // "current" = the period closing Sep 5
+
+    // Booked Oct 10: after Sep 5's naive due date (Sep 5 + 40 = Oct 15, so still "inside" an
+    // uncapped window) but also after Oct 5, the *next* period's own close.
+    withdrawal(token, a.current(), "-1200.00", LocalDate.of(2026, 10, 10));
+    cardCredit(token, a.card(), "1200.00", LocalDate.of(2026, 10, 10));
+
+    CardStatementResponse current = statement(token, a.card(), HttpStatus.OK);
+    assertThat(current.periodEnd()).isEqualTo(LocalDate.of(2026, 9, 5));
+    assertThat(current.closingBalance()).isEqualByComparingTo("1200.00");
+    assertThat(current.paid()).isFalse();
   }
 
   // --- Authorization (US-03-03)
@@ -351,6 +337,11 @@ class CardStatementControllerTest {
   }
 
   // --- helpers -------------------------------------------------------------------------------
+
+  // Sets "today" unambiguously in the app's own business zone (noon avoids any DST edge).
+  private static void setToday(MutableClock clock, LocalDate date) {
+    clock.set(date.atTime(12, 0).atZone(BUSINESS_ZONE).toInstant());
+  }
 
   private record Accounts(UUID card, UUID current) {}
 

@@ -4,7 +4,6 @@ import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CardStatementResponse;
 import com.trackmywealth.backend.dto.SetStatementConfigRequest;
-import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.StatementConfigResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
@@ -43,6 +42,15 @@ import org.springframework.web.server.ResponseStatusException;
  * {@code CONFIRMED} {@link SettlementMatch} pays this card exactly {@code closingBalance}, booked
  * on or between {@code periodEnd} and {@code dueDate}. A late or partial payment outside that
  * window is not reflected - EPIC 10's fuller card-statement history can revisit this.
+ *
+ * <p>{@code SettlementMatch} has no link to a specific statement period, so <b>the paid-check
+ * window is capped one day before the next period's own close</b>, never {@code dueDate} alone:
+ * without that cap, a {@code dueDateOffsetDays} at or beyond a cycle's length would let two
+ * consecutive periods' windows overlap, and a single payment (or two periods that coincidentally
+ * close with the same balance) could satisfy both - marking a still-unpaid statement paid. Capping
+ * keeps every period's window disjoint from its neighbours' by construction, independent of the
+ * configured offset. The reported {@code dueDate} itself is never altered by this - only what
+ * counts as evidence of payment is.
  */
 @Service
 public class CardStatementService {
@@ -148,7 +156,7 @@ public class CardStatementService {
     AccountValuation valuation =
         accountValuationService.valueIn(card, card.getNativeCurrency(), periodEnd);
     BigDecimal closingBalance = valuation.value();
-    boolean paid = isPaid(cardAccountId, closingBalance, periodEnd, dueDate);
+    boolean paid = isPaid(cardAccountId, closingBalance, periodEnd, dueDate, statementDay);
 
     return new CardStatementResponse(
         cardAccountId,
@@ -177,20 +185,24 @@ public class CardStatementService {
   }
 
   private boolean isPaid(
-      UUID cardAccountId, BigDecimal closingBalance, LocalDate periodEnd, LocalDate dueDate) {
+      UUID cardAccountId,
+      BigDecimal closingBalance,
+      LocalDate periodEnd,
+      LocalDate dueDate,
+      int statementDay) {
     if (closingBalance.signum() <= 0) {
       return true; // nothing owed, or the card is in credit
     }
-    return settlementMatchRepository.findByCardAccountId(cardAccountId).stream()
-        .filter(m -> SettlementMatchValues.CONFIRMED.equals(m.getStatus()))
+    // Capped one day before the next period's own close (see class Javadoc): keeps this window
+    // disjoint from the next period's, so a payment can never be read as evidence for both.
+    LocalDate nextClose = closingDateFor(YearMonth.from(periodEnd).plusMonths(1), statementDay);
+    LocalDate windowEnd = dueDate.isBefore(nextClose) ? dueDate : nextClose.minusDays(1);
+    return settlementMatchRepository
+        .findConfirmedByCardAccountIdAndPaymentBookingDateBetween(
+            cardAccountId, periodEnd, windowEnd)
+        .stream()
         .anyMatch(
-            m -> {
-              LocalDate paidOn = m.getPaymentTransaction().getBookingDate();
-              BigDecimal paidAmount = m.getPaymentTransaction().getAmount().negate();
-              return !paidOn.isBefore(periodEnd)
-                  && !paidOn.isAfter(dueDate)
-                  && paidAmount.compareTo(closingBalance) == 0;
-            });
+            m -> m.getPaymentTransaction().getAmount().negate().compareTo(closingBalance) == 0);
   }
 
   private Account requireCard(UUID cardAccountId, AuthenticatedUserPrincipal actor, String level) {

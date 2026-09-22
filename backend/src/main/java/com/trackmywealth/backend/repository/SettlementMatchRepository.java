@@ -2,6 +2,7 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.SettlementMatch;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -37,6 +38,19 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
           + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction"
           + " WHERE m.cardAccount.id = :cardAccountId ORDER BY m.createdAt DESC, m.id DESC")
   List<SettlementMatch> findByCardAccountId(@Param("cardAccountId") UUID cardAccountId);
+
+  // US-09-03: whether a statement period is paid needs only the CONFIRMED matches whose payment
+  // could plausibly belong to it - far cheaper than findByCardAccountId's whole history (any
+  // status, all time) when a card has years of settlements behind it. Only the payment leg is
+  // fetched, the one CardStatementService reads.
+  @Query(
+      "SELECT m FROM SettlementMatch m JOIN FETCH m.paymentTransaction p"
+          + " WHERE m.cardAccount.id = :cardAccountId AND m.status = 'CONFIRMED'"
+          + " AND p.bookingDate BETWEEN :from AND :to")
+  List<SettlementMatch> findConfirmedByCardAccountIdAndPaymentBookingDateBetween(
+      @Param("cardAccountId") UUID cardAccountId,
+      @Param("from") LocalDate from,
+      @Param("to") LocalDate to);
 
   // The work queue: matches of one status whose card AND payment account are both in accountIds -
   // the accounts the caller may EDIT. Filtering here, before the page is cut, is what keeps another
