@@ -538,8 +538,8 @@ class SettlementMatchControllerTest {
     post(token, asset.id(), "WITHDRAWAL", "-10.00")
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
-    // Not a type the ledger accepts yet.
-    post(token, a.current(), "EXPENSE", "-10.00")
+    // Not a type the ledger accepts yet (two-sided, US-10-01).
+    post(token, a.current(), "TRANSFER", "-10.00")
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
   }

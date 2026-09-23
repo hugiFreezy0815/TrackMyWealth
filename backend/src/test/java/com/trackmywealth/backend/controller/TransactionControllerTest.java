@@ -1074,6 +1074,292 @@ class TransactionControllerTest {
         .satisfies(a -> assertThat(a.valueKnown()).isFalse());
   }
 
+  // --- US-07-01: manually recorded cash transactions -------------------------------------------
+
+  @Test
+  void aCashExpenseIsRecordedAsManualWithTodaysBookingDateAndNoSecurity() {
+    // The story's DoD: a CHF 45.00 expense on a CASH account, end to end through the API and DB.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+
+    TransactionResponse created =
+        postTransaction(token, cash.id(), cashTransaction("EXPENSE", "-45.00", "CHF"))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(created.transactionType()).isEqualTo("EXPENSE");
+    assertThat(created.source()).isEqualTo("MANUAL");
+    assertThat(created.bookingDate()).isEqualTo(today());
+    assertThat(created.amount()).isEqualByComparingTo("-45.00");
+    assertThat(created.fxRateToAccountCurrency()).isNull();
+    assertThat(
+            jdbcUuid(
+                "SELECT id FROM transaction WHERE id = ? AND security_id IS NULL", created.id()))
+        .isEqualTo(created.id());
+
+    List<TransactionResponse> listed = listTransactions(token, cash.id(), "").content();
+    assertThat(listed).extracting(TransactionResponse::id).containsExactly(created.id());
+  }
+
+  @Test
+  void everyCashTypeIsAcceptedWithItsOwnSignAndRejectedWithTheOpposite() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+
+    for (String outflow : List.of("EXPENSE", "WITHDRAWAL", "FEE", "TAX")) {
+      postTransaction(token, cash.id(), cashTransaction(outflow, "10.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+      postTransaction(token, cash.id(), cashTransaction(outflow, "0.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+      postTransaction(token, cash.id(), cashTransaction(outflow, "-10.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.CREATED);
+    }
+    for (String inflow : List.of("INCOME", "DEPOSIT", "INTEREST", "REFUND")) {
+      postTransaction(token, cash.id(), cashTransaction(inflow, "-10.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+      postTransaction(token, cash.id(), cashTransaction(inflow, "0.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+      postTransaction(token, cash.id(), cashTransaction(inflow, "10.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.CREATED);
+    }
+    assertThat(countTransactions(cash.id())).isEqualTo(8); // only the eight correctly-signed rows
+  }
+
+  @Test
+  void typesThatBelongToLaterStoriesAreRejectedOnACashAccount() {
+    // TRANSFER/DEBT_REPAYMENT/PENSION_CONTRIBUTION -> US-10-01; BUY/SELL/DIVIDEND -> US-12-01.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+
+    for (String type :
+        List.of(
+            "TRANSFER",
+            "DEBT_REPAYMENT",
+            "PENSION_CONTRIBUTION",
+            "BUY",
+            "SELL",
+            "DIVIDEND",
+            "NOT_A_TYPE")) {
+      postTransaction(token, cash.id(), cashTransaction(type, "-10.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    }
+    assertThat(countTransactions(cash.id())).isZero();
+  }
+
+  @Test
+  void aCardAccountRejectsCashTypes() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+
+    for (String type : List.of("INCOME", "DEPOSIT", "REFUND", "FEE", "TAX", "WITHDRAWAL")) {
+      postTransaction(token, card.id(), cashTransaction(type, "-10.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    }
+    assertThat(countTransactions(card.id())).isZero();
+  }
+
+  @Test
+  void aForeignCurrencyCashEntryWithAnExplicitRateKeepsTheOriginalAmountAndTheRate() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+
+    TransactionResponse created =
+        postTransaction(
+                token, cash.id(), foreignCash("EXPENSE", "-50.00", "EUR", "1.0800000000", null))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(created.currency()).isEqualTo("EUR");
+    assertThat(created.amount()).isEqualByComparingTo("-50.00");
+    assertThat(created.fxRateToAccountCurrency()).isEqualByComparingTo("1.08");
+    assertThat(created.fxRateEstimated()).isFalse();
+  }
+
+  @Test
+  void aDisclosedBilledAmountDerivesTheRateForACashEntryToo() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+
+    TransactionResponse created =
+        postTransaction(token, cash.id(), foreignCash("EXPENSE", "-50.00", "EUR", null, "-54.00"))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(created.fxRateToAccountCurrency()).isEqualByComparingTo("1.08");
+    assertThat(created.fxRateEstimated()).isFalse();
+  }
+
+  @Test
+  void aForeignCurrencyCashEntryWithNoRateFallsBackToTheDailyRateFlaggedEstimated() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+    seedFxRate("EUR", "CHF", today(), "1.0500000000");
+
+    TransactionResponse created =
+        postTransaction(token, cash.id(), foreignCash("INCOME", "20.00", "EUR", null, null))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(created.fxRateToAccountCurrency()).isEqualByComparingTo("1.05");
+    assertThat(created.fxRateEstimated()).isTrue();
+  }
+
+  @Test
+  void aForeignCurrencyCashEntryWithNoDerivableRateIsRejectedNotRecordedWithoutOne() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+
+    postTransaction(token, cash.id(), foreignCash("EXPENSE", "-50.00", "EUR", null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThat(countTransactions(cash.id())).isZero();
+  }
+
+  @Test
+  void fxFieldsAndAForeignFeeAreRejectedWhereTheyDoNotApplyToACashEntry() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+    seedFxRate("EUR", "CHF", today(), "1.0500000000");
+
+    // A rate on a same-currency entry has nothing to convert.
+    postTransaction(token, cash.id(), foreignCash("EXPENSE", "-50.00", "CHF", "1.10", null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    // feeAmount is a card-issuer concept; on a cash account the fee is its own FEE transaction.
+    postTransaction(
+            token,
+            cash.id(),
+            new CreateTransactionRequest(
+                "EXPENSE",
+                today(),
+                new BigDecimal("-50.00"),
+                "EUR",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new BigDecimal("2.00")))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThat(countTransactions(cash.id())).isZero();
+  }
+
+  @Test
+  void aCashEntryOnAnArchivedAccountIsRejected() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + cash.id() + "/archive")
+        .exchange()
+        .expectStatus()
+        .is2xxSuccessful();
+
+    postTransaction(token, cash.id(), cashTransaction("EXPENSE", "-5.00", "CHF"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void aCashEntryRetriedWithTheSameExternalIdIsRecordedOnce() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+    CreateTransactionRequest request =
+        new CreateTransactionRequest(
+            "EXPENSE",
+            today(),
+            new BigDecimal("-45.00"),
+            "CHF",
+            "Coop",
+            null,
+            null,
+            "key-1",
+            null,
+            null,
+            null);
+
+    UUID first =
+        postTransaction(token, cash.id(), request)
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody()
+            .id();
+    UUID second =
+        postTransaction(token, cash.id(), request)
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody()
+            .id();
+
+    assertThat(second).isEqualTo(first);
+    assertThat(countTransactions(cash.id())).isEqualTo(1);
+  }
+
+  @Test
+  void aReadOnlyMemberCannotRecordACashEntryButAnEditorCan() {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(adminToken);
+    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    String memberToken = login("member@example.com");
+
+    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.READ);
+    postTransaction(memberToken, cash.id(), cashTransaction("EXPENSE", "-5.00", "CHF"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND); // same as the card endpoints: no hint the account exists
+    assertThat(countTransactions(cash.id())).isZero();
+
+    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.EDIT);
+    postTransaction(memberToken, cash.id(), cashTransaction("EXPENSE", "-5.00", "CHF"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+  }
+
+  private CreateTransactionRequest cashTransaction(String type, String amount, String currency) {
+    return foreignCash(type, amount, currency, null, null);
+  }
+
+  private CreateTransactionRequest foreignCash(
+      String type, String amount, String currency, String rate, String billedAmount) {
+    return new CreateTransactionRequest(
+        type,
+        today(),
+        new BigDecimal(amount),
+        currency,
+        null,
+        null,
+        null,
+        null,
+        rate == null ? null : new BigDecimal(rate),
+        billedAmount == null ? null : new BigDecimal(billedAmount),
+        null);
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
 
   private RestTestClient.ResponseSpec recordPurchase(

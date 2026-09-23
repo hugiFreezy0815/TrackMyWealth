@@ -18,6 +18,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -31,13 +33,14 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Records individual transactions on the append-only ledger. This is deliberately the narrow slice
- * of US-07-01 ("manually record a transaction of any supported type") that the credit-card stories
- * need: US-09-01's {@code CREDIT_CARD_PURCHASE}, US-09-02's {@code SETTLEMENT} (either leg of a
- * card payment) and {@code WITHDRAWAL} (money out of an ordinary account), and US-09-04's {@code
- * FEE} (a disclosed foreign-transaction fee - never directly postable, only ever created alongside
- * a foreign-currency purchase, see {@link #recordTransaction}). US-07-01 widens the accepted set
- * rather than replacing this method.
+ * Records individual transactions on the append-only ledger (US-07-01, widened from the slice the
+ * credit-card stories US-09-01..04 needed). Accepted so far: the single-account cash types ({@code
+ * INCOME}, {@code EXPENSE}, {@code DEPOSIT}, {@code WITHDRAWAL}, {@code INTEREST}, {@code FEE},
+ * {@code TAX}, {@code REFUND}) plus the card types {@code CREDIT_CARD_PURCHASE} and {@code
+ * SETTLEMENT}. Two-sided types (TRANSFER, DEBT_REPAYMENT, PENSION_CONTRIBUTION) arrive with
+ * US-10-01 and the investment types (BUY, SELL, DIVIDEND) with the security master (US-12-01). A
+ * card account accepts only its own two types; a {@code FEE} is also created alongside a
+ * foreign-currency card purchase, see {@link #recordTransaction}.
  *
  * <p>Every amount is cash-direction signed and stored as sent (see {@link Transaction}); the sign
  * each type must carry is checked in {@link #validate}. Whether an account is a credit card is
@@ -49,8 +52,9 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p><b>US-09-04/FR-CC-010</b>: a {@code CREDIT_CARD_PURCHASE} may be in a currency other than the
  * card's own {@code billing_currency} (compared here, not {@code account.nativeCurrency} - the two
- * may legitimately differ, {@code CreateAccountRequest}). Every other type/account still requires
- * an exact currency match. The applied rate is resolved, in priority order, from an explicit {@code
+ * may legitimately differ, {@code CreateAccountRequest}). <b>US-07-01/DM-06</b>: a cash type on an
+ * ordinary account may likewise be in another currency; a {@code SETTLEMENT} must match exactly.
+ * The applied rate is resolved, in priority order, from an explicit {@code
  * fxRateToAccountCurrency}, a disclosed {@code billedAmount} (rate derived by division), or - if
  * neither is given - {@link FxRateService}'s generic daily rate, flagged {@code fxRateEstimated}
  * (PR-011). See {@link #resolveForeignCurrency}. A disclosed {@code feeAmount} is recorded as its
@@ -70,8 +74,20 @@ public class TransactionService {
   private static final String SETTLEMENT = "SETTLEMENT";
   private static final String WITHDRAWAL = "WITHDRAWAL";
   private static final String FEE = "FEE";
+  // US-07-01 cash types: single-account, cash-direction signed. Money leaves the account for the
+  // first group and enters it for the second. TRANSFER, DEBT_REPAYMENT and PENSION_CONTRIBUTION are
+  // two-sided and belong to US-10-01; BUY/SELL/DIVIDEND need the security master (US-12-01).
+  private static final Set<String> OUTFLOW_CASH_TYPES = Set.of(WITHDRAWAL, FEE, "EXPENSE", "TAX");
+  private static final Set<String> INFLOW_CASH_TYPES =
+      Set.of("INCOME", "DEPOSIT", "INTEREST", "REFUND");
+  private static final Set<String> CASH_TYPES =
+      Stream.concat(OUTFLOW_CASH_TYPES.stream(), INFLOW_CASH_TYPES.stream())
+          .collect(Collectors.toUnmodifiableSet());
+  // A credit card is only ever charged (purchase, incl. its own FEE row) or paid down (settlement).
+  private static final Set<String> CARD_TYPES = Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT);
   private static final Set<String> SUPPORTED_TYPES =
-      Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT, WITHDRAWAL);
+      Stream.concat(CASH_TYPES.stream(), Stream.of(CREDIT_CARD_PURCHASE, SETTLEMENT))
+          .collect(Collectors.toUnmodifiableSet());
   private static final String ACTIVE = "ACTIVE";
   private static final String MANUAL = "MANUAL";
   private static final String MCC_KEY = "mcc";
@@ -150,6 +166,9 @@ public class TransactionService {
             ? accountCreditCardRepository.findById(accountId).orElse(null)
             : null;
     boolean foreignCurrency = validate(account, cardExtension, request);
+    // The currency a rate converts into: the card's billing currency, else the account's own.
+    String accountCurrency =
+        cardExtension != null ? cardExtension.getBillingCurrency() : account.getNativeCurrency();
 
     Transaction transaction = new Transaction();
     transaction.setWorkspace(account.getWorkspace());
@@ -170,7 +189,7 @@ public class TransactionService {
             : objectMapper.writeValueAsString(Map.of(MCC_KEY, request.mcc())));
     transaction.setCreatedBy(actor.userId());
     if (foreignCurrency) {
-      ForeignCurrencyResolution resolution = resolveForeignCurrency(cardExtension, request);
+      ForeignCurrencyResolution resolution = resolveForeignCurrency(accountCurrency, request);
       transaction.setFxRateToAccountCurrency(resolution.rate());
       transaction.setFxRateDate(request.bookingDate());
       transaction.setFxRateEstimated(resolution.estimated());
@@ -314,37 +333,55 @@ public class TransactionService {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "Credit-card details are missing.");
     }
-    if (WITHDRAWAL.equals(type) && card) {
+    if (card && !CARD_TYPES.contains(type)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
-          "A credit card is paid down by a " + SETTLEMENT + ", not a " + WITHDRAWAL + ".");
+          WITHDRAWAL.equals(type)
+              ? "A credit card is paid down by a " + SETTLEMENT + ", not a " + WITHDRAWAL + "."
+              : "A credit card only accepts "
+                  + String.join(", ", new TreeSet<>(CARD_TYPES))
+                  + " transactions.");
     }
     if (!ACTIVE.equals(account.getStatus())) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "Cannot record a transaction on an archived account.");
     }
 
-    // US-09-04/FR-CC-010: a CREDIT_CARD_PURCHASE is compared against the card's own
-    // billing_currency, not account.nativeCurrency - the two may legitimately differ
-    // (CreateAccountRequest). Any currency is accepted structurally here; resolveForeignCurrency
-    // is what actually requires a real, derivable rate. Every other type/account is unchanged.
-    boolean foreignCardPurchase =
-        isCardPurchase && !cardExtension.getBillingCurrency().equals(request.currency());
-    if (!isCardPurchase && !account.getNativeCurrency().equals(request.currency())) {
+    // US-09-04/FR-CC-010, US-07-01/DM-06: the currency may differ from the account's own. A card is
+    // compared against its billing_currency, not account.nativeCurrency - the two may legitimately
+    // differ (CreateAccountRequest). Any currency is accepted structurally here;
+    // resolveForeignCurrency is what actually requires a real, derivable rate.
+    String accountCurrency =
+        isCardPurchase ? cardExtension.getBillingCurrency() : account.getNativeCurrency();
+    boolean foreignCurrency = !accountCurrency.equals(request.currency());
+    // A SETTLEMENT is the one type that must be in the account's own currency: matching pairs
+    // payment and card credit by exact amount (US-09-02), which a converted row cannot satisfy.
+    if (foreignCurrency && !isCardPurchase && !CASH_TYPES.contains(type)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           "currency must match the account's currency ("
-              + account.getNativeCurrency()
-              + "); foreign-currency transactions are not supported yet.");
+              + accountCurrency
+              + ") for a "
+              + type
+              + ".");
     }
-    if (!foreignCardPurchase
+    if (!foreignCurrency
         && (request.fxRateToAccountCurrency() != null
             || request.billedAmount() != null
             || request.feeAmount() != null)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           "fxRateToAccountCurrency, billedAmount and feeAmount are only valid for a"
-              + " foreign-currency card purchase.");
+              + " foreign-currency transaction.");
+    }
+    // A disclosed foreign-transaction fee is a card-issuer concept (FR-CC-010); on an ordinary
+    // account the fee is simply its own FEE transaction.
+    if (request.feeAmount() != null && !isCardPurchase) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          "feeAmount is only valid for a foreign-currency card purchase; record a "
+              + FEE
+              + " transaction instead.");
     }
     if (request.fxRateToAccountCurrency() != null && request.billedAmount() != null) {
       throw new ResponseStatusException(
@@ -368,21 +405,20 @@ public class TransactionService {
     }
 
     // Cash-direction signed ledger: rejecting a wrong sign rather than flipping it keeps "what you
-    // send is what is stored". Money leaves the account for a purchase, a withdrawal, and the
-    // payment side of a settlement; it enters the card for the card side of a settlement.
-    boolean mustBePositive = SETTLEMENT.equals(type) && card;
+    // send is what is stored". Money leaves the account for a purchase, a withdrawal, an expense,
+    // fee or tax and the payment side of a settlement; it enters for income, deposit, interest,
+    // refund and the card side of a settlement.
+    boolean mustBePositive = INFLOW_CASH_TYPES.contains(type) || (SETTLEMENT.equals(type) && card);
     if (mustBePositive ? request.amount().signum() <= 0 : request.amount().signum() >= 0) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           mustBePositive
-              ? "amount must be positive for the card side of a "
-                  + SETTLEMENT
-                  + " (e.g. 1200.00): it reduces what the card owes."
+              ? "amount must be positive for a " + type + " (e.g. 45.00): money enters the account."
               : "amount must be negative for a "
                   + type
                   + " (e.g. -85.00): money leaves the account.");
     }
-    return foreignCardPurchase;
+    return foreignCurrency;
   }
 
   /**
@@ -394,7 +430,7 @@ public class TransactionService {
    * calls out: never leave {@code fx_rate_to_account_currency} null with no indication why.
    */
   private ForeignCurrencyResolution resolveForeignCurrency(
-      AccountCreditCard cardExtension, CreateTransactionRequest request) {
+      String accountCurrency, CreateTransactionRequest request) {
     if (request.fxRateToAccountCurrency() != null) {
       return new ForeignCurrencyResolution(request.fxRateToAccountCurrency(), false);
     }
@@ -409,17 +445,16 @@ public class TransactionService {
       }
       return new ForeignCurrencyResolution(rate, false);
     }
-    String billingCurrency = cardExtension.getBillingCurrency();
     Optional<CurrencyConversionResult> fallback =
         fxRateService.tryGetConversionRate(
-            request.currency(), billingCurrency, request.bookingDate(), fxDefaultSource);
+            request.currency(), accountCurrency, request.bookingDate(), fxDefaultSource);
     if (fallback.isEmpty()) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           "No FX rate is available for "
               + request.currency()
               + " to "
-              + billingCurrency
+              + accountCurrency
               + " on "
               + request.bookingDate()
               + "; supply fxRateToAccountCurrency or billedAmount explicitly.");
