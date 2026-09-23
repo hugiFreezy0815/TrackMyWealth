@@ -7,6 +7,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -34,6 +35,12 @@ public class SecurityAssetClassWeight {
 
   @Column(name = "is_estimated", nullable = false)
   private boolean estimated;
+
+  // FR-SMD-009: reference data is effective-dated. Read-only here - the column's CURRENT_DATE
+  // default assigns it, and a classification is never back-dated by an edit; a reclassification
+  // adds a row for a later date (V7's UNIQUE (security_id, asset_class, effective_date)).
+  @Column(name = "effective_date", insertable = false, updatable = false)
+  private LocalDate effectiveDate;
 
   private String source;
 
@@ -71,6 +78,10 @@ public class SecurityAssetClassWeight {
 
   public void setEstimated(boolean estimated) {
     this.estimated = estimated;
+  }
+
+  public LocalDate getEffectiveDate() {
+    return effectiveDate;
   }
 
   public String getSource() {

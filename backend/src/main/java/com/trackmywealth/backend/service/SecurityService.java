@@ -135,7 +135,15 @@ public class SecurityService {
           (request.isin() != null
                   ? securityRepository.findByIsin(request.isin())
                   : securityRepository.findBySyntheticKey(syntheticKey))
-              .orElseThrow();
+              .orElseThrow(
+                  () ->
+                      new IllegalStateException(
+                          "INSERT into security was skipped by ON CONFLICT but neither the ISIN nor"
+                              + " the synthetic key matches an existing row. The ON CONFLICT clause"
+                              + " names no target (it cannot: one statement may name only one, and"
+                              + " either column can be the conflicting one), so it absorbs every"
+                              + " unique constraint on the table - including any added after this"
+                              + " code was written. Check whether a migration added one."));
       SecurityResponse response = toResponse(existing);
       return new SecurityCreation(response, false, ignoredFields(request, response));
     }
@@ -257,7 +265,7 @@ public class SecurityService {
 
   private SecurityResponse toResponse(Security security) {
     Optional<SecurityAssetClassWeight> dominant =
-        weightRepository.findBySecurityIdOrderByWeightDesc(security.getId()).stream().findFirst();
+        weightRepository.findEffectiveBySecurityId(security.getId()).stream().findFirst();
     return new SecurityResponse(
         security.getId(),
         security.getIsin(),

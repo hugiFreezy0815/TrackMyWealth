@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -556,6 +557,99 @@ class SecurityControllerTest {
         .expectHeader()
         .valueEquals("X-Security-Ignored-Fields", "denominationCurrency,instrumentType");
     assertThat(count("security")).isEqualTo(1);
+  }
+
+  @Test
+  void theIgnoredFieldsHeaderIsReadableByABrowserClient() {
+    String token = adminWithAccount();
+    post(token, etf(ETF_ISIN, "iShares Core MSCI World")).expectStatus().isCreated();
+
+    // The web build of mobile/ is a different origin, and a browser hides every response header
+    // from JS unless the server names it in Access-Control-Expose-Headers. Without that, this
+    // header exists on the wire and still reads as null in the web client, while working on
+    // iOS/Android - so asserting only that it is present (as the test above does) would pass for
+    // a feature that is broken on exactly one of the three clients.
+    HttpHeaders headers =
+        client(token)
+            .post()
+            .uri("/api/v1/securities")
+            .header("Origin", "http://localhost:8081")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(
+                new CreateSecurityRequest(
+                    ETF_ISIN,
+                    "iShares Core MSCI World",
+                    "CHF",
+                    "ETF",
+                    "EQUITY",
+                    "IE",
+                    "IE",
+                    null,
+                    null))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectHeader()
+            .valueEquals("X-Security-Ignored-Fields", "denominationCurrency")
+            .returnResult(SecurityResponse.class)
+            .getResponseHeaders();
+
+    assertThat(headers.getAccessControlExposeHeaders())
+        .as("a header the browser is not told to expose reads as null in the web client")
+        .contains("X-Security-Ignored-Fields");
+  }
+
+  @Test
+  void theAssetClassInForceWinsOverASupersededOne() throws Exception {
+    String token = adminWithAccount();
+    SecurityResponse created =
+        post(token, etf(ETF_ISIN, "iShares Core MSCI World"))
+            .expectStatus()
+            .isCreated()
+            .expectBody(SecurityResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(created.assetClass()).isEqualTo("EQUITY");
+
+    // FR-SMD-009: a reclassification adds a row for a later date rather than editing the old one,
+    // so a security legitimately carries several vintages. The newer one wins even though it
+    // weighs the same, and a row that is not in force yet is ignored until its date arrives - a
+    // read that sorted on weight alone would pick whichever vintage happened to weigh most.
+    insertWeight(created.id(), "MULTI_ASSET", "CURRENT_DATE - 1");
+    assertThat(lookupAssetClass(token)).isEqualTo("EQUITY");
+
+    insertWeight(created.id(), "FIXED_INCOME", "CURRENT_DATE + 1");
+    assertThat(lookupAssetClass(token)).isEqualTo("EQUITY");
+
+    insertWeight(created.id(), "COMMODITY", "CURRENT_DATE");
+    assertThat(lookupAssetClass(token))
+        .as("same date as the original row, so the tie is broken deterministically by asset class")
+        .isEqualTo("COMMODITY");
+  }
+
+  private String lookupAssetClass(String token) {
+    return get(token, ETF_ISIN)
+        .expectStatus()
+        .isOk()
+        .expectBody(SecurityResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .assetClass();
+  }
+
+  private void insertWeight(UUID securityId, String assetClass, String effectiveDate)
+      throws Exception {
+    try (Connection connection = dataSource.getConnection()) {
+      execute(
+          connection,
+          "INSERT INTO security_asset_class_weight"
+              + " (security_id, asset_class, weight, is_estimated, effective_date, source)"
+              + " VALUES (?, ?, 1, true, "
+              + effectiveDate
+              + ", 'MANUAL')",
+          securityId,
+          assetClass);
+    }
   }
 
   @Test
