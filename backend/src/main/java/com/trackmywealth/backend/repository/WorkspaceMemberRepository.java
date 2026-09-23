@@ -20,6 +20,10 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
   // ownership/explicit grants only. Dependent members (is_dependent=true - "a person represented
   // financially; may have no login", per WorkspaceMember's own Javadoc) never count here: they can
   // never authenticate, so they can never be "the caller" this rule is granting access to.
+  //
+  // #122: an account has account_ownership as a second, permanent bootstrap fallback once this
+  // rule stops applying - an institution/the workspace itself has neither, which is what #122's own
+  // (narrow, role-based) SharingGrantService#isBootstrapping exception exists to close.
   long countByWorkspaceIdAndStatusAndDependentFalse(UUID workspaceId, String status);
 
   // US-03-04/FR-HHL-015: locks the target row plus every other currently-ACTIVE member of the

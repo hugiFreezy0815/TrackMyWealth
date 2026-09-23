@@ -28,8 +28,14 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.IntStream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,9 +58,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * AccountController}'s {@code GET}/{@code PUT} endpoints - at the time, the only endpoints that
  * consulted {@code AccessControlService} at all. US-04-03's institution summary and US-04-04's
  * {@code reassign-institution} both now gate on {@code INSTITUTION}-scope access too ({@link
- * #reassigningInstitutionRequiresEditAccessToTheDestinationInstitution}), though only the deny side
- * is provable through the public API today - see that test's own comment for why no test here
- * grants {@code INSTITUTION}/{@code WORKSPACE}-scope access and then proves it works.
+ * #reassigningInstitutionRequiresEditAccessToTheDestinationInstitution}).
+ *
+ * <p>Until #122, only the deny side of {@code INSTITUTION}/{@code WORKSPACE} scope was provable
+ * through the public API at all - unlike an account, neither has an ownership fallback, so once a
+ * second active member existed, no one (not even the institution's creator) could ever hold {@code
+ * FULL} access to call {@code grant()} for either scope. The {@code #...Bootstrap...}/ {@code
+ * #...CanBeBootstrapped...} tests below exercise {@link SharingGrantService}'s fix: a {@code
+ * SYSTEM_ADMINISTRATOR} may create the first non-revoked grant of a scope that has none.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -343,15 +354,10 @@ class SharingGrantControllerTest {
     // and never shared with him - proving the destination-institution check is a real, separate
     // gate, not subsumed by the account-side EDIT check that already passes for Bob here.
     //
-    // Deny-only: proving the allow side would need an INSTITUTION-scope grant to Bob, but
-    // AccessControlService gives no one but the sole active member implicit FULL institution
-    // access (unlike accounts, an institution has no ownership fallback) - so once Bob exists as
-    // a second active member, admin's own FULL institution access (the one thing grant() itself
-    // requires of its caller) is already gone too, with no path through the public API to ever
-    // establish it again. That's a pre-existing gap in US-03-03's sharing model, not something
-    // this story introduces or is scoped to fix - noted here rather than worked around, since a
-    // raw-SQL-inserted grant would test AccessControlService's read side only, not anything a real
-    // caller could ever reach.
+    // The allow side (grant Bob EDIT on the destination institution, then succeed) is
+    // #institutionScopeCanBeBootstrappedByTheAdministratorThenSharedWithASecondMember /
+    // #reassigningInstitutionSucceedsOnceGrantedEditOnTheDestination - #122 fixed the pre-existing
+    // gap that made establishing that grant unreachable through the public API at all.
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse account = createAccount(adminToken);
     UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
@@ -376,6 +382,314 @@ class SharingGrantControllerTest {
     reassignInstitution(bobToken, account.id(), destination.id())
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  // --- #122: institution/workspace-scope access is bootstrappable once a second member exists ---
+
+  @Test
+  void institutionScopeCanBeBootstrappedByTheAdministratorThenSharedWithASecondMember() {
+    // Before #122: once Bob exists as a second active member, no one - not even the admin who
+    // created the institution - could ever hold FULL institution access again (institutions have
+    // no ownership fallback the way accounts do), so grant() itself could never be called for
+    // INSTITUTION scope. The SYSTEM_ADMINISTRATOR may now create the *first* non-revoked grant of
+    // an institution that has none.
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com", PASSWORD);
+    getSummary(bobToken, institution.id()).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+
+    SharingGrantResponse grant =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId,
+                ScopeTypeValues.INSTITUTION,
+                null,
+                institution.id(),
+                AccessLevelValues.BALANCE_ONLY));
+    assertThat(grant.scopeInstitutionId()).isEqualTo(institution.id());
+
+    getSummary(bobToken, institution.id()).expectStatus().isOk();
+  }
+
+  @Test
+  void reassigningInstitutionSucceedsOnceGrantedEditOnTheDestination() {
+    // The allow side of #reassigningInstitutionRequiresEditAccessToTheDestinationInstitution,
+    // established via #122's bootstrap fix.
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com", PASSWORD);
+    assignOwnership(adminToken, account.id(), bobMemberId);
+    FinancialInstitutionSummaryResponse destination = createInstitution(adminToken);
+    grant(
+        adminToken,
+        new CreateSharingGrantRequest(
+            bobMemberId,
+            ScopeTypeValues.INSTITUTION,
+            null,
+            destination.id(),
+            AccessLevelValues.EDIT));
+
+    reassignInstitution(bobToken, account.id(), destination.id()).expectStatus().isOk();
+  }
+
+  @Test
+  void institutionScopeRevokedBackToZeroCanBeBootstrappedAgain() {
+    // The re-arm guarantee: revoking the only grant of a scope must not durably relock the
+    // workspace the way #122's original bug did - the admin can always bootstrap a fresh grant.
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com", PASSWORD);
+    SharingGrantResponse first =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId,
+                ScopeTypeValues.INSTITUTION,
+                null,
+                institution.id(),
+                AccessLevelValues.BALANCE_ONLY));
+    revoke(adminToken, first.id());
+    getSummary(bobToken, institution.id()).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+
+    UUID carolMemberId = createSecondMember(adminToken, "carol@example.com");
+    String carolToken = login("carol@example.com", PASSWORD);
+    grant(
+        adminToken,
+        new CreateSharingGrantRequest(
+            carolMemberId,
+            ScopeTypeValues.INSTITUTION,
+            null,
+            institution.id(),
+            AccessLevelValues.BALANCE_ONLY));
+
+    getSummary(carolToken, institution.id()).expectStatus().isOk();
+  }
+
+  @Test
+  void theBootstrapExceptionIsForTheSystemAdministratorOnlyNotAnyStandardUser() {
+    // RULE-018's own boundary: the exception is scoped to the SYSTEM_ADMINISTRATOR role, not a
+    // general "no grants yet" free-for-all any STANDARD_USER could exploit.
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com", PASSWORD);
+    UUID carolMemberId = createSecondMember(adminToken, "carol@example.com");
+
+    client(bobToken)
+        .post()
+        .uri("/api/v1/sharing-grants")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateSharingGrantRequest(
+                carolMemberId,
+                ScopeTypeValues.INSTITUTION,
+                null,
+                institution.id(),
+                AccessLevelValues.BALANCE_ONLY))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void workspaceScopeCanBeBootstrappedAndCascadesToEveryInstitution() {
+    // WORKSPACE scope had exactly the same bootstrap gap as INSTITUTION scope - and, once granted,
+    // cascades down to every institution (AccessControlService's own documented scope hierarchy),
+    // so Bob needs no separate INSTITUTION-scope grant for this same institution.
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    String bobToken = login("bob@example.com", PASSWORD);
+    getSummary(bobToken, institution.id()).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+
+    SharingGrantResponse grant =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId,
+                ScopeTypeValues.WORKSPACE,
+                null,
+                null,
+                AccessLevelValues.BALANCE_ONLY));
+    assertThat(grant.scopeType()).isEqualTo(ScopeTypeValues.WORKSPACE);
+
+    getSummary(bobToken, institution.id()).expectStatus().isOk();
+  }
+
+  @Test
+  void workspaceScopeRevokedBackToZeroCanBeBootstrappedAgain() {
+    String adminToken = bootstrapAdministrator();
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    SharingGrantResponse first =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId,
+                ScopeTypeValues.WORKSPACE,
+                null,
+                null,
+                AccessLevelValues.BALANCE_ONLY));
+    revoke(adminToken, first.id());
+
+    UUID carolMemberId = createSecondMember(adminToken, "carol@example.com");
+    SharingGrantResponse second =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                carolMemberId,
+                ScopeTypeValues.WORKSPACE,
+                null,
+                null,
+                AccessLevelValues.BALANCE_ONLY));
+
+    assertThat(second.revokedAt()).isNull();
+  }
+
+  @Test
+  void
+      onceAnInstitutionGrantExistsTheAdministratorCanNoLongerBootstrapAnotherOneWithoutFullAccess() {
+    // The exception only ever covers the *first* grant of a scope - once one exists, a further
+    // grant to a third member needs the ordinary FULL-access path like anything else (the admin
+    // never gained standing FULL access to the institution merely by bootstrapping Bob's grant).
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    grant(
+        adminToken,
+        new CreateSharingGrantRequest(
+            bobMemberId,
+            ScopeTypeValues.INSTITUTION,
+            null,
+            institution.id(),
+            AccessLevelValues.BALANCE_ONLY));
+    UUID carolMemberId = createSecondMember(adminToken, "carol@example.com");
+
+    client(adminToken)
+        .post()
+        .uri("/api/v1/sharing-grants")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateSharingGrantRequest(
+                carolMemberId,
+                ScopeTypeValues.INSTITUTION,
+                null,
+                institution.id(),
+                AccessLevelValues.BALANCE_ONLY))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void aDifferentSystemAdministratorCannotRevokeAGrantTheyDidNotCreate() {
+    // #139 review fix: the bootstrap-revoke exception is scoped to the SYSTEM_ADMINISTRATOR who
+    // granted this specific row, not "any SYSTEM_ADMINISTRATOR may strip a scope's last standing
+    // grant" - a second administrator in the same workspace, uninvolved in creating Bob's grant,
+    // has no more standing to revoke it than a STANDARD_USER would.
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    SharingGrantResponse grant =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId,
+                ScopeTypeValues.INSTITUTION,
+                null,
+                institution.id(),
+                AccessLevelValues.BALANCE_ONLY));
+    String secondAdminToken = createSecondAdministrator(adminToken, "otheradmin@example.com");
+
+    client(secondAdminToken)
+        .post()
+        .uri("/api/v1/sharing-grants/" + grant.id() + "/revoke")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void concurrentBootstrapAttemptsForTheSameInstitutionOnlyOneSucceeds() {
+    // #139 review fix: without the institution-row lock, two concurrent grant() calls could both
+    // observe "no existing grant" and both bypass the FULL-access requirement. With it, exactly one
+    // wins the bootstrap and every other racing call falls through to the ordinary FULL-access
+    // check - which the admin does not hold (they only ever bootstrap *other* members, never
+    // themselves), so it deterministically fails, not just "usually" fails.
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(adminToken);
+    int racers = 8;
+    List<UUID> memberIds =
+        IntStream.range(0, racers)
+            .mapToObj(i -> createSecondMember(adminToken, "racer" + i + "@example.com"))
+            .toList();
+
+    ExecutorService pool = Executors.newFixedThreadPool(racers);
+    try {
+      CountDownLatch start = new CountDownLatch(1);
+      List<Future<Integer>> statuses = new ArrayList<>();
+      for (UUID memberId : memberIds) {
+        statuses.add(
+            pool.submit(
+                () -> {
+                  start.await();
+                  return client(adminToken)
+                      .post()
+                      .uri("/api/v1/sharing-grants")
+                      .contentType(MediaType.APPLICATION_JSON)
+                      .body(
+                          new CreateSharingGrantRequest(
+                              memberId,
+                              ScopeTypeValues.INSTITUTION,
+                              null,
+                              institution.id(),
+                              AccessLevelValues.BALANCE_ONLY))
+                      .exchange()
+                      .returnResult(String.class)
+                      .getStatus()
+                      .value();
+                }));
+      }
+      start.countDown();
+      long created = 0;
+      long denied = 0;
+      for (Future<Integer> status : statuses) {
+        int code = status.get();
+        if (code == HttpStatus.CREATED.value()) {
+          created++;
+        } else if (code == HttpStatus.NOT_FOUND.value()) {
+          denied++;
+        }
+      }
+      assertThat(created).as("exactly one racer should win the bootstrap").isEqualTo(1);
+      assertThat(denied)
+          .as("every other racer needs FULL access, which the admin lacks")
+          .isEqualTo(racers - 1);
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    } finally {
+      pool.shutdownNow();
+    }
+  }
+
+  private String createSecondAdministrator(String adminToken, String email) {
+    client(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new CreateUserRequest(email, PASSWORD, "SYSTEM_ADMINISTRATOR", "EN"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(UserSummaryResponse.class);
+    return login(email, PASSWORD);
+  }
+
+  private RestTestClient.ResponseSpec getSummary(String token, UUID institutionId) {
+    return client(token).get().uri("/api/v1/institutions/" + institutionId + "/summary").exchange();
   }
 
   @Test
