@@ -34,9 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <h2>What matches</h2>
  *
- * A candidate <em>payment</em> is a negative, non-voided {@code WITHDRAWAL}/{@code SETTLEMENT} row
- * on the card's settlement-source account; a candidate <em>card credit</em> is a positive,
- * non-voided {@code SETTLEMENT} row on the card. Both must be in the card's currency
+ * A candidate <em>payment</em> is a negative, non-voided {@code WITHDRAWAL}/{@code EXPENSE}/{@code
+ * SETTLEMENT} row on the card's settlement-source account; a candidate <em>card credit</em> is a
+ * positive, non-voided {@code SETTLEMENT} row on the card. Both must be in the card's currency
  * (cross-currency settlement - the payment itself in a different currency than the card - is not
  * built). A payment and a credit pair up when their amounts are exactly equal and their booking
  * dates are at most {@value #WINDOW_DAYS} days apart.
@@ -76,7 +76,11 @@ public class SettlementDetectionService {
   /** Booking dates further apart than this never pair (payment vs card-side credit). */
   static final int WINDOW_DAYS = 5;
 
-  private static final Set<String> PAYMENT_TYPES = Set.of("WITHDRAWAL", "SETTLEMENT");
+  // A card bill paid from a current account is typed by whoever records it: WITHDRAWAL (money out),
+  // EXPENSE (a manual "I paid my card bill") or SETTLEMENT. All three must be matchable, or the
+  // payment counts as spending on top of the purchases it settles (double count). The type is
+  // frozen (V21), so matching never re-types - it only flags the row an internal transfer.
+  private static final Set<String> PAYMENT_TYPES = Set.of("WITHDRAWAL", "EXPENSE", "SETTLEMENT");
 
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final AccountRepository accountRepository;

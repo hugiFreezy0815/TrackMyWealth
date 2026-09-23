@@ -83,6 +83,11 @@ public class TransactionService {
   private static final Set<String> CASH_TYPES =
       Stream.concat(OUTFLOW_CASH_TYPES.stream(), INFLOW_CASH_TYPES.stream())
           .collect(Collectors.toUnmodifiableSet());
+  // Cash movements a custodian account (holds positions: depot, mandate, crypto) can carry itself.
+  // INCOME/EXPENSE/REFUND are consumer-spending types and belong on a cash or savings account;
+  // dividends and trades arrive with US-12-01.
+  private static final Set<String> CUSTODY_CASH_TYPES =
+      Set.of("DEPOSIT", WITHDRAWAL, "INTEREST", FEE, "TAX");
   // A credit card is only ever charged (purchase, incl. its own FEE row) or paid down (settlement).
   private static final Set<String> CARD_TYPES = Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT);
   private static final Set<String> SUPPORTED_TYPES =
@@ -302,9 +307,30 @@ public class TransactionService {
   }
 
   /**
-   * Structural/business validation, throwing on the first violation. Returns whether this is a
-   * foreign-currency card purchase - the one caller, {@link #recordTransaction}, needs that same
-   * boolean right after and previously recomputed it by hand a second time.
+   * Which cash types an account takes, decided by capability flags, never {@code account_type}
+   * (US-05-04, enforced by ArchitectureTest). Narrowing later would break callers, so this starts
+   * strict: a loan or mortgage (amortisation) is serviced by DEBT_REPAYMENT (US-10-02) - a signed
+   * INTEREST/EXPENSE row would move its balance the wrong way - and a pension (contribution limit)
+   * by PENSION_CONTRIBUTION (US-10-01). A custodian account takes only its own cash movements.
+   */
+  private static Set<String> cashTypesAllowedOn(Account account) {
+    if (account.isHasAmortisation() || account.isHasContributionLimit()) {
+      return Set.of();
+    }
+    return account.isHoldsPositions() ? CUSTODY_CASH_TYPES : CASH_TYPES;
+  }
+
+  private static String allowedHint(Account account) {
+    Set<String> allowed = cashTypesAllowedOn(account);
+    return allowed.isEmpty()
+        ? "; it is serviced by its own transaction types"
+        : "; allowed: " + String.join(", ", new TreeSet<>(allowed));
+  }
+
+  /**
+   * Structural/business validation, throwing on the first violation. Returns whether the entry is
+   * in a currency other than the account's own - the one caller, {@link #recordTransaction}, needs
+   * that same boolean right after and previously recomputed it by hand a second time.
    */
   private static boolean validate(
       Account account, AccountCreditCard cardExtension, CreateTransactionRequest request) {
@@ -345,6 +371,14 @@ public class TransactionService {
     if (!ACTIVE.equals(account.getStatus())) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "Cannot record a transaction on an archived account.");
+    }
+    // A SETTLEMENT is not a cash type: it stays acceptable on an ordinary account as the payment
+    // leg
+    // of a card payment (US-09-02), whatever that account's kind.
+    if (CASH_TYPES.contains(type) && !cashTypesAllowedOn(account).contains(type)) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          type + " cannot be recorded on this kind of account" + allowedHint(account) + ".");
     }
 
     // US-09-04/FR-CC-010, US-07-01/DM-06: the currency may differ from the account's own. A card is

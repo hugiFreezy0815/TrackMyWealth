@@ -30,6 +30,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -106,6 +107,9 @@ class TransactionControllerTest {
               "account_custom_asset",
               "account_credit_card",
               "account_mortgage",
+              "account_loan",
+              "account_securities",
+              "account_pension",
               "account",
               "admin_audit_log",
               "user_session",
@@ -1360,6 +1364,79 @@ class TransactionControllerTest {
         null);
   }
 
+  @Test
+  void cashExpensesAndTaxCountAsSpendingButInflowsDoNot() {
+    // Review finding: EXPENSE/TAX were accepted but missing from SPENDING_TYPES, so a recorded
+    // CHF 45 expense showed as 0 spending with no incomplete flag.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+    for (CreateTransactionRequest request :
+        List.of(
+            cashTransaction("EXPENSE", "-45.00", "CHF"),
+            cashTransaction("TAX", "-5.00", "CHF"),
+            cashTransaction("INCOME", "3000.00", "CHF"),
+            cashTransaction("INTEREST", "1.20", "CHF"))) {
+      postTransaction(token, cash.id(), request).expectStatus().isEqualTo(HttpStatus.CREATED);
+    }
+
+    CashFlowResponse flow = cashFlow(token, YearMonth.from(today()).toString());
+
+    assertThat(flow.spending())
+        .singleElement()
+        .satisfies(
+            s -> {
+              assertThat(s.currency()).isEqualTo("CHF");
+              assertThat(s.amount()).isEqualByComparingTo("50.00");
+            });
+    assertThat(flow.complete()).isTrue();
+  }
+
+  @Test
+  void aCustodianAccountTakesOnlyItsOwnCashMovements() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "Depot", "SECURITIES", "CHF", null);
+
+    for (String outflow : List.of("WITHDRAWAL", "FEE", "TAX")) {
+      postTransaction(token, depot.id(), cashTransaction(outflow, "-10.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.CREATED);
+    }
+    for (String inflow : List.of("DEPOSIT", "INTEREST")) {
+      postTransaction(token, depot.id(), cashTransaction(inflow, "10.00", "CHF"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.CREATED);
+    }
+    postTransaction(token, depot.id(), cashTransaction("EXPENSE", "-10.00", "CHF"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    postTransaction(token, depot.id(), cashTransaction("INCOME", "10.00", "CHF"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    postTransaction(token, depot.id(), cashTransaction("REFUND", "10.00", "CHF"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThat(countTransactions(depot.id())).isEqualTo(5);
+  }
+
+  @Test
+  void aLoanOrPensionTakesNoCashTypesBecauseTheyHaveTheirOwn() {
+    // INTEREST is forced positive, which on a liability would move the balance the wrong way;
+    // DEBT_REPAYMENT (US-10-02) and PENSION_CONTRIBUTION (US-10-01) are the types for these.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse loan = createLoan(token);
+    AccountSummaryResponse pension = createPension(token);
+
+    for (AccountSummaryResponse account : List.of(loan, pension)) {
+      for (String type : List.of("INTEREST", "EXPENSE", "INCOME", "WITHDRAWAL", "FEE", "TAX")) {
+        String amount = List.of("INTEREST", "INCOME").contains(type) ? "10.00" : "-10.00";
+        postTransaction(token, account.id(), cashTransaction(type, amount, "CHF"))
+            .expectStatus()
+            .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+      }
+      assertThat(countTransactions(account.id())).isZero();
+    }
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
 
   private RestTestClient.ResponseSpec recordPurchase(
@@ -1469,6 +1546,47 @@ class TransactionControllerTest {
 
   private AccountSummaryResponse createCashAccount(String token) {
     return createAccount(token, "Everyday Checking", "CASH", null);
+  }
+
+  private AccountSummaryResponse createLoan(String token) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateAccountRequest(
+                null,
+                "Car Loan",
+                "LOAN",
+                "CHF",
+                null,
+                null,
+                new BigDecimal("10000"),
+                null,
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private AccountSummaryResponse createPension(String token) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateAccountRequest(
+                null, "Pillar 3a", "PENSION", "CHF", null, null, null, null, "CH_PILLAR_3A", null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private AccountSummaryResponse createCustomAsset(String token) {

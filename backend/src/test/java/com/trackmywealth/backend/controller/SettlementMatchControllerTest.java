@@ -223,6 +223,22 @@ class SettlementMatchControllerTest {
   }
 
   @Test
+  void aCardBillRecordedAsAnExpenseIsMatchedNotCountedAsSecondSpending() {
+    // Review finding: a member paying the card by hand types the payment EXPENSE. It must pair
+    // with the card-side credit like a WITHDRAWAL, or it doubles the spending it settles.
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    purchase(token, a.card(), "-1200.00", AUG_10);
+    record(token, a.current(), "EXPENSE", "-1200.00", SEP_3);
+    cardCredit(token, a.card(), "1200.00", SEP_3);
+
+    CashFlowResponse september = cashFlow(token, "2026-09");
+    assertThat(september.spending()).isEmpty();
+    assertThat(september.pendingReview()).isEmpty();
+    assertThat(balance(token, a.card()).value()).isEqualByComparingTo("0");
+  }
+
+  @Test
   void withoutASettlementSourceThePaymentCountsAsSpendingAndDoubleCounts() {
     // The control for the test above: matching is what prevents the double count.
     String token = bootstrapAdministrator();
