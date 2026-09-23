@@ -32,6 +32,8 @@ public class SecurityFieldProvenance {
   @Column(nullable = false)
   private String source;
 
+  private String confidence;
+
   public UUID getId() {
     return id;
   }
@@ -58,5 +60,13 @@ public class SecurityFieldProvenance {
 
   public void setSource(String source) {
     this.source = source;
+  }
+
+  public String getConfidence() {
+    return confidence;
+  }
+
+  public void setConfidence(String confidence) {
+    this.confidence = confidence;
   }
 }

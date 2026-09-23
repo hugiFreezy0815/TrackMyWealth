@@ -160,6 +160,11 @@ app:
     mfa-confirm:
       capacity: ${RATE_LIMIT_MFA_CONFIRM_CAPACITY:5}
       refill-period: ${RATE_LIMIT_MFA_CONFIRM_REFILL_PERIOD:1m}
+    # US-12-01: POST /api/v1/securities writes to reference data shared by every tenant. Generous
+    # for real use (a broker import adds a handful of new instruments), tight against flooding.
+    security-create:
+      capacity: ${RATE_LIMIT_SECURITY_CREATE_CAPACITY:30}
+      refill-period: ${RATE_LIMIT_SECURITY_CREATE_REFILL_PERIOD:1m}
 
 management:
   endpoints:

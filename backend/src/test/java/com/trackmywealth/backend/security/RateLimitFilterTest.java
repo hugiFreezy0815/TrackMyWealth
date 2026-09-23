@@ -65,6 +65,8 @@ class RateLimitFilterTest {
     registry.add("app.rate-limit.mfa-verify.refill-period", () -> "1m");
     registry.add("app.rate-limit.mfa-confirm.capacity", () -> String.valueOf(CAPACITY));
     registry.add("app.rate-limit.mfa-confirm.refill-period", () -> "1m");
+    registry.add("app.rate-limit.security-create.capacity", () -> String.valueOf(CAPACITY));
+    registry.add("app.rate-limit.security-create.refill-period", () -> "1m");
   }
 
   @LocalServerPort int port;
@@ -178,6 +180,28 @@ class RateLimitFilterTest {
       mfaConfirm().expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
     }
     mfaConfirm().expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+    // US-12-01: creating shared security-master rows is limited per source too. Only POST counts;
+    // a GET lookup of the same path is not throttled by this rule.
+    for (int i = 0; i < CAPACITY; i++) {
+      createSecurity().expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    createSecurity().expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    client()
+        .get()
+        .uri("/api/v1/securities?isin=IE00B4L5Y983")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  private RestTestClient.ResponseSpec createSecurity() {
+    return client()
+        .post()
+        .uri("/api/v1/securities")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body("{}")
+        .exchange();
   }
 
   private RestTestClient.ResponseSpec mfaVerify() {

@@ -15,7 +15,11 @@ import com.trackmywealth.backend.repository.SecurityFieldProvenanceRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -47,6 +51,8 @@ public class SecurityService {
   private static final String SYNTHETIC_PREFIX = "MANUAL-";
   private static final String EQUITY = "EQUITY";
   private static final String ACTIVE = "ACTIVE";
+  private static final String DERIVED = "DERIVED";
+  private static final int ACCESS_CHECK_BATCH = 20;
 
   private final SecurityRepository securityRepository;
   private final SecurityAssetClassWeightRepository weightRepository;
@@ -79,51 +85,131 @@ public class SecurityService {
   }
 
   /**
+   * Read-only lookup by id - the only way to find a security that has no ISIN again. The id is an
+   * unguessable UUID and there is deliberately no search or listing of the shared master, so a
+   * hand-entered private holding is not discoverable by another workspace (NFR-LIC-007).
+   */
+  @Transactional(readOnly = true)
+  public SecurityResponse get(UUID id, AuthenticatedUserPrincipal actor) {
+    accessControlService.requireActingMember(actor);
+    return securityRepository
+        .findById(id)
+        .map(this::toResponse)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+  }
+
+  /**
    * Returns the record for the request's ISIN, creating it only if none exists. Without an ISIN a
-   * new record is always created under a generated synthetic key. Safe under concurrent creation of
-   * the same ISIN: exactly one row results (see {@code SecurityRepository#insertIfAbsent}).
+   * new record is created under a generated synthetic key - or, when the request carries an {@code
+   * idempotencyKey}, under a key derived from it and the caller's workspace, so a retry finds the
+   * record instead of adding a duplicate. Safe under concurrent creation: exactly one row results
+   * (see {@code SecurityRepository#insertIfAbsent}).
    */
   @Transactional
   public SecurityCreation findOrCreate(
       CreateSecurityRequest request, AuthenticatedUserPrincipal actor) {
     requireMayCreate(actor);
+    if (request.isin() != null && request.idempotencyKey() != null) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          "idempotencyKey is only for a security without an ISIN; the ISIN already is its identity.");
+    }
 
     UUID id = UUID.randomUUID();
-    String syntheticKey = request.isin() == null ? SYNTHETIC_PREFIX + id : null;
+    String syntheticKey = request.isin() == null ? syntheticKeyFor(request, actor, id) : null;
     int inserted =
         securityRepository.insertIfAbsent(
             id,
             request.isin(),
             syntheticKey,
-            request.displayName(),
+            request.legalName() == null ? request.displayName() : request.legalName(),
             request.displayName(),
             request.instrumentType(),
             request.securityCountry(),
             request.issuerCountry(),
             request.denominationCurrency());
     if (inserted == 0) {
-      // Lost the race to (or simply repeats) an existing record: it wins, unchanged.
-      Security existing = securityRepository.findByIsin(request.isin()).orElseThrow();
-      return new SecurityCreation(toResponse(existing), false);
+      // Lost the race to (or simply repeats) an existing record: it wins, unchanged. Only an ISIN
+      // or an idempotency-derived key can conflict, so exactly one of the two lookups applies.
+      Security existing =
+          (request.isin() != null
+                  ? securityRepository.findByIsin(request.isin())
+                  : securityRepository.findBySyntheticKey(syntheticKey))
+              .orElseThrow();
+      SecurityResponse response = toResponse(existing);
+      return new SecurityCreation(response, false, ignoredFields(request, response));
     }
 
     recordAssetClass(id, request.assetClass());
     recordProvenance(id, request);
     Security created = securityRepository.findById(id).orElseThrow();
-    return new SecurityCreation(toResponse(created), true);
+    return new SecurityCreation(toResponse(created), true, List.of());
   }
 
+  // A one-way hash of (workspace, key): stable for a retry, different for every workspace, and it
+  // reveals neither the key nor the workspace (NFR-LIC-007). Without a key, a fresh random key.
+  private static String syntheticKeyFor(
+      CreateSecurityRequest request, AuthenticatedUserPrincipal actor, UUID freshId) {
+    if (request.idempotencyKey() == null) {
+      return SYNTHETIC_PREFIX + freshId;
+    }
+    try {
+      byte[] digest =
+          MessageDigest.getInstance("SHA-256")
+              .digest(
+                  (actor.workspaceId() + ":" + request.idempotencyKey())
+                      .getBytes(StandardCharsets.UTF_8));
+      return SYNTHETIC_PREFIX + HexFormat.of().formatHex(digest);
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 is required by every Java platform", e);
+    }
+  }
+
+  // The fields the caller supplied that differ from what is stored. Optional fields the caller
+  // left out are not a difference.
+  private static List<String> ignoredFields(
+      CreateSecurityRequest request, SecurityResponse existing) {
+    List<String> ignored = new ArrayList<>();
+    addIfDiffers(ignored, "displayName", request.displayName(), existing.displayName());
+    addIfDiffers(
+        ignored,
+        "denominationCurrency",
+        request.denominationCurrency(),
+        existing.denominationCurrency());
+    addIfDiffers(ignored, "instrumentType", request.instrumentType(), existing.instrumentType());
+    addIfDiffers(ignored, "assetClass", request.assetClass(), existing.assetClass());
+    addIfDiffers(ignored, "securityCountry", request.securityCountry(), existing.securityCountry());
+    addIfDiffers(ignored, "issuerCountry", request.issuerCountry(), existing.issuerCountry());
+    addIfDiffers(ignored, "legalName", request.legalName(), existing.legalName());
+    return ignored;
+  }
+
+  private static void addIfDiffers(
+      List<String> ignored, String field, String supplied, String stored) {
+    if (supplied != null && !supplied.equals(stored)) {
+      ignored.add(field);
+    }
+  }
+
+  // Stops at the first batch containing an account the member may edit, so a member with many
+  // accounts does not pay for evaluating every one of them. Batches (not one call per account)
+  // keep AccessControlService's bulk sole-member optimisation.
   private void requireMayCreate(AuthenticatedUserPrincipal actor) {
     UUID memberId = accessControlService.requireActingMember(actor);
     List<Account> accounts =
         accountRepository.findByWorkspaceIdAndStatusOrderByCreatedAtAsc(
             actor.workspaceId(), ACTIVE);
-    if (accessControlService
-        .accountsWithAccess(memberId, accounts, AccessLevelValues.EDIT)
-        .isEmpty()) {
-      // Same 404 as every other denial (FR-TEN-006): no hint of what exists.
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found.");
+    for (int from = 0; from < accounts.size(); from += ACCESS_CHECK_BATCH) {
+      List<Account> batch =
+          accounts.subList(from, Math.min(from + ACCESS_CHECK_BATCH, accounts.size()));
+      if (!accessControlService
+          .accountsWithAccess(memberId, batch, AccessLevelValues.EDIT)
+          .isEmpty()) {
+        return;
+      }
     }
+    // Same 404 as every other denial (FR-TEN-006): no hint of what exists.
+    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found.");
   }
 
   private void recordAssetClass(UUID securityId, String assetClass) {
@@ -149,13 +235,24 @@ public class SecurityService {
     if (request.issuerCountry() != null) {
       fields.add("issuerCountry");
     }
+    List<SecurityFieldProvenance> rows = new ArrayList<>();
     for (String field : fields) {
-      SecurityFieldProvenance provenance = new SecurityFieldProvenance();
-      provenance.setSecurityId(securityId);
-      provenance.setFieldName(field);
-      provenance.setSource(MANUAL);
-      provenanceRepository.save(provenance);
+      rows.add(provenance(securityId, field, null));
     }
+    // A legal name the caller did not give is the display name standing in for it - recorded as
+    // such, so nothing downstream mistakes it for an authoritative legal name.
+    rows.add(provenance(securityId, "legalName", request.legalName() == null ? DERIVED : null));
+    provenanceRepository.saveAll(rows);
+  }
+
+  private static SecurityFieldProvenance provenance(
+      UUID securityId, String field, String confidence) {
+    SecurityFieldProvenance row = new SecurityFieldProvenance();
+    row.setSecurityId(securityId);
+    row.setFieldName(field);
+    row.setSource(MANUAL);
+    row.setConfidence(confidence);
+    return row;
   }
 
   private SecurityResponse toResponse(Security security) {

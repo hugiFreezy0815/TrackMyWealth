@@ -24,7 +24,8 @@ public record RateLimitProperties(
     Rule setup,
     Rule sessionRevoke,
     Rule mfaVerify,
-    Rule mfaConfirm) {
+    Rule mfaConfirm,
+    Rule securityCreate) {
 
   public record Rule(int capacity, Duration refillPeriod) {}
 }

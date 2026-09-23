@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.trackmywealth.backend.config.RateLimitProperties;
 import com.trackmywealth.backend.controller.AuthController;
 import com.trackmywealth.backend.controller.MfaController;
+import com.trackmywealth.backend.controller.SecurityController;
 import com.trackmywealth.backend.controller.SessionController;
 import com.trackmywealth.backend.controller.SetupController;
 import io.github.bucket4j.Bandwidth;
@@ -107,7 +108,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
   // The divisor perRuleMaxBuckets below splits app.rate-limit.max-buckets across - keep in sync
   // with the number of *Rule fields/newRule(...) calls in the constructor.
-  private static final int RULE_COUNT = 6;
+  private static final int RULE_COUNT = 7;
 
   private final boolean enabled;
   private final Rule loginRule;
@@ -116,6 +117,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
   private final Rule sessionRevokeRule;
   private final Rule mfaVerifyRule;
   private final Rule mfaConfirmRule;
+  private final Rule securityCreateRule;
 
   public RateLimitFilter(RateLimitProperties properties) {
     this.enabled = properties.enabled();
@@ -129,6 +131,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
         newRule("sessionRevoke", properties.sessionRevoke(), perRuleMaxBuckets);
     this.mfaVerifyRule = newRule("mfaVerify", properties.mfaVerify(), perRuleMaxBuckets);
     this.mfaConfirmRule = newRule("mfaConfirm", properties.mfaConfirm(), perRuleMaxBuckets);
+    this.securityCreateRule =
+        newRule("securityCreate", properties.securityCreate(), perRuleMaxBuckets);
   }
 
   private static Rule newRule(String name, RateLimitProperties.Rule config, int maxBuckets) {
@@ -193,6 +197,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
     if (MfaController.CONFIRM_PATH.equals(path)) {
       return Optional.of(mfaConfirmRule);
+    }
+    // US-12-01: every insert into the shared security master is visible to every tenant, so an
+    // authenticated member must not be able to flood it. Like the rules above, keyed by source.
+    if (SecurityController.BASE_PATH.equals(path)) {
+      return Optional.of(securityCreateRule);
     }
     return Optional.empty();
   }

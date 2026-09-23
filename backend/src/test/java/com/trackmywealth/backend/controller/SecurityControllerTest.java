@@ -161,7 +161,9 @@ class SecurityControllerTest {
                     "BOND",
                     "FIXED_INCOME",
                     "CH",
-                    "CH"))
+                    "CH",
+                    null,
+                    null))
             .expectStatus()
             .isOk()
             .expectBody(SecurityResponse.class)
@@ -222,7 +224,7 @@ class SecurityControllerTest {
     assertThat(count("security")).isEqualTo(1);
     assertThat(count("security_asset_class_weight")).isEqualTo(1);
     assertThat(count("security_field_provenance"))
-        .isEqualTo(7); // isin + the six other supplied fields
+        .isEqualTo(8); // isin, the six other supplied fields and the derived legalName
   }
 
   // --- Manual record, provenance, completeness --------------------------------------------
@@ -232,7 +234,7 @@ class SecurityControllerTest {
     String token = adminWithAccount();
     CreateSecurityRequest request =
         new CreateSecurityRequest(
-            null, "Private Loan Note", "CHF", "OTHER", "ALTERNATIVES", null, null);
+            null, "Private Loan Note", "CHF", "OTHER", "ALTERNATIVES", null, null, null, null);
 
     SecurityResponse first =
         post(token, request)
@@ -302,7 +304,7 @@ class SecurityControllerTest {
         post(
                 token,
                 new CreateSecurityRequest(
-                    EQUITY_ISIN, "Apple", "USD", "EQUITY", "EQUITY", null, null))
+                    EQUITY_ISIN, "Apple", "USD", "EQUITY", "EQUITY", null, null, null, null))
             .expectStatus()
             .isCreated()
             .expectBody(SecurityResponse.class)
@@ -317,7 +319,8 @@ class SecurityControllerTest {
     SecurityResponse etf =
         post(
                 token,
-                new CreateSecurityRequest(ETF_ISIN, "iShares", "USD", "ETF", "EQUITY", "IE", "IE"))
+                new CreateSecurityRequest(
+                    ETF_ISIN, "iShares", "USD", "ETF", "EQUITY", "IE", "IE", null, null))
             .expectStatus()
             .isCreated()
             .expectBody(SecurityResponse.class)
@@ -343,19 +346,34 @@ class SecurityControllerTest {
   void requiredFieldsAndKnownValuesAreEnforced() {
     String token = adminWithAccount();
 
-    post(token, new CreateSecurityRequest(ETF_ISIN, " ", "USD", "ETF", "EQUITY", null, null))
+    post(
+            token,
+            new CreateSecurityRequest(
+                ETF_ISIN, " ", "USD", "ETF", "EQUITY", null, null, null, null))
         .expectStatus()
         .isBadRequest();
-    post(token, new CreateSecurityRequest(ETF_ISIN, "X", "ZZZ", "ETF", "EQUITY", null, null))
+    post(
+            token,
+            new CreateSecurityRequest(
+                ETF_ISIN, "X", "ZZZ", "ETF", "EQUITY", null, null, null, null))
         .expectStatus()
         .isBadRequest();
-    post(token, new CreateSecurityRequest(ETF_ISIN, "X", "USD", "WIDGET", "EQUITY", null, null))
+    post(
+            token,
+            new CreateSecurityRequest(
+                ETF_ISIN, "X", "USD", "WIDGET", "EQUITY", null, null, null, null))
         .expectStatus()
         .isBadRequest();
-    post(token, new CreateSecurityRequest(ETF_ISIN, "X", "USD", "ETF", "STAMPS", null, null))
+    post(
+            token,
+            new CreateSecurityRequest(
+                ETF_ISIN, "X", "USD", "ETF", "STAMPS", null, null, null, null))
         .expectStatus()
         .isBadRequest();
-    post(token, new CreateSecurityRequest(ETF_ISIN, "X", "USD", "ETF", "EQUITY", "ch", null))
+    post(
+            token,
+            new CreateSecurityRequest(
+                ETF_ISIN, "X", "USD", "ETF", "EQUITY", "ch", null, null, null))
         .expectStatus()
         .isBadRequest();
     assertThat(count("security")).isZero();
@@ -409,6 +427,237 @@ class SecurityControllerTest {
     post(memberToken, etf(EQUITY_ISIN, "Apple")).expectStatus().isCreated();
   }
 
+  // --- Review fixes: findability, idempotency, ignored values, legal name, DB backstop -------
+
+  @Test
+  void aSecurityWithoutAnIsinCanBeFoundAgainById() {
+    String token = adminWithAccount();
+    SecurityResponse created =
+        post(token, manual("Private Loan Note", null))
+            .expectStatus()
+            .isCreated()
+            .expectBody(SecurityResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    client(token)
+        .get()
+        .uri("/api/v1/securities/" + created.id())
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(SecurityResponse.class)
+        .value(found -> assertThat(found).isEqualTo(created));
+    client(token)
+        .get()
+        .uri("/api/v1/securities/" + UUID.randomUUID())
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    anonymousClient()
+        .get()
+        .uri("/api/v1/securities/" + created.id())
+        .exchange()
+        .expectStatus()
+        .isUnauthorized();
+  }
+
+  @Test
+  void retryingAnIsinlessCreateWithTheSameIdempotencyKeyReturnsTheOriginal() {
+    String token = adminWithAccount();
+
+    SecurityResponse first =
+        post(token, manual("Private Loan Note", "retry-1"))
+            .expectStatus()
+            .isCreated()
+            .expectBody(SecurityResponse.class)
+            .returnResult()
+            .getResponseBody();
+    SecurityResponse retry =
+        post(token, manual("Private Loan Note", "retry-1"))
+            .expectStatus()
+            .isOk()
+            .expectHeader()
+            .doesNotExist("X-Security-Ignored-Fields")
+            .expectBody(SecurityResponse.class)
+            .returnResult()
+            .getResponseBody();
+    SecurityResponse other =
+        post(token, manual("Private Loan Note", "retry-2"))
+            .expectStatus()
+            .isCreated()
+            .expectBody(SecurityResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(retry).isEqualTo(first);
+    assertThat(other.id()).isNotEqualTo(first.id());
+    assertThat(count("security")).isEqualTo(2);
+    // The key itself is not recoverable from the stored synthetic key.
+    assertThat(first.syntheticKey()).startsWith("MANUAL-").doesNotContain("retry-1");
+  }
+
+  @Test
+  void theSameIdempotencyKeyInAnotherWorkspaceIsADifferentSecurity() throws Exception {
+    adminWithAccount();
+    AuthenticatedUserPrincipal a = principalOfExistingWorkspace();
+    AuthenticatedUserPrincipal b = seedSecondWorkspaceWithAccount();
+    CreateSecurityRequest request = manual("Private Loan Note", "same-key");
+
+    SecurityCreation fromA = createAs(a, request, new CountDownLatch(0));
+    SecurityCreation fromB = createAs(b, request, new CountDownLatch(0));
+
+    assertThat(fromA.created()).isTrue();
+    assertThat(fromB.created()).isTrue(); // not a replay of A's record
+    assertThat(fromB.security().id()).isNotEqualTo(fromA.security().id());
+    assertThat(count("security")).isEqualTo(2);
+  }
+
+  @Test
+  void anIdempotencyKeyTogetherWithAnIsinIsRejected() {
+    String token = adminWithAccount();
+
+    post(
+            token,
+            new CreateSecurityRequest(
+                ETF_ISIN, "iShares", "USD", "ETF", "EQUITY", null, null, null, "key"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThat(count("security")).isZero();
+  }
+
+  @Test
+  void suppliedValuesThatDifferFromTheStoredRecordAreNamedInAHeader() {
+    String token = adminWithAccount();
+    post(token, etf(ETF_ISIN, "iShares Core MSCI World")).expectStatus().isCreated();
+
+    // Identical values: nothing ignored, so no header.
+    post(token, etf(ETF_ISIN, "iShares Core MSCI World"))
+        .expectStatus()
+        .isOk()
+        .expectHeader()
+        .doesNotExist("X-Security-Ignored-Fields");
+
+    // Different currency and type; omitted optional fields are not differences.
+    post(
+            token,
+            new CreateSecurityRequest(
+                ETF_ISIN,
+                "iShares Core MSCI World",
+                "CHF",
+                "BOND",
+                "EQUITY",
+                null,
+                null,
+                null,
+                null))
+        .expectStatus()
+        .isOk()
+        .expectHeader()
+        .valueEquals("X-Security-Ignored-Fields", "denominationCurrency,instrumentType");
+    assertThat(count("security")).isEqualTo(1);
+  }
+
+  @Test
+  void aLegalNameThatWasNotGivenIsMarkedDerivedAndAGivenOneIsNot() throws Exception {
+    String token = adminWithAccount();
+
+    SecurityResponse defaulted =
+        post(token, etf(ETF_ISIN, "iShares"))
+            .expectStatus()
+            .isCreated()
+            .expectBody(SecurityResponse.class)
+            .returnResult()
+            .getResponseBody();
+    SecurityResponse given =
+        post(
+                token,
+                new CreateSecurityRequest(
+                    EQUITY_ISIN,
+                    "Apple",
+                    "USD",
+                    "EQUITY",
+                    "EQUITY",
+                    "US",
+                    "US",
+                    "Apple Inc.",
+                    null))
+            .expectStatus()
+            .isCreated()
+            .expectBody(SecurityResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(defaulted.legalName()).isEqualTo("iShares");
+    assertThat(given.legalName()).isEqualTo("Apple Inc.");
+    assertThat(legalNameConfidence(defaulted.id())).isEqualTo("DERIVED");
+    assertThat(legalNameConfidence(given.id())).isNull();
+  }
+
+  @Test
+  void theDatabaseRejectsAnInstrumentTypeTheApiWouldNot() throws Exception {
+    // V32: the CHECK is the backstop for every writer other than the endpoint.
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO security (isin, legal_name, display_name, denomination_currency,"
+                    + " instrument_type) VALUES ('IE00B4L5Y983', 'x', 'x', 'USD', 'WIDGET')")) {
+      assertThat(org.assertj.core.api.Assertions.catchThrowable(statement::executeUpdate))
+          .hasMessageContaining("security_instrument_type_check");
+    }
+  }
+
+  @Test
+  void aMemberWhoMayEditOnlyTheLastOfManyAccountsMayStillCreate() {
+    // More accounts than one access-check batch, with EDIT only on the newest: proves the early
+    // exit still looks past the first batch.
+    String adminToken = adminWithAccount();
+    for (int i = 0; i < 24; i++) {
+      createCash(adminToken, "Cash " + i);
+    }
+    AccountSummaryResponse last = createCash(adminToken, "Last");
+    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    String memberToken = login("member@example.com");
+    post(memberToken, etf(ETF_ISIN, "iShares")).expectStatus().isNotFound();
+
+    grantOnAccount(adminToken, memberId, last.id(), AccessLevelValues.EDIT);
+    post(memberToken, etf(ETF_ISIN, "iShares")).expectStatus().isCreated();
+  }
+
+  private String legalNameConfidence(UUID securityId) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT confidence FROM security_field_provenance WHERE security_id = ? AND"
+                    + " field_name = 'legalName'")) {
+      statement.setObject(1, securityId);
+      try (ResultSet rs = statement.executeQuery()) {
+        assertThat(rs.next()).isTrue();
+        return rs.getString(1);
+      }
+    }
+  }
+
+  private static CreateSecurityRequest manual(String name, String idempotencyKey) {
+    return new CreateSecurityRequest(
+        null, name, "CHF", "OTHER", "ALTERNATIVES", null, null, null, idempotencyKey);
+  }
+
+  private AccountSummaryResponse createCash(String token, String name) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateAccountRequest(null, name, "CASH", "CHF", null, null, null, null, null, null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
   // --- helpers ------------------------------------------------------------------------------
 
   private SecurityCreation createAs(
@@ -425,7 +674,7 @@ class SecurityControllerTest {
   }
 
   private static CreateSecurityRequest etf(String isin, String name) {
-    return new CreateSecurityRequest(isin, name, "USD", "ETF", "EQUITY", "IE", "IE");
+    return new CreateSecurityRequest(isin, name, "USD", "ETF", "EQUITY", "IE", "IE", null, null);
   }
 
   private int count(String table) {
