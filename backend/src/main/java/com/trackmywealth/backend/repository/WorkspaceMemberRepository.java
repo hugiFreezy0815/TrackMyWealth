@@ -23,7 +23,8 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
   //
   // #122: an account has account_ownership as a second, permanent bootstrap fallback once this
   // rule stops applying - an institution/the workspace itself has neither, which is what #122's own
-  // (narrow, role-based) SharingGrantService#isBootstrapping exception exists to close.
+  // (narrow, role-based) SharingGrantService#tryBootstrapInstitution/#tryBootstrapWorkspace
+  // exception exists to close.
   long countByWorkspaceIdAndStatusAndDependentFalse(UUID workspaceId, String status);
 
   // US-03-04/FR-HHL-015: locks the target row plus every other currently-ACTIVE member of the

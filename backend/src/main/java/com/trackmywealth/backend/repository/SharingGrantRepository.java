@@ -43,7 +43,8 @@ public interface SharingGrantRepository extends JpaRepository<SharingGrant, UUID
       @Param("accountId") UUID accountId,
       @Param("institutionId") UUID institutionId);
 
-  // #122's SYSTEM_ADMINISTRATOR-bootstrap exception (SharingGrantService#isBootstrapping): whether
+  // #122's SYSTEM_ADMINISTRATOR-bootstrap exception (SharingGrantService#tryBootstrapInstitution/
+  // #tryBootstrapWorkspace): whether
   // this scope already has a non-revoked grant at all, regardless of who it was granted to or by.
   // Re-checked on every grant() call, not cached/flagged - if every grant of a scope is later
   // revoked, these both answer false again and the exception re-arms, so the scope can never
