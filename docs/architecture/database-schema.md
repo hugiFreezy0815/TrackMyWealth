@@ -136,6 +136,31 @@ automated cross-tenant test suite that attempts unauthorized access against ever
 entity type in CI; write it against that runtime role, not the migration role, or it will pass
 for the wrong reason (superusers bypass RLS unconditionally).
 
+### Security master: lazy creation and manual mode (US-12-01)
+
+`security` is created only when a workspace first references an instrument (FR-SMD-001) and is
+shared afterwards (FR-SMD-004). `POST /api/v1/securities` finds or creates by ISIN;
+`GET /api/v1/securities?isin=` looks up without ever writing (FR-SMD-007). Rules that follow from
+the table being global, unscoped data:
+
+- **Existing wins.** A second caller supplying a different name, currency or type for a known ISIN
+  gets the existing row back unchanged. Shared rows are never edited by a caller; a
+  workspace-specific change is an override (`workspace_security_override`, US-12-04).
+- **No tenant traces.** Neither the row nor its `security_field_provenance` names the workspace or
+  user that caused it to exist; a hand-entered value has source `MANUAL` (NFR-LIC-007).
+- **Race-safe.** Creation is `INSERT ... ON CONFLICT (isin) DO NOTHING`, so two workspaces
+  creating the same new ISIN at once yield one row (a caught unique violation would abort the
+  PostgreSQL transaction).
+- **Who may create.** EDIT on at least one active account in the caller's workspace.
+- **Manual mode is the supported baseline** (NFR-LIC-004/008, NFR-CON-004): no external
+  reference-data provider is configured (OPEN-005), so a record is entered by hand (name,
+  denomination currency, instrument type, asset class; ISIN optional and check-digit validated,
+  else a generated `MANUAL-<uuid>` synthetic key). The asset class is stored as one 100%
+  `security_asset_class_weight` row flagged estimated. Downstream code cannot tell such a record
+  from a provider-fed one.
+- **Completeness (FR-SMD-011).** The response lists the analysis-relevant fields still missing
+  (`securityCountry`, `issuerCountry`, and `gicsSubIndustry` for equity instruments).
+
 ## 5. Time-series data and partitioning
 
 `price`, `fx_rate` and `daily_valuation` are the volume-dominant tables (DB-02, NFR-TEC-003) and
