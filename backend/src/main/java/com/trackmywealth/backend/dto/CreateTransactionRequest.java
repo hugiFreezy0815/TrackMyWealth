@@ -17,10 +17,11 @@ import java.time.LocalDate;
  * The API does not silently flip a sign, so what the caller sends is what the ledger records.
  * {@code TransactionService} rejects a non-negative amount for a purchase.
  *
- * <p>Only {@code CREDIT_CARD_PURCHASE} is accepted so far - the wider set of ledger types belongs
- * to US-07-01, which widens this request rather than replacing it, so {@code transactionType} is
- * validated in the service (where the account is known) rather than pinned by a pattern here.
- * {@code mcc} is the ISO 18245 Merchant Category Code, four digits (FR-CC-002).
+ * <p>Which {@code transactionType}s are accepted depends on the account (a credit card takes only
+ * its own two, see {@code TransactionService}), so it is validated in the service, where the
+ * account is known, rather than pinned by a pattern here. US-07-01 widened the set to the cash
+ * types; investment types follow with the security master. {@code mcc} is the ISO 18245 Merchant
+ * Category Code, four digits (FR-CC-002).
  *
  * <p>{@code externalId} is an optional client-generated idempotency key (a UUID is ideal), stored
  * in {@code transaction.external_id} under source {@code MANUAL}. The ledger is append-only, so a
@@ -32,10 +33,10 @@ import java.time.LocalDate;
  * <p>Every optional {@code String} field is normalized blank-to-{@code null} in the compact
  * constructor via {@link RequestStrings#blankToNull}.
  *
- * <p><b>US-09-04/FR-CC-010</b>: {@code currency} may differ from a {@code CREDIT_CARD_PURCHASE}'s
- * card's {@code billing_currency} - every other type/account still requires an exact match. The
- * three fields below are meaningful only for such a foreign-currency card purchase and are rejected
- * (422) otherwise:
+ * <p><b>US-09-04/FR-CC-010, US-07-01/DM-06</b>: {@code currency} may differ from the account's own
+ * (a card's {@code billing_currency}) for a card purchase or a cash type - a {@code SETTLEMENT}
+ * still requires an exact match. The fields below are meaningful only for such a foreign-currency
+ * entry and are rejected (422) otherwise; {@code feeAmount} applies to a card purchase only:
  *
  * <ul>
  *   <li>{@code fxRateToAccountCurrency} - the issuer's applied rate, when the source discloses it
