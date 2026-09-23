@@ -28,8 +28,14 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.IntStream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -576,6 +582,110 @@ class SharingGrantControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void aDifferentSystemAdministratorCannotRevokeAGrantTheyDidNotCreate() {
+    // #139 review fix: the bootstrap-revoke exception is scoped to the SYSTEM_ADMINISTRATOR who
+    // granted this specific row, not "any SYSTEM_ADMINISTRATOR may strip a scope's last standing
+    // grant" - a second administrator in the same workspace, uninvolved in creating Bob's grant,
+    // has no more standing to revoke it than a STANDARD_USER would.
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    SharingGrantResponse grant =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId,
+                ScopeTypeValues.INSTITUTION,
+                null,
+                institution.id(),
+                AccessLevelValues.BALANCE_ONLY));
+    String secondAdminToken = createSecondAdministrator(adminToken, "otheradmin@example.com");
+
+    client(secondAdminToken)
+        .post()
+        .uri("/api/v1/sharing-grants/" + grant.id() + "/revoke")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void concurrentBootstrapAttemptsForTheSameInstitutionOnlyOneSucceeds() {
+    // #139 review fix: without the institution-row lock, two concurrent grant() calls could both
+    // observe "no existing grant" and both bypass the FULL-access requirement. With it, exactly one
+    // wins the bootstrap and every other racing call falls through to the ordinary FULL-access
+    // check - which the admin does not hold (they only ever bootstrap *other* members, never
+    // themselves), so it deterministically fails, not just "usually" fails.
+    String adminToken = bootstrapAdministrator();
+    FinancialInstitutionSummaryResponse institution = createInstitution(adminToken);
+    int racers = 8;
+    List<UUID> memberIds =
+        IntStream.range(0, racers)
+            .mapToObj(i -> createSecondMember(adminToken, "racer" + i + "@example.com"))
+            .toList();
+
+    ExecutorService pool = Executors.newFixedThreadPool(racers);
+    try {
+      CountDownLatch start = new CountDownLatch(1);
+      List<Future<Integer>> statuses = new ArrayList<>();
+      for (UUID memberId : memberIds) {
+        statuses.add(
+            pool.submit(
+                () -> {
+                  start.await();
+                  return client(adminToken)
+                      .post()
+                      .uri("/api/v1/sharing-grants")
+                      .contentType(MediaType.APPLICATION_JSON)
+                      .body(
+                          new CreateSharingGrantRequest(
+                              memberId,
+                              ScopeTypeValues.INSTITUTION,
+                              null,
+                              institution.id(),
+                              AccessLevelValues.BALANCE_ONLY))
+                      .exchange()
+                      .returnResult(String.class)
+                      .getStatus()
+                      .value();
+                }));
+      }
+      start.countDown();
+      long created = 0;
+      long denied = 0;
+      for (Future<Integer> status : statuses) {
+        int code = status.get();
+        if (code == HttpStatus.CREATED.value()) {
+          created++;
+        } else if (code == HttpStatus.NOT_FOUND.value()) {
+          denied++;
+        }
+      }
+      assertThat(created).as("exactly one racer should win the bootstrap").isEqualTo(1);
+      assertThat(denied)
+          .as("every other racer needs FULL access, which the admin lacks")
+          .isEqualTo(racers - 1);
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    } finally {
+      pool.shutdownNow();
+    }
+  }
+
+  private String createSecondAdministrator(String adminToken, String email) {
+    client(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new CreateUserRequest(email, PASSWORD, "SYSTEM_ADMINISTRATOR", "EN"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(UserSummaryResponse.class);
+    return login(email, PASSWORD);
   }
 
   private RestTestClient.ResponseSpec getSummary(String token, UUID institutionId) {

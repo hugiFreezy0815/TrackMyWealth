@@ -9,8 +9,10 @@ import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.entity.SharingGrant;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.entity.WorkspaceMember;
+import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.SharingGrantRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
+import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -50,12 +52,12 @@ import org.springframework.web.server.ResponseStatusException;
  * ownership fallback - so once a second active member exists, the sole-active-member rule stops
  * applying and "can't share what you can't fully see" becomes permanently unsatisfiable for {@code
  * INSTITUTION}/{@code WORKSPACE} scope: no one, including the admin who created the institution,
- * could ever hold {@code FULL} access to grant from. {@link #isBootstrapping} is the fix: the
- * workspace's {@code SYSTEM_ADMINISTRATOR} may create the <em>first</em> non-revoked grant of an
- * {@code INSTITUTION}/{@code WORKSPACE} scope that currently has none, without needing {@code FULL}
- * access first. This is a deliberately narrow exception to RULE-018/FR-USR-010/FR-TEN-007 (role
- * confers administration rights only, never financial-data access - see {@code AppUser}'s own
- * Javadoc, and contrast {@code
+ * could ever hold {@code FULL} access to grant from. {@link #tryBootstrapInstitution}/{@link
+ * #tryBootstrapWorkspace} are the fix: the workspace's {@code SYSTEM_ADMINISTRATOR} may create the
+ * <em>first</em> non-revoked grant of an {@code INSTITUTION}/{@code WORKSPACE} scope that currently
+ * has none, without needing {@code FULL} access first. This is a deliberately narrow exception to
+ * RULE-018/FR-USR-010/FR-TEN-007 (role confers administration rights only, never financial-data
+ * access - see {@code AppUser}'s own Javadoc, and contrast {@code
  * WorkspaceMemberRepository#countByWorkspaceIdAndStatusAndDependentFalse}'s comment on why the
  * *sole-member* bootstrap is deliberately structural, not role-based, for exactly this reason): the
  * role only ever unlocks creating that one grant, never any financial-data access of its own, and
@@ -64,12 +66,25 @@ import org.springframework.web.server.ResponseStatusException;
  * re-enter #122's original locked-out state.
  *
  * <p>{@link #revoke} gets the symmetric counterpart, {@link #isSoleRemainingGrant}: a {@code
- * SYSTEM_ADMINISTRATOR} may revoke a scope's <em>sole</em> non-revoked grant without {@code FULL}
- * access either. Without this, a bootstrap grant made to someone other than the administrator
- * themselves (the ordinary case - bootstrapping is usually done *for* a second member, not for
- * oneself) would be permanent: the administrator granted it without ever holding {@code FULL}
- * access themselves, so they could never revoke a mistake, and no one else could either (they are,
- * by construction, the only one with any standing on that scope at all).
+ * SYSTEM_ADMINISTRATOR} may revoke a scope's <em>sole</em> non-revoked grant, <b>if they are the
+ * one who granted it</b>, without {@code FULL} access either. Without this, a bootstrap grant made
+ * to someone other than the administrator themselves (the ordinary case - bootstrapping is usually
+ * done *for* a second member, not for oneself) would be permanent: the administrator granted it
+ * without ever holding {@code FULL} access themselves, so they could never revoke a mistake, and no
+ * one else could either (they are, by construction, the only one with any standing on that scope at
+ * all). The "granted it themselves" check (added on review, #139) is what keeps this from becoming
+ * "any {@code SYSTEM_ADMINISTRATOR} may strip a scope's last standing grant regardless of who
+ * created it or how" - a different administrator, or a grant that reached "sole remaining" through
+ * ordinary revocation of its siblings rather than ever being a bootstrap grant, still needs {@code
+ * FULL} access like anything else.
+ *
+ * <p>Both bootstrap checks lock the scope's own row ({@code FinancialInstitutionRepository}/{@code
+ * WorkspaceRepository} {@code findByIdForUpdate}, added on review, #139) before checking whether a
+ * non-revoked grant already exists: without it, two concurrent {@link #grant} calls for the same
+ * scope could each observe "none exist yet" and both bypass {@link #requireFullAccessToScope} - the
+ * same class of check-then-act race {@link #revoke}'s own grant-row lock already closes for itself.
+ * The role check runs before either the lock or the existence query (also #139), so the common
+ * non-{@code SYSTEM_ADMINISTRATOR} caller pays for neither.
  */
 @Service
 public class SharingGrantService {
@@ -84,6 +99,8 @@ public class SharingGrantService {
   private final InstitutionLookupService institutionLookupService;
   private final WorkspaceMemberRepository workspaceMemberRepository;
   private final SharingGrantRepository sharingGrantRepository;
+  private final FinancialInstitutionRepository financialInstitutionRepository;
+  private final WorkspaceRepository workspaceRepository;
 
   public SharingGrantService(
       WorkspaceAccessService workspaceAccessService,
@@ -91,13 +108,17 @@ public class SharingGrantService {
       AccountLookupService accountLookupService,
       InstitutionLookupService institutionLookupService,
       WorkspaceMemberRepository workspaceMemberRepository,
-      SharingGrantRepository sharingGrantRepository) {
+      SharingGrantRepository sharingGrantRepository,
+      FinancialInstitutionRepository financialInstitutionRepository,
+      WorkspaceRepository workspaceRepository) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.accountLookupService = accountLookupService;
     this.institutionLookupService = institutionLookupService;
     this.workspaceMemberRepository = workspaceMemberRepository;
     this.sharingGrantRepository = sharingGrantRepository;
+    this.financialInstitutionRepository = financialInstitutionRepository;
+    this.workspaceRepository = workspaceRepository;
   }
 
   @Transactional
@@ -127,24 +148,14 @@ public class SharingGrantService {
       case ScopeTypeValues.INSTITUTION -> {
         FinancialInstitution institution =
             institutionLookupService.findInstitutionOrThrow(request.scopeInstitutionId());
-        boolean bootstrapping =
-            isBootstrapping(
-                actor,
-                sharingGrantRepository.existsByScopeInstitutionIdAndRevokedAtIsNull(
-                    institution.getId()));
-        if (!bootstrapping) {
+        if (!tryBootstrapInstitution(actor, institution.getId())) {
           requireFullAccessToScope(
               granterMemberId, ScopeTypeValues.INSTITUTION, null, institution, null);
         }
         grant.setScopeInstitution(institution);
       }
       case ScopeTypeValues.WORKSPACE -> {
-        boolean bootstrapping =
-            isBootstrapping(
-                actor,
-                sharingGrantRepository.existsByScopeTypeAndRevokedAtIsNull(
-                    ScopeTypeValues.WORKSPACE));
-        if (!bootstrapping) {
+        if (!tryBootstrapWorkspace(actor)) {
           requireFullAccessToScope(
               granterMemberId, ScopeTypeValues.WORKSPACE, null, null, actor.workspaceId());
         }
@@ -170,14 +181,16 @@ public class SharingGrantService {
             .orElseThrow(
                 () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Grant not found."));
 
+    UUID actingMemberId = accessControlService.requireActingMember(actor);
+
     // Revoking requires the same FULL access the original grant did - not "only the original
     // granter may revoke": household membership changes over time (a granter could themselves be
     // deactivated later), and anyone who currently has FULL access to a scope is, by definition,
-    // trusted to manage sharing for it. #122: unless this is the scope's sole remaining grant and
-    // the actor is the SYSTEM_ADMINISTRATOR - see this class's own Javadoc.
-    if (!isSoleRemainingGrant(actor, grant)) {
+    // trusted to manage sharing for it. #122: unless the actor is the SYSTEM_ADMINISTRATOR who
+    // granted this, and it is the scope's sole remaining grant - see this class's own Javadoc.
+    if (!isSoleRemainingGrant(actor, actingMemberId, grant)) {
       requireFullAccessToScope(
-          accessControlService.requireActingMember(actor),
+          actingMemberId,
           grant.getScopeType(),
           grant.getScopeAccount(),
           grant.getScopeInstitution(),
@@ -220,18 +233,39 @@ public class SharingGrantService {
     }
   }
 
-  // #122: see this class's own Javadoc for the full rationale. scopeAlreadyGranted is whichever
-  // repository existence check matches the scope being granted (institution- or workspace-wide) -
-  // computed by the caller, not here, so this stays scope-agnostic.
-  private boolean isBootstrapping(AuthenticatedUserPrincipal actor, boolean scopeAlreadyGranted) {
-    return !scopeAlreadyGranted && SYSTEM_ADMINISTRATOR.equals(actor.role());
+  // #122: see this class's own Javadoc for the full rationale. Role checked before either the lock
+  // or the existence query (#139 review), so the common non-SYSTEM_ADMINISTRATOR caller pays for
+  // neither. The lock (institution row) closes the check-then-insert race between two concurrent
+  // bootstrap grant() calls for the same institution (#139 review) - held until this transaction
+  // commits, same as revoke()'s own grant-row lock.
+  private boolean tryBootstrapInstitution(AuthenticatedUserPrincipal actor, UUID institutionId) {
+    if (!SYSTEM_ADMINISTRATOR.equals(actor.role())) {
+      return false;
+    }
+    financialInstitutionRepository.findByIdForUpdate(institutionId);
+    return !sharingGrantRepository.existsByScopeInstitutionIdAndRevokedAtIsNull(institutionId);
   }
 
-  // revoke()'s counterpart to isBootstrapping: ACCOUNT scope never qualifies (it has ownership as
-  // its own permanent fallback, so this exception has no reason to extend to it) - only whether any
-  // *other* non-revoked grant of the same INSTITUTION/WORKSPACE scope exists besides this one.
-  private boolean isSoleRemainingGrant(AuthenticatedUserPrincipal actor, SharingGrant grant) {
+  // Same as tryBootstrapInstitution, locking the workspace row instead.
+  private boolean tryBootstrapWorkspace(AuthenticatedUserPrincipal actor) {
     if (!SYSTEM_ADMINISTRATOR.equals(actor.role())) {
+      return false;
+    }
+    workspaceRepository.findByIdForUpdate(actor.workspaceId());
+    return !sharingGrantRepository.existsByScopeTypeAndRevokedAtIsNull(ScopeTypeValues.WORKSPACE);
+  }
+
+  // revoke()'s counterpart to the tryBootstrap* methods: ACCOUNT scope never qualifies (it has
+  // ownership as its own permanent fallback, so this exception has no reason to extend to it).
+  // Requires the actor to be the SYSTEM_ADMINISTRATOR who granted this specific row (#139 review) -
+  // without that check, any SYSTEM_ADMINISTRATOR could revoke any scope's last standing grant
+  // regardless of who created it or how it came to be the sole one, which is a far broader power
+  // than "undo my own bootstrap mistake". Only then does it check whether any *other* non-revoked
+  // grant of the same scope exists besides this one.
+  private boolean isSoleRemainingGrant(
+      AuthenticatedUserPrincipal actor, UUID actingMemberId, SharingGrant grant) {
+    if (!SYSTEM_ADMINISTRATOR.equals(actor.role())
+        || !grant.getGrantedByMember().getId().equals(actingMemberId)) {
       return false;
     }
     boolean anotherExists =
