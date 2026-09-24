@@ -136,6 +136,49 @@ automated cross-tenant test suite that attempts unauthorized access against ever
 entity type in CI; write it against that runtime role, not the migration role, or it will pass
 for the wrong reason (superusers bypass RLS unconditionally).
 
+### Security master: lazy creation and manual mode (US-12-01)
+
+`security` is created only when a workspace first references an instrument (FR-SMD-001) and is
+shared afterwards (FR-SMD-004). `POST /api/v1/securities` finds or creates by ISIN;
+`GET /api/v1/securities?isin=` looks up without ever writing (FR-SMD-007), and
+`GET /api/v1/securities/{id}` is the only way to find a security that has no ISIN. There is
+deliberately no search or listing of the shared master: a hand-entered private holding must not be
+discoverable by another workspace. Rules that follow from the table being global, unscoped data:
+
+- **Existing wins, visibly.** A second caller supplying a different name, currency or type for a
+  known ISIN gets the existing row back unchanged, with an `X-Security-Ignored-Fields` header
+  naming which supplied values differed (absent when nothing differed). Shared rows are never
+  edited by a caller. A workspace-specific change is an override
+  (`workspace_security_override`, US-12-04); note that a wrong `denominationCurrency` or
+  `instrumentType` on the shared row therefore cannot be corrected by the workspace that
+  introduced it, only overridden per workspace - US-12-04 must cover those fields.
+- **No tenant traces.** Neither the row nor its `security_field_provenance` names the workspace or
+  user that caused it to exist; a hand-entered value has source `MANUAL` (NFR-LIC-007).
+- **Race-safe.** Creation is `INSERT ... ON CONFLICT DO NOTHING`, so two workspaces creating the
+  same new ISIN at once yield one row (a caught unique violation would abort the PostgreSQL
+  transaction).
+- **Retry-safe without an ISIN.** An optional `idempotencyKey` makes a no-ISIN create safe to
+  retry. It is stored only as a SHA-256 of workspace id and key inside the synthetic key
+  (`MANUAL-<hex>`), so it is not recoverable and never collides across workspaces. Without a key
+  every call creates a new record (`MANUAL-<uuid>`). A key together with an ISIN is a 422.
+- **Who may create.** EDIT on at least one active account in the caller's workspace, and at most
+  `app.rate-limit.security-create` requests per source (default 30/min), since every insert is
+  visible to every tenant. Lookups are not rate-limited by this rule.
+- **Manual mode is the supported baseline** (NFR-LIC-004/008, NFR-CON-004): no external
+  reference-data provider is configured (OPEN-005), so a record is entered by hand (name,
+  denomination currency, instrument type, asset class; ISIN optional and check-digit validated).
+  The asset class is stored as one 100% `security_asset_class_weight` row flagged estimated.
+  `legalName` is optional; when omitted it is set to the display name and its provenance
+  confidence is `DERIVED`. Downstream code cannot tell such a record from a provider-fed one.
+- **Completeness (FR-SMD-011).** The response lists the analysis-relevant fields still missing
+  (`securityCountry`, `issuerCountry`, and `gicsSubIndustry` for equity instruments). Until a
+  story can set a GICS code, a manual equity is always reported incomplete on `gicsSubIndustry` -
+  that is the honest state, not an error.
+- **Vocabulary.** `V32` adds a `CHECK` on `security.instrument_type` (EQUITY, ETF, FUND, BOND,
+  CRYPTO, DERIVATIVE, OTHER; NULL allowed) so no other writer can put an unrecognised value into
+  shared data. `CRYPTO` (an instrument type) and `CRYPTOCURRENCY` (an asset class) are different
+  vocabularies on purpose; adding a type is a one-line migration.
+
 ## 5. Time-series data and partitioning
 
 `price`, `fx_rate` and `daily_valuation` are the volume-dominant tables (DB-02, NFR-TEC-003) and

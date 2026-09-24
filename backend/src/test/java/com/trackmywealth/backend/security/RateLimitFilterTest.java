@@ -65,6 +65,10 @@ class RateLimitFilterTest {
     registry.add("app.rate-limit.mfa-verify.refill-period", () -> "1m");
     registry.add("app.rate-limit.mfa-confirm.capacity", () -> String.valueOf(CAPACITY));
     registry.add("app.rate-limit.mfa-confirm.refill-period", () -> "1m");
+    registry.add("app.rate-limit.security-create.capacity", () -> String.valueOf(CAPACITY));
+    registry.add("app.rate-limit.security-create.refill-period", () -> "1m");
+    registry.add("app.rate-limit.security-lookup.capacity", () -> String.valueOf(CAPACITY));
+    registry.add("app.rate-limit.security-lookup.refill-period", () -> "1m");
   }
 
   @LocalServerPort int port;
@@ -178,6 +182,44 @@ class RateLimitFilterTest {
       mfaConfirm().expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
     }
     mfaConfirm().expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+    // US-12-01: creating shared security-master rows is limited per source too.
+    for (int i = 0; i < CAPACITY; i++) {
+      createSecurity().expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    createSecurity().expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+    // The lookup has its own, separate bucket: exhausting the create rule above must not have
+    // spent it, and exhausting it here must not be what stops a create (that already returned 429
+    // on its own rule). Both are verbs on one path, so a filter keyed by path alone would conflate
+    // them. Metered because the master is cross-tenant reference data whose membership is itself a
+    // signal - ADR 0003, not because the query is expensive.
+    for (int i = 0; i < CAPACITY; i++) {
+      lookupSecurity().expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    lookupSecurity().expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+    // Still keyed per rule *and* per path: the by-id read has no rule of its own and stays open,
+    // since an unguessable UUID is not enumerable the way the published ISIN list is.
+    client()
+        .get()
+        .uri("/api/v1/securities/" + UUID.randomUUID())
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  private RestTestClient.ResponseSpec createSecurity() {
+    return client()
+        .post()
+        .uri("/api/v1/securities")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body("{}")
+        .exchange();
+  }
+
+  private RestTestClient.ResponseSpec lookupSecurity() {
+    return client().get().uri("/api/v1/securities?isin=IE00B4L5Y983").exchange();
   }
 
   private RestTestClient.ResponseSpec mfaVerify() {

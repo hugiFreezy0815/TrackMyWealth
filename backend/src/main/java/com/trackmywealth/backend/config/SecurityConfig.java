@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.config;
 
+import com.trackmywealth.backend.controller.SecurityController;
 import com.trackmywealth.backend.security.JwtAuthenticationFilter;
 import com.trackmywealth.backend.security.RateLimitFilter;
 import java.util.List;
@@ -107,6 +108,11 @@ public class SecurityConfig {
     // cookies, so credentialed (cookie-carrying) CORS requests are not needed yet. Revisit
     // if/when EPIC-02's web refresh-token cookie (FR-AUT-006) is implemented.
     configuration.setAllowCredentials(false);
+    // A browser hides every response header from JS except the CORS-safelisted six unless the
+    // server names it here - so without this, the web build of mobile/ reads null for a header the
+    // iOS/Android builds (not subject to the same-origin policy) read fine. Any custom response
+    // header this API adds must be listed, or it is invisible on exactly one of the three clients.
+    configuration.setExposedHeaders(List.of(SecurityController.IGNORED_FIELDS_HEADER));
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);

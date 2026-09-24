@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.trackmywealth.backend.config.RateLimitProperties;
 import com.trackmywealth.backend.controller.AuthController;
 import com.trackmywealth.backend.controller.MfaController;
+import com.trackmywealth.backend.controller.SecurityController;
 import com.trackmywealth.backend.controller.SessionController;
 import com.trackmywealth.backend.controller.SetupController;
 import io.github.bucket4j.Bandwidth;
@@ -43,6 +44,10 @@ import org.springframework.web.util.UrlPathHelper;
  * brute-forceable 6-digit-code reasoning applies to confirming a pending enrollment). Referencing
  * each controller's own constant, rather than a re-typed literal, means the two can never silently
  * drift apart the way a second hardcoded copy of the same path could.
+ *
+ * <p>US-12-01 adds {@link SecurityController#BASE_PATH} on both verbs, for a different reason from
+ * every rule above: not brute-forcing a credential, but bounding write and read access to global,
+ * cross-tenant reference data - see {@link #ruleFor}.
  *
  * <p>Runs before {@link JwtAuthenticationFilter} in {@code SecurityConfig} - an excess request is
  * rejected before it costs a JWT parse or an {@code AppUserRepository.findAuthSnapshot} query, not
@@ -107,7 +112,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
   // The divisor perRuleMaxBuckets below splits app.rate-limit.max-buckets across - keep in sync
   // with the number of *Rule fields/newRule(...) calls in the constructor.
-  private static final int RULE_COUNT = 6;
+  private static final int RULE_COUNT = 8;
 
   private final boolean enabled;
   private final Rule loginRule;
@@ -116,6 +121,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
   private final Rule sessionRevokeRule;
   private final Rule mfaVerifyRule;
   private final Rule mfaConfirmRule;
+  private final Rule securityCreateRule;
+  private final Rule securityLookupRule;
 
   public RateLimitFilter(RateLimitProperties properties) {
     this.enabled = properties.enabled();
@@ -129,6 +136,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
         newRule("sessionRevoke", properties.sessionRevoke(), perRuleMaxBuckets);
     this.mfaVerifyRule = newRule("mfaVerify", properties.mfaVerify(), perRuleMaxBuckets);
     this.mfaConfirmRule = newRule("mfaConfirm", properties.mfaConfirm(), perRuleMaxBuckets);
+    this.securityCreateRule =
+        newRule("securityCreate", properties.securityCreate(), perRuleMaxBuckets);
+    this.securityLookupRule =
+        newRule("securityLookup", properties.securityLookup(), perRuleMaxBuckets);
   }
 
   private static Rule newRule(String name, RateLimitProperties.Rule config, int maxBuckets) {
@@ -170,6 +181,20 @@ public class RateLimitFilter extends OncePerRequestFilter {
   }
 
   private Optional<Rule> ruleFor(String method, String path) {
+    // US-12-01: the one rate-limited *read* in this filter, and the reason it exists is not the
+    // cost of the query. The security master is global reference data with no tenant column, so any
+    // member of any workspace may ask whether an ISIN is in it - and a "yes" reveals that somebody
+    // on this instance tracks that instrument. The real ISIN universe is a published, downloadable
+    // list, so an unmetered lookup turns that into an enumerable cross-tenant holdings-inference
+    // channel (NFR-LIC-007). A limit does not close the channel - only removing the shared master
+    // would, and that is the wrong trade - but it stops a sweep of the whole list being free. See
+    // docs/architecture/adr/0003-shared-security-master-visibility.md.
+    //
+    // Only the collection path: GET /securities/{id} takes an unguessable UUID and there is no
+    // listing endpoint, so a security without an ISIN is not reachable by guessing.
+    if ("GET".equals(method) && SecurityController.BASE_PATH.equals(path)) {
+      return Optional.of(securityLookupRule);
+    }
     if (!"POST".equals(method)) {
       return Optional.empty();
     }
@@ -193,6 +218,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
     if (MfaController.CONFIRM_PATH.equals(path)) {
       return Optional.of(mfaConfirmRule);
+    }
+    // US-12-01: every insert into the shared security master is visible to every tenant, so an
+    // authenticated member must not be able to flood it. Like the rules above, keyed by source.
+    if (SecurityController.BASE_PATH.equals(path)) {
+      return Optional.of(securityCreateRule);
     }
     return Optional.empty();
   }

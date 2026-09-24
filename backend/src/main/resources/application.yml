@@ -160,6 +160,17 @@ app:
     mfa-confirm:
       capacity: ${RATE_LIMIT_MFA_CONFIRM_CAPACITY:5}
       refill-period: ${RATE_LIMIT_MFA_CONFIRM_REFILL_PERIOD:1m}
+    # US-12-01: POST /api/v1/securities writes to reference data shared by every tenant. Generous
+    # for real use (a broker import adds a handful of new instruments), tight against flooding.
+    security-create:
+      capacity: ${RATE_LIMIT_SECURITY_CREATE_CAPACITY:30}
+      refill-period: ${RATE_LIMIT_SECURITY_CREATE_REFILL_PERIOD:1m}
+    # US-12-01: GET /api/v1/securities?isin= answers whether an instrument is in the shared
+    # master, which is a cross-tenant signal (see RateLimitFilter.ruleFor). Deliberately loose -
+    # an import legitimately checks far more instruments than it creates - but not unbounded.
+    security-lookup:
+      capacity: ${RATE_LIMIT_SECURITY_LOOKUP_CAPACITY:120}
+      refill-period: ${RATE_LIMIT_SECURITY_LOOKUP_REFILL_PERIOD:1m}
 
 management:
   endpoints:
