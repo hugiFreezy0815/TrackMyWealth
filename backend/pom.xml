@@ -106,7 +106,7 @@
         <dependency>
             <groupId>com.bucket4j</groupId>
             <artifactId>bucket4j_jdk17-core</artifactId>
-            <version>8.19.0</version>
+            <version>8.20.0</version>
         </dependency>
         <!-- #60: bounds RateLimitFilter's in-memory bucket store so a caller spread across many
              source addresses (e.g. a routed IPv6 block) can't grow it unboundedly between sweeps. -->
