@@ -113,7 +113,7 @@
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
-            <version>3.2.4</version>
+            <version>3.3.0</version>
         </dependency>
 
         <!-- OpenAPI contract - FR-API-001: the spec is generated from and validated
