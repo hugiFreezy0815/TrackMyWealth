@@ -179,6 +179,26 @@ discoverable by another workspace. Rules that follow from the table being global
   shared data. `CRYPTO` (an instrument type) and `CRYPTOCURRENCY` (an asset class) are different
   vocabularies on purpose; adding a type is a one-line migration.
 
+### Snapshots: manual entry (US-25-01)
+
+`POST /api/v1/accounts/{id}/snapshots` records a statement balance, and for an account that
+`holds_positions` its per-security quantities, as a `MANUAL` `account_snapshot` with
+`snapshot_holding` rows (FR-REC-006). It never touches the ledger (RULE-025).
+
+- **Currency and sign.** A snapshot is always in the account's `native_currency` (not client
+  input; `V33` guards it), and its balance uses the same convention as the ledger-derived balance
+  (a liability's balance is the positive amount owed), so US-25-02 can compare the two directly.
+  `reported_cost_basis` is a total in that same currency.
+- **Holdings** reference existing security-master ids only (create first via `POST
+  /api/v1/securities`), at most once per snapshot (`V33`'s `uq_snapshot_holding_security`). A
+  balance may be omitted only when holdings are given.
+- **Duplicates and corrections.** A second `MANUAL` snapshot for the same account and date is a
+  409 carrying `existingSnapshotId`; `PUT .../snapshots/{snapshotId}` replaces a `MANUAL`
+  snapshot's balance and holdings and sets `updated_at`/`updated_by` (`V33`). Snapshots from any
+  other source are never edited through the API.
+- **Isolation.** `account_snapshot` is RLS-protected; `snapshot_holding` is not and is only read
+  by the id of a snapshot already loaded under that policy.
+
 ## 5. Time-series data and partitioning
 
 `price`, `fx_rate` and `daily_valuation` are the volume-dominant tables (DB-02, NFR-TEC-003) and

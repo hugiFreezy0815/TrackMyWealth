@@ -2,6 +2,7 @@ package com.trackmywealth.backend.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -72,6 +73,44 @@ class GlobalExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getDetail()).contains("FR-ACC-002");
+  }
+
+  @Test
+  void aRacingDuplicateSnapshotIsTranslatedToAConflictTellingTheCallerToRetry() {
+    ProblemDetail problem =
+        handler.handleDataIntegrityViolation(
+            violationWithRootMessage(
+                "ERROR: duplicate key value violates unique constraint"
+                    + " \"account_snapshot_account_id_snapshot_date_source_key\""));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getDetail()).contains("already exists");
+  }
+
+  @Test
+  void aSnapshotCurrencyMismatchIsTranslatedToAConflictNamingFrAcc002() {
+    ProblemDetail problem =
+        handler.handleDataIntegrityViolation(
+            violationWithRootMessage(
+                "ERROR: account_snapshot_currency_mismatch: account 1 native_currency is CHF but a"
+                    + " snapshot in EUR was attempted (FR-ACC-002)"));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getDetail()).contains("FR-ACC-002");
+  }
+
+  @Test
+  void anExistingResourceConflictNamesTheExistingId() {
+    UUID existing = UUID.randomUUID();
+
+    ProblemDetail problem =
+        handler.handleExistingResourceConflict(
+            new ExistingResourceConflictException(
+                "Already there.", "existingSnapshotId", existing));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getDetail()).isEqualTo("Already there.");
+    assertThat(problem.getProperties()).containsEntry("existingSnapshotId", existing);
   }
 
   @Test
