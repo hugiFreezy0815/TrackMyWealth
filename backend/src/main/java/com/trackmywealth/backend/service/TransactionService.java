@@ -14,6 +14,7 @@ import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Currency;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -49,10 +50,12 @@ import tools.jackson.databind.ObjectMapper;
  * currency - a depot's cash may be held in several currencies. The rules (see {@link
  * #validateInvestment}) are checked here rather than only on the request, so an import (EPIC 07)
  * can reuse them: a trade's {@code amount} must agree with {@code -(quantity * unitPrice) -
- * feeAmount} within {@value #TRADE_AMOUNT_TOLERANCE_TEXT}, since a statement's rounding is the
- * authority; a dividend's gross minus withheld tax must equal its net {@code amount} exactly. A
- * sale is not checked against the held quantity: positions are derived later (US-15-01), and an
- * unmatched sale is a reconciliation difference, never a rejection (FR-DEP-007).
+ * feeAmount} within the rounding a statement can carry (see {@link #amountTolerance}), since a
+ * statement's rounding is the authority; a dividend's gross minus withheld tax must equal its net
+ * {@code amount} exactly. A sale's cash leg is proceeds minus costs, so it may be zero or negative
+ * for a tiny sale. A sale is not checked against the held quantity: positions are derived later
+ * (US-15-01), and an unmatched sale is a reconciliation difference, never a rejection (FR-DEP-007).
+ * The same shape rules are enforced by V36's check constraints for every writer.
  *
  * <p>Every amount is cash-direction signed and stored as sent (see {@link Transaction}); the sign
  * each type must carry is checked in {@link #validate}. Whether an account is a credit card is
@@ -112,9 +115,9 @@ public class TransactionService {
       Stream.of(CASH_TYPES, CARD_TYPES, INVESTMENT_TYPES)
           .flatMap(Set::stream)
           .collect(Collectors.toUnmodifiableSet());
-  private static final String TRADE_AMOUNT_TOLERANCE_TEXT = "0.01";
-  private static final BigDecimal TRADE_AMOUNT_TOLERANCE =
-      new BigDecimal(TRADE_AMOUNT_TOLERANCE_TEXT);
+  // For a currency without an ISO minor unit (Currency#getDefaultFractionDigits is -1).
+  private static final int DEFAULT_MINOR_DIGITS = 2;
+  private static final BigDecimal HALF = new BigDecimal("0.5");
   private static final String ACTIVE = "ACTIVE";
   private static final String MANUAL = "MANUAL";
   private static final String MCC_KEY = "mcc";
@@ -517,6 +520,13 @@ public class TransactionService {
           HttpStatus.UNPROCESSABLE_CONTENT,
           "billedAmount must carry the same sign as amount (both cash-direction signed).");
     }
+    // Only a sale can have a zero cash leg (proceeds exactly equal to costs); no rate follows from
+    // it, and dividing by it below would fail.
+    if (request.billedAmount() != null && request.amount().signum() == 0) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          "A zero amount implies no rate: give fxRateToAccountCurrency instead of billedAmount.");
+    }
     if (request.feeAmount() != null && request.feeAmount().signum() <= 0) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "feeAmount must be a positive magnitude.");
@@ -525,13 +535,16 @@ public class TransactionService {
     // Cash-direction signed ledger: rejecting a wrong sign rather than flipping it keeps "what you
     // send is what is stored". Money leaves the account for a purchase, a withdrawal, an expense,
     // fee or tax, a buy and the payment side of a settlement; it enters for income, deposit,
-    // interest, refund, a sale, a dividend and the card side of a settlement.
+    // interest, refund, a dividend and the card side of a settlement. A sale has no fixed sign: its
+    // cash leg is proceeds minus costs, which is zero or negative when the costs of selling a
+    // near-worthless remnant exceed its proceeds, so requireTradeAmountMatches alone decides it.
     boolean mustBePositive =
         INFLOW_CASH_TYPES.contains(type)
-            || SELL.equals(type)
             || DIVIDEND.equals(type)
             || (SETTLEMENT.equals(type) && card);
-    if (mustBePositive ? request.amount().signum() <= 0 : request.amount().signum() >= 0) {
+    boolean signFixedByType = !SELL.equals(type);
+    if (signFixedByType
+        && (mustBePositive ? request.amount().signum() <= 0 : request.amount().signum() >= 0)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           mustBePositive
@@ -601,11 +614,19 @@ public class TransactionService {
       throw unprocessable(
           "grossAmount and taxWithheldAmount are only valid for a " + DIVIDEND + ".");
     }
-    // FR-TRX-008: performance reads the trade date, cash balances the settlement date.
+    // FR-TRX-008: performance reads the trade date, cash balances the settlement date. The
+    // booking date is the day the statement books the trade's cash, which can never precede the
+    // trade itself; it usually equals the settlement date, but some custodians book on trade date,
+    // so no tighter rule is imposed.
     if (request.tradeDate() != null
         && request.settlementDate() != null
         && request.settlementDate().isBefore(request.tradeDate())) {
       throw unprocessable("settlementDate cannot be before tradeDate.");
+    }
+    if (request.tradeDate() != null && request.tradeDate().isAfter(request.bookingDate())) {
+      throw unprocessable(
+          "tradeDate cannot be after bookingDate: a trade's cash is booked on or after its trade"
+              + " date.");
     }
   }
 
@@ -634,17 +655,19 @@ public class TransactionService {
                 + ") must equal amount, the net cash received.");
       }
     }
-    // Per-share gross against the gross total (or the amount, when nothing was withheld): the same
-    // rounding tolerance as a trade, since a per-share rate is rounded on the advice too.
+    // Per-share gross against the gross total (or the amount, when nothing was withheld), with
+    // the same rounding allowance as a trade, since a per-share rate is rounded on the advice too.
     if (request.quantity() != null && request.unitPrice() != null) {
       BigDecimal gross = request.grossAmount() != null ? request.grossAmount() : request.amount();
       BigDecimal perShareTotal = request.quantity().multiply(request.unitPrice());
-      if (perShareTotal.subtract(gross).abs().compareTo(TRADE_AMOUNT_TOLERANCE) > 0) {
+      BigDecimal tolerance =
+          amountTolerance(request.currency(), request.quantity(), request.unitPrice());
+      if (perShareTotal.subtract(gross).abs().compareTo(tolerance) > 0) {
         throw unprocessable(
             "quantity x unitPrice ("
                 + perShareTotal.setScale(4, RoundingMode.HALF_UP).toPlainString()
                 + ") must equal the gross dividend within "
-                + TRADE_AMOUNT_TOLERANCE_TEXT
+                + tolerance.toPlainString()
                 + "; if tax was withheld, give grossAmount and taxWithheldAmount.");
       }
     }
@@ -654,14 +677,41 @@ public class TransactionService {
   private static void requireTradeAmountMatches(CreateTransactionRequest request) {
     BigDecimal fee = request.feeAmount() == null ? BigDecimal.ZERO : request.feeAmount();
     BigDecimal expected = request.quantity().multiply(request.unitPrice()).negate().subtract(fee);
-    if (expected.subtract(request.amount()).abs().compareTo(TRADE_AMOUNT_TOLERANCE) > 0) {
+    BigDecimal tolerance =
+        amountTolerance(request.currency(), request.quantity(), request.unitPrice());
+    if (expected.subtract(request.amount()).abs().compareTo(tolerance) > 0) {
       throw unprocessable(
           "amount must equal -(quantity x unitPrice) - feeAmount = "
               + expected.setScale(4, RoundingMode.HALF_UP).toPlainString()
               + " within "
-              + TRADE_AMOUNT_TOLERANCE_TEXT
+              + tolerance.toPlainString()
               + ".");
     }
+  }
+
+  /**
+   * How far a statement's {@code amount} may lie from {@code quantity x unitPrice}, given how both
+   * were rounded on it: one minor unit of the currency (0.01 for CHF, 1 for JPY) for the booked
+   * amount, plus half a unit in the last place of the unit price for every share, because a
+   * statement shows the (average) price rounded while the amount is computed from the exact one. A
+   * price is taken as given at least to the currency's minor unit - "100" means 100.00 - so a
+   * whole-number price does not widen the allowance to half a currency unit per share.
+   *
+   * <p>E.g. 25,000 shares at a shown 12.3457 (exact 12.345678): 0.01 + 25,000 x 0.00005 = 1.26,
+   * which accepts the booked 308,641.95 against the computed 308,642.50, while 10 x 100 with a fee
+   * of 5 still rejects a typed 1,010 for the correct 1,005 (0.01 + 10 x 0.005 = 0.06).
+   */
+  static BigDecimal amountTolerance(String currency, BigDecimal quantity, BigDecimal unitPrice) {
+    int minorDigits = minorDigits(currency);
+    BigDecimal bookedAmountRounding = BigDecimal.ONE.movePointLeft(minorDigits);
+    int priceDigits = Math.max(unitPrice.stripTrailingZeros().scale(), minorDigits);
+    BigDecimal priceRounding = HALF.movePointLeft(priceDigits);
+    return bookedAmountRounding.add(quantity.abs().multiply(priceRounding)).stripTrailingZeros();
+  }
+
+  private static int minorDigits(String currency) {
+    int digits = Currency.getInstance(currency).getDefaultFractionDigits();
+    return digits < 0 ? DEFAULT_MINOR_DIGITS : digits;
   }
 
   private static ResponseStatusException unprocessable(String detail) {

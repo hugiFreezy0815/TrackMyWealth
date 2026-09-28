@@ -65,12 +65,15 @@ import java.util.UUID;
  *       {@code SELL}; optional and positive (shares entitled) for a {@code DIVIDEND}.
  *   <li>{@code unitPrice} - positive, in {@code currency}: the trade price, or a dividend's gross
  *       amount per share. {@code amount} of a trade must equal {@code -(quantity * unitPrice +
- *       feeAmount)} within 0.01.
+ *       feeAmount)} within the statement's rounding: one minor unit of the currency plus half a
+ *       unit in the last place of {@code unitPrice} per share. A {@code BUY}'s amount is negative;
+ *       a {@code SELL}'s is whatever proceeds minus costs come to, which can be zero or negative.
  *   <li>{@code feeAmount} - on a trade, all its costs (commission, stamp duty, exchange fees) as a
  *       positive magnitude, part of the same row - unlike a card purchase's fee, whatever the
  *       currency.
  *   <li>{@code tradeDate}, {@code settlementDate} - optional on a trade, kept distinct
- *       (FR-TRX-008); settlement cannot precede trade.
+ *       (FR-TRX-008); settlement cannot precede trade, and {@code bookingDate} (the day the
+ *       statement books the cash) cannot precede the trade either.
  *   <li>{@code grossAmount}, {@code taxWithheldAmount} - optional on a {@code DIVIDEND}, together:
  *       gross minus withheld must equal {@code amount}, the net cash received (FR-TAXR-001).
  * </ul>
@@ -94,40 +97,6 @@ public record CreateTransactionRequest(
     LocalDate settlementDate,
     @Digits(integer = 16, fraction = 4) BigDecimal grossAmount,
     @Digits(integer = 16, fraction = 4) BigDecimal taxWithheldAmount) {
-
-  /** A cash or card entry, without the investment fields. */
-  public CreateTransactionRequest(
-      String transactionType,
-      LocalDate bookingDate,
-      BigDecimal amount,
-      String currency,
-      String merchantDescription,
-      String mcc,
-      String notes,
-      String externalId,
-      BigDecimal fxRateToAccountCurrency,
-      BigDecimal billedAmount,
-      BigDecimal feeAmount) {
-    this(
-        transactionType,
-        bookingDate,
-        amount,
-        currency,
-        merchantDescription,
-        mcc,
-        notes,
-        externalId,
-        fxRateToAccountCurrency,
-        billedAmount,
-        feeAmount,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null);
-  }
 
   public CreateTransactionRequest {
     transactionType = RequestStrings.blankToNull(transactionType);
