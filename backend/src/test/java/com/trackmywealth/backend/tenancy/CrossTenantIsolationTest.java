@@ -75,7 +75,8 @@ class CrossTenantIsolationTest {
           "account",
           "sharing_grant",
           "transaction",
-          "settlement_match");
+          "settlement_match",
+          "account_snapshot");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -91,6 +92,8 @@ class CrossTenantIsolationTest {
   private UUID accountBId;
   private UUID sharingGrantAId;
   private UUID sharingGrantBId;
+  private UUID snapshotAId;
+  private UUID snapshotBId;
 
   @BeforeAll
   static void migrateAndCreateNonSuperuserRole() throws Exception {
@@ -124,7 +127,7 @@ class CrossTenantIsolationTest {
     try (Connection admin = adminConnection();
         Statement statement = admin.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE settlement_match, transaction, sharing_grant, account, financial_institution,"
+          "TRUNCATE TABLE account_snapshot, settlement_match, transaction, sharing_grant, account, financial_institution,"
               + " workspace_member, workspace RESTART IDENTITY CASCADE");
     }
 
@@ -141,6 +144,7 @@ class CrossTenantIsolationTest {
       settlementMatchAId =
           insertSettlementMatch(connection, workspaceAId, accountAId, transactionAId);
       sharingGrantAId = insertSharingGrant(connection, workspaceAId, memberAId);
+      snapshotAId = insertSnapshot(connection, workspaceAId, accountAId);
 
       workspaceBId = UUID.randomUUID();
       setWorkspaceContext(connection, workspaceBId);
@@ -152,6 +156,7 @@ class CrossTenantIsolationTest {
       settlementMatchBId =
           insertSettlementMatch(connection, workspaceBId, accountBId, transactionBId);
       sharingGrantBId = insertSharingGrant(connection, workspaceBId, memberBId);
+      snapshotBId = insertSnapshot(connection, workspaceBId, accountBId);
 
       connection.commit();
     }
@@ -210,6 +215,15 @@ class CrossTenantIsolationTest {
         .isFalse();
   }
 
+  // US-25-01: account_snapshot carries its own workspace_id and is RLS-protected (V20) - a
+  // statement balance must never cross a workspace. snapshot_holding has no policy of its own and
+  // is only ever read by the id of a snapshot loaded under this policy.
+  @Test
+  void accountSnapshotRowIsInvisibleAcrossWorkspaces() throws Exception {
+    assertThat(rowVisibleUnderContext(workspaceAId, "account_snapshot", snapshotBId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceBId, "account_snapshot", snapshotAId)).isFalse();
+  }
+
   // A cross-tenant suite that only ever asserts "denied" can pass vacuously if RLS is
   // accidentally denying everyone, including a workspace reading its own data - this is the
   // false-negative guard against that.
@@ -224,6 +238,7 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceAId, "transaction", transactionAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "settlement_match", settlementMatchAId))
         .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceAId, "account_snapshot", snapshotAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace", workspaceBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace_member", memberBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "financial_institution", institutionBId))
@@ -233,6 +248,7 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceBId, "transaction", transactionBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "settlement_match", settlementMatchBId))
         .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "account_snapshot", snapshotBId)).isTrue();
   }
 
   @Test
@@ -360,6 +376,21 @@ class CrossTenantIsolationTest {
       statement.executeUpdate();
     }
     return matchId;
+  }
+
+  private UUID insertSnapshot(Connection connection, UUID workspaceId, UUID accountId)
+      throws Exception {
+    UUID snapshotId = UUID.randomUUID();
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO account_snapshot (id, workspace_id, account_id, snapshot_date, balance,"
+                + " currency) VALUES (?, ?, ?, CURRENT_DATE, 1.00, 'CHF')")) {
+      statement.setObject(1, snapshotId);
+      statement.setObject(2, workspaceId);
+      statement.setObject(3, accountId);
+      statement.executeUpdate();
+    }
+    return snapshotId;
   }
 
   // WORKSPACE scope needs no scope_account_id/scope_institution_id (V6's own CHECK constraint) -

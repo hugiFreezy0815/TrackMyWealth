@@ -48,12 +48,29 @@ public class GlobalExceptionHandler {
     if (rootMessage.contains("custom_asset_valuation_currency_mismatch")) {
       return conflict("A valuation's currency must match the account's own currency (FR-ACC-002).");
     }
+    if (rootMessage.contains("account_snapshot_currency_mismatch")) {
+      return conflict("A snapshot's currency must match the account's own currency (FR-ACC-002).");
+    }
+    // Two concurrent entries for the same account and date: the loser of the race lands here
+    // rather than on AccountSnapshotService's own existence check, which answers with the id.
+    if (rootMessage.contains("account_snapshot_account_id_snapshot_date_source_key")) {
+      return conflict(
+          "A snapshot for this account and date already exists. Retry the request to get its id,"
+              + " then update it instead.");
+    }
     if (rootMessage.contains("uq_transaction_external_id")) {
       return conflict(
           "A transaction with this externalId is already being recorded. Retry the request: it"
               + " returns the recorded transaction.");
     }
     return conflict("The request conflicts with an existing data constraint.");
+  }
+
+  @ExceptionHandler(ExistingResourceConflictException.class)
+  public ProblemDetail handleExistingResourceConflict(ExistingResourceConflictException ex) {
+    ProblemDetail problem = conflict(ex.getMessage());
+    problem.setProperty(ex.getPropertyName(), ex.getExistingId());
+    return problem;
   }
 
   @ExceptionHandler(OptimisticLockingFailureException.class)
