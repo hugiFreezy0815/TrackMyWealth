@@ -21,9 +21,9 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Maps {@code transaction} (V10, V31) - the append-only ledger (RULE-024/FR-TRX-007). Only the
- * columns the credit-card slice (US-09-01/02/04) writes or reads are mapped; every other column
- * (security, trade/settlement dates, void metadata, category, ...) is left to the story that first
- * needs it, and an unmapped column is neither read nor overwritten by Hibernate.
+ * columns the stories so far (US-09-01/02/04, US-07-01) write or read are mapped; every other
+ * column (void metadata, category, import batch, ...) is left to the story that first needs it, and
+ * an unmapped column is neither read nor overwritten by Hibernate.
  *
  * <p>{@code amount} is <b>cash-direction signed</b> and stored exactly as the caller sent it: money
  * leaving the account is negative, money entering it is positive. For a {@code CREDIT_CARD} account
@@ -38,6 +38,15 @@ import org.hibernate.type.SqlTypes;
  * fxRateEstimated} distinguishes a disclosed-or-derived rate from a generic daily-rate fallback
  * (PR-011). {@code relatedTransactionId} links a distinct {@code FEE} row (a disclosed
  * foreign-transaction fee) back to the purchase it was charged on.
+ *
+ * <p>US-07-01 investment types ({@code BUY}, {@code SELL}, {@code DIVIDEND}): {@code securityId}
+ * references the shared security master. {@code quantity} is <b>position-direction signed</b> (a
+ * buy adds, a sale removes), so a position is the sum of {@code quantity} over the position-moving
+ * types; a dividend's quantity (shares entitled) is informational and never moves a position.
+ * {@code unitPrice} and {@code feeAmount} are positive magnitudes in {@code currency}; the fee of a
+ * trade is part of its {@code amount}, not a separate row. {@code tradeDate} and {@code
+ * settlementDate} are kept distinct (FR-TRX-008). A dividend's {@code grossAmount} minus {@code
+ * taxWithheldAmount} is its {@code netAmount}, which equals {@code amount} (FR-TAXR-001).
  */
 // Only the columns that actually changed are written: the ledger's financial fields are frozen by
 // trg_transaction_append_only, so an UPDATE that re-sent every mapped column would be one careless
@@ -128,6 +137,35 @@ public class Transaction {
   // the FX columns above - set once at insert, never reassigned.
   @Column(name = "related_transaction_id", columnDefinition = UUID_COLUMN)
   private UUID relatedTransactionId;
+
+  // A plain id, not an association: the shared security master is read separately, and a ledger
+  // row must never cascade into it.
+  @Column(name = "security_id", columnDefinition = UUID_COLUMN)
+  private UUID securityId;
+
+  @Column(precision = 28, scale = 10)
+  private BigDecimal quantity;
+
+  @Column(name = "unit_price", precision = 20, scale = 10)
+  private BigDecimal unitPrice;
+
+  @Column(name = "fee_amount", precision = 20, scale = 4)
+  private BigDecimal feeAmount;
+
+  @Column(name = "trade_date")
+  private LocalDate tradeDate;
+
+  @Column(name = "settlement_date")
+  private LocalDate settlementDate;
+
+  @Column(name = "gross_amount", precision = 20, scale = 4)
+  private BigDecimal grossAmount;
+
+  @Column(name = "tax_withheld_amount", precision = 20, scale = 4)
+  private BigDecimal taxWithheldAmount;
+
+  @Column(name = "net_amount", precision = 20, scale = 4)
+  private BigDecimal netAmount;
 
   // FR-LIF-002: set when the row is voided (US-07-02). Read-only here - no code path in this
   // codebase voids yet - so a matching query can leave voided rows out.
@@ -279,6 +317,78 @@ public class Transaction {
 
   public void setRelatedTransactionId(UUID relatedTransactionId) {
     this.relatedTransactionId = relatedTransactionId;
+  }
+
+  public UUID getSecurityId() {
+    return securityId;
+  }
+
+  public void setSecurityId(UUID securityId) {
+    this.securityId = securityId;
+  }
+
+  public BigDecimal getQuantity() {
+    return quantity;
+  }
+
+  public void setQuantity(BigDecimal quantity) {
+    this.quantity = quantity;
+  }
+
+  public BigDecimal getUnitPrice() {
+    return unitPrice;
+  }
+
+  public void setUnitPrice(BigDecimal unitPrice) {
+    this.unitPrice = unitPrice;
+  }
+
+  public BigDecimal getFeeAmount() {
+    return feeAmount;
+  }
+
+  public void setFeeAmount(BigDecimal feeAmount) {
+    this.feeAmount = feeAmount;
+  }
+
+  public LocalDate getTradeDate() {
+    return tradeDate;
+  }
+
+  public void setTradeDate(LocalDate tradeDate) {
+    this.tradeDate = tradeDate;
+  }
+
+  public LocalDate getSettlementDate() {
+    return settlementDate;
+  }
+
+  public void setSettlementDate(LocalDate settlementDate) {
+    this.settlementDate = settlementDate;
+  }
+
+  public BigDecimal getGrossAmount() {
+    return grossAmount;
+  }
+
+  public void setGrossAmount(BigDecimal grossAmount) {
+    this.grossAmount = grossAmount;
+  }
+
+  public BigDecimal getTaxWithheldAmount() {
+    return taxWithheldAmount;
+  }
+
+  public void setTaxWithheldAmount(BigDecimal taxWithheldAmount) {
+    this.taxWithheldAmount = taxWithheldAmount;
+  }
+
+  public BigDecimal getNetAmount() {
+    return netAmount;
+  }
+
+  public void setNetAmount(BigDecimal netAmount) {
+    this.netAmount = netAmount;
   }
 
   public OffsetDateTime getVoidedAt() {

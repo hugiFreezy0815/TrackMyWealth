@@ -73,12 +73,22 @@ class TransactionAppendOnlyTriggerTest {
             "CASH",
             "Test Account",
             "CHF");
+    // A trade: since V36 only a BUY or SELL carries fee_amount (its trading costs), so the frozen
+    // fee is exercised on the kind of row that actually has one.
+    UUID securityId =
+        insertReturningId(
+            "INSERT INTO security(isin, legal_name, display_name, denomination_currency) VALUES (?, ?, ?, ?) RETURNING id",
+            "IE00B4L5Y983",
+            "iShares Core MSCI World UCITS ETF",
+            "iShares Core MSCI World",
+            "USD");
     transactionId =
         insertReturningId(
-            "INSERT INTO transaction(workspace_id, account_id, transaction_type, booking_date, amount, currency, fee_amount, fx_rate_to_account_currency, fx_rate_date) "
-                + "VALUES (?, ?, 'EXPENSE', CURRENT_DATE, 45.00, 'CHF', 5.00, 1.0000000000, CURRENT_DATE) RETURNING id",
+            "INSERT INTO transaction(workspace_id, account_id, transaction_type, booking_date, amount, currency, security_id, quantity, unit_price, fee_amount, fx_rate_to_account_currency, fx_rate_date) "
+                + "VALUES (?, ?, 'BUY', CURRENT_DATE, -45.00, 'CHF', ?, 4, 10, 5.00, 1.0000000000, CURRENT_DATE) RETURNING id",
             workspaceId,
-            accountId);
+            accountId,
+            securityId);
   }
 
   @AfterAll

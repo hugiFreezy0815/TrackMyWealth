@@ -9,11 +9,14 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
+import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Currency;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -34,13 +37,25 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Records individual transactions on the append-only ledger (US-07-01, widened from the slice the
- * credit-card stories US-09-01..04 needed). Accepted so far: the single-account cash types ({@code
+ * credit-card stories US-09-01..04 needed). Accepted: the single-account cash types ({@code
  * INCOME}, {@code EXPENSE}, {@code DEPOSIT}, {@code WITHDRAWAL}, {@code INTEREST}, {@code FEE},
- * {@code TAX}, {@code REFUND}) plus the card types {@code CREDIT_CARD_PURCHASE} and {@code
- * SETTLEMENT}. Two-sided types (TRANSFER, DEBT_REPAYMENT, PENSION_CONTRIBUTION) arrive with
- * US-10-01 and the investment types (BUY, SELL, DIVIDEND) with the security master (US-12-01). A
- * card account accepts only its own two types; a {@code FEE} is also created alongside a
- * foreign-currency card purchase, see {@link #recordTransaction}.
+ * {@code TAX}, {@code REFUND}), the card types {@code CREDIT_CARD_PURCHASE} and {@code SETTLEMENT},
+ * and the investment types {@code BUY}, {@code SELL} and {@code DIVIDEND}. Two-sided types
+ * (TRANSFER, DEBT_REPAYMENT, PENSION_CONTRIBUTION) arrive with US-10-01. A card account accepts
+ * only its own two types; a {@code FEE} is also created alongside a foreign-currency card purchase,
+ * see {@link #recordTransaction}.
+ *
+ * <p><b>US-07-01 investment types</b> go on any account that holds positions (depot, mandate,
+ * crypto, a pension that holds funds), with their cash leg on that same account, in the trade
+ * currency - a depot's cash may be held in several currencies. The rules (see {@link
+ * #validateInvestment}) are checked here rather than only on the request, so an import (EPIC 07)
+ * can reuse them: a trade's {@code amount} must agree with {@code -(quantity * unitPrice) -
+ * feeAmount} within the rounding a statement can carry (see {@link #amountTolerance}), since a
+ * statement's rounding is the authority; a dividend's gross minus withheld tax must equal its net
+ * {@code amount} exactly. A sale's cash leg is proceeds minus costs, so it may be zero or negative
+ * for a tiny sale. A sale is not checked against the held quantity: positions are derived later
+ * (US-15-01), and an unmatched sale is a reconciliation difference, never a rejection (FR-DEP-007).
+ * The same shape rules are enforced by V36's check constraints for every writer.
  *
  * <p>Every amount is cash-direction signed and stored as sent (see {@link Transaction}); the sign
  * each type must carry is checked in {@link #validate}. Whether an account is a credit card is
@@ -76,7 +91,7 @@ public class TransactionService {
   private static final String FEE = "FEE";
   // US-07-01 cash types: single-account, cash-direction signed. Money leaves the account for the
   // first group and enters it for the second. TRANSFER, DEBT_REPAYMENT and PENSION_CONTRIBUTION are
-  // two-sided and belong to US-10-01; BUY/SELL/DIVIDEND need the security master (US-12-01).
+  // two-sided and belong to US-10-01.
   private static final Set<String> OUTFLOW_CASH_TYPES = Set.of(WITHDRAWAL, FEE, "EXPENSE", "TAX");
   private static final Set<String> INFLOW_CASH_TYPES =
       Set.of("INCOME", "DEPOSIT", "INTEREST", "REFUND");
@@ -85,14 +100,24 @@ public class TransactionService {
           .collect(Collectors.toUnmodifiableSet());
   // Cash movements a custodian account (holds positions: depot, mandate, crypto) can carry itself.
   // INCOME/EXPENSE/REFUND are consumer-spending types and belong on a cash or savings account;
-  // dividends and trades arrive with US-12-01.
+  // trades and dividends are the investment types below.
   private static final Set<String> CUSTODY_CASH_TYPES =
       Set.of("DEPOSIT", WITHDRAWAL, "INTEREST", FEE, "TAX");
   // A credit card is only ever charged (purchase, incl. its own FEE row) or paid down (settlement).
   private static final Set<String> CARD_TYPES = Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT);
+  private static final String BUY = "BUY";
+  private static final String SELL = "SELL";
+  private static final String DIVIDEND = "DIVIDEND";
+  // US-07-01: need a security and an account that holds positions. BUY and SELL move the position.
+  private static final Set<String> TRADE_TYPES = Set.of(BUY, SELL);
+  private static final Set<String> INVESTMENT_TYPES = Set.of(BUY, SELL, DIVIDEND);
   private static final Set<String> SUPPORTED_TYPES =
-      Stream.concat(CASH_TYPES.stream(), Stream.of(CREDIT_CARD_PURCHASE, SETTLEMENT))
+      Stream.of(CASH_TYPES, CARD_TYPES, INVESTMENT_TYPES)
+          .flatMap(Set::stream)
           .collect(Collectors.toUnmodifiableSet());
+  // For a currency without an ISO minor unit (Currency#getDefaultFractionDigits is -1).
+  private static final int DEFAULT_MINOR_DIGITS = 2;
+  private static final BigDecimal HALF = new BigDecimal("0.5");
   private static final String ACTIVE = "ACTIVE";
   private static final String MANUAL = "MANUAL";
   private static final String MCC_KEY = "mcc";
@@ -120,6 +145,7 @@ public class TransactionService {
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final SettlementDetectionService settlementDetectionService;
   private final FxRateService fxRateService;
+  private final SecurityRepository securityRepository;
   private final ObjectMapper objectMapper;
   private final String fxDefaultSource;
 
@@ -130,6 +156,7 @@ public class TransactionService {
       AccountCreditCardRepository accountCreditCardRepository,
       SettlementDetectionService settlementDetectionService,
       FxRateService fxRateService,
+      SecurityRepository securityRepository,
       ObjectMapper objectMapper,
       @Value("${app.fx.default-source}") String fxDefaultSource) {
     this.accountLookupService = accountLookupService;
@@ -138,6 +165,7 @@ public class TransactionService {
     this.accountCreditCardRepository = accountCreditCardRepository;
     this.settlementDetectionService = settlementDetectionService;
     this.fxRateService = fxRateService;
+    this.securityRepository = securityRepository;
     this.objectMapper = objectMapper;
     this.fxDefaultSource = fxDefaultSource;
   }
@@ -171,6 +199,15 @@ public class TransactionService {
             ? accountCreditCardRepository.findById(accountId).orElse(null)
             : null;
     boolean foreignCurrency = validate(account, cardExtension, request);
+    if (request.securityId() != null && !securityRepository.existsById(request.securityId())) {
+      // Same answer as a snapshot holding (US-25-01): the master is shared, and the id reveals
+      // nothing a workspace could not already look up.
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          "Security "
+              + request.securityId()
+              + " does not exist. Create it first with POST /api/v1/securities.");
+    }
     // The currency a rate converts into: the card's billing currency, else the account's own.
     String accountCurrency =
         cardExtension != null ? cardExtension.getBillingCurrency() : account.getNativeCurrency();
@@ -193,6 +230,20 @@ public class TransactionService {
             ? null
             : objectMapper.writeValueAsString(Map.of(MCC_KEY, request.mcc())));
     transaction.setCreatedBy(actor.userId());
+    transaction.setSecurityId(request.securityId());
+    transaction.setQuantity(request.quantity());
+    transaction.setUnitPrice(request.unitPrice());
+    transaction.setTradeDate(request.tradeDate());
+    transaction.setSettlementDate(request.settlementDate());
+    transaction.setGrossAmount(request.grossAmount());
+    transaction.setTaxWithheldAmount(request.taxWithheldAmount());
+    // Only a dividend with its withholding disclosed has a known net that differs from "amount
+    // received"; without the gross, amount is simply what arrived.
+    transaction.setNetAmount(request.grossAmount() == null ? null : request.amount());
+    if (!isCardPurchase) {
+      // A trade's costs are part of its own row; a card purchase's fee becomes a FEE row below.
+      transaction.setFeeAmount(request.feeAmount());
+    }
     if (foreignCurrency) {
       ForeignCurrencyResolution resolution = resolveForeignCurrency(accountCurrency, request);
       transaction.setFxRateToAccountCurrency(resolution.rate());
@@ -205,7 +256,7 @@ public class TransactionService {
     // as AccountService's own saveAndFlush calls.
     Transaction saved = transactionRepository.saveAndFlush(transaction);
 
-    if (foreignCurrency && request.feeAmount() != null) {
+    if (isCardPurchase && foreignCurrency && request.feeAmount() != null) {
       Transaction fee = new Transaction();
       fee.setWorkspace(account.getWorkspace());
       fee.setAccount(account);
@@ -263,7 +314,8 @@ public class TransactionService {
                   && row.getAmount().compareTo(request.amount()) == 0
                   && row.getCurrency().equals(request.currency())
                   && sameFxRate(row, request)
-                  && sameFee(row, request);
+                  && sameFee(row, request)
+                  && sameInvestment(row, request);
           if (!samePurchase) {
             throw new ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -297,6 +349,9 @@ public class TransactionService {
   }
 
   private boolean sameFee(Transaction row, CreateTransactionRequest request) {
+    if (!CREDIT_CARD_PURCHASE.equals(row.getTransactionType())) {
+      return sameDecimal(row.getFeeAmount(), request.feeAmount());
+    }
     if (request.feeAmount() == null) {
       return true;
     }
@@ -304,6 +359,26 @@ public class TransactionService {
         .findByRelatedTransactionId(row.getId())
         .map(fee -> fee.getAmount().negate().compareTo(request.feeAmount()) == 0)
         .orElse(false);
+  }
+
+  // Every investment field is frozen and part of what the key identifies, so all must match; two
+  // nulls match (a cash row carries none of them).
+  private static boolean sameInvestment(Transaction row, CreateTransactionRequest request) {
+    return Objects.equals(row.getSecurityId(), request.securityId())
+        && sameDecimal(row.getQuantity(), request.quantity())
+        && sameDecimal(row.getUnitPrice(), request.unitPrice())
+        && Objects.equals(row.getTradeDate(), request.tradeDate())
+        && Objects.equals(row.getSettlementDate(), request.settlementDate())
+        && sameDecimal(row.getGrossAmount(), request.grossAmount())
+        && sameDecimal(row.getTaxWithheldAmount(), request.taxWithheldAmount());
+  }
+
+  // compareTo, not equals: the stored NUMERIC comes back at the column's scale (10.0000000000),
+  // the request at whatever scale the client sent (10).
+  private static boolean sameDecimal(BigDecimal stored, BigDecimal requested) {
+    return stored == null
+        ? requested == null
+        : requested != null && stored.compareTo(requested) == 0;
   }
 
   /**
@@ -380,6 +455,14 @@ public class TransactionService {
           HttpStatus.UNPROCESSABLE_CONTENT,
           type + " cannot be recorded on this kind of account" + allowedHint(account) + ".");
     }
+    // Decided by the capability flag alone: a pension that holds funds trades like a depot; its
+    // contribution limit governs contributions (US-10-01), not what happens inside it.
+    if (INVESTMENT_TYPES.contains(type) && !account.isHoldsPositions()) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          type + " can only be recorded on an account that holds positions.");
+    }
+    validateInvestment(type, request);
 
     // US-09-04/FR-CC-010, US-07-01/DM-06: the currency may differ from the account's own. A card is
     // compared against its billing_currency, not account.nativeCurrency - the two may legitimately
@@ -390,7 +473,7 @@ public class TransactionService {
     boolean foreignCurrency = !accountCurrency.equals(request.currency());
     // A SETTLEMENT is the one type that must be in the account's own currency: matching pairs
     // payment and card credit by exact amount (US-09-02), which a converted row cannot satisfy.
-    if (foreignCurrency && !isCardPurchase && !CASH_TYPES.contains(type)) {
+    if (foreignCurrency && SETTLEMENT.equals(type)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           "currency must match the account's currency ("
@@ -400,20 +483,24 @@ public class TransactionService {
               + ".");
     }
     if (!foreignCurrency
-        && (request.fxRateToAccountCurrency() != null
-            || request.billedAmount() != null
-            || request.feeAmount() != null)) {
+        && (request.fxRateToAccountCurrency() != null || request.billedAmount() != null)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
-          "fxRateToAccountCurrency, billedAmount and feeAmount are only valid for a"
-              + " foreign-currency transaction.");
+          "fxRateToAccountCurrency and billedAmount are only valid for a foreign-currency"
+              + " transaction.");
     }
-    // A disclosed foreign-transaction fee is a card-issuer concept (FR-CC-010); on an ordinary
-    // account the fee is simply its own FEE transaction.
-    if (request.feeAmount() != null && !isCardPurchase) {
+    // Two kinds of fee travel with their transaction: a trade's costs, part of its amount, and a
+    // card issuer's disclosed foreign-transaction fee (FR-CC-010). Any other fee is simply its own
+    // FEE transaction.
+    boolean feeAllowed = TRADE_TYPES.contains(type) || (isCardPurchase && foreignCurrency);
+    if (request.feeAmount() != null && !feeAllowed) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
-          "feeAmount is only valid for a foreign-currency card purchase; record a "
+          "feeAmount is only valid on a "
+              + BUY
+              + " or "
+              + SELL
+              + ", or a foreign-currency card purchase; record a "
               + FEE
               + " transaction instead.");
     }
@@ -433,6 +520,13 @@ public class TransactionService {
           HttpStatus.UNPROCESSABLE_CONTENT,
           "billedAmount must carry the same sign as amount (both cash-direction signed).");
     }
+    // Only a sale can have a zero cash leg (proceeds exactly equal to costs); no rate follows from
+    // it, and dividing by it below would fail.
+    if (request.billedAmount() != null && request.amount().signum() == 0) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          "A zero amount implies no rate: give fxRateToAccountCurrency instead of billedAmount.");
+    }
     if (request.feeAmount() != null && request.feeAmount().signum() <= 0) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "feeAmount must be a positive magnitude.");
@@ -440,10 +534,17 @@ public class TransactionService {
 
     // Cash-direction signed ledger: rejecting a wrong sign rather than flipping it keeps "what you
     // send is what is stored". Money leaves the account for a purchase, a withdrawal, an expense,
-    // fee or tax and the payment side of a settlement; it enters for income, deposit, interest,
-    // refund and the card side of a settlement.
-    boolean mustBePositive = INFLOW_CASH_TYPES.contains(type) || (SETTLEMENT.equals(type) && card);
-    if (mustBePositive ? request.amount().signum() <= 0 : request.amount().signum() >= 0) {
+    // fee or tax, a buy and the payment side of a settlement; it enters for income, deposit,
+    // interest, refund, a dividend and the card side of a settlement. A sale has no fixed sign: its
+    // cash leg is proceeds minus costs, which is zero or negative when the costs of selling a
+    // near-worthless remnant exceed its proceeds, so requireTradeAmountMatches alone decides it.
+    boolean mustBePositive =
+        INFLOW_CASH_TYPES.contains(type)
+            || DIVIDEND.equals(type)
+            || (SETTLEMENT.equals(type) && card);
+    boolean signFixedByType = !SELL.equals(type);
+    if (signFixedByType
+        && (mustBePositive ? request.amount().signum() <= 0 : request.amount().signum() >= 0)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           mustBePositive
@@ -452,7 +553,169 @@ public class TransactionService {
                   + type
                   + " (e.g. -85.00): money leaves the account.");
     }
+    if (TRADE_TYPES.contains(type)) {
+      requireTradeAmountMatches(request);
+    }
     return foreignCurrency;
+  }
+
+  /**
+   * US-07-01: the fields only an investment type carries, and the rules between them. Checked for
+   * every type, so a cash or card entry carrying one of them is rejected rather than silently
+   * storing a quantity no position will ever read.
+   */
+  private static void validateInvestment(String type, CreateTransactionRequest request) {
+    if (!INVESTMENT_TYPES.contains(type)) {
+      boolean anyInvestmentField =
+          Stream.of(
+                  request.securityId(),
+                  request.quantity(),
+                  request.unitPrice(),
+                  request.tradeDate(),
+                  request.settlementDate(),
+                  request.grossAmount(),
+                  request.taxWithheldAmount())
+              .anyMatch(Objects::nonNull);
+      if (anyInvestmentField) {
+        throw unprocessable(
+            "securityId, quantity, unitPrice, tradeDate, settlementDate, grossAmount and"
+                + " taxWithheldAmount are only valid for "
+                + String.join(", ", new TreeSet<>(INVESTMENT_TYPES))
+                + ".");
+      }
+      return;
+    }
+    if (request.securityId() == null) {
+      throw unprocessable("securityId is required for a " + type + ".");
+    }
+    if (request.unitPrice() != null && request.unitPrice().signum() <= 0) {
+      throw unprocessable("unitPrice must be positive.");
+    }
+    if (TRADE_TYPES.contains(type)) {
+      validateTrade(type, request);
+    } else {
+      validateDividend(request);
+    }
+  }
+
+  private static void validateTrade(String type, CreateTransactionRequest request) {
+    if (request.quantity() == null || request.unitPrice() == null) {
+      throw unprocessable("quantity and unitPrice are required for a " + type + ".");
+    }
+    // Position-direction signed, so a position is the plain sum of its trades' quantities.
+    boolean buy = BUY.equals(type);
+    if (buy ? request.quantity().signum() <= 0 : request.quantity().signum() >= 0) {
+      throw unprocessable(
+          buy
+              ? "quantity must be positive for a BUY (e.g. 10): shares enter the position."
+              : "quantity must be negative for a SELL (e.g. -10): shares leave the position.");
+    }
+    if (request.grossAmount() != null || request.taxWithheldAmount() != null) {
+      throw unprocessable(
+          "grossAmount and taxWithheldAmount are only valid for a " + DIVIDEND + ".");
+    }
+    // FR-TRX-008: performance reads the trade date, cash balances the settlement date. The
+    // booking date is the day the statement books the trade's cash, which can never precede the
+    // trade itself; it usually equals the settlement date, but some custodians book on trade date,
+    // so no tighter rule is imposed.
+    if (request.tradeDate() != null
+        && request.settlementDate() != null
+        && request.settlementDate().isBefore(request.tradeDate())) {
+      throw unprocessable("settlementDate cannot be before tradeDate.");
+    }
+    if (request.tradeDate() != null && request.tradeDate().isAfter(request.bookingDate())) {
+      throw unprocessable(
+          "tradeDate cannot be after bookingDate: a trade's cash is booked on or after its trade"
+              + " date.");
+    }
+  }
+
+  private static void validateDividend(CreateTransactionRequest request) {
+    if (request.tradeDate() != null || request.settlementDate() != null) {
+      throw unprocessable(
+          "tradeDate and settlementDate are only valid for a " + BUY + " or " + SELL + ".");
+    }
+    // A dividend never moves the position, so its quantity is only the shares entitled.
+    if (request.quantity() != null && request.quantity().signum() <= 0) {
+      throw unprocessable("quantity must be positive for a DIVIDEND: the shares entitled.");
+    }
+    if ((request.grossAmount() == null) != (request.taxWithheldAmount() == null)) {
+      throw unprocessable("grossAmount and taxWithheldAmount must be given together.");
+    }
+    if (request.grossAmount() != null) {
+      if (request.taxWithheldAmount().signum() < 0) {
+        throw unprocessable("taxWithheldAmount cannot be negative.");
+      }
+      // FR-TAXR-001: gross, withheld and net must reconcile exactly - they come from one advice.
+      BigDecimal net = request.grossAmount().subtract(request.taxWithheldAmount());
+      if (net.compareTo(request.amount()) != 0) {
+        throw unprocessable(
+            "grossAmount minus taxWithheldAmount ("
+                + net.toPlainString()
+                + ") must equal amount, the net cash received.");
+      }
+    }
+    // Per-share gross against the gross total (or the amount, when nothing was withheld), with
+    // the same rounding allowance as a trade, since a per-share rate is rounded on the advice too.
+    if (request.quantity() != null && request.unitPrice() != null) {
+      BigDecimal gross = request.grossAmount() != null ? request.grossAmount() : request.amount();
+      BigDecimal perShareTotal = request.quantity().multiply(request.unitPrice());
+      BigDecimal tolerance =
+          amountTolerance(request.currency(), request.quantity(), request.unitPrice());
+      if (perShareTotal.subtract(gross).abs().compareTo(tolerance) > 0) {
+        throw unprocessable(
+            "quantity x unitPrice ("
+                + perShareTotal.setScale(4, RoundingMode.HALF_UP).toPlainString()
+                + ") must equal the gross dividend within "
+                + tolerance.toPlainString()
+                + "; if tax was withheld, give grossAmount and taxWithheldAmount.");
+      }
+    }
+  }
+
+  // The statement's amount is the authority; the check only catches a typo or a mixed-up field.
+  private static void requireTradeAmountMatches(CreateTransactionRequest request) {
+    BigDecimal fee = request.feeAmount() == null ? BigDecimal.ZERO : request.feeAmount();
+    BigDecimal expected = request.quantity().multiply(request.unitPrice()).negate().subtract(fee);
+    BigDecimal tolerance =
+        amountTolerance(request.currency(), request.quantity(), request.unitPrice());
+    if (expected.subtract(request.amount()).abs().compareTo(tolerance) > 0) {
+      throw unprocessable(
+          "amount must equal -(quantity x unitPrice) - feeAmount = "
+              + expected.setScale(4, RoundingMode.HALF_UP).toPlainString()
+              + " within "
+              + tolerance.toPlainString()
+              + ".");
+    }
+  }
+
+  /**
+   * How far a statement's {@code amount} may lie from {@code quantity x unitPrice}, given how both
+   * were rounded on it: one minor unit of the currency (0.01 for CHF, 1 for JPY) for the booked
+   * amount, plus half a unit in the last place of the unit price for every share, because a
+   * statement shows the (average) price rounded while the amount is computed from the exact one. A
+   * price is taken as given at least to the currency's minor unit - "100" means 100.00 - so a
+   * whole-number price does not widen the allowance to half a currency unit per share.
+   *
+   * <p>E.g. 25,000 shares at a shown 12.3457 (exact 12.345678): 0.01 + 25,000 x 0.00005 = 1.26,
+   * which accepts the booked 308,641.95 against the computed 308,642.50, while 10 x 100 with a fee
+   * of 5 still rejects a typed 1,010 for the correct 1,005 (0.01 + 10 x 0.005 = 0.06).
+   */
+  static BigDecimal amountTolerance(String currency, BigDecimal quantity, BigDecimal unitPrice) {
+    int minorDigits = minorDigits(currency);
+    BigDecimal bookedAmountRounding = BigDecimal.ONE.movePointLeft(minorDigits);
+    int priceDigits = Math.max(unitPrice.stripTrailingZeros().scale(), minorDigits);
+    BigDecimal priceRounding = HALF.movePointLeft(priceDigits);
+    return bookedAmountRounding.add(quantity.abs().multiply(priceRounding)).stripTrailingZeros();
+  }
+
+  private static int minorDigits(String currency) {
+    int digits = Currency.getInstance(currency).getDefaultFractionDigits();
+    return digits < 0 ? DEFAULT_MINOR_DIGITS : digits;
+  }
+
+  private static ResponseStatusException unprocessable(String detail) {
+    return new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, detail);
   }
 
   /**
@@ -513,7 +776,16 @@ public class TransactionService {
         transaction.getFxRateToAccountCurrency(),
         transaction.isFxRateEstimated(),
         transaction.getRelatedTransactionId(),
-        transaction.getCreatedAt());
+        transaction.getCreatedAt(),
+        transaction.getSecurityId(),
+        transaction.getQuantity(),
+        transaction.getUnitPrice(),
+        transaction.getFeeAmount(),
+        transaction.getTradeDate(),
+        transaction.getSettlementDate(),
+        transaction.getGrossAmount(),
+        transaction.getTaxWithheldAmount(),
+        transaction.getNetAmount());
   }
 
   // raw_source_data may in future carry a richer, import-defined shape (EPIC 07); only the "mcc"

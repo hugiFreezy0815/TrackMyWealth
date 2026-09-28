@@ -8,7 +8,6 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CardStatementResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
-import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
@@ -21,6 +20,7 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.testsupport.MutableClock;
 import com.trackmywealth.backend.testsupport.TestClockConfig;
+import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -387,7 +387,7 @@ class CardStatementControllerTest {
         .uri("/api/v1/accounts/" + accountId + "/transactions")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateTransactionRequest(
+            TransactionRequests.cash(
                 type,
                 date,
                 new BigDecimal(amount),

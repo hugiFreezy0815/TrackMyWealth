@@ -10,7 +10,6 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
-import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
@@ -22,6 +21,7 @@ import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.testsupport.TransactionRequests;
 import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -1054,7 +1054,7 @@ class SettlementMatchControllerTest {
         .uri("/api/v1/accounts/" + accountId + "/transactions")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateTransactionRequest(
+            TransactionRequests.cash(
                 type,
                 date,
                 new BigDecimal(amount),
@@ -1092,7 +1092,7 @@ class SettlementMatchControllerTest {
         .uri("/api/v1/accounts/" + card + "/transactions")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateTransactionRequest(
+            TransactionRequests.cash(
                 "CREDIT_CARD_PURCHASE",
                 date,
                 new BigDecimal(amount),
