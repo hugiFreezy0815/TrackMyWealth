@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,12 +16,15 @@ import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.entity.Category;
+import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.entity.WorkspaceCategoryOverride;
 import com.trackmywealth.backend.repository.CategoryRepository;
 import com.trackmywealth.backend.repository.WorkspaceCategoryOverrideRepository;
+import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,9 +53,11 @@ class CategoryServiceTest {
   private final CategoryRepository categoryRepository = mock(CategoryRepository.class);
   private final WorkspaceCategoryOverrideRepository overrideRepository =
       mock(WorkspaceCategoryOverrideRepository.class);
+  private final WorkspaceRepository workspaceRepository = mock(WorkspaceRepository.class);
   private final AccessControlService accessControlService = mock(AccessControlService.class);
   private final CategoryService service =
-      new CategoryService(categoryRepository, overrideRepository, accessControlService);
+      new CategoryService(
+          categoryRepository, overrideRepository, workspaceRepository, accessControlService);
 
   private final List<Category> categories = new ArrayList<>();
   private final List<WorkspaceCategoryOverride> overrides = new ArrayList<>();
@@ -70,6 +76,9 @@ class CategoryServiceTest {
     when(categoryRepository.findVisibleTo(WORKSPACE)).thenAnswer(inv -> List.copyOf(categories));
     when(overrideRepository.findByWorkspaceId(WORKSPACE)).thenAnswer(inv -> List.copyOf(overrides));
     when(accessControlService.requireActingMember(ACTOR)).thenReturn(MEMBER);
+    when(accessControlService.workspaceAccessLevel(MEMBER, WORKSPACE))
+        .thenReturn(AccessLevelValues.EDIT);
+    when(workspaceRepository.findByIdForUpdate(WORKSPACE)).thenReturn(Optional.of(new Workspace()));
     // Writes land in the fixture lists, so a later call in the same test sees them, as it would
     // see the database.
     when(categoryRepository.saveAndFlush(any(Category.class)))
@@ -238,7 +247,7 @@ class CategoryServiceTest {
     void relabellingASharedDefaultWritesAnOverrideAndNeverTouchesTheSharedRow() {
       CategoryResponse renamed =
           service.update(
-              leisure.getId(), new UpdateCategoryRequest(null, "Free Time", "Freizeit"), ACTOR);
+              leisure.getId(), new UpdateCategoryRequest(null, "Free Time", "Freizeit", 0), ACTOR);
 
       ArgumentCaptor<WorkspaceCategoryOverride> saved =
           ArgumentCaptor.forClass(WorkspaceCategoryOverride.class);
@@ -259,7 +268,7 @@ class CategoryServiceTest {
 
       CategoryResponse restored =
           service.update(
-              leisure.getId(), new UpdateCategoryRequest(null, "Leisure", "Freizeit"), ACTOR);
+              leisure.getId(), new UpdateCategoryRequest(null, "Leisure", "Freizeit", 1), ACTOR);
 
       verify(overrideRepository).delete(existing);
       assertThat(restored.customised()).isFalse();
@@ -274,7 +283,7 @@ class CategoryServiceTest {
           () ->
               service.update(
                   leisure.getId(),
-                  new UpdateCategoryRequest(hobby.getId(), "Leisure", "Freizeit"),
+                  new UpdateCategoryRequest(hobby.getId(), "Leisure", "Freizeit", 0),
                   ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
     }
@@ -286,7 +295,7 @@ class CategoryServiceTest {
       CategoryResponse moved =
           service.update(
               hobby.getId(),
-              new UpdateCategoryRequest(leisure.getId(), "Hobbies", "Hobbys"),
+              new UpdateCategoryRequest(leisure.getId(), "Hobbies", "Hobbys", 0),
               ACTOR);
 
       verify(categoryRepository).saveAndFlush(hobby);
@@ -304,12 +313,16 @@ class CategoryServiceTest {
       assertStatus(
           () ->
               service.update(
-                  hobby.getId(), new UpdateCategoryRequest(hobby.getId(), "Hobby", "Hobby"), ACTOR),
+                  hobby.getId(),
+                  new UpdateCategoryRequest(hobby.getId(), "Hobby", "Hobby", 0),
+                  ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
       assertStatus(
           () ->
               service.update(
-                  hobby.getId(), new UpdateCategoryRequest(music.getId(), "Hobby", "Hobby"), ACTOR),
+                  hobby.getId(),
+                  new UpdateCategoryRequest(music.getId(), "Hobby", "Hobby", 0),
+                  ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
     }
 
@@ -323,14 +336,16 @@ class CategoryServiceTest {
       assertStatus(
           () ->
               service.update(
-                  hobby.getId(), new UpdateCategoryRequest(sport.getId(), "Hobby", "Hobby"), ACTOR),
+                  hobby.getId(),
+                  new UpdateCategoryRequest(sport.getId(), "Hobby", "Hobby", 0),
+                  ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
       // Under Leisure (level 1) it fits exactly.
       assertThat(
               service
                   .update(
                       hobby.getId(),
-                      new UpdateCategoryRequest(leisure.getId(), "Hobby", "Hobby"),
+                      new UpdateCategoryRequest(leisure.getId(), "Hobby", "Hobby", 0),
                       ACTOR)
                   .level())
           .isEqualTo(2);
@@ -341,7 +356,8 @@ class CategoryServiceTest {
       Category sport = own("WS_SPORT", "Sport", "Sport", leisure);
 
       CategoryResponse moved =
-          service.update(sport.getId(), new UpdateCategoryRequest(null, "Sport", "Sport"), ACTOR);
+          service.update(
+              sport.getId(), new UpdateCategoryRequest(null, "Sport", "Sport", 0), ACTOR);
 
       assertThat(moved.parentId()).isNull();
       assertThat(moved.level()).isEqualTo(1);
@@ -466,6 +482,215 @@ class CategoryServiceTest {
     assertThat(all)
         .containsExactly(
             "TRANSFER_INTERNAL", "LEISURE", archived.getCode(), sport.getCode(), "UNCATEGORIZED");
+  }
+
+  // --- review follow-ups: serialization, versions, inherited activity, batch, capability -----
+
+  @Nested
+  class Concurrency {
+
+    @Test
+    void everyChangeLocksTheWorkspaceRowBeforeReadingTheTree() {
+      Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
+
+      service.create(new CreateCategoryRequest(null, "Pets", "Haustiere"), ACTOR);
+      service.update(hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys", 0), ACTOR);
+      service.deactivate(hobby.getId(), ACTOR);
+      service.activate(hobby.getId(), ACTOR);
+      service.delete(hobby.getId(), ACTOR);
+
+      verify(workspaceRepository, times(5)).findByIdForUpdate(WORKSPACE);
+    }
+
+    @Test
+    void aMemberWithoutEditNeverTakesTheLock() {
+      doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace not found."))
+          .when(accessControlService)
+          .requireWorkspaceAccess(MEMBER, WORKSPACE, AccessLevelValues.EDIT);
+
+      assertStatus(
+          () -> service.create(new CreateCategoryRequest(null, "Pets", "Haustiere"), ACTOR),
+          HttpStatus.NOT_FOUND);
+      verify(workspaceRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    void readsDoNotLock() {
+      service.list(true, ACTOR);
+      service.get(leisure.getId(), ACTOR);
+
+      verify(workspaceRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    void anUpdateBasedOnAStaleVersionIsAConflictAndChangesNothing() {
+      Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
+      ReflectionTestUtils.setField(hobby, "version", 3);
+
+      assertStatus(
+          () ->
+              service.update(
+                  hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys", 2), ACTOR),
+          HttpStatus.CONFLICT);
+      verify(categoryRepository, never()).saveAndFlush(any());
+      assertThat(
+              service
+                  .update(
+                      hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys", 3), ACTOR)
+                  .nameEn())
+          .isEqualTo("Hobbies");
+    }
+
+    @Test
+    void aDefaultsVersionTracksThisWorkspacesOverride() {
+      assertThat(service.get(leisure.getId(), ACTOR).version()).as("no override").isZero();
+      WorkspaceCategoryOverride existing = override(leisure, "Fun", null, null);
+      ReflectionTestUtils.setField(existing, "version", 4);
+
+      assertThat(service.get(leisure.getId(), ACTOR).version()).isEqualTo(5);
+      assertStatus(
+          () ->
+              service.update(
+                  leisure.getId(),
+                  new UpdateCategoryRequest(null, "Free Time", "Freizeit", 0),
+                  ACTOR),
+          HttpStatus.CONFLICT);
+      verify(overrideRepository, never()).saveAndFlush(any());
+    }
+  }
+
+  @Nested
+  class DefaultPosition {
+
+    @Test
+    void aNestedDefaultIsRelabelledWithoutRepeatingItsParent() {
+      Category streaming = shared("STREAMING", "Streaming", "Streaming", leisure);
+
+      CategoryResponse renamed =
+          service.update(
+              streaming.getId(), new UpdateCategoryRequest(null, "Video", "Video", 0), ACTOR);
+
+      assertThat(renamed.parentId()).isEqualTo(leisure.getId());
+      assertThat(renamed.nameEn()).isEqualTo("Video");
+      assertThat(streaming.getParentCategoryId()).isEqualTo(leisure.getId());
+    }
+
+    @Test
+    void aNestedDefaultCanStillNotBeMovedToAnotherParent() {
+      Category streaming = shared("STREAMING", "Streaming", "Streaming", leisure);
+      Category other = shared("OTHER", "Other", "Sonstiges", null);
+
+      assertStatus(
+          () ->
+              service.update(
+                  streaming.getId(),
+                  new UpdateCategoryRequest(other.getId(), "Streaming", "Streaming", 0),
+                  ACTOR),
+          HttpStatus.UNPROCESSABLE_CONTENT);
+    }
+  }
+
+  @Nested
+  class InheritedActivity {
+
+    // E.g. a default a later reference package adds under a default this workspace deactivated:
+    // its own flag is active, but it sits under an inactive ancestor.
+    @Test
+    void aCategoryUnderAnInactiveAncestorIsInactiveAndNotAssignable() {
+      override(leisure, null, null, false);
+      Category streaming = shared("STREAMING", "Streaming", "Streaming", leisure);
+      Category netflix = own("WS_NETFLIX", "Netflix", "Netflix", streaming);
+
+      assertThat(service.get(streaming.getId(), ACTOR).active()).isFalse();
+      assertThat(service.get(netflix.getId(), ACTOR).active()).isFalse();
+      assertStatus(
+          () -> service.requireAssignable(netflix.getId(), WORKSPACE),
+          HttpStatus.UNPROCESSABLE_CONTENT);
+      assertStatus(
+          () -> service.create(new CreateCategoryRequest(streaming.getId(), "X", "X"), ACTOR),
+          HttpStatus.UNPROCESSABLE_CONTENT);
+      assertThat(service.list(false, ACTOR))
+          .extracting(CategoryResponse::code)
+          .doesNotContain("STREAMING", "WS_NETFLIX");
+    }
+
+    @Test
+    void activatingUnderAnInactiveAncestorAsksForTheAncestorFirst() {
+      override(leisure, null, null, false);
+      Category streaming = shared("STREAMING", "Streaming", "Streaming", leisure);
+
+      assertStatus(
+          () -> service.activate(streaming.getId(), ACTOR), HttpStatus.UNPROCESSABLE_CONTENT);
+
+      CategoryResponse reactivated = service.activate(leisure.getId(), ACTOR);
+      assertThat(reactivated.active()).isTrue();
+      assertThat(service.get(streaming.getId(), ACTOR).active())
+          .as("its own flag was never cleared")
+          .isTrue();
+    }
+  }
+
+  @Nested
+  class BatchAssignability {
+
+    @Test
+    void manyCategoriesAreCheckedAgainstOneLoadOfTheTaxonomy() {
+      Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
+
+      service.requireAssignable(
+          List.of(hobby.getId(), leisure.getId(), hobby.getId(), uncategorized.getId()), WORKSPACE);
+
+      verify(categoryRepository, times(1)).findVisibleTo(WORKSPACE);
+      verify(overrideRepository, times(1)).findByWorkspaceId(WORKSPACE);
+    }
+
+    @Test
+    void oneInactiveOrUnknownCategoryFailsTheBatch() {
+      Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
+      override(leisure, null, null, false);
+
+      assertStatus(
+          () -> service.requireAssignable(List.of(hobby.getId(), leisure.getId()), WORKSPACE),
+          HttpStatus.UNPROCESSABLE_CONTENT);
+      assertStatus(
+          () -> service.requireAssignable(List.of(hobby.getId(), UUID.randomUUID()), WORKSPACE),
+          HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void anEmptyBatchLoadsNothing() {
+      service.requireAssignable(List.of(), WORKSPACE);
+
+      verify(categoryRepository, never()).findVisibleTo(any());
+    }
+  }
+
+  @Nested
+  class Capability {
+
+    @Test
+    void aReadOnlyMemberSeesCanEditFalse() {
+      when(accessControlService.workspaceAccessLevel(MEMBER, WORKSPACE))
+          .thenReturn(AccessLevelValues.READ);
+
+      assertThat(service.list(false, ACTOR))
+          .extracting(CategoryResponse::canEdit)
+          .containsOnly(false);
+      assertThat(service.get(leisure.getId(), ACTOR).canEdit()).isFalse();
+    }
+
+    @Test
+    void anEditorSeesCanEditTrue() {
+      when(accessControlService.workspaceAccessLevel(MEMBER, WORKSPACE))
+          .thenReturn(AccessLevelValues.FULL);
+
+      assertThat(service.list(false, ACTOR))
+          .extracting(CategoryResponse::canEdit)
+          .containsOnly(true);
+      assertThat(
+              service.create(new CreateCategoryRequest(null, "Pets", "Haustiere"), ACTOR).canEdit())
+          .isTrue();
+    }
   }
 
   // --- fixtures ------------------------------------------------------------------------------

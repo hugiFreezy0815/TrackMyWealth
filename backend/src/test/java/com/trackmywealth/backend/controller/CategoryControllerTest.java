@@ -24,6 +24,11 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Supplier;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
@@ -196,7 +201,7 @@ class CategoryControllerTest {
             .put()
             .uri(BASE + "/" + groceries)
             .contentType(MediaType.APPLICATION_JSON)
-            .body(new UpdateCategoryRequest(null, "Food & Drink", "Essen & Trinken"))
+            .body(new UpdateCategoryRequest(null, "Food & Drink", "Essen & Trinken", 0))
             .exchange()
             .expectStatus()
             .isOk()
@@ -239,10 +244,16 @@ class CategoryControllerTest {
     CategoryResponse music =
         created(token, new CreateCategoryRequest(hobby.id(), "Music", "Musik"));
 
-    update(token, hobby.id(), new UpdateCategoryRequest(music.id(), "Hobby", "Hobby"))
+    update(
+            token,
+            hobby.id(),
+            new UpdateCategoryRequest(music.id(), "Hobby", "Hobby", hobby.version()))
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
-    update(token, hobby.id(), new UpdateCategoryRequest(defaultId("LEISURE"), "Hobby", "Hobby"))
+    update(
+            token,
+            hobby.id(),
+            new UpdateCategoryRequest(defaultId("LEISURE"), "Hobby", "Hobby", hobby.version()))
         .expectStatus()
         .isOk();
     assertThat(list(token, false))
@@ -380,6 +391,124 @@ class CategoryControllerTest {
                     hobby.id()))
         .as("only a shared default can be overridden")
         .hasMessageContaining("workspace_category_override_default_only");
+  }
+
+  // --- review follow-ups ---------------------------------------------------------------------
+
+  @Test
+  void anUpdateBasedOnAStaleReadIsAConflict() {
+    String token = bootstrapAdministrator();
+    CategoryResponse hobby = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
+    CategoryResponse renamed =
+        update(
+                token,
+                hobby.id(),
+                new UpdateCategoryRequest(null, "Hobbies", "Hobbys", hobby.version()))
+            .expectStatus()
+            .isOk()
+            .expectBody(CategoryResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(renamed.version()).isGreaterThan(hobby.version());
+
+    update(
+            token,
+            hobby.id(),
+            new UpdateCategoryRequest(null, "Pastime", "Zeitvertreib", hobby.version()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    update(token, hobby.id(), new UpdateCategoryRequest(null, "Hobby", "Hobby", null))
+        .expectStatus()
+        .isBadRequest();
+
+    UUID leisure = defaultId("LEISURE");
+    update(token, leisure, new UpdateCategoryRequest(null, "Fun", "Spass", 0))
+        .expectStatus()
+        .isOk();
+    update(token, leisure, new UpdateCategoryRequest(null, "Free Time", "Musse", 0))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void canEditTellsAReadOnlyMemberWhatTheyMayNotDo() {
+    String adminToken = bootstrapAdministrator();
+    // The sole active member has FULL implicitly - only until a second member joins.
+    assertThat(list(adminToken, false)).extracting(CategoryResponse::canEdit).containsOnly(true);
+    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    String memberToken = login("member@example.com");
+
+    assertThat(list(memberToken, false)).extracting(CategoryResponse::canEdit).containsOnly(false);
+
+    grantWorkspace(adminToken, memberId, AccessLevelValues.EDIT);
+    assertThat(list(memberToken, false)).extracting(CategoryResponse::canEdit).containsOnly(true);
+  }
+
+  // Without the workspace lock both moves pass their in-memory cycle check and the two categories
+  // end up each other's parent, vanishing from the tree. With it, the second sees the first.
+  @Test
+  void concurrentCrossMovesCannotFormACycle() throws Exception {
+    String token = bootstrapAdministrator();
+    CategoryResponse hobby = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
+    CategoryResponse music = created(token, new CreateCategoryRequest(null, "Music", "Musik"));
+    CountDownLatch start = new CountDownLatch(1);
+    Callable<HttpStatus> hobbyUnderMusic =
+        () -> {
+          start.await();
+          return moveStatus(token, hobby, music.id());
+        };
+    Callable<HttpStatus> musicUnderHobby =
+        () -> {
+          start.await();
+          return moveStatus(token, music, hobby.id());
+        };
+
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      Future<HttpStatus> first = pool.submit(hobbyUnderMusic);
+      Future<HttpStatus> second = pool.submit(musicUnderHobby);
+      start.countDown();
+      assertThat(List.of(first.get(), second.get()))
+          .containsExactlyInAnyOrder(HttpStatus.OK, HttpStatus.UNPROCESSABLE_CONTENT);
+    } finally {
+      pool.shutdownNow();
+    }
+    assertThat(codes(list(token, true))).contains(hobby.code(), music.code());
+  }
+
+  @Test
+  void anOverrideGoesWithTheDefaultItCustomises() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID retired = UUID.randomUUID();
+    execute(
+        "INSERT INTO category (id, workspace_id, code, name_en, name_de, is_system_default)"
+            + " VALUES (?, NULL, 'TEST_RETIRED', 'Retired', 'Ausgemustert', TRUE)",
+        retired);
+    client(token).post().uri(BASE + "/" + retired + "/deactivate").exchange().expectStatus().isOk();
+    assertThat(
+            count(
+                "SELECT count(*) FROM workspace_category_override WHERE category_id = ?", retired))
+        .isEqualTo(1);
+
+    execute("DELETE FROM category WHERE id = ?", retired);
+
+    assertThat(
+            count(
+                "SELECT count(*) FROM workspace_category_override WHERE category_id = ?", retired))
+        .as("V35: ON DELETE CASCADE")
+        .isZero();
+  }
+
+  private HttpStatus moveStatus(String token, CategoryResponse category, UUID parentId) {
+    return HttpStatus.valueOf(
+        update(
+                token,
+                category.id(),
+                new UpdateCategoryRequest(
+                    parentId, category.nameEn(), category.nameDe(), category.version()))
+            .returnResult(Void.class)
+            .getStatus()
+            .value());
   }
 
   // --- helpers -------------------------------------------------------------------------------

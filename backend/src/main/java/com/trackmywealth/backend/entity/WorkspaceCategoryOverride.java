@@ -99,6 +99,10 @@ public class WorkspaceCategoryOverride {
     this.active = active;
   }
 
+  public Integer getVersion() {
+    return version;
+  }
+
   /** True once every field inherits the shipped value again, i.e. the row overrides nothing. */
   public boolean isEmpty() {
     return nameEn == null && nameDe == null && active == null;

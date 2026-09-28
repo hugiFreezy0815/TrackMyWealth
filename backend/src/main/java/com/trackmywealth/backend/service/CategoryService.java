@@ -8,12 +8,15 @@ import com.trackmywealth.backend.entity.Category;
 import com.trackmywealth.backend.entity.WorkspaceCategoryOverride;
 import com.trackmywealth.backend.repository.CategoryRepository;
 import com.trackmywealth.backend.repository.WorkspaceCategoryOverrideRepository;
+import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -42,15 +45,26 @@ import org.springframework.web.server.ResponseStatusException;
  *       subtree's height included); a move under its own subtree is rejected.
  *   <li>Codes are generated, {@code WS_}-prefixed and immutable, so reports keyed on them survive
  *       any relabelling (FR-CAT-008) and never clash with a default code.
- *   <li>Deactivation cascades to every subcategory; reactivation needs an active parent.
+ *   <li>Deactivation cascades to every subcategory; reactivation needs an active parent. A category
+ *       is only ever reported (and assignable) as active if every ancestor is active too, so the
+ *       rule holds even for a category that did not exist when its ancestor was deactivated (e.g. a
+ *       default a later reference package adds under a default this workspace deactivated).
  *   <li>{@link #PROTECTED_CODES} can never be deactivated, deleted or given subcategories.
  *   <li>Hard delete (FR-LIF-001): never for a default (another workspace may rely on it), and for a
  *       workspace category only if nothing ever referred to it - otherwise deactivate.
  *   <li>EN and DE labels are each unique, ignoring case, among a category's siblings.
  * </ul>
  *
+ * <p>Every change is a load-check-write over the whole tree, so every change first locks the
+ * workspace row: two concurrent changes to one workspace's taxonomy run one after the other and the
+ * second sees the first's result. Without that, two concurrent moves could form a cycle or exceed
+ * the depth limit, which no constraint catches. Updates additionally carry the version the client
+ * last read ({@link CategoryResponse#version()}), so an edit based on a stale read is a 409 rather
+ * than a silent overwrite of another member's change.
+ *
  * <p>Reads need workspace membership; changes need EDIT on the workspace, because the taxonomy is
- * shared by every member and reshapes everyone's reports.
+ * shared by every member and reshapes everyone's reports. {@link CategoryResponse#canEdit()} tells
+ * a client which of the two the caller has, so it can hide the actions that would be refused.
  */
 @Service
 public class CategoryService {
@@ -63,38 +77,41 @@ public class CategoryService {
 
   private final CategoryRepository categoryRepository;
   private final WorkspaceCategoryOverrideRepository overrideRepository;
+  private final WorkspaceRepository workspaceRepository;
   private final AccessControlService accessControlService;
 
   public CategoryService(
       CategoryRepository categoryRepository,
       WorkspaceCategoryOverrideRepository overrideRepository,
+      WorkspaceRepository workspaceRepository,
       AccessControlService accessControlService) {
     this.categoryRepository = categoryRepository;
     this.overrideRepository = overrideRepository;
+    this.workspaceRepository = workspaceRepository;
     this.accessControlService = accessControlService;
   }
 
   /** The taxonomy in tree order (parents first, siblings by English label). */
   @Transactional(readOnly = true)
   public List<CategoryResponse> list(boolean includeInactive, AuthenticatedUserPrincipal actor) {
-    accessControlService.requireActingMember(actor);
+    boolean canEdit = canEdit(actor);
     Map<UUID, Category> categories = loadCategories(actor.workspaceId());
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(actor.workspaceId());
     Map<UUID, List<Category>> children = childrenOf(categories, overrides);
 
     List<CategoryResponse> result = new ArrayList<>();
     for (Category root : children.getOrDefault(null, List.of())) {
-      appendInTreeOrder(root, children, categories, overrides, includeInactive, result);
+      appendInTreeOrder(root, children, categories, overrides, includeInactive, canEdit, result);
     }
     return result;
   }
 
   @Transactional(readOnly = true)
   public CategoryResponse get(UUID id, AuthenticatedUserPrincipal actor) {
-    accessControlService.requireActingMember(actor);
+    boolean canEdit = canEdit(actor);
     Map<UUID, Category> categories = loadCategories(actor.workspaceId());
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(actor.workspaceId());
-    return toResponse(require(categories, id), categories, overrides);
+    return toResponse(require(categories, id), categories, overrides, canEdit);
   }
 
   @Transactional
@@ -105,7 +122,7 @@ public class CategoryService {
 
     if (request.parentId() != null) {
       Category parent = require(categories, request.parentId());
-      requireMayHoldChildren(parent, overrides);
+      requireMayHoldChildren(parent, categories, overrides);
       if (level(parent, categories) + 1 > MAX_DEPTH) {
         throw unprocessable(
             "Categories can be nested at most " + MAX_DEPTH + " levels deep (FR-CAT-001).");
@@ -127,12 +144,14 @@ public class CategoryService {
     category.setNameDe(request.nameDe());
     Category saved = categoryRepository.saveAndFlush(category);
     categories.put(saved.getId(), saved);
-    return toResponse(saved, categories, overrides);
+    return toResponse(saved, categories, overrides, true);
   }
 
   /**
    * Relabels and/or moves a category. A default is relabelled through this workspace's override (a
-   * label equal to the shipped one is stored as "inherit") and cannot be moved.
+   * label equal to the shipped one is stored as "inherit") and cannot be moved: for a default, a
+   * {@code null} parent means "where it is", and only its current parent is accepted otherwise.
+   * {@code version} must be the one the client last read; a different one is a 409.
    */
   @Transactional
   public CategoryResponse update(
@@ -141,13 +160,22 @@ public class CategoryService {
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = require(categories, id);
+    if (request.version() != versionOf(category, overrides)) {
+      throw conflict(
+          "This category was changed by someone else in the meantime. Reload it and retry your"
+              + " update.");
+    }
 
-    boolean moving = !Objects.equals(request.parentId(), category.getParentCategoryId());
+    UUID parentId =
+        category.isShared() && request.parentId() == null
+            ? category.getParentCategoryId()
+            : request.parentId();
+    boolean moving = !Objects.equals(parentId, category.getParentCategoryId());
     if (moving) {
-      requireMovable(category, request.parentId(), categories, overrides);
+      requireMovable(category, parentId, categories, overrides);
     }
     requireUniqueAmongSiblings(
-        request.parentId(), id, request.nameEn(), request.nameDe(), categories, overrides);
+        parentId, id, request.nameEn(), request.nameDe(), categories, overrides);
 
     if (category.isShared()) {
       WorkspaceCategoryOverride override = overrideFor(category, workspaceId, overrides);
@@ -155,12 +183,12 @@ public class CategoryService {
       override.setNameDe(request.nameDe().equals(category.getNameDe()) ? null : request.nameDe());
       saveOrRemove(override, overrides);
     } else {
-      category.setParentCategoryId(request.parentId());
+      category.setParentCategoryId(parentId);
       category.setNameEn(request.nameEn());
       category.setNameDe(request.nameDe());
       categoryRepository.saveAndFlush(category);
     }
-    return toResponse(category, categories, overrides);
+    return toResponse(category, categories, overrides, true);
   }
 
   /**
@@ -182,11 +210,11 @@ public class CategoryService {
     List<Category> subtree = new ArrayList<>();
     collectSubtree(category, children, subtree);
     for (Category member : subtree) {
-      if (isActive(member, overrides)) {
+      if (isOwnActive(member, overrides)) {
         setActive(member, false, workspaceId, overrides);
       }
     }
-    return toResponse(category, categories, overrides);
+    return toResponse(category, categories, overrides, true);
   }
 
   /**
@@ -199,14 +227,14 @@ public class CategoryService {
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = require(categories, id);
-    if (!isActive(category, overrides)) {
+    if (!isActive(category, categories, overrides)) {
       Category parent = categories.get(category.getParentCategoryId());
-      if (parent != null && !isActive(parent, overrides)) {
+      if (parent != null && !isActive(parent, categories, overrides)) {
         throw unprocessable("Reactivate the parent category first.");
       }
       setActive(category, true, workspaceId, overrides);
     }
-    return toResponse(category, categories, overrides);
+    return toResponse(category, categories, overrides, true);
   }
 
   /**
@@ -233,15 +261,31 @@ public class CategoryService {
 
   /**
    * The check every assignment of a category (a rule, a manual or automatic categorization) must
-   * pass: the category is visible to the workspace and active. An inactive one is a 422; historical
-   * assignments to it are untouched.
+   * pass: the category is visible to the workspace and active, including every ancestor. An
+   * inactive one is a 422; historical assignments to it are untouched.
    */
   @Transactional(readOnly = true)
   public void requireAssignable(UUID categoryId, UUID workspaceId) {
+    requireAssignable(List.of(categoryId), workspaceId);
+  }
+
+  /**
+   * {@link #requireAssignable(UUID, UUID)} for many assignments at once (e.g. categorizing an
+   * import), loading the taxonomy once instead of once per category. Fails on the first category
+   * that is unknown (404) or inactive (422).
+   */
+  @Transactional(readOnly = true)
+  public void requireAssignable(Collection<UUID> categoryIds, UUID workspaceId) {
+    if (categoryIds.isEmpty()) {
+      return;
+    }
     Map<UUID, Category> categories = loadCategories(workspaceId);
-    Category category = require(categories, categoryId);
-    if (!isActive(category, loadOverrides(workspaceId))) {
-      throw unprocessable("An inactive category cannot be assigned. Reactivate it first.");
+    Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
+    for (UUID categoryId : new LinkedHashSet<>(categoryIds)) {
+      Category category = require(categories, categoryId);
+      if (!isActive(category, categories, overrides)) {
+        throw unprocessable("An inactive category cannot be assigned. Reactivate it first.");
+      }
     }
   }
 
@@ -273,22 +317,36 @@ public class CategoryService {
 
   // --- rules ---------------------------------------------------------------------------------
 
+  // EDIT on the workspace, then the workspace row lock that serializes every taxonomy change of
+  // this workspace until the transaction ends (see the class comment).
   private UUID requireEditor(AuthenticatedUserPrincipal actor) {
     UUID memberId = accessControlService.requireActingMember(actor);
     accessControlService.requireWorkspaceAccess(
         memberId, actor.workspaceId(), AccessLevelValues.EDIT);
+    workspaceRepository
+        .findByIdForUpdate(actor.workspaceId())
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
     return actor.workspaceId();
   }
 
+  private boolean canEdit(AuthenticatedUserPrincipal actor) {
+    UUID memberId = accessControlService.requireActingMember(actor);
+    String level = accessControlService.workspaceAccessLevel(memberId, actor.workspaceId());
+    return level != null
+        && AccessLevelValues.Rank.valueOf(level).compareTo(AccessLevelValues.Rank.EDIT) >= 0;
+  }
+
   private void requireMayHoldChildren(
-      Category parent, Map<UUID, WorkspaceCategoryOverride> overrides) {
+      Category parent,
+      Map<UUID, Category> categories,
+      Map<UUID, WorkspaceCategoryOverride> overrides) {
     if (isProtected(parent)) {
       throw unprocessable(
           "'"
               + parent.getCode()
               + "' is required by the application and cannot have subcategories.");
     }
-    if (!isActive(parent, overrides)) {
+    if (!isActive(parent, categories, overrides)) {
       throw unprocessable("A category cannot be placed under an inactive category.");
     }
   }
@@ -309,7 +367,7 @@ public class CategoryService {
     if (isSelfOrDescendant(newParent, category.getId(), categories)) {
       throw unprocessable("A category cannot be moved under itself or one of its subcategories.");
     }
-    requireMayHoldChildren(newParent, overrides);
+    requireMayHoldChildren(newParent, categories, overrides);
     int subtreeHeight = height(category, childrenOf(categories, overrides));
     if (level(newParent, categories) + subtreeHeight > MAX_DEPTH) {
       throw unprocessable(
@@ -412,13 +470,14 @@ public class CategoryService {
       Map<UUID, Category> categories,
       Map<UUID, WorkspaceCategoryOverride> overrides,
       boolean includeInactive,
+      boolean canEdit,
       List<CategoryResponse> into) {
-    if (!includeInactive && !isActive(category, overrides)) {
-      return; // deactivation cascades, so nothing below an inactive category is active either
+    if (!includeInactive && !isOwnActive(category, overrides)) {
+      return; // and so is everything below it: an inactive ancestor makes a category inactive
     }
-    into.add(toResponse(category, categories, overrides));
+    into.add(toResponse(category, categories, overrides, canEdit));
     for (Category child : children.getOrDefault(category.getId(), List.of())) {
-      appendInTreeOrder(child, children, categories, overrides, includeInactive, into);
+      appendInTreeOrder(child, children, categories, overrides, includeInactive, canEdit, into);
     }
   }
 
@@ -438,12 +497,30 @@ public class CategoryService {
         : category.getNameDe();
   }
 
-  private static boolean isActive(
+  // The category's own flag (with this workspace's override applied), ignoring its ancestors.
+  // Only what is written - the deactivation cascade and the reactivation - works on this flag.
+  private static boolean isOwnActive(
       Category category, Map<UUID, WorkspaceCategoryOverride> overrides) {
     WorkspaceCategoryOverride override = overrides.get(category.getId());
     return override != null && override.getActive() != null
         ? override.getActive()
         : category.isActive();
+  }
+
+  // Whether the category is active for this workspace: its own flag and every ancestor's. What is
+  // reported and what decides assignability. Bounded like level(), so a corrupt cycle cannot hang.
+  private static boolean isActive(
+      Category category,
+      Map<UUID, Category> categories,
+      Map<UUID, WorkspaceCategoryOverride> overrides) {
+    Category current = category;
+    for (int steps = 0; current != null && steps <= categories.size(); steps++) {
+      if (!isOwnActive(current, overrides)) {
+        return false;
+      }
+      current = categories.get(current.getParentCategoryId());
+    }
+    return true;
   }
 
   private void setActive(
@@ -483,6 +560,24 @@ public class CategoryService {
     }
   }
 
+  /**
+   * The concurrency token a client sends back on update. For a workspace category, its row version.
+   * For a default, what this workspace has made of it: 0 while it has no override, the override's
+   * version plus one while it has. An override removed and later created again starts over, so a
+   * client whose read predates both steps is not caught - an accepted gap, since both steps must
+   * happen between that client's read and its write.
+   */
+  static int versionOf(Category category, Map<UUID, WorkspaceCategoryOverride> overrides) {
+    if (!category.isShared()) {
+      return category.getVersion() == null ? 0 : category.getVersion();
+    }
+    WorkspaceCategoryOverride override = overrides.get(category.getId());
+    if (override == null) {
+      return 0;
+    }
+    return 1 + (override.getVersion() == null ? 0 : override.getVersion());
+  }
+
   // --- loading and mapping -------------------------------------------------------------------
 
   private Map<UUID, Category> loadCategories(UUID workspaceId) {
@@ -512,7 +607,8 @@ public class CategoryService {
   private static CategoryResponse toResponse(
       Category category,
       Map<UUID, Category> categories,
-      Map<UUID, WorkspaceCategoryOverride> overrides) {
+      Map<UUID, WorkspaceCategoryOverride> overrides,
+      boolean canEdit) {
     return new CategoryResponse(
         category.getId(),
         category.getParentCategoryId(),
@@ -520,10 +616,12 @@ public class CategoryService {
         nameEn(category, overrides),
         nameDe(category, overrides),
         level(category, categories),
-        isActive(category, overrides),
+        isActive(category, categories, overrides),
         category.isShared(),
         isProtected(category),
-        category.isShared() && overrides.containsKey(category.getId()));
+        category.isShared() && overrides.containsKey(category.getId()),
+        versionOf(category, overrides),
+        canEdit);
   }
 
   private static ResponseStatusException unprocessable(String detail) {
