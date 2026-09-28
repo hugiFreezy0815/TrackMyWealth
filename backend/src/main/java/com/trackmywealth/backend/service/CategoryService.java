@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -287,6 +288,25 @@ public class CategoryService {
         throw unprocessable("An inactive category cannot be assigned. Reactivate it first.");
       }
     }
+  }
+
+  /**
+   * The ids of every category the workspace may assign right now, by the same rule as {@link
+   * #requireAssignable(UUID, UUID)}: visible and active, every ancestor included. For a caller that
+   * chooses among candidates (automatic categorization, US-08-01) rather than validating a single
+   * user choice, so an inactive candidate is skipped instead of failing the request.
+   */
+  @Transactional(readOnly = true)
+  public Set<UUID> assignableCategoryIds(UUID workspaceId) {
+    Map<UUID, Category> categories = loadCategories(workspaceId);
+    Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
+    Set<UUID> assignable = new HashSet<>();
+    for (Category category : categories.values()) {
+      if (isActive(category, categories, overrides)) {
+        assignable.add(category.getId());
+      }
+    }
+    return assignable;
   }
 
   /**

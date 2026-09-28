@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -42,12 +43,16 @@ public class TransactionController {
         .body(transactionService.recordTransaction(accountId, request, actor));
   }
 
-  /** Newest booking first; the order is fixed server-side, only {@code page}/{@code size} apply. */
+  /**
+   * Newest booking first; the order is fixed server-side, only {@code page}/{@code size} apply.
+   * {@code uncategorized=true} lists only the rows still in UNCATEGORIZED (FR-CAT-013).
+   */
   @GetMapping("/transactions")
   public Page<TransactionResponse> listTransactions(
       @PathVariable UUID accountId,
+      @RequestParam(defaultValue = "false") boolean uncategorized,
       @PageableDefault(size = 50) Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transactionService.listTransactions(accountId, pageable, actor);
+    return transactionService.listTransactions(accountId, uncategorized, pageable, actor);
   }
 }

@@ -21,9 +21,9 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Maps {@code transaction} (V10, V31) - the append-only ledger (RULE-024/FR-TRX-007). Only the
- * columns the stories so far (US-09-01/02/04, US-07-01) write or read are mapped; every other
- * column (void metadata, category, import batch, ...) is left to the story that first needs it, and
- * an unmapped column is neither read nor overwritten by Hibernate.
+ * columns the stories so far (US-09-01/02/04, US-07-01, US-08-01) write or read are mapped; every
+ * other column (void metadata, import batch, ...) is left to the story that first needs it, and an
+ * unmapped column is neither read nor overwritten by Hibernate.
  *
  * <p>{@code amount} is <b>cash-direction signed</b> and stored exactly as the caller sent it: money
  * leaving the account is negative, money entering it is positive. For a {@code CREDIT_CARD} account
@@ -137,6 +137,12 @@ public class Transaction {
   // the FX columns above - set once at insert, never reassigned.
   @Column(name = "related_transaction_id", columnDefinition = UUID_COLUMN)
   private UUID relatedTransactionId;
+
+  // US-08-01: the reporting category - an annotation, not a financial field, so it stays mutable
+  // under trg_transaction_append_only (FR-CAT-014: classifying never mutates the transaction).
+  // How it was assigned is in transaction_categorization_log.
+  @Column(name = "category_id", columnDefinition = UUID_COLUMN)
+  private UUID categoryId;
 
   // A plain id, not an association: the shared security master is read separately, and a ledger
   // row must never cascade into it.
@@ -317,6 +323,14 @@ public class Transaction {
 
   public void setRelatedTransactionId(UUID relatedTransactionId) {
     this.relatedTransactionId = relatedTransactionId;
+  }
+
+  public UUID getCategoryId() {
+    return categoryId;
+  }
+
+  public void setCategoryId(UUID categoryId) {
+    this.categoryId = categoryId;
   }
 
   public UUID getSecurityId() {

@@ -38,6 +38,17 @@ uncategorized fallback.
 **Data-quality behaviour:** Uncategorized transactions are queryable as a distinct, visible list
 (FR-CAT-013), and the workspace's category-report totals show an explicit "Uncategorized" line
 rather than omitting it.
+**Clarified before development (issue #145, 2026-09-28):**
+- **Order:** user rule, then shipped source-code mapping (purpose, then BTC, then MCC), then fuzzy
+  match (`FALLBACK_MATCH`), then Uncategorized. A category that isn't assignable is skipped.
+- **Scope:** runs on new cash and card rows only, and existing rows are backfilled once.
+- **Rules:** a minimal rule API (create, list, deactivate) with `MERCHANT` and `SOURCE_CODE` rules.
+- **Taxonomy:** new defaults `DINING`, `TRAVEL`, `UTILITIES`, `HEALTH`, `SHOPPING` and `TAXES`, and
+  about 40 seeded codes.
+- **Uncategorized:** listed per account via `?uncategorized=true`. The workspace-wide list and the
+  report totals line come with the reporting epic.
+
+See `docs/architecture/database-schema.md`.
 
 ---
 

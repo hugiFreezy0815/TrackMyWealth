@@ -104,6 +104,8 @@ class SettlementMatchControllerTest {
         Statement statement = connection.createStatement()) {
       statement.execute("DELETE FROM settlement_match");
       statement.execute("DELETE FROM transaction_category_split");
+      // US-08-01: every categorized row has a log row referencing it.
+      statement.execute("DELETE FROM transaction_categorization_log");
       statement.execute("DELETE FROM transaction");
       for (String table :
           List.of(

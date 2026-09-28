@@ -88,6 +88,8 @@ class SecurityControllerTest {
         Statement statement = connection.createStatement()) {
       statement.execute("DELETE FROM fx_rate");
       statement.execute("DELETE FROM transaction_category_split");
+      // US-08-01: every categorized row has a log row referencing it.
+      statement.execute("DELETE FROM transaction_categorization_log");
       statement.execute("DELETE FROM transaction");
       statement.execute("DELETE FROM security_field_provenance");
       statement.execute("DELETE FROM security_asset_class_weight");

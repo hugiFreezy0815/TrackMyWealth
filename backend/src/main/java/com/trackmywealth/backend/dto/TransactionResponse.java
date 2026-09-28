@@ -24,6 +24,11 @@ import java.util.UUID;
  * null} except on a {@code BUY}, {@code SELL} or {@code DIVIDEND}, with the meaning described on
  * {@link CreateTransactionRequest}; {@code netAmount} is set (equal to {@code amount}) when a
  * dividend's gross and withheld amounts were given.
+ *
+ * <p>US-08-01: {@code categoryId} is the reporting category - {@code null} for a type that is not
+ * categorized (settlement, trade, dividend), the shipped UNCATEGORIZED default when nothing matched
+ * (FR-CAT-013). {@code categoryAssignedBy} says how it was assigned ({@code SOURCE_CODE}, {@code
+ * RULE}, {@code FALLBACK_MATCH}, later {@code USER}), {@code null} for UNCATEGORIZED.
  */
 public record TransactionResponse(
     UUID id,
@@ -50,4 +55,6 @@ public record TransactionResponse(
     LocalDate settlementDate,
     BigDecimal grossAmount,
     BigDecimal taxWithheldAmount,
-    BigDecimal netAmount) {}
+    BigDecimal netAmount,
+    UUID categoryId,
+    String categoryAssignedBy) {}

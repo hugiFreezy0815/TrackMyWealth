@@ -101,6 +101,8 @@ class TransactionControllerTest {
         Statement statement = connection.createStatement()) {
       statement.execute("DELETE FROM fx_rate");
       statement.execute("DELETE FROM transaction_category_split");
+      // US-08-01: every categorized row has a log row referencing it.
+      statement.execute("DELETE FROM transaction_categorization_log");
       statement.execute("DELETE FROM transaction");
       statement.execute("DELETE FROM category WHERE code = '" + TEST_CATEGORY_CODE + "'");
       for (String table :

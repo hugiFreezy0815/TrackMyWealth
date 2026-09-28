@@ -2,6 +2,7 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.Category;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -34,4 +35,20 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
               + " OR EXISTS (SELECT 1 FROM category WHERE parent_category_id = :id)",
       nativeQuery = true)
   boolean isReferenced(@Param("id") UUID id);
+
+  /** A shipped default by its stable code (FR-CAT-008), e.g. {@code UNCATEGORIZED}. */
+  Optional<Category> findByWorkspaceIdIsNullAndCode(String code);
+
+  /**
+   * FR-CAT-005/010: the category the shipped mapping assigns to one source code, e.g. {@code
+   * ("MCC", "5411")}. {@code category_source_mapping} is global configuration with at most one row
+   * per code (V13's unique constraint).
+   */
+  @Query(
+      value =
+          "SELECT category_id FROM category_source_mapping"
+              + " WHERE source_standard = :standard AND source_code = :code",
+      nativeQuery = true)
+  Optional<UUID> findMappedCategoryId(
+      @Param("standard") String standard, @Param("code") String code);
 }
