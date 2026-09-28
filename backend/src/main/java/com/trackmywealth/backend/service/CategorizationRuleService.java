@@ -26,6 +26,10 @@ import org.springframework.web.server.ResponseStatusException;
 public class CategorizationRuleService {
 
   private static final int DEFAULT_PRIORITY = 100;
+  // A MERCHANT rule is a case-insensitive "contains": one or two letters would match almost every
+  // merchant and silently take over the whole ledger. Three matches the brand-word length the
+  // fuzzy match uses.
+  static final int MIN_MERCHANT_VALUE_LENGTH = 3;
   private static final Pattern SOURCE_CODE_VALUE =
       Pattern.compile(
           "MCC:\\d{4}|ISO20022_PURPOSE:[A-Z0-9]{4}|ISO20022_BTC:[A-Z]{4}-[A-Z]{4}-[A-Z]{4}");
@@ -92,7 +96,14 @@ public class CategorizationRuleService {
   // Stored the way CategorizationService compares it, so a rule's value reads back as it matches.
   private static String normalizedValue(String matchType, String matchValue) {
     if (CategorizationService.MERCHANT.equals(matchType)) {
-      return CategorizationService.normalizeMerchant(matchValue);
+      String merchant = CategorizationService.normalizeMerchant(matchValue);
+      if (merchant == null || merchant.length() < MIN_MERCHANT_VALUE_LENGTH) {
+        throw unprocessable(
+            "matchValue for a MERCHANT rule needs at least "
+                + MIN_MERCHANT_VALUE_LENGTH
+                + " characters; a shorter one would match almost every merchant.");
+      }
+      return merchant;
     }
     if (CategorizationService.SOURCE_CODE.equals(matchType)) {
       String code = matchValue.strip().toUpperCase(Locale.ROOT);

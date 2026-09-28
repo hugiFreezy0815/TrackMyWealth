@@ -20,8 +20,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * US-08-01: V37 categorizes the cash and card rows recorded before categorization existed - a
- * mapped MCC where the workspace may still assign its category, else UNCATEGORIZED - and leaves
- * every other row alone. Migrates to just before V37, seeds such rows, then runs the rest.
+ * mapped MCC where the workspace may still assign its category, else the category a FEE or TAX
+ * row's type implies, else UNCATEGORIZED - and leaves every other row alone. Migrates to just
+ * before V37, seeds such rows, then runs the rest.
  */
 @Testcontainers
 class CategorizationBackfillMigrationTest {
@@ -41,6 +42,9 @@ class CategorizationBackfillMigrationTest {
   private static UUID transfer;
   private static UUID alreadyCategorized;
   private static UUID deactivatedTarget;
+  private static UUID fee;
+  private static UUID tax;
+  private static UUID feeWithMappedMcc;
 
   @BeforeAll
   static void migrateSeedAndBackfill() throws Exception {
@@ -58,6 +62,9 @@ class CategorizationBackfillMigrationTest {
     // An importer may store the MCC as a JSON number.
     mappedNumericMcc = insertTransaction(workspace, account, "EXPENSE", "{\"mcc\": 5812}");
     noSourceCode = insertTransaction(workspace, account, "EXPENSE", null);
+    fee = insertTransaction(workspace, account, "FEE", null);
+    tax = insertTransaction(workspace, account, "TAX", null);
+    feeWithMappedMcc = insertTransaction(workspace, account, "FEE", "{\"mcc\": \"5411\"}");
     settlement = insertTransaction(workspace, account, "SETTLEMENT", null);
     transfer = insertTransaction(workspace, account, "TRANSFER", null);
     alreadyCategorized = insertTransaction(workspace, account, "EXPENSE", "{\"mcc\": \"5411\"}");
@@ -101,6 +108,17 @@ class CategorizationBackfillMigrationTest {
   }
 
   @Test
+  void aFeeOrTaxWithoutAMappedCodeGetsItsTypesCategory() throws Exception {
+    assertThat(categoryCode(fee)).isEqualTo("FEES");
+    assertThat(logAssignedBy(fee)).isEqualTo("TRANSACTION_TYPE");
+    assertThat(categoryCode(tax)).isEqualTo("TAXES");
+    assertThat(logAssignedBy(tax)).isEqualTo("TRANSACTION_TYPE");
+    // A mapped code is more specific than the type, as in CategorizationService.
+    assertThat(categoryCode(feeWithMappedMcc)).isEqualTo("GROCERIES");
+    assertThat(logAssignedBy(feeWithMappedMcc)).isEqualTo("SOURCE_CODE");
+  }
+
+  @Test
   void aCategoryTheWorkspaceDeactivatedIsNotAssigned() throws Exception {
     assertThat(categoryCode(deactivatedTarget)).isEqualTo("UNCATEGORIZED");
   }
@@ -121,6 +139,7 @@ class CategorizationBackfillMigrationTest {
     assertThat(parentCode("HEALTH")).isNull();
     assertThat(parentCode("SHOPPING")).isNull();
     assertThat(parentCode("TAXES")).isNull();
+    assertThat(parentCode("FEES")).isNull();
   }
 
   private static String lastVersionBefore(String version) {

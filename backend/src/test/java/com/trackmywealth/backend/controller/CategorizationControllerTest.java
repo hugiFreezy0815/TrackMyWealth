@@ -44,9 +44,12 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -89,6 +92,8 @@ class CategorizationControllerTest {
   @Autowired CategorizationService categorizationService;
 
   @Autowired TransactionRepository transactionRepository;
+
+  @Autowired PlatformTransactionManager transactionManager;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -242,6 +247,116 @@ class CategorizationControllerTest {
         .isEqualTo("INCOME");
   }
 
+  @Test
+  void aBankTransactionCodeRuleCategorizesAnImportedRow() throws Exception {
+    // Only an import writes ISO 20022 codes, so the row is inserted the way one would leave it.
+    String token = bootstrapAdministrator();
+    createRule(token, "SOURCE_CODE", "iso20022_btc:pmnt-rcdt-esct", defaultId("INCOME"), null);
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    UUID id =
+        insertImportedRow(cash.id(), "INCOME", "{\"bankTransactionCode\": \"PMNT-RCDT-ESCT\"}");
+
+    assertThat(categorizationService.categorize(transactionRepository.findById(id).orElseThrow()))
+        .contains("RULE");
+    assertThat(codeOf(jdbcUuid("SELECT category_id FROM transaction WHERE id = ?", id)))
+        .isEqualTo("INCOME");
+  }
+
+  // --- the type-implied category (V37) --------------------------------------------------------
+
+  @Test
+  void aFeeOrTaxWithNothingMoreSpecificLandsInItsTypesCategory() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+
+    TransactionResponse fee = record(token, cash.id(), "FEE", "Kontofuehrung", null);
+    TransactionResponse tax = record(token, cash.id(), "TAX", "Steuerverwaltung", null);
+
+    assertThat(codeOf(fee.categoryId())).isEqualTo("FEES");
+    assertThat(fee.categoryAssignedBy()).isEqualTo("TRANSACTION_TYPE");
+    assertThat(logAssignments(fee.id())).containsExactly("TRANSACTION_TYPE");
+    assertThat(codeOf(tax.categoryId())).isEqualTo("TAXES");
+    assertThat(tax.categoryAssignedBy()).isEqualTo("TRANSACTION_TYPE");
+  }
+
+  @Test
+  void aForeignCardPurchasesFeeRowLandsInFeesNotUncategorized() {
+    // Review follow-up: the FEE row created alongside a foreign-currency purchase has no merchant
+    // or code of its own, so without the type layer it always ended up in UNCATEGORIZED.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+
+    post(
+            token,
+            card.id(),
+            TransactionRequests.cash(
+                PURCHASE,
+                LocalDate.now(ZoneId.of("Europe/Zurich")),
+                new BigDecimal("-50.00"),
+                "EUR",
+                "HOTEL DU LAC PARIS",
+                null,
+                null,
+                null,
+                new BigDecimal("0.95"),
+                null,
+                new BigDecimal("1.50")))
+        .expectStatus()
+        .isCreated();
+
+    TransactionResponse feeRow =
+        list(token, card.id(), false).stream()
+            .filter(row -> "FEE".equals(row.transactionType()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(codeOf(feeRow.categoryId())).isEqualTo("FEES");
+    assertThat(feeRow.categoryAssignedBy()).isEqualTo("TRANSACTION_TYPE");
+    assertThat(list(token, card.id(), true))
+        .extracting(TransactionResponse::transactionType)
+        .doesNotContain("FEE");
+  }
+
+  // --- the fuzzy query's SQL (review follow-up) -------------------------------------------------
+
+  @Test
+  void theFuzzyFilterIsTheIndexableTrigramOperatorUnderATransactionLocalThreshold() {
+    // similarity() >= t alone cannot use V10's GIN trigram index; pg_trgm's % can. If the query
+    // filters with %, a threshold of 0.99 set for the transaction hides a 0.3-similar candidate
+    // that the explicit threshold alone would return.
+    String token = bootstrapAdministrator();
+    createRule(token, "MERCHANT", "migros zuerich", defaultId("GROCERIES"), null);
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    record(token, cash.id(), EXPENSE, "MIGROS ZUERICH", null);
+    UUID workspaceId = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", cash.id());
+    TransactionTemplate inTransaction = new TransactionTemplate(transactionManager);
+
+    List<?> strict =
+        inTransaction.execute(
+            status -> {
+              transactionRepository.setSimilarityThresholdForTransaction("0.99");
+              return transactionRepository.findFuzzyCandidates(
+                  workspaceId, UUID.randomUUID(), "MIGROS BASEL", 0.3, 20);
+            });
+    // is_local = true: the 0.99 ended with that transaction, even on the same pooled connection.
+    String thresholdAfterwards =
+        inTransaction.execute(
+            status ->
+                new JdbcTemplate(dataSource)
+                    .queryForObject(
+                        "SELECT current_setting('pg_trgm.similarity_threshold')", String.class));
+    List<?> configured =
+        inTransaction.execute(
+            status -> {
+              transactionRepository.setSimilarityThresholdForTransaction("0.3");
+              return transactionRepository.findFuzzyCandidates(
+                  workspaceId, UUID.randomUUID(), "MIGROS BASEL", 0.3, 20);
+            });
+
+    assertThat(strict).isEmpty();
+    assertThat(thresholdAfterwards).isEqualTo("0.3");
+    assertThat(configured).hasSize(1);
+  }
+
   // --- fuzzy fallback -------------------------------------------------------------------------
 
   @Test
@@ -346,10 +461,15 @@ class CategorizationControllerTest {
                 "COUNTERPARTY_IBAN", "CH93 0076 2011", groceries, null),
             new CreateCategorizationRuleRequest("AMOUNT_PATTERN", "-1200.00", groceries, null),
             new CreateCategorizationRuleRequest("SOURCE_CODE", "5411", groceries, null),
-            new CreateCategorizationRuleRequest("SOURCE_CODE", "MCC:54", groceries, null))) {
+            new CreateCategorizationRuleRequest("SOURCE_CODE", "MCC:54", groceries, null),
+            // Two letters would match almost every merchant (a MERCHANT rule is a "contains").
+            new CreateCategorizationRuleRequest("MERCHANT", "  ab ", groceries, null),
+            new CreateCategorizationRuleRequest("MERCHANT", "co", groceries, null))) {
       postRule(token, invalid).expectStatus().isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     }
-    postRule(token, new CreateCategorizationRuleRequest("MERCHANT", "x", UUID.randomUUID(), null))
+    postRule(
+            token,
+            new CreateCategorizationRuleRequest("MERCHANT", "migros", UUID.randomUUID(), null))
         .expectStatus()
         .isNotFound();
     assertThat(listRules(token, true)).isEmpty();
@@ -441,6 +561,26 @@ class CategorizationControllerTest {
   }
 
   // --- helpers ---------------------------------------------------------------------------------
+
+  // A row as an import (EPIC 07) would leave it, with ISO 20022 codes the API cannot carry yet.
+  private UUID insertImportedRow(UUID accountId, String type, String rawSourceData)
+      throws Exception {
+    UUID id = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, raw_source_data)"
+                    + " SELECT ?, workspace_id, id, ?, CURRENT_DATE, 5000, 'CHF',"
+                    + " CAST(? AS jsonb) FROM account WHERE id = ?")) {
+      statement.setObject(1, id);
+      statement.setString(2, type);
+      statement.setString(3, rawSourceData);
+      statement.setObject(4, accountId);
+      statement.executeUpdate();
+    }
+    return id;
+  }
 
   private TransactionResponse record(
       String token, UUID accountId, String type, String merchant, String mcc) {

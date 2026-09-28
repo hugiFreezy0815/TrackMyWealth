@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.Category;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +39,9 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
   /** A shipped default by its stable code (FR-CAT-008), e.g. {@code UNCATEGORIZED}. */
   Optional<Category> findByWorkspaceIdIsNullAndCode(String code);
+
+  /** Several shipped defaults at once, e.g. UNCATEGORIZED and the type-implied FEES and TAXES. */
+  List<Category> findByWorkspaceIdIsNullAndCodeIn(Collection<String> codes);
 
   /**
    * FR-CAT-005/010: the category the shipped mapping assigns to one source code, e.g. {@code

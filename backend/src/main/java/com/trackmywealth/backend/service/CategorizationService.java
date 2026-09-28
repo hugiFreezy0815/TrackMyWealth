@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.dto.TransactionSourceCode;
 import com.trackmywealth.backend.entity.CategorizationRule;
+import com.trackmywealth.backend.entity.Category;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.entity.TransactionCategorizationLog;
 import com.trackmywealth.backend.repository.CategorizationRuleRepository;
@@ -11,8 +12,11 @@ import com.trackmywealth.backend.repository.TransactionCategorizationLogReposito
 import com.trackmywealth.backend.repository.TransactionRepository;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -35,6 +39,9 @@ import tools.jackson.databind.ObjectMapper;
  *       row's source codes, most specific first: ISO 20022 purpose, bank transaction code, MCC. A
  *       code with no mapping falls through rather than straight to UNCATEGORIZED, since mapping
  *       gaps are common.
+ *   <li><b>TRANSACTION_TYPE</b> - the category the row's own type implies: a {@code FEE} is in
+ *       {@code FEES} (e.g. a card's foreign-transaction fee row, which has no merchant or code), a
+ *       {@code TAX} in {@code TAXES}. Certain where it applies, so it comes before any guess.
  *   <li><b>FALLBACK_MATCH</b> - learning from the workspace's earlier rows that a rule or a user
  *       categorized: the most trigram-similar merchant description at or above the configured
  *       threshold, which must also share the merchant's brand (see {@link #brandOf}) - a shared
@@ -42,6 +49,12 @@ import tools.jackson.databind.ObjectMapper;
  *   <li>otherwise the protected {@code UNCATEGORIZED} default (FR-CAT-013), with no log row: the
  *       log says how a category was assigned, and nothing assigned this one.
  * </ol>
+ *
+ * <p>{@link #categorizeAll} categorizes many rows (an import) against one load of each workspace's
+ * taxonomy, rules and shipped defaults, and resolves each distinct source code once; {@link
+ * #categorize} is the same for one row. The fuzzy query is served by V10's trigram index: it
+ * filters with pg_trgm's {@code %} operator under a threshold set for the current transaction only
+ * (never the session - connections are pooled), and rechecks the exact threshold.
  *
  * <p>Only the cash and card types in {@link #CATEGORIZED_TYPES} are categorized; a settlement, a
  * trade or a dividend is not spending or income and would only crowd the Uncategorized list.
@@ -76,8 +89,12 @@ public class CategorizationService {
   static final String ISO20022_BTC = "ISO20022_BTC";
   static final String ASSIGNED_BY_RULE = "RULE";
   static final String ASSIGNED_BY_SOURCE_CODE = "SOURCE_CODE";
+  static final String ASSIGNED_BY_TRANSACTION_TYPE = "TRANSACTION_TYPE";
   static final String ASSIGNED_BY_FALLBACK = "FALLBACK_MATCH";
   private static final String UNCATEGORIZED = "UNCATEGORIZED";
+  // The shipped default a type implies when nothing more specific applies (V37).
+  static final Map<String, String> TYPE_CATEGORY_CODES = Map.of("FEE", "FEES", "TAX", "TAXES");
+  private static final Set<String> SHIPPED_CODES = Set.of(UNCATEGORIZED, "FEES", "TAXES");
   // Enough headroom for candidates that fail the brand or assignability check below.
   private static final int FUZZY_CANDIDATES = 20;
   private static final int MIN_BRAND_LENGTH = 3;
@@ -113,28 +130,81 @@ public class CategorizationService {
    */
   @Transactional
   public Optional<String> categorize(Transaction transaction) {
-    if (!CATEGORIZED_TYPES.contains(transaction.getTransactionType())) {
-      return Optional.empty();
+    return Optional.ofNullable(categorizeAll(List.of(transaction)).get(transaction.getId()));
+  }
+
+  /**
+   * Categorizes just-saved transactions (e.g. one import) in the caller's transaction, loading each
+   * workspace's taxonomy, rules and shipped defaults once, and returns how each categorized row was
+   * assigned, by transaction id; a row that landed in UNCATEGORIZED or is not categorized is
+   * absent.
+   */
+  @Transactional
+  public Map<UUID, String> categorizeAll(List<Transaction> transactions) {
+    Map<UUID, String> assignedBy = new HashMap<>();
+    Map<UUID, List<Transaction>> byWorkspace = new LinkedHashMap<>();
+    for (Transaction transaction : transactions) {
+      if (CATEGORIZED_TYPES.contains(transaction.getTransactionType())) {
+        byWorkspace
+            .computeIfAbsent(transaction.getWorkspace().getId(), id -> new ArrayList<>())
+            .add(transaction);
+      }
     }
-    UUID workspaceId = transaction.getWorkspace().getId();
-    Set<UUID> assignable = categoryService.assignableCategoryIds(workspaceId);
+    boolean thresholdSet = false;
+    for (Map.Entry<UUID, List<Transaction>> group : byWorkspace.entrySet()) {
+      UUID workspaceId = group.getKey();
+      Set<UUID> assignable = categoryService.assignableCategoryIds(workspaceId);
+      List<CategorizationRule> rules =
+          ruleRepository.findByWorkspaceIdAndActiveTrueOrderByPriorityAscCreatedAtAscIdAsc(
+              workspaceId);
+      Map<String, UUID> shipped = new HashMap<>();
+      for (Category category : categoryRepository.findByWorkspaceIdIsNullAndCodeIn(SHIPPED_CODES)) {
+        shipped.put(category.getCode(), category.getId());
+      }
+      Map<TransactionSourceCode, Optional<UUID>> mappings = new HashMap<>();
+      for (Transaction transaction : group.getValue()) {
+        if (!thresholdSet && brandOf(transaction.getMerchantDescription()) != null) {
+          // Transaction-local (is_local = true): it ends with this transaction, so it can never
+          // leak to another request on the same pooled connection.
+          transactionRepository.setSimilarityThresholdForTransaction(
+              Double.toString(fuzzyThreshold));
+          thresholdSet = true;
+        }
+        categorizeOne(transaction, assignable, rules, shipped, mappings)
+            .ifPresent(by -> assignedBy.put(transaction.getId(), by));
+      }
+    }
+    return assignedBy;
+  }
+
+  private Optional<String> categorizeOne(
+      Transaction transaction,
+      Set<UUID> assignable,
+      List<CategorizationRule> rules,
+      Map<String, UUID> shipped,
+      Map<TransactionSourceCode, Optional<UUID>> mappings) {
     String merchant = normalizeMerchant(transaction.getMerchantDescription());
     List<TransactionSourceCode> codes = sourceCodes(transaction.getRawSourceData());
 
-    for (CategorizationRule rule :
-        ruleRepository.findByWorkspaceIdAndActiveTrueOrderByPriorityAscCreatedAtAscIdAsc(
-            workspaceId)) {
+    for (CategorizationRule rule : rules) {
       if (assignable.contains(rule.getCategoryId()) && matches(rule, merchant, codes)) {
         return assign(transaction, rule.getCategoryId(), ASSIGNED_BY_RULE, rule.getId(), null);
       }
     }
     for (TransactionSourceCode code : codes) {
-      Optional<UUID> mapped = categoryRepository.findMappedCategoryId(code.standard(), code.code());
+      Optional<UUID> mapped =
+          mappings.computeIfAbsent(
+              code, key -> categoryRepository.findMappedCategoryId(key.standard(), key.code()));
       if (mapped.isPresent() && assignable.contains(mapped.get())) {
         return assign(transaction, mapped.get(), ASSIGNED_BY_SOURCE_CODE, null, null);
       }
     }
-    Optional<FuzzyCategoryCandidate> similar = fuzzyMatch(transaction, workspaceId, assignable);
+    UUID typed = shipped.get(TYPE_CATEGORY_CODES.get(transaction.getTransactionType()));
+    if (typed != null && assignable.contains(typed)) {
+      return assign(transaction, typed, ASSIGNED_BY_TRANSACTION_TYPE, null, null);
+    }
+    Optional<FuzzyCategoryCandidate> similar =
+        fuzzyMatch(transaction, transaction.getWorkspace().getId(), assignable);
     if (similar.isPresent()) {
       return assign(
           transaction,
@@ -143,13 +213,11 @@ public class CategorizationService {
           null,
           similar.get().getSimilarity());
     }
-    categoryRepository
-        .findByWorkspaceIdIsNullAndCode(UNCATEGORIZED)
-        .ifPresent(
-            uncategorized -> {
-              transaction.setCategoryId(uncategorized.getId());
-              transactionRepository.saveAndFlush(transaction);
-            });
+    UUID uncategorized = shipped.get(UNCATEGORIZED);
+    if (uncategorized != null) {
+      transaction.setCategoryId(uncategorized);
+      transactionRepository.saveAndFlush(transaction);
+    }
     return Optional.empty();
   }
 

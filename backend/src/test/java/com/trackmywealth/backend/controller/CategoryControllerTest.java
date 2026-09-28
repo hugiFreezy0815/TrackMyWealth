@@ -316,6 +316,7 @@ class CategoryControllerTest {
 
     assertThat(codes(list(token, false)))
         .containsExactly(
+            "FEES", // V37: "Fees & Charges"
             "GROCERIES",
             "HEALTH",
             "HOUSING",

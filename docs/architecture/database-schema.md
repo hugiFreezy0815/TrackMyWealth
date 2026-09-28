@@ -255,13 +255,21 @@ issue #145.
      as `MCC:5812`.
   2. The shipped `category_source_mapping`, trying ISO 20022 purpose, then bank transaction code,
      then MCC.
-  3. `FALLBACK_MATCH`: the most pg_trgm-similar earlier row of the workspace whose category a
+  3. `TRANSACTION_TYPE`: the category a row's own type implies, `FEE` to `FEES` and `TAX` to
+     `TAXES`. This is where a card's foreign-transaction fee row lands, since it has no merchant
+     or code of its own.
+  4. `FALLBACK_MATCH`: the most pg_trgm-similar earlier row of the workspace whose category a
      rule or a user assigned, at or above `app.categorization.fuzzy-similarity-threshold`. It must
      share the merchant's brand word, because a shared city name alone is as similar as a shared
-     brand.
-  4. `UNCATEGORIZED`.
+     brand. The query filters with pg_trgm's `%` operator, which V10's GIN trigram index serves
+     (`similarity() >= t` alone scans the workspace's whole history). The threshold for `%` is set
+     with `set_config(..., true)`, for the current transaction only, so it never outlives the
+     request on a pooled connection.
+  5. `UNCATEGORIZED`.
 
   A candidate whose category is inactive for the workspace (itself or an ancestor) is skipped.
+  `categorizeAll` categorizes many rows (an import) against one load of each workspace's
+  taxonomy, rules and shipped defaults, and resolves each distinct source code once.
 - **Source codes** are read from `raw_source_data`: `mcc`, `purposeCode` and `bankTransactionCode`
   (`DOMAIN-FAMILY-SUBFAMILY`), the keys a camt import must write.
 - **Provenance.** Every assignment writes a `transaction_categorization_log` row (`rule_id` for a
@@ -270,12 +278,14 @@ issue #145.
   `GET /accounts/{id}/transactions?uncategorized=true` is the actionable list (FR-CAT-013).
 - **Rules** (`/api/v1/categorization-rules`): create, list and deactivate. Reading needs
   membership; changes need EDIT on the workspace. A rule is never edited, so its log rows keep
-  their meaning. `COUNTERPARTY_IBAN` and `AMOUNT_PATTERN` are rejected until imports supply that
-  data.
+  their meaning. A `MERCHANT` value needs at least three characters, since a shorter "contains"
+  would match almost every merchant. `COUNTERPARTY_IBAN` and `AMOUNT_PATTERN` are rejected until
+  imports supply that data.
 - **`V37`** adds the defaults `LEISURE > DINING`, `LEISURE > TRAVEL`, `HOUSING > UTILITIES`,
-  `HEALTH`, `SHOPPING` and `TAXES`, and seeds 43 MCC and purpose-code mappings (FR-CAT-010:
-  configuration, extendable by a reference package). It also backfills existing cash and card
-  rows: the mapped MCC where assignable, else `UNCATEGORIZED`. The backfill sets
+  `HEALTH`, `SHOPPING`, `TAXES` and `FEES`, and seeds 43 MCC and purpose-code mappings
+  (FR-CAT-010: configuration, extendable by a reference package). It adds `TRANSACTION_TYPE` to
+  the log's provenance values. It also backfills existing cash and card rows: the mapped MCC where
+  assignable, else the type's category for a `FEE` or `TAX`, else `UNCATEGORIZED`. The backfill sets
   `row_security = off`, so a migration role that cannot bypass RLS fails loudly instead of
   updating nothing.
 

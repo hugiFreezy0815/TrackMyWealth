@@ -55,7 +55,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install sqlfluff
+      # Pinned: an unpinned install picked up 4.3.0 mid-review and failed a migration that 4.1.0
+      # had passed (RF04). Bump deliberately, together with any fixes the new version asks for.
+      - run: pip install sqlfluff==4.3.0
 
       - name: Lint new/changed migrations
         env:

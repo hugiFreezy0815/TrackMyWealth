@@ -1,16 +1,21 @@
 -- =============================================================================================
 -- V37: Automatic categorization baseline (US-08-01, FR-CAT-002/005/009/010)
 -- =============================================================================================
--- Three parts:
---   1. Six more shipped default categories, so common card and bank codes have a precise home
+-- Four parts:
+--   1. Seven more shipped default categories, so common card and bank codes have a precise home
 --      instead of LEISURE or OTHER: DINING and TRAVEL under LEISURE, UTILITIES under HOUSING, and
---      the top-level HEALTH, SHOPPING and TAXES.
+--      the top-level HEALTH, SHOPPING, TAXES and FEES. TAXES and FEES are also where a TAX or FEE
+--      transaction lands when nothing more specific applies (TRANSACTION_TYPE, part 3).
 --   2. The first shipped source-code mappings (category_source_mapping, V13): ~40 common MCC
 --      (ISO 18245) and ISO 20022 purpose codes. Configuration data, not code (FR-CAT-010) - a
 --      reference package can extend it later. MCC 6011 (ATM withdrawal) is deliberately unmapped:
 --      moving cash is not spending.
---   3. A one-off backfill of existing cash and card rows, which predate categorization: a mapped
---      MCC where there is one, else UNCATEGORIZED (FR-CAT-013: visible, never silently "Other").
+--   3. A new provenance, TRANSACTION_TYPE, in transaction_categorization_log: the category a
+--      transaction's own type implies (a FEE is a fee, e.g. a card's foreign-transaction fee row,
+--      which has no merchant or code of its own; a TAX is a tax payment).
+--   4. A one-off backfill of existing cash and card rows, which predate categorization: a mapped
+--      MCC where there is one, else the type's category for a FEE or TAX, else UNCATEGORIZED
+--      (FR-CAT-013: visible, never silently "Other").
 --      No workspace had rules before this migration, and fuzzy matching has nothing to learn
 --      from yet, so those layers have nothing to contribute here.
 -- =============================================================================================
@@ -20,7 +25,8 @@ INSERT INTO category (workspace_id, parent_category_id, code, name_en, name_de, 
 VALUES
 (NULL, NULL, 'HEALTH', 'Health', 'Gesundheit', TRUE),
 (NULL, NULL, 'SHOPPING', 'Shopping', 'Einkäufe', TRUE),
-(NULL, NULL, 'TAXES', 'Taxes', 'Steuern', TRUE);
+(NULL, NULL, 'TAXES', 'Taxes', 'Steuern', TRUE),
+(NULL, NULL, 'FEES', 'Fees & Charges', 'Gebühren & Spesen', TRUE);
 
 INSERT INTO category (workspace_id, parent_category_id, code, name_en, name_de, is_system_default)
 SELECT
@@ -47,7 +53,7 @@ INSERT INTO category_source_mapping (
 SELECT
     seed.source_standard,
     seed.source_code,
-    target.id,
+    target_category.id,
     '1.0.0-baseline' AS reference_package_version
 FROM (
     VALUES
@@ -95,10 +101,18 @@ FROM (
     ('ISO20022_PURPOSE', 'INSU', 'INSURANCE'), -- insurance premium
     ('ISO20022_PURPOSE', 'TAXS', 'TAXES') -- tax payment
 ) AS seed (source_standard, source_code, category_code)
-INNER JOIN category AS target
-    ON seed.category_code = target.code AND target.workspace_id IS NULL;
+INNER JOIN category AS target_category
+    ON seed.category_code = target_category.code AND target_category.workspace_id IS NULL;
 
--- --- 3. backfill existing cash and card rows --------------------------------------------------
+-- --- 3. TRANSACTION_TYPE provenance -----------------------------------------------------------
+-- V13 declared the check inline, so PostgreSQL named it <table>_<column>_check.
+ALTER TABLE transaction_categorization_log
+DROP CONSTRAINT transaction_categorization_log_assigned_by_check,
+ADD CONSTRAINT transaction_categorization_log_assigned_by_check CHECK (
+    assigned_by IN ('SOURCE_CODE', 'RULE', 'TRANSACTION_TYPE', 'FALLBACK_MATCH', 'USER')
+);
+
+-- --- 4. backfill existing cash and card rows --------------------------------------------------
 -- transaction is FORCE ROW LEVEL SECURITY (V20). With row_security off, a role that bypasses RLS
 -- (today's migration role) sees every workspace, and any other role gets an error instead of
 -- silently updating nothing.
@@ -149,6 +163,35 @@ UPDATE transaction AS t
 SET category_id = m.category_id
 FROM v37_mapped AS m
 WHERE t.id = m.transaction_id;
+
+-- A FEE or TAX row without a mapped code: the category its type implies. Both defaults are new in
+-- this migration, so no workspace can have deactivated them yet.
+CREATE TEMPORARY TABLE v37_typed ON COMMIT DROP AS
+SELECT
+    e.id AS transaction_id,
+    c.id AS category_id
+FROM v37_eligible AS e
+INNER JOIN transaction AS t ON e.id = t.id
+INNER JOIN category AS c
+    ON
+        c.workspace_id IS NULL
+        AND c.code = CASE t.transaction_type WHEN 'FEE' THEN 'FEES' WHEN 'TAX' THEN 'TAXES' END
+WHERE NOT EXISTS (
+    SELECT 1 FROM v37_mapped AS m
+    WHERE m.transaction_id = e.id
+);
+
+INSERT INTO transaction_categorization_log (transaction_id, category_id, assigned_by)
+SELECT
+    transaction_id,
+    category_id,
+    'TRANSACTION_TYPE' AS assigned_by
+FROM v37_typed;
+
+UPDATE transaction AS t
+SET category_id = ty.category_id
+FROM v37_typed AS ty
+WHERE t.id = ty.transaction_id;
 
 -- Everything else lands in the always-active, protected UNCATEGORIZED default, with no log row:
 -- the log records how a category was assigned, and nothing assigned this one.

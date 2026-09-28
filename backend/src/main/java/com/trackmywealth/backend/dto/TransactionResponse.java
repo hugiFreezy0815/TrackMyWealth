@@ -27,8 +27,9 @@ import java.util.UUID;
  *
  * <p>US-08-01: {@code categoryId} is the reporting category - {@code null} for a type that is not
  * categorized (settlement, trade, dividend), the shipped UNCATEGORIZED default when nothing matched
- * (FR-CAT-013). {@code categoryAssignedBy} says how it was assigned ({@code SOURCE_CODE}, {@code
- * RULE}, {@code FALLBACK_MATCH}, later {@code USER}), {@code null} for UNCATEGORIZED.
+ * (FR-CAT-013). {@code categoryAssignedBy} says how it was assigned ({@code RULE}, {@code
+ * SOURCE_CODE}, {@code TRANSACTION_TYPE}, {@code FALLBACK_MATCH}, later {@code USER}), {@code null}
+ * for UNCATEGORIZED.
  */
 public record TransactionResponse(
     UUID id,
