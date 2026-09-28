@@ -24,29 +24,33 @@ VALUES
 
 INSERT INTO category (workspace_id, parent_category_id, code, name_en, name_de, is_system_default)
 SELECT
-    NULL,
+    NULL AS workspace_id,
     parent.id,
     child.code,
     child.name_en,
     child.name_de,
-    TRUE
-FROM (VALUES
+    TRUE AS is_system_default
+FROM (
+    VALUES
     ('LEISURE', 'DINING', 'Dining Out', 'Auswärts essen'),
     ('LEISURE', 'TRAVEL', 'Travel', 'Reisen'),
     ('HOUSING', 'UTILITIES', 'Utilities & Telecom', 'Energie & Telekommunikation')
 ) AS child (parent_code, code, name_en, name_de)
 INNER JOIN category AS parent
-    ON parent.code = child.parent_code AND parent.workspace_id IS NULL;
+    ON child.parent_code = parent.code AND parent.workspace_id IS NULL;
 
 -- --- 2. shipped source-code mappings ----------------------------------------------------------
-INSERT INTO category_source_mapping (source_standard, source_code, category_id,
-    reference_package_version)
+INSERT INTO category_source_mapping (
+    source_standard, source_code, category_id,
+    reference_package_version
+)
 SELECT
-    mapping.source_standard,
-    mapping.source_code,
+    seed.source_standard,
+    seed.source_code,
     target.id,
-    '1.0.0-baseline'
-FROM (VALUES
+    '1.0.0-baseline' AS reference_package_version
+FROM (
+    VALUES
     ('MCC', '5411', 'GROCERIES'), -- grocery stores, supermarkets
     ('MCC', '5422', 'GROCERIES'), -- meat provisioners
     ('MCC', '5441', 'GROCERIES'), -- candy and confectionery
@@ -90,9 +94,9 @@ FROM (VALUES
     ('ISO20022_PURPOSE', 'ELEC', 'UTILITIES'), -- electricity bill
     ('ISO20022_PURPOSE', 'INSU', 'INSURANCE'), -- insurance premium
     ('ISO20022_PURPOSE', 'TAXS', 'TAXES') -- tax payment
-) AS mapping (source_standard, source_code, category_code)
+) AS seed (source_standard, source_code, category_code)
 INNER JOIN category AS target
-    ON target.code = mapping.category_code AND target.workspace_id IS NULL;
+    ON seed.category_code = target.code AND target.workspace_id IS NULL;
 
 -- --- 3. backfill existing cash and card rows --------------------------------------------------
 -- transaction is FORCE ROW LEVEL SECURITY (V20). With row_security off, a role that bypasses RLS
@@ -123,13 +127,13 @@ SELECT
     m.category_id
 FROM v37_eligible AS e
 INNER JOIN category_source_mapping AS m
-    ON m.source_standard = 'MCC' AND m.source_code = e.mcc
-INNER JOIN category AS c ON c.id = m.category_id
-LEFT JOIN category AS p ON p.id = c.parent_category_id
+    ON m.source_standard = 'MCC' AND e.mcc = m.source_code
+INNER JOIN category AS c ON m.category_id = c.id
+LEFT JOIN category AS p ON c.parent_category_id = p.id
 LEFT JOIN workspace_category_override AS co
-    ON co.workspace_id = e.workspace_id AND co.category_id = c.id
+    ON e.workspace_id = co.workspace_id AND c.id = co.category_id
 LEFT JOIN workspace_category_override AS po
-    ON po.workspace_id = e.workspace_id AND po.category_id = p.id
+    ON e.workspace_id = po.workspace_id AND p.id = po.category_id
 WHERE
     coalesce(co.is_active, c.is_active)
     AND (p.id IS NULL OR coalesce(po.is_active, p.is_active));
@@ -138,7 +142,7 @@ INSERT INTO transaction_categorization_log (transaction_id, category_id, assigne
 SELECT
     transaction_id,
     category_id,
-    'SOURCE_CODE'
+    'SOURCE_CODE' AS assigned_by
 FROM v37_mapped;
 
 UPDATE transaction AS t
@@ -149,6 +153,10 @@ WHERE t.id = m.transaction_id;
 -- Everything else lands in the always-active, protected UNCATEGORIZED default, with no log row:
 -- the log records how a category was assigned, and nothing assigned this one.
 UPDATE transaction AS t
-SET category_id = (SELECT id FROM category WHERE workspace_id IS NULL AND code = 'UNCATEGORIZED')
+SET
+    category_id = (
+        SELECT id FROM category
+        WHERE workspace_id IS NULL AND code = 'UNCATEGORIZED'
+    )
 FROM v37_eligible AS e
 WHERE t.id = e.id AND t.category_id IS NULL;
