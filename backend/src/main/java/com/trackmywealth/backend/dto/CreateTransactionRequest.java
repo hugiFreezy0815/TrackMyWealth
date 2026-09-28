@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
 
 /**
  * Request body for {@code POST /api/v1/accounts/{accountId}/transactions} (US-09-01).
@@ -52,6 +53,27 @@ import java.time.LocalDate;
  * falls back to {@code FxRateService}'s generic daily rate and flags the row {@code
  * fx_rate_estimated} (PR-011) - see {@code TransactionService}. It is a 422 if that fallback has no
  * rate to offer either, rather than recording a row with no derivable rate at all.
+ *
+ * <p><b>US-07-01 investment types</b> ({@code BUY}, {@code SELL}, {@code DIVIDEND}, on an account
+ * that holds positions) add the fields below; each is rejected (422) on any other type, and the
+ * rules are checked in {@code TransactionService} so an import can reuse them:
+ *
+ * <ul>
+ *   <li>{@code securityId} - required: an existing security-master id (create it first with {@code
+ *       POST /api/v1/securities}).
+ *   <li>{@code quantity} - position-direction signed: positive for a {@code BUY}, negative for a
+ *       {@code SELL}; optional and positive (shares entitled) for a {@code DIVIDEND}.
+ *   <li>{@code unitPrice} - positive, in {@code currency}: the trade price, or a dividend's gross
+ *       amount per share. {@code amount} of a trade must equal {@code -(quantity * unitPrice +
+ *       feeAmount)} within 0.01.
+ *   <li>{@code feeAmount} - on a trade, all its costs (commission, stamp duty, exchange fees) as a
+ *       positive magnitude, part of the same row - unlike a card purchase's fee, whatever the
+ *       currency.
+ *   <li>{@code tradeDate}, {@code settlementDate} - optional on a trade, kept distinct
+ *       (FR-TRX-008); settlement cannot precede trade.
+ *   <li>{@code grossAmount}, {@code taxWithheldAmount} - optional on a {@code DIVIDEND}, together:
+ *       gross minus withheld must equal {@code amount}, the net cash received (FR-TAXR-001).
+ * </ul>
  */
 public record CreateTransactionRequest(
     @NotBlank String transactionType,
@@ -64,7 +86,48 @@ public record CreateTransactionRequest(
     @Size(max = 255) String externalId,
     @Digits(integer = 10, fraction = 10) BigDecimal fxRateToAccountCurrency,
     @Digits(integer = 16, fraction = 4) BigDecimal billedAmount,
-    @Digits(integer = 16, fraction = 4) BigDecimal feeAmount) {
+    @Digits(integer = 16, fraction = 4) BigDecimal feeAmount,
+    UUID securityId,
+    @Digits(integer = 18, fraction = 10) BigDecimal quantity,
+    @Digits(integer = 10, fraction = 10) BigDecimal unitPrice,
+    LocalDate tradeDate,
+    LocalDate settlementDate,
+    @Digits(integer = 16, fraction = 4) BigDecimal grossAmount,
+    @Digits(integer = 16, fraction = 4) BigDecimal taxWithheldAmount) {
+
+  /** A cash or card entry, without the investment fields. */
+  public CreateTransactionRequest(
+      String transactionType,
+      LocalDate bookingDate,
+      BigDecimal amount,
+      String currency,
+      String merchantDescription,
+      String mcc,
+      String notes,
+      String externalId,
+      BigDecimal fxRateToAccountCurrency,
+      BigDecimal billedAmount,
+      BigDecimal feeAmount) {
+    this(
+        transactionType,
+        bookingDate,
+        amount,
+        currency,
+        merchantDescription,
+        mcc,
+        notes,
+        externalId,
+        fxRateToAccountCurrency,
+        billedAmount,
+        feeAmount,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null);
+  }
 
   public CreateTransactionRequest {
     transactionType = RequestStrings.blankToNull(transactionType);

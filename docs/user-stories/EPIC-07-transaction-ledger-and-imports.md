@@ -37,6 +37,17 @@ require/derive an `fx_rate_to_account_currency` (DM-06).
 **Priority:** MUST.
 **Definition of Done:** Integration test covers a cash expense and a security buy end to end.
 **Data-quality behaviour:** N/A (this is the source-of-truth entry point).
+**Clarified before development of the investment types (issue #140, 2026-09-28):** the cash leg of
+`BUY`/`SELL`/`DIVIDEND` stays on the position-holding account itself, in the trade currency (a
+depot's cash may be held in several currencies). The security is referenced by an existing
+`securityId`. `quantity` is position-direction signed (BUY positive, SELL negative). `feeAmount`
+holds all trading costs on the trade row, and `amount` must equal `-(quantity × unitPrice) −
+feeAmount` within 0.01. Any account with `holdsPositions` qualifies, including a pension holding
+funds. The FX rate is the disclosed or derived one if given, else the daily rate flagged estimated.
+A dividend's gross and withheld amounts are optional but must be given together, with gross −
+withheld = amount. Trade and settlement dates are optional on trades, with settlement ≥ trade. A
+sale is not checked against the held quantity (FR-DEP-007). Remaining types move to US-10-01
+(transfers), EPIC 14 (corporate actions) and a later story (valuation adjustment).
 
 ---
 

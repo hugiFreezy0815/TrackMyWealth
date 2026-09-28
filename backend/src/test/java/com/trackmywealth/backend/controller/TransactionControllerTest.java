@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
+import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
@@ -18,6 +19,7 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
+import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
@@ -1140,7 +1142,8 @@ class TransactionControllerTest {
 
   @Test
   void typesThatBelongToLaterStoriesAreRejectedOnACashAccount() {
-    // TRANSFER/DEBT_REPAYMENT/PENSION_CONTRIBUTION -> US-10-01; BUY/SELL/DIVIDEND -> US-12-01.
+    // TRANSFER/DEBT_REPAYMENT/PENSION_CONTRIBUTION -> US-10-01; BUY/SELL/DIVIDEND need an account
+    // that holds positions.
     String token = bootstrapAdministrator();
     AccountSummaryResponse cash = createCashAccount(token);
 
@@ -1435,6 +1438,543 @@ class TransactionControllerTest {
       }
       assertThat(countTransactions(account.id())).isZero();
     }
+  }
+
+  // --- US-07-01 part 2: investment transactions ------------------------------------------------
+
+  @Test
+  void aSecurityBuyRecordsQuantityPriceFeeAndItsNetCashImpactEndToEnd() {
+    // The story's DoD: BUY 10 shares at CHF 100 with a CHF 5 fee on a depot.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+    LocalDate tradeDate = today().minusDays(2);
+
+    postTransaction(
+            token,
+            depot.id(),
+            investment(
+                "BUY",
+                "-1005.00",
+                "CHF",
+                security,
+                "10",
+                "100",
+                "5",
+                tradeDate,
+                today(),
+                null,
+                null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+
+    // Read back from the database, not the POST's echo.
+    TransactionResponse stored = listTransactions(token, depot.id(), "").content().get(0);
+    assertThat(stored.transactionType()).isEqualTo("BUY");
+    assertThat(stored.source()).isEqualTo("MANUAL");
+    assertThat(stored.securityId()).isEqualTo(security);
+    assertThat(stored.quantity()).isEqualByComparingTo("10");
+    assertThat(stored.unitPrice()).isEqualByComparingTo("100");
+    assertThat(stored.feeAmount()).isEqualByComparingTo("5");
+    assertThat(stored.amount()).isEqualByComparingTo("-1005.00");
+    // FR-TRX-008: both dates retained distinctly.
+    assertThat(stored.tradeDate()).isEqualTo(tradeDate);
+    assertThat(stored.settlementDate()).isEqualTo(today());
+    assertThat(stored.fxRateToAccountCurrency()).isNull();
+    assertThat(stored.grossAmount()).isNull();
+    // The fee is part of the trade, not a FEE row of its own.
+    assertThat(countTransactions(depot.id())).isEqualTo(1);
+  }
+
+  @Test
+  void aSaleCarriesANegativeQuantityAndItsProceedsNetOfCosts() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    TransactionResponse sale =
+        postTransaction(token, depot.id(), trade("SELL", security, "-4", "110", "3", "437.00"))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(sale.quantity()).isEqualByComparingTo("-4");
+    assertThat(sale.amount()).isEqualByComparingTo("437.00");
+  }
+
+  @Test
+  void tradeSignsFollowTheirDirection() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    for (CreateTransactionRequest wrong :
+        List.of(
+            // The story's edge case: a negative quantity on a BUY.
+            trade("BUY", security, "-10", "100", null, "-1000.00"),
+            trade("BUY", security, "10", "100", null, "1000.00"),
+            trade("SELL", security, "4", "110", null, "440.00"),
+            trade("SELL", security, "-4", "110", null, "-440.00"),
+            trade("BUY", security, "10", "-100", null, "-1000.00"))) {
+      postTransaction(token, depot.id(), wrong)
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    }
+    assertThat(countTransactions(depot.id())).isZero();
+  }
+
+  @Test
+  void aTradeAmountMustAgreeWithQuantityTimesPriceWithinStatementRounding() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    // 10 x 100 + 5 = 1005, not 1010: a typo, rejected.
+    postTransaction(token, depot.id(), trade("BUY", security, "10", "100", "5", "-1010.00"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    // 3 x 33.3333 = 99.9999, booked as 100.00 on the statement: accepted.
+    postTransaction(token, depot.id(), trade("BUY", security, "3", "33.3333", null, "-100.00"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+    assertThat(countTransactions(depot.id())).isEqualTo(1);
+  }
+
+  @Test
+  void aTradeNeedsAnExistingSecurityAQuantityAndAPrice() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    for (CreateTransactionRequest incomplete :
+        List.of(
+            trade("BUY", null, "10", "100", null, "-1000.00"),
+            trade("BUY", UUID.randomUUID(), "10", "100", null, "-1000.00"),
+            trade("BUY", security, null, "100", null, "-1000.00"),
+            trade("BUY", security, "10", null, null, "-1000.00"))) {
+      postTransaction(token, depot.id(), incomplete)
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    }
+    assertThat(countTransactions(depot.id())).isZero();
+  }
+
+  @Test
+  void investmentTypesNeedAnAccountThatHoldsPositionsWhateverItsType() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+    AccountSummaryResponse plainPension = createPension(token);
+    AccountSummaryResponse fundPension = createPensionHoldingPositions(token);
+    // After the accounts: creating a security needs EDIT on an active account (US-12-01).
+    UUID security = createSecurity(token);
+
+    for (AccountSummaryResponse account : List.of(cash, plainPension)) {
+      postTransaction(token, account.id(), trade("BUY", security, "10", "100", null, "-1000.00"))
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    }
+    // A 3a that holds funds trades like a depot; its contribution limit is about contributions.
+    postTransaction(token, fundPension.id(), trade("BUY", security, "10", "100", null, "-1000.00"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+  }
+
+  @Test
+  void aDividendKeepsGrossWithheldAndNetDistinguishable() {
+    // FR-TAXR-001's example: a gross dividend of 100 with 35% withheld puts 65 in the account.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    postTransaction(
+            token,
+            depot.id(),
+            investment(
+                "DIVIDEND",
+                "65.00",
+                "CHF",
+                security,
+                "200",
+                "0.50",
+                null,
+                null,
+                null,
+                "100.00",
+                "35.00"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+
+    TransactionResponse stored = listTransactions(token, depot.id(), "").content().get(0);
+    assertThat(stored.amount()).isEqualByComparingTo("65.00");
+    assertThat(stored.grossAmount()).isEqualByComparingTo("100.00");
+    assertThat(stored.taxWithheldAmount()).isEqualByComparingTo("35.00");
+    assertThat(stored.netAmount()).isEqualByComparingTo("65.00");
+    assertThat(stored.quantity()).isEqualByComparingTo("200");
+  }
+
+  @Test
+  void aDividendWithoutWithholdingNeedsOnlyItsAmount() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    TransactionResponse dividend =
+        postTransaction(
+                token,
+                depot.id(),
+                investment(
+                    "DIVIDEND", "42.10", "CHF", security, null, null, null, null, null, null, null))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(dividend.grossAmount()).isNull();
+    assertThat(dividend.netAmount()).isNull();
+  }
+
+  @Test
+  void dividendFiguresThatDoNotReconcileAreRejected() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    for (CreateTransactionRequest wrong :
+        List.of(
+            // 100 - 30 is 70, not the 65 received.
+            investment(
+                "DIVIDEND",
+                "65.00",
+                "CHF",
+                security,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "100.00",
+                "30.00"),
+            // Gross without the withheld part.
+            investment(
+                "DIVIDEND", "65.00", "CHF", security, null, null, null, null, null, "100.00", null),
+            // 200 x 0.50 = 100 gross, but 65 arrived and no withholding was stated.
+            investment(
+                "DIVIDEND", "65.00", "CHF", security, "200", "0.50", null, null, null, null, null),
+            // A dividend has no trade or settlement date, nor a trade's fee.
+            investment(
+                "DIVIDEND", "65.00", "CHF", security, null, null, null, today(), null, null, null),
+            investment(
+                "DIVIDEND", "65.00", "CHF", security, null, null, "1", null, null, null, null),
+            investment(
+                "DIVIDEND", "-65.00", "CHF", security, null, null, null, null, null, null, null))) {
+      postTransaction(token, depot.id(), wrong)
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    }
+    assertThat(countTransactions(depot.id())).isZero();
+  }
+
+  @Test
+  void investmentFieldsAreRejectedOnEveryOtherType() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    postTransaction(
+            token,
+            depot.id(),
+            investment(
+                "DEPOSIT", "100.00", "CHF", security, null, null, null, null, null, null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    postTransaction(
+            token,
+            depot.id(),
+            investment("FEE", "-5.00", "CHF", null, "10", null, null, null, null, null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    // A trade's fee travels on the trade; a standalone fee is its own FEE row, without feeAmount.
+    postTransaction(
+            token,
+            depot.id(),
+            investment("FEE", "-5.00", "CHF", null, null, null, "5", null, null, null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThat(countTransactions(depot.id())).isZero();
+  }
+
+  @Test
+  void aSettlementDateBeforeTheTradeDateIsRejected() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    postTransaction(
+            token,
+            depot.id(),
+            investment(
+                "BUY",
+                "-1000.00",
+                "CHF",
+                security,
+                "10",
+                "100",
+                null,
+                today(),
+                today().minusDays(1),
+                null,
+                null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+  }
+
+  @Test
+  void aForeignCurrencyBuyKeepsTheTradeCurrencyAndTheBrokersRate() {
+    // A CHF depot whose cash is also held in USD: the trade stays in USD; the rate is the one the
+    // broker disclosed, not an estimate, and the fee stays on the trade.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+
+    TransactionResponse bought =
+        postTransaction(
+                token,
+                depot.id(),
+                new CreateTransactionRequest(
+                    "BUY",
+                    today(),
+                    new BigDecimal("-1005.00"),
+                    "USD",
+                    null,
+                    null,
+                    null,
+                    null,
+                    new BigDecimal("0.9"),
+                    null,
+                    new BigDecimal("5"),
+                    security,
+                    new BigDecimal("10"),
+                    new BigDecimal("100"),
+                    null,
+                    null,
+                    null,
+                    null))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(bought.currency()).isEqualTo("USD");
+    assertThat(bought.amount()).isEqualByComparingTo("-1005.00");
+    assertThat(bought.fxRateToAccountCurrency()).isEqualByComparingTo("0.9");
+    assertThat(bought.fxRateEstimated()).isFalse();
+    assertThat(bought.feeAmount()).isEqualByComparingTo("5");
+    assertThat(countTransactions(depot.id())).isEqualTo(1);
+  }
+
+  @Test
+  void aForeignCurrencyTradeWithoutADisclosedRateFallsBackToTheDailyRateFlaggedEstimated() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+    seedFxRate("USD", "CHF", today(), "0.88");
+
+    TransactionResponse bought =
+        postTransaction(
+                token,
+                depot.id(),
+                investment(
+                    "BUY", "-1000.00", "USD", security, "10", "100", null, null, null, null, null))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(bought.fxRateToAccountCurrency()).isEqualByComparingTo("0.88");
+    assertThat(bought.fxRateEstimated()).isTrue();
+  }
+
+  @Test
+  void aRetriedTradeIsRecordedOnceAndTheSameKeyForADifferentTradeIsAConflict() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+    String key = UUID.randomUUID().toString();
+
+    for (int attempt = 0; attempt < 2; attempt++) {
+      postTransaction(token, depot.id(), tradeWithKey(security, "10", "-1000.00", key))
+          .expectStatus()
+          .isEqualTo(HttpStatus.CREATED);
+    }
+    assertThat(countTransactions(depot.id())).isEqualTo(1);
+
+    // Same money, different shares: 20 at 50 is not the trade the key recorded.
+    postTransaction(
+            token,
+            depot.id(),
+            new CreateTransactionRequest(
+                "BUY",
+                today(),
+                new BigDecimal("-1000.00"),
+                "CHF",
+                null,
+                null,
+                null,
+                key,
+                null,
+                null,
+                null,
+                security,
+                new BigDecimal("20"),
+                new BigDecimal("50"),
+                null,
+                null,
+                null,
+                null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(countTransactions(depot.id())).isEqualTo(1);
+  }
+
+  @Test
+  void tradesAndDividendsAreNotSpending() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createDepot(token, "CHF");
+    UUID security = createSecurity(token);
+    postTransaction(token, depot.id(), trade("BUY", security, "10", "100", "5", "-1005.00"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+    postTransaction(
+            token,
+            depot.id(),
+            investment(
+                "DIVIDEND", "20.00", "CHF", security, null, null, null, null, null, null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+
+    assertThat(cashFlow(token, YearMonth.from(today()).toString()).spending()).isEmpty();
+  }
+
+  private AccountSummaryResponse createDepot(String token, String currency) {
+    return createAccount(token, "Depot", "SECURITIES", currency, null);
+  }
+
+  private AccountSummaryResponse createPensionHoldingPositions(String token) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateAccountRequest(
+                null, "VIAC 3a", "PENSION", "CHF", true, null, null, null, "CH_PILLAR_3A", null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  // The story's own ISIN. The master is shared, so a later test finds the same record (200).
+  private UUID createSecurity(String token) {
+    return client(token)
+        .post()
+        .uri("/api/v1/securities")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateSecurityRequest(
+                "IE00B4L5Y983",
+                "iShares Core MSCI World",
+                "USD",
+                "ETF",
+                "EQUITY",
+                null,
+                null,
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .is2xxSuccessful()
+        .expectBody(SecurityResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .id();
+  }
+
+  private CreateTransactionRequest trade(
+      String type,
+      UUID securityId,
+      String quantity,
+      String unitPrice,
+      String feeAmount,
+      String amount) {
+    return investment(
+        type, amount, "CHF", securityId, quantity, unitPrice, feeAmount, null, null, null, null);
+  }
+
+  private CreateTransactionRequest tradeWithKey(
+      UUID securityId, String quantity, String amount, String externalId) {
+    return new CreateTransactionRequest(
+        "BUY",
+        today(),
+        new BigDecimal(amount),
+        "CHF",
+        null,
+        null,
+        null,
+        externalId,
+        null,
+        null,
+        null,
+        securityId,
+        new BigDecimal(quantity),
+        new BigDecimal("100"),
+        null,
+        null,
+        null,
+        null);
+  }
+
+  private CreateTransactionRequest investment(
+      String type,
+      String amount,
+      String currency,
+      UUID securityId,
+      String quantity,
+      String unitPrice,
+      String feeAmount,
+      LocalDate tradeDate,
+      LocalDate settlementDate,
+      String grossAmount,
+      String taxWithheldAmount) {
+    return new CreateTransactionRequest(
+        type,
+        today(),
+        new BigDecimal(amount),
+        currency,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        decimal(feeAmount),
+        securityId,
+        decimal(quantity),
+        decimal(unitPrice),
+        tradeDate,
+        settlementDate,
+        decimal(grossAmount),
+        decimal(taxWithheldAmount));
+  }
+
+  private static BigDecimal decimal(String value) {
+    return value == null ? null : new BigDecimal(value);
   }
 
   // --- helpers ---------------------------------------------------------------------------------
