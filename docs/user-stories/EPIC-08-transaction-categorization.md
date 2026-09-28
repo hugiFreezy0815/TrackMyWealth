@@ -133,3 +133,8 @@ package import (EPIC 32).
 **Definition of Done:** Integration test creates a custom subcategory, attempts to hard-delete a
 used default category (rejected), and deactivates it instead (succeeds).
 **Data-quality behaviour:** N/A.
+**Clarified before development (issue #144, 2026-09-28):** a workspace customises a shared default
+through a per-workspace override (V34 `workspace_category_override`), never by editing the shared
+row; max 3 levels; codes are server-generated with a `WS_` prefix; deactivation cascades;
+`UNCATEGORIZED` and `TRANSFER_INTERNAL` are protected; only workspace categories can be moved; new
+assignments to an inactive category are rejected. See `docs/architecture/database-schema.md`.
