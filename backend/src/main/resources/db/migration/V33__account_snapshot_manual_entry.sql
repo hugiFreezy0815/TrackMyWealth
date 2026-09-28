@@ -35,14 +35,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER account_snapshot_currency_guard BEFORE INSERT OR UPDATE OF currency, account_id ON account_snapshot
+CREATE TRIGGER account_snapshot_currency_guard
+BEFORE INSERT OR UPDATE OF currency, account_id ON account_snapshot
 FOR EACH ROW EXECUTE FUNCTION trg_account_snapshot_currency_guard();
 
 ALTER TABLE snapshot_holding
-    ADD CONSTRAINT uq_snapshot_holding_security UNIQUE (snapshot_id, security_id);
+ADD CONSTRAINT uq_snapshot_holding_security UNIQUE (snapshot_id, security_id);
 -- The unique index leads with snapshot_id, so it serves every lookup V11's index did.
 DROP INDEX idx_snapshot_holding_snapshot;
 
 ALTER TABLE account_snapshot
-    ADD COLUMN updated_at TIMESTAMPTZ,
-    ADD COLUMN updated_by UUID REFERENCES app_user(id);
+ADD COLUMN updated_at TIMESTAMPTZ,
+ADD COLUMN updated_by UUID REFERENCES app_user (id);

@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -150,7 +151,9 @@ public class AccountSnapshotService {
         validate(account, snapshot.getSnapshotDate(), request.balance(), request.holdings());
 
     snapshot.setBalance(atScale(request.balance(), MONEY_SCALE));
-    snapshot.setUpdatedAt(OffsetDateTime.now(clock));
+    // TIMESTAMPTZ keeps microseconds; a Linux clock has nanoseconds. Truncate so this response
+    // shows the same instant a later read returns.
+    snapshot.setUpdatedAt(OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MICROS));
     snapshot.setUpdatedBy(actor.userId());
     snapshot = snapshotRepository.saveAndFlush(snapshot);
 
