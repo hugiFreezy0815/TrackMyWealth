@@ -25,6 +25,17 @@ updates:
         update-types:
           - version-update:semver-minor
           - version-update:semver-major
+      # Same SDK pin: Expo SDK 57 bundles react-native-reanimated 4.5.1 with react-native-worklets
+      # 0.10.x, and reanimated 4.5.x only accepts worklets 0.10.x, so a worklets minor bump breaks
+      # `npm ci` (#157). The two move together, on the SDK's schedule - remove with the rule above.
+      - dependency-name: react-native-worklets
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
+      - dependency-name: react-native-reanimated
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
 
   - package-ecosystem: docker
     directory: /backend
