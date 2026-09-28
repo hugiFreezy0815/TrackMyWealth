@@ -80,7 +80,8 @@ class CrossTenantIsolationTest {
           "settlement_match",
           "account_snapshot",
           "category",
-          "workspace_category_override");
+          "workspace_category_override",
+          "categorization_rule");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -103,6 +104,8 @@ class CrossTenantIsolationTest {
   private UUID categoryBId;
   private UUID categoryOverrideAId;
   private UUID categoryOverrideBId;
+  private UUID ruleAId;
+  private UUID ruleBId;
 
   @BeforeAll
   static void migrateAndCreateNonSuperuserRole() throws Exception {
@@ -167,6 +170,7 @@ class CrossTenantIsolationTest {
       snapshotAId = insertSnapshot(connection, workspaceAId, accountAId);
       categoryAId = insertCategory(connection, workspaceAId, "WS_A", sharedCategoryId);
       categoryOverrideAId = insertCategoryOverride(connection, workspaceAId, sharedCategoryId);
+      ruleAId = insertRule(connection, workspaceAId, sharedCategoryId);
 
       workspaceBId = UUID.randomUUID();
       setWorkspaceContext(connection, workspaceBId);
@@ -181,6 +185,7 @@ class CrossTenantIsolationTest {
       snapshotBId = insertSnapshot(connection, workspaceBId, accountBId);
       categoryBId = insertCategory(connection, workspaceBId, "WS_B", sharedCategoryId);
       categoryOverrideBId = insertCategoryOverride(connection, workspaceBId, sharedCategoryId);
+      ruleBId = insertRule(connection, workspaceBId, sharedCategoryId);
 
       connection.commit();
     }
@@ -259,6 +264,12 @@ class CrossTenantIsolationTest {
   }
 
   @Test
+  void categorizationRuleRowIsInvisibleAcrossWorkspaces() throws Exception {
+    assertThat(rowVisibleUnderContext(workspaceAId, "categorization_rule", ruleBId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceBId, "categorization_rule", ruleAId)).isFalse();
+  }
+
+  @Test
   void workspaceCategoryOverrideRowIsInvisibleAcrossWorkspaces() throws Exception {
     assertThat(
             rowVisibleUnderContext(
@@ -322,6 +333,7 @@ class CrossTenantIsolationTest {
             rowVisibleUnderContext(
                 workspaceAId, "workspace_category_override", categoryOverrideAId))
         .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceAId, "categorization_rule", ruleAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace", workspaceBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace_member", memberBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "financial_institution", institutionBId))
@@ -337,6 +349,7 @@ class CrossTenantIsolationTest {
             rowVisibleUnderContext(
                 workspaceBId, "workspace_category_override", categoryOverrideBId))
         .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "categorization_rule", ruleBId)).isTrue();
   }
 
   @Test
@@ -482,6 +495,21 @@ class CrossTenantIsolationTest {
       statement.executeUpdate();
     }
     return categoryId;
+  }
+
+  private UUID insertRule(Connection connection, UUID workspaceId, UUID categoryId)
+      throws Exception {
+    UUID ruleId = UUID.randomUUID();
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO categorization_rule (id, workspace_id, match_type, match_value,"
+                + " category_id) VALUES (?, ?, 'MERCHANT', 'migros', ?)")) {
+      statement.setObject(1, ruleId);
+      statement.setObject(2, workspaceId);
+      statement.setObject(3, categoryId);
+      statement.executeUpdate();
+    }
+    return ruleId;
   }
 
   private UUID insertCategoryOverride(Connection connection, UUID workspaceId, UUID categoryId)

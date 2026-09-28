@@ -316,14 +316,21 @@ class CategoryControllerTest {
 
     assertThat(codes(list(token, false)))
         .containsExactly(
+            "FEES", // V37: "Fees & Charges"
             "GROCERIES",
+            "HEALTH",
             "HOUSING",
+            "UTILITIES", // V37: "Utilities & Telecom" under Housing
             "INCOME",
             "INSURANCE",
             "TRANSFER_INTERNAL", // "Internal Transfer"
             "LEISURE",
+            "DINING", // V37: "Dining Out" under Leisure
+            "TRAVEL",
             "OTHER",
             "SAVINGS_INVEST",
+            "SHOPPING",
+            "TAXES",
             "TRANSPORT",
             "UNCATEGORIZED");
   }

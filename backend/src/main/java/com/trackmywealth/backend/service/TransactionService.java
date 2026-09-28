@@ -4,17 +4,20 @@ import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.ForeignCurrencyResolution;
+import com.trackmywealth.backend.dto.LatestCategoryAssignment;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
+import com.trackmywealth.backend.repository.TransactionCategorizationLogRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Currency;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -146,6 +149,8 @@ public class TransactionService {
   private final SettlementDetectionService settlementDetectionService;
   private final FxRateService fxRateService;
   private final SecurityRepository securityRepository;
+  private final CategorizationService categorizationService;
+  private final TransactionCategorizationLogRepository categorizationLogRepository;
   private final ObjectMapper objectMapper;
   private final String fxDefaultSource;
 
@@ -157,6 +162,8 @@ public class TransactionService {
       SettlementDetectionService settlementDetectionService,
       FxRateService fxRateService,
       SecurityRepository securityRepository,
+      CategorizationService categorizationService,
+      TransactionCategorizationLogRepository categorizationLogRepository,
       ObjectMapper objectMapper,
       @Value("${app.fx.default-source}") String fxDefaultSource) {
     this.accountLookupService = accountLookupService;
@@ -166,6 +173,8 @@ public class TransactionService {
     this.settlementDetectionService = settlementDetectionService;
     this.fxRateService = fxRateService;
     this.securityRepository = securityRepository;
+    this.categorizationService = categorizationService;
+    this.categorizationLogRepository = categorizationLogRepository;
     this.objectMapper = objectMapper;
     this.fxDefaultSource = fxDefaultSource;
   }
@@ -187,7 +196,8 @@ public class TransactionService {
     // archived since, rather than turn a successful earlier request into a 409 on retry.
     Optional<Transaction> replay = findReplay(accountId, request);
     if (replay.isPresent()) {
-      return toResponse(replay.get());
+      return toResponse(
+          replay.get(), latestAssignments(List.of(replay.get())).get(replay.get().getId()));
     }
     // Only a CREDIT_CARD_PURCHASE ever needs the card's billing_currency (the FX check, resolution
     // and any FEE row below) - every other card write (e.g. the card-side SETTLEMENT leg)
@@ -255,6 +265,8 @@ public class TransactionService {
     // here, inside this method, rather than deferred to end-of-transaction commit - same reasoning
     // as AccountService's own saveAndFlush calls.
     Transaction saved = transactionRepository.saveAndFlush(transaction);
+    // US-08-01: once per new row, in this same transaction; a replay above is never re-categorized.
+    Optional<String> assignedBy = categorizationService.categorize(saved);
 
     if (isCardPurchase && foreignCurrency && request.feeAmount() != null) {
       Transaction fee = new Transaction();
@@ -274,18 +286,22 @@ public class TransactionService {
       fee.setRelatedTransactionId(saved.getId());
       fee.setSource(MANUAL);
       fee.setCreatedBy(actor.userId());
-      transactionRepository.saveAndFlush(fee);
+      categorizationService.categorize(transactionRepository.saveAndFlush(fee));
     }
 
     // Same transaction, so the response below already shows the internal-transfer flag if this row
     // just completed a settlement pair.
     settlementDetectionService.detectAfterWrite(account, request.bookingDate());
-    return toResponse(saved);
+    return toResponse(saved, assignedBy.orElse(null));
   }
 
+  /**
+   * Newest booking first. With {@code uncategorized}, only the rows in UNCATEGORIZED: the
+   * actionable list FR-CAT-013 asks for, per account (a workspace-wide list comes later).
+   */
   @Transactional(readOnly = true)
   public Page<TransactionResponse> listTransactions(
-      UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
+      UUID accountId, boolean uncategorized, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     Pageable bounded =
@@ -293,7 +309,30 @@ public class TransactionService {
             pageable.getPageNumber(),
             Math.min(pageable.getPageSize(), MAX_PAGE_SIZE),
             LEDGER_ORDER);
-    return transactionRepository.findByAccountId(accountId, bounded).map(this::toResponse);
+    Page<Transaction> page =
+        uncategorized
+            ? transactionRepository.findByAccountIdAndCategoryId(
+                accountId, categorizationService.uncategorizedCategoryId(), bounded)
+            : transactionRepository.findByAccountId(accountId, bounded);
+    Map<UUID, String> assignments = latestAssignments(page.getContent());
+    return page.map(transaction -> toResponse(transaction, assignments.get(transaction.getId())));
+  }
+
+  // How each row got its category, for a whole page in one query.
+  private Map<UUID, String> latestAssignments(List<Transaction> transactions) {
+    List<UUID> categorized =
+        transactions.stream()
+            .filter(transaction -> transaction.getCategoryId() != null)
+            .map(Transaction::getId)
+            .toList();
+    if (categorized.isEmpty()) {
+      return Map.of();
+    }
+    return categorizationLogRepository.findLatestAssignments(categorized).stream()
+        .collect(
+            Collectors.toMap(
+                LatestCategoryAssignment::getTransactionId,
+                LatestCategoryAssignment::getAssignedBy));
   }
 
   private Optional<Transaction> findReplay(UUID accountId, CreateTransactionRequest request) {
@@ -759,7 +798,7 @@ public class TransactionService {
     return new ForeignCurrencyResolution(fallback.get().rate(), true);
   }
 
-  private TransactionResponse toResponse(Transaction transaction) {
+  private TransactionResponse toResponse(Transaction transaction, String categoryAssignedBy) {
     return new TransactionResponse(
         transaction.getId(),
         transaction.getAccount().getId(),
@@ -785,11 +824,14 @@ public class TransactionService {
         transaction.getSettlementDate(),
         transaction.getGrossAmount(),
         transaction.getTaxWithheldAmount(),
-        transaction.getNetAmount());
+        transaction.getNetAmount(),
+        transaction.getCategoryId(),
+        categoryAssignedBy);
   }
 
   // raw_source_data may in future carry a richer, import-defined shape (EPIC 07); only the "mcc"
-  // key is this story's contract, so read just that and tolerate anything else being present. An
+  // key is echoed in responses (CategorizationService also reads the ISO 20022 keys), so read just
+  // that and tolerate anything else being present. An
   // importer may well write the MCC as a JSON number ({"mcc":5411}) rather than a string; both
   // read back as the four-digit code (a number loses leading zeros, so it is re-padded).
   private String extractMcc(String rawSourceData) {

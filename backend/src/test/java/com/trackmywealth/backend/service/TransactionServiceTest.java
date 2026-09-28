@@ -16,6 +16,7 @@ import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
+import com.trackmywealth.backend.repository.TransactionCategorizationLogRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
@@ -58,6 +59,8 @@ class TransactionServiceTest {
           mock(SettlementDetectionService.class),
           mock(FxRateService.class),
           securityRepository,
+          mock(CategorizationService.class),
+          mock(TransactionCategorizationLogRepository.class),
           mock(ObjectMapper.class),
           "ECB");
 

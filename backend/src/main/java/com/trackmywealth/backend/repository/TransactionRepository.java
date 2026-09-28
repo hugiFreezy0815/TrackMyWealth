@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.entity.Transaction;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -20,6 +21,55 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   // The caller supplies the sort (TransactionService fixes it): a Pageable's own sort is client
   // input and must not decide which columns the query orders by.
   Page<Transaction> findByAccountId(UUID accountId, Pageable pageable);
+
+  // FR-CAT-013: the account's rows in one category - with UNCATEGORIZED, the actionable list.
+  Page<Transaction> findByAccountIdAndCategoryId(
+      UUID accountId, UUID categoryId, Pageable pageable);
+
+  /**
+   * Sets pg_trgm's threshold for the {@code %} operator in {@link #findFuzzyCandidates} for the
+   * current transaction only ({@code is_local = true}): a session-wide setting would outlive the
+   * request on a pooled connection.
+   */
+  @Query(
+      value = "SELECT set_config('pg_trgm.similarity_threshold', :threshold, true)",
+      nativeQuery = true)
+  String setSimilarityThresholdForTransaction(@Param("threshold") String threshold);
+
+  /**
+   * US-08-01 FALLBACK_MATCH: the workspace's earlier, non-voided rows whose merchant description is
+   * trigram-similar (pg_trgm, V10's GIN index) to {@code merchant} at or above {@code threshold},
+   * and whose current category was assigned by a rule or a user - never by a shipped code or an
+   * earlier fuzzy guess, so a guess cannot teach the next one. Most similar first, then most
+   * recent. The caller still checks the brand and whether the category is assignable, hence {@code
+   * limit}. Call {@link #setSimilarityThresholdForTransaction} with the same threshold first, in
+   * the same transaction: the {@code %} filter reads it.
+   */
+  @Query(
+      value =
+          "SELECT t.category_id AS categoryId, t.merchant_description AS merchantDescription,"
+              + " CAST(similarity(t.merchant_description, :merchant) AS NUMERIC(4, 3))"
+              + " AS similarity"
+              + " FROM transaction t"
+              + " WHERE t.workspace_id = :workspaceId AND t.id <> :excludedId"
+              + " AND t.voided_at IS NULL AND t.category_id IS NOT NULL"
+              + " AND t.merchant_description IS NOT NULL"
+              // % is what the GIN trigram index serves (similarity() alone is a full scan of the
+              // workspace's history); the explicit >= keeps the exact configured threshold.
+              + " AND t.merchant_description % :merchant"
+              + " AND similarity(t.merchant_description, :merchant) >= :threshold"
+              + " AND (SELECT l.assigned_by FROM transaction_categorization_log l"
+              + " WHERE l.transaction_id = t.id ORDER BY l.assigned_at DESC, l.id DESC LIMIT 1)"
+              + " IN ('RULE', 'USER')"
+              + " ORDER BY similarity(t.merchant_description, :merchant) DESC, t.created_at DESC,"
+              + " t.id DESC LIMIT :limit",
+      nativeQuery = true)
+  List<FuzzyCategoryCandidate> findFuzzyCandidates(
+      @Param("workspaceId") UUID workspaceId,
+      @Param("excludedId") UUID excludedId,
+      @Param("merchant") String merchant,
+      @Param("threshold") double threshold,
+      @Param("limit") int limit);
 
   // The idempotency lookup, backed by uq_transaction_external_id (account_id, source, external_id).
   Optional<Transaction> findByAccountIdAndSourceAndExternalId(
