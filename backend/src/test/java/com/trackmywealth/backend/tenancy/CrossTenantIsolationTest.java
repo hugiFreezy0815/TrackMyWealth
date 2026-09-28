@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.tenancy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -8,6 +9,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashSet;
 import java.util.Set;
@@ -76,7 +78,9 @@ class CrossTenantIsolationTest {
           "sharing_grant",
           "transaction",
           "settlement_match",
-          "account_snapshot");
+          "account_snapshot",
+          "category",
+          "workspace_category_override");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -94,6 +98,11 @@ class CrossTenantIsolationTest {
   private UUID sharingGrantBId;
   private UUID snapshotAId;
   private UUID snapshotBId;
+  private UUID sharedCategoryId;
+  private UUID categoryAId;
+  private UUID categoryBId;
+  private UUID categoryOverrideAId;
+  private UUID categoryOverrideBId;
 
   @BeforeAll
   static void migrateAndCreateNonSuperuserRole() throws Exception {
@@ -129,6 +138,17 @@ class CrossTenantIsolationTest {
       statement.execute(
           "TRUNCATE TABLE account_snapshot, settlement_match, transaction, sharing_grant, account, financial_institution,"
               + " workspace_member, workspace RESTART IDENTITY CASCADE");
+      // The CASCADE above also empties `category` (it references workspace), shipped defaults
+      // included, so this suite seeds its own shared default: only a superuser can, since V20's
+      // WITH CHECK rejects a NULL workspace_id for every workspace.
+      sharedCategoryId = UUID.randomUUID();
+      try (PreparedStatement insert =
+          admin.prepareStatement(
+              "INSERT INTO category (id, workspace_id, code, name_en, name_de, is_system_default)"
+                  + " VALUES (?, NULL, 'CROSS_TENANT_DEFAULT', 'Shared', 'Geteilt', TRUE)")) {
+        insert.setObject(1, sharedCategoryId);
+        insert.executeUpdate();
+      }
     }
 
     try (Connection connection = testRoleConnection()) {
@@ -145,6 +165,8 @@ class CrossTenantIsolationTest {
           insertSettlementMatch(connection, workspaceAId, accountAId, transactionAId);
       sharingGrantAId = insertSharingGrant(connection, workspaceAId, memberAId);
       snapshotAId = insertSnapshot(connection, workspaceAId, accountAId);
+      categoryAId = insertCategory(connection, workspaceAId, "WS_A", sharedCategoryId);
+      categoryOverrideAId = insertCategoryOverride(connection, workspaceAId, sharedCategoryId);
 
       workspaceBId = UUID.randomUUID();
       setWorkspaceContext(connection, workspaceBId);
@@ -157,6 +179,8 @@ class CrossTenantIsolationTest {
           insertSettlementMatch(connection, workspaceBId, accountBId, transactionBId);
       sharingGrantBId = insertSharingGrant(connection, workspaceBId, memberBId);
       snapshotBId = insertSnapshot(connection, workspaceBId, accountBId);
+      categoryBId = insertCategory(connection, workspaceBId, "WS_B", sharedCategoryId);
+      categoryOverrideBId = insertCategoryOverride(connection, workspaceBId, sharedCategoryId);
 
       connection.commit();
     }
@@ -224,6 +248,60 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceBId, "account_snapshot", snapshotAId)).isFalse();
   }
 
+  // US-08-04: a workspace's own categories and its customisation of a shared default are tenant
+  // data; the shared default itself is visible to every workspace.
+  @Test
+  void categoryRowIsInvisibleAcrossWorkspaces() throws Exception {
+    assertThat(rowVisibleUnderContext(workspaceAId, "category", categoryBId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceBId, "category", categoryAId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceAId, "category", sharedCategoryId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "category", sharedCategoryId)).isTrue();
+  }
+
+  @Test
+  void workspaceCategoryOverrideRowIsInvisibleAcrossWorkspaces() throws Exception {
+    assertThat(
+            rowVisibleUnderContext(
+                workspaceAId, "workspace_category_override", categoryOverrideBId))
+        .isFalse();
+    assertThat(
+            rowVisibleUnderContext(
+                workspaceBId, "workspace_category_override", categoryOverrideAId))
+        .isFalse();
+  }
+
+  // The shared default is visible but never writable by a workspace: its customisation belongs in
+  // workspace_category_override, or one workspace would relabel the category for all of them.
+  @Test
+  void aWorkspaceCannotEditASharedDefaultCategory() throws Exception {
+    try (Connection connection = testRoleConnection()) {
+      connection.setAutoCommit(false);
+      setWorkspaceContext(connection, workspaceAId);
+      try (PreparedStatement statement =
+          connection.prepareStatement("UPDATE category SET is_active = false WHERE id = ?")) {
+        statement.setObject(1, sharedCategoryId);
+        assertThatThrownBy(statement::executeUpdate)
+            .isInstanceOf(SQLException.class)
+            .hasMessageContaining("row-level security");
+      } finally {
+        connection.rollback();
+      }
+    }
+  }
+
+  // V34's parent-scope guard: the FK alone would accept another workspace's category as parent.
+  @Test
+  void aCategoryCannotBePlacedUnderAnotherWorkspacesCategory() throws Exception {
+    try (Connection connection = testRoleConnection()) {
+      connection.setAutoCommit(false);
+      setWorkspaceContext(connection, workspaceAId);
+      assertThatThrownBy(() -> insertCategory(connection, workspaceAId, "WS_A_CHILD", categoryBId))
+          .isInstanceOf(SQLException.class)
+          .hasMessageContaining("category_parent_scope");
+      connection.rollback();
+    }
+  }
+
   // A cross-tenant suite that only ever asserts "denied" can pass vacuously if RLS is
   // accidentally denying everyone, including a workspace reading its own data - this is the
   // false-negative guard against that.
@@ -239,6 +317,11 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceAId, "settlement_match", settlementMatchAId))
         .isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "account_snapshot", snapshotAId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceAId, "category", categoryAId)).isTrue();
+    assertThat(
+            rowVisibleUnderContext(
+                workspaceAId, "workspace_category_override", categoryOverrideAId))
+        .isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace", workspaceBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace_member", memberBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "financial_institution", institutionBId))
@@ -249,6 +332,11 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceBId, "settlement_match", settlementMatchBId))
         .isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "account_snapshot", snapshotBId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "category", categoryBId)).isTrue();
+    assertThat(
+            rowVisibleUnderContext(
+                workspaceBId, "workspace_category_override", categoryOverrideBId))
+        .isTrue();
   }
 
   @Test
@@ -376,6 +464,39 @@ class CrossTenantIsolationTest {
       statement.executeUpdate();
     }
     return matchId;
+  }
+
+  private UUID insertCategory(Connection connection, UUID workspaceId, String code, UUID parentId)
+      throws Exception {
+    UUID categoryId = UUID.randomUUID();
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO category (id, workspace_id, parent_category_id, code, name_en, name_de)"
+                + " VALUES (?, ?, ?, ?, ?, ?)")) {
+      statement.setObject(1, categoryId);
+      statement.setObject(2, workspaceId);
+      statement.setObject(3, parentId);
+      statement.setString(4, code);
+      statement.setString(5, code);
+      statement.setString(6, code);
+      statement.executeUpdate();
+    }
+    return categoryId;
+  }
+
+  private UUID insertCategoryOverride(Connection connection, UUID workspaceId, UUID categoryId)
+      throws Exception {
+    UUID overrideId = UUID.randomUUID();
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO workspace_category_override (id, workspace_id, category_id, is_active)"
+                + " VALUES (?, ?, ?, false)")) {
+      statement.setObject(1, overrideId);
+      statement.setObject(2, workspaceId);
+      statement.setObject(3, categoryId);
+      statement.executeUpdate();
+    }
+    return overrideId;
   }
 
   private UUID insertSnapshot(Connection connection, UUID workspaceId, UUID accountId)

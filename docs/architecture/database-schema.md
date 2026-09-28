@@ -199,6 +199,49 @@ discoverable by another workspace. Rules that follow from the table being global
 - **Isolation.** `account_snapshot` is RLS-protected; `snapshot_holding` is not and is only read
   by the id of a snapshot already loaded under that policy.
 
+### Category taxonomy: shared defaults, workspace customisation (US-08-04)
+
+`/api/v1/categories` manages a workspace's reporting taxonomy: the shipped defaults
+(`workspace_id IS NULL`, `V19`) plus the workspace's own categories. Decisions are recorded on
+issue #144.
+
+- **Defaults are never edited by a workspace.** V20's RLS rejects the write anyway, and editing the
+  shared row would change it for everyone. Relabelling or deactivating a default is stored per
+  workspace in `workspace_category_override` (`V34`; a NULL column inherits the shipped value, and
+  an override that overrides nothing is deleted). It is a user customisation a reference package
+  must not overwrite (FR-REF-009). Defaults keep their shipped position; only workspace categories
+  can be moved.
+- **Codes.** Reports key on `code`, never on a label (FR-CAT-008). Workspace codes are generated
+  from the English label, immutable, and carry a `WS_` prefix that defaults never use
+  (`category_code_namespace`), so a future default cannot collide with a workspace code. `V34`
+  also replaces V13's `UNIQUE (workspace_id, code)`, which let two defaults share a code (NULLs are
+  distinct), with `uq_category_workspace_code ... NULLS NOT DISTINCT`.
+- **Service-layer rules** (`CategoryService`): at most 3 levels (a move checks the moved subtree's
+  height) and no cycles; EN and DE labels unique among siblings, ignoring case; deactivation
+  cascades to every subcategory, while reactivation affects one category and needs an active
+  parent; `UNCATEGORIZED` and `TRANSFER_INTERNAL` can never be deactivated, deleted or given
+  subcategories. A category counts as active only if every ancestor is active too, so a default a
+  later reference package adds under a deactivated default is inactive as well. `requireAssignable`
+  is the single check later stories (US-08-01/02) call before assigning a category: an inactive
+  one is a 422. It has a batch form that loads the taxonomy once, for bulk categorization.
+- **Concurrency.** Every change locks the workspace row (`SELECT ... FOR UPDATE`) before reading
+  the tree, so two changes to one workspace's taxonomy run one after the other. The depth, cycle
+  and sibling-label rules are checked in memory and no constraint backs them, so without the lock
+  two concurrent moves could form a cycle. `PUT` also carries the `version` the client last read
+  and is a 409 if the category changed since. For a default, that token tracks the workspace's
+  override.
+- **Deletion (FR-LIF-001).** A default is never hard-deleted (409, deactivate instead). A
+  workspace category is deleted only if no transaction, split, rule, source mapping, budget line,
+  categorization-log entry or subcategory refers to it; the foreign keys are the backstop for a
+  reference the workspace cannot see.
+- **Isolation.** `workspace_category_override` is RLS-protected like any tenant table. Its
+  foreign keys cascade (`V35`), so an override goes with its workspace or with a retired default.
+  `category_parent_scope_guard` stops a category being placed under another workspace's category,
+  which the foreign key alone would allow, since FK checks bypass RLS.
+- **Access.** Any workspace member may read; changes need EDIT on the workspace, because the
+  taxonomy shapes every member's reports. Each response carries `canEdit`, so a client can hide
+  the actions that would be refused.
+
 ## 5. Time-series data and partitioning
 
 `price`, `fx_rate` and `daily_valuation` are the volume-dominant tables (DB-02, NFR-TEC-003) and

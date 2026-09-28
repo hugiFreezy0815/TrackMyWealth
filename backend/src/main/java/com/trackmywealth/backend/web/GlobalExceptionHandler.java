@@ -63,6 +63,10 @@ public class GlobalExceptionHandler {
           "A transaction with this externalId is already being recorded. Retry the request: it"
               + " returns the recorded transaction.");
     }
+    if (rootMessage.contains("uq_category_workspace_code")) {
+      return conflict(
+          "A category with the same name was created at the same moment. Retry the request.");
+    }
     return conflict("The request conflicts with an existing data constraint.");
   }
 
