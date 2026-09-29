@@ -15,6 +15,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
+import com.trackmywealth.backend.dto.LatestCategoryAssignment;
 import com.trackmywealth.backend.entity.CategorizationRule;
 import com.trackmywealth.backend.entity.Category;
 import com.trackmywealth.backend.entity.Transaction;
@@ -24,7 +25,9 @@ import com.trackmywealth.backend.repository.CategorizationRuleRepository;
 import com.trackmywealth.backend.repository.CategoryRepository;
 import com.trackmywealth.backend.repository.TransactionCategorizationLogRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -66,6 +69,7 @@ class CategorizationServiceTest {
   private final TransactionCategorizationLogRepository logRepository =
       mock(TransactionCategorizationLogRepository.class);
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
+  private final EntityManager entityManager = mock(EntityManager.class);
   private final CategorizationService service =
       new CategorizationService(
           categoryService,
@@ -74,10 +78,12 @@ class CategorizationServiceTest {
           logRepository,
           transactionRepository,
           JsonMapper.builder().build(),
+          entityManager,
           0.3);
 
   private final Set<UUID> assignable = new HashSet<>();
   private final List<CategorizationRule> rules = new ArrayList<>();
+  private long createdSequence;
 
   @BeforeEach
   void setUp() {
@@ -394,6 +400,124 @@ class CategorizationServiceTest {
     }
   }
 
+  // --- re-running a workspace (US-08-02) ----------------------------------------------------
+
+  @Nested
+  class Recategorization {
+
+    @Test
+    void anUnchangedDecisionWritesNothingSoRepeatedRunsDoNotGrowTheLog() {
+      mapping("MCC", "5411", GROCERIES);
+      Transaction row = categorizedRow("{\"mcc\": \"5411\"}", GROCERIES);
+      page(List.of(row));
+      latest(row, GROCERIES, "SOURCE_CODE", null, false);
+
+      assertThat(service.recategorizeWorkspace(WORKSPACE)).isZero();
+      verify(transactionRepository, never()).saveAndFlush(any());
+      verify(logRepository, never()).save(any());
+    }
+
+    @Test
+    void theSameCategoryNowFoundByARuleIsWrittenWithTheNewProvenance() {
+      Transaction row = categorizedRow(null, GROCERIES);
+      row.setMerchantDescription("MIGROS BASEL");
+      page(List.of(row));
+      latest(row, GROCERIES, "FALLBACK_MATCH", null, false);
+      rule("MERCHANT", "migros basel", GROCERIES);
+
+      assertThat(service.recategorizeWorkspace(WORKSPACE)).isEqualTo(1);
+      ArgumentCaptor<TransactionCategorizationLog> log =
+          ArgumentCaptor.forClass(TransactionCategorizationLog.class);
+      verify(logRepository).save(log.capture());
+      assertThat(log.getValue().getAssignedBy()).isEqualTo("RULE");
+      assertThat(log.getValue().getRuleId()).isEqualTo(rules.get(0).getId());
+    }
+
+    @Test
+    void theSameCategoryFromAnotherRuleIsWritten() {
+      Transaction row = categorizedRow(null, GROCERIES);
+      row.setMerchantDescription("MIGROS BASEL");
+      page(List.of(row));
+      rule("MERCHANT", "migros", GROCERIES);
+      latest(row, GROCERIES, "RULE", UUID.randomUUID(), false);
+
+      assertThat(service.recategorizeWorkspace(WORKSPACE)).isEqualTo(1);
+    }
+
+    @Test
+    void anOverriddenRowIsSkippedEvenWhenARuleNowMatches() {
+      Transaction row = categorizedRow(null, SHOPPING);
+      row.setMerchantDescription("MIGROS BASEL");
+      page(List.of(row));
+      latest(row, SHOPPING, "USER", null, true);
+      rule("MERCHANT", "migros", GROCERIES);
+
+      assertThat(service.recategorizeWorkspace(WORKSPACE)).isZero();
+      assertThat(row.getCategoryId()).isEqualTo(SHOPPING);
+      verify(transactionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void anOverrideRowThatNoLongerDescribesTheCategoryNoLongerProtectsIt() {
+      // Reset to automatic landed in UNCATEGORIZED, which writes no log row of its own.
+      Transaction row = categorizedRow(null, UNCATEGORIZED);
+      row.setMerchantDescription("MIGROS BASEL");
+      page(List.of(row));
+      latest(row, SHOPPING, "USER", null, true);
+      rule("MERCHANT", "migros", GROCERIES);
+
+      assertThat(service.recategorizeWorkspace(WORKSPACE)).isEqualTo(1);
+      assertThat(row.getCategoryId()).isEqualTo(GROCERIES);
+    }
+
+    @Test
+    void pagesFollowTheLastRowAndTheContextIsClearedAfterEachPage() {
+      List<Transaction> full = new ArrayList<>();
+      for (int i = 0; i < CategorizationService.RECATEGORIZATION_PAGE_SIZE; i++) {
+        full.add(categorizedRow(null, UNCATEGORIZED));
+      }
+      Transaction lastOfFirstPage = full.get(full.size() - 1);
+      when(transactionRepository.lockRecategorizationPage(
+              eq(WORKSPACE),
+              any(),
+              any(),
+              any(),
+              eq(CategorizationService.RECATEGORIZATION_PAGE_SIZE)))
+          .thenReturn(full)
+          .thenReturn(List.of(categorizedRow(null, UNCATEGORIZED)));
+
+      assertThat(service.recategorizeWorkspace(WORKSPACE)).isZero();
+
+      InOrder order = inOrder(transactionRepository, entityManager);
+      order
+          .verify(transactionRepository)
+          .lockRecategorizationPage(
+              eq(WORKSPACE), eq(CategorizationService.CATEGORIZED_TYPES), any(), any(), anyInt());
+      order.verify(entityManager).clear();
+      order
+          .verify(transactionRepository)
+          .lockRecategorizationPage(
+              eq(WORKSPACE),
+              eq(CategorizationService.CATEGORIZED_TYPES),
+              eq(lastOfFirstPage.getCreatedAt()),
+              eq(lastOfFirstPage.getId()),
+              anyInt());
+      order.verify(entityManager).clear();
+      // The second page was short, so there is no third query.
+      verify(transactionRepository, times(2))
+          .lockRecategorizationPage(any(), any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void anEmptyWorkspaceIsOneQuery() {
+      when(transactionRepository.lockRecategorizationPage(any(), any(), any(), any(), anyInt()))
+          .thenReturn(List.of());
+
+      assertThat(service.recategorizeWorkspace(WORKSPACE)).isZero();
+      verifyNoInteractions(entityManager, logRepository);
+    }
+  }
+
   // --- helpers the rule service shares -------------------------------------------------------
 
   @ParameterizedTest
@@ -422,6 +546,58 @@ class CategorizationServiceTest {
   }
 
   // --- fixtures ------------------------------------------------------------------------------
+
+  private Transaction categorizedRow(String rawSourceData, UUID categoryId) {
+    Transaction transaction = row("EXPENSE", null, rawSourceData);
+    transaction.setCategoryId(categoryId);
+    ReflectionTestUtils.setField(
+        transaction, "createdAt", OffsetDateTime.now().plusNanos(createdSequence++ * 1000L));
+    return transaction;
+  }
+
+  private void page(List<Transaction> rows) {
+    when(transactionRepository.lockRecategorizationPage(any(), any(), any(), any(), anyInt()))
+        .thenReturn(rows)
+        .thenReturn(List.of());
+  }
+
+  private final List<LatestCategoryAssignment> latestRows = new ArrayList<>();
+
+  private void latest(
+      Transaction transaction,
+      UUID categoryId,
+      String assignedBy,
+      UUID ruleId,
+      boolean userOverride) {
+    latestRows.add(
+        new LatestCategoryAssignment() {
+          @Override
+          public UUID getTransactionId() {
+            return transaction.getId();
+          }
+
+          @Override
+          public String getAssignedBy() {
+            return assignedBy;
+          }
+
+          @Override
+          public UUID getCategoryId() {
+            return categoryId;
+          }
+
+          @Override
+          public UUID getRuleId() {
+            return ruleId;
+          }
+
+          @Override
+          public boolean isUserOverride() {
+            return userOverride;
+          }
+        });
+    when(logRepository.findLatestAssignments(any())).thenReturn(List.copyOf(latestRows));
+  }
 
   private Transaction row(String type, String merchant, String rawSourceData) {
     Workspace workspace = new Workspace();

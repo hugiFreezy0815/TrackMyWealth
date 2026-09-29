@@ -356,7 +356,7 @@ public class TransactionService {
         categoryId.equals(transaction.getCategoryId())
             && categorizationService.isOverridden(transaction);
     if (!alreadyOverridden) {
-      categorizationService.override(transaction, categoryId);
+      categorizationService.override(transaction, categoryId, actor.userId());
     }
     return toResponse(
         transaction, latestAssignments(List.of(transaction)).get(transaction.getId()));
@@ -379,14 +379,17 @@ public class TransactionService {
   }
 
   // The category is an annotation, not a financial field (FR-CAT-014), so an archived account's
-  // rows may still be categorized; a voided row keeps what it had when it was voided.
+  // rows may still be categorized; a voided row keeps what it had when it was voided. The row is
+  // locked until this transaction ends, so an automatic re-run of it waits (or ran first) instead
+  // of
+  // interleaving with the override check and write (RULE-031).
   private Transaction requireCategorizable(
       UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     Transaction transaction =
         transactionRepository
-            .findById(transactionId)
+            .findByIdForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(accountId))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
     if (transaction.getVoidedAt() != null) {

@@ -23,7 +23,7 @@ public interface TransactionCategorizationLogRepository
   @Query(
       value =
           "SELECT DISTINCT ON (transaction_id) transaction_id AS transactionId,"
-              + " assigned_by AS assignedBy, category_id AS categoryId,"
+              + " assigned_by AS assignedBy, category_id AS categoryId, rule_id AS ruleId,"
               + " is_user_override AS userOverride"
               + " FROM transaction_categorization_log WHERE transaction_id IN (:ids)"
               + " ORDER BY transaction_id, assigned_at DESC, id DESC",

@@ -2,8 +2,10 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.entity.Transaction;
+import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -11,6 +13,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -23,9 +26,36 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   Page<Transaction> findByAccountId(UUID accountId, Pageable pageable);
 
   // FR-CAT-013: the account's rows in one category - with UNCATEGORIZED, the actionable list.
-  // US-08-02: the rows an automatic re-run of one workspace's categorization considers.
-  List<Transaction> findByWorkspace_IdAndVoidedAtIsNullAndTransactionTypeInOrderByCreatedAtAscIdAsc(
-      UUID workspaceId, Collection<String> transactionTypes);
+  /**
+   * US-08-02: the next page of rows an automatic re-run of one workspace's categorization considers
+   * - non-voided, of the given types, after {@code (afterCreatedAt, afterId)} in creation order -
+   * locked FOR UPDATE until the re-run's transaction ends. The lock is what lets the re-run check
+   * for a member's override and then write without the override slipping in between: an override
+   * locks the same row first ({@link #findByIdForUpdate}). Keyset paging keeps each page's id list
+   * (and the override check's IN list) small, whatever the workspace's size.
+   */
+  @Query(
+      value =
+          "SELECT * FROM transaction t WHERE t.workspace_id = :workspaceId"
+              + " AND t.voided_at IS NULL AND t.transaction_type IN (:transactionTypes)"
+              + " AND (t.created_at, t.id) > (:afterCreatedAt, :afterId)"
+              + " ORDER BY t.created_at, t.id LIMIT :limit FOR UPDATE",
+      nativeQuery = true)
+  List<Transaction> lockRecategorizationPage(
+      @Param("workspaceId") UUID workspaceId,
+      @Param("transactionTypes") Collection<String> transactionTypes,
+      @Param("afterCreatedAt") OffsetDateTime afterCreatedAt,
+      @Param("afterId") UUID afterId,
+      @Param("limit") int limit);
+
+  /**
+   * One row, locked FOR UPDATE until the caller's transaction ends - for a member's category
+   * override or reset (US-08-02), so it and an automatic re-run of the same row run one after the
+   * other.
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT t FROM Transaction t WHERE t.id = :id")
+  Optional<Transaction> findByIdForUpdate(@Param("id") UUID id);
 
   Page<Transaction> findByAccountIdAndCategoryId(
       UUID accountId, UUID categoryId, Pageable pageable);

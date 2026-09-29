@@ -26,8 +26,10 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -755,6 +757,146 @@ class CategorizationControllerTest {
 
     assertThat(codeOf(similar.categoryId())).isEqualTo("GROCERIES");
     assertThat(similar.categoryAssignedBy()).isEqualTo("FALLBACK_MATCH");
+  }
+
+  // --- review follow-ups: confirmation, provenance, actor, paging, locking --------------------
+
+  @Test
+  void confirmingTheAutomaticCategoryProtectsItFromALaterRule() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+
+    // The member agrees with GROCERIES and says so.
+    TransactionResponse confirmed =
+        setCategory(token, card.id(), recorded.id(), recorded.categoryId());
+    assertThat(confirmed.categoryAssignedBy()).isEqualTo("USER");
+    assertThat(logAssignments(recorded.id())).containsExactly("SOURCE_CODE", "USER");
+
+    createRule(token, "MERCHANT", "coop", defaultId("SHOPPING"), null);
+    assertThat(categorizationService.recategorizeWorkspace(workspaceOf(card.id()))).isZero();
+
+    assertThat(codeOf(categoryOf(recorded.id()))).isEqualTo("GROCERIES");
+    assertThat(assignedByInList(token, card.id(), recorded.id())).isEqualTo("USER");
+  }
+
+  @Test
+  void aReRunRecordsARuleThatNowExplainsAFuzzyGuessButRepeatsNothing() {
+    String token = bootstrapAdministrator();
+    createRule(token, "MERCHANT", "migros zuerich", defaultId("GROCERIES"), null);
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    record(token, cash.id(), EXPENSE, "MIGROS ZUERICH", null);
+    TransactionResponse guessed = record(token, cash.id(), EXPENSE, "MIGROS BASEL", null);
+    assertThat(guessed.categoryAssignedBy()).isEqualTo("FALLBACK_MATCH");
+
+    // Same category, but a rule now explains it: the log should say so.
+    createRule(token, "MERCHANT", "migros basel", defaultId("GROCERIES"), null);
+    UUID workspace = workspaceOf(cash.id());
+
+    assertThat(categorizationService.recategorizeWorkspace(workspace)).isEqualTo(1);
+    assertThat(assignedByInList(token, cash.id(), guessed.id())).isEqualTo("RULE");
+    assertThat(logAssignments(guessed.id())).containsExactly("FALLBACK_MATCH", "RULE");
+    // A second run finds nothing new to say and writes nothing.
+    assertThat(categorizationService.recategorizeWorkspace(workspace)).isZero();
+    assertThat(logAssignments(guessed.id())).hasSize(2);
+  }
+
+  @Test
+  void anOverrideRecordsTheMemberWhoMadeIt() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+
+    setCategory(token, card.id(), recorded.id(), defaultId("SHOPPING"));
+
+    assertThat(
+            jdbcUuid(
+                "SELECT assigned_by_user_id FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND assigned_by = 'USER'",
+                recorded.id()))
+        .isEqualTo(jdbcUuid("SELECT id FROM app_user WHERE email = ?", "admin@example.com"));
+    assertThat(
+            jdbcValue(
+                "SELECT count(*) FROM transaction_categorization_log WHERE transaction_id = ?"
+                    + " AND assigned_by <> 'USER' AND assigned_by_user_id IS NOT NULL",
+                recorded.id()))
+        .as("automatic rows name no member")
+        .isEqualTo(0L);
+  }
+
+  @Test
+  void aReRunCoversAWorkspaceLargerThanOnePage() throws Exception {
+    // More rows than one page, all with the same created_at (one INSERT), so paging must break
+    // the tie by id to neither skip nor repeat a row.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    int rows = 2 * CategorizationService.RECATEGORIZATION_PAGE_SIZE + 1;
+    execute(
+        "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+            + " amount, currency, raw_source_data)"
+            + " SELECT a.workspace_id, a.id, 'EXPENSE', CURRENT_DATE, -1, 'CHF',"
+            + " CAST('{\"mcc\": \"5411\"}' AS jsonb)"
+            + " FROM account a, generate_series(1, "
+            + rows
+            + ") WHERE a.id = ?",
+        cash.id());
+
+    assertThat(categorizationService.recategorizeWorkspace(workspaceOf(cash.id()))).isEqualTo(rows);
+    assertThat(
+            jdbcValue(
+                "SELECT count(*) FROM transaction t JOIN category c ON c.id = t.category_id"
+                    + " WHERE t.account_id = ? AND c.code = 'GROCERIES'",
+                cash.id()))
+        .isEqualTo((long) rows);
+    assertThat(categorizationService.recategorizeWorkspace(workspaceOf(cash.id()))).isZero();
+  }
+
+  @Test
+  void theReRunsPageAndTheOverridesRowAreLockedUntilTheirTransactionEnds() {
+    // The lock is what keeps a re-run from writing over an override made between its check and
+    // its write: while one transaction holds a row, another cannot lock it.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+    UUID workspace = workspaceOf(card.id());
+    TransactionTemplate inTransaction = new TransactionTemplate(transactionManager);
+
+    Boolean pageLocked =
+        inTransaction.execute(
+            status -> {
+              transactionRepository.lockRecategorizationPage(
+                  workspace,
+                  List.of(PURCHASE),
+                  OffsetDateTime.parse("1970-01-01T00:00:00Z"),
+                  new UUID(0L, 0L),
+                  10);
+              return lockedElsewhere(recorded.id());
+            });
+    Boolean rowLocked =
+        inTransaction.execute(
+            status -> {
+              transactionRepository.findByIdForUpdate(recorded.id()).orElseThrow();
+              return lockedElsewhere(recorded.id());
+            });
+
+    assertThat(pageLocked).isTrue();
+    assertThat(rowLocked).isTrue();
+    assertThat(lockedElsewhere(recorded.id())).as("released on commit").isFalse();
+  }
+
+  // Tries to lock the row from a second connection without waiting.
+  private boolean lockedElsewhere(UUID transactionId) {
+    try (Connection other = dataSource.getConnection();
+        PreparedStatement statement =
+            other.prepareStatement("SELECT id FROM transaction WHERE id = ? FOR UPDATE NOWAIT")) {
+      other.setAutoCommit(false);
+      statement.setObject(1, transactionId);
+      statement.executeQuery().close();
+      other.rollback();
+      return false;
+    } catch (SQLException e) {
+      return "55P03".equals(e.getSQLState()); // lock_not_available
+    }
   }
 
   // --- helpers ---------------------------------------------------------------------------------

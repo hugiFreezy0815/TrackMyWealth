@@ -54,6 +54,10 @@ public class TransactionCategorizationLog {
   @Column(name = "is_user_override", nullable = false, updatable = false)
   private boolean userOverride;
 
+  // V38: the member who made an override; NULL for an automatic assignment.
+  @Column(name = "assigned_by_user_id", updatable = false, columnDefinition = UUID_COLUMN)
+  private UUID assignedByUserId;
+
   @Generated(event = EventType.INSERT)
   @Column(name = "assigned_at", insertable = false, updatable = false)
   private OffsetDateTime assignedAt;
@@ -70,11 +74,16 @@ public class TransactionCategorizationLog {
     this.confidence = confidence;
   }
 
-  /** A member's override (US-08-02): {@code USER}, protected from every automatic run. */
-  public static TransactionCategorizationLog ofUserOverride(UUID transactionId, UUID categoryId) {
+  /**
+   * A member's override (US-08-02): {@code USER}, protected from every automatic run, and naming
+   * the member who made it (V38).
+   */
+  public static TransactionCategorizationLog ofUserOverride(
+      UUID transactionId, UUID categoryId, UUID userId) {
     TransactionCategorizationLog log =
         new TransactionCategorizationLog(transactionId, categoryId, "USER", null, null);
     log.userOverride = true;
+    log.assignedByUserId = userId;
     return log;
   }
 
@@ -100,6 +109,10 @@ public class TransactionCategorizationLog {
 
   public boolean isUserOverride() {
     return userOverride;
+  }
+
+  public UUID getAssignedByUserId() {
+    return assignedByUserId;
   }
 
   public BigDecimal getConfidence() {

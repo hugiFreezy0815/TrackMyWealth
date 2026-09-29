@@ -286,7 +286,18 @@ issue #145.
   resets it to automatic and re-categorizes at once. Both need EDIT on the account. Any type may be
   overridden, to any assignable category except `UNCATEGORIZED`; voided rows cannot be changed.
   Every automatic path, including the internal `CategorizationService.recategorizeWorkspace`,
-  skips an overridden row.
+  skips an overridden row. The log row names the member who made the override
+  (`assigned_by_user_id`, `V38`; required when `is_user_override`, `NULL` for automatic rows).
+- **Override against a concurrent re-run.** The override and reset lock their row
+  (`SELECT ... FOR UPDATE`) before checking it, and the re-run locks each page of rows before it
+  checks them for overrides. Whichever comes second sees what the first committed, so a re-run can
+  never write over an override made between its check and its write.
+- **Re-run.** `recategorizeWorkspace` walks the workspace in keyset pages of 500 rows by
+  `(created_at, id)`, clearing the persistence context after each page, so neither memory nor the
+  override check's `IN` list grows with the workspace. A single unbounded list fails above 65,535
+  rows. It writes a row only when its assignment changes: another category, or the same category
+  reached another way (e.g. a rule instead of a fuzzy guess, or another rule). An unchanged
+  decision writes nothing, so repeated runs don't grow the log.
 - **Reading the log.** A transaction's latest log row describes its category only while the two
   still match: a reset that lands in `UNCATEGORIZED`, or a type the engine doesn't categorize,
   writes no row of its own. Responses, the override guard and the fuzzy matcher's learning query

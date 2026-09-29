@@ -19,6 +19,8 @@ public interface LatestCategoryAssignment {
 
   UUID getCategoryId();
 
+  UUID getRuleId();
+
   boolean isUserOverride();
 
   /** Whether this row still describes the transaction's current category. */
