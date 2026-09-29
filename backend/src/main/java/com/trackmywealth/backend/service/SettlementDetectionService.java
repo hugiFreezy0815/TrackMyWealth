@@ -113,6 +113,17 @@ public class SettlementDetectionService {
    */
   @Transactional
   public void detectAfterWrite(Account written, LocalDate bookedOn) {
+    LocalDate since = bookedOn.minusDays(WINDOW_DAYS);
+    cardsAffectedBy(written).forEach(cardId -> detectForCard(cardId, since));
+  }
+
+  /**
+   * The cards whose matching a row on {@code written} can affect: the account itself if it is a
+   * card, otherwise every card that names it as settlement source. A writer that must exclude
+   * matching for these cards (US-07-02's removal) locks them first, in this order.
+   */
+  @Transactional(readOnly = true)
+  public Set<UUID> cardsAffectedBy(Account written) {
     Set<UUID> cardIds = new LinkedHashSet<>();
     if (written.isHasStatementCycle()) {
       cardIds.add(written.getId());
@@ -121,8 +132,7 @@ public class SettlementDetectionService {
           .findBySettlementSourceAccountId(written.getId())
           .forEach(card -> cardIds.add(card.getAccountId()));
     }
-    LocalDate since = bookedOn.minusDays(WINDOW_DAYS);
-    cardIds.forEach(cardId -> detectForCard(cardId, since));
+    return cardIds;
   }
 
   /** Runs matching for one card over its whole ledger. */

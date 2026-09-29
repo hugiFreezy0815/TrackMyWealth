@@ -17,10 +17,14 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SecurityResponse;
+import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
+import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.SettlementDetectionService;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -33,6 +37,12 @@ import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,9 +52,13 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -84,6 +98,10 @@ class TransactionRemovalControllerTest {
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
+
+  @Autowired SettlementDetectionService settlementDetectionService;
+
+  @Autowired PlatformTransactionManager transactionManager;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -424,6 +442,154 @@ class TransactionRemovalControllerTest {
     assertThat(freed.internalTransfer()).isFalse();
   }
 
+  // --- review findings on PR #180 ------------------------------------------------------------
+
+  // V36 required tax_withheld_amount >= 0 on every row; the reversal negates it (V40).
+  @Test
+  void aVoidedDividendWithWithholdingTaxIsReversedInFull() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "SECURITIES", "CHF");
+    UUID security = createSecurity(token);
+    UUID dividend = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, security_id, gross_amount,"
+                    + " tax_withheld_amount, net_amount, source) SELECT ?, workspace_id, id,"
+                    + " 'DIVIDEND', CURRENT_DATE, 75, 'CHF', ?, 100, 25, 75, 'CSV' FROM account"
+                    + " WHERE id = ?")) {
+      statement.setObject(1, dividend);
+      statement.setObject(2, security);
+      statement.setObject(3, depot.id());
+      statement.executeUpdate();
+    }
+
+    TransactionRemovalResponse voided = remove(token, depot.id(), dividend, "Booked twice");
+
+    assertThat(voided.reversals())
+        .singleElement()
+        .satisfies(
+            reversal -> {
+              assertThat(reversal.amount()).isEqualByComparingTo("-75");
+              assertThat(reversal.grossAmount()).isEqualByComparingTo("-100");
+              assertThat(reversal.taxWithheldAmount()).isEqualByComparingTo("-25");
+              assertThat(reversal.netAmount()).isEqualByComparingTo("-75");
+            });
+    assertThat(queryDecimal("SELECT sum(amount) FROM transaction WHERE account_id = ?", depot.id()))
+        .isEqualByComparingTo("0");
+  }
+
+  // A soft delete used to drop the row's rejected matches, so a restore re-confirmed the very pair
+  // the member had rejected.
+  @Test
+  void aRejectedPairStaysRejectedThroughASoftDeleteAndRestore() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
+    setSettlementSource(token, card.id(), checking.id());
+    TransactionResponse payment = record(token, checking.id(), cashRow("WITHDRAWAL", "-300.00"));
+    TransactionResponse credit = record(token, card.id(), cashRow("SETTLEMENT", "300.00"));
+    UUID match = matchIdOf(card.id());
+    client(token)
+        .post()
+        .uri("/api/v1/settlement-matches/" + match + "/reject")
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    remove(token, card.id(), credit.id(), null);
+
+    assertThat(rejectedMatches(card.id())).isEqualByComparingTo("1");
+    // While its card leg is deleted the match is neither listed nor actionable - and loads fine.
+    assertThat(settlementMatches(token, "REJECTED")).isEmpty();
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + card.id() + "/settlement-matches/run")
+        .exchange()
+        .expectStatus()
+        .isOk();
+    client(token)
+        .post()
+        .uri("/api/v1/settlement-matches/" + match + "/confirm")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+
+    restore(token, card.id(), credit.id());
+
+    assertThat(rejectedMatches(card.id())).isEqualByComparingTo("1");
+    assertThat(
+            queryDecimal(
+                "SELECT count(*) FROM settlement_match WHERE card_account_id = ?", card.id()))
+        .isEqualByComparingTo("1");
+    assertThat(list(token, checking.id()))
+        .filteredOn(row -> row.id().equals(payment.id()))
+        .singleElement()
+        .satisfies(row -> assertThat(row.internalTransfer()).isFalse());
+    assertThat(settlementMatches(token, "REJECTED")).singleElement().isEqualTo(match);
+  }
+
+  // Voiding a +500 card credit adds a -500 SETTLEMENT reversal; it is not a payment to review.
+  @Test
+  void aVoidedCardCreditIsNotAnUnresolvedSettlement() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID credit = insertImported(card.id(), "SETTLEMENT", "500.00", today());
+
+    remove(token, card.id(), credit, "Duplicate import");
+
+    assertThat(pendingReview(token)).isEmpty();
+  }
+
+  // Removal used to lock only the cards already matched to the row. A detection run holding a
+  // card's lock may be about to match this unmatched payment, so removal must wait for it.
+  @Test
+  void aRemovalWaitsForMatchingOnTheCardEvenBeforeTheRowIsMatched() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
+    setSettlementSource(token, card.id(), checking.id());
+    TransactionResponse payment = record(token, checking.id(), cashRow("WITHDRAWAL", "-120.00"));
+    AuthenticatedUserPrincipal admin = adminPrincipal();
+
+    CountDownLatch locked = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> matching =
+          pool.submit(
+              () -> {
+                SecurityContextHolder.getContext()
+                    .setAuthentication(
+                        new UsernamePasswordAuthenticationToken(admin, null, List.of()));
+                try {
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            settlementDetectionService.lockCard(card.id());
+                            locked.countDown();
+                            await(release);
+                          });
+                } finally {
+                  SecurityContextHolder.clearContext();
+                }
+              });
+      assertThat(locked.await(30, TimeUnit.SECONDS)).isTrue();
+      Future<TransactionRemovalResponse> removal =
+          pool.submit(() -> remove(token, checking.id(), payment.id(), null));
+
+      assertThatThrownBy(() -> removal.get(1, TimeUnit.SECONDS))
+          .isInstanceOf(TimeoutException.class);
+      release.countDown();
+      matching.get(30, TimeUnit.SECONDS);
+      assertThat(removal.get(30, TimeUnit.SECONDS).removal()).isEqualTo(SOFT_DELETE);
+    } finally {
+      release.countDown();
+      pool.shutdownNow();
+    }
+  }
+
   // --- access ----------------------------------------------------------------------------------
 
   @Test
@@ -607,6 +773,99 @@ class TransactionRemovalControllerTest {
         .map(CashFlowResponse.CurrencyAmount::amount)
         .findFirst()
         .orElse(BigDecimal.ZERO);
+  }
+
+  private static CreateTransactionRequest cashRow(String type, String amount) {
+    return TransactionRequests.cash(
+        type, today(), new BigDecimal(amount), "CHF", null, null, null, null, null, null, null);
+  }
+
+  private void setSettlementSource(String token, UUID cardAccountId, UUID sourceAccountId) {
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + cardAccountId + "/settlement-source")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetSettlementSourceRequest(sourceAccountId))
+        .exchange()
+        .expectStatus()
+        .is2xxSuccessful();
+  }
+
+  private UUID matchIdOf(UUID cardAccountId) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT id FROM settlement_match WHERE card_account_id = ?")) {
+      statement.setObject(1, cardAccountId);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        assertThat(resultSet.next()).as("a match for the card").isTrue();
+        return (UUID) resultSet.getObject(1);
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private BigDecimal rejectedMatches(UUID cardAccountId) {
+    return queryDecimal(
+        "SELECT count(*) FROM settlement_match WHERE card_account_id = ? AND status = 'REJECTED'",
+        cardAccountId);
+  }
+
+  private List<UUID> settlementMatches(String token, String status) {
+    return client(token)
+        .get()
+        .uri("/api/v1/settlement-matches?status=" + status)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<List<SettlementMatchResponse>>() {})
+        .returnResult()
+        .getResponseBody()
+        .stream()
+        .map(SettlementMatchResponse::id)
+        .toList();
+  }
+
+  private List<CashFlowResponse.CurrencyAmount> pendingReview(String token) {
+    return client(token)
+        .get()
+        .uri("/api/v1/cash-flow?month=" + YearMonth.from(today()))
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(CashFlowResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .pendingReview();
+  }
+
+  private AuthenticatedUserPrincipal adminPrincipal() {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT u.id, wm.workspace_id FROM app_user u JOIN workspace_member wm ON wm.id"
+                    + " = u.workspace_member_id WHERE u.email = 'admin@example.com'")) {
+      try (ResultSet resultSet = statement.executeQuery()) {
+        resultSet.next();
+        return new AuthenticatedUserPrincipal(
+            (UUID) resultSet.getObject(1),
+            "SYSTEM_ADMINISTRATOR",
+            (UUID) resultSet.getObject(2),
+            UUID.randomUUID());
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private static void await(CountDownLatch latch) {
+    try {
+      assertThat(latch.await(30, TimeUnit.SECONDS)).isTrue();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
   }
 
   // An imported row as a CSV import (EPIC 07) would leave it: source CSV, so its removal is a void.

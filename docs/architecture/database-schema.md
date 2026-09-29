@@ -332,9 +332,19 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   can never be removed on its own.
 - **Linked rows (FR-LIF-007).** A card purchase's FEE row (`related_transaction_id`) is removed
   and restored with it. A settlement match that includes the removed row is dissolved: a
-  confirmed match's flags on the other leg are cleared. A soft delete removes every match row of
-  the row, since `SettlementMatch` must never point at a hidden row. A void keeps rejected
-  decisions as history.
+  confirmed match's flags on the other leg are cleared. Only open matches (proposed, confirmed)
+  are removed: a rejected match is a member's decision and outlives both a void and a soft delete,
+  so a restore cannot re-propose or auto-confirm the rejected pair. While a leg is soft-deleted,
+  match queries leave the match out (`SettlementMatchRepository.HIDDEN_LEG_EXCLUDED`), since
+  Hibernate cannot load a leg its `@SQLRestriction` hides, and the match is not actionable (404).
+- **Concurrency.** Removal and restore first lock every card whose matching the row can take part
+  in (the account itself if it is a card, else every card using it as settlement source, plus the
+  cards of existing matches), in id order, before the row. A detection run holding a card's lock
+  therefore finishes before the row is hidden or voided, and never links a match to it.
+- **Signs on a reversal.** `V40` exempts a reversing row from V36's `tax_withheld_amount >= 0`, as
+  V36's sign rules already did, so a dividend with withholding tax can be voided; `net = gross -
+  tax` still holds. The unresolved-settlement figure leaves out reversals too: voiding a card-side
+  `SETTLEMENT` credit adds a negative `SETTLEMENT` row that is not a payment awaiting review.
 - **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02, undoing a
   void is US-07-07, and correction as void plus replacement is US-07-06.
 

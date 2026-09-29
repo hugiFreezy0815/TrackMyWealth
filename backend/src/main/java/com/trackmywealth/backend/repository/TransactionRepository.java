@@ -278,13 +278,15 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /**
    * Signed sum per currency of payments that look like a card settlement but are not resolved: a
    * negative row typed {@code SETTLEMENT}, or one with a PROPOSED match, that is not yet flagged an
-   * internal transfer (FR-CF-004/005 data-quality rule). A voided row is no longer unresolved, so
-   * it is left out (its reversing row is positive and outside the sum anyway). Each element is
+   * internal transfer (FR-CF-004/005 data-quality rule). A voided row is no longer unresolved, and
+   * neither is its reversing row: voiding a card-side SETTLEMENT credit (+500) adds a -500
+   * SETTLEMENT reversal, which would otherwise count as an unresolved payment. Each element is
    * {@code [currency, sum]}.
    */
   @Query(
       "select t.currency, sum(t.amount) from Transaction t where t.account.id in :accountIds"
-          + " and t.internalTransfer = false and t.amount < 0 and t.voidedAt is null"
+          + " and t.internalTransfer = false and t.amount < 0"
+          + NOT_VOIDED_OR_REVERSAL
           + " and t.bookingDate between :from and :to"
           + " and (t.transactionType = 'SETTLEMENT' or exists (select 1 from SettlementMatch m"
           + " where m.status = 'PROPOSED' and m.paymentTransaction = t))"

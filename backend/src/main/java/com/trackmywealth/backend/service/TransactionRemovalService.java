@@ -46,9 +46,10 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>Nothing goes silently (FR-LIF-007): a card purchase's linked FEE row is removed with it, and
  * every settlement match the removal breaks is dissolved - a confirmed match's other leg becomes an
- * ordinary payment or credit again. The response names every row affected. A soft delete removes
- * every match row of the row (a JPA association may not point at a hidden row); a void removes only
- * the open ones (proposed, confirmed), since the voided row stays visible with its history.
+ * ordinary payment or credit again. The response names every row affected. Only open matches
+ * (proposed, confirmed) are removed: a rejected one stays, beside a voided row as history and
+ * beside a soft-deleted one so that a restore cannot re-propose or auto-confirm the pair the member
+ * rejected. Match queries leave a match out while one of its legs is deleted.
  *
  * <p>Needs EDIT on the account, the same as recording there. T3 - a reconciled row whose void
  * reopens its reconciliation - arrives with reconciliation itself (US-25-02).
@@ -99,7 +100,7 @@ public class TransactionRemovalService {
     Account account = requireEditable(accountId, actor);
     // Cards before rows, the order settlement matching takes them, so a concurrent match decision
     // and this removal queue behind each other instead of deadlocking.
-    lockCardsOf(transactionId);
+    lockCards(account, transactionId);
     Transaction original =
         transactionRepository
             .findByIdForUpdate(transactionId)
@@ -129,7 +130,7 @@ public class TransactionRemovalService {
     SortedSet<UUID> unmatched = new TreeSet<>();
     List<Transaction> reversals = new ArrayList<>();
     for (Transaction row : affected) {
-      dissolveMatches(row, softDelete, unmatched);
+      dissolveMatches(row, unmatched);
       if (softDelete) {
         row.setDeletedAt(now);
         row.setDeletedBy(actor.userId());
@@ -160,6 +161,7 @@ public class TransactionRemovalService {
   public TransactionRemovalResponse restore(
       UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
+    lockCards(account, transactionId);
     Transaction deleted =
         transactionRepository
             .findByIdIncludingDeletedForUpdate(transactionId)
@@ -213,30 +215,31 @@ public class TransactionRemovalService {
     return account;
   }
 
-  private void lockCardsOf(UUID transactionId) {
-    settlementMatchRepository.findByTransactionId(transactionId).stream()
-        .map(match -> match.getCardAccount().getId())
-        .distinct()
-        .sorted()
-        .forEach(settlementDetectionService::lockCard);
+  // Every card whose matching the row can take part in, not only those with a match on it yet: a
+  // detection run already reading the row as an unmatched candidate holds its card's lock, and must
+  // finish (or wait) before the row is hidden or voided, or it would link a match to a removed row.
+  // Plus the cards of any existing match, which a former settlement source may still have. Sorted,
+  // so two removals take them in the same order.
+  private void lockCards(Account account, UUID transactionId) {
+    SortedSet<UUID> cards = new TreeSet<>(settlementDetectionService.cardsAffectedBy(account));
+    settlementMatchRepository
+        .findByTransactionId(transactionId)
+        .forEach(match -> cards.add(match.getCardAccount().getId()));
+    cards.forEach(settlementDetectionService::lockCard);
   }
 
   // A confirmed match flagged both legs an internal transfer; dissolving it makes the other leg an
-  // ordinary payment or credit again (SettlementMatchService#reject does the same).
-  private void dissolveMatches(Transaction row, boolean softDelete, Set<UUID> unmatched) {
+  // ordinary payment or credit again (SettlementMatchService#reject does the same). A rejected
+  // match is a member's decision and is kept whichever way the row goes (see the class comment).
+  private void dissolveMatches(Transaction row, Set<UUID> unmatched) {
     for (SettlementMatch match : settlementMatchRepository.findByTransactionId(row.getId())) {
-      boolean open =
-          SettlementMatchValues.PROPOSED.equals(match.getStatus())
-              || SettlementMatchValues.CONFIRMED.equals(match.getStatus());
-      if (!open && !softDelete) {
-        continue; // a rejected decision stays as history beside the visible, voided row
+      if (SettlementMatchValues.REJECTED.equals(match.getStatus())) {
+        continue;
       }
       if (SettlementMatchValues.CONFIRMED.equals(match.getStatus())) {
         settlementDetectionService.clearFlags(match);
       }
-      if (open) {
-        addOtherLeg(match, row, unmatched);
-      }
+      addOtherLeg(match, row, unmatched);
       settlementMatchRepository.delete(match);
     }
     settlementMatchRepository.flush();
