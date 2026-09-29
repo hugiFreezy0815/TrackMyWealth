@@ -30,6 +30,13 @@ import java.util.UUID;
  * (FR-CAT-013). {@code categoryAssignedBy} says how it was assigned ({@code RULE}, {@code
  * SOURCE_CODE}, {@code TRANSACTION_TYPE}, {@code FALLBACK_MATCH}, later {@code USER}), {@code null}
  * for UNCATEGORIZED.
+ *
+ * <p>US-07-02: {@code removal} is how this row would be removed ({@code SOFT_DELETE} for a manual
+ * row, {@code VOID} for an imported one, see {@link TransactionRemovalValues}), {@code null} when
+ * it cannot be removed any more (already voided, a reversing row, or soft-deleted). A voided
+ * original stays listed with {@code voidedAt} and {@code voidReason} (FR-LIF-003); its reversing
+ * row points back at it through {@code replacesTransactionId}. {@code deletedAt} is set only in the
+ * restore list of soft-deleted rows.
  */
 public record TransactionResponse(
     UUID id,
@@ -58,4 +65,9 @@ public record TransactionResponse(
     BigDecimal taxWithheldAmount,
     BigDecimal netAmount,
     UUID categoryId,
-    String categoryAssignedBy) {}
+    String categoryAssignedBy,
+    String removal,
+    OffsetDateTime voidedAt,
+    String voidReason,
+    UUID replacesTransactionId,
+    OffsetDateTime deletedAt) {}

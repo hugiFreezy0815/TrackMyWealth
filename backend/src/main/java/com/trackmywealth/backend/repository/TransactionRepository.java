@@ -21,6 +21,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
+  String ACCOUNT_ID = "accountId";
+
+  // US-07-02: neither a voided original nor its reversing row - the pair nets to zero in a
+  // balance, but must not count as spending or pair with a settlement.
+  String NOT_VOIDED_OR_REVERSAL = " and t.voidedAt is null and t.replacesTransactionId is null";
+
   // The caller supplies the sort (TransactionService fixes it): a Pageable's own sort is client
   // input and must not decide which columns the query orders by.
   Page<Transaction> findByAccountId(UUID accountId, Pageable pageable);
@@ -37,7 +43,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   @Query(
       value =
           "SELECT * FROM transaction t WHERE t.workspace_id = :workspaceId"
-              + " AND t.voided_at IS NULL AND t.transaction_type IN (:transactionTypes)"
+              + " AND t.voided_at IS NULL AND t.deleted_at IS NULL"
+              + " AND t.replaces_transaction_id IS NULL"
+              + " AND t.transaction_type IN (:transactionTypes)"
               + " AND (t.created_at, t.id) > (:afterCreatedAt, :afterId)"
               + " ORDER BY t.created_at, t.id LIMIT :limit FOR UPDATE",
       nativeQuery = true)
@@ -57,7 +65,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   @Query("SELECT t FROM Transaction t WHERE t.id = :id")
   Optional<Transaction> findByIdForUpdate(@Param("id") UUID id);
 
-  Page<Transaction> findByAccountIdAndCategoryId(
+  // FR-CAT-013: the account's rows in one category - with UNCATEGORIZED, the actionable list. A
+  // voided row or a reversal is not actionable (US-07-02).
+  Page<Transaction> findByAccountIdAndCategoryIdAndVoidedAtIsNullAndReplacesTransactionIdIsNull(
       UUID accountId, UUID categoryId, Pageable pageable);
 
   /**
@@ -86,7 +96,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " AS similarity"
               + " FROM transaction t"
               + " WHERE t.workspace_id = :workspaceId AND t.id <> :excludedId"
-              + " AND t.voided_at IS NULL AND t.category_id IS NOT NULL"
+              + " AND t.voided_at IS NULL AND t.deleted_at IS NULL AND t.category_id IS NOT NULL"
               + " AND t.merchant_description IS NOT NULL"
               // % is what the GIN trigram index serves (similarity() alone is a full scan of the
               // workspace's history); the explicit >= keeps the exact configured threshold.
@@ -109,8 +119,41 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param("limit") int limit);
 
   // The idempotency lookup, backed by uq_transaction_external_id (account_id, source, external_id).
+  // Native, so it also finds a soft-deleted row: its key stays taken (V39 keeps the row).
+  @Query(
+      value =
+          "SELECT * FROM transaction WHERE account_id = :accountId AND source = :source"
+              + " AND external_id = :externalId",
+      nativeQuery = true)
   Optional<Transaction> findByAccountIdAndSourceAndExternalId(
-      UUID accountId, String source, String externalId);
+      @Param(ACCOUNT_ID) UUID accountId,
+      @Param("source") String source,
+      @Param("externalId") String externalId);
+
+  /**
+   * US-07-02: one row whatever its state, soft-deleted included (native, so the entity's
+   * restriction does not apply), locked FOR UPDATE - for restoring it.
+   */
+  @Query(value = "SELECT * FROM transaction WHERE id = :id FOR UPDATE", nativeQuery = true)
+  Optional<Transaction> findByIdIncludingDeletedForUpdate(@Param("id") UUID id);
+
+  /** US-07-02: the account's soft-deleted rows deleted at or after {@code since}, newest first. */
+  @Query(
+      value =
+          "SELECT * FROM transaction WHERE account_id = :accountId"
+              + " AND deleted_at IS NOT NULL AND deleted_at >= :since"
+              + " ORDER BY deleted_at DESC, id DESC",
+      nativeQuery = true)
+  List<Transaction> findDeletedByAccountIdSince(
+      @Param(ACCOUNT_ID) UUID accountId, @Param("since") OffsetDateTime since);
+
+  /** US-07-02: the soft-deleted FEE row of a purchase, restored together with it. */
+  @Query(
+      value =
+          "SELECT * FROM transaction WHERE related_transaction_id = :purchaseId"
+              + " AND deleted_at IS NOT NULL FOR UPDATE",
+      nativeQuery = true)
+  List<Transaction> findDeletedFeeRowsForUpdate(@Param("purchaseId") UUID purchaseId);
 
   // US-09-04: the FEE row (if any) a foreign-currency purchase's replay check compares feeAmount
   // against - at most one exists per purchase (TransactionService only ever creates one).
@@ -136,7 +179,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       "select sum(t.amount * coalesce(t.fxRateToAccountCurrency, 1)) from Transaction t"
           + " where t.account.id = :accountId and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdAsOf(
-      @Param("accountId") UUID accountId, @Param("asOf") LocalDate asOf);
+      @Param(ACCOUNT_ID) UUID accountId, @Param("asOf") LocalDate asOf);
 
   /**
    * Payments that can pair with a card credit of {@code -amount} (US-09-02): the non-voided rows of
@@ -150,12 +193,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   @Query(
       "select t from Transaction t where t.account.id = :accountId and t.amount = :amount"
           + " and t.bookingDate between :from and :to"
-          + " and t.voidedAt is null and t.currency = :currency and t.transactionType in :types"
+          + NOT_VOIDED_OR_REVERSAL
+          + " and t.currency = :currency and t.transactionType in :types"
           + " and not exists (select 1 from SettlementMatch m where m.status = 'CONFIRMED'"
           + " and m.cardTransaction is not null and m.paymentTransaction = t)"
           + " order by t.bookingDate, t.createdAt, t.id")
   List<Transaction> findPairablePayments(
-      @Param("accountId") UUID accountId,
+      @Param(ACCOUNT_ID) UUID accountId,
       @Param("currency") String currency,
       @Param("types") Collection<String> types,
       @Param("amount") BigDecimal amount,
@@ -178,7 +222,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    */
   @Query(
       "select t from Transaction t where t.account.id = :sourceAccountId and t.amount < 0"
-          + " and t.voidedAt is null and t.currency = :currency and t.transactionType in :types"
+          + NOT_VOIDED_OR_REVERSAL
+          + " and t.currency = :currency and t.transactionType in :types"
           + " and t.bookingDate >= :since"
           + " and not exists (select 1 from SettlementMatch m"
           + " where m.cardAccount.id = :cardAccountId and m.paymentTransaction = t)"
@@ -197,13 +242,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    */
   @Query(
       "select t from Transaction t where t.account.id = :accountId and t.amount > 0"
-          + " and t.voidedAt is null and t.currency = :currency"
-          + " and t.transactionType = 'SETTLEMENT'"
+          + NOT_VOIDED_OR_REVERSAL
+          + " and t.currency = :currency and t.transactionType = 'SETTLEMENT'"
           + " and not exists (select 1 from SettlementMatch m where m.status = 'CONFIRMED'"
           + " and m.cardTransaction = t)"
           + " order by t.bookingDate, t.createdAt, t.id")
   List<Transaction> findUnmatchedCardCredits(
-      @Param("accountId") UUID accountId, @Param("currency") String currency);
+      @Param(ACCOUNT_ID) UUID accountId, @Param("currency") String currency);
 
   /**
    * Signed sum per currency of {@code types} rows booked in [{@code from}, {@code to}] on {@code
@@ -211,18 +256,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * (US-09-02: that amount is reported separately as pending review, never as an expense). Each
    * element is {@code [currency, sum]}.
    *
-   * <p>Like the balance query, this includes voided rows: a void's reversing row nets against the
-   * original only if both are summed. For the same reason a voided payment is never "awaiting a
-   * decision" here - a proposal on a row that has since been voided is moot - so it stays in the
-   * sum, where its reversing row cancels it, instead of being excluded while the reversal is
-   * counted.
+   * <p>US-07-02: unlike the balance query, a voided original and its reversing row are both left
+   * out (decision on issue #143): the reversal is dated to the void, so summing the pair would move
+   * the expense from its own month into the void's month as a negative spend. Soft-deleted rows are
+   * gone through the entity's restriction.
    */
   @Query(
       "select t.currency, sum(t.amount) from Transaction t where t.account.id in :accountIds"
           + " and t.transactionType in :types and t.internalTransfer = false"
           + " and t.bookingDate between :from and :to"
-          + " and (t.voidedAt is not null or not exists (select 1 from SettlementMatch m"
-          + " where m.status = 'PROPOSED' and m.paymentTransaction = t))"
+          + NOT_VOIDED_OR_REVERSAL
+          + " and not exists (select 1 from SettlementMatch m"
+          + " where m.status = 'PROPOSED' and m.paymentTransaction = t)"
           + " group by t.currency order by t.currency")
   List<Object[]> sumSpendingByCurrency(
       @Param("accountIds") Collection<UUID> accountIds,

@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.ForeignCurrencyResolution;
 import com.trackmywealth.backend.dto.LatestCategoryAssignment;
+import com.trackmywealth.backend.dto.TransactionRemovalValues;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
@@ -311,8 +312,9 @@ public class TransactionService {
             LEDGER_ORDER);
     Page<Transaction> page =
         uncategorized
-            ? transactionRepository.findByAccountIdAndCategoryId(
-                accountId, categorizationService.uncategorizedCategoryId(), bounded)
+            ? transactionRepository
+                .findByAccountIdAndCategoryIdAndVoidedAtIsNullAndReplacesTransactionIdIsNull(
+                    accountId, categorizationService.uncategorizedCategoryId(), bounded)
             : transactionRepository.findByAccountId(accountId, bounded);
     Map<UUID, String> assignments = latestAssignments(page.getContent());
     return page.map(transaction -> toResponse(transaction, assignments.get(transaction.getId())));
@@ -392,6 +394,11 @@ public class TransactionService {
             .findByIdForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(accountId))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+    if (transaction.isReversal()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "A reversing entry has no category of its own; it follows the voided original.");
+    }
     if (transaction.getVoidedAt() != null) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "A voided transaction's category cannot be changed.");
@@ -409,6 +416,14 @@ public class TransactionService {
     // The same key must mean the same purchase: only the ledger-frozen financial fields are
     // compared (notes and merchant text stay editable, so comparing them would turn a later edit
     // into a false conflict) - including the FX/fee fields a foreign-currency purchase adds.
+    if (existing.isPresent() && existing.get().getDeletedAt() != null) {
+      // US-07-02: the key stays taken by the soft-deleted row it recorded.
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "externalId '"
+              + request.externalId()
+              + "' was used for a transaction that has since been deleted; restore it instead.");
+    }
     existing.ifPresent(
         row -> {
           boolean samePurchase =
@@ -890,7 +905,36 @@ public class TransactionService {
         transaction.getTaxWithheldAmount(),
         transaction.getNetAmount(),
         transaction.getCategoryId(),
-        categoryAssignedBy);
+        categoryAssignedBy,
+        removalOf(transaction),
+        transaction.getVoidedAt(),
+        transaction.getVoidReason(),
+        transaction.getReplacesTransactionId(),
+        transaction.getDeletedAt());
+  }
+
+  /**
+   * US-07-02/FR-LIF-002b: how the row would be removed, decided by its provenance - a manual row is
+   * soft-deleted (T1), anything imported is voided (T2); {@code null} once it cannot be removed any
+   * more. T3 (a reconciled row) arrives with reconciliation (US-25-02).
+   */
+  static String removalOf(Transaction transaction) {
+    if (transaction.getVoidedAt() != null
+        || transaction.isReversal()
+        || transaction.getDeletedAt() != null) {
+      return null;
+    }
+    return MANUAL.equals(transaction.getSource())
+        ? TransactionRemovalValues.SOFT_DELETE
+        : TransactionRemovalValues.VOID;
+  }
+
+  /** Responses for many rows at once, with how each got its category (one log query). */
+  public List<TransactionResponse> toResponses(List<Transaction> transactions) {
+    Map<UUID, String> assignments = latestAssignments(transactions);
+    return transactions.stream()
+        .map(transaction -> toResponse(transaction, assignments.get(transaction.getId())))
+        .toList();
   }
 
   // raw_source_data may in future carry a richer, import-defined shape (EPIC 07); only the "mcc"

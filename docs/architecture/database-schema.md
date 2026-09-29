@@ -310,6 +310,34 @@ issue #145.
   `row_security = off`, so a migration role that cannot bypass RLS fails loudly instead of
   updating nothing.
 
+### Removing a transaction (US-07-02)
+
+The ledger stays append-only (RULE-024): removing a row never changes a financial field, and
+`trg_transaction_append_only` stays the backstop. The system picks the removal from the row's
+provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions are on issue #143.
+
+- **T1, manual row: soft delete.** `deleted_at`/`deleted_by` (`V39`) hide the row. The entity's
+  `@SQLRestriction("deleted_at IS NULL")` keeps it out of every JPA query (lists, balances, cash
+  flow, matching). Native queries filter `deleted_at` themselves; only the restore paths read
+  deleted rows on purpose. A soft-deleted row is restorable for 30 days
+  (`POST …/transactions/{id}/restore`, listed at `GET …/transactions/deleted`), then only no longer
+  restorable. It is **never purged**: FR-LIF-001 forbids a hard delete of a transaction, which
+  closes OPEN-032. Its idempotency key stays taken.
+- **T2, imported row: void.** The original gets `voided_at`/`voided_by`/`void_reason`, with the
+  reason required (`V39`). A reversing row of the same type is added, with every amount and the
+  quantity negated, dated to the void (or to the original's date if that is later), and linked by
+  `replaces_transaction_id` (at most one per original, `uq_transaction_reversal`). Balances sum
+  both rows. Cash-flow, category, matching and re-categorization queries leave out both the voided
+  original and its reversal (`replaces_transaction_id IS NULL`). The reversal gets no category and
+  can never be removed on its own.
+- **Linked rows (FR-LIF-007).** A card purchase's FEE row (`related_transaction_id`) is removed
+  and restored with it. A settlement match that includes the removed row is dissolved: a
+  confirmed match's flags on the other leg are cleared. A soft delete removes every match row of
+  the row, since `SettlementMatch` must never point at a hidden row. A void keeps rejected
+  decisions as history.
+- **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02, undoing a
+  void is US-07-07, and correction as void plus replacement is US-07-06.
+
 ## 5. Time-series data and partitioning
 
 `price`, `fx_rate` and `daily_valuation` are the volume-dominant tables (DB-02, NFR-TEC-003) and

@@ -23,6 +23,12 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   @Query("SELECT m FROM SettlementMatch m WHERE m.id = :id")
   Optional<SettlementMatch> findByIdForUpdate(@Param("id") UUID id);
 
+  /** US-07-02: every match, any status, one of whose legs is the given transaction. */
+  @Query(
+      "SELECT m FROM SettlementMatch m"
+          + " WHERE m.paymentTransaction.id = :id OR m.cardTransaction.id = :id")
+  List<SettlementMatch> findByTransactionId(@Param("id") UUID id);
+
   // A scalar, not the entity: a decision must first learn WHICH card to serialise on, without
   // loading (and so caching, possibly stale) the match before that lock is held.
   @Query("SELECT m.cardAccount.id FROM SettlementMatch m WHERE m.id = :id")
