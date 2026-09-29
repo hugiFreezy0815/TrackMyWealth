@@ -46,6 +46,16 @@ public class SettlementMatch {
   @JoinColumn(name = "card_transaction_id")
   private Transaction cardTransaction;
 
+  // The same column as a plain id, read-only. A soft-deleted leg (US-07-02) is hidden by
+  // Transaction's @SQLRestriction, so a fetch join yields no row for it: queries compare this id
+  // with the joined leg to tell "one-sided" apart from "card leg currently deleted".
+  @Column(
+      name = "card_transaction_id",
+      columnDefinition = "uuid",
+      insertable = false,
+      updatable = false)
+  private UUID cardTransactionId;
+
   @Column(nullable = false)
   private String status;
 

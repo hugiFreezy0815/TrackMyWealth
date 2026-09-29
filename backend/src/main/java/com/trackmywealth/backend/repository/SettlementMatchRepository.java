@@ -17,15 +17,29 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface SettlementMatchRepository extends JpaRepository<SettlementMatch, UUID> {
 
+  // A card leg that exists but is soft-deleted (US-07-02) joins as null: such a match is left out
+  // rather than read as one-sided, or loaded with a leg Hibernate cannot find.
+  String HIDDEN_LEG_EXCLUDED = " AND (m.cardTransactionId IS NULL OR c.id IS NOT NULL)";
+
   // Same SELECT ... FOR UPDATE pattern as AccountRepository.findByIdForUpdate: the row a decision
   // reads is the row it then changes.
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("SELECT m FROM SettlementMatch m WHERE m.id = :id")
   Optional<SettlementMatch> findByIdForUpdate(@Param("id") UUID id);
 
+  /** US-07-02: every match, any status, one of whose legs is the given transaction. */
+  @Query(
+      "SELECT m FROM SettlementMatch m"
+          + " WHERE m.paymentTransaction.id = :id OR m.cardTransaction.id = :id")
+  List<SettlementMatch> findByTransactionId(@Param("id") UUID id);
+
   // A scalar, not the entity: a decision must first learn WHICH card to serialise on, without
-  // loading (and so caching, possibly stale) the match before that lock is held.
-  @Query("SELECT m.cardAccount.id FROM SettlementMatch m WHERE m.id = :id")
+  // loading (and so caching, possibly stale) the match before that lock is held. Empty while a leg
+  // is soft-deleted (US-07-02): such a match is not actionable, and loading it would fail.
+  @Query(
+      "SELECT m.cardAccount.id FROM SettlementMatch m JOIN m.paymentTransaction p"
+          + " LEFT JOIN m.cardTransaction c WHERE m.id = :id"
+          + HIDDEN_LEG_EXCLUDED)
   Optional<UUID> findCardAccountIdById(@Param("id") UUID id);
 
   // Every match ever made for a card, in any status: detection needs the rejected ones too, since a
@@ -33,10 +47,16 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   // detection reads are fetched in the same query, not one lazy load each. Newest first, with id as
   // the tie-breaker: created_at defaults to now(), the transaction's start, so every match one run
   // creates carries the same timestamp.
+  //
+  // US-07-02: a rejected match outlives a soft delete of either leg, so a restore does not forget
+  // the member's decision. While a leg is deleted the match is left out (HIDDEN_LEG_EXCLUDED); the
+  // inner join already drops a deleted payment.
   @Query(
       "SELECT m FROM SettlementMatch m JOIN FETCH m.cardAccount JOIN FETCH m.paymentTransaction p"
-          + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction"
-          + " WHERE m.cardAccount.id = :cardAccountId ORDER BY m.createdAt DESC, m.id DESC")
+          + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction c"
+          + " WHERE m.cardAccount.id = :cardAccountId"
+          + HIDDEN_LEG_EXCLUDED
+          + " ORDER BY m.createdAt DESC, m.id DESC")
   List<SettlementMatch> findByCardAccountId(@Param("cardAccountId") UUID cardAccountId);
 
   // US-09-03: whether a statement period is paid needs only the CONFIRMED matches whose payment
@@ -58,9 +78,11 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   // caller's workspace. accountIds must not be empty.
   @Query(
       "SELECT m FROM SettlementMatch m JOIN FETCH m.cardAccount JOIN FETCH m.paymentTransaction p"
-          + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction"
+          + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction c"
           + " WHERE m.status = :status AND m.cardAccount.id IN :accountIds"
-          + " AND p.account.id IN :accountIds ORDER BY m.createdAt DESC, m.id DESC")
+          + " AND p.account.id IN :accountIds"
+          + HIDDEN_LEG_EXCLUDED
+          + " ORDER BY m.createdAt DESC, m.id DESC")
   List<SettlementMatch> findActionable(
       @Param("status") String status,
       @Param("accountIds") Collection<UUID> accountIds,

@@ -715,7 +715,9 @@ class CategorizationControllerTest {
         .expectStatus()
         .isBadRequest();
 
-    execute("UPDATE transaction SET voided_at = now() WHERE id = ?", recorded.id());
+    execute(
+        "UPDATE transaction SET voided_at = now(), void_reason = 'test' WHERE id = ?",
+        recorded.id());
     putCategory(token, card.id(), recorded.id(), defaultId("LEISURE"))
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);

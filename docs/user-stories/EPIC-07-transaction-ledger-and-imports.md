@@ -94,6 +94,19 @@ editing.
 DB trigger rejects a direct financial-field update regardless of tier.
 **Data-quality behaviour:** A voided item shown in a historical view must display as voided, not
 silently omitted (FR-LIF-003).
+**Clarified before development (issue #143, 2026-09-29):**
+- **No purge:** a soft-deleted row stays in the data, never hard-deleted (FR-LIF-001), which closes
+  OPEN-032.
+- **One endpoint:** a single `DELETE`; the system picks soft delete (manual) or void (imported). A
+  void needs a reason, and each row shows its removal kind.
+- **Restore:** only soft deletes can be restored, within 30 days. Restoring a void is US-07-07.
+- **Figures:** a voided original and its reversal net to zero in balances and stay out of spending
+  and category figures.
+- **Linked rows:** a card purchase's FEE row is removed with it, and settlement matches are
+  dissolved.
+- **Correction** (void plus replacement, FR-LIF-004) is US-07-06.
+
+See `docs/architecture/database-schema.md`.
 
 ---
 
@@ -201,6 +214,24 @@ background job touching the same transactions) must be serialised, not race (FR-
 one row was edited (void path) — plus an atomicity test that forces a failure partway through and
 asserts no partial state.
 **Data-quality behaviour:** N/A.
+
+---
+
+## US-07-06 — Correct a transaction's financial fields as void plus replacement
+
+Split from US-07-02 on 2026-09-29; the full story is issue #178. FR-LIF-004: correcting an amount,
+currency, date, quantity, price or account records a removal of the original (soft delete for a
+manual row, void for an imported one) plus a replacement row, atomically. A non-financial edit
+stays a normal update. **Dependencies:** US-07-02. **Priority:** MUST. **Size:** M.
+
+---
+
+## US-07-07 — Restore a voided transaction within 30 days
+
+Split from US-07-02 on 2026-09-29; the full story is issue #179. FR-LIF-006: a void can be undone
+within 30 days, without breaking the append-only ledger. The approach (voiding the reversal, or a
+`restored_at` marker) needs a decision when the story is scheduled. **Dependencies:** US-07-02.
+**Priority:** MUST. **Size:** M.
 
 ---
 

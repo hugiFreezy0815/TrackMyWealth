@@ -2,10 +2,13 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
+import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.TransactionRemovalService;
 import com.trackmywealth.backend.service.TransactionService;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -32,9 +35,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class TransactionController {
 
   private final TransactionService transactionService;
+  private final TransactionRemovalService transactionRemovalService;
 
-  public TransactionController(TransactionService transactionService) {
+  public TransactionController(
+      TransactionService transactionService, TransactionRemovalService transactionRemovalService) {
     this.transactionService = transactionService;
+    this.transactionRemovalService = transactionRemovalService;
   }
 
   @PostMapping("/transactions")
@@ -80,5 +86,35 @@ public class TransactionController {
       @PathVariable UUID transactionId,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return transactionService.resetCategory(accountId, transactionId, actor);
+  }
+
+  /**
+   * US-07-02: removes the transaction the way its provenance requires - a manual one is
+   * soft-deleted (restorable for 30 days), an imported one voided and reversed, which needs a
+   * {@code reason}. Each row's {@code removal} says which applies. Needs EDIT on the account.
+   */
+  @DeleteMapping("/transactions/{transactionId}")
+  public TransactionRemovalResponse removeTransaction(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @RequestParam(required = false) String reason,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return transactionRemovalService.remove(accountId, transactionId, reason, actor);
+  }
+
+  /** US-07-02/FR-LIF-006: brings back a soft-deleted transaction within 30 days. */
+  @PostMapping("/transactions/{transactionId}/restore")
+  public TransactionRemovalResponse restoreTransaction(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return transactionRemovalService.restore(accountId, transactionId, actor);
+  }
+
+  /** US-07-02: the account's soft-deleted transactions that can still be restored. */
+  @GetMapping("/transactions/deleted")
+  public List<TransactionResponse> listRestorableTransactions(
+      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return transactionRemovalService.listRestorable(accountId, actor);
   }
 }

@@ -2656,21 +2656,23 @@ class TransactionControllerTest {
     }
   }
 
-  // Direct ledger inserts, the way the (not yet built) void path of US-07-02 would leave the table:
-  // a voided original keeps its financial fields and gets voided_at set, and the reversing row is
-  // an ordinary new row of the opposite sign.
+  // Direct ledger inserts, the way US-07-02's void path leaves the table: a voided original keeps
+  // its financial fields and gets voided_at and a reason (V39 requires one), and the reversing row
+  // is an ordinary new row of the opposite sign.
   private void insertLedgerRow(UUID accountId, String amount, boolean voided) {
     UUID workspaceId = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", accountId);
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
                 "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
-                    + " amount, currency, voided_at) VALUES (?, ?, 'CREDIT_CARD_PURCHASE',"
-                    + " CURRENT_DATE, ?, 'CHF', CASE WHEN ? THEN now() END)")) {
+                    + " amount, currency, voided_at, void_reason) VALUES (?, ?,"
+                    + " 'CREDIT_CARD_PURCHASE', CURRENT_DATE, ?, 'CHF', CASE WHEN ? THEN now() END,"
+                    + " CASE WHEN ? THEN 'test' END)")) {
       statement.setObject(1, workspaceId);
       statement.setObject(2, accountId);
       statement.setBigDecimal(3, new BigDecimal(amount));
       statement.setBoolean(4, voided);
+      statement.setBoolean(5, voided);
       statement.executeUpdate();
     } catch (Exception e) {
       throw new IllegalStateException(e);

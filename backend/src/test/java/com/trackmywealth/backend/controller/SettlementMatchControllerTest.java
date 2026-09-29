@@ -971,7 +971,8 @@ class SettlementMatchControllerTest {
     UUID workspaceId = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", accountId);
     try (Connection connection = dataSource.getConnection()) {
       try (PreparedStatement statement =
-          connection.prepareStatement("UPDATE transaction SET voided_at = now() WHERE id = ?")) {
+          connection.prepareStatement(
+              "UPDATE transaction SET voided_at = now(), void_reason = 'test' WHERE id = ?")) {
         statement.setObject(1, transactionId);
         statement.executeUpdate();
       }

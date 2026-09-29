@@ -16,6 +16,7 @@ import java.util.UUID;
 import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
 
@@ -54,6 +55,9 @@ import org.hibernate.type.SqlTypes;
 // columns below.
 @Entity
 @DynamicUpdate
+// US-07-02: a soft-deleted row (T1) is gone from every JPA query - lists, balances, cash flow,
+// matching. Native queries do not see this restriction and filter deleted_at themselves.
+@SQLRestriction("deleted_at IS NULL")
 @Table(name = "transaction")
 public class Transaction {
 
@@ -173,10 +177,28 @@ public class Transaction {
   @Column(name = "net_amount", precision = 20, scale = 4)
   private BigDecimal netAmount;
 
-  // FR-LIF-002: set when the row is voided (US-07-02). Read-only here - no code path in this
-  // codebase voids yet - so a matching query can leave voided rows out.
-  @Column(name = "voided_at", insertable = false, updatable = false)
+  // US-07-02/FR-LIF-002: a voided original keeps every financial field and gains these three; its
+  // reversing row (a new row, amounts negated) points back at it via replacesTransactionId. None of
+  // the four is frozen by trg_transaction_append_only - they record a lifecycle, not a figure.
+  @Column(name = "voided_at")
   private OffsetDateTime voidedAt;
+
+  @Column(name = "voided_by", columnDefinition = UUID_COLUMN)
+  private UUID voidedBy;
+
+  @Column(name = "void_reason")
+  private String voidReason;
+
+  @Column(name = "replaces_transaction_id", columnDefinition = UUID_COLUMN)
+  private UUID replacesTransactionId;
+
+  // US-07-02/FR-LIF-002a T1: a soft-deleted manual row. The entity's @SQLRestriction hides it from
+  // every JPA query; only TransactionRepository's native queries for restoring see it (V39).
+  @Column(name = "deleted_at")
+  private OffsetDateTime deletedAt;
+
+  @Column(name = "deleted_by", columnDefinition = UUID_COLUMN)
+  private UUID deletedBy;
 
   @Column(name = "created_by", columnDefinition = UUID_COLUMN)
   private UUID createdBy;
@@ -407,6 +429,55 @@ public class Transaction {
 
   public OffsetDateTime getVoidedAt() {
     return voidedAt;
+  }
+
+  public void setVoidedAt(OffsetDateTime voidedAt) {
+    this.voidedAt = voidedAt;
+  }
+
+  public UUID getVoidedBy() {
+    return voidedBy;
+  }
+
+  public void setVoidedBy(UUID voidedBy) {
+    this.voidedBy = voidedBy;
+  }
+
+  public String getVoidReason() {
+    return voidReason;
+  }
+
+  public void setVoidReason(String voidReason) {
+    this.voidReason = voidReason;
+  }
+
+  public UUID getReplacesTransactionId() {
+    return replacesTransactionId;
+  }
+
+  public void setReplacesTransactionId(UUID replacesTransactionId) {
+    this.replacesTransactionId = replacesTransactionId;
+  }
+
+  /** A reversing row of a void: it goes with its original and is never removed on its own. */
+  public boolean isReversal() {
+    return replacesTransactionId != null;
+  }
+
+  public OffsetDateTime getDeletedAt() {
+    return deletedAt;
+  }
+
+  public void setDeletedAt(OffsetDateTime deletedAt) {
+    this.deletedAt = deletedAt;
+  }
+
+  public UUID getDeletedBy() {
+    return deletedBy;
+  }
+
+  public void setDeletedBy(UUID deletedBy) {
+    this.deletedBy = deletedBy;
   }
 
   public UUID getCreatedBy() {

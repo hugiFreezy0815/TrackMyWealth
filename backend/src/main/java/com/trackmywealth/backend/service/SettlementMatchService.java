@@ -236,6 +236,9 @@ public class SettlementMatchService {
     UUID cardAccountId =
         settlementMatchRepository.findCardAccountIdById(matchId).orElseThrow(this::matchNotFound);
     settlementDetectionService.lockCard(cardAccountId);
+    // Again under the lock: a removal (which takes the same card lock) may have soft-deleted a leg
+    // in between, and a match with a hidden leg is not actionable (US-07-02).
+    settlementMatchRepository.findCardAccountIdById(matchId).orElseThrow(this::matchNotFound);
     SettlementMatch match =
         settlementMatchRepository.findByIdForUpdate(matchId).orElseThrow(this::matchNotFound);
     Set<Account> both = Set.of(match.getCardAccount(), match.getPaymentTransaction().getAccount());
