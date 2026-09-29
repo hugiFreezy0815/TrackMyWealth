@@ -23,6 +23,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   Page<Transaction> findByAccountId(UUID accountId, Pageable pageable);
 
   // FR-CAT-013: the account's rows in one category - with UNCATEGORIZED, the actionable list.
+  // US-08-02: the rows an automatic re-run of one workspace's categorization considers.
+  List<Transaction> findByWorkspace_IdAndVoidedAtIsNullAndTransactionTypeInOrderByCreatedAtAscIdAsc(
+      UUID workspaceId, Collection<String> transactionTypes);
+
   Page<Transaction> findByAccountIdAndCategoryId(
       UUID accountId, UUID categoryId, Pageable pageable);
 
@@ -58,9 +62,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               // workspace's history); the explicit >= keeps the exact configured threshold.
               + " AND t.merchant_description % :merchant"
               + " AND similarity(t.merchant_description, :merchant) >= :threshold"
-              + " AND (SELECT l.assigned_by FROM transaction_categorization_log l"
-              + " WHERE l.transaction_id = t.id ORDER BY l.assigned_at DESC, l.id DESC LIMIT 1)"
-              + " IN ('RULE', 'USER')"
+              // The latest log row counts only while it still describes the current category: a
+              // reset to automatic that landed in UNCATEGORIZED writes no row of its own
+              // (US-08-02).
+              + " AND (SELECT CASE WHEN l.category_id = t.category_id THEN l.assigned_by END"
+              + " FROM transaction_categorization_log l WHERE l.transaction_id = t.id"
+              + " ORDER BY l.assigned_at DESC, l.id DESC LIMIT 1) IN ('RULE', 'USER')"
               + " ORDER BY similarity(t.merchant_description, :merchant) DESC, t.created_at DESC,"
               + " t.id DESC LIMIT :limit",
       nativeQuery = true)

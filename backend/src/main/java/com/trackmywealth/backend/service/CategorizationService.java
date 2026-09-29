@@ -1,6 +1,8 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.CategoryDecision;
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
+import com.trackmywealth.backend.dto.LatestCategoryAssignment;
 import com.trackmywealth.backend.dto.TransactionSourceCode;
 import com.trackmywealth.backend.entity.CategorizationRule;
 import com.trackmywealth.backend.entity.Category;
@@ -10,19 +12,23 @@ import com.trackmywealth.backend.repository.CategorizationRuleRepository;
 import com.trackmywealth.backend.repository.CategoryRepository;
 import com.trackmywealth.backend.repository.TransactionCategorizationLogRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -59,8 +65,10 @@ import tools.jackson.databind.ObjectMapper;
  * <p>Only the cash and card types in {@link #CATEGORIZED_TYPES} are categorized; a settlement, a
  * trade or a dividend is not spending or income and would only crowd the Uncategorized list.
  * Categorizing writes {@code category_id} and a log row, never a financial field (FR-CAT-014). It
- * runs once, when the row is recorded; re-running it over history is US-08-03's, and a user's own
- * choice is US-08-02's, which later runs must respect.
+ * runs when the row is recorded; {@link #recategorizeWorkspace} re-runs it over existing rows (the
+ * user-facing re-run with a preview is US-08-03's). A member's own choice ({@link #override},
+ * US-08-02) is never replaced by any automatic path (RULE-031, FR-CAT-014), until the member resets
+ * it ({@link #resetToAutomatic}).
  *
  * <p>Source codes are read from {@code raw_source_data}: {@code mcc} (four digits, string or
  * number), {@code purposeCode} (e.g. {@code SALA}) and {@code bankTransactionCode} as {@code
@@ -142,9 +150,108 @@ public class CategorizationService {
   @Transactional
   public Map<UUID, String> categorizeAll(List<Transaction> transactions) {
     Map<UUID, String> assignedBy = new HashMap<>();
+    forEachDecision(
+        transactions,
+        (transaction, decision) -> {
+          apply(transaction, decision);
+          if (decision.assignedBy() != null) {
+            assignedBy.put(transaction.getId(), decision.assignedBy());
+          }
+        });
+    return assignedBy;
+  }
+
+  /**
+   * US-08-02: re-runs the automatic layers over a workspace's existing, non-voided rows - after a
+   * new rule, for instance - and writes only where the category changes. A row whose current
+   * category is a member's override is skipped (RULE-031, FR-CAT-014). Returns how many rows
+   * changed. Internal for now: the user-facing re-run with a preview is US-08-03's.
+   */
+  @Transactional
+  public int recategorizeWorkspace(UUID workspaceId) {
+    List<Transaction> transactions =
+        transactionRepository
+            .findByWorkspace_IdAndVoidedAtIsNullAndTransactionTypeInOrderByCreatedAtAscIdAsc(
+                workspaceId, CATEGORIZED_TYPES);
+    int[] changed = {0};
+    forEachDecision(
+        transactions,
+        (transaction, decision) -> {
+          if (!Objects.equals(transaction.getCategoryId(), decision.categoryId())) {
+            apply(transaction, decision);
+            changed[0]++;
+          }
+        });
+    return changed[0];
+  }
+
+  /**
+   * US-08-02: a member's own choice. Written as a {@code USER} log row with {@code
+   * is_user_override}, which every automatic path then respects. The category must be assignable
+   * for the workspace (404 unknown, 422 inactive) and cannot be UNCATEGORIZED: resetting to
+   * automatic is the way back to it.
+   */
+  @Transactional
+  public void override(Transaction transaction, UUID categoryId) {
+    categoryService.requireAssignable(categoryId, transaction.getWorkspace().getId());
+    if (categoryId.equals(uncategorizedCategoryId())) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          "A transaction cannot be set to UNCATEGORIZED; reset it to automatic instead.");
+    }
+    transaction.setCategoryId(categoryId);
+    transactionRepository.saveAndFlush(transaction);
+    logRepository.save(
+        TransactionCategorizationLog.ofUserOverride(transaction.getId(), categoryId));
+  }
+
+  /**
+   * US-08-02 "reset to automatic": runs the automatic layers again as for a new row and returns how
+   * the category was assigned (empty for UNCATEGORIZED). A type the engine never categorizes goes
+   * back to having no category. The override log row stays as history; it stops counting because it
+   * no longer describes the current category, or a newer automatic row follows it.
+   */
+  @Transactional
+  public Optional<String> resetToAutomatic(Transaction transaction) {
+    if (!CATEGORIZED_TYPES.contains(transaction.getTransactionType())) {
+      transaction.setCategoryId(null);
+      transactionRepository.saveAndFlush(transaction);
+      return Optional.empty();
+    }
+    String[] assignedBy = {null};
+    forEachDecision(
+        List.of(transaction),
+        (row, decision) -> {
+          apply(row, decision);
+          assignedBy[0] = decision.assignedBy();
+        },
+        true);
+    return Optional.ofNullable(assignedBy[0]);
+  }
+
+  /** Whether the transaction's current category is a member's override (US-08-02). */
+  @Transactional(readOnly = true)
+  public boolean isOverridden(Transaction transaction) {
+    return !overridden(List.of(transaction)).isEmpty();
+  }
+
+  private void forEachDecision(
+      List<Transaction> transactions, BiConsumer<Transaction, CategoryDecision> action) {
+    forEachDecision(transactions, action, false);
+  }
+
+  // Loads each workspace's taxonomy, rules and shipped defaults once, skips every row a member has
+  // overridden (unless the member is resetting that override), and hands each remaining
+  // categorized-type row its decision.
+  private void forEachDecision(
+      List<Transaction> transactions,
+      BiConsumer<Transaction, CategoryDecision> action,
+      boolean includeOverridden) {
+    Set<UUID> overridden = includeOverridden ? Set.of() : overridden(transactions);
     Map<UUID, List<Transaction>> byWorkspace = new LinkedHashMap<>();
     for (Transaction transaction : transactions) {
-      if (CATEGORIZED_TYPES.contains(transaction.getTransactionType())) {
+      if (CATEGORIZED_TYPES.contains(transaction.getTransactionType())
+          && !overridden.contains(transaction.getId())) {
         byWorkspace
             .computeIfAbsent(transaction.getWorkspace().getId(), id -> new ArrayList<>())
             .add(transaction);
@@ -170,14 +277,35 @@ public class CategorizationService {
               Double.toString(fuzzyThreshold));
           thresholdSet = true;
         }
-        categorizeOne(transaction, assignable, rules, shipped, mappings)
-            .ifPresent(by -> assignedBy.put(transaction.getId(), by));
+        action.accept(transaction, decide(transaction, assignable, rules, shipped, mappings));
       }
     }
-    return assignedBy;
   }
 
-  private Optional<String> categorizeOne(
+  // The ids of the given rows whose current category is a member's override: their latest log row
+  // is a user override and still describes the category they hold.
+  private Set<UUID> overridden(List<Transaction> transactions) {
+    Map<UUID, UUID> currentCategory = new HashMap<>();
+    for (Transaction transaction : transactions) {
+      if (transaction.getId() != null && transaction.getCategoryId() != null) {
+        currentCategory.put(transaction.getId(), transaction.getCategoryId());
+      }
+    }
+    if (currentCategory.isEmpty()) {
+      return Set.of();
+    }
+    Set<UUID> overridden = new HashSet<>();
+    for (LatestCategoryAssignment latest :
+        logRepository.findLatestAssignments(currentCategory.keySet())) {
+      if (latest.isUserOverride()
+          && latest.describes(currentCategory.get(latest.getTransactionId()))) {
+        overridden.add(latest.getTransactionId());
+      }
+    }
+    return overridden;
+  }
+
+  private CategoryDecision decide(
       Transaction transaction,
       Set<UUID> assignable,
       List<CategorizationRule> rules,
@@ -188,7 +316,7 @@ public class CategorizationService {
 
     for (CategorizationRule rule : rules) {
       if (assignable.contains(rule.getCategoryId()) && matches(rule, merchant, codes)) {
-        return assign(transaction, rule.getCategoryId(), ASSIGNED_BY_RULE, rule.getId(), null);
+        return new CategoryDecision(rule.getCategoryId(), ASSIGNED_BY_RULE, rule.getId(), null);
       }
     }
     for (TransactionSourceCode code : codes) {
@@ -196,29 +324,20 @@ public class CategorizationService {
           mappings.computeIfAbsent(
               code, key -> categoryRepository.findMappedCategoryId(key.standard(), key.code()));
       if (mapped.isPresent() && assignable.contains(mapped.get())) {
-        return assign(transaction, mapped.get(), ASSIGNED_BY_SOURCE_CODE, null, null);
+        return new CategoryDecision(mapped.get(), ASSIGNED_BY_SOURCE_CODE, null, null);
       }
     }
     UUID typed = shipped.get(TYPE_CATEGORY_CODES.get(transaction.getTransactionType()));
     if (typed != null && assignable.contains(typed)) {
-      return assign(transaction, typed, ASSIGNED_BY_TRANSACTION_TYPE, null, null);
+      return new CategoryDecision(typed, ASSIGNED_BY_TRANSACTION_TYPE, null, null);
     }
     Optional<FuzzyCategoryCandidate> similar =
         fuzzyMatch(transaction, transaction.getWorkspace().getId(), assignable);
     if (similar.isPresent()) {
-      return assign(
-          transaction,
-          similar.get().getCategoryId(),
-          ASSIGNED_BY_FALLBACK,
-          null,
-          similar.get().getSimilarity());
+      return new CategoryDecision(
+          similar.get().getCategoryId(), ASSIGNED_BY_FALLBACK, null, similar.get().getSimilarity());
     }
-    UUID uncategorized = shipped.get(UNCATEGORIZED);
-    if (uncategorized != null) {
-      transaction.setCategoryId(uncategorized);
-      transactionRepository.saveAndFlush(transaction);
-    }
-    return Optional.empty();
+    return new CategoryDecision(shipped.get(UNCATEGORIZED), null, null, null);
   }
 
   /** The id of the shipped UNCATEGORIZED default, for the actionable list (FR-CAT-013). */
@@ -230,18 +349,19 @@ public class CategorizationService {
         .getId();
   }
 
-  private Optional<String> assign(
-      Transaction transaction,
-      UUID categoryId,
-      String assignedBy,
-      UUID ruleId,
-      BigDecimal confidence) {
-    transaction.setCategoryId(categoryId);
+  // UNCATEGORIZED (no assignedBy) is recorded without a log row: nothing assigned it.
+  private void apply(Transaction transaction, CategoryDecision decision) {
+    transaction.setCategoryId(decision.categoryId());
     transactionRepository.saveAndFlush(transaction);
-    logRepository.save(
-        new TransactionCategorizationLog(
-            transaction.getId(), categoryId, assignedBy, ruleId, confidence));
-    return Optional.of(assignedBy);
+    if (decision.assignedBy() != null) {
+      logRepository.save(
+          new TransactionCategorizationLog(
+              transaction.getId(),
+              decision.categoryId(),
+              decision.assignedBy(),
+              decision.ruleId(),
+              decision.confidence()));
+    }
   }
 
   private static boolean matches(

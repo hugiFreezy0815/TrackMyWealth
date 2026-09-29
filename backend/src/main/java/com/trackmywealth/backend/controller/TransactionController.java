@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
+import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.TransactionService;
@@ -12,9 +13,11 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -54,5 +57,28 @@ public class TransactionController {
       @PageableDefault(size = 50) Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return transactionService.listTransactions(accountId, uncategorized, pageable, actor);
+  }
+
+  /**
+   * US-08-02: the member's own category for this transaction, which no automatic run replaces.
+   * Needs EDIT on the account.
+   */
+  @PutMapping("/transactions/{transactionId}/category")
+  public TransactionResponse overrideCategory(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @Valid @RequestBody SetTransactionCategoryRequest request,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return transactionService.overrideCategory(
+        accountId, transactionId, request.categoryId(), actor);
+  }
+
+  /** US-08-02 "reset to automatic": gives up the override and categorizes the row again. */
+  @DeleteMapping("/transactions/{transactionId}/category")
+  public TransactionResponse resetCategory(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return transactionService.resetCategory(accountId, transactionId, actor);
   }
 }

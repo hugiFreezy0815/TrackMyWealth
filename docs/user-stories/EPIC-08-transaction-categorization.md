@@ -79,6 +79,15 @@ explicit action (e.g. "reset to automatic"), not achievable by accident.
 **Definition of Done:** Integration test overrides a category, re-runs the automatic job, and
 asserts the override persists.
 **Data-quality behaviour:** N/A.
+**Clarified before development (issue #146, 2026-09-29):**
+- **API:** `PUT`/`DELETE /api/v1/accounts/{id}/transactions/{txId}/category`, with EDIT on the
+  account.
+- **Targets:** any transaction type, any assignable category except UNCATEGORIZED.
+- **Reset:** re-categorizes at once.
+- **Guard:** on every automatic path, with an internal re-run for the DoD. The user-facing re-run
+  with preview stays US-08-03.
+
+See `docs/architecture/database-schema.md`.
 
 ---
 

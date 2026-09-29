@@ -15,14 +15,16 @@ public interface TransactionCategorizationLogRepository
     extends JpaRepository<TransactionCategorizationLog, UUID> {
 
   /**
-   * The latest assignment of each given transaction, in one query for a whole page. A transaction
-   * with no log row (not categorized, or UNCATEGORIZED) is simply absent. Callers pass only ids of
-   * transactions already loaded under the transaction table's RLS policy.
+   * The latest log row of each given transaction, in one query for a whole page. A transaction with
+   * no log row (not categorized, or UNCATEGORIZED) is simply absent; check {@link
+   * LatestCategoryAssignment#describes} before trusting a row that is present. Callers pass only
+   * ids of transactions already loaded under the transaction table's RLS policy.
    */
   @Query(
       value =
           "SELECT DISTINCT ON (transaction_id) transaction_id AS transactionId,"
-              + " assigned_by AS assignedBy"
+              + " assigned_by AS assignedBy, category_id AS categoryId,"
+              + " is_user_override AS userOverride"
               + " FROM transaction_categorization_log WHERE transaction_id IN (:ids)"
               + " ORDER BY transaction_id, assigned_at DESC, id DESC",
       nativeQuery = true)

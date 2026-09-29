@@ -328,11 +328,72 @@ public class TransactionService {
     if (categorized.isEmpty()) {
       return Map.of();
     }
+    Map<UUID, UUID> currentCategory =
+        transactions.stream()
+            .filter(transaction -> transaction.getCategoryId() != null)
+            .collect(Collectors.toMap(Transaction::getId, Transaction::getCategoryId));
+    // A latest row that no longer describes the current category (e.g. an override reset to
+    // UNCATEGORIZED) says nothing about how the category was assigned.
     return categorizationLogRepository.findLatestAssignments(categorized).stream()
+        .filter(latest -> latest.describes(currentCategory.get(latest.getTransactionId())))
         .collect(
             Collectors.toMap(
                 LatestCategoryAssignment::getTransactionId,
                 LatestCategoryAssignment::getAssignedBy));
+  }
+
+  /**
+   * US-08-02: a member's own category for one transaction, which no automatic run replaces
+   * (RULE-031, FR-CAT-014). Any type may be overridden; the category must be assignable for the
+   * workspace and cannot be UNCATEGORIZED ({@link #resetCategory} is the way back). Needs EDIT on
+   * the account. Idempotent: overriding with the category already overridden writes nothing.
+   */
+  @Transactional
+  public TransactionResponse overrideCategory(
+      UUID accountId, UUID transactionId, UUID categoryId, AuthenticatedUserPrincipal actor) {
+    Transaction transaction = requireCategorizable(accountId, transactionId, actor);
+    boolean alreadyOverridden =
+        categoryId.equals(transaction.getCategoryId())
+            && categorizationService.isOverridden(transaction);
+    if (!alreadyOverridden) {
+      categorizationService.override(transaction, categoryId);
+    }
+    return toResponse(
+        transaction, latestAssignments(List.of(transaction)).get(transaction.getId()));
+  }
+
+  /**
+   * US-08-02 "reset to automatic": the explicit way to give up an override - the automatic layers
+   * categorize the row again at once. Idempotent: a row that is not overridden is returned
+   * unchanged.
+   */
+  @Transactional
+  public TransactionResponse resetCategory(
+      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+    Transaction transaction = requireCategorizable(accountId, transactionId, actor);
+    if (categorizationService.isOverridden(transaction)) {
+      categorizationService.resetToAutomatic(transaction);
+    }
+    return toResponse(
+        transaction, latestAssignments(List.of(transaction)).get(transaction.getId()));
+  }
+
+  // The category is an annotation, not a financial field (FR-CAT-014), so an archived account's
+  // rows may still be categorized; a voided row keeps what it had when it was voided.
+  private Transaction requireCategorizable(
+      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId);
+    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    Transaction transaction =
+        transactionRepository
+            .findById(transactionId)
+            .filter(row -> row.getAccount().getId().equals(accountId))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+    if (transaction.getVoidedAt() != null) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "A voided transaction's category cannot be changed.");
+    }
+    return transaction;
   }
 
   private Optional<Transaction> findReplay(UUID accountId, CreateTransactionRequest request) {

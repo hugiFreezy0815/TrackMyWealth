@@ -281,6 +281,16 @@ issue #145.
   their meaning. A `MERCHANT` value needs at least three characters, since a shorter "contains"
   would match almost every merchant. `COUNTERPARTY_IBAN` and `AMOUNT_PATTERN` are rejected until
   imports supply that data.
+- **User override (US-08-02, RULE-031).** `PUT /accounts/{id}/transactions/{txId}/category` sets
+  a member's own category, logged as `USER` with `is_user_override`. `DELETE` on the same path
+  resets it to automatic and re-categorizes at once. Both need EDIT on the account. Any type may be
+  overridden, to any assignable category except `UNCATEGORIZED`; voided rows cannot be changed.
+  Every automatic path, including the internal `CategorizationService.recategorizeWorkspace`,
+  skips an overridden row.
+- **Reading the log.** A transaction's latest log row describes its category only while the two
+  still match: a reset that lands in `UNCATEGORIZED`, or a type the engine doesn't categorize,
+  writes no row of its own. Responses, the override guard and the fuzzy matcher's learning query
+  all apply that rule.
 - **`V37`** adds the defaults `LEISURE > DINING`, `LEISURE > TRAVEL`, `HOUSING > UTILITIES`,
   `HEALTH`, `SHOPPING`, `TAXES` and `FEES`, and seeds 43 MCC and purpose-code mappings
   (FR-CAT-010: configuration, extendable by a reference package). It adds `TRANSACTION_TYPE` to
