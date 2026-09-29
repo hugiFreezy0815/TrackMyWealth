@@ -79,6 +79,15 @@ explicit action (e.g. "reset to automatic"), not achievable by accident.
 **Definition of Done:** Integration test overrides a category, re-runs the automatic job, and
 asserts the override persists.
 **Data-quality behaviour:** N/A.
+**Clarified before development (issue #146, 2026-09-29):**
+- **API:** `PUT`/`DELETE /api/v1/accounts/{id}/transactions/{txId}/category`, with EDIT on the
+  account.
+- **Targets:** any transaction type, any assignable category except UNCATEGORIZED.
+- **Reset:** re-categorizes at once.
+- **Guard:** on every automatic path, with an internal re-run for the DoD. The user-facing re-run
+  with preview stays US-08-03.
+
+See `docs/architecture/database-schema.md`.
 
 ---
 
@@ -108,6 +117,22 @@ request, consistent with EPIC 30/31's background-processing pattern.
 **Definition of Done:** Integration test creates a rule, previews, applies, and confirms
 user-overridden transactions are skipped.
 **Data-quality behaviour:** N/A.
+**Notes from the US-08-02 review (PR #177, 2026-09-29):**
+- **Build on `CategorizationService.recategorizeWorkspace`.** It already pages through a workspace
+  (500 rows, keyset on `created_at, id`), locks each page before checking it for overrides, and
+  writes only rows whose assignment changes.
+- **Commit per page for large workspaces.** Today the whole run is one transaction, so every
+  page's rows stay locked until it commits, and a member's override or reset of one of those rows
+  waits for the run. For the user-facing apply, and the asynchronous job the edge cases above ask
+  for, run each page in its own transaction and resume from the last `(created_at, id)`. The
+  override guard still holds, because each page locks its rows before it checks them.
+- **The preview must not lock or write.** Compute the decisions read-only, without the page lock,
+  and apply only after the user confirms. Then re-check each row under its lock, because the
+  preview can be stale by then.
+- **Clarify the acceptance criterion.** The engine records whichever layer now decides a row,
+  which can be `SOURCE_CODE` or `TRANSACTION_TYPE` as well as `RULE`. The criterion above says
+  every changed row is logged as `RULE`. Decide whether the apply only touches rows the new rule
+  matches, or re-runs all layers and reports the other changes too.
 
 ---
 

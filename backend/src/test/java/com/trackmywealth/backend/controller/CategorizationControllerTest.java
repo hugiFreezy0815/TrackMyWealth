@@ -16,6 +16,7 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
+import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.repository.TransactionRepository;
@@ -25,8 +26,10 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -560,7 +563,408 @@ class CategorizationControllerTest {
     execute("DELETE FROM workspace WHERE id = ?", foreignWorkspace);
   }
 
+  // --- US-08-02: a user override always wins --------------------------------------------------
+
+  // The story's DoD: override, re-run the automatic job, the override persists.
+  @Test
+  void aUserOverrideSurvivesAnAutomaticReRunWhileTheRestIsRecategorized() {
+    String token = bootstrapAdministrator();
+    UUID workspace =
+        createCategory(token, new CreateCategoryRequest(null, "Workspace", "Arbeitsplatz"));
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse overridden = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+    TransactionResponse automatic = record(token, card.id(), PURCHASE, "COOP CITY", "5411");
+    assertThat(codeOf(overridden.categoryId())).isEqualTo("GROCERIES");
+
+    TransactionResponse changed = setCategory(token, card.id(), overridden.id(), workspace);
+
+    assertThat(changed.categoryId()).isEqualTo(workspace);
+    assertThat(changed.categoryAssignedBy()).isEqualTo("USER");
+    assertThat(logAssignments(overridden.id())).containsExactly("SOURCE_CODE", "USER");
+    assertThat(
+            jdbcValue(
+                "SELECT is_user_override FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND assigned_by = 'USER'",
+                overridden.id()))
+        .isEqualTo(true);
+
+    // A new rule, then the automatic job: only the row nobody overrode follows it.
+    createRule(token, "MERCHANT", "coop", defaultId("SHOPPING"), null);
+    assertThat(categorizationService.recategorizeWorkspace(workspaceOf(card.id()))).isEqualTo(1);
+
+    assertThat(categoryOf(overridden.id())).isEqualTo(workspace);
+    assertThat(codeOf(categoryOf(automatic.id()))).isEqualTo("SHOPPING");
+    assertThat(assignedByInList(token, card.id(), overridden.id())).isEqualTo("USER");
+    assertThat(assignedByInList(token, card.id(), automatic.id())).isEqualTo("RULE");
+  }
+
+  @Test
+  void aReRunWritesNothingWhereTheCategoryWouldNotChange() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+
+    assertThat(categorizationService.recategorizeWorkspace(workspaceOf(card.id()))).isZero();
+    assertThat(logAssignments(recorded.id())).containsExactly("SOURCE_CODE");
+  }
+
+  @Test
+  void resettingToAutomaticRecategorizesAtOnceAndLiftsTheProtection() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+    setCategory(token, card.id(), recorded.id(), defaultId("SHOPPING"));
+
+    TransactionResponse reset = resetCategory(token, card.id(), recorded.id());
+
+    assertThat(codeOf(reset.categoryId())).isEqualTo("GROCERIES");
+    assertThat(reset.categoryAssignedBy()).isEqualTo("SOURCE_CODE");
+    createRule(token, "MERCHANT", "coop", defaultId("SHOPPING"), null);
+    categorizationService.recategorizeWorkspace(workspaceOf(card.id()));
+    assertThat(codeOf(categoryOf(recorded.id()))).isEqualTo("SHOPPING");
+  }
+
+  // Nothing writes a log row for UNCATEGORIZED, so the override's row outlives it; it must stop
+  // counting - neither shown as USER nor protecting the row from the next run.
+  @Test
+  void aResetThatLandsInUncategorizedNoLongerCountsAsAnOverride() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    TransactionResponse recorded = record(token, cash.id(), EXPENSE, "Unknown Shop", null);
+    setCategory(token, cash.id(), recorded.id(), defaultId("SHOPPING"));
+
+    TransactionResponse reset = resetCategory(token, cash.id(), recorded.id());
+
+    assertThat(codeOf(reset.categoryId())).isEqualTo(UNCATEGORIZED);
+    assertThat(reset.categoryAssignedBy()).isNull();
+    assertThat(assignedByInList(token, cash.id(), recorded.id())).isNull();
+    createRule(token, "MERCHANT", "unknown shop", defaultId("LEISURE"), null);
+    categorizationService.recategorizeWorkspace(workspaceOf(cash.id()));
+    assertThat(codeOf(categoryOf(recorded.id()))).isEqualTo("LEISURE");
+  }
+
+  @Test
+  void aTypeTheEngineNeverCategorizesCanStillBeOverriddenAndResetToNone() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse settlement =
+        post(token, card.id(), transaction("SETTLEMENT", "85.00", null, null))
+            .expectStatus()
+            .isCreated()
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    TransactionResponse overridden =
+        setCategory(token, card.id(), settlement.id(), defaultId("TRANSFER_INTERNAL"));
+    assertThat(codeOf(overridden.categoryId())).isEqualTo("TRANSFER_INTERNAL");
+    assertThat(overridden.categoryAssignedBy()).isEqualTo("USER");
+
+    TransactionResponse reset = resetCategory(token, card.id(), settlement.id());
+    assertThat(reset.categoryId()).isNull();
+    assertThat(reset.categoryAssignedBy()).isNull();
+  }
+
+  @Test
+  void overridingTwiceWritesOnceAndResettingAnAutomaticRowChangesNothing() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+
+    TransactionResponse untouched = resetCategory(token, card.id(), recorded.id());
+    assertThat(codeOf(untouched.categoryId())).isEqualTo("GROCERIES");
+    assertThat(logAssignments(recorded.id())).containsExactly("SOURCE_CODE");
+
+    for (int attempt = 0; attempt < 2; attempt++) {
+      setCategory(token, card.id(), recorded.id(), defaultId("SHOPPING"));
+    }
+    assertThat(logAssignments(recorded.id())).containsExactly("SOURCE_CODE", "USER");
+  }
+
+  @Test
+  void anOverrideIsRejectedForAnInvalidTargetOrRow() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+    client(token)
+        .post()
+        .uri("/api/v1/categories/" + defaultId("SHOPPING") + "/deactivate")
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    putCategory(token, card.id(), recorded.id(), defaultId(UNCATEGORIZED))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    putCategory(token, card.id(), recorded.id(), defaultId("SHOPPING"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    putCategory(token, card.id(), recorded.id(), UUID.randomUUID()).expectStatus().isNotFound();
+    // The row exists, but not on this account.
+    putCategory(token, cash.id(), recorded.id(), defaultId("LEISURE")).expectStatus().isNotFound();
+    putCategory(token, card.id(), UUID.randomUUID(), defaultId("LEISURE"))
+        .expectStatus()
+        .isNotFound();
+    client(token)
+        .put()
+        .uri(categoryUri(card.id(), recorded.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body("{}")
+        .exchange()
+        .expectStatus()
+        .isBadRequest();
+
+    execute("UPDATE transaction SET voided_at = now() WHERE id = ?", recorded.id());
+    putCategory(token, card.id(), recorded.id(), defaultId("LEISURE"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(logAssignments(recorded.id())).containsExactly("SOURCE_CODE");
+  }
+
+  @Test
+  void changingACategoryNeedsEditOnTheAccount() {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD");
+    TransactionResponse recorded = record(adminToken, card.id(), PURCHASE, "COOP PRONTO", "5411");
+    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    String memberToken = login("member@example.com");
+    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.READ);
+
+    putCategory(memberToken, card.id(), recorded.id(), defaultId("SHOPPING"))
+        .expectStatus()
+        .isNotFound();
+    client(memberToken)
+        .delete()
+        .uri(categoryUri(card.id(), recorded.id()))
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+
+    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.EDIT);
+    putCategory(memberToken, card.id(), recorded.id(), defaultId("SHOPPING")).expectStatus().isOk();
+  }
+
+  // Fuzzy matching learns from USER rows too: the member's correction teaches the next similar row.
+  @Test
+  void anOverrideTeachesTheFuzzyMatchForTheSameBrand() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    TransactionResponse first = record(token, cash.id(), EXPENSE, "MIGROS ZUERICH", null);
+    setCategory(token, cash.id(), first.id(), defaultId("GROCERIES"));
+
+    TransactionResponse similar = record(token, cash.id(), EXPENSE, "MIGROS BASEL", null);
+
+    assertThat(codeOf(similar.categoryId())).isEqualTo("GROCERIES");
+    assertThat(similar.categoryAssignedBy()).isEqualTo("FALLBACK_MATCH");
+  }
+
+  // --- review follow-ups: confirmation, provenance, actor, paging, locking --------------------
+
+  @Test
+  void confirmingTheAutomaticCategoryProtectsItFromALaterRule() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+
+    // The member agrees with GROCERIES and says so.
+    TransactionResponse confirmed =
+        setCategory(token, card.id(), recorded.id(), recorded.categoryId());
+    assertThat(confirmed.categoryAssignedBy()).isEqualTo("USER");
+    assertThat(logAssignments(recorded.id())).containsExactly("SOURCE_CODE", "USER");
+
+    createRule(token, "MERCHANT", "coop", defaultId("SHOPPING"), null);
+    assertThat(categorizationService.recategorizeWorkspace(workspaceOf(card.id()))).isZero();
+
+    assertThat(codeOf(categoryOf(recorded.id()))).isEqualTo("GROCERIES");
+    assertThat(assignedByInList(token, card.id(), recorded.id())).isEqualTo("USER");
+  }
+
+  @Test
+  void aReRunRecordsARuleThatNowExplainsAFuzzyGuessButRepeatsNothing() {
+    String token = bootstrapAdministrator();
+    createRule(token, "MERCHANT", "migros zuerich", defaultId("GROCERIES"), null);
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    record(token, cash.id(), EXPENSE, "MIGROS ZUERICH", null);
+    TransactionResponse guessed = record(token, cash.id(), EXPENSE, "MIGROS BASEL", null);
+    assertThat(guessed.categoryAssignedBy()).isEqualTo("FALLBACK_MATCH");
+
+    // Same category, but a rule now explains it: the log should say so.
+    createRule(token, "MERCHANT", "migros basel", defaultId("GROCERIES"), null);
+    UUID workspace = workspaceOf(cash.id());
+
+    assertThat(categorizationService.recategorizeWorkspace(workspace)).isEqualTo(1);
+    assertThat(assignedByInList(token, cash.id(), guessed.id())).isEqualTo("RULE");
+    assertThat(logAssignments(guessed.id())).containsExactly("FALLBACK_MATCH", "RULE");
+    // A second run finds nothing new to say and writes nothing.
+    assertThat(categorizationService.recategorizeWorkspace(workspace)).isZero();
+    assertThat(logAssignments(guessed.id())).hasSize(2);
+  }
+
+  @Test
+  void anOverrideRecordsTheMemberWhoMadeIt() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+
+    setCategory(token, card.id(), recorded.id(), defaultId("SHOPPING"));
+
+    assertThat(
+            jdbcUuid(
+                "SELECT assigned_by_user_id FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND assigned_by = 'USER'",
+                recorded.id()))
+        .isEqualTo(jdbcUuid("SELECT id FROM app_user WHERE email = ?", "admin@example.com"));
+    assertThat(
+            jdbcValue(
+                "SELECT count(*) FROM transaction_categorization_log WHERE transaction_id = ?"
+                    + " AND assigned_by <> 'USER' AND assigned_by_user_id IS NOT NULL",
+                recorded.id()))
+        .as("automatic rows name no member")
+        .isEqualTo(0L);
+  }
+
+  @Test
+  void aReRunCoversAWorkspaceLargerThanOnePage() throws Exception {
+    // More rows than one page, all with the same created_at (one INSERT), so paging must break
+    // the tie by id to neither skip nor repeat a row.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    int rows = 2 * CategorizationService.RECATEGORIZATION_PAGE_SIZE + 1;
+    execute(
+        "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+            + " amount, currency, raw_source_data)"
+            + " SELECT a.workspace_id, a.id, 'EXPENSE', CURRENT_DATE, -1, 'CHF',"
+            + " CAST('{\"mcc\": \"5411\"}' AS jsonb)"
+            + " FROM account a, generate_series(1, "
+            + rows
+            + ") WHERE a.id = ?",
+        cash.id());
+
+    assertThat(categorizationService.recategorizeWorkspace(workspaceOf(cash.id()))).isEqualTo(rows);
+    assertThat(
+            jdbcValue(
+                "SELECT count(*) FROM transaction t JOIN category c ON c.id = t.category_id"
+                    + " WHERE t.account_id = ? AND c.code = 'GROCERIES'",
+                cash.id()))
+        .isEqualTo((long) rows);
+    assertThat(categorizationService.recategorizeWorkspace(workspaceOf(cash.id()))).isZero();
+  }
+
+  @Test
+  void theReRunsPageAndTheOverridesRowAreLockedUntilTheirTransactionEnds() {
+    // The lock is what keeps a re-run from writing over an override made between its check and
+    // its write: while one transaction holds a row, another cannot lock it.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
+    TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
+    UUID workspace = workspaceOf(card.id());
+    TransactionTemplate inTransaction = new TransactionTemplate(transactionManager);
+
+    Boolean pageLocked =
+        inTransaction.execute(
+            status -> {
+              transactionRepository.lockRecategorizationPage(
+                  workspace,
+                  List.of(PURCHASE),
+                  OffsetDateTime.parse("1970-01-01T00:00:00Z"),
+                  new UUID(0L, 0L),
+                  10);
+              return lockedElsewhere(recorded.id());
+            });
+    Boolean rowLocked =
+        inTransaction.execute(
+            status -> {
+              transactionRepository.findByIdForUpdate(recorded.id()).orElseThrow();
+              return lockedElsewhere(recorded.id());
+            });
+
+    assertThat(pageLocked).isTrue();
+    assertThat(rowLocked).isTrue();
+    assertThat(lockedElsewhere(recorded.id())).as("released on commit").isFalse();
+  }
+
+  // Tries to lock the row from a second connection without waiting.
+  private boolean lockedElsewhere(UUID transactionId) {
+    try (Connection other = dataSource.getConnection();
+        PreparedStatement statement =
+            other.prepareStatement("SELECT id FROM transaction WHERE id = ? FOR UPDATE NOWAIT")) {
+      other.setAutoCommit(false);
+      statement.setObject(1, transactionId);
+      statement.executeQuery().close();
+      other.rollback();
+      return false;
+    } catch (SQLException e) {
+      return "55P03".equals(e.getSQLState()); // lock_not_available
+    }
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
+
+  private String categoryUri(UUID accountId, UUID transactionId) {
+    return "/api/v1/accounts/" + accountId + "/transactions/" + transactionId + "/category";
+  }
+
+  private RestTestClient.ResponseSpec putCategory(
+      String token, UUID accountId, UUID transactionId, UUID categoryId) {
+    return client(token)
+        .put()
+        .uri(categoryUri(accountId, transactionId))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetTransactionCategoryRequest(categoryId))
+        .exchange();
+  }
+
+  private TransactionResponse setCategory(
+      String token, UUID accountId, UUID transactionId, UUID categoryId) {
+    return putCategory(token, accountId, transactionId, categoryId)
+        .expectStatus()
+        .isOk()
+        .expectBody(TransactionResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private TransactionResponse resetCategory(String token, UUID accountId, UUID transactionId) {
+    return client(token)
+        .delete()
+        .uri(categoryUri(accountId, transactionId))
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(TransactionResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private String assignedByInList(String token, UUID accountId, UUID transactionId) {
+    return list(token, accountId, false).stream()
+        .filter(row -> row.id().equals(transactionId))
+        .findFirst()
+        .orElseThrow()
+        .categoryAssignedBy();
+  }
+
+  private UUID categoryOf(UUID transactionId) {
+    return jdbcUuid("SELECT category_id FROM transaction WHERE id = ?", transactionId);
+  }
+
+  private UUID workspaceOf(UUID accountId) {
+    return jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", accountId);
+  }
+
+  private void grantAccount(String token, UUID memberId, UUID accountId, String level) {
+    client(token)
+        .post()
+        .uri("/api/v1/sharing-grants")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateSharingGrantRequest(
+                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+  }
 
   // A row as an import (EPIC 07) would leave it, with ISO 20022 codes the API cannot carry yet.
   private UUID insertImportedRow(UUID accountId, String type, String rawSourceData)
