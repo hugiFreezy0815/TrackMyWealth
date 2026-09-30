@@ -195,5 +195,9 @@ springdoc:
     path: /api-docs/ui
 
 logging:
+  pattern:
+    # EPIC-29 (#149): every log line of a request carries its correlation id (CorrelationIdFilter),
+    # the id an error response quotes - so a reported error can be found in the logs.
+    correlation: "[%X{correlationId:-}] "
   level:
     org.flywaydb: INFO

@@ -6,6 +6,8 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.web.ApiErrorCode;
+import com.trackmywealth.backend.web.ApiException;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -126,8 +128,10 @@ public class TransferRecordingService {
       throw unprocessable("A transfer needs two different accounts.");
     }
     if (!ACTIVE.equals(counterparty.getStatus())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Cannot transfer to or from an archived account.");
+      throw new ApiException(
+          HttpStatus.CONFLICT,
+          ApiErrorCode.ACCOUNT_ARCHIVED,
+          "Cannot transfer to or from an archived account.");
     }
     if (!counterparty.isHasTransactions()) {
       throw unprocessable("The other account does not hold transactions.");

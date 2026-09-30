@@ -15,6 +15,8 @@ import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.TransactionCategorizationLogRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.web.ApiErrorCode;
+import com.trackmywealth.backend.web.ApiException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Currency;
@@ -599,8 +601,10 @@ public class TransactionService {
                   + " transactions.");
     }
     if (!ACTIVE.equals(account.getStatus())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Cannot record a transaction on an archived account.");
+      throw new ApiException(
+          HttpStatus.CONFLICT,
+          ApiErrorCode.ACCOUNT_ARCHIVED,
+          "Cannot record a transaction on an archived account.");
     }
     // A SETTLEMENT is not a cash type: it stays acceptable on an ordinary account as the payment
     // leg

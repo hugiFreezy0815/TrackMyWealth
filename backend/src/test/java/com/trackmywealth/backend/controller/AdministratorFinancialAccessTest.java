@@ -131,8 +131,9 @@ class AdministratorFinancialAccessTest {
         account + "/transactions/deleted");
   }
 
-  // Status and body of a denied read, without the timestamp. The path stays in: both callers ask
-  // for the same one, so it is identical in both bodies.
+  // Status and body of a denied read, without what differs per request by design: the timestamp
+  // and the correlation id. The path stays in: both callers ask for the same one, so it is
+  // identical in both bodies.
   private String denial(String token, String path) {
     return client(token)
             .get()
@@ -144,6 +145,7 @@ class AdministratorFinancialAccessTest {
             .returnResult()
             .getResponseBody()
             .replaceAll("\"timestamp\":\"[^\"]*\",?", "")
+            .replaceAll("\"correlationId\":\"[^\"]*\",?", "")
         + " (404)";
   }
 

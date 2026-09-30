@@ -71,4 +71,14 @@ holds itself to for its own exemption list.
         </Or>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
+    <!-- EPIC-29 (#149): CorrelationIdFilter echoes a caller's X-Correlation-Id on the response so
+         a request can be traced end to end. It echoes only a value that matched
+         [A-Za-z0-9._-]{8,64} in full - no CR/LF, no separators, nothing a header-injection or
+         response-splitting attack needs - and replaces anything else with a generated UUID.
+         SpotBugs' HRS check doesn't follow that validation; the echo is the feature. -->
+    <Match>
+        <Class name="com.trackmywealth.backend.web.CorrelationIdFilter"/>
+        <Method name="doFilterInternal"/>
+        <Bug pattern="HRS_REQUEST_PARAMETER_TO_HTTP_HEADER"/>
+    </Match>
 </FindBugsFilter>

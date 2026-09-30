@@ -105,7 +105,15 @@ class RateLimitFilterTest {
         .expectStatus()
         .isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
         .expectHeader()
-        .exists("Retry-After");
+        .exists("Retry-After")
+        // EPIC-29 (#149): the one error shape, even though a filter answers before Spring MVC.
+        .expectHeader()
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("RATE_LIMITED")
+        .jsonPath("$.correlationId")
+        .exists();
 
     // #60: no server.tomcat.remoteip.internal-proxies is configured in this context (the
     // application.yml default - nobody is trusted), so a spoofed X-Forwarded-For claiming a

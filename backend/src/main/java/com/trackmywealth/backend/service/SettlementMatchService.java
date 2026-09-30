@@ -12,6 +12,8 @@ import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.web.ApiErrorCode;
+import com.trackmywealth.backend.web.ApiException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -305,8 +307,10 @@ public class SettlementMatchService {
           "The settlement source must be an ordinary account that holds transactions.");
     }
     if (!"ACTIVE".equals(source.getStatus())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "The settlement source account is archived.");
+      throw new ApiException(
+          HttpStatus.CONFLICT,
+          ApiErrorCode.ACCOUNT_ARCHIVED,
+          "The settlement source account is archived.");
     }
     if (!source.getNativeCurrency().equals(card.getNativeCurrency())) {
       throw new ResponseStatusException(
