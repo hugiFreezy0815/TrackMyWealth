@@ -6,11 +6,50 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.security.SecureRandom;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Import;
 import org.springframework.mock.env.MockEnvironment;
 
 class JwtSecretPolicyTest {
 
   private static final String ISSUER = "trackmywealth";
+
+  private final ApplicationContextRunner contextRunner =
+      new ApplicationContextRunner()
+          .withUserConfiguration(TestConfiguration.class)
+          .withPropertyValues(
+              "app.security.jwt.issuer=" + ISSUER,
+              "app.security.jwt.access-token-ttl-minutes=15",
+              "app.security.jwt.refresh-token-ttl-days=30");
+
+  @Test
+  void springContextFailsWithPlaceholderWhenNoInsecureProfileIsActive() {
+    contextRunner
+        .withPropertyValues("app.security.jwt.secret=" + JwtSecretPolicy.PLACEHOLDER_SECRET)
+        .run(
+            context ->
+                org.assertj.core.api.Assertions.assertThat(context)
+                    .hasFailed()
+                    .getFailure()
+                    .hasMessageContaining("JWT_SECRET"));
+  }
+
+  @Test
+  void springContextStartsWithPlaceholderUnderExplicitTestProfile() {
+    contextRunner
+        .withPropertyValues(
+            "spring.profiles.active=test",
+            "app.security.jwt.secret=" + JwtSecretPolicy.PLACEHOLDER_SECRET)
+        .run(context -> org.assertj.core.api.Assertions.assertThat(context).hasNotFailed());
+  }
+
+  @Test
+  void springContextStartsWithRandomSecretWithoutDevelopmentProfile() {
+    contextRunner
+        .withPropertyValues("app.security.jwt.secret=" + randomSecret())
+        .run(context -> org.assertj.core.api.Assertions.assertThat(context).hasNotFailed());
+  }
 
   @Test
   void publicPlaceholderIsAllowedOnlyInDevProfile() {
@@ -83,4 +122,8 @@ class JwtSecretPolicyTest {
     new SecureRandom().nextBytes(bytes);
     return Base64.getEncoder().encodeToString(bytes);
   }
+
+  @EnableConfigurationProperties(JwtProperties.class)
+  @Import(JwtSecretPolicy.class)
+  static class TestConfiguration {}
 }
