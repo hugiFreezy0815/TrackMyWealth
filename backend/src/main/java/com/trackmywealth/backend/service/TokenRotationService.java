@@ -10,6 +10,7 @@ import com.trackmywealth.backend.repository.UserSessionRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -133,7 +134,7 @@ public class TokenRotationService {
    * it to a newer token in that same family.
    */
   private void revokeCompromisedTokenFamily(
-      java.util.UUID refreshTokenFamilyId, OffsetDateTime revokedAt) {
+      UUID refreshTokenFamilyId, OffsetDateTime revokedAt) {
     refreshTokenRepository.markFamilyAsTheftSuspected(refreshTokenFamilyId, revokedAt);
     userSessionRepository.revokeActiveSessionsByRefreshTokenFamilyId(
         refreshTokenFamilyId, revokedAt);
