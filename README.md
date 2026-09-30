@@ -74,14 +74,20 @@ Two ways to run the backend, depending on what you're doing:
 ```bash
 docker compose up -d postgres          # bare PostgreSQL server, no database pre-created
 cd backend
-mvn spring-boot:run                    # creates the database, runs all migrations, starts the API
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+                                        # dev profile may use the public JWT placeholder only
 ```
 
 **Just running the whole stack** (this is also what a NAS deployment uses - see below):
 
 ```bash
+printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 32)" > .env   # once; keep this file private
 docker compose up -d --build           # builds backend/Dockerfile, starts postgres + backend
 ```
+
+Docker Compose treats `JWT_SECRET` as required and refuses to start the backend when it is absent.
+Do not commit the generated `.env`; keep the secret with the same care as other deployment
+credentials.
 
 Either way, the API comes up on `:8080`; OpenAPI UI at `/api-docs/ui` once the controller layer is
 built out (see `docs/user-stories/EPIC-29-*` in the backlog).
@@ -114,9 +120,16 @@ multi-tenant hosted service — see `docs/architecture/adr/0001-database-auto-mi
 that does and doesn't simplify (the production DB role split it describes is a hosted-multi-tenant
 concern; not needed here).
 
+Before the first real start, create a private deployment secret:
+
 ```bash
+printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 32)" > .env
 docker compose up -d --build
 ```
+
+`docker-compose.yml` requires that value. The public JWT placeholder is accepted only when the
+backend is explicitly started with the Spring `dev` or `test` profile; neither is a deployment
+profile.
 
 That's the whole deployment: `docker-compose.yml` builds `backend/Dockerfile` (multi-stage Maven
 build -> a plain JRE runtime image) and starts it alongside `postgres`, wired together on Docker's
@@ -150,11 +163,13 @@ live outside Switzerland/Germany.
 
 ### Secrets to set before real use
 
-Both have a well-formed placeholder default in `application.yml` so the stack starts out of the
-box, but the placeholders are public - override them via a `.env` file next to
-`docker-compose.yml` (uncomment the matching lines under `backend.environment`):
+The JWT default in `application.yml` is a deliberately public development placeholder. It is
+accepted only under the explicit Spring `dev` or `test` profile. Every other startup fails fast
+until a real secret is supplied; Docker Compose also requires it before launching the backend.
 
-- `JWT_SECRET` - signs access tokens and MFA login challenges; at least 32 bytes.
+- `JWT_SECRET` - signs access tokens and MFA login challenges. Generate cryptographically random
+  key material with `openssl rand -base64 32` (at least 32 bytes of HMAC key material) and store it
+  in the deployment's private `.env`/secret manager. Never reuse the repository placeholder.
 - `MFA_ENCRYPTION_KEY` - AES-256 key encrypting each user's TOTP secret at rest (US-02-04): the
   Base64 of exactly 32 random bytes, e.g. `openssl rand -base64 32`. Left unset, the backend
   logs a startup warning (and refuses to start at all when `DEPLOYMENT_TOPOLOGY=hosted`). **Back it up with the same
