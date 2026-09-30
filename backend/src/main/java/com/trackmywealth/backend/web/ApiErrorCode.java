@@ -57,7 +57,7 @@ public final class ApiErrorCode {
       case 400 -> VALIDATION_FAILED;
       case 401 -> UNAUTHENTICATED;
       case 403 -> FORBIDDEN;
-      case 404, 405 -> NOT_FOUND;
+      case 404 -> NOT_FOUND;
       case 409 -> CONFLICT;
       case 422 -> UNPROCESSABLE;
       case 423 -> LOCKED;
