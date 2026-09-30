@@ -5,6 +5,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.trackmywealth.backend.dto.AccountSnapshotResponse;
+import com.trackmywealth.backend.dto.AccountValuation;
+import com.trackmywealth.backend.dto.CardStatementResponse;
+import com.trackmywealth.backend.dto.CashFlowResponse;
+import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
+import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
+import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.SettlementMatchResponse;
+import com.trackmywealth.backend.dto.TransactionResponse;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
@@ -58,6 +67,24 @@ class DecimalWireFormatTest {
   }
 
   @Test
+  void everyMoneyResponseFamilyCarriesExplicitCurrencyContext() {
+    assertRecordHasComponent(TransactionResponse.class, "currency");
+    assertRecordHasComponent(AccountValuation.class, "currency");
+    assertRecordHasComponent(NetWorthResponse.class, "reportingCurrency");
+    assertRecordHasComponent(InstitutionSummaryResponse.class, "containerCurrency");
+    assertRecordHasComponent(CashFlowResponse.CurrencyAmount.class, "currency");
+    assertRecordHasComponent(CardStatementResponse.class, "currency");
+    assertRecordHasComponent(SettlementMatchResponse.class, "currency");
+    assertRecordHasComponent(CustomAssetValuationResponse.class, "currency");
+
+    // SnapshotHoldingResponse.reportedCostBasis and institution AccountContribution values are
+    // nested under responses whose single currency field defines the unit for every child amount.
+    assertRecordHasComponent(AccountSnapshotResponse.class, "currency");
+    assertRecordHasComponent(AccountSnapshotResponse.class, "holdings");
+    assertRecordHasComponent(InstitutionSummaryResponse.class, "accounts");
+  }
+
+  @Test
   void scaleIsKeptAndNeverWrittenInExponentForm() {
     assertThat(jsonMapper.writeValueAsString(new BigDecimal("1005.0000")))
         .isEqualTo("\"1005.0000\"");
@@ -74,6 +101,13 @@ class DecimalWireFormatTest {
         .isEqualByComparingTo(SAMPLE);
     assertThat(jsonMapper.readValue("{\"amount\":-10.5}", Amount.class).amount())
         .isEqualByComparingTo("-10.5");
+  }
+
+  private static void assertRecordHasComponent(Class<?> record, String componentName) {
+    assertThat(record.getRecordComponents())
+        .extracting(RecordComponent::getName)
+        .as("%s carries %s", record.getSimpleName(), componentName)
+        .contains(componentName);
   }
 
   private static JsonMapper mapper() {
