@@ -186,7 +186,11 @@ management:
         include: health,info,flyway
   endpoint:
     health:
+      # #191: "authorized" alone means any signed-in user; the details (database, disk space and
+      # path, certificates) are operational data for administrators only. Anonymous probes and
+      # ordinary users get the status alone.
       show-details: when-authorized
+      roles: SYSTEM_ADMINISTRATOR
 
 springdoc:
   api-docs:
