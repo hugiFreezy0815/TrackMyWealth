@@ -8,6 +8,9 @@ import com.trackmywealth.backend.web.CorrelationIdFilter;
 import com.trackmywealth.backend.web.ProblemResponseWriter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.actuate.info.InfoEndpoint;
+import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -28,7 +31,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * itself once one does, see {@code SetupService}), login/refresh ({@code /api/v1/auth/**}, US-02-02
  * - must be reachable by a caller who has no token yet), and {@code /error}. Everything else
  * requires a valid {@link JwtAuthenticationFilter}-authenticated request; {@code /api/v1/admin/**}
- * additionally requires the {@code SYSTEM_ADMINISTRATOR} role (US-02-01).
+ * and every Actuator endpoint other than health and info (e.g. Flyway's migration metadata)
+ * additionally require the {@code SYSTEM_ADMINISTRATOR} role (US-02-01, NFR-SEC-001).
  *
  * <p>CORS is configured here because the web build of {@code mobile/} (an Expo Router app exported
  * for web, see its README) calls this API from a browser on a different origin - unlike the
@@ -55,8 +59,16 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             authorize ->
                 authorize
-                    .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info")
+                    // NFR-SEC-001 / #191: of the Actuator, only health (with its probe groups)
+                    // and info are public, for deployment probes; health's details are shown to
+                    // administrators only (management.endpoint.health.roles). Every other
+                    // endpoint - Flyway's schema-evolution metadata, the /actuator index, and any
+                    // endpoint a deployment exposes later - is an administrator-only operational
+                    // surface. EndpointRequest follows a changed base path or management port.
+                    .requestMatchers(EndpointRequest.to(HealthEndpoint.class, InfoEndpoint.class))
                     .permitAll()
+                    .requestMatchers(EndpointRequest.toAnyEndpoint())
+                    .hasRole("SYSTEM_ADMINISTRATOR")
                     .requestMatchers("/api/v1/setup/**")
                     .permitAll()
                     .requestMatchers("/api/v1/auth/**")
