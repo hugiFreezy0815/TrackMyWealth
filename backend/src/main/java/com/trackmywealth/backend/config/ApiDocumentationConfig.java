@@ -88,29 +88,30 @@ public class ApiDocumentationConfig {
   }
 
   private static ObjectSchema problemSchema() {
-    return new ObjectSchema()
-        .description(
-            "RFC 9457 problem detail extended with a stable application code and correlation id.")
-        .addProperty("title", new StringSchema())
-        .addProperty("status", new IntegerSchema().format("int32"))
-        .addProperty("detail", new StringSchema())
-        .addProperty(
-            "code",
-            new StringSchema()
-                .description("Stable application error code. Existing values are never renamed."))
-        .addProperty(
-            "correlationId",
-            new StringSchema()
-                .description("Request correlation id; quote it when reporting an error."))
-        .addProperty("instance", new StringSchema().format("uri"))
-        .addProperty(
-            "errors",
-            new ArraySchema()
-                .description("Present on bean-validation failures; one entry per rejected field.")
-                .items(
-                    new ObjectSchema()
-                        .addProperty("field", new StringSchema())
-                        .addProperty("message", new StringSchema())));
+    ObjectSchema problem = new ObjectSchema();
+    problem.setDescription(
+        "RFC 9457 problem detail extended with a stable application code and correlation id.");
+    problem.addProperty("title", new StringSchema());
+    problem.addProperty("status", new IntegerSchema().format("int32"));
+    problem.addProperty("detail", new StringSchema());
+    problem.addProperty(
+        "code",
+        new StringSchema()
+            .description("Stable application error code. Existing values are never renamed."));
+    problem.addProperty(
+        "correlationId",
+        new StringSchema().description("Request correlation id; quote it when reporting an error."));
+    problem.addProperty("instance", new StringSchema().format("uri"));
+
+    ObjectSchema validationError = new ObjectSchema();
+    validationError.addProperty("field", new StringSchema());
+    validationError.addProperty("message", new StringSchema());
+    problem.addProperty(
+        "errors",
+        new ArraySchema()
+            .description("Present on bean-validation failures; one entry per rejected field.")
+            .items(validationError));
+    return problem;
   }
 
   private static ApiResponse problemResponse() {
