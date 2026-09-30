@@ -737,7 +737,8 @@ class SharingGrantControllerTest {
                 null,
                 null,
                 null,
-                "VEHICLE"))
+                "VEHICLE",
+                null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -858,7 +859,7 @@ class SharingGrantControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, "Family Home", "CASH", "CHF", null, null, null, null, null, null))
+                null, "Family Home", "CASH", "CHF", null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

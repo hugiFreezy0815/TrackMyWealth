@@ -79,6 +79,10 @@ public class AccountService {
   private static final String PENSION = "PENSION";
   private static final String CUSTOM_ASSET = "CUSTOM_ASSET";
   private static final String ACTIVE = "ACTIVE";
+  // US-10-01: the types whose accounts count as saving by default (the type -> capability mapping
+  // lives in this service, like every other capability default).
+  private static final Set<String> SAVING_ACCOUNT_TYPES =
+      Set.of("SAVINGS", "SECURITIES", "MANAGED_MANDATE", "CRYPTO", PENSION, "VESTED_BENEFITS");
   private static final String ARCHIVED = "ARCHIVED";
   private static final String DELETED = "DELETED";
 
@@ -448,6 +452,13 @@ public class AccountService {
     if (request.holdsPositions() != null) {
       holdsPositions = request.holdsPositions();
     }
+    // US-10-01/FR-CF-003: where money moved in is saving or investing rather than a neutral
+    // transfer between current accounts. A default the member may override either way.
+    boolean countsAsSaving =
+        request.countsAsSaving() != null
+            ? request.countsAsSaving()
+            : SAVING_ACCOUNT_TYPES.contains(request.accountType());
+    account.setCountsAsSaving(countsAsSaving);
 
     account.setHoldsPositions(holdsPositions);
     account.setHasTransactions(hasTransactions);
@@ -541,6 +552,7 @@ public class AccountService {
         account.isHasContributionLimit(),
         account.isDiscretionary(),
         account.isManualValuation(),
+        account.isCountsAsSaving(),
         account.getStatus(),
         account.getArchivedAt());
   }

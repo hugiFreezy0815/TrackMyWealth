@@ -32,4 +32,5 @@ public record SettlementMatchResponse(
     String status,
     String matchBasis,
     OffsetDateTime decidedAt,
-    OffsetDateTime createdAt) {}
+    OffsetDateTime createdAt,
+    String matchKind) {}

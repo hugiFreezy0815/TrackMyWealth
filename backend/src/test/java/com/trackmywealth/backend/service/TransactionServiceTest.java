@@ -61,6 +61,7 @@ class TransactionServiceTest {
           securityRepository,
           mock(CategorizationService.class),
           mock(TransactionCategorizationLogRepository.class),
+          mock(TransferDetectionService.class),
           mock(ObjectMapper.class),
           "ECB");
 
@@ -159,6 +160,8 @@ class TransactionServiceTest {
               SECURITY,
               new BigDecimal("-1"),
               new BigDecimal("5"),
+              null,
+              null,
               null,
               null,
               null,
@@ -426,6 +429,8 @@ class TransactionServiceTest {
         null,
         null,
         null,
+        null,
+        null,
         null);
   }
 
@@ -449,7 +454,9 @@ class TransactionServiceTest {
         tradeDate,
         settlementDate,
         r.grossAmount(),
-        r.taxWithheldAmount());
+        r.taxWithheldAmount(),
+        null,
+        null);
   }
 
   private static CreateTransactionRequest withWithholding(
@@ -472,7 +479,9 @@ class TransactionServiceTest {
         r.tradeDate(),
         r.settlementDate(),
         decimal(grossAmount),
-        decimal(taxWithheldAmount));
+        decimal(taxWithheldAmount),
+        null,
+        null);
   }
 
   private static BigDecimal decimal(String value) {

@@ -328,7 +328,8 @@ class InstitutionControllerTest {
                 null,
                 null,
                 null,
-                "REAL_ESTATE"));
+                "REAL_ESTATE",
+                null));
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("2000")));
     createAccount(
@@ -342,6 +343,7 @@ class InstitutionControllerTest {
             null,
             new BigDecimal("300000"),
             new BigDecimal("1.5"),
+            null,
             null,
             null));
 
@@ -376,7 +378,8 @@ class InstitutionControllerTest {
                 null,
                 null,
                 null,
-                "REAL_ESTATE"));
+                "REAL_ESTATE",
+                null));
     recordValuation(
         token,
         account.id(),
@@ -418,7 +421,8 @@ class InstitutionControllerTest {
                 null,
                 null,
                 null,
-                "REAL_ESTATE"));
+                "REAL_ESTATE",
+                null));
     recordValuation(
         token,
         account.id(),
@@ -452,6 +456,7 @@ class InstitutionControllerTest {
             null,
             null,
             null,
+            null,
             null));
     AccountSummaryResponse asset =
         createAccount(
@@ -466,7 +471,8 @@ class InstitutionControllerTest {
                 null,
                 null,
                 null,
-                "COLLECTIBLE"));
+                "COLLECTIBLE",
+                null));
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("5000")));
 
@@ -505,7 +511,8 @@ class InstitutionControllerTest {
                 null,
                 null,
                 null,
-                "COLLECTIBLE"));
+                "COLLECTIBLE",
+                null));
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
     client(token).post().uri("/api/v1/accounts/" + asset.id() + "/archive").exchange();
@@ -544,7 +551,8 @@ class InstitutionControllerTest {
                 null,
                 null,
                 null,
-                "COLLECTIBLE"));
+                "COLLECTIBLE",
+                null));
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
     // Deliberately no seedFxRate call - USD/CHF has no rate at all, not even a stale one.

@@ -745,7 +745,8 @@ class SecurityControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(null, name, "CASH", "CHF", null, null, null, null, null, null))
+            new CreateAccountRequest(
+                null, name, "CASH", "CHF", null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -859,7 +860,7 @@ class SecurityControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null))
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);

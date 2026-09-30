@@ -22,6 +22,12 @@ import org.springframework.stereotype.Repository;
 public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
   String ACCOUNT_ID = "accountId";
+  String ACCOUNT_IDS = "accountIds";
+  String FROM = "from";
+  String TYPES = "types";
+  String BOOKED_BETWEEN = " and t.bookingDate between :from and :to";
+  String IN_LEDGER_ORDER = " order by t.bookingDate, t.createdAt, t.id";
+  String PER_CURRENCY = " group by t.currency order by t.currency";
 
   // US-07-02: neither a voided original nor its reversing row - the pair nets to zero in a
   // balance, but must not count as spending or pair with a settlement.
@@ -182,6 +188,32 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param(ACCOUNT_ID) UUID accountId, @Param("asOf") LocalDate asOf);
 
   /**
+   * US-10-01: the workspace's rows booked in [{@code from}, {@code to}] that could be one leg of an
+   * own-account transfer still to be matched - a debit of {@code debitTypes} or a credit of {@code
+   * creditTypes}, not voided or reversing, not on a card (cards settle through US-09-02's
+   * matching), not already linked to a counterpart account, and not already in a confirmed match or
+   * an open card settlement. A leg confirmed as a transfer to an untracked account is flagged but
+   * has no counterpart account, so it stays a candidate for a later counterpart.
+   */
+  @Query(
+      "select t from Transaction t join fetch t.account a where t.workspace.id = :workspaceId"
+          + BOOKED_BETWEEN
+          + NOT_VOIDED_OR_REVERSAL
+          + " and a.hasStatementCycle = false and t.counterpartyAccountId is null"
+          + " and ((t.amount < 0 and t.transactionType in :debitTypes)"
+          + " or (t.amount > 0 and t.transactionType in :creditTypes))"
+          + " and not exists (select 1 from SettlementMatch m where (m.status = 'CONFIRMED'"
+          + " or (m.status = 'PROPOSED' and m.matchKind = 'CARD_SETTLEMENT'))"
+          + " and (m.paymentTransaction = t or m.cardTransaction = t))"
+          + IN_LEDGER_ORDER)
+  List<Transaction> findTransferCandidates(
+      @Param("workspaceId") UUID workspaceId,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to,
+      @Param("debitTypes") Collection<String> debitTypes,
+      @Param("creditTypes") Collection<String> creditTypes);
+
+  /**
    * Payments that can pair with a card credit of {@code -amount} (US-09-02): the non-voided rows of
    * {@code types} on the card's settlement-source account, in {@code currency}, of exactly {@code
    * amount}, booked in [{@code from}, {@code to}] and not already half of a CONFIRMED
@@ -192,18 +224,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    */
   @Query(
       "select t from Transaction t where t.account.id = :accountId and t.amount = :amount"
-          + " and t.bookingDate between :from and :to"
+          + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
           + " and t.currency = :currency and t.transactionType in :types"
           + " and not exists (select 1 from SettlementMatch m where m.status = 'CONFIRMED'"
           + " and m.cardTransaction is not null and m.paymentTransaction = t)"
-          + " order by t.bookingDate, t.createdAt, t.id")
+          + IN_LEDGER_ORDER)
   List<Transaction> findPairablePayments(
       @Param(ACCOUNT_ID) UUID accountId,
       @Param("currency") String currency,
-      @Param("types") Collection<String> types,
+      @Param(TYPES) Collection<String> types,
       @Param("amount") BigDecimal amount,
-      @Param("from") LocalDate from,
+      @Param(FROM) LocalDate from,
       @Param("to") LocalDate to);
 
   /**
@@ -229,12 +261,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + " where m.cardAccount.id = :cardAccountId and m.paymentTransaction = t)"
           + " and (select sum(c.amount * coalesce(c.fxRateToAccountCurrency, 1)) from Transaction c"
           + " where c.account.id = :cardAccountId and c.bookingDate <= t.bookingDate) = t.amount"
-          + " order by t.bookingDate, t.createdAt, t.id")
+          + IN_LEDGER_ORDER)
   List<Transaction> findPaymentsEqualToCardBalance(
       @Param("sourceAccountId") UUID sourceAccountId,
       @Param("cardAccountId") UUID cardAccountId,
       @Param("currency") String currency,
-      @Param("types") Collection<String> types,
+      @Param(TYPES) Collection<String> types,
       @Param("since") LocalDate since);
 
   /**
@@ -246,7 +278,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + " and t.currency = :currency and t.transactionType = 'SETTLEMENT'"
           + " and not exists (select 1 from SettlementMatch m where m.status = 'CONFIRMED'"
           + " and m.cardTransaction = t)"
-          + " order by t.bookingDate, t.createdAt, t.id")
+          + IN_LEDGER_ORDER)
   List<Transaction> findUnmatchedCardCredits(
       @Param(ACCOUNT_ID) UUID accountId, @Param("currency") String currency);
 
@@ -264,35 +296,79 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   @Query(
       "select t.currency, sum(t.amount) from Transaction t where t.account.id in :accountIds"
           + " and t.transactionType in :types and t.internalTransfer = false"
-          + " and t.bookingDate between :from and :to"
+          + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
           + " and not exists (select 1 from SettlementMatch m"
           + " where m.status = 'PROPOSED' and m.paymentTransaction = t)"
-          + " group by t.currency order by t.currency")
+          + PER_CURRENCY)
   List<Object[]> sumSpendingByCurrency(
-      @Param("accountIds") Collection<UUID> accountIds,
-      @Param("types") Collection<String> types,
-      @Param("from") LocalDate from,
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
+      @Param(TYPES) Collection<String> types,
+      @Param(FROM) LocalDate from,
       @Param("to") LocalDate to);
 
   /**
-   * Signed sum per currency of payments that look like a card settlement but are not resolved: a
-   * negative row typed {@code SETTLEMENT}, or one with a PROPOSED match, that is not yet flagged an
-   * internal transfer (FR-CF-004/005 data-quality rule). A voided row is no longer unresolved, and
-   * neither is its reversing row: voiding a card-side SETTLEMENT credit (+500) adds a -500
-   * SETTLEMENT reversal, which would otherwise count as an unresolved payment. Each element is
-   * {@code [currency, sum]}.
+   * US-10-01/FR-CF-004/005: sum per currency, as positive magnitudes, of everything in [{@code
+   * from}, {@code to}] that awaits a member's decision before it can count as spending, income or a
+   * transfer: a negative {@code SETTLEMENT}, or a payment of any open proposal (card settlement or
+   * transfer); and an unlinked {@code TRANSFER}/{@code PENSION_CONTRIBUTION} leg - except the
+   * credit leg of a proposed transfer pair, whose debit already stands for the pair. Internal
+   * transfers, voided rows and reversals are resolved and left out. Each element is {@code
+   * [currency, sum]}.
+   */
+  @Query(
+      "select t.currency, sum(abs(t.amount)) from Transaction t where t.account.id in :accountIds"
+          + " and t.internalTransfer = false and t.bookingDate between :from and :to"
+          + NOT_VOIDED_OR_REVERSAL
+          + " and ((t.amount < 0 and (t.transactionType = 'SETTLEMENT' or exists (select 1 from"
+          + " SettlementMatch m where m.status = 'PROPOSED' and m.paymentTransaction = t)))"
+          + " or (t.transactionType in ('TRANSFER', 'PENSION_CONTRIBUTION') and not exists"
+          + " (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
+          + " and m.matchKind = 'TRANSFER' and m.cardTransaction = t)))"
+          + PER_CURRENCY)
+  List<Object[]> sumPendingReviewByCurrency(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to);
+
+  /**
+   * US-10-01: signed income per currency - {@code types} rows in [{@code from}, {@code to}] that
+   * are not an internal transfer and not the incoming leg of a transfer pair still awaiting a
+   * decision (that pair is pending review). Each element is {@code [currency, sum]}.
    */
   @Query(
       "select t.currency, sum(t.amount) from Transaction t where t.account.id in :accountIds"
-          + " and t.internalTransfer = false and t.amount < 0"
+          + " and t.transactionType in :types and t.internalTransfer = false"
+          + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
-          + " and t.bookingDate between :from and :to"
-          + " and (t.transactionType = 'SETTLEMENT' or exists (select 1 from SettlementMatch m"
-          + " where m.status = 'PROPOSED' and m.paymentTransaction = t))"
-          + " group by t.currency order by t.currency")
-  List<Object[]> sumUnresolvedSettlementsByCurrency(
-      @Param("accountIds") Collection<UUID> accountIds,
-      @Param("from") LocalDate from,
+          + " and not exists (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
+          + " and m.matchKind = 'TRANSFER' and m.cardTransaction = t)"
+          + PER_CURRENCY)
+  List<Object[]> sumIncomeByCurrency(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
+      @Param(TYPES) Collection<String> types,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to);
+
+  /**
+   * US-10-01/FR-CF-003: per currency, the incoming legs of linked internal transfers in [{@code
+   * from}, {@code to}] whose own account's {@code counts_as_saving} is {@code intoSaving} and whose
+   * counterparty account's is the opposite - money moved into saving ({@code true}) or back out of
+   * it ({@code false}). A transfer between two alike accounts, or to an untracked one, is in
+   * neither. Each element is {@code [currency, sum]}.
+   */
+  @Query(
+      "select t.currency, sum(t.amount) from Transaction t where t.account.id in :accountIds"
+          + " and t.internalTransfer = true and t.amount > 0 and t.counterpartyAccountId is not null"
+          + BOOKED_BETWEEN
+          + NOT_VOIDED_OR_REVERSAL
+          + " and t.account.countsAsSaving = :intoSaving"
+          + " and exists (select 1 from Account c where c.id = t.counterpartyAccountId"
+          + " and c.countsAsSaving <> :intoSaving)"
+          + PER_CURRENCY)
+  List<Object[]> sumSavingMovementsByCurrency(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
+      @Param("intoSaving") boolean intoSaving,
+      @Param(FROM) LocalDate from,
       @Param("to") LocalDate to);
 }

@@ -27,6 +27,16 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   @Query("SELECT m FROM SettlementMatch m WHERE m.id = :id")
   Optional<SettlementMatch> findByIdForUpdate(@Param("id") UUID id);
 
+  /**
+   * US-10-01: every transfer match, any status, one of whose legs is among {@code ids} - detection
+   * needs the rejected ones too, since a rejected pair is never proposed again. {@code ids} must
+   * not be empty.
+   */
+  @Query(
+      "SELECT m FROM SettlementMatch m WHERE m.matchKind = 'TRANSFER'"
+          + " AND (m.paymentTransaction.id IN :ids OR m.cardTransaction.id IN :ids)")
+  List<SettlementMatch> findTransferMatchesTouching(@Param("ids") Collection<UUID> ids);
+
   /** US-07-02: every match, any status, one of whose legs is the given transaction. */
   @Query(
       "SELECT m FROM SettlementMatch m"
@@ -54,7 +64,7 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   @Query(
       "SELECT m FROM SettlementMatch m JOIN FETCH m.cardAccount JOIN FETCH m.paymentTransaction p"
           + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction c"
-          + " WHERE m.cardAccount.id = :cardAccountId"
+          + " WHERE m.cardAccount.id = :cardAccountId AND m.matchKind = 'CARD_SETTLEMENT'"
           + HIDDEN_LEG_EXCLUDED
           + " ORDER BY m.createdAt DESC, m.id DESC")
   List<SettlementMatch> findByCardAccountId(@Param("cardAccountId") UUID cardAccountId);
@@ -66,6 +76,7 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   @Query(
       "SELECT m FROM SettlementMatch m JOIN FETCH m.paymentTransaction p"
           + " WHERE m.cardAccount.id = :cardAccountId AND m.status = 'CONFIRMED'"
+          + " AND m.matchKind = 'CARD_SETTLEMENT'"
           + " AND p.bookingDate BETWEEN :from AND :to")
   List<SettlementMatch> findConfirmedByCardAccountIdAndPaymentBookingDateBetween(
       @Param("cardAccountId") UUID cardAccountId,

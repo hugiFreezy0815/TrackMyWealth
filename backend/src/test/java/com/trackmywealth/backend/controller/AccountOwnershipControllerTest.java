@@ -559,7 +559,7 @@ class AccountOwnershipControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, "Family Home", "CASH", "CHF", null, null, null, null, null, null))
+                null, "Family Home", "CASH", "CHF", null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

@@ -14,6 +14,8 @@ import java.util.UUID;
  * {@code account_type}-driven default - meaningful for any type, but the one case that actually
  * needs it today is {@code PENSION}: whether a Pillar 3a account holds positions depends on the
  * provider (a VIAC account does, a PostFinance one may not), not on the type alone (US-05-04).
+ * {@code countsAsSaving} (US-10-01) likewise overrides whether money moved into the account counts
+ * as saving in cash flow - on by default for savings, depot, mandate, crypto and pension accounts.
  *
  * <p>The remaining fields are extension-table attributes that are only required for specific {@code
  * account_type}s, because their underlying columns are {@code NOT NULL} with no sensible type-wide
@@ -41,7 +43,8 @@ public record CreateAccountRequest(
     @Pattern(regexp = "CH_PILLAR_3A|CH_PILLAR_2_VESTED_BENEFITS|DE_RIESTER|DE_RUERUP|DE_BAV|OTHER")
         String pensionScheme,
     @Pattern(regexp = "REAL_ESTATE|VEHICLE|PRECIOUS_METAL|COLLECTIBLE|OTHER")
-        String customAssetType) {
+        String customAssetType,
+    Boolean countsAsSaving) {
 
   public CreateAccountRequest {
     name = RequestStrings.blankToNull(name);

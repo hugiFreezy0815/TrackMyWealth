@@ -132,17 +132,17 @@ class AccountControllerTest {
     return Stream.of(
         Arguments.of(
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null),
+                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null, null),
             new ExpectedCapabilities(
                 false, true, false, false, false, false, false, "ASSET", null)),
         Arguments.of(
             new CreateAccountRequest(
-                null, "Savings", "SAVINGS", "CHF", null, null, null, null, null, null),
+                null, "Savings", "SAVINGS", "CHF", null, null, null, null, null, null, null),
             new ExpectedCapabilities(
                 false, true, false, false, false, false, false, "ASSET", null)),
         Arguments.of(
             new CreateAccountRequest(
-                null, "Depot", "SECURITIES", "CHF", null, null, null, null, null, null),
+                null, "Depot", "SECURITIES", "CHF", null, null, null, null, null, null, null),
             new ExpectedCapabilities(
                 true, true, false, false, false, false, false, "ASSET", "account_securities")),
         Arguments.of(
@@ -156,12 +156,23 @@ class AccountControllerTest {
                 null,
                 null,
                 null,
+                null,
                 null),
             new ExpectedCapabilities(
                 true, true, false, false, false, true, false, "ASSET", "account_securities")),
         Arguments.of(
             new CreateAccountRequest(
-                null, "Pillar 3a", "PENSION", "CHF", null, null, null, null, "CH_PILLAR_3A", null),
+                null,
+                "Pillar 3a",
+                "PENSION",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                "CH_PILLAR_3A",
+                null,
+                null),
             new ExpectedCapabilities(
                 false, true, false, false, true, false, false, "ASSET", "account_pension")),
         Arguments.of(
@@ -170,6 +181,7 @@ class AccountControllerTest {
                 "Vested Benefits",
                 "VESTED_BENEFITS",
                 "CHF",
+                null,
                 null,
                 null,
                 null,
@@ -188,7 +200,7 @@ class AccountControllerTest {
                 "account_vested_benefits")),
         Arguments.of(
             new CreateAccountRequest(
-                null, "Visa Card", "CREDIT_CARD", "CHF", null, null, null, null, null, null),
+                null, "Visa Card", "CREDIT_CARD", "CHF", null, null, null, null, null, null, null),
             new ExpectedCapabilities(
                 false, true, true, false, false, false, false, "LIABILITY", "account_credit_card")),
         Arguments.of(
@@ -201,6 +213,7 @@ class AccountControllerTest {
                 null,
                 BigDecimal.valueOf(500000),
                 BigDecimal.valueOf(1.5),
+                null,
                 null,
                 null),
             new ExpectedCapabilities(
@@ -216,12 +229,13 @@ class AccountControllerTest {
                 BigDecimal.valueOf(10000),
                 null,
                 null,
+                null,
                 null),
             new ExpectedCapabilities(
                 false, true, false, true, false, false, false, "LIABILITY", "account_loan")),
         Arguments.of(
             new CreateAccountRequest(
-                null, "Crypto Wallet", "CRYPTO", "CHF", null, null, null, null, null, null),
+                null, "Crypto Wallet", "CRYPTO", "CHF", null, null, null, null, null, null, null),
             new ExpectedCapabilities(true, true, false, false, false, false, false, "ASSET", null)),
         Arguments.of(
             new CreateAccountRequest(
@@ -234,7 +248,8 @@ class AccountControllerTest {
                 null,
                 null,
                 null,
-                "REAL_ESTATE"),
+                "REAL_ESTATE",
+                null),
             new ExpectedCapabilities(
                 false, false, false, false, false, false, true, "ASSET", "account_custom_asset")));
   }
@@ -298,6 +313,7 @@ class AccountControllerTest {
                 null,
                 null,
                 "CH_PILLAR_3A",
+                null,
                 null));
 
     assertThat(created.holdsPositions()).isTrue();
@@ -322,6 +338,7 @@ class AccountControllerTest {
                 null,
                 null,
                 "CH_PILLAR_2_VESTED_BENEFITS",
+                null,
                 null));
     AccountSummaryResponse nonOccupational =
         createAccount(
@@ -336,6 +353,7 @@ class AccountControllerTest {
                 null,
                 null,
                 "CH_PILLAR_3A",
+                null,
                 null));
 
     assertThat(isOccupational(occupational.id())).isTrue();
@@ -350,7 +368,7 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Amex", "CREDIT_CARD", "USD", null, null, null, null, null, null));
+                null, "Amex", "CREDIT_CARD", "USD", null, null, null, null, null, null, null));
 
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
@@ -383,6 +401,7 @@ class AccountControllerTest {
                 null,
                 BigDecimal.valueOf(1.5),
                 null,
+                null,
                 null))
         .exchange()
         .expectStatus()
@@ -399,7 +418,17 @@ class AccountControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, "Nameless Pension", "PENSION", "CHF", null, null, null, null, null, null))
+                null,
+                "Nameless Pension",
+                "PENSION",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.BAD_REQUEST);
@@ -413,7 +442,7 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Unassigned Cash", "CASH", "CHF", null, null, null, null, null, null));
+                null, "Unassigned Cash", "CASH", "CHF", null, null, null, null, null, null, null));
 
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
@@ -440,7 +469,7 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Visa Card", "CREDIT_CARD", "CHF", null, null, null, null, null, null));
+                null, "Visa Card", "CREDIT_CARD", "CHF", null, null, null, null, null, null, null));
 
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
@@ -464,7 +493,7 @@ class AccountControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, "Nope", "CASH", "CHF", null, null, null, null, null, null))
+                null, "Nope", "CASH", "CHF", null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.UNAUTHORIZED);
@@ -480,7 +509,17 @@ class AccountControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                UUID.randomUUID(), "Orphan", "CASH", "CHF", null, null, null, null, null, null))
+                UUID.randomUUID(),
+                "Orphan",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
@@ -495,7 +534,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
 
     client(token)
         .put()
@@ -522,7 +571,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
 
     client(token)
         .put()
@@ -546,7 +605,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
 
     AccountSummaryResponse updated =
         client(token)
@@ -608,7 +677,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
 
     AccountSummaryResponse archived =
         client(token)
@@ -650,7 +729,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
     client(token).post().uri("/api/v1/accounts/" + created.id() + "/archive").exchange();
     backdateArchivedAt(created.id(), 31);
 
@@ -671,7 +760,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
     client(token).post().uri("/api/v1/accounts/" + created.id() + "/archive").exchange();
 
     client(token)
@@ -693,7 +792,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
     setStatusDirectly(created.id(), "DELETED");
 
     client(token)
@@ -711,7 +820,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
 
     client(token)
         .post()
@@ -774,6 +893,7 @@ class AccountControllerTest {
                 BigDecimal.valueOf(500000),
                 BigDecimal.valueOf(1.5),
                 null,
+                null,
                 null));
 
     InstitutionSummaryResponse beforeA = getInstitutionSummary(token, institutionA.id());
@@ -809,7 +929,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
 
     client(token)
         .post()
@@ -851,7 +981,17 @@ class AccountControllerTest {
         createAccount(
             token,
             new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null));
+                null,
+                "Everyday Checking",
+                "CASH",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
     FinancialInstitutionSummaryResponse destination =
         createInstitution(
             token,
@@ -894,6 +1034,7 @@ class AccountControllerTest {
                 null,
                 null,
                 null,
+                null,
                 null));
     AccountSummaryResponse securities =
         createAccount(
@@ -903,6 +1044,7 @@ class AccountControllerTest {
                 "Fund Depot",
                 "SECURITIES",
                 "CHF",
+                null,
                 null,
                 null,
                 null,
@@ -922,6 +1064,7 @@ class AccountControllerTest {
                 null,
                 null,
                 "CH_PILLAR_3A",
+                null,
                 null));
     AccountSummaryResponse pillar3aSecond =
         createAccount(
@@ -936,6 +1079,7 @@ class AccountControllerTest {
                 null,
                 null,
                 "CH_PILLAR_3A",
+                null,
                 null));
 
     assertThat(List.of(cash, securities, pillar3aFirst, pillar3aSecond))

@@ -1094,7 +1094,7 @@ class CategorizationControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, accountType, accountType, "CHF", null, null, null, null, null, null))
+                null, accountType, accountType, "CHF", null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

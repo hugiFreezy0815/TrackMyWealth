@@ -348,7 +348,8 @@ class CustomAssetValuationControllerTest {
                 null,
                 null,
                 null,
-                "VEHICLE"))
+                "VEHICLE",
+                null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -368,6 +369,7 @@ class CustomAssetValuationControllerTest {
                 "Everyday Checking",
                 "CASH",
                 nativeCurrency,
+                null,
                 null,
                 null,
                 null,

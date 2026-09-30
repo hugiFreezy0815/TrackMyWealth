@@ -50,6 +50,7 @@ public class SettlementMatchService {
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final SettlementMatchRepository settlementMatchRepository;
   private final SettlementDetectionService settlementDetectionService;
+  private final TransferDetectionService transferDetectionService;
   private final Clock clock;
 
   public SettlementMatchService(
@@ -59,6 +60,7 @@ public class SettlementMatchService {
       AccountCreditCardRepository accountCreditCardRepository,
       SettlementMatchRepository settlementMatchRepository,
       SettlementDetectionService settlementDetectionService,
+      TransferDetectionService transferDetectionService,
       Clock clock) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -66,6 +68,7 @@ public class SettlementMatchService {
     this.accountCreditCardRepository = accountCreditCardRepository;
     this.settlementMatchRepository = settlementMatchRepository;
     this.settlementDetectionService = settlementDetectionService;
+    this.transferDetectionService = transferDetectionService;
     this.clock = clock;
   }
 
@@ -223,7 +226,13 @@ public class SettlementMatchService {
     if (wasConfirmed) {
       settlementDetectionService.clearFlags(match);
     }
-    settlementDetectionService.detectForCard(match.getCardAccount().getId());
+    if (match.isTransfer()) {
+      // US-10-01: the freed legs may pair differently now; a rejected pair itself never returns.
+      transferDetectionService.detectAround(
+          match.getWorkspace().getId(), match.getPaymentTransaction().getBookingDate());
+    } else {
+      settlementDetectionService.detectForCard(match.getCardAccount().getId());
+    }
     return toResponse(match);
   }
 
@@ -328,6 +337,7 @@ public class SettlementMatchService {
         match.getStatus(),
         match.getMatchBasis(),
         match.getDecidedAt(),
-        match.getCreatedAt());
+        match.getCreatedAt(),
+        match.getMatchKind());
   }
 }

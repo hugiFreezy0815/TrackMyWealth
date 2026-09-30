@@ -1016,6 +1016,7 @@ class TransactionControllerTest {
                     new BigDecimal("500000.00"),
                     new BigDecimal("1.5"),
                     null,
+                    null,
                     null))
             .exchange()
             .expectStatus()
@@ -1146,20 +1147,14 @@ class TransactionControllerTest {
 
   @Test
   void typesThatBelongToLaterStoriesAreRejectedOnACashAccount() {
-    // TRANSFER/DEBT_REPAYMENT/PENSION_CONTRIBUTION -> US-10-01; BUY/SELL/DIVIDEND need an account
-    // that holds positions.
+    // DEBT_REPAYMENT -> US-10-02; a PENSION_CONTRIBUTION without its pension account is incomplete;
+    // BUY/SELL/DIVIDEND need an account that holds positions.
     String token = bootstrapAdministrator();
     AccountSummaryResponse cash = createCashAccount(token);
 
     for (String type :
         List.of(
-            "TRANSFER",
-            "DEBT_REPAYMENT",
-            "PENSION_CONTRIBUTION",
-            "BUY",
-            "SELL",
-            "DIVIDEND",
-            "NOT_A_TYPE")) {
+            "DEBT_REPAYMENT", "PENSION_CONTRIBUTION", "BUY", "SELL", "DIVIDEND", "NOT_A_TYPE")) {
       postTransaction(token, cash.id(), cashTransaction(type, "-10.00", "CHF"))
           .expectStatus()
           .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
@@ -2128,7 +2123,17 @@ class TransactionControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, "VIAC 3a", "PENSION", "CHF", true, null, null, null, "CH_PILLAR_3A", null))
+                null,
+                "VIAC 3a",
+                "PENSION",
+                "CHF",
+                true,
+                null,
+                null,
+                null,
+                "CH_PILLAR_3A",
+                null,
+                null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -2190,6 +2195,8 @@ class TransactionControllerTest {
         null,
         null,
         null,
+        null,
+        null,
         null);
   }
 
@@ -2223,7 +2230,9 @@ class TransactionControllerTest {
         tradeDate,
         settlementDate,
         decimal(grossAmount),
-        decimal(taxWithheldAmount));
+        decimal(taxWithheldAmount),
+        null,
+        null);
   }
 
   private CreateTransactionRequest dividend(
@@ -2276,6 +2285,8 @@ class TransactionControllerTest {
         null,
         null,
         null,
+        null,
+        null,
         null);
   }
 
@@ -2299,7 +2310,9 @@ class TransactionControllerTest {
         request.tradeDate(),
         request.settlementDate(),
         request.grossAmount(),
-        request.taxWithheldAmount());
+        request.taxWithheldAmount(),
+        null,
+        null);
   }
 
   // A 422 and nothing recorded. Which rule rejected the request is asserted on the service
@@ -2443,6 +2456,7 @@ class TransactionControllerTest {
                 null,
                 null,
                 null,
+                null,
                 null))
         .exchange()
         .expectStatus()
@@ -2472,6 +2486,7 @@ class TransactionControllerTest {
                 new BigDecimal("10000"),
                 null,
                 null,
+                null,
                 null))
         .exchange()
         .expectStatus()
@@ -2488,7 +2503,17 @@ class TransactionControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, "Pillar 3a", "PENSION", "CHF", null, null, null, null, "CH_PILLAR_3A", null))
+                null,
+                "Pillar 3a",
+                "PENSION",
+                "CHF",
+                null,
+                null,
+                null,
+                null,
+                "CH_PILLAR_3A",
+                null,
+                null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -2514,7 +2539,17 @@ class TransactionControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, name, accountType, currency, null, null, null, null, null, customAssetType))
+                null,
+                name,
+                accountType,
+                currency,
+                null,
+                null,
+                null,
+                null,
+                null,
+                customAssetType,
+                null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

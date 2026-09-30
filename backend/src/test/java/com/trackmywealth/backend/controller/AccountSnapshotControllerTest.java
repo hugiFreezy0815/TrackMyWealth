@@ -548,7 +548,7 @@ class AccountSnapshotControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, name, accountType, "CHF", null, null, null, null, null, null))
+                null, name, accountType, "CHF", null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

@@ -82,6 +82,11 @@ public class Account {
   @Column(name = "manual_valuation", nullable = false)
   private boolean manualValuation;
 
+  // US-10-01/FR-CF-003: money moved into such an account is saving or investing, not a neutral
+  // internal transfer (V41). A declared capability like the others, overridable per account.
+  @Column(name = "counts_as_saving", nullable = false)
+  private boolean countsAsSaving;
+
   @Column(name = "identifier_masked")
   private String identifierMasked;
 
@@ -220,6 +225,14 @@ public class Account {
 
   public void setManualValuation(boolean manualValuation) {
     this.manualValuation = manualValuation;
+  }
+
+  public boolean isCountsAsSaving() {
+    return countsAsSaving;
+  }
+
+  public void setCountsAsSaving(boolean countsAsSaving) {
+    this.countsAsSaving = countsAsSaving;
   }
 
   public String getStatus() {

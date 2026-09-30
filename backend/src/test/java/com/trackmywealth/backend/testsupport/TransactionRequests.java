@@ -44,6 +44,8 @@ public final class TransactionRequests {
         null,
         null,
         null,
+        null,
+        null,
         null);
   }
 }

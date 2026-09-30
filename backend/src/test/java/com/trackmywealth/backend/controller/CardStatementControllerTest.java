@@ -373,7 +373,7 @@ class CardStatementControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CreateAccountRequest(
-                null, name, accountType, currency, null, null, null, null, null, null))
+                null, name, accountType, currency, null, null, null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

@@ -70,4 +70,5 @@ public record TransactionResponse(
     OffsetDateTime voidedAt,
     String voidReason,
     UUID replacesTransactionId,
-    OffsetDateTime deletedAt) {}
+    OffsetDateTime deletedAt,
+    UUID counterpartyAccountId) {}
