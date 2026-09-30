@@ -30,5 +30,10 @@ public record JwtProperties(
       throw new IllegalArgumentException(
           "JWT_SECRET must contain at least 32 bytes of key material for JWT HMAC signing.");
     }
+    if (secret.chars().distinct().count() < 4) {
+      throw new IllegalArgumentException(
+          "JWT_SECRET is trivially low-entropy. Generate cryptographically random key material"
+              + " (for example: openssl rand -base64 32).");
+    }
   }
 }
