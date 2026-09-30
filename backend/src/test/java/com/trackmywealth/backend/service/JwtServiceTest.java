@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.config.JwtProperties;
 import com.trackmywealth.backend.security.AccessTokenClaims;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
@@ -40,7 +41,7 @@ class JwtServiceTest {
   @Test
   void tokenFromDifferentIssuerIsRejected() {
     String token =
-        tokenBuilder()
+        validTokenBuilder()
             .issuer("other-service")
             .claim("tokenVersion", 7)
             .claim("sessionId", SESSION_ID.toString())
@@ -51,10 +52,15 @@ class JwtServiceTest {
 
   @Test
   void tokenWithoutIssuerIsRejected() {
+    Instant now = Instant.now();
     String token =
-        tokenBuilder()
+        Jwts.builder()
+            .subject(USER_ID.toString())
+            .issuedAt(Date.from(now))
+            .expiration(Date.from(now.plus(15, ChronoUnit.MINUTES)))
             .claim("tokenVersion", 7)
             .claim("sessionId", SESSION_ID.toString())
+            .signWith(signingKey)
             .compact();
 
     assertThat(service.parseAccessToken(token)).isEmpty();
@@ -62,11 +68,12 @@ class JwtServiceTest {
 
   @Test
   void tokenWithoutSubjectIsRejected() {
+    Instant now = Instant.now();
     String token =
         Jwts.builder()
             .issuer(ISSUER)
-            .issuedAt(Date.from(now()))
-            .expiration(Date.from(now().plus(15, ChronoUnit.MINUTES)))
+            .issuedAt(Date.from(now))
+            .expiration(Date.from(now.plus(15, ChronoUnit.MINUTES)))
             .claim("tokenVersion", 7)
             .claim("sessionId", SESSION_ID.toString())
             .signWith(signingKey)
@@ -78,7 +85,7 @@ class JwtServiceTest {
   @Test
   void tokenWithMalformedSubjectIsRejected() {
     String token =
-        tokenBuilder()
+        validTokenBuilder()
             .subject("not-a-uuid")
             .claim("tokenVersion", 7)
             .claim("sessionId", SESSION_ID.toString())
@@ -89,7 +96,7 @@ class JwtServiceTest {
 
   @Test
   void tokenWithoutSessionIdIsRejected() {
-    String token = tokenBuilder().claim("tokenVersion", 7).compact();
+    String token = validTokenBuilder().claim("tokenVersion", 7).compact();
 
     assertThat(service.parseAccessToken(token)).isEmpty();
   }
@@ -97,7 +104,7 @@ class JwtServiceTest {
   @Test
   void tokenWithMalformedSessionIdIsRejected() {
     String token =
-        tokenBuilder()
+        validTokenBuilder()
             .claim("tokenVersion", 7)
             .claim("sessionId", "not-a-uuid")
             .compact();
@@ -107,7 +114,7 @@ class JwtServiceTest {
 
   @Test
   void tokenWithoutTokenVersionIsRejected() {
-    String token = tokenBuilder().claim("sessionId", SESSION_ID.toString()).compact();
+    String token = validTokenBuilder().claim("sessionId", SESSION_ID.toString()).compact();
 
     assertThat(service.parseAccessToken(token)).isEmpty();
   }
@@ -115,7 +122,7 @@ class JwtServiceTest {
   @Test
   void tokenWithWrongTokenVersionTypeIsRejected() {
     String token =
-        tokenBuilder()
+        validTokenBuilder()
             .claim("tokenVersion", "seven")
             .claim("sessionId", SESSION_ID.toString())
             .compact();
@@ -125,11 +132,12 @@ class JwtServiceTest {
 
   @Test
   void tokenWithoutIssuedAtIsRejected() {
+    Instant now = Instant.now();
     String token =
         Jwts.builder()
             .subject(USER_ID.toString())
             .issuer(ISSUER)
-            .expiration(Date.from(now().plus(15, ChronoUnit.MINUTES)))
+            .expiration(Date.from(now.plus(15, ChronoUnit.MINUTES)))
             .claim("tokenVersion", 7)
             .claim("sessionId", SESSION_ID.toString())
             .signWith(signingKey)
@@ -144,7 +152,7 @@ class JwtServiceTest {
         Jwts.builder()
             .subject(USER_ID.toString())
             .issuer(ISSUER)
-            .issuedAt(Date.from(now()))
+            .issuedAt(new Date())
             .claim("tokenVersion", 7)
             .claim("sessionId", SESSION_ID.toString())
             .signWith(signingKey)
@@ -155,7 +163,7 @@ class JwtServiceTest {
 
   @Test
   void expiredTokenIsRejected() {
-    Instant issuedAt = now().minus(20, ChronoUnit.MINUTES);
+    Instant issuedAt = Instant.now().minus(20, ChronoUnit.MINUTES);
     String token =
         Jwts.builder()
             .subject(USER_ID.toString())
@@ -179,8 +187,8 @@ class JwtServiceTest {
         Jwts.builder()
             .subject(USER_ID.toString())
             .issuer(ISSUER)
-            .issuedAt(Date.from(now()))
-            .expiration(Date.from(now().plus(15, ChronoUnit.MINUTES)))
+            .issuedAt(new Date())
+            .expiration(Date.from(Instant.now().plus(15, ChronoUnit.MINUTES)))
             .claim("tokenVersion", 7)
             .claim("sessionId", SESSION_ID.toString())
             .signWith(otherKey)
@@ -189,16 +197,13 @@ class JwtServiceTest {
     assertThat(service.parseAccessToken(token)).isEmpty();
   }
 
-  private io.jsonwebtoken.JwtBuilder tokenBuilder() {
-    Instant now = now();
+  private JwtBuilder validTokenBuilder() {
+    Instant now = Instant.now();
     return Jwts.builder()
         .subject(USER_ID.toString())
+        .issuer(ISSUER)
         .issuedAt(Date.from(now))
         .expiration(Date.from(now.plus(15, ChronoUnit.MINUTES)))
         .signWith(signingKey);
-  }
-
-  private Instant now() {
-    return Instant.now();
   }
 }
