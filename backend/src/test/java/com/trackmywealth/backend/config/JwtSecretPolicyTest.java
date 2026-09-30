@@ -81,6 +81,19 @@ class JwtSecretPolicyTest {
   }
 
   @Test
+  void hostedTopologyRejectsPlaceholderEvenWhenDevProfileIsActive() {
+    JwtProperties properties = properties(JwtSecretPolicy.PLACEHOLDER_SECRET);
+    MockEnvironment environment = new MockEnvironment();
+    environment.setActiveProfiles("dev");
+    environment.setProperty("app.deployment.topology", "hosted");
+
+    assertThatThrownBy(() -> new JwtSecretPolicy(properties, environment))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("JWT_SECRET")
+        .hasMessageContaining("hosted");
+  }
+
+  @Test
   void publicPlaceholderIsRejectedForHostedDeploymentToo() {
     JwtProperties properties = properties(JwtSecretPolicy.PLACEHOLDER_SECRET);
     MockEnvironment environment = new MockEnvironment();
