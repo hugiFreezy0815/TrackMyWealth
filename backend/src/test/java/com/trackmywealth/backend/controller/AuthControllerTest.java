@@ -353,6 +353,7 @@ class AuthControllerTest {
       // reuse attempt, so the safe response is the same either way.
       assertThat(tokensInFamily(familyId))
           .allSatisfy(token -> assertThat(token.isTheftSuspected()).isTrue());
+      assertThat(sessionStatusForRefreshTokenFamily(familyId)).isEqualTo("REVOKED");
     } finally {
       executor.shutdownNow();
     }
