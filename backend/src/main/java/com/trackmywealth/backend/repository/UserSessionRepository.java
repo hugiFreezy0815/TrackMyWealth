@@ -28,9 +28,15 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
   // concurrent US-02-03 session revoke had already set them in the meantime (confirmed: this was
   // the exact bug before this fix - a refresh racing a revoke of the same session could
   // resurrect it to ACTIVE).
+  //
+  // #190: only an ACTIVE session is ever repointed. Theft detection's family-wide token update
+  // cannot see a token a concurrent legitimate rotation inserts but has not yet committed, so that
+  // new token can survive the sweep while its session is revoked right after. 0 rows here is how
+  // TokenRotationService recognises such a token on its next use and kills it instead of rotating.
   @Modifying
   @Query(
-      "UPDATE UserSession s SET s.refreshToken = :refreshToken, s.lastSeenAt = :lastSeenAt WHERE s.id = :id")
+      "UPDATE UserSession s SET s.refreshToken = :refreshToken, s.lastSeenAt = :lastSeenAt "
+          + "WHERE s.id = :id AND s.status = 'ACTIVE'")
   int repointRefreshToken(
       @Param("id") UUID id,
       @Param("refreshToken") RefreshToken refreshToken,

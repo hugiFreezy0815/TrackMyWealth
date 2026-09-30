@@ -256,7 +256,8 @@ class AuthControllerTest {
   }
 
   @Test
-  void refreshTokenReuseRevokesTheWholeTokenFamilyAndItsAccessSessionImmediately() throws Exception {
+  void refreshTokenReuseRevokesTheWholeTokenFamilyAndItsAccessSessionImmediately()
+      throws Exception {
     // bootstrapAdministrator() itself auto-logs-in (US-01-03), which starts its own independent
     // refresh-token rotation family. Only the family started by the explicit login() below is in
     // scope for this test; workspace tenancy is unrelated to this authentication-only family id.
@@ -360,6 +361,104 @@ class AuthControllerTest {
   }
 
   @Test
+  void aTokenRotatedInWhileTheftDetectionWasBlockedCannotRefreshTheRevokedSession()
+      throws Exception {
+    bootstrapAdministrator();
+    AuthTokensResponse initial = login("admin@example.com", PASSWORD);
+    UUID familyId = familyIdOf(initial.refreshToken());
+    AuthTokensResponse rotated =
+        refresh(initial.refreshToken())
+            .expectStatus()
+            .isOk()
+            .expectBody(AuthTokensResponse.class)
+            .returnResult()
+            .getResponseBody();
+    UUID rotatedTokenId = tokenIdOf(rotated.refreshToken());
+    String racingPlaintext = "legitimate-rotation-racing-theft-detection";
+
+    // A legitimate rotation of `rotated`, performed step by step exactly as rotate() does it and
+    // held open: new token inserted, `rotated` row locked by revoking it, session repointed.
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try (Connection legitimateRotation = dataSource.getConnection()) {
+      legitimateRotation.setAutoCommit(false);
+      UUID racingTokenId =
+          insertTokenInSameFamily(legitimateRotation, rotatedTokenId, racingPlaintext);
+      try (PreparedStatement revoke =
+              legitimateRotation.prepareStatement(
+                  "UPDATE refresh_token SET revoked_at = now(), replaced_by_token_id = ? "
+                      + "WHERE id = ?");
+          PreparedStatement repoint =
+              legitimateRotation.prepareStatement(
+                  "UPDATE user_session SET refresh_token_id = ? WHERE refresh_token_id = ?")) {
+        revoke.setObject(1, racingTokenId);
+        revoke.setObject(2, rotatedTokenId);
+        assertThat(revoke.executeUpdate()).isEqualTo(1);
+        repoint.setObject(1, racingTokenId);
+        repoint.setObject(2, rotatedTokenId);
+        assertThat(repoint.executeUpdate()).isEqualTo(1);
+      }
+
+      // Reuse of the first token now runs theft detection, whose family-wide update blocks on the
+      // locked `rotated` row - its snapshot predates the uncommitted new token, so it cannot see
+      // it.
+      Future<Integer> reuse =
+          executor.submit(() -> refresh(initial.refreshToken()).returnResult().getStatus().value());
+      awaitABlockedLockWaiter();
+      legitimateRotation.commit();
+      assertThat(reuse.get(30, TimeUnit.SECONDS)).isEqualTo(HttpStatus.UNAUTHORIZED.value());
+    } finally {
+      executor.shutdownNow();
+    }
+    assertThat(sessionStatusForRefreshTokenFamily(familyId)).isEqualTo("REVOKED");
+
+    // The token that slipped past the sweep must not keep the family alive: presenting it is
+    // rejected and finishes revoking every token in the family, the one it would have minted too.
+    refresh(racingPlaintext).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
+    assertThat(tokensInFamily(familyId))
+        .allSatisfy(
+            token -> {
+              assertThat(token.isTheftSuspected()).isTrue();
+              assertThat(token.getRevokedAt()).isNotNull();
+            });
+  }
+
+  private UUID insertTokenInSameFamily(Connection connection, UUID siblingId, String plaintext)
+      throws Exception {
+    try (PreparedStatement insert =
+        connection.prepareStatement(
+            "INSERT INTO refresh_token (user_id, family_id, token_hash, expires_at) "
+                + "SELECT user_id, family_id, ?, expires_at FROM refresh_token WHERE id = ? "
+                + "RETURNING id")) {
+      insert.setString(1, tokenHashingService.sha256Hex(plaintext));
+      insert.setObject(2, siblingId);
+      try (ResultSet resultSet = insert.executeQuery()) {
+        assertThat(resultSet.next()).isTrue();
+        return resultSet.getObject(1, UUID.class);
+      }
+    }
+  }
+
+  private void awaitABlockedLockWaiter() throws Exception {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement()) {
+      while (System.nanoTime() < deadline) {
+        try (ResultSet resultSet =
+            statement.executeQuery(
+                "SELECT count(*) FROM pg_stat_activity "
+                    + "WHERE datname = current_database() AND wait_event_type = 'Lock'")) {
+          resultSet.next();
+          if (resultSet.getInt(1) > 0) {
+            return;
+          }
+        }
+        TimeUnit.MILLISECONDS.sleep(20);
+      }
+    }
+    throw new AssertionError("theft detection never blocked on the locked refresh token row");
+  }
+
+  @Test
   void refreshWithAnExpiredTokenIsRejectedWithoutTriggeringTheftDetection() throws Exception {
     bootstrapAdministrator();
     AuthTokensResponse initial = login("admin@example.com", PASSWORD);
@@ -403,6 +502,13 @@ class AuthControllerTest {
         .findByTokenHash(tokenHashingService.sha256Hex(plaintextRefreshToken))
         .orElseThrow()
         .getFamilyId();
+  }
+
+  private UUID tokenIdOf(String plaintextRefreshToken) {
+    return refreshTokenRepository
+        .findByTokenHash(tokenHashingService.sha256Hex(plaintextRefreshToken))
+        .orElseThrow()
+        .getId();
   }
 
   private List<RefreshToken> tokensInFamily(UUID familyId) {
