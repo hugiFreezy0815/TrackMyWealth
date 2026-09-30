@@ -106,7 +106,9 @@ class AdminReferenceDataControllerTest {
     assertThat(current.publicationDate()).isEqualTo(LocalDate.of(2026, 9, 28));
     assertThat(current.importedAt()).isNotNull();
     assertThat(current.importedBy()).isNull(); // shipped with the application
-    // V19 plus V37: 10 + 7 default categories, 43 source-code mappings.
+    // Pins the shipped content on purpose (V19 plus V37: 10 + 7 default categories, 43 source-code
+    // mappings): a migration that changes the baseline must update these counts - and should ship
+    // as a new baseline version, as V43 does.
     assertThat(current.contents())
         .isEqualTo(new ReferenceDataResponse.Contents(5, 17, 43, 12, "2023-03"));
     // FR-REF-011: no staleness warning for the baseline's mere age.

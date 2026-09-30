@@ -8,20 +8,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 /**
- * US-01-04: the current reference package and how much of each kind of reference data is loaded.
- * All of it is global, unscoped data (NFR-LIC-007); the default categories are the shipped rows
- * ({@code workspace_id IS NULL}), which the category RLS policy shows to everyone.
+ * US-01-04: the current reference package, and the counts of the reference data that has no
+ * repository of its own - source-code mappings and the fallback sector taxonomy. The institution
+ * catalogue and the default categories are counted through their own repositories. All of it is
+ * global, unscoped data (NFR-LIC-007).
  */
 @Repository
 public interface ReferencePackageRepository extends JpaRepository<ReferencePackage, UUID> {
 
   Optional<ReferencePackage> findByCurrentTrue();
-
-  @Query(value = "SELECT count(*) FROM institution_catalogue", nativeQuery = true)
-  long countCatalogueInstitutions();
-
-  @Query(value = "SELECT count(*) FROM category WHERE workspace_id IS NULL", nativeQuery = true)
-  long countDefaultCategories();
 
   @Query(value = "SELECT count(*) FROM category_source_mapping", nativeQuery = true)
   long countSourceCodeMappings();

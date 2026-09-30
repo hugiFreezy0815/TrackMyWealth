@@ -19,7 +19,8 @@ import java.util.UUID;
  * @param contents how much of each kind of reference data is loaded
  * @param stalenessWarnings effective-dated values with no entry for the current period (FR-REF-011)
  *     - never the baseline's mere age. Empty until effective-dated reference data (e.g. pension
- *     contribution limits, EPIC 32) exists.
+ *     contribution limits, EPIC 32) exists. Structured, not free text, so a client can show and
+ *     translate each one without parsing it.
  */
 public record ReferenceDataResponse(
     String packageVersion,
@@ -27,7 +28,7 @@ public record ReferenceDataResponse(
     OffsetDateTime importedAt,
     UUID importedBy,
     Contents contents,
-    List<String> stalenessWarnings) {
+    List<StalenessWarning> stalenessWarnings) {
 
   public ReferenceDataResponse {
     stalenessWarnings = List.copyOf(stalenessWarnings);
@@ -43,4 +44,14 @@ public record ReferenceDataResponse(
       long sourceCodeMappings,
       long fallbackSectors,
       String gicsStructureVersion) {}
+
+  /**
+   * One effective-dated reference value with no entry for the current period (FR-REF-011).
+   *
+   * @param code what is missing, as a stable key a client translates, e.g. {@code
+   *     PENSION_CONTRIBUTION_LIMIT_MISSING}
+   * @param subject what it is missing for, e.g. the pension scheme {@code CH_PILLAR_3A}
+   * @param missingPeriod the period with no value, e.g. {@code 2027}
+   */
+  public record StalenessWarning(String code, String subject, String missingPeriod) {}
 }

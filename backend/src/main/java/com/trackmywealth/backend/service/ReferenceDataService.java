@@ -2,6 +2,8 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.ReferenceDataResponse;
 import com.trackmywealth.backend.entity.ReferencePackage;
+import com.trackmywealth.backend.repository.CategoryRepository;
+import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
 import com.trackmywealth.backend.repository.ReferencePackageRepository;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -17,9 +19,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReferenceDataService {
 
   private final ReferencePackageRepository referencePackageRepository;
+  private final InstitutionCatalogueRepository institutionCatalogueRepository;
+  private final CategoryRepository categoryRepository;
 
-  public ReferenceDataService(ReferencePackageRepository referencePackageRepository) {
+  public ReferenceDataService(
+      ReferencePackageRepository referencePackageRepository,
+      InstitutionCatalogueRepository institutionCatalogueRepository,
+      CategoryRepository categoryRepository) {
     this.referencePackageRepository = referencePackageRepository;
+    this.institutionCatalogueRepository = institutionCatalogueRepository;
+    this.categoryRepository = categoryRepository;
   }
 
   @Transactional(readOnly = true)
@@ -37,8 +46,9 @@ public class ReferenceDataService {
         current.getImportedAt(),
         current.getImportedBy(),
         new ReferenceDataResponse.Contents(
-            referencePackageRepository.countCatalogueInstitutions(),
-            referencePackageRepository.countDefaultCategories(),
+            institutionCatalogueRepository.count(),
+            // Shipped rows: the category RLS policy shows workspace_id IS NULL rows to everyone.
+            categoryRepository.countByWorkspaceIdIsNull(),
             referencePackageRepository.countSourceCodeMappings(),
             referencePackageRepository.countFallbackSectors(),
             referencePackageRepository.findCurrentGicsStructureVersion().orElse(null)),

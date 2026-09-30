@@ -4,11 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -131,7 +131,8 @@ class AdministratorFinancialAccessTest {
         account + "/transactions/deleted");
   }
 
-  // Status and body of a denied read, with the request-specific parts (timestamp, path) left out.
+  // Status and body of a denied read, without the timestamp. The path stays in: both callers ask
+  // for the same one, so it is identical in both bodies.
   private String denial(String token, String path) {
     return client(token)
             .get()
@@ -151,9 +152,7 @@ class AdministratorFinancialAccessTest {
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateAccountRequest(
-                null, "Checking", "CASH", "CHF", null, null, null, null, null, null, null))
+        .body(AccountRequests.account("Checking", "CASH", "CHF").build())
         .exchange()
         .expectStatus()
         .isCreated()

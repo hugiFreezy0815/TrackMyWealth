@@ -357,6 +357,32 @@ DM-05). Decisions are on issue #147.
   Voided pairs and soft-deleted rows are in none of them. Cross-currency matching is US-10-06
   (#181); savings rate is US-10-05.
 
+### Reference-data packages (US-01-04)
+
+`reference_package` records which version of the shipped or imported reference data is loaded;
+exactly one row is current (`uq_reference_package_current`). `GET /api/v1/admin/reference-data`
+shows it, for `SYSTEM_ADMINISTRATOR` only.
+
+- **Baselines.** V19 recorded `1.0.0-baseline`. V43 adds `1.1.0-baseline` (V37's extra default
+  categories and source-code mappings) as current, and keeps 1.0.0 as history. Publication dates
+  are release dates, not install dates.
+- **How the two version fields relate, as built today:**
+  - A package's `content_manifest` lists everything loaded while it is current. The 1.1.0
+    manifest covers the catalogue, categories, mappings, fallback taxonomy and GICS, so a
+    package reads as a **cumulative snapshot**.
+  - Each row's `reference_package_version` names the package that **introduced** it. The
+    catalogue and GICS rows stay `1.0.0-baseline`; only the mappings are `1.1.0-baseline`.
+  - Nothing filters reference data by the current package. Every loaded row is used, whichever
+    package is current.
+- **Open for EPIC 32 (package import).** FR-REF-008 describes rollback as flipping `is_current`
+  back. Under the model above, that changes the version shown but not the data in use: rolling
+  back to 1.0.0 would leave the 1.1.0 mappings active. Before import or rollback is built, decide
+  either to remove or deactivate rows introduced after the target package on rollback, or to
+  filter reads by the current package.
+- **Staleness warnings** (FR-REF-011) cover effective-dated values missing for the current
+  period, never the baseline's age. Each is `{code, subject, missingPeriod}`, so a client can
+  translate it. The list is empty until effective-dated reference data exists.
+
 ### Removing a transaction (US-07-02)
 
 The ledger stays append-only (RULE-024): removing a row never changes a financial field, and
