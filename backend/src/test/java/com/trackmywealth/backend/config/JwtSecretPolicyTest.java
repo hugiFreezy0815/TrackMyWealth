@@ -28,11 +28,11 @@ class JwtSecretPolicyTest {
     contextRunner
         .withPropertyValues("app.security.jwt.secret=" + JwtSecretPolicy.PLACEHOLDER_SECRET)
         .run(
-            context ->
-                org.assertj.core.api.Assertions.assertThat(context)
-                    .hasFailed()
-                    .getFailure()
-                    .hasMessageContaining("JWT_SECRET"));
+            context -> {
+              org.assertj.core.api.Assertions.assertThat(context).hasFailed();
+              org.assertj.core.api.Assertions.assertThat(context.getStartupFailure())
+                  .hasMessageContaining("JWT_SECRET");
+            });
   }
 
   @Test
