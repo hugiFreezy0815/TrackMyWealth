@@ -69,7 +69,7 @@ public class TokenRotationService {
       // stale client retry after a lost response, or a stolen token racing the legitimate client.
       // Both are indistinguishable from here, so the safe response is the same either way: kill
       // every token in the family and force a fresh login.
-      refreshTokenRepository.markFamilyAsTheftSuspected(current.getFamilyId(), now);
+      revokeCompromisedTokenFamily(current.getFamilyId(), now);
       throw refreshTokenAlreadyUsed();
     }
 
@@ -97,7 +97,7 @@ public class TokenRotationService {
       // this family, and the safe response to "this exact race just happened" is the same as any
       // other reuse: kill the whole family.
       refreshTokenRepository.delete(savedNext);
-      refreshTokenRepository.markFamilyAsTheftSuspected(current.getFamilyId(), now);
+      revokeCompromisedTokenFamily(current.getFamilyId(), now);
       throw refreshTokenAlreadyUsed();
     }
 
@@ -120,6 +120,23 @@ public class TokenRotationService {
         jwtService.issueAccessToken(user.getId(), user.getTokenVersion(), session.getId());
     return new AuthTokensResponse(
         accessToken, plaintextNext, "Bearer", jwtService.accessTokenTtlSeconds());
+  }
+
+  /**
+   * Invalidates both credentials belonging to a compromised refresh-token rotation family:
+   * every refresh token in the family and any active session currently pointing at that family.
+   *
+   * <p>Refresh-token rows are updated first, then the session row. Keep that order aligned with
+   * {@link SessionService#revokeSession}: a concurrent refresh/session-revoke operation must never
+   * acquire the same rows in the opposite order and deadlock. The session is matched by refresh
+   * token family rather than the reused token id because successful rotation has already repointed
+   * it to a newer token in that same family.
+   */
+  private void revokeCompromisedTokenFamily(
+      java.util.UUID refreshTokenFamilyId, OffsetDateTime revokedAt) {
+    refreshTokenRepository.markFamilyAsTheftSuspected(refreshTokenFamilyId, revokedAt);
+    userSessionRepository.revokeActiveSessionsByRefreshTokenFamilyId(
+        refreshTokenFamilyId, revokedAt);
   }
 
   private ResponseStatusException invalidRefreshToken() {
