@@ -21,6 +21,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *
  * <p>An incoming value is only trusted as an opaque token of safe characters: anything else (too
  * long, spaces, control characters, log-injection attempts) is replaced, never echoed.
+ *
+ * <p>It also runs on the container's error dispatch to {@code /error} (registered for {@code ERROR}
+ * in {@link CorrelationIdFilterRegistration}), reusing the id the original request got - kept as a
+ * request attribute, since the MDC is cleared when the request's own pass ends - so an error
+ * rendered there quotes the same id as the header and the log lines.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -28,6 +33,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
 
   public static final String HEADER = "X-Correlation-Id";
   public static final String MDC_KEY = "correlationId";
+  private static final String ATTRIBUTE = CorrelationIdFilter.class.getName() + ".id";
   private static final Pattern WELL_FORMED = Pattern.compile("[A-Za-z0-9._-]{8,64}");
 
   /** The current request's correlation id, or {@code null} outside a request. */
@@ -39,11 +45,8 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
   protected void doFilterInternal(
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
-    String incoming = request.getHeader(HEADER);
-    String correlationId =
-        incoming != null && WELL_FORMED.matcher(incoming).matches()
-            ? incoming
-            : UUID.randomUUID().toString();
+    String correlationId = correlationIdOf(request);
+    request.setAttribute(ATTRIBUTE, correlationId);
     MDC.put(MDC_KEY, correlationId);
     response.setHeader(HEADER, correlationId);
     try {
@@ -51,5 +54,21 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
     } finally {
       MDC.remove(MDC_KEY);
     }
+  }
+
+  // The error dispatch is a second pass over the same request: it must see the same id.
+  @Override
+  protected boolean shouldNotFilterErrorDispatch() {
+    return false;
+  }
+
+  private static String correlationIdOf(HttpServletRequest request) {
+    if (request.getAttribute(ATTRIBUTE) instanceof String assigned) {
+      return assigned;
+    }
+    String incoming = request.getHeader(HEADER);
+    return incoming != null && WELL_FORMED.matcher(incoming).matches()
+        ? incoming
+        : UUID.randomUUID().toString();
   }
 }

@@ -11,6 +11,7 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import java.net.URI;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
@@ -204,6 +205,18 @@ class ApiConventionsIntegrationTest {
         postTransaction(token, cash.id(), expense("-45.00")),
         HttpStatus.CONFLICT,
         "ACCOUNT_ARCHIVED");
+  }
+
+  @Test
+  void aRequestTheSecurityFirewallRejectsGetsTheSameShape() {
+    String token = bootstrapAdministrator();
+    // Sent as given - a client would normalise these paths - so they reach the firewall as is.
+    for (String path : List.of("/api/v1/accounts;x=1", "/api/v1/accounts/%2e%2e/x")) {
+      URI uri = URI.create("http://localhost:" + port + path);
+      problem(client(token).get().uri(uri).exchange(), HttpStatus.BAD_REQUEST, "VALIDATION_FAILED");
+      problem(
+          anonymousClient().get().uri(uri).exchange(), HttpStatus.BAD_REQUEST, "VALIDATION_FAILED");
+    }
   }
 
   // --- correlation ids

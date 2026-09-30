@@ -17,6 +17,7 @@ import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.firewall.RequestRejectedHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -106,6 +107,19 @@ public class SecurityConfig {
         // Stateless, token-based API (see EPIC-02) - no session cookie for CSRF to protect.
         .csrf(csrf -> csrf.disable());
     return http.build();
+  }
+
+  // EPIC-29 (#149): a request the security firewall refuses (a ";" or an encoded "." or "/" in the
+  // path) is answered in the one error shape too. Without this bean it is rethrown to the container
+  // and rendered by /error instead; picked up by WebSecurity from the context.
+  @Bean
+  RequestRejectedHandler requestRejectedHandler(ProblemResponseWriter problemResponseWriter) {
+    return (request, response, rejected) ->
+        problemResponseWriter.write(
+            response,
+            HttpStatus.BAD_REQUEST,
+            ApiErrorCode.VALIDATION_FAILED,
+            "The request was rejected.");
   }
 
   // FR-AUT-007: a modern memory-hard hash with a per-user salt. Argon2id specifically (not
