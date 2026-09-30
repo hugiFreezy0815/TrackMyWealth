@@ -42,6 +42,26 @@ class CorrelationIdFilterTest {
   }
 
   @Test
+  void anAsyncDispatchKeepsTheRequestsCorrelationId() throws Exception {
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/accounts");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    filter.doFilter(request, response, new MockFilterChain());
+    String assigned = response.getHeader(CorrelationIdFilter.HEADER);
+
+    request.setDispatcherType(DispatcherType.ASYNC);
+    MockHttpServletResponse asyncResponse = new MockHttpServletResponse();
+    AtomicReference<String> seenByAsyncDispatch = new AtomicReference<>();
+    filter.doFilter(
+        request,
+        asyncResponse,
+        (req, res) -> seenByAsyncDispatch.set(MDC.get(CorrelationIdFilter.MDC_KEY)));
+
+    assertThat(seenByAsyncDispatch.get()).isEqualTo(assigned);
+    assertThat(asyncResponse.getHeader(CorrelationIdFilter.HEADER)).isEqualTo(assigned);
+    assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull();
+  }
+
+  @Test
   void aMalformedIncomingIdIsReplaced() throws Exception {
     MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/accounts");
     request.addHeader(CorrelationIdFilter.HEADER, "bad id\r\nX-Injected: 1");
