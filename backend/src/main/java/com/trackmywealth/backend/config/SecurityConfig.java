@@ -25,7 +25,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * itself once one does, see {@code SetupService}), login/refresh ({@code /api/v1/auth/**}, US-02-02
  * - must be reachable by a caller who has no token yet), and {@code /error}. Everything else
  * requires a valid {@link JwtAuthenticationFilter}-authenticated request; {@code /api/v1/admin/**}
- * additionally requires the {@code SYSTEM_ADMINISTRATOR} role (US-02-01).
+ * and migration metadata at {@code /actuator/flyway} additionally require the {@code
+ * SYSTEM_ADMINISTRATOR} role (US-02-01, NFR-SEC-001).
  *
  * <p>CORS is configured here because the web build of {@code mobile/} (an Expo Router app exported
  * for web, see its README) calls this API from a browser on a different origin - unlike the
@@ -57,6 +58,12 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/api/v1/auth/**")
                     .permitAll()
+                    // NFR-SEC-001 / #191: Flyway exposes schema-evolution and migration metadata
+                    // useful to an operator, but unnecessary to ordinary financial users. Keep
+                    // health/info public for deployment probes; migration diagnostics are an
+                    // administrator-only operational surface.
+                    .requestMatchers("/actuator/flyway", "/actuator/flyway/**")
+                    .hasRole("SYSTEM_ADMINISTRATOR")
                     // Spring MVC's default handling of a thrown ResponseStatusException (e.g.
                     // US-01-03's "setup already completed" 409) forwards internally to /error to
                     // render the response body. Spring Security re-secures that forwarded
