@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.web;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.springframework.http.HttpStatusCode;
@@ -21,9 +22,16 @@ public class ProblemResponseWriter {
     this.jsonMapper = jsonMapper;
   }
 
-  public void write(HttpServletResponse response, HttpStatusCode status, String code, String detail)
+  public void write(
+      HttpServletRequest request,
+      HttpServletResponse response,
+      HttpStatusCode status,
+      String code,
+      String detail)
       throws IOException {
-    ProblemDetail problem = ProblemDetails.of(status, code, detail);
+    ProblemDetail problem =
+        ProblemDetails.withInstance(
+            ProblemDetails.of(status, code, detail), request.getRequestURI());
     response.setStatus(status.value());
     // The same content type Spring MVC sends; JSON is UTF-8 by definition (RFC 8259), so the bytes
     // are written as such rather than through the servlet's ISO-8859-1 default writer.

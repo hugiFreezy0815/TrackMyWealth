@@ -1,9 +1,9 @@
 package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.controller.SecurityController;
+import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.security.JwtAuthenticationFilter;
 import com.trackmywealth.backend.security.RateLimitFilter;
-import com.trackmywealth.backend.web.ApiErrorCode;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
 import com.trackmywealth.backend.web.ProblemResponseWriter;
 import java.util.List;
@@ -105,6 +105,7 @@ public class SecurityConfig {
                     .authenticationEntryPoint(
                         (request, response, denied) ->
                             problemResponseWriter.write(
+                                request,
                                 response,
                                 HttpStatus.UNAUTHORIZED,
                                 ApiErrorCode.UNAUTHENTICATED,
@@ -112,6 +113,7 @@ public class SecurityConfig {
                     .accessDeniedHandler(
                         (request, response, denied) ->
                             problemResponseWriter.write(
+                                request,
                                 response,
                                 HttpStatus.FORBIDDEN,
                                 ApiErrorCode.FORBIDDEN,
@@ -128,6 +130,7 @@ public class SecurityConfig {
   RequestRejectedHandler requestRejectedHandler(ProblemResponseWriter problemResponseWriter) {
     return (request, response, rejected) ->
         problemResponseWriter.write(
+            request,
             response,
             HttpStatus.BAD_REQUEST,
             ApiErrorCode.VALIDATION_FAILED,

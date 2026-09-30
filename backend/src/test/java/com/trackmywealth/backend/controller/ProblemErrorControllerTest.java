@@ -47,6 +47,16 @@ class ProblemErrorControllerTest {
   }
 
   @Test
+  void itNamesThePathTheClientAskedForNotTheErrorPage() {
+    MockHttpServletRequest request = errorRequest(400);
+    request.setAttribute(RequestDispatcher.ERROR_REQUEST_URI, "/api/v1/accounts;x=1");
+
+    ProblemDetail problem = controller.error(request).getBody();
+
+    assertThat(problem.getInstance()).hasToString("/api/v1/accounts;x=1");
+  }
+
+  @Test
   void a404IsTheGenericNotFound() {
     ProblemDetail problem = controller.error(errorRequest(404)).getBody();
 

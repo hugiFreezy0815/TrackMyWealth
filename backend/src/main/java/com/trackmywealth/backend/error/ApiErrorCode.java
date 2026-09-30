@@ -1,4 +1,4 @@
-package com.trackmywealth.backend.web;
+package com.trackmywealth.backend.error;
 
 import org.springframework.http.HttpStatusCode;
 
@@ -9,6 +9,9 @@ import org.springframework.http.HttpStatusCode;
  * part of the API contract - never rename one.
  */
 public final class ApiErrorCode {
+
+  /** The name of the error-body property that carries the code. */
+  public static final String PROPERTY = "code";
 
   /** 400: the request body or parameters are malformed or fail validation. */
   public static final String VALIDATION_FAILED = "VALIDATION_FAILED";

@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.web;
 
+import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ExistingResourceConflictException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import org.springframework.web.util.DisconnectedClientHelper;
 
 /**
  * Translates persistence-layer failures the service layer doesn't itself anticipate into the same
@@ -130,9 +133,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   /**
    * Anything unexpected: a 500 that says nothing about its cause (no exception text, class or trace
    * - FR-API-005), only the correlation id to quote. The cause is logged with that id.
+   *
+   * <p>A client that went away mid-response (#197) is not an error of this application, and there
+   * is nobody left to answer: it is logged at debug, and no body is written.
    */
   @ExceptionHandler(Exception.class)
   public ProblemDetail handleUnexpected(Exception ex) {
+    if (DisconnectedClientHelper.isClientDisconnectedException(ex)) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Client disconnected before the response was complete: {}", ex.toString());
+      }
+      return null;
+    }
     LOG.error("Unexpected error answered with 500", ex);
     return ProblemDetails.of(
         HttpStatus.INTERNAL_SERVER_ERROR,

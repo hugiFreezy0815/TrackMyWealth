@@ -431,6 +431,8 @@ class ApiConventionsIntegrationTest {
     assertThat(problem.path("code").asString()).isEqualTo(code);
     assertThat(problem.path("detail").asString()).isNotBlank();
     assertThat(problem.path("correlationId").asString()).isEqualTo(correlationHeader);
+    // #197: every error body names its request, whichever component wrote it.
+    assertThat(problem.path("instance").asString()).startsWith("/");
     return problem;
   }
 

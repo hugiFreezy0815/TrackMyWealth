@@ -3,6 +3,9 @@ package com.trackmywealth.backend.architecture;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.properties.CanBeAnnotated;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -14,6 +17,7 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.service.InstitutionService;
+import jakarta.persistence.Entity;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,6 +47,13 @@ class ArchitectureTest {
   // package is populated" is what makes these enforce automatically the moment real code lands,
   // per this class's Javadoc, without weakening the rule once classes do exist.
 
+  // A JPA entity: anything in the entity package, and - #197 - anything annotated @Entity
+  // wherever it lives, so an entity declared outside that package cannot slip past the rules.
+  static final DescribedPredicate<JavaClass> JPA_ENTITIES =
+      JavaClass.Predicates.resideInAPackage("..entity..")
+          .or(CanBeAnnotated.Predicates.annotatedWith(Entity.class))
+          .as("JPA entities");
+
   // FR-API contract (see EPIC-29 in docs/user-stories/BACKLOG-remaining-epics.md): the REST
   // boundary speaks DTOs, never JPA entities directly - erodes easily if not enforced.
   @ArchTest
@@ -51,8 +62,7 @@ class ArchitectureTest {
           .that()
           .resideInAPackage("..controller..")
           .should()
-          .dependOnClassesThat()
-          .resideInAPackage("..entity..")
+          .dependOnClassesThat(JPA_ENTITIES)
           .because(
               "REST responses must be DTOs, never JPA entities (FR-API contract, EPIC-29) -"
                   + " depend on a mapper/service-layer DTO instead")
@@ -66,11 +76,25 @@ class ArchitectureTest {
           .that()
           .resideInAPackage("..dto..")
           .should()
-          .dependOnClassesThat()
-          .resideInAPackage("..entity..")
+          .dependOnClassesThat(JPA_ENTITIES)
           .because(
               "the API speaks DTOs only (FR-API contract, EPIC-29) - a DTO holding an entity puts"
                   + " the entity on the wire all the same")
+          .allowEmptyShould(true);
+
+  // #197: business rules throw ApiException/ResponseStatusException (..error.., spring-web) but
+  // never depend on the application's web layer - its filters, handlers and response writers.
+  @ArchTest
+  static final ArchRule services_do_not_depend_on_the_web_layer =
+      noClasses()
+          .that()
+          .resideInAPackage("..service..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("com.trackmywealth.backend.web..")
+          .because(
+              "error types a service throws live in ..error.., so the web layer can change"
+                  + " without touching business logic (#197)")
           .allowEmptyShould(true);
 
   @ArchTest

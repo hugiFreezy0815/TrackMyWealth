@@ -2,6 +2,10 @@ package com.trackmywealth.backend.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ExistingResourceConflictException;
+import java.io.IOException;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -9,6 +13,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 /**
  * A plain unit test, not an integration one: every branch here is a pure translation from an
@@ -212,5 +217,17 @@ class GlobalExceptionHandlerTest {
   private DataIntegrityViolationException violationWithRootMessage(String rootMessage) {
     return new DataIntegrityViolationException(
         "could not execute statement", new RuntimeException(rootMessage));
+  }
+
+  // #197: a client that went away mid-response is not answered with a 500 or logged as an error.
+  @Test
+  void aClientThatDisconnectedGetsNoErrorResponse() {
+    assertThat(handler.handleUnexpected(new IOException("Broken pipe"))).isNull();
+    assertThat(
+            handler.handleUnexpected(
+                new AsyncRequestNotUsableException("Response not usable after response errors.")))
+        .isNull();
+    assertThat(handler.handleUnexpected(new IllegalStateException("boom")).getStatus())
+        .isEqualTo(500);
   }
 }
