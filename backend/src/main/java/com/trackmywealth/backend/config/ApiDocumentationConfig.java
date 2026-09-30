@@ -4,6 +4,7 @@ import com.trackmywealth.backend.web.CorrelationIdFilter;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.headers.Header;
+import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.IntegerSchema;
 import io.swagger.v3.oas.models.media.ObjectSchema;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
+import io.swagger.v3.oas.models.responses.ApiResponses;
 import java.math.BigDecimal;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
@@ -66,12 +68,12 @@ public class ApiDocumentationConfig {
                       .forEach(
                           operation -> {
                             documentCorrelationRequestHeader(operation);
-                            operation
-                                .getResponses()
-                                .addApiResponse(
-                                    "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
-                            operation
-                                .getResponses()
+                            ApiResponses responses = responsesOf(operation);
+                            if (!responses.containsKey("default")) {
+                              responses.addApiResponse(
+                                  "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
+                            }
+                            responses
                                 .values()
                                 .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
                           }));
@@ -100,7 +102,15 @@ public class ApiDocumentationConfig {
             "correlationId",
             new StringSchema()
                 .description("Request correlation id; quote it when reporting an error."))
-        .addProperty("instance", new StringSchema().format("uri"));
+        .addProperty("instance", new StringSchema().format("uri"))
+        .addProperty(
+            "errors",
+            new ArraySchema()
+                .description("Present on bean-validation failures; one entry per rejected field.")
+                .items(
+                    new ObjectSchema()
+                        .addProperty("field", new StringSchema())
+                        .addProperty("message", new StringSchema())));
   }
 
   private static ApiResponse problemResponse() {
@@ -111,6 +121,13 @@ public class ApiDocumentationConfig {
         .description("Error response using the TrackMyWealth problem-detail contract.")
         .content(new Content().addMediaType(MediaType.APPLICATION_PROBLEM_JSON_VALUE, problemMediaType))
         .addHeaderObject(CorrelationIdFilter.HEADER, correlationResponseHeader());
+  }
+
+  private static ApiResponses responsesOf(io.swagger.v3.oas.models.Operation operation) {
+    if (operation.getResponses() == null) {
+      operation.setResponses(new ApiResponses());
+    }
+    return operation.getResponses();
   }
 
   private static void documentCorrelationRequestHeader(
