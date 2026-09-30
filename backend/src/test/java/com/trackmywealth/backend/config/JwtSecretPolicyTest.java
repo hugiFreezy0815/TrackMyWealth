@@ -60,6 +60,13 @@ class JwtSecretPolicyTest {
   }
 
   @Test
+  void repeatedCharacterSecretIsRejectedAsTriviallyLowEntropy() {
+    assertThatThrownBy(() -> properties("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("low-entropy");
+  }
+
+  @Test
   void cryptographicallyRandomSecretIsAcceptedWithoutDevelopmentProfile() {
     JwtProperties properties = properties(randomSecret());
 
