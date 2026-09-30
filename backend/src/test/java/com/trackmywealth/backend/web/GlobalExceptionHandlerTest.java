@@ -193,6 +193,13 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  void methodNotAllowedIsARequestErrorNotNotFound() {
+    assertThat(ApiErrorCode.forStatus(HttpStatus.METHOD_NOT_ALLOWED))
+        .isEqualTo(ApiErrorCode.VALIDATION_FAILED)
+        .isNotEqualTo(ApiErrorCode.NOT_FOUND);
+  }
+
+  @Test
   void aCodedExceptionKeepsItsOwnCode() {
     ApiException archived =
         new ApiException(HttpStatus.CONFLICT, ApiErrorCode.ACCOUNT_ARCHIVED, "Archived.");
