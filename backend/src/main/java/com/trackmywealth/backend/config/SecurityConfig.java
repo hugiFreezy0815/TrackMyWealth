@@ -134,7 +134,8 @@ public class SecurityConfig {
     CorsConfiguration configuration = new CorsConfiguration();
     configuration.setAllowedOriginPatterns(allowedOriginPatterns);
     configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+    configuration.setAllowedHeaders(
+        List.of("Authorization", "Content-Type", CorrelationIdFilter.HEADER));
     // Bearer tokens are sent via the Authorization header (see mobile/src/api/client.ts), not
     // cookies, so credentialed (cookie-carrying) CORS requests are not needed yet. Revisit
     // if/when EPIC-02's web refresh-token cookie (FR-AUT-006) is implemented.
