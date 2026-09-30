@@ -69,18 +69,20 @@ public class JwtService {
   public Optional<AccessTokenClaims> parseAccessToken(String token) {
     try {
       Claims claims =
-          Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token).getPayload();
+          Jwts.parser()
+              .requireIssuer(properties.issuer())
+              .verifyWith(signingKey)
+              .build()
+              .parseSignedClaims(token)
+              .getPayload();
 
       String subject = claims.getSubject();
-      String issuer = claims.getIssuer();
       Date issuedAt = claims.getIssuedAt();
       Date expiration = claims.getExpiration();
       Integer tokenVersion = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
       String sessionIdClaim = claims.get(SESSION_ID_CLAIM, String.class);
 
       if (subject == null
-          || properties.issuer() == null
-          || !properties.issuer().equals(issuer)
           || issuedAt == null
           || expiration == null
           || tokenVersion == null
