@@ -76,9 +76,12 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
   // write stale status/revocation state back over this update.
   @Modifying
   @Query(
-      "UPDATE UserSession s SET s.status = 'REVOKED', "
-          + "s.revokedAt = COALESCE(s.revokedAt, :revokedAt) "
-          + "WHERE s.refreshToken.familyId = :refreshTokenFamilyId AND s.status = 'ACTIVE'")
+      value =
+          "UPDATE user_session SET status = 'REVOKED', "
+              + "revoked_at = COALESCE(revoked_at, :revokedAt) "
+              + "WHERE status = 'ACTIVE' AND refresh_token_id IN "
+              + "(SELECT id FROM refresh_token WHERE family_id = :refreshTokenFamilyId)",
+      nativeQuery = true)
   int revokeActiveSessionsByRefreshTokenFamilyId(
       @Param("refreshTokenFamilyId") UUID refreshTokenFamilyId,
       @Param(REVOKED_AT_PARAM) OffsetDateTime revokedAt);
