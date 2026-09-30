@@ -62,19 +62,35 @@ public class JwtService {
   }
 
   /**
-   * Empty if the token is malformed, expired, missing an expected claim, or signed with a different
-   * key - never throws.
+   * Empty if the token is malformed, expired, signed with a different key, issued by a different
+   * issuer, or missing/mis-typing any claim required by the TrackMyWealth access-token contract -
+   * never throws.
    */
   public Optional<AccessTokenClaims> parseAccessToken(String token) {
     try {
       Claims claims =
-          Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token).getPayload();
-      UUID userId = UUID.fromString(claims.getSubject());
+          Jwts.parser()
+              .requireIssuer(properties.issuer())
+              .verifyWith(signingKey)
+              .build()
+              .parseSignedClaims(token)
+              .getPayload();
+
+      String subject = claims.getSubject();
       Integer tokenVersion = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
       String sessionIdClaim = claims.get(SESSION_ID_CLAIM, String.class);
-      if (tokenVersion == null || sessionIdClaim == null) {
+
+      // Presence only: JJWT has already checked exp against the clock, and iat is never trusted
+      // beyond being there - so neither is read into a java.util.Date here.
+      if (subject == null
+          || claims.getIssuedAt() == null
+          || claims.getExpiration() == null
+          || tokenVersion == null
+          || sessionIdClaim == null) {
         return Optional.empty();
       }
+
+      UUID userId = UUID.fromString(subject);
       UUID sessionId = UUID.fromString(sessionIdClaim);
       return Optional.of(new AccessTokenClaims(userId, tokenVersion, sessionId));
     } catch (JwtException | IllegalArgumentException e) {

@@ -55,17 +55,25 @@ public class MfaChallengeTokenService {
   }
 
   /**
-   * Empty if the token is malformed, expired, signed with a different key, or not actually an
-   * MFA-challenge token (e.g. a real access token presented here instead) - never throws.
+   * Empty if the token is malformed, expired, signed with a different key, issued by a different
+   * issuer (#189, the same contract as {@link JwtService#parseAccessToken}), without a subject, or
+   * not actually an MFA-challenge token (e.g. a real access token presented here instead) - never
+   * throws.
    */
   public Optional<UUID> parse(String token) {
     try {
       Claims claims =
-          Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token).getPayload();
-      if (!CHALLENGE_PURPOSE.equals(claims.get(PURPOSE_CLAIM, String.class))) {
+          Jwts.parser()
+              .requireIssuer(properties.issuer())
+              .verifyWith(signingKey)
+              .build()
+              .parseSignedClaims(token)
+              .getPayload();
+      String subject = claims.getSubject();
+      if (subject == null || !CHALLENGE_PURPOSE.equals(claims.get(PURPOSE_CLAIM, String.class))) {
         return Optional.empty();
       }
-      return Optional.of(UUID.fromString(claims.getSubject()));
+      return Optional.of(UUID.fromString(subject));
     } catch (JwtException | IllegalArgumentException e) {
       return Optional.empty();
     }
