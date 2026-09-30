@@ -19,6 +19,7 @@ import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.FxRateRepository;
+import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Statement;
@@ -318,32 +319,19 @@ class InstitutionControllerTest {
     AccountSummaryResponse asset =
         createAccount(
             token,
-            new CreateAccountRequest(
-                institution.id(),
-                "Family Home",
-                "CUSTOM_ASSET",
-                "EUR",
-                null,
-                null,
-                null,
-                null,
-                null,
-                "REAL_ESTATE"));
+            AccountRequests.account("Family Home", "CUSTOM_ASSET", "EUR")
+                .financialInstitutionId(institution.id())
+                .customAssetType("REAL_ESTATE")
+                .build());
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("2000")));
     createAccount(
         token,
-        new CreateAccountRequest(
-            institution.id(),
-            "Home Mortgage",
-            "MORTGAGE",
-            "EUR",
-            null,
-            null,
-            new BigDecimal("300000"),
-            new BigDecimal("1.5"),
-            null,
-            null));
+        AccountRequests.account("Home Mortgage", "MORTGAGE", "EUR")
+            .financialInstitutionId(institution.id())
+            .originalPrincipal(new BigDecimal("300000"))
+            .interestRatePercent(new BigDecimal("1.5"))
+            .build());
 
     InstitutionSummaryResponse summary = getSummary(token, institution.id());
 
@@ -366,17 +354,10 @@ class InstitutionControllerTest {
     AccountSummaryResponse account =
         createAccount(
             token,
-            new CreateAccountRequest(
-                institution.id(),
-                "US Property",
-                "CUSTOM_ASSET",
-                "USD",
-                null,
-                null,
-                null,
-                null,
-                null,
-                "REAL_ESTATE"));
+            AccountRequests.account("US Property", "CUSTOM_ASSET", "USD")
+                .financialInstitutionId(institution.id())
+                .customAssetType("REAL_ESTATE")
+                .build());
     recordValuation(
         token,
         account.id(),
@@ -408,17 +389,10 @@ class InstitutionControllerTest {
     AccountSummaryResponse account =
         createAccount(
             token,
-            new CreateAccountRequest(
-                institution.id(),
-                "US Property",
-                "CUSTOM_ASSET",
-                "USD",
-                null,
-                null,
-                null,
-                null,
-                null,
-                "REAL_ESTATE"));
+            AccountRequests.account("US Property", "CUSTOM_ASSET", "USD")
+                .financialInstitutionId(institution.id())
+                .customAssetType("REAL_ESTATE")
+                .build());
     recordValuation(
         token,
         account.id(),
@@ -442,31 +416,16 @@ class InstitutionControllerTest {
                 null, "Mixed Bank", null, null, null, null, "CHF"));
     createAccount(
         token,
-        new CreateAccountRequest(
-            institution.id(),
-            "Everyday Checking",
-            "CASH",
-            "CHF",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null));
+        AccountRequests.account("Everyday Checking", "CASH", "CHF")
+            .financialInstitutionId(institution.id())
+            .build());
     AccountSummaryResponse asset =
         createAccount(
             token,
-            new CreateAccountRequest(
-                institution.id(),
-                "Watch Collection",
-                "CUSTOM_ASSET",
-                "CHF",
-                null,
-                null,
-                null,
-                null,
-                null,
-                "COLLECTIBLE"));
+            AccountRequests.account("Watch Collection", "CUSTOM_ASSET", "CHF")
+                .financialInstitutionId(institution.id())
+                .customAssetType("COLLECTIBLE")
+                .build());
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("5000")));
 
@@ -495,17 +454,10 @@ class InstitutionControllerTest {
     AccountSummaryResponse asset =
         createAccount(
             token,
-            new CreateAccountRequest(
-                institution.id(),
-                "Old Watch",
-                "CUSTOM_ASSET",
-                "CHF",
-                null,
-                null,
-                null,
-                null,
-                null,
-                "COLLECTIBLE"));
+            AccountRequests.account("Old Watch", "CUSTOM_ASSET", "CHF")
+                .financialInstitutionId(institution.id())
+                .customAssetType("COLLECTIBLE")
+                .build());
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
     client(token).post().uri("/api/v1/accounts/" + asset.id() + "/archive").exchange();
@@ -534,17 +486,10 @@ class InstitutionControllerTest {
     AccountSummaryResponse asset =
         createAccount(
             token,
-            new CreateAccountRequest(
-                institution.id(),
-                "Foreign Collectible",
-                "CUSTOM_ASSET",
-                "USD",
-                null,
-                null,
-                null,
-                null,
-                null,
-                "COLLECTIBLE"));
+            AccountRequests.account("Foreign Collectible", "CUSTOM_ASSET", "USD")
+                .financialInstitutionId(institution.id())
+                .customAssetType("COLLECTIBLE")
+                .build());
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
     // Deliberately no seedFxRate call - USD/CHF has no rate at all, not even a stale one.

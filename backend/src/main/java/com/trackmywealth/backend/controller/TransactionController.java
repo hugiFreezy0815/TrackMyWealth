@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.TransactionRemovalService;
 import com.trackmywealth.backend.service.TransactionService;
+import com.trackmywealth.backend.service.TransferResolutionService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -36,11 +37,15 @@ public class TransactionController {
 
   private final TransactionService transactionService;
   private final TransactionRemovalService transactionRemovalService;
+  private final TransferResolutionService transferResolutionService;
 
   public TransactionController(
-      TransactionService transactionService, TransactionRemovalService transactionRemovalService) {
+      TransactionService transactionService,
+      TransactionRemovalService transactionRemovalService,
+      TransferResolutionService transferResolutionService) {
     this.transactionService = transactionService;
     this.transactionRemovalService = transactionRemovalService;
+    this.transferResolutionService = transferResolutionService;
   }
 
   @PostMapping("/transactions")
@@ -116,5 +121,26 @@ public class TransactionController {
   public List<TransactionResponse> listRestorableTransactions(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return transactionRemovalService.listRestorable(accountId, actor);
+  }
+
+  /**
+   * US-10-01: confirms a one-sided transfer leg as money moved to or from an own account not
+   * tracked here - it then counts as neither income nor spending. Needs EDIT on the account.
+   */
+  @PostMapping("/transactions/{transactionId}/untracked-transfer")
+  public TransactionResponse confirmUntrackedTransfer(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return transferResolutionService.confirmUntracked(accountId, transactionId, actor);
+  }
+
+  /** US-10-01: undoes that confirmation; the leg is pending review again. */
+  @DeleteMapping("/transactions/{transactionId}/untracked-transfer")
+  public TransactionResponse undoUntrackedTransfer(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return transferResolutionService.undoUntracked(accountId, transactionId, actor);
   }
 }

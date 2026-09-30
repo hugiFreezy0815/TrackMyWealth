@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.entity;
 
+import com.trackmywealth.backend.dto.SettlementMatchValues;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -62,6 +63,11 @@ public class SettlementMatch {
   @Column(name = "match_basis", nullable = false)
   private String matchBasis;
 
+  // US-10-01 (V41): CARD_SETTLEMENT or TRANSFER. For a transfer, paymentTransaction is the debit
+  // leg, cardTransaction the credit leg and cardAccount the credit leg's account.
+  @Column(name = "match_kind", nullable = false)
+  private String matchKind = SettlementMatchValues.CARD_SETTLEMENT;
+
   // Null when the system decided (an unambiguous exact pair, or a competing proposal that lost).
   @Column(name = "decided_by", columnDefinition = "uuid")
   private UUID decidedBy;
@@ -123,6 +129,19 @@ public class SettlementMatch {
 
   public void setMatchBasis(String matchBasis) {
     this.matchBasis = matchBasis;
+  }
+
+  public String getMatchKind() {
+    return matchKind;
+  }
+
+  public void setMatchKind(String matchKind) {
+    this.matchKind = matchKind;
+  }
+
+  /** US-10-01: an own-account transfer pair rather than a card settlement. */
+  public boolean isTransfer() {
+    return SettlementMatchValues.TRANSFER.equals(matchKind);
   }
 
   public UUID getDecidedBy() {

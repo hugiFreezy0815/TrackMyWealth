@@ -77,6 +77,15 @@ import java.util.UUID;
  *   <li>{@code grossAmount}, {@code taxWithheldAmount} - optional on a {@code DIVIDEND}, together:
  *       gross minus withheld must equal {@code amount}, the net cash received (FR-TAXR-001).
  * </ul>
+ *
+ * <p><b>US-10-01 transfers</b> between two of the workspace's own accounts: a {@code TRANSFER} (or
+ * {@code PENSION_CONTRIBUTION}, into an account with a contribution limit) with a {@code
+ * counterpartyAccountId} records both legs at once - the debit here ({@code amount} negative, in
+ * this account's currency) and the credit on the counterparty, already linked as an internal
+ * transfer. {@code counterpartyAmount} is the amount credited there, required when the two
+ * accounts' currencies differ and rejected otherwise. A {@code TRANSFER} without a counterparty is
+ * one leg of a transfer whose other side is not recorded (yet): it is matched later, or confirmed
+ * as a transfer to an account not tracked here.
  */
 public record CreateTransactionRequest(
     @NotBlank String transactionType,
@@ -96,7 +105,9 @@ public record CreateTransactionRequest(
     LocalDate tradeDate,
     LocalDate settlementDate,
     @Digits(integer = 16, fraction = 4) BigDecimal grossAmount,
-    @Digits(integer = 16, fraction = 4) BigDecimal taxWithheldAmount) {
+    @Digits(integer = 16, fraction = 4) BigDecimal taxWithheldAmount,
+    UUID counterpartyAccountId,
+    @Digits(integer = 16, fraction = 4) BigDecimal counterpartyAmount) {
 
   public CreateTransactionRequest {
     transactionType = RequestStrings.blankToNull(transactionType);

@@ -8,7 +8,6 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
-import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
@@ -21,6 +20,7 @@ import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
@@ -556,8 +556,8 @@ class SettlementMatchControllerTest {
     post(token, asset.id(), "WITHDRAWAL", "-10.00")
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
-    // Not a type the ledger accepts yet (two-sided, US-10-01).
-    post(token, a.current(), "TRANSFER", "-10.00")
+    // Not a type the ledger accepts yet (a loan repayment, US-10-02).
+    post(token, a.current(), "DEBT_REPAYMENT", "-10.00")
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
   }
@@ -1030,8 +1030,9 @@ class SettlementMatchControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(
-                null, name, accountType, currency, null, null, null, null, null, customAssetType))
+            AccountRequests.account(name, accountType, currency)
+                .customAssetType(customAssetType)
+                .build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

@@ -27,6 +27,16 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   @Query("SELECT m FROM SettlementMatch m WHERE m.id = :id")
   Optional<SettlementMatch> findByIdForUpdate(@Param("id") UUID id);
 
+  /**
+   * US-10-01: every transfer match, any status, one of whose legs is among {@code ids} - detection
+   * needs the rejected ones too, since a rejected pair is never proposed again. {@code ids} must
+   * not be empty.
+   */
+  @Query(
+      "SELECT m FROM SettlementMatch m WHERE m.matchKind = 'TRANSFER'"
+          + " AND (m.paymentTransaction.id IN :ids OR m.cardTransaction.id IN :ids)")
+  List<SettlementMatch> findTransferMatchesTouching(@Param("ids") Collection<UUID> ids);
+
   /** US-07-02: every match, any status, one of whose legs is the given transaction. */
   @Query(
       "SELECT m FROM SettlementMatch m"
@@ -54,7 +64,7 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   @Query(
       "SELECT m FROM SettlementMatch m JOIN FETCH m.cardAccount JOIN FETCH m.paymentTransaction p"
           + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction c"
-          + " WHERE m.cardAccount.id = :cardAccountId"
+          + " WHERE m.cardAccount.id = :cardAccountId AND m.matchKind = 'CARD_SETTLEMENT'"
           + HIDDEN_LEG_EXCLUDED
           + " ORDER BY m.createdAt DESC, m.id DESC")
   List<SettlementMatch> findByCardAccountId(@Param("cardAccountId") UUID cardAccountId);
@@ -66,32 +76,40 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   @Query(
       "SELECT m FROM SettlementMatch m JOIN FETCH m.paymentTransaction p"
           + " WHERE m.cardAccount.id = :cardAccountId AND m.status = 'CONFIRMED'"
+          + " AND m.matchKind = 'CARD_SETTLEMENT'"
           + " AND p.bookingDate BETWEEN :from AND :to")
   List<SettlementMatch> findConfirmedByCardAccountIdAndPaymentBookingDateBetween(
       @Param("cardAccountId") UUID cardAccountId,
       @Param("from") LocalDate from,
       @Param("to") LocalDate to);
 
-  // The work queue: matches of one status whose card AND payment account are both in accountIds -
-  // the accounts the caller may EDIT. Filtering here, before the page is cut, is what keeps another
-  // member's matches from crowding the caller's own out of the page. RLS confines the rows to the
-  // caller's workspace. accountIds must not be empty.
+  // The work queue: matches of one status - and of one kind, unless matchKind is null - whose
+  // card (credit) AND payment (debit) account are both in accountIds, the accounts the caller may
+  // EDIT. Filtering here, before the page is cut, is what keeps another member's matches from
+  // crowding the caller's own out of the page. RLS confines the rows to the caller's workspace.
+  // accountIds must not be empty.
   @Query(
       "SELECT m FROM SettlementMatch m JOIN FETCH m.cardAccount JOIN FETCH m.paymentTransaction p"
           + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction c"
           + " WHERE m.status = :status AND m.cardAccount.id IN :accountIds"
           + " AND p.account.id IN :accountIds"
+          + " AND (:matchKind IS NULL OR m.matchKind = :matchKind)"
           + HIDDEN_LEG_EXCLUDED
           + " ORDER BY m.createdAt DESC, m.id DESC")
   List<SettlementMatch> findActionable(
       @Param("status") String status,
+      @Param("matchKind") String matchKind,
       @Param("accountIds") Collection<UUID> accountIds,
       Pageable pageable);
 
-  // The other PROPOSED matches that reference either leg, so confirming one can reject its
-  // competitors. Not row-locked here: every decision on a card first takes that card's own row lock
-  // (SettlementDetectionService#lockCard), which is what serialises two members confirming
-  // competing proposals - all competitors share a payment or credit, so they share a card.
+  // The other PROPOSED matches, of either kind, that reference either leg, so confirming one can
+  // reject its competitors. Not row-locked here. Every decision first takes the row lock of the
+  // match's "card" account (SettlementDetectionService#lockCard) - the card, or for a transfer the
+  // credit leg's account - so competitors that share a credit, or a card, are serialised by it.
+  // Competitors sharing only a debit can hold different locks (two transfer proposals crediting
+  // two accounts, or a card settlement and a transfer); for those, uq_settlement_match_confirmed_*
+  // is the guard: the second confirmation fails its flush and is answered 409, never a second
+  // confirmed match.
   @Query(
       "SELECT m FROM SettlementMatch m WHERE m.status = 'PROPOSED' AND m.id <> :excludeId"
           + " AND (m.paymentTransaction.id = :paymentId"

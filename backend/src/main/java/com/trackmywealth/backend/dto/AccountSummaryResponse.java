@@ -17,5 +17,6 @@ public record AccountSummaryResponse(
     boolean hasContributionLimit,
     boolean discretionary,
     boolean manualValuation,
+    boolean countsAsSaving,
     String status,
     OffsetDateTime archivedAt) {}

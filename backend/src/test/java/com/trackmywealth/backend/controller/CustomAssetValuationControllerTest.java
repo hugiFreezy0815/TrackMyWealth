@@ -5,11 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.CustomAssetValuationService;
+import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -338,17 +338,9 @@ class CustomAssetValuationControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(
-                null,
-                "Vintage Car",
-                "CUSTOM_ASSET",
-                nativeCurrency,
-                null,
-                null,
-                null,
-                null,
-                null,
-                "VEHICLE"))
+            AccountRequests.account("Vintage Car", "CUSTOM_ASSET", nativeCurrency)
+                .customAssetType("VEHICLE")
+                .build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -362,18 +354,7 @@ class CustomAssetValuationControllerTest {
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateAccountRequest(
-                null,
-                "Everyday Checking",
-                "CASH",
-                nativeCurrency,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null))
+        .body(AccountRequests.account("Everyday Checking", "CASH", nativeCurrency).build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

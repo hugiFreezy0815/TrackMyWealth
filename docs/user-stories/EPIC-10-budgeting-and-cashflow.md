@@ -33,6 +33,19 @@ ambiguous cases, not auto-applied silently when confidence is low.
 **Definition of Done:** Integration test for the transfer-to-savings and transfer-to-investment
 scenarios, asserting exclusion from cash-flow totals.
 **Data-quality behaviour:** N/A.
+**Clarified before development (issue #147, 2026-09-29):**
+- **Size:** L.
+- **Recording:** a manual transfer or `PENSION_CONTRIBUTION` records both legs at once.
+- **Matching:** separately recorded same-currency legs (TRANSFER/WITHDRAWAL/EXPENSE against
+  TRANSFER/DEPOSIT/INCOME) are matched. Only an unambiguous TRANSFER pair is applied automatically;
+  every other pair is proposed.
+- **One-sided legs:** they are pending review until matched or confirmed as a transfer to an
+  untracked account.
+- **Cash flow:** income, spending, saving (a new `counts_as_saving` account flag) and pending
+  review.
+- **Cross-currency matching** is US-10-06.
+
+See `docs/architecture/database-schema.md`.
 
 ---
 
@@ -147,3 +160,12 @@ so that the headline number means what I think it means.
 **Definition of Done:** Unit test for each of the eight toggle combinations' effect on a fixed
 synthetic dataset.
 **Data-quality behaviour:** N/A.
+
+---
+
+## US-10-06 — Match cross-currency transfer legs within an FX tolerance
+
+Split from US-10-01 on 2026-09-29; the full story is issue #181. Two imported legs of a transfer
+between accounts in different currencies are proposed as a pair (never auto-applied) when their
+amounts agree within a tolerance at the daily FX rate; without a rate, no pair is proposed.
+**Dependencies:** US-10-01, the import framework. **Priority:** SHOULD. **Size:** M.

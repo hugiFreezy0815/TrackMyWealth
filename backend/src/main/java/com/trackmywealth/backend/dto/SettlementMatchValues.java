@@ -24,6 +24,15 @@ public final class SettlementMatchValues {
   /** Only the payment is recorded, and it equals the card's balance on that date. */
   public static final String BALANCE_EQUALS_PAYMENT = "BALANCE_EQUALS_PAYMENT";
 
+  /** A card payment and its settlement credit (US-09-02). */
+  public static final String CARD_SETTLEMENT = "CARD_SETTLEMENT";
+
+  /** US-10-01: the two legs of a transfer between two of the workspace's own accounts. */
+  public static final String TRANSFER = "TRANSFER";
+
+  /** Every kind of match (V41) - the one place the closed set is spelled out. */
+  public static final Set<String> MATCH_KINDS = Set.of(CARD_SETTLEMENT, TRANSFER);
+
   /** Every status a match can have - the one place the closed set is spelled out. */
   public static final Set<String> STATUSES = Set.of(PROPOSED, CONFIRMED, REJECTED);
 

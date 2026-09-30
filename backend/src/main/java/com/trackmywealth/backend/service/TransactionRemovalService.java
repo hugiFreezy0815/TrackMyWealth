@@ -66,6 +66,7 @@ public class TransactionRemovalService {
   private final TransactionRepository transactionRepository;
   private final SettlementMatchRepository settlementMatchRepository;
   private final SettlementDetectionService settlementDetectionService;
+  private final TransferDetectionService transferDetectionService;
   private final TransactionService transactionService;
   private final BusinessDateService businessDateService;
   private final Clock clock;
@@ -76,6 +77,7 @@ public class TransactionRemovalService {
       TransactionRepository transactionRepository,
       SettlementMatchRepository settlementMatchRepository,
       SettlementDetectionService settlementDetectionService,
+      TransferDetectionService transferDetectionService,
       TransactionService transactionService,
       BusinessDateService businessDateService,
       Clock clock) {
@@ -84,6 +86,7 @@ public class TransactionRemovalService {
     this.transactionRepository = transactionRepository;
     this.settlementMatchRepository = settlementMatchRepository;
     this.settlementDetectionService = settlementDetectionService;
+    this.transferDetectionService = transferDetectionService;
     this.transactionService = transactionService;
     this.businessDateService = businessDateService;
     this.clock = clock;
@@ -125,6 +128,15 @@ public class TransactionRemovalService {
         .findByRelatedTransactionId(original.getId())
         .filter(fee -> fee.getVoidedAt() == null)
         .ifPresent(affected::add);
+    // US-10-01: a two-sided transfer is one entry - removing its incoming leg takes the outgoing
+    // one too (the other direction is the lookup just above).
+    if (isTransferLeg(original) && original.getRelatedTransactionId() != null) {
+      transactionRepository
+          .findByIdForUpdate(original.getRelatedTransactionId())
+          .filter(debit -> debit.getVoidedAt() == null)
+          .ifPresent(affected::add);
+    }
+    requireEditOnOtherAccounts(affected, account, actor);
 
     OffsetDateTime now = OffsetDateTime.now(clock);
     SortedSet<UUID> unmatched = new TreeSet<>();
@@ -185,6 +197,15 @@ public class TransactionRemovalService {
         restored.add(fee);
       }
     }
+    // US-10-01: the outgoing leg of a two-sided transfer comes back with its incoming leg.
+    if (isTransferLeg(deleted) && deleted.getRelatedTransactionId() != null) {
+      transactionRepository
+          .findByIdIncludingDeletedForUpdate(deleted.getRelatedTransactionId())
+          .filter(debit -> debit.getDeletedAt() != null)
+          .filter(debit -> debit.getDeletedAt().isEqual(deleted.getDeletedAt()))
+          .ifPresent(restored::add);
+    }
+    requireEditOnOtherAccounts(restored, account, actor);
     LocalDate earliest = deleted.getBookingDate();
     for (Transaction row : restored) {
       row.setDeletedAt(null);
@@ -192,6 +213,7 @@ public class TransactionRemovalService {
       transactionRepository.saveAndFlush(row);
     }
     settlementDetectionService.detectAfterWrite(account, earliest);
+    transferDetectionService.detectAfterWrite(account, earliest);
     return new TransactionRemovalResponse(
         TransactionRemovalValues.SOFT_DELETE,
         transactionService.toResponses(restored),
@@ -207,6 +229,21 @@ public class TransactionRemovalService {
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     return transactionService.toResponses(
         transactionRepository.findDeletedByAccountIdSince(accountId, restoreWindowStart()));
+  }
+
+  private static boolean isTransferLeg(Transaction row) {
+    return TransferRecordingService.TRANSFER_TYPES.contains(row.getTransactionType());
+  }
+
+  // The other leg of a two-sided transfer sits on another account, which the member must be able to
+  // edit too - the same rule as recording it.
+  private void requireEditOnOtherAccounts(
+      List<Transaction> rows, Account account, AuthenticatedUserPrincipal actor) {
+    for (Transaction row : rows) {
+      if (!row.getAccount().getId().equals(account.getId())) {
+        accessControlService.requireAccountAccess(actor, row.getAccount(), AccessLevelValues.EDIT);
+      }
+    }
   }
 
   private Account requireEditable(UUID accountId, AuthenticatedUserPrincipal actor) {

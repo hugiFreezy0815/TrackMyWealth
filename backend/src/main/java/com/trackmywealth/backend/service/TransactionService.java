@@ -115,8 +115,10 @@ public class TransactionService {
   // US-07-01: need a security and an account that holds positions. BUY and SELL move the position.
   private static final Set<String> TRADE_TYPES = Set.of(BUY, SELL);
   private static final Set<String> INVESTMENT_TYPES = Set.of(BUY, SELL, DIVIDEND);
+  // US-10-01: one leg, or both at once, of a transfer between two of the workspace's own accounts.
+  private static final Set<String> TRANSFER_TYPES = TransferRecordingService.TRANSFER_TYPES;
   private static final Set<String> SUPPORTED_TYPES =
-      Stream.of(CASH_TYPES, CARD_TYPES, INVESTMENT_TYPES)
+      Stream.of(CASH_TYPES, CARD_TYPES, INVESTMENT_TYPES, TRANSFER_TYPES)
           .flatMap(Set::stream)
           .collect(Collectors.toUnmodifiableSet());
   // For a currency without an ISO minor unit (Currency#getDefaultFractionDigits is -1).
@@ -152,6 +154,8 @@ public class TransactionService {
   private final SecurityRepository securityRepository;
   private final CategorizationService categorizationService;
   private final TransactionCategorizationLogRepository categorizationLogRepository;
+  private final TransferDetectionService transferDetectionService;
+  private final TransferRecordingService transferRecordingService;
   private final ObjectMapper objectMapper;
   private final String fxDefaultSource;
 
@@ -165,6 +169,8 @@ public class TransactionService {
       SecurityRepository securityRepository,
       CategorizationService categorizationService,
       TransactionCategorizationLogRepository categorizationLogRepository,
+      TransferDetectionService transferDetectionService,
+      TransferRecordingService transferRecordingService,
       ObjectMapper objectMapper,
       @Value("${app.fx.default-source}") String fxDefaultSource) {
     this.accountLookupService = accountLookupService;
@@ -176,6 +182,8 @@ public class TransactionService {
     this.securityRepository = securityRepository;
     this.categorizationService = categorizationService;
     this.categorizationLogRepository = categorizationLogRepository;
+    this.transferDetectionService = transferDetectionService;
+    this.transferRecordingService = transferRecordingService;
     this.objectMapper = objectMapper;
     this.fxDefaultSource = fxDefaultSource;
   }
@@ -219,6 +227,8 @@ public class TransactionService {
               + request.securityId()
               + " does not exist. Create it first with POST /api/v1/securities.");
     }
+    // US-10-01: the other account of a two-sided transfer, checked before anything is written.
+    Account counterparty = transferRecordingService.findCounterparty(account, request, actor);
     // The currency a rate converts into: the card's billing currency, else the account's own.
     String accountCurrency =
         cardExtension != null ? cardExtension.getBillingCurrency() : account.getNativeCurrency();
@@ -255,6 +265,11 @@ public class TransactionService {
       // A trade's costs are part of its own row; a card purchase's fee becomes a FEE row below.
       transaction.setFeeAmount(request.feeAmount());
     }
+    if (counterparty != null) {
+      // Linked from the start: a manual two-sided transfer never waits for matching (DM-05).
+      transaction.setInternalTransfer(true);
+      transaction.setCounterpartyAccountId(counterparty.getId());
+    }
     if (foreignCurrency) {
       ForeignCurrencyResolution resolution = resolveForeignCurrency(accountCurrency, request);
       transaction.setFxRateToAccountCurrency(resolution.rate());
@@ -290,9 +305,14 @@ public class TransactionService {
       categorizationService.categorize(transactionRepository.saveAndFlush(fee));
     }
 
+    if (counterparty != null) {
+      transferRecordingService.recordCreditLeg(saved, counterparty, request, actor);
+    }
+
     // Same transaction, so the response below already shows the internal-transfer flag if this row
-    // just completed a settlement pair.
+    // just completed a settlement pair or an own-account transfer.
     settlementDetectionService.detectAfterWrite(account, request.bookingDate());
+    transferDetectionService.detectAfterWrite(account, request.bookingDate());
     return toResponse(saved, assignedBy.orElse(null));
   }
 
@@ -433,7 +453,8 @@ public class TransactionService {
                   && row.getCurrency().equals(request.currency())
                   && sameFxRate(row, request)
                   && sameFee(row, request)
-                  && sameInvestment(row, request);
+                  && sameInvestment(row, request)
+                  && sameCounterparty(row, request);
           if (!samePurchase) {
             throw new ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -477,6 +498,22 @@ public class TransactionService {
         .findByRelatedTransactionId(row.getId())
         .map(fee -> fee.getAmount().negate().compareTo(request.feeAmount()) == 0)
         .orElse(false);
+  }
+
+  // US-10-01: a two-sided transfer names its other account; a one-sided leg matched or confirmed
+  // since may have gained one, which is not a different request.
+  private boolean sameCounterparty(Transaction row, CreateTransactionRequest request) {
+    if (request.counterpartyAccountId() == null) {
+      return true;
+    }
+    if (!request.counterpartyAccountId().equals(row.getCounterpartyAccountId())) {
+      return false;
+    }
+    return request.counterpartyAmount() == null
+        || transactionRepository
+            .findByRelatedTransactionId(row.getId())
+            .map(credit -> credit.getAmount().compareTo(request.counterpartyAmount()) == 0)
+            .orElse(false);
   }
 
   // Every investment field is frozen and part of what the key identifies, so all must match; two
@@ -581,6 +618,7 @@ public class TransactionService {
           type + " can only be recorded on an account that holds positions.");
     }
     validateInvestment(type, request);
+    TransferRecordingService.validateRequest(account, type, request);
 
     // US-09-04/FR-CC-010, US-07-01/DM-06: the currency may differ from the account's own. A card is
     // compared against its billing_currency, not account.nativeCurrency - the two may legitimately
@@ -660,7 +698,8 @@ public class TransactionService {
         INFLOW_CASH_TYPES.contains(type)
             || DIVIDEND.equals(type)
             || (SETTLEMENT.equals(type) && card);
-    boolean signFixedByType = !SELL.equals(type);
+    // A one-sided TRANSFER may run either way; TransferRecordingService decides a transfer's sign.
+    boolean signFixedByType = !SELL.equals(type) && !TRANSFER_TYPES.contains(type);
     if (signFixedByType
         && (mustBePositive ? request.amount().signum() <= 0 : request.amount().signum() >= 0)) {
       throw new ResponseStatusException(
@@ -910,7 +949,8 @@ public class TransactionService {
         transaction.getVoidedAt(),
         transaction.getVoidReason(),
         transaction.getReplacesTransactionId(),
-        transaction.getDeletedAt());
+        transaction.getDeletedAt(),
+        transaction.getCounterpartyAccountId());
   }
 
   /**

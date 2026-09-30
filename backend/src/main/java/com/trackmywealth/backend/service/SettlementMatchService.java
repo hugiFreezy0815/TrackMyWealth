@@ -50,6 +50,7 @@ public class SettlementMatchService {
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final SettlementMatchRepository settlementMatchRepository;
   private final SettlementDetectionService settlementDetectionService;
+  private final TransferDetectionService transferDetectionService;
   private final Clock clock;
 
   public SettlementMatchService(
@@ -59,6 +60,7 @@ public class SettlementMatchService {
       AccountCreditCardRepository accountCreditCardRepository,
       SettlementMatchRepository settlementMatchRepository,
       SettlementDetectionService settlementDetectionService,
+      TransferDetectionService transferDetectionService,
       Clock clock) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -66,6 +68,7 @@ public class SettlementMatchService {
     this.accountCreditCardRepository = accountCreditCardRepository;
     this.settlementMatchRepository = settlementMatchRepository;
     this.settlementDetectionService = settlementDetectionService;
+    this.transferDetectionService = transferDetectionService;
     this.clock = clock;
   }
 
@@ -144,21 +147,27 @@ public class SettlementMatchService {
    * The matches with the given {@code status} (default {@code PROPOSED}, i.e. what needs a
    * decision) that the caller may act on: newest first, at most {@value #MAX_LISTED}. The access
    * filter is part of the query, so the cap applies to the caller's own matches and another
-   * member's cannot crowd them out.
+   * member's cannot crowd them out. {@code kind} (US-10-01) keeps one kind of match only; {@code
+   * null} keeps both.
    */
   @Transactional(readOnly = true)
-  public List<SettlementMatchResponse> list(String status, AuthenticatedUserPrincipal actor) {
+  public List<SettlementMatchResponse> list(
+      String status, String kind, AuthenticatedUserPrincipal actor) {
     String wanted = status == null ? SettlementMatchValues.PROPOSED : status;
     if (!SettlementMatchValues.STATUSES.contains(wanted)) {
       throw new ResponseStatusException(
           HttpStatus.BAD_REQUEST, "status must be one of PROPOSED, CONFIRMED, REJECTED.");
+    }
+    if (kind != null && !SettlementMatchValues.MATCH_KINDS.contains(kind)) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "kind must be one of CARD_SETTLEMENT, TRANSFER.");
     }
     Set<UUID> editable = editableAccountIds(actor);
     if (editable.isEmpty()) {
       return List.of();
     }
     return settlementMatchRepository
-        .findActionable(wanted, editable, PageRequest.of(0, MAX_LISTED))
+        .findActionable(wanted, kind, editable, PageRequest.of(0, MAX_LISTED))
         .stream()
         .map(this::toResponse)
         .toList();
@@ -183,17 +192,7 @@ public class SettlementMatchService {
 
     // Competitors first: they share a payment or a credit with this match, and only one match may
     // own it (uq_settlement_match_confirmed_*). Decided by the system, on this member's choice.
-    List<SettlementMatch> competitors =
-        settlementMatchRepository.findCompetingProposals(
-            match.getId(),
-            match.getPaymentTransaction().getId(),
-            match.getCardTransaction() == null ? null : match.getCardTransaction().getId());
-    competitors.forEach(
-        competitor -> {
-          competitor.setStatus(SettlementMatchValues.REJECTED);
-          competitor.setDecidedAt(now);
-        });
-    settlementMatchRepository.saveAllAndFlush(competitors);
+    settlementDetectionService.rejectCompetitors(match, now);
 
     match.setStatus(SettlementMatchValues.CONFIRMED);
     match.setDecidedBy(actor.userId());
@@ -223,15 +222,23 @@ public class SettlementMatchService {
     if (wasConfirmed) {
       settlementDetectionService.clearFlags(match);
     }
-    settlementDetectionService.detectForCard(match.getCardAccount().getId());
+    if (match.isTransfer()) {
+      // US-10-01: the freed legs may pair differently now; a rejected pair itself never returns.
+      transferDetectionService.detectAround(
+          match.getWorkspace().getId(), match.getPaymentTransaction().getBookingDate());
+    } else {
+      settlementDetectionService.detectForCard(match.getCardAccount().getId());
+    }
     return toResponse(match);
   }
 
   private SettlementMatch lockActionableMatch(UUID matchId, AuthenticatedUserPrincipal actor) {
     UUID memberId = accessControlService.requireActingMember(actor);
-    // Serialise on the card first, learned from a scalar so the match itself is not loaded (and its
-    // status cached) before the lock is held: a second decision on the same card then sees what the
-    // first committed. Taken before the access check, so a member with no access briefly queues
+    // Serialise on the card first - for a transfer match (US-10-01) the credit leg's account, which
+    // the match keeps in card_account_id - learned from a scalar so the match itself is not loaded
+    // (and its status cached) before the lock is held: a second decision on the same card then sees
+    // what the first committed. Taken before the access check, so a member with no access briefly
+    // queues
     // behind a card's decision at worst - it changes nothing.
     UUID cardAccountId =
         settlementMatchRepository.findCardAccountIdById(matchId).orElseThrow(this::matchNotFound);
@@ -316,18 +323,28 @@ public class SettlementMatchService {
   }
 
   private SettlementMatchResponse toResponse(SettlementMatch match) {
+    UUID creditAccountId = match.getCardAccount().getId();
+    UUID debitAccountId = match.getPaymentTransaction().getAccount().getId();
+    UUID debitTransactionId = match.getPaymentTransaction().getId();
+    UUID creditTransactionId =
+        match.getCardTransaction() == null ? null : match.getCardTransaction().getId();
     return new SettlementMatchResponse(
         match.getId(),
-        match.getCardAccount().getId(),
-        match.getPaymentTransaction().getAccount().getId(),
-        match.getPaymentTransaction().getId(),
-        match.getCardTransaction() == null ? null : match.getCardTransaction().getId(),
+        creditAccountId,
+        debitAccountId,
+        debitTransactionId,
+        creditTransactionId,
         match.getPaymentTransaction().getAmount().negate(),
         match.getPaymentTransaction().getCurrency(),
         match.getPaymentTransaction().getBookingDate(),
         match.getStatus(),
         match.getMatchBasis(),
         match.getDecidedAt(),
-        match.getCreatedAt());
+        match.getCreatedAt(),
+        match.getMatchKind(),
+        debitAccountId,
+        debitTransactionId,
+        creditAccountId,
+        creditTransactionId);
   }
 }

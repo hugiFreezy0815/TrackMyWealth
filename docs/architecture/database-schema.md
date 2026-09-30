@@ -310,6 +310,53 @@ issue #145.
   `row_security = off`, so a migration role that cannot bypass RLS fails loudly instead of
   updating nothing.
 
+### Internal transfers and cash flow (US-10-01)
+
+A transfer between two of a workspace's own accounts is never income or spending (FR-CF-001/002,
+DM-05). Decisions are on issue #147.
+
+- **Recorded as a pair.** A `TRANSFER` or `PENSION_CONTRIBUTION` with a `counterpartyAccountId`
+  writes both legs at once, each in its own account's currency, both flagged `is_internal_transfer`
+  and pointing at each other's account. The incoming leg links to the outgoing one through
+  `related_transaction_id`. Removing or restoring either leg takes the other along (US-07-02), and
+  either way the member needs EDIT on both accounts.
+- **Matched when recorded separately.** `TransferDetectionService` pairs a negative
+  TRANSFER/WITHDRAWAL/EXPENSE with a positive TRANSFER/DEPOSIT/INCOME on another own account: same
+  currency, exact amount, at most 5 days apart. Card accounts are excluded, since cards settle
+  through US-09-02. Matches reuse `settlement_match` with `match_kind = 'TRANSFER'` (`V41`): the
+  debit is the "payment" leg, the credit the "card" leg, and the credit's account the "card"
+  account. So confirm, reject and dissolve work as for a card settlement. Only an unambiguous
+  TRANSFER↔TRANSFER pair is applied automatically; every other pair is only proposed, and a
+  rejected pair is never proposed again. Confirming any match, by a member or by the system,
+  rejects every other proposal of either kind that shares one of its legs. A card settlement
+  and a transfer can both be proposed for the same WITHDRAWAL; card matching wins an unambiguous
+  pair. A run around a date decides only pairs with a leg within 5 days of it, and loads
+  candidates 15 days either side so each is judged with all competitors in view. Each run holds
+  a transaction-scoped advisory lock per workspace (`pg_advisory_xact_lock`), not the workspace
+  row. `V42` indexes `transaction (workspace_id, booking_date)` for that scan. The API also
+  returns each match's legs as `debit*`/`credit*` fields, which fit both kinds, and
+  `GET /settlement-matches?kind=` lists one kind only.
+- **One-sided legs.** An unlinked TRANSFER leg is pending review. `POST
+  …/transactions/{id}/untracked-transfer` confirms it as money moved to or from an untracked own
+  account (`is_internal_transfer` with no counterparty); a counterpart recorded later still pairs
+  with it. If that match is later undone, the leg is pending review again: the confirmation is
+  not remembered apart from the flag.
+- **Cash flow** (`GET /api/v1/cash-flow`, per month and currency; the four figures never
+  overlap):
+  - **income:** INCOME, INTEREST, DIVIDEND
+  - **spending:** purchases, withdrawals, expenses, fees, tax
+  - **saving:** internal-transfer credits into an account whose `counts_as_saving` is true from
+    one whose flag is false, less the reverse. `counts_as_saving` is a declared capability, on by
+    default for savings, depot, mandate, crypto, pension and vested-benefits accounts, and
+    overridable. The current flag applies to every month, so changing it restates history.
+  - **pendingReview:** unresolved settlements, unlinked transfer legs, and proposed pairs counted
+    once. A pair's credit leg is counted when its debit is not in the same figure (another month,
+    or an account the caller cannot read), so an income leg held back from income is never
+    dropped.
+
+  Voided pairs and soft-deleted rows are in none of them. Cross-currency matching is US-10-06
+  (#181); savings rate is US-10-05.
+
 ### Removing a transaction (US-07-02)
 
 The ledger stays append-only (RULE-024): removing a row never changes a financial field, and
