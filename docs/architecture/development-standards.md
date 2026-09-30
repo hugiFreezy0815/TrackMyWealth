@@ -56,7 +56,12 @@ cd backend
     something another workspace owns says exactly what one for a missing id says (US-28-03). A
     500 never carries exception text.
   - **Correlation id.** `CorrelationIdFilter` puts one on every request (a well-formed
-    `X-Correlation-Id` is honoured) and in the log MDC; quote it when reporting an error.
+    `X-Correlation-Id` is honoured) and in the log MDC; quote it when reporting an error. Browser
+    CORS must allow the header on requests and expose it on responses.
+  - **OpenAPI must match the wire.** `/api-docs` describes exact decimals as strings, documents
+    the optional correlation-id request/response header and the shared RFC 9457 problem response.
+    `ApiConventionsIntegrationTest` guards the generated contract so runtime serialization and
+    generated clients cannot silently drift apart.
 - SLF4J (`LoggerFactory.getLogger`) for logging, never `System.out`/`System.err` — enforced by both
   PMD (`SystemPrintln`) and an ArchUnit general coding rule; see `DatabaseBootstrapInitializer` for
   why this is safe even in code that runs before Spring's DI container exists.
