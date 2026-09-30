@@ -147,7 +147,7 @@ public class TokenRotationService {
   private ResponseStatusException refreshTokenAlreadyUsed() {
     return new ResponseStatusException(
         HttpStatus.UNAUTHORIZED,
-        "Refresh token has already been used. All sessions in this family have been revoked -"
+        "Refresh token has already been used. This login session has been revoked -"
             + " please log in again.");
   }
 }
