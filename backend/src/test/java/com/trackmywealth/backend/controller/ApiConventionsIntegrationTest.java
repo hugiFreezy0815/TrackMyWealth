@@ -27,10 +27,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -51,6 +54,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(ApiConventionsIntegrationTest.FailureProbeController.class)
 class ApiConventionsIntegrationTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
@@ -208,6 +212,23 @@ class ApiConventionsIntegrationTest {
   }
 
   @Test
+  void anUnexpectedHttpErrorUsesTheSameEnvelopeAndDoesNotLeakItsCause() {
+    String token = bootstrapAdministrator();
+
+    JsonNode problem =
+        problem(
+            client(token).get().uri("/api/v1/test/internal-error").exchange(),
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "INTERNAL");
+
+    assertThat(problem.path("detail").asString())
+        .doesNotContain("SELECT")
+        .doesNotContain("password_hash")
+        .doesNotContain("super-secret")
+        .doesNotContain("IllegalStateException");
+  }
+
+  @Test
   void aRequestTheSecurityFirewallRejectsGetsTheSameShape() {
     String token = bootstrapAdministrator();
     // Sent as given - a client would normalise these paths - so they reach the firewall as is.
@@ -256,6 +277,23 @@ class ApiConventionsIntegrationTest {
     assertThat(replaced).isNotEqualTo("x").hasSize(36); // a generated UUID
   }
 
+  @Test
+  void browserPreflightAllowsTheCorrelationIdRequestHeader() {
+    anonymousClient()
+        .options()
+        .uri("/api/v1/accounts")
+        .header("Origin", "http://localhost:19006")
+        .header("Access-Control-Request-Method", "GET")
+        .header("Access-Control-Request-Headers", "X-Correlation-Id")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectHeader()
+        .value(
+            "Access-Control-Allow-Headers",
+            value -> assertThat(value.toLowerCase()).contains("x-correlation-id"));
+  }
+
   // --- decimals as strings (#149, #176)
   // ------------------------------------------------------------
 
@@ -288,6 +326,29 @@ class ApiConventionsIntegrationTest {
     assertThat(row.path("amount").asString()).isEqualTo("-12345678.1247");
     // A replay sending back exactly what it received is the same transaction, not a conflict.
     postTransaction(token, depot.id(), buy).expectStatus().isCreated();
+
+    // #176's sell-all regression: use the exact quantity the API returned, with no conversion
+    // through a JavaScript/IEEE-754 number. Every digit must survive the BUY -> response -> SELL
+    // round trip so the position can be closed without precision dust.
+    String sellAll =
+        """
+        {"transactionType":"SELL","bookingDate":"%s","amount":"12345678.1247","currency":"CHF",
+         "securityId":"%s","quantity":"-%s","unitPrice":"%s","externalId":"exact-sell"}
+        """
+            .formatted(
+                today(),
+                security,
+                row.path("quantity").asString(),
+                row.path("unitPrice").asString());
+    JsonNode sold =
+        objectMapper.readTree(
+            postTransaction(token, depot.id(), sellAll)
+                .expectStatus()
+                .isCreated()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody());
+    assertThat(sold.path("quantity").asString()).isEqualTo("-12345678.1234567891");
   }
 
   @Test
@@ -313,6 +374,51 @@ class ApiConventionsIntegrationTest {
     JsonNode row = objectMapper.readTree(created);
     assertThat(row.path("amount").asString()).isEqualTo("-10.5");
     assertThat(row.path("fxRateToAccountCurrency").asString()).isEqualTo("0.9412345678");
+  }
+
+  @Test
+  void openApiDocumentsExactDecimalsCorrelationIdsAndTheSharedProblemEnvelope() {
+    String token = bootstrapAdministrator();
+
+    JsonNode spec =
+        objectMapper.readTree(
+            client(token)
+                .get()
+                .uri("/api-docs")
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody());
+
+    JsonNode transaction = spec.path("components").path("schemas").path("TransactionResponse");
+    assertThat(transaction.path("properties").path("amount").path("type").asString())
+        .isEqualTo("string");
+    assertThat(transaction.path("properties").path("quantity").path("type").asString())
+        .isEqualTo("string");
+    assertThat(transaction.path("properties").path("unitPrice").path("format").asString())
+        .isEqualTo("decimal");
+
+    JsonNode postTransaction =
+        spec.path("paths")
+            .path("/api/v1/accounts/{accountId}/transactions")
+            .path("post");
+    assertThat(postTransaction.path("parameters").findValuesAsText("name"))
+        .contains("X-Correlation-Id");
+    assertThat(
+            postTransaction
+                .path("responses")
+                .path("default")
+                .path("$ref")
+                .asString())
+        .isEqualTo("#/components/responses/ApiProblemResponse");
+
+    JsonNode problem = spec.path("components").path("schemas").path("ApiProblem");
+    assertThat(problem.path("properties").path("code").path("type").asString())
+        .isEqualTo("string");
+    assertThat(problem.path("properties").path("correlationId").path("type").asString())
+        .isEqualTo("string");
   }
 
   // --- helpers ---------------------------------------------------------------------------------
@@ -471,5 +577,15 @@ class ApiConventionsIntegrationTest {
         .baseUrl("http://localhost:%d".formatted(port))
         .defaultHeader("Authorization", "Bearer " + accessToken)
         .build();
+  }
+
+  @RestController
+  static class FailureProbeController {
+
+    @GetMapping("/api/v1/test/internal-error")
+    void internalError() {
+      throw new IllegalStateException(
+          "SELECT password_hash FROM app_user WHERE password_hash = 'super-secret'");
+    }
   }
 }
