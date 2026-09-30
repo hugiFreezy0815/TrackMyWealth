@@ -16,6 +16,7 @@ import com.trackmywealth.backend.repository.RefreshTokenRepository;
 import com.trackmywealth.backend.service.TokenHashingService;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -255,14 +256,13 @@ class AuthControllerTest {
   }
 
   @Test
-  void refreshRotatesTheTokenAndReuseOfTheOldOneInvalidatesTheWholeFamily() {
-    // bootstrapAdministrator() itself auto-logs-in (US-01-03), which starts its own,
-    // never-touched-again token family - only the family started by the explicit login() call
-    // below is exercised by this test, so assertions must be scoped to that family, not to every
-    // refresh_token row in the database.
+  void refreshTokenReuseRevokesTheWholeTokenFamilyAndItsAccessSessionImmediately() throws Exception {
+    // bootstrapAdministrator() itself auto-logs-in (US-01-03), which starts its own independent
+    // refresh-token rotation family. Only the family started by the explicit login() below is in
+    // scope for this test; workspace tenancy is unrelated to this authentication-only family id.
     bootstrapAdministrator();
     AuthTokensResponse initial = login("admin@example.com", PASSWORD);
-    UUID familyId = familyIdOf(initial.refreshToken());
+    UUID refreshTokenFamilyId = familyIdOf(initial.refreshToken());
 
     AuthTokensResponse rotated =
         refresh(initial.refreshToken())
@@ -275,16 +275,28 @@ class AuthControllerTest {
     assertThat(rotated.refreshToken()).isNotEqualTo(initial.refreshToken());
     assertThat(rotated.accessToken()).isNotBlank();
 
-    // The new token works.
-    refresh(rotated.refreshToken()).expectStatus().isOk();
+    // Before theft is detected, the newly issued access token authenticates normally.
+    protectedSessionsRequest(rotated.accessToken()).expectStatus().isOk();
 
-    // Reusing the very first (already rotated-away) token is theft: rejected, and it takes down
-    // every token in the family - including the one issued by the rotation directly above.
+    // Reusing the first, already-rotated-away refresh token is theft. The response is rejected and
+    // the security response must persist despite rotate() throwing ResponseStatusException.
     refresh(initial.refreshToken()).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
 
-    assertThat(tokensInFamily(familyId))
-        .hasSize(3)
-        .allSatisfy(token -> assertThat(token.isTheftSuspected()).isTrue());
+    assertThat(tokensInFamily(refreshTokenFamilyId))
+        .hasSize(2)
+        .allSatisfy(
+            token -> {
+              assertThat(token.isTheftSuspected()).isTrue();
+              assertThat(token.getRevokedAt()).isNotNull();
+            });
+
+    // FR-AUT-004/005 + US-02-03: theft detection must also revoke the user_session bound to this
+    // token-rotation family, so an access JWT already issued for it fails on the very next request
+    // rather than remaining valid until its normal 15-minute expiry.
+    assertThat(sessionStatusForRefreshTokenFamily(refreshTokenFamilyId)).isEqualTo("REVOKED");
+    protectedSessionsRequest(rotated.accessToken())
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
   }
 
   @Test
@@ -358,6 +370,31 @@ class AuthControllerTest {
     assertThat(tokensInFamily(familyId))
         .hasSize(1)
         .allSatisfy(token -> assertThat(token.isTheftSuspected()).isFalse());
+  }
+
+  private RestTestClient.ResponseSpec protectedSessionsRequest(String accessToken) {
+    return client()
+        .get()
+        .uri("/api/v1/sessions")
+        .header("Authorization", "Bearer " + accessToken)
+        .exchange();
+  }
+
+  private String sessionStatusForRefreshTokenFamily(UUID refreshTokenFamilyId) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT us.status FROM user_session us "
+                    + "JOIN refresh_token rt ON rt.id = us.refresh_token_id "
+                    + "WHERE rt.family_id = ?")) {
+      statement.setObject(1, refreshTokenFamilyId);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        assertThat(resultSet.next()).isTrue();
+        String status = resultSet.getString("status");
+        assertThat(resultSet.next()).isFalse();
+        return status;
+      }
+    }
   }
 
   private UUID familyIdOf(String plaintextRefreshToken) {
