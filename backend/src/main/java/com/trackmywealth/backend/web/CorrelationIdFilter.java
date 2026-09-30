@@ -62,6 +62,11 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
     return false;
   }
 
+  @Override
+  protected boolean shouldNotFilterAsyncDispatch() {
+    return false;
+  }
+
   private static String correlationIdOf(HttpServletRequest request) {
     if (request.getAttribute(ATTRIBUTE) instanceof String assigned) {
       return assigned;
