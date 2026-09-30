@@ -85,9 +85,9 @@ printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 32)" > .env   # once; keep this
 docker compose up -d --build           # builds backend/Dockerfile, starts postgres + backend
 ```
 
-Docker Compose treats `JWT_SECRET` as required and refuses to start the backend when it is absent.
-Do not commit the generated `.env`; keep the secret with the same care as other deployment
-credentials.
+The backend refuses to start when `JWT_SECRET` is absent on this deployment path. Starting only
+the PostgreSQL service for development still works without it. Do not commit the generated `.env`;
+keep the secret with the same care as other deployment credentials.
 
 Either way, the API comes up on `:8080`; OpenAPI UI at `/api-docs/ui` once the controller layer is
 built out (see `docs/user-stories/EPIC-29-*` in the backlog).
@@ -127,9 +127,10 @@ printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 32)" > .env
 docker compose up -d --build
 ```
 
-`docker-compose.yml` requires that value. The public JWT placeholder is accepted only when the
-backend is explicitly started with the Spring `dev` or `test` profile; neither is a deployment
-profile.
+`docker-compose.yml` passes that value to the backend, whose startup guard rejects an absent,
+short, trivially weak, or public-placeholder secret. The public JWT placeholder is accepted only
+when the backend is explicitly started with the Spring `dev` or `test` profile; neither is a
+deployment profile.
 
 That's the whole deployment: `docker-compose.yml` builds `backend/Dockerfile` (multi-stage Maven
 build -> a plain JRE runtime image) and starts it alongside `postgres`, wired together on Docker's
@@ -165,7 +166,7 @@ live outside Switzerland/Germany.
 
 The JWT default in `application.yml` is a deliberately public development placeholder. It is
 accepted only under the explicit Spring `dev` or `test` profile. Every other startup fails fast
-until a real secret is supplied; Docker Compose also requires it before launching the backend.
+until a real secret is supplied; a Compose backend start without it fails immediately.
 
 - `JWT_SECRET` - signs access tokens and MFA login challenges. Generate cryptographically random
   key material with `openssl rand -base64 32` (at least 32 bytes of HMAC key material) and store it
