@@ -66,6 +66,23 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
           + " WHERE s.id = :id")
   int revokeById(@Param("id") UUID id, @Param(REVOKED_AT_PARAM) OffsetDateTime revokedAt);
 
+  // FR-AUT-004 / #190: refresh-token reuse invalidates the entire token-rotation family and
+  // must immediately invalidate access tokens already issued for its session. The session points
+  // only at the family's CURRENT refresh token, so matching by refreshToken.familyId (rather than
+  // by the reused, already-rotated-away token id) still finds it after successful rotations.
+  //
+  // Deliberately a targeted bulk update, for the same reason as revokeById above: callers may hold
+  // a managed UserSession loaded before a concurrent security event, and a full entity save could
+  // write stale status/revocation state back over this update.
+  @Modifying
+  @Query(
+      "UPDATE UserSession s SET s.status = 'REVOKED', "
+          + "s.revokedAt = COALESCE(s.revokedAt, :revokedAt) "
+          + "WHERE s.refreshToken.familyId = :refreshTokenFamilyId AND s.status = 'ACTIVE'")
+  int revokeActiveSessionsByRefreshTokenFamilyId(
+      @Param("refreshTokenFamilyId") UUID refreshTokenFamilyId,
+      @Param(REVOKED_AT_PARAM) OffsetDateTime revokedAt);
+
   // US-02-01 disable: user_session.status is now a security-relevant signal (US-02-03's
   // JwtAuthenticationFilter check), not just a display field, so disabling a user must mark their
   // sessions REVOKED too - previously only their refresh tokens were revoked
