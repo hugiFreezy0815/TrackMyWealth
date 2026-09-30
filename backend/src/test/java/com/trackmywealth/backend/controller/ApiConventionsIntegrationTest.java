@@ -404,7 +404,7 @@ class ApiConventionsIntegrationTest {
         spec.path("paths")
             .path("/api/v1/accounts/{accountId}/transactions")
             .path("post");
-    assertThat(postTransaction.path("parameters").findValuesAsText("name"))
+    assertThat(postTransaction.path("parameters").findValuesAsString("name"))
         .contains("X-Correlation-Id");
     assertThat(
             postTransaction
