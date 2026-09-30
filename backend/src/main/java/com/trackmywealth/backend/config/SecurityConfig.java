@@ -3,6 +3,9 @@ package com.trackmywealth.backend.config;
 import com.trackmywealth.backend.controller.SecurityController;
 import com.trackmywealth.backend.security.JwtAuthenticationFilter;
 import com.trackmywealth.backend.security.RateLimitFilter;
+import com.trackmywealth.backend.web.ApiErrorCode;
+import com.trackmywealth.backend.web.CorrelationIdFilter;
+import com.trackmywealth.backend.web.ProblemResponseWriter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -13,8 +16,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.firewall.RequestRejectedHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -45,7 +48,8 @@ public class SecurityConfig {
   SecurityFilterChain filterChain(
       HttpSecurity http,
       JwtAuthenticationFilter jwtAuthenticationFilter,
-      RateLimitFilter rateLimitFilter)
+      RateLimitFilter rateLimitFilter,
+      ProblemResponseWriter problemResponseWriter)
       throws Exception {
     http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
         .authorizeHttpRequests(
@@ -82,13 +86,40 @@ public class SecurityConfig {
         // unchanged) - without this, both cases fall back to the same Http403ForbiddenEntryPoint,
         // which is the entry point ordinarily meant for a session/form-login flow, not a
         // stateless token API where a client needs to tell "log in" apart from "not allowed".
+        // EPIC-29 (#149): both in the one error shape, with their own stable codes.
         .exceptionHandling(
             exceptions ->
-                exceptions.authenticationEntryPoint(
-                    new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                exceptions
+                    .authenticationEntryPoint(
+                        (request, response, denied) ->
+                            problemResponseWriter.write(
+                                response,
+                                HttpStatus.UNAUTHORIZED,
+                                ApiErrorCode.UNAUTHENTICATED,
+                                "Sign in to continue."))
+                    .accessDeniedHandler(
+                        (request, response, denied) ->
+                            problemResponseWriter.write(
+                                response,
+                                HttpStatus.FORBIDDEN,
+                                ApiErrorCode.FORBIDDEN,
+                                "Not allowed.")))
         // Stateless, token-based API (see EPIC-02) - no session cookie for CSRF to protect.
         .csrf(csrf -> csrf.disable());
     return http.build();
+  }
+
+  // EPIC-29 (#149): a request the security firewall refuses (a ";" or an encoded "." or "/" in the
+  // path) is answered in the one error shape too. Without this bean it is rethrown to the container
+  // and rendered by /error instead; picked up by WebSecurity from the context.
+  @Bean
+  RequestRejectedHandler requestRejectedHandler(ProblemResponseWriter problemResponseWriter) {
+    return (request, response, rejected) ->
+        problemResponseWriter.write(
+            response,
+            HttpStatus.BAD_REQUEST,
+            ApiErrorCode.VALIDATION_FAILED,
+            "The request was rejected.");
   }
 
   // FR-AUT-007: a modern memory-hard hash with a per-user salt. Argon2id specifically (not
@@ -103,7 +134,8 @@ public class SecurityConfig {
     CorsConfiguration configuration = new CorsConfiguration();
     configuration.setAllowedOriginPatterns(allowedOriginPatterns);
     configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+    configuration.setAllowedHeaders(
+        List.of("Authorization", "Content-Type", CorrelationIdFilter.HEADER));
     // Bearer tokens are sent via the Authorization header (see mobile/src/api/client.ts), not
     // cookies, so credentialed (cookie-carrying) CORS requests are not needed yet. Revisit
     // if/when EPIC-02's web refresh-token cookie (FR-AUT-006) is implemented.
@@ -112,7 +144,8 @@ public class SecurityConfig {
     // server names it here - so without this, the web build of mobile/ reads null for a header the
     // iOS/Android builds (not subject to the same-origin policy) read fine. Any custom response
     // header this API adds must be listed, or it is invisible on exactly one of the three clients.
-    configuration.setExposedHeaders(List.of(SecurityController.IGNORED_FIELDS_HEADER));
+    configuration.setExposedHeaders(
+        List.of(SecurityController.IGNORED_FIELDS_HEADER, CorrelationIdFilter.HEADER));
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);

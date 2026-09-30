@@ -58,6 +58,21 @@ class ArchitectureTest {
                   + " depend on a mapper/service-layer DTO instead")
           .allowEmptyShould(true);
 
+  // EPIC-29 (#149): the controller rule alone lets an entity slip through inside a DTO (a record
+  // component, a nested list); a DTO must not reach the entity package either.
+  @ArchTest
+  static final ArchRule dtos_do_not_carry_entities =
+      noClasses()
+          .that()
+          .resideInAPackage("..dto..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..entity..")
+          .because(
+              "the API speaks DTOs only (FR-API contract, EPIC-29) - a DTO holding an entity puts"
+                  + " the entity on the wire all the same")
+          .allowEmptyShould(true);
+
   @ArchTest
   static final ArchRule controllers_are_named_consistently =
       classes()

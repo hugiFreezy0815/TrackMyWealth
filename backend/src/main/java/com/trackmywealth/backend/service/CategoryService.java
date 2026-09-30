@@ -10,6 +10,8 @@ import com.trackmywealth.backend.repository.CategoryRepository;
 import com.trackmywealth.backend.repository.WorkspaceCategoryOverrideRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.web.ApiErrorCode;
+import com.trackmywealth.backend.web.ApiException;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -162,7 +164,9 @@ public class CategoryService {
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = require(categories, id);
     if (request.version() != versionOf(category, overrides)) {
-      throw conflict(
+      throw new ApiException(
+          HttpStatus.CONFLICT,
+          ApiErrorCode.VERSION_CONFLICT,
           "This category was changed by someone else in the meantime. Reload it and retry your"
               + " update.");
     }

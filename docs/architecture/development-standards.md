@@ -41,6 +41,27 @@ cd backend
 - **DTOs only across the REST boundary, never JPA entities** (`controllers_do_not_expose_entities`
   in `ArchitectureTest`) — this is explicitly called out in `docs/user-stories/BACKLOG-remaining-epics.md`
   (EPIC 29) as a rule that "erodes easily if not enforced."
+  A DTO may not reference an entity either (`dtos_do_not_carry_entities`), and
+  `ArchitectureRulesBiteTest` proves both rules fail on a deliberate violation.
+- **API wire conventions (EPIC-29, #149)** — mandatory for every new endpoint:
+  - **Decimals travel as strings.** Every `BigDecimal` (money, quantity, price, FX rate,
+    percentage) is serialized as a plain decimal string with its scale kept (`"1005.0000"`) by
+    one global rule (`JacksonConfig`); requests accept strings or numbers. Never use `double` or
+    `float` in a DTO. `DecimalWireFormatTest` checks every DTO automatically.
+  - **One error shape.** Every error is RFC 9457 `application/problem+json` with `detail`, a
+    stable `code` (`ApiErrorCode`) and the request's `correlationId`. Throw a
+    `ResponseStatusException` with a user-facing reason — its class-level code is added
+    automatically. Throw an `ApiException` with a specific code only where a client must branch on
+    it, and add that code to `ApiErrorCode`; codes are contract and are never renamed. A 404 for
+    something another workspace owns says exactly what one for a missing id says (US-28-03). A
+    500 never carries exception text.
+  - **Correlation id.** `CorrelationIdFilter` puts one on every request (a well-formed
+    `X-Correlation-Id` is honoured) and in the log MDC; quote it when reporting an error. Browser
+    CORS must allow the header on requests and expose it on responses.
+  - **OpenAPI must match the wire.** `/api-docs` describes exact decimals as strings, documents
+    the optional correlation-id request/response header and the shared RFC 9457 problem response.
+    `ApiConventionsIntegrationTest` guards the generated contract so runtime serialization and
+    generated clients cannot silently drift apart.
 - SLF4J (`LoggerFactory.getLogger`) for logging, never `System.out`/`System.err` — enforced by both
   PMD (`SystemPrintln`) and an ArchUnit general coding rule; see `DatabaseBootstrapInitializer` for
   why this is safe even in code that runs before Spring's DI container exists.

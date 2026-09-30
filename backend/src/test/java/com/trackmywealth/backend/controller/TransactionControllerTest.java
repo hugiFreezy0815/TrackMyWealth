@@ -1517,7 +1517,8 @@ class TransactionControllerTest {
     expectUnprocessable(
         token,
         depot.id(),
-        foreignTrade("SELL", "0.00", "USD", security, "-1", "5", "5", null, "0.00"));
+        foreignTrade("SELL", "0.00", "USD", security, "-1", "5", "5", null, "0.00"),
+        "A zero amount implies no rate: give fxRateToAccountCurrency instead of billedAmount.");
     assertThat(countTransactions(depot.id())).isEqualTo(2);
   }
 
@@ -1528,13 +1529,37 @@ class TransactionControllerTest {
     UUID security = createSecurity(token);
 
     // The story's edge case: a negative quantity on a BUY.
-    expectUnprocessable(token, depot.id(), trade("BUY", security, "-10", "100", null, "-1000.00"));
-    expectUnprocessable(token, depot.id(), trade("BUY", security, "10", "100", null, "1000.00"));
-    expectUnprocessable(token, depot.id(), trade("SELL", security, "4", "110", null, "440.00"));
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("BUY", security, "-10", "100", null, "-1000.00"),
+        "quantity must be positive for a BUY (e.g. 10): shares enter the position.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("BUY", security, "10", "100", null, "1000.00"),
+        "amount must be negative for a BUY (e.g. -85.00): money leaves the account.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("SELL", security, "4", "110", null, "440.00"),
+        "quantity must be negative for a SELL (e.g. -10): shares leave the position.");
     // A sale's sign follows from its figures: -4 x 110 is 440 in, not 440 out.
-    expectUnprocessable(token, depot.id(), trade("SELL", security, "-4", "110", null, "-440.00"));
-    expectUnprocessable(token, depot.id(), trade("BUY", security, "10", "-100", null, "-1000.00"));
-    expectUnprocessable(token, depot.id(), trade("BUY", security, "10", "100", "-5", "-995.00"));
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("SELL", security, "-4", "110", null, "-440.00"),
+        "amount must equal -(quantity x unitPrice) - feeAmount = 440.0000 within 0.03.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("BUY", security, "10", "-100", null, "-1000.00"),
+        "unitPrice must be positive.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("BUY", security, "10", "100", "-5", "-995.00"),
+        "feeAmount must be a positive magnitude.");
     assertThat(countTransactions(depot.id())).isZero();
   }
 
@@ -1545,7 +1570,11 @@ class TransactionControllerTest {
     UUID security = createSecurity(token);
 
     // 10 x 100 + 5 = 1005, not 1010: a typo, rejected (0.01 + 10 x 0.005 = 0.06 allowed).
-    expectUnprocessable(token, depot.id(), trade("BUY", security, "10", "100", "5", "-1010.00"));
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("BUY", security, "10", "100", "5", "-1010.00"),
+        "amount must equal -(quantity x unitPrice) - feeAmount = -1005.0000 within 0.06.");
     // 3 x 33.3333 = 99.9999, booked as 100.00 on the statement: accepted.
     postTransaction(token, depot.id(), trade("BUY", security, "3", "33.3333", null, "-100.00"))
         .expectStatus()
@@ -1567,7 +1596,10 @@ class TransactionControllerTest {
         .isEqualTo(HttpStatus.CREATED);
     // The allowance is 0.01 + 25,000 x 0.00005 = 1.26, so a slip of ten is still caught.
     expectUnprocessable(
-        token, depot.id(), trade("BUY", security, "25000", "12.3457", null, "-308652.50"));
+        token,
+        depot.id(),
+        trade("BUY", security, "25000", "12.3457", null, "-308652.50"),
+        "amount must equal -(quantity x unitPrice) - feeAmount = -308642.5000 within 1.26.");
     assertThat(countTransactions(depot.id())).isEqualTo(1);
   }
 
@@ -1587,7 +1619,8 @@ class TransactionControllerTest {
     expectUnprocessable(
         token,
         depot.id(),
-        foreignTrade("BUY", "-2900", "JPY", security, "1.2345", "2345", null, "0.0056", null));
+        foreignTrade("BUY", "-2900", "JPY", security, "1.2345", "2345", null, "0.0056", null),
+        "amount must equal -(quantity x unitPrice) - feeAmount = -2894.9025 within 1.61725.");
   }
 
   @Test
@@ -1596,11 +1629,26 @@ class TransactionControllerTest {
     AccountSummaryResponse depot = createDepot(token, "CHF");
     UUID security = createSecurity(token);
 
-    expectUnprocessable(token, depot.id(), trade("BUY", null, "10", "100", null, "-1000.00"));
     expectUnprocessable(
-        token, depot.id(), trade("BUY", UUID.randomUUID(), "10", "100", null, "-1000.00"));
-    expectUnprocessable(token, depot.id(), trade("BUY", security, null, "100", null, "-1000.00"));
-    expectUnprocessable(token, depot.id(), trade("BUY", security, "10", null, null, "-1000.00"));
+        token,
+        depot.id(),
+        trade("BUY", null, "10", "100", null, "-1000.00"),
+        "securityId is required for a BUY.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("BUY", UUID.randomUUID(), "10", "100", null, "-1000.00"),
+        "does not exist. Create it first with POST /api/v1/securities.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("BUY", security, null, "100", null, "-1000.00"),
+        "quantity and unitPrice are required for a BUY.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        trade("BUY", security, "10", null, null, "-1000.00"),
+        "quantity and unitPrice are required for a BUY.");
     assertThat(countTransactions(depot.id())).isZero();
   }
 
@@ -1615,7 +1663,10 @@ class TransactionControllerTest {
 
     for (AccountSummaryResponse account : List.of(cash, plainPension)) {
       expectUnprocessable(
-          token, account.id(), trade("BUY", security, "10", "100", null, "-1000.00"));
+          token,
+          account.id(),
+          trade("BUY", security, "10", "100", null, "-1000.00"),
+          "BUY can only be recorded on an account that holds positions.");
     }
     // A 3a that holds funds trades like a depot; its contribution limit is about contributions.
     postTransaction(token, fundPension.id(), trade("BUY", security, "10", "100", null, "-1000.00"))
@@ -1689,33 +1740,70 @@ class TransactionControllerTest {
 
     // 100 - 30 is 70, not the 65 received.
     expectUnprocessable(
-        token, depot.id(), dividend("65.00", security, null, null, "100.00", "30.00"));
-    expectUnprocessable(token, depot.id(), dividend("65.00", security, null, null, "100.00", null));
-    expectUnprocessable(token, depot.id(), dividend("65.00", security, null, null, null, "35.00"));
+        token,
+        depot.id(),
+        dividend("65.00", security, null, null, "100.00", "30.00"),
+        "grossAmount minus taxWithheldAmount (70.00) must equal amount, the net cash received.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        dividend("65.00", security, null, null, "100.00", null),
+        "grossAmount and taxWithheldAmount must be given together.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        dividend("65.00", security, null, null, null, "35.00"),
+        "grossAmount and taxWithheldAmount must be given together.");
     // 60 - (-5) is 65, but a withholding is never negative.
     expectUnprocessable(
-        token, depot.id(), dividend("65.00", security, null, null, "60.00", "-5.00"));
+        token,
+        depot.id(),
+        dividend("65.00", security, null, null, "60.00", "-5.00"),
+        "taxWithheldAmount cannot be negative.");
     // 200 x 0.50 = 100 gross, but 65 arrived and no withholding was stated.
-    expectUnprocessable(token, depot.id(), dividend("65.00", security, "200", "0.50", null, null));
-    expectUnprocessable(token, depot.id(), dividend("65.00", security, "-200", null, null, null));
-    expectUnprocessable(token, depot.id(), dividend("65.00", security, "200", "0", null, null));
-    expectUnprocessable(token, depot.id(), dividend("-65.00", security, null, null, null, null));
-    expectUnprocessable(token, depot.id(), dividend("65.00", null, null, null, null, null));
+    expectUnprocessable(
+        token,
+        depot.id(),
+        dividend("65.00", security, "200", "0.50", null, null),
+        "quantity x unitPrice (100.0000) must equal the gross dividend within 1.01; if tax was withheld, give grossAmount and taxWithheldAmount.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        dividend("65.00", security, "-200", null, null, null),
+        "quantity must be positive for a DIVIDEND: the shares entitled.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        dividend("65.00", security, "200", "0", null, null),
+        "unitPrice must be positive.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        dividend("-65.00", security, null, null, null, null),
+        "amount must be positive for a DIVIDEND (e.g. 45.00): money enters the account.");
+    expectUnprocessable(
+        token,
+        depot.id(),
+        dividend("65.00", null, null, null, null, null),
+        "securityId is required for a DIVIDEND.");
     // A dividend has no trade or settlement date, nor a trade's fee.
     expectUnprocessable(
         token,
         depot.id(),
         investment(
-            "DIVIDEND", "65.00", "CHF", security, null, null, null, today(), null, null, null));
+            "DIVIDEND", "65.00", "CHF", security, null, null, null, today(), null, null, null),
+        "tradeDate and settlementDate are only valid for a BUY or SELL.");
     expectUnprocessable(
         token,
         depot.id(),
         investment(
-            "DIVIDEND", "65.00", "CHF", security, null, null, null, null, today(), null, null));
+            "DIVIDEND", "65.00", "CHF", security, null, null, null, null, today(), null, null),
+        "tradeDate and settlementDate are only valid for a BUY or SELL.");
     expectUnprocessable(
         token,
         depot.id(),
-        investment("DIVIDEND", "65.00", "CHF", security, null, null, "1", null, null, null, null));
+        investment("DIVIDEND", "65.00", "CHF", security, null, null, "1", null, null, null, null),
+        "feeAmount is only valid on a BUY or SELL, or a foreign-currency card purchase; record a FEE transaction instead.");
     assertThat(countTransactions(depot.id())).isZero();
   }
 
@@ -1728,27 +1816,32 @@ class TransactionControllerTest {
     expectUnprocessable(
         token,
         depot.id(),
-        investment("DEPOSIT", "100.00", "CHF", security, null, null, null, null, null, null, null));
+        investment("DEPOSIT", "100.00", "CHF", security, null, null, null, null, null, null, null),
+        "securityId, quantity, unitPrice, tradeDate, settlementDate, grossAmount and taxWithheldAmount are only valid for BUY, DIVIDEND, SELL.");
     expectUnprocessable(
         token,
         depot.id(),
-        investment("FEE", "-5.00", "CHF", null, "10", null, null, null, null, null, null));
+        investment("FEE", "-5.00", "CHF", null, "10", null, null, null, null, null, null),
+        "securityId, quantity, unitPrice, tradeDate, settlementDate, grossAmount and taxWithheldAmount are only valid for BUY, DIVIDEND, SELL.");
     expectUnprocessable(
         token,
         depot.id(),
         investment(
-            "INTEREST", "65.00", "CHF", null, null, null, null, null, null, "100.00", "35.00"));
+            "INTEREST", "65.00", "CHF", null, null, null, null, null, null, "100.00", "35.00"),
+        "securityId, quantity, unitPrice, tradeDate, settlementDate, grossAmount and taxWithheldAmount are only valid for BUY, DIVIDEND, SELL.");
     // A trade's fee travels on the trade; a standalone fee is its own FEE row, without feeAmount.
     expectUnprocessable(
         token,
         depot.id(),
-        investment("FEE", "-5.00", "CHF", null, null, null, "5", null, null, null, null));
+        investment("FEE", "-5.00", "CHF", null, null, null, "5", null, null, null, null),
+        "feeAmount is only valid on a BUY or SELL, or a foreign-currency card purchase; record a FEE transaction instead.");
     // Gross and withheld belong to a dividend, not a trade.
     expectUnprocessable(
         token,
         depot.id(),
         investment(
-            "BUY", "-1000.00", "CHF", security, "10", "100", null, null, null, "1000.00", "0"));
+            "BUY", "-1000.00", "CHF", security, "10", "100", null, null, null, "1000.00", "0"),
+        "grossAmount and taxWithheldAmount are only valid for a DIVIDEND.");
     assertThat(countTransactions(depot.id())).isZero();
   }
 
@@ -1772,7 +1865,8 @@ class TransactionControllerTest {
             today(),
             today().minusDays(1),
             null,
-            null));
+            null),
+        "settlementDate cannot be before tradeDate.");
     // Booked today, traded tomorrow: the cash cannot be booked before the trade happened.
     expectUnprocessable(
         token,
@@ -1788,7 +1882,8 @@ class TransactionControllerTest {
             today().plusDays(1),
             null,
             null,
-            null));
+            null),
+        "tradeDate cannot be after bookingDate: a trade's cash is booked on or after its trade date.");
     // Traded two days before booking and settling on the booking day: the ordinary case.
     postTransaction(
             token,
@@ -2299,13 +2394,20 @@ class TransactionControllerTest {
         null);
   }
 
-  // A 422 and nothing recorded. Which rule rejected the request is asserted on the service
-  // (TransactionServiceTest): a ResponseStatusException's reason does not reach the HTTP body.
-  private void expectUnprocessable(String token, UUID accountId, CreateTransactionRequest request) {
+  // A 422 and nothing recorded, rejected by the rule whose message the body's detail carries
+  // (#175): several rules overlap, so the status alone would not say which one fired. Matched by
+  // containment only so a message naming a generated id can be given without it.
+  private void expectUnprocessable(
+      String token, UUID accountId, CreateTransactionRequest request, String expectedDetail) {
     int before = countTransactions(accountId);
     postTransaction(token, accountId, request)
         .expectStatus()
-        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("UNPROCESSABLE")
+        .jsonPath("$.detail")
+        .value(String.class, detail -> assertThat(detail).contains(expectedDetail));
     assertThat(countTransactions(accountId)).isEqualTo(before);
   }
 

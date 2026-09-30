@@ -8,6 +8,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 /**
  * A plain unit test, not an integration one: every branch here is a pure translation from an
@@ -144,6 +145,68 @@ class GlobalExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getDetail()).contains("changed by another request");
+  }
+
+  // --- EPIC-29 (#149): stable codes and no leaks ------------------------------------------------
+
+  @Test
+  void aConflictCarriesTheCodeAClientBranchesOn() {
+    assertThat(
+            handler
+                .handleDataIntegrityViolation(
+                    violationWithRootMessage(
+                        "ERROR: duplicate key value violates unique constraint"
+                            + " \"uq_transaction_external_id\""))
+                .getProperties())
+        .containsEntry(ProblemDetails.CODE, ApiErrorCode.RETRY);
+    assertThat(
+            handler
+                .handleDataIntegrityViolation(
+                    violationWithRootMessage("ERROR: account_type_immutable: ..."))
+                .getProperties())
+        .containsEntry(ProblemDetails.CODE, ApiErrorCode.IMMUTABLE_FIELD);
+    assertThat(
+            handler
+                .handleOptimisticLockingFailure(
+                    new ObjectOptimisticLockingFailureException(Object.class, "id"))
+                .getProperties())
+        .containsEntry(ProblemDetails.CODE, ApiErrorCode.VERSION_CONFLICT);
+    assertThat(
+            handler
+                .handleDataIntegrityViolation(violationWithRootMessage("ERROR: something else"))
+                .getProperties())
+        .containsEntry(ProblemDetails.CODE, ApiErrorCode.CONFLICT);
+  }
+
+  @Test
+  void anUnexpectedErrorSaysNothingAboutItsCause() {
+    ProblemDetail problem =
+        handler.handleUnexpected(
+            new IllegalStateException("SELECT * FROM app_user WHERE password_hash = 'secret'"));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
+    assertThat(problem.getProperties()).containsEntry(ProblemDetails.CODE, ApiErrorCode.INTERNAL);
+    assertThat(problem.getDetail())
+        .doesNotContain("SELECT")
+        .doesNotContain("secret")
+        .doesNotContain("IllegalStateException");
+  }
+
+  @Test
+  void methodNotAllowedIsARequestErrorNotNotFound() {
+    assertThat(ApiErrorCode.forStatus(HttpStatus.METHOD_NOT_ALLOWED))
+        .isEqualTo(ApiErrorCode.VALIDATION_FAILED)
+        .isNotEqualTo(ApiErrorCode.NOT_FOUND);
+  }
+
+  @Test
+  void aCodedExceptionKeepsItsOwnCode() {
+    ApiException archived =
+        new ApiException(HttpStatus.CONFLICT, ApiErrorCode.ACCOUNT_ARCHIVED, "Archived.");
+
+    assertThat(ProblemDetails.decorate(archived.getBody()).getProperties())
+        .containsEntry(ProblemDetails.CODE, ApiErrorCode.ACCOUNT_ARCHIVED);
+    assertThat(archived.getBody().getDetail()).isEqualTo("Archived.");
   }
 
   private DataIntegrityViolationException violationWithRootMessage(String rootMessage) {

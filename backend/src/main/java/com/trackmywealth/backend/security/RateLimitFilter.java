@@ -8,6 +8,8 @@ import com.trackmywealth.backend.controller.MfaController;
 import com.trackmywealth.backend.controller.SecurityController;
 import com.trackmywealth.backend.controller.SessionController;
 import com.trackmywealth.backend.controller.SetupController;
+import com.trackmywealth.backend.web.ApiErrorCode;
+import com.trackmywealth.backend.web.ProblemResponseWriter;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
@@ -114,6 +116,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
   // with the number of *Rule fields/newRule(...) calls in the constructor.
   private static final int RULE_COUNT = 8;
 
+  private final ProblemResponseWriter problemResponseWriter;
   private final boolean enabled;
   private final Rule loginRule;
   private final Rule refreshRule;
@@ -124,7 +127,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
   private final Rule securityCreateRule;
   private final Rule securityLookupRule;
 
-  public RateLimitFilter(RateLimitProperties properties) {
+  public RateLimitFilter(
+      RateLimitProperties properties, ProblemResponseWriter problemResponseWriter) {
+    this.problemResponseWriter = problemResponseWriter;
     this.enabled = properties.enabled();
     // Split (not duplicated) across every rule, so app.rate-limit.max-buckets still bounds total
     // worst-case memory across all of them combined, matching its own documented meaning.
@@ -171,13 +176,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
       return;
     }
 
-    response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
     // Rounded up, not truncated: refillGreedy trickles tokens back continuously rather than all
     // at once at the period boundary, so the actual wait is usually well under the full configured
     // refill-period - reporting a truncated (possibly zero) value could tell a client to retry
     // before a token is actually available.
     long retryAfterSeconds = (probe.getNanosToWaitForRefill() + 999_999_999L) / 1_000_000_000L;
     response.setHeader("Retry-After", String.valueOf(retryAfterSeconds));
+    problemResponseWriter.write(
+        response,
+        HttpStatus.TOO_MANY_REQUESTS,
+        ApiErrorCode.RATE_LIMITED,
+        "Too many requests. Retry after " + retryAfterSeconds + " seconds.");
   }
 
   private Optional<Rule> ruleFor(String method, String path) {
