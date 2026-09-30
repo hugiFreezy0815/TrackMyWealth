@@ -77,14 +77,14 @@ public class JwtService {
               .getPayload();
 
       String subject = claims.getSubject();
-      Date issuedAt = claims.getIssuedAt();
-      Date expiration = claims.getExpiration();
       Integer tokenVersion = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
       String sessionIdClaim = claims.get(SESSION_ID_CLAIM, String.class);
 
+      // Presence only: JJWT has already checked exp against the clock, and iat is never trusted
+      // beyond being there - so neither is read into a java.util.Date here.
       if (subject == null
-          || issuedAt == null
-          || expiration == null
+          || claims.getIssuedAt() == null
+          || claims.getExpiration() == null
           || tokenVersion == null
           || sessionIdClaim == null) {
         return Optional.empty();

@@ -21,13 +21,11 @@ class JwtServiceTest {
   private static final String ISSUER = "trackmywealth";
   private static final String SECRET = "test-secret-that-is-at-least-32-bytes-long";
   private static final UUID USER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
-  private static final UUID SESSION_ID =
-      UUID.fromString("22222222-2222-2222-2222-222222222222");
+  private static final UUID SESSION_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
 
   private final JwtProperties properties = new JwtProperties(ISSUER, 15, 30, SECRET);
   private final JwtService service = new JwtService(properties);
-  private final SecretKey signingKey =
-      Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
+  private final SecretKey signingKey = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
 
   @Test
   void issuedTokenWithExpectedIssuerAndClaimsIsAccepted() {
@@ -104,10 +102,7 @@ class JwtServiceTest {
   @Test
   void tokenWithMalformedSessionIdIsRejected() {
     String token =
-        validTokenBuilder()
-            .claim("tokenVersion", 7)
-            .claim("sessionId", "not-a-uuid")
-            .compact();
+        validTokenBuilder().claim("tokenVersion", 7).claim("sessionId", "not-a-uuid").compact();
 
     assertThat(service.parseAccessToken(token)).isEmpty();
   }
