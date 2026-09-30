@@ -1,7 +1,10 @@
 package com.trackmywealth.backend.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -65,10 +68,8 @@ class TokenRotationServiceTest {
         .isInstanceOfSatisfying(
             ResponseStatusException.class,
             exception -> {
-              org.assertj.core.api.Assertions.assertThat(exception.getStatusCode())
-                  .isEqualTo(HttpStatus.UNAUTHORIZED);
-              org.assertj.core.api.Assertions.assertThat(exception.getReason())
-                  .contains("already been used");
+              assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+              assertThat(exception.getReason()).contains("already been used");
             });
 
     InOrder securityResponseOrder =
@@ -76,12 +77,12 @@ class TokenRotationServiceTest {
     securityResponseOrder
         .verify(refreshTokenRepository)
         .markFamilyAsTheftSuspected(
-            org.mockito.ArgumentMatchers.eq(REFRESH_TOKEN_FAMILY_ID), any(OffsetDateTime.class));
+            eq(REFRESH_TOKEN_FAMILY_ID), any(OffsetDateTime.class));
     securityResponseOrder
         .verify(userSessionRepository)
         .revokeActiveSessionsByRefreshTokenFamilyId(
-            org.mockito.ArgumentMatchers.eq(REFRESH_TOKEN_FAMILY_ID), any(OffsetDateTime.class));
+            eq(REFRESH_TOKEN_FAMILY_ID), any(OffsetDateTime.class));
 
-    verify(jwtService, never()).issueAccessToken(any(), any(Integer.class), any());
+    verify(jwtService, never()).issueAccessToken(any(), anyInt(), any());
   }
 }
