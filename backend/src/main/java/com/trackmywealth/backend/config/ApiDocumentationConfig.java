@@ -14,6 +14,7 @@ import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import java.math.BigDecimal;
+import java.util.Map;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
@@ -68,11 +69,9 @@ public class ApiDocumentationConfig {
                       .forEach(
                           operation -> {
                             documentCorrelationRequestHeader(operation);
-                            ApiResponses responses = responsesOf(operation);
-                            if (!responses.containsKey("default")) {
-                              responses.addApiResponse(
-                                  "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
-                            }
+                            Map<String, ApiResponse> responses = responsesOf(operation);
+                            responses.putIfAbsent(
+                                "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
                             responses
                                 .values()
                                 .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
@@ -100,7 +99,8 @@ public class ApiDocumentationConfig {
             .description("Stable application error code. Existing values are never renamed."));
     problem.addProperty(
         "correlationId",
-        new StringSchema().description("Request correlation id; quote it when reporting an error."));
+        new StringSchema()
+            .description("Request correlation id; quote it when reporting an error."));
     problem.addProperty("instance", new StringSchema().format("uri"));
 
     ObjectSchema validationError = new ObjectSchema();
@@ -120,11 +120,14 @@ public class ApiDocumentationConfig {
             .schema(new Schema<>().$ref("#/components/schemas/" + API_PROBLEM_SCHEMA));
     return new ApiResponse()
         .description("Error response using the TrackMyWealth problem-detail contract.")
-        .content(new Content().addMediaType(MediaType.APPLICATION_PROBLEM_JSON_VALUE, problemMediaType))
+        .content(
+            new Content().addMediaType(MediaType.APPLICATION_PROBLEM_JSON_VALUE, problemMediaType))
         .addHeaderObject(CorrelationIdFilter.HEADER, correlationResponseHeader());
   }
 
-  private static ApiResponses responsesOf(io.swagger.v3.oas.models.Operation operation) {
+  // As a Map: Swagger's ApiResponses is a LinkedHashMap, and only map operations are needed here.
+  private static Map<String, ApiResponse> responsesOf(
+      io.swagger.v3.oas.models.Operation operation) {
     if (operation.getResponses() == null) {
       operation.setResponses(new ApiResponses());
     }

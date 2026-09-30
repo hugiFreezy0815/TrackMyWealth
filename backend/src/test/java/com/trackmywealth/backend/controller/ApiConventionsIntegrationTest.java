@@ -25,9 +25,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.EntityExchangeResult;
@@ -401,22 +401,14 @@ class ApiConventionsIntegrationTest {
         .isEqualTo("decimal");
 
     JsonNode postTransaction =
-        spec.path("paths")
-            .path("/api/v1/accounts/{accountId}/transactions")
-            .path("post");
+        spec.path("paths").path("/api/v1/accounts/{accountId}/transactions").path("post");
     assertThat(postTransaction.path("parameters").findValuesAsString("name"))
         .contains("X-Correlation-Id");
-    assertThat(
-            postTransaction
-                .path("responses")
-                .path("default")
-                .path("$ref")
-                .asString())
+    assertThat(postTransaction.path("responses").path("default").path("$ref").asString())
         .isEqualTo("#/components/responses/ApiProblemResponse");
 
     JsonNode problem = spec.path("components").path("schemas").path("ApiProblem");
-    assertThat(problem.path("properties").path("code").path("type").asString())
-        .isEqualTo("string");
+    assertThat(problem.path("properties").path("code").path("type").asString()).isEqualTo("string");
     assertThat(problem.path("properties").path("correlationId").path("type").asString())
         .isEqualTo("string");
   }
