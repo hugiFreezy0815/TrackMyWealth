@@ -50,9 +50,17 @@ import org.springframework.transaction.annotation.Transactional;
  * again. A match never re-types a leg; it only sets {@code is_internal_transfer} and {@code
  * counterparty_account_id}.
  *
+ * <p>Confirming a pair, by the system or a member, rejects every other proposal - of either kind -
+ * that shares one of its legs ({@link SettlementDetectionService#rejectCompetitors}).
+ *
  * <p>Idempotent and resumable like card matching: a run only adds what is missing. Runs as the
- * system; each run holds the workspace row lock, so two writes racing in one workspace neither
+ * system; each run holds a transaction-scoped advisory lock per workspace (not the workspace row,
+ * which sharing grants lock for their own purpose), so two writes racing in one workspace neither
  * propose the same pair twice nor both claim one leg.
+ *
+ * <p>A run around a date decides only pairs with a leg booked within {@value #WINDOW_DAYS} days of
+ * it - the pairs a change on that date can create or make ambiguous - and loads every candidate
+ * within three windows, so each of those pairs is judged with all of its competitors in view.
  */
 @Service
 public class TransferDetectionService {
@@ -63,6 +71,10 @@ public class TransferDetectionService {
   static final Set<String> DEBIT_TYPES = Set.of("TRANSFER", "WITHDRAWAL", "EXPENSE");
   static final Set<String> CREDIT_TYPES = Set.of("TRANSFER", "DEPOSIT", "INCOME");
   private static final String TRANSFER = "TRANSFER";
+  // Decided pairs have a leg within one window of the run's date, so the other leg is within two;
+  // their competitors pair with a leg, so they are within three.
+  private static final int LOADED_WINDOWS = 3;
+  private static final String LOCK_PREFIX = "transfer-detection:";
 
   private final TransactionRepository transactionRepository;
   private final SettlementMatchRepository settlementMatchRepository;
@@ -84,9 +96,8 @@ public class TransferDetectionService {
   }
 
   /**
-   * Re-runs matching around a row just written to {@code written} on {@code bookedOn}: every
-   * candidate within twice the window, since pairing the new row can also make an earlier pair
-   * ambiguous. A card account has nothing to do here.
+   * Re-runs matching around a row just written to {@code written} on {@code bookedOn}. A card
+   * account has nothing to do here.
    */
   @Transactional
   public void detectAfterWrite(Account written, LocalDate bookedOn) {
@@ -96,15 +107,18 @@ public class TransferDetectionService {
     detectAround(written.getWorkspace().getId(), bookedOn);
   }
 
-  /** Runs matching for one workspace's candidates booked around {@code date}. */
+  /**
+   * Runs matching for the pairs of one workspace with a leg booked within {@value #WINDOW_DAYS}
+   * days of {@code date}.
+   */
   @Transactional
   public void detectAround(UUID workspaceId, LocalDate date) {
-    workspaceRepository.findByIdForUpdate(workspaceId);
+    workspaceRepository.lockAdvisory(LOCK_PREFIX + workspaceId);
     List<Transaction> candidates =
         transactionRepository.findTransferCandidates(
             workspaceId,
-            date.minusDays(2L * WINDOW_DAYS),
-            date.plusDays(2L * WINDOW_DAYS),
+            date.minusDays((long) LOADED_WINDOWS * WINDOW_DAYS),
+            date.plusDays((long) LOADED_WINDOWS * WINDOW_DAYS),
             DEBIT_TYPES,
             CREDIT_TYPES);
     List<Transaction> debits = new ArrayList<>();
@@ -141,10 +155,12 @@ public class TransferDetectionService {
           && TRANSFER.equals(debit.getTransactionType())
           && TRANSFER.equals(only.getTransactionType())
           && existing(known, debit, only) == null) {
-        confirm(debit, only);
+        if (inScope(date, debit, only)) {
+          confirm(debit, only);
+        }
       } else {
         for (Transaction credit : fitting) {
-          if (existing(known, debit, credit) == null) {
+          if (inScope(date, debit, credit) && existing(known, debit, credit) == null) {
             propose(debit, credit);
           }
         }
@@ -152,12 +168,22 @@ public class TransferDetectionService {
     }
   }
 
+  // A pair this run may decide: one of its legs is within a window of the run's date. Further out,
+  // a competitor could lie beyond what was loaded.
+  private static boolean inScope(LocalDate date, Transaction debit, Transaction credit) {
+    return withinWindow(date, debit.getBookingDate())
+        || withinWindow(date, credit.getBookingDate());
+  }
+
+  private static boolean withinWindow(LocalDate a, LocalDate b) {
+    return Math.abs(ChronoUnit.DAYS.between(a, b)) <= WINDOW_DAYS;
+  }
+
   private static boolean pairs(Transaction debit, Transaction credit) {
     return !debit.getAccount().getId().equals(credit.getAccount().getId())
         && debit.getCurrency().equals(credit.getCurrency())
         && debit.getAmount().negate().compareTo(credit.getAmount()) == 0
-        && Math.abs(ChronoUnit.DAYS.between(debit.getBookingDate(), credit.getBookingDate()))
-            <= WINDOW_DAYS;
+        && withinWindow(debit.getBookingDate(), credit.getBookingDate());
   }
 
   private static SettlementMatch existing(
@@ -184,6 +210,7 @@ public class TransferDetectionService {
     match.setStatus(SettlementMatchValues.CONFIRMED);
     match.setDecidedAt(OffsetDateTime.now(clock));
     settlementMatchRepository.saveAndFlush(match);
+    settlementDetectionService.rejectCompetitors(match, match.getDecidedAt());
     settlementDetectionService.applyFlags(match);
   }
 

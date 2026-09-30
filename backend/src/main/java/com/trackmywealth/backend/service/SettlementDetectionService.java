@@ -283,7 +283,30 @@ public class SettlementDetectionService {
       match.setDecidedAt(OffsetDateTime.now(clock));
     }
     settlementMatchRepository.saveAndFlush(match);
+    // A payment can also sit in a proposed own-account transfer (US-10-01): that proposal lost.
+    rejectCompetitors(match, OffsetDateTime.now(clock));
     applyFlags(match);
+  }
+
+  /**
+   * Rejects, as decided by the system, every other PROPOSED match - card settlement or transfer -
+   * that shares a leg with {@code match}, which is being confirmed: only one match may own a leg
+   * (uq_settlement_match_confirmed_*), and a proposal left behind could never be confirmed. Every
+   * path that confirms a match calls this; {@code match} must already have its id.
+   */
+  void rejectCompetitors(SettlementMatch match, OffsetDateTime now) {
+    List<SettlementMatch> competitors =
+        settlementMatchRepository.findCompetingProposals(
+            match.getId(),
+            match.getPaymentTransaction().getId(),
+            match.getCardTransaction() == null ? null : match.getCardTransaction().getId());
+    competitors.forEach(
+        competitor -> {
+          competitor.setStatus(SettlementMatchValues.REJECTED);
+          competitor.setDecidedBy(null);
+          competitor.setDecidedAt(now);
+        });
+    settlementMatchRepository.saveAllAndFlush(competitors);
   }
 
   private void proposePairs(

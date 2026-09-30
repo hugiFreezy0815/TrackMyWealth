@@ -53,12 +53,17 @@ public class SettlementMatchController {
     return settlementMatchService.run(cardAccountId, actor);
   }
 
-  /** Matches needing a decision by default ({@code status=PROPOSED}); newest first, at most 200. */
+  /**
+   * Matches needing a decision by default ({@code status=PROPOSED}); newest first, at most 200.
+   * {@code kind} ({@code CARD_SETTLEMENT} or {@code TRANSFER}, US-10-01) narrows the list to one
+   * kind of match; without it both are listed.
+   */
   @GetMapping("/settlement-matches")
   public List<SettlementMatchResponse> list(
       @RequestParam(required = false) String status,
+      @RequestParam(required = false) String kind,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return settlementMatchService.list(status, actor);
+    return settlementMatchService.list(status, kind, actor);
   }
 
   @PostMapping("/settlement-matches/{matchId}/confirm")

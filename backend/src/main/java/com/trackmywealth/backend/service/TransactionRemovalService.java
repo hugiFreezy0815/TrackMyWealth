@@ -60,7 +60,6 @@ public class TransactionRemovalService {
   static final int RESTORE_WINDOW_DAYS = 30;
   private static final int MAX_REASON_LENGTH = 500;
   private static final String NOT_FOUND = "Not found.";
-  private static final Set<String> TRANSFER_TYPES = Set.of("TRANSFER", "PENSION_CONTRIBUTION");
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
@@ -233,7 +232,7 @@ public class TransactionRemovalService {
   }
 
   private static boolean isTransferLeg(Transaction row) {
-    return TRANSFER_TYPES.contains(row.getTransactionType());
+    return TransferRecordingService.TRANSFER_TYPES.contains(row.getTransactionType());
   }
 
   // The other leg of a two-sided transfer sits on another account, which the member must be able to

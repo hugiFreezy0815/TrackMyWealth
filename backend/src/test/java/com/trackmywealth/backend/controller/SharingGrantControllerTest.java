@@ -8,7 +8,6 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest.OwnerAllocation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
@@ -22,6 +21,7 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SharingGrantResponse;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -727,18 +727,9 @@ class SharingGrantControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(
-                null,
-                "Vintage Car",
-                "CUSTOM_ASSET",
-                "CHF",
-                null,
-                null,
-                null,
-                null,
-                null,
-                "VEHICLE",
-                null))
+            AccountRequests.account("Vintage Car", "CUSTOM_ASSET", "CHF")
+                .customAssetType("VEHICLE")
+                .build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -857,9 +848,7 @@ class SharingGrantControllerTest {
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateAccountRequest(
-                null, "Family Home", "CASH", "CHF", null, null, null, null, null, null, null))
+        .body(AccountRequests.account("Family Home", "CASH", "CHF").build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

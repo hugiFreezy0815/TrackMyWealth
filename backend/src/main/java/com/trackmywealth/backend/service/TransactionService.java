@@ -116,9 +116,7 @@ public class TransactionService {
   private static final Set<String> TRADE_TYPES = Set.of(BUY, SELL);
   private static final Set<String> INVESTMENT_TYPES = Set.of(BUY, SELL, DIVIDEND);
   // US-10-01: one leg, or both at once, of a transfer between two of the workspace's own accounts.
-  private static final String TRANSFER = "TRANSFER";
-  private static final String PENSION_CONTRIBUTION = "PENSION_CONTRIBUTION";
-  private static final Set<String> TRANSFER_TYPES = Set.of(TRANSFER, PENSION_CONTRIBUTION);
+  private static final Set<String> TRANSFER_TYPES = TransferRecordingService.TRANSFER_TYPES;
   private static final Set<String> SUPPORTED_TYPES =
       Stream.of(CASH_TYPES, CARD_TYPES, INVESTMENT_TYPES, TRANSFER_TYPES)
           .flatMap(Set::stream)
@@ -157,6 +155,7 @@ public class TransactionService {
   private final CategorizationService categorizationService;
   private final TransactionCategorizationLogRepository categorizationLogRepository;
   private final TransferDetectionService transferDetectionService;
+  private final TransferRecordingService transferRecordingService;
   private final ObjectMapper objectMapper;
   private final String fxDefaultSource;
 
@@ -171,6 +170,7 @@ public class TransactionService {
       CategorizationService categorizationService,
       TransactionCategorizationLogRepository categorizationLogRepository,
       TransferDetectionService transferDetectionService,
+      TransferRecordingService transferRecordingService,
       ObjectMapper objectMapper,
       @Value("${app.fx.default-source}") String fxDefaultSource) {
     this.accountLookupService = accountLookupService;
@@ -183,6 +183,7 @@ public class TransactionService {
     this.categorizationService = categorizationService;
     this.categorizationLogRepository = categorizationLogRepository;
     this.transferDetectionService = transferDetectionService;
+    this.transferRecordingService = transferRecordingService;
     this.objectMapper = objectMapper;
     this.fxDefaultSource = fxDefaultSource;
   }
@@ -226,12 +227,8 @@ public class TransactionService {
               + request.securityId()
               + " does not exist. Create it first with POST /api/v1/securities.");
     }
-    Account counterparty =
-        request.counterpartyAccountId() == null
-            ? null
-            : accountLookupService.findAccountOrThrow(request.counterpartyAccountId());
-    BigDecimal credited =
-        counterparty == null ? null : requireCounterparty(account, counterparty, request, actor);
+    // US-10-01: the other account of a two-sided transfer, checked before anything is written.
+    Account counterparty = transferRecordingService.findCounterparty(account, request, actor);
     // The currency a rate converts into: the card's billing currency, else the account's own.
     String accountCurrency =
         cardExtension != null ? cardExtension.getBillingCurrency() : account.getNativeCurrency();
@@ -309,7 +306,7 @@ public class TransactionService {
     }
 
     if (counterparty != null) {
-      transactionRepository.saveAndFlush(creditLeg(saved, counterparty, credited, actor));
+      transferRecordingService.recordCreditLeg(saved, counterparty, request, actor);
     }
 
     // Same transaction, so the response below already shows the internal-transfer flag if this row
@@ -317,30 +314,6 @@ public class TransactionService {
     settlementDetectionService.detectAfterWrite(account, request.bookingDate());
     transferDetectionService.detectAfterWrite(account, request.bookingDate());
     return toResponse(saved, assignedBy.orElse(null));
-  }
-
-  // US-10-01: the incoming leg of a two-sided transfer, on the other account, in its own currency,
-  // linked back to the debit by related_transaction_id and flagged like the debit.
-  private static Transaction creditLeg(
-      Transaction debit,
-      Account counterparty,
-      BigDecimal amount,
-      AuthenticatedUserPrincipal actor) {
-    Transaction credit = new Transaction();
-    credit.setWorkspace(debit.getWorkspace());
-    credit.setAccount(counterparty);
-    credit.setTransactionType(debit.getTransactionType());
-    credit.setBookingDate(debit.getBookingDate());
-    credit.setAmount(amount);
-    credit.setCurrency(counterparty.getNativeCurrency());
-    credit.setMerchantDescription(debit.getMerchantDescription());
-    credit.setNotes(debit.getNotes());
-    credit.setSource(MANUAL);
-    credit.setInternalTransfer(true);
-    credit.setCounterpartyAccountId(debit.getAccount().getId());
-    credit.setRelatedTransactionId(debit.getId());
-    credit.setCreatedBy(actor.userId());
-    return credit;
   }
 
   /**
@@ -645,7 +618,7 @@ public class TransactionService {
           type + " can only be recorded on an account that holds positions.");
     }
     validateInvestment(type, request);
-    validateTransfer(account, type, request);
+    TransferRecordingService.validateRequest(account, type, request);
 
     // US-09-04/FR-CC-010, US-07-01/DM-06: the currency may differ from the account's own. A card is
     // compared against its billing_currency, not account.nativeCurrency - the two may legitimately
@@ -725,7 +698,7 @@ public class TransactionService {
         INFLOW_CASH_TYPES.contains(type)
             || DIVIDEND.equals(type)
             || (SETTLEMENT.equals(type) && card);
-    // A one-sided TRANSFER may run either way; validateTransfer decides a transfer's sign.
+    // A one-sided TRANSFER may run either way; TransferRecordingService decides a transfer's sign.
     boolean signFixedByType = !SELL.equals(type) && !TRANSFER_TYPES.contains(type);
     if (signFixedByType
         && (mustBePositive ? request.amount().signum() <= 0 : request.amount().signum() >= 0)) {
@@ -741,110 +714,6 @@ public class TransactionService {
       requireTradeAmountMatches(request);
     }
     return foreignCurrency;
-  }
-
-  /**
-   * US-10-01: what a transfer entry must look like before its counterparty is loaded. Each leg is
-   * in its own account's currency - the other side's amount is {@code counterpartyAmount} - so no
-   * FX field ever applies. With a counterparty the money leaves this account; a one-sided {@code
-   * TRANSFER} may run either way. {@code PENSION_CONTRIBUTION} always names the pension it pays
-   * into. A loan or mortgage is serviced by {@code DEBT_REPAYMENT} (US-10-02), a card by a {@code
-   * SETTLEMENT}.
-   */
-  private static void validateTransfer(
-      Account account, String type, CreateTransactionRequest request) {
-    if (!TRANSFER_TYPES.contains(type)) {
-      if (request.counterpartyAccountId() != null || request.counterpartyAmount() != null) {
-        throw unprocessable(
-            "counterpartyAccountId and counterpartyAmount are only valid for a "
-                + TRANSFER
-                + " or "
-                + PENSION_CONTRIBUTION
-                + ".");
-      }
-      return;
-    }
-    if (account.isHasAmortisation()) {
-      throw unprocessable(
-          "A loan or mortgage is serviced by its own transaction type, not a " + type + ".");
-    }
-    if (!request.currency().equals(account.getNativeCurrency())) {
-      throw unprocessable(
-          "A transfer leg is in its account's own currency ("
-              + account.getNativeCurrency()
-              + "); give counterpartyAmount for what the other account receives.");
-    }
-    if (PENSION_CONTRIBUTION.equals(type) && request.counterpartyAccountId() == null) {
-      throw unprocessable("A PENSION_CONTRIBUTION needs the pension account it pays into.");
-    }
-    if (request.counterpartyAccountId() == null) {
-      if (request.counterpartyAmount() != null) {
-        throw unprocessable("counterpartyAmount needs a counterpartyAccountId.");
-      }
-      if (request.amount().signum() == 0) {
-        throw unprocessable("amount of a " + TRANSFER + " cannot be zero.");
-      }
-      return;
-    }
-    if (request.amount().signum() >= 0) {
-      throw unprocessable(
-          "amount must be negative for a "
-              + type
-              + " to another account (e.g. -500.00): money leaves this account.");
-    }
-    if (request.counterpartyAmount() != null && request.counterpartyAmount().signum() <= 0) {
-      throw unprocessable("counterpartyAmount must be positive: money enters the other account.");
-    }
-  }
-
-  /**
-   * US-10-01: the other account of a two-sided transfer - one of the workspace's own, which the
-   * member may edit too, since the entry writes there. Returns the amount it receives.
-   */
-  private BigDecimal requireCounterparty(
-      Account account,
-      Account counterparty,
-      CreateTransactionRequest request,
-      AuthenticatedUserPrincipal actor) {
-    accessControlService.requireAccountAccess(actor, counterparty, AccessLevelValues.EDIT);
-    String type = request.transactionType();
-    if (counterparty.getId().equals(account.getId())) {
-      throw unprocessable("A transfer needs two different accounts.");
-    }
-    if (!ACTIVE.equals(counterparty.getStatus())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Cannot transfer to or from an archived account.");
-    }
-    if (!counterparty.isHasTransactions()) {
-      throw unprocessable("The other account does not hold transactions.");
-    }
-    if (counterparty.isHasStatementCycle()) {
-      throw unprocessable(
-          "A credit card is paid down by a " + SETTLEMENT + ", not a " + type + ".");
-    }
-    if (counterparty.isHasAmortisation()) {
-      throw unprocessable(
-          "A loan or mortgage is serviced by its own transaction type, not a " + type + ".");
-    }
-    if (PENSION_CONTRIBUTION.equals(type) != counterparty.isHasContributionLimit()) {
-      throw unprocessable(
-          PENSION_CONTRIBUTION.equals(type)
-              ? "A PENSION_CONTRIBUTION goes into an account with a contribution limit."
-              : "A payment into a pension account is a " + PENSION_CONTRIBUTION + ".");
-    }
-    boolean sameCurrency = counterparty.getNativeCurrency().equals(account.getNativeCurrency());
-    if (sameCurrency && request.counterpartyAmount() != null) {
-      throw unprocessable(
-          "counterpartyAmount is only for accounts in different currencies; the other account"
-              + " receives the same amount.");
-    }
-    if (!sameCurrency && request.counterpartyAmount() == null) {
-      throw unprocessable(
-          "The other account is in "
-              + counterparty.getNativeCurrency()
-              + ": give counterpartyAmount, what it receives.");
-    }
-    return sameCurrency ? request.amount().negate() : request.counterpartyAmount();
   }
 
   /**

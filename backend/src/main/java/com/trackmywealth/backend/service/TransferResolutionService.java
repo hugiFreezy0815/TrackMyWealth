@@ -7,7 +7,6 @@ import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -21,11 +20,15 @@ import org.springframework.web.server.ResponseStatusException;
  * income nor spending and leaves pending review; a counterpart recorded later still pairs with it
  * ({@link TransferDetectionService} treats it as a candidate). Undoing the confirmation puts it
  * back in pending review. Both need EDIT on the account and are idempotent.
+ *
+ * <p>The confirmation is not remembered apart from the flag. If the leg is later matched with a
+ * counterpart and that match is undone ({@code reject} on a confirmed match), the leg reverts to an
+ * ordinary, unresolved transfer leg - pending review again, not "untracked" - by design: rejecting
+ * the match is new information about where the money went, so the member decides the leg afresh.
  */
 @Service
 public class TransferResolutionService {
 
-  private static final Set<String> TRANSFER_TYPES = Set.of("TRANSFER", "PENSION_CONTRIBUTION");
   private static final String NOT_FOUND = "Not found.";
 
   private final AccountLookupService accountLookupService;
@@ -81,7 +84,7 @@ public class TransferResolutionService {
             .findByIdForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(accountId))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND));
-    if (!TRANSFER_TYPES.contains(leg.getTransactionType())) {
+    if (!TransferRecordingService.TRANSFER_TYPES.contains(leg.getTransactionType())) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           "Only a TRANSFER or PENSION_CONTRIBUTION leg can be confirmed as a transfer to an"

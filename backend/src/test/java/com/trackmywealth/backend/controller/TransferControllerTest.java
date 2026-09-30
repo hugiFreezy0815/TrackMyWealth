@@ -6,18 +6,19 @@ import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
-import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
+import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.service.TransferDetectionService;
+import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -191,6 +192,11 @@ class TransferControllerTest {
     SettlementMatchResponse proposal = matches(token, "PROPOSED").get(0);
     assertThat(proposal.matchKind()).isEqualTo("TRANSFER");
     assertThat(proposal.paymentTransactionId()).isEqualTo(withdrawal.id());
+    // The kind-neutral names a client reads for a transfer.
+    assertThat(proposal.debitTransactionId()).isEqualTo(withdrawal.id());
+    assertThat(proposal.debitAccountId()).isEqualTo(current.id());
+    assertThat(proposal.creditAccountId()).isEqualTo(savings.id());
+    assertThat(proposal.creditTransactionId()).isEqualTo(proposal.cardTransactionId()).isNotNull();
     // Neither spending nor silently dropped while a member decides; counted once, not per leg.
     CashFlowResponse pending = cashFlow(token);
     assertThat(pending.spending()).isEmpty();
@@ -223,6 +229,29 @@ class TransferControllerTest {
   }
 
   @Test
+  void aProposedPairAcrossTwoMonthsIsPendingInBothNeverDropped() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse other = createAccount(token, "CASH", "CHF");
+    YearMonth month = YearMonth.from(today()).minusMonths(1);
+    LocalDate paid = month.minusMonths(1).atEndOfMonth();
+    // An expense and an income of the same amount two days apart: a possible transfer, proposed.
+    insertImported(current.id(), "EXPENSE", "-3000.00", paid);
+    insertImported(other.id(), "INCOME", "3000.00", paid.plusDays(2));
+    transferDetectionService.detectAround(workspaceOf(current.id()), paid);
+    assertThat(matches(token, "PROPOSED")).hasSize(1);
+
+    CashFlowResponse before = cashFlow(token, month.minusMonths(1));
+    assertThat(before.spending()).isEmpty();
+    assertThat(chf(before.pendingReview())).isEqualByComparingTo("3000.00");
+    // The income leg is held back from income, so it must be pending in its own month.
+    CashFlowResponse after = cashFlow(token, month);
+    assertThat(after.income()).isEmpty();
+    assertThat(chf(after.pendingReview())).isEqualByComparingTo("3000.00");
+    assertThat(after.complete()).isFalse();
+  }
+
+  @Test
   void aRejectedPairIsNeverProposedAgain() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
@@ -242,6 +271,82 @@ class TransferControllerTest {
     assertThat(matches(token, "PROPOSED")).isEmpty();
     // Rejected: the withdrawal is spending after all.
     assertThat(chf(cashFlow(token).spending())).isEqualByComparingTo("157.00");
+  }
+
+  @Test
+  void theMatchListCanBeNarrowedToOneKind() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
+    record(token, current.id(), cash("WITHDRAWAL", "-150.00"));
+    record(token, savings.id(), cash("DEPOSIT", "150.00"));
+
+    assertThat(matches(token, "PROPOSED", "TRANSFER")).hasSize(1);
+    assertThat(matches(token, "PROPOSED", "CARD_SETTLEMENT")).isEmpty();
+    client(token)
+        .get()
+        .uri("/api/v1/settlement-matches?kind=SOMETHING")
+        .exchange()
+        .expectStatus()
+        .isBadRequest();
+  }
+
+  @Test
+  void aCardSettlementConfirmedAutomaticallyRejectsATransferProposalForTheSamePayment() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + card.id() + "/settlement-source")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetSettlementSourceRequest(current.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    TransactionResponse payment = record(token, current.id(), cash("WITHDRAWAL", "-200.00"));
+    record(token, savings.id(), cash("DEPOSIT", "200.00"));
+    SettlementMatchResponse transfer = matches(token, "PROPOSED").get(0);
+    assertThat(transfer.matchKind()).isEqualTo("TRANSFER");
+
+    // The card's own credit makes the payment an unambiguous card settlement.
+    record(token, card.id(), cash("SETTLEMENT", "200.00"));
+
+    assertThat(matches(token, "CONFIRMED"))
+        .singleElement()
+        .satisfies(
+            match -> {
+              assertThat(match.matchKind()).isEqualTo("CARD_SETTLEMENT");
+              assertThat(match.debitTransactionId()).isEqualTo(payment.id());
+            });
+    // Not left behind as a proposal that could never be confirmed.
+    assertThat(matches(token, "PROPOSED")).isEmpty();
+    assertThat(matches(token, "REJECTED"))
+        .singleElement()
+        .satisfies(match -> assertThat(match.id()).isEqualTo(transfer.id()));
+  }
+
+  @Test
+  void aPairIsOnlyDecidedWithEveryCompetitorInView() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
+    LocalDate run = today().minusDays(60);
+    // The credit pairs with both debits; the second one lies beyond two windows from the run.
+    insertImported(current.id(), TRANSFER, "-400.00", run.plusDays(6));
+    insertImported(savings.id(), TRANSFER, "400.00", run.plusDays(10));
+    insertImported(current.id(), TRANSFER, "-400.00", run.plusDays(14));
+    UUID workspace = workspaceOf(current.id());
+
+    // Neither leg of the first pair is within a window of this run: it is not decided here.
+    transferDetectionService.detectAround(workspace, run);
+    assertThat(matchCount(workspace)).isZero();
+
+    // Around the credit, both pairs are in view: ambiguous, so only proposed.
+    transferDetectionService.detectAround(workspace, run.plusDays(10));
+    assertThat(matches(token, "CONFIRMED")).isEmpty();
+    assertThat(matches(token, "PROPOSED")).hasSize(2);
   }
 
   // --- one-sided legs --------------------------------------------------------------------------
@@ -297,6 +402,18 @@ class TransferControllerTest {
 
     assertThat(counterpartyOf(leg.id())).isEqualTo(savings.id());
     assertThat(chf(cashFlow(token).saving())).isEqualByComparingTo("250.00");
+
+    // Undoing that match does not bring back "untracked": both legs are pending review again.
+    SettlementMatchResponse match = matches(token, "CONFIRMED").get(0);
+    client(token)
+        .post()
+        .uri("/api/v1/settlement-matches/" + match.id() + "/reject")
+        .exchange()
+        .expectStatus()
+        .isOk();
+    assertThat(query("SELECT is_internal_transfer FROM transaction WHERE id = ?", leg.id()))
+        .isEqualTo(false);
+    assertThat(chf(cashFlow(token).pendingReview())).isEqualByComparingTo("500.00");
   }
 
   @Test
@@ -417,18 +534,9 @@ class TransferControllerTest {
             .uri("/api/v1/accounts")
             .contentType(MediaType.APPLICATION_JSON)
             .body(
-                new CreateAccountRequest(
-                    null,
-                    "Holiday pot",
-                    "SAVINGS",
-                    "CHF",
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    false))
+                AccountRequests.account("Holiday pot", "SAVINGS", "CHF")
+                    .countsAsSaving(false)
+                    .build())
             .exchange()
             .expectStatus()
             .isCreated()
@@ -593,9 +701,13 @@ class TransferControllerTest {
   }
 
   private List<SettlementMatchResponse> matches(String token, String status) {
+    return matches(token, status, null);
+  }
+
+  private List<SettlementMatchResponse> matches(String token, String status, String kind) {
     return client(token)
         .get()
-        .uri("/api/v1/settlement-matches?status=" + status)
+        .uri("/api/v1/settlement-matches?status=" + status + (kind == null ? "" : "&kind=" + kind))
         .exchange()
         .expectStatus()
         .isOk()
@@ -605,9 +717,13 @@ class TransferControllerTest {
   }
 
   private CashFlowResponse cashFlow(String token) {
+    return cashFlow(token, YearMonth.from(today()));
+  }
+
+  private CashFlowResponse cashFlow(String token, YearMonth month) {
     return client(token)
         .get()
-        .uri("/api/v1/cash-flow?month=" + YearMonth.from(today()))
+        .uri("/api/v1/cash-flow?month=" + month)
         .exchange()
         .expectStatus()
         .isOk()
@@ -629,9 +745,7 @@ class TransferControllerTest {
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateAccountRequest(
-                null, type, type, currency, null, null, null, null, null, null, null))
+        .body(AccountRequests.account(type, type, currency).build())
         .exchange()
         .expectStatus()
         .isCreated()
@@ -646,18 +760,9 @@ class TransferControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(
-                null,
-                "Pillar 3a",
-                "PENSION",
-                "CHF",
-                null,
-                null,
-                null,
-                null,
-                "CH_PILLAR_3A",
-                null,
-                null))
+            AccountRequests.account("Pillar 3a", "PENSION", "CHF")
+                .pensionScheme("CH_PILLAR_3A")
+                .build())
         .exchange()
         .expectStatus()
         .isCreated()
@@ -694,6 +799,11 @@ class TransferControllerTest {
         id,
         "MANUAL-" + id);
     return id;
+  }
+
+  private long matchCount(UUID workspaceId) {
+    return (Long)
+        query("SELECT count(*) FROM settlement_match WHERE workspace_id = ?", workspaceId);
   }
 
   private UUID workspaceOf(UUID accountId) {

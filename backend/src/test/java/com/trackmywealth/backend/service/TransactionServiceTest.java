@@ -62,6 +62,7 @@ class TransactionServiceTest {
           mock(CategorizationService.class),
           mock(TransactionCategorizationLogRepository.class),
           mock(TransferDetectionService.class),
+          mock(TransferRecordingService.class),
           mock(ObjectMapper.class),
           "ECB");
 

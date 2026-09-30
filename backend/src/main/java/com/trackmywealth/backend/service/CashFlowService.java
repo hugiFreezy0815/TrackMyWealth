@@ -28,7 +28,10 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li><b>spending</b> - card purchases, withdrawals, expenses, fees and tax (consumption);
  *   <li><b>saving</b> - money moved from an account that does not count as saving into one that
  *       does ({@code counts_as_saving}, V41), less money moved back out; a transfer between two
- *       alike accounts is in no figure at all, and neither is a trade;
+ *       alike accounts is in no figure at all, and neither is a trade. The flag is read as it is
+ *       now, not as it was when the money moved: changing an account's flag restates every month,
+ *       like re-classifying the account. An endpoint that changes the flag must keep it so, or
+ *       record the flag per transfer instead;
  *   <li><b>pendingReview</b> - what awaits a member's decision before it can count anywhere: an
  *       unresolved card settlement, a proposed transfer pair, an unlinked transfer leg.
  * </ul>

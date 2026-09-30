@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
@@ -17,6 +16,7 @@ import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SecurityService;
+import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.validation.IsinValidator;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -744,9 +744,7 @@ class SecurityControllerTest {
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateAccountRequest(
-                null, name, "CASH", "CHF", null, null, null, null, null, null, null))
+        .body(AccountRequests.account(name, "CASH", "CHF").build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -858,9 +856,7 @@ class SecurityControllerTest {
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateAccountRequest(
-                null, "Everyday Checking", "CASH", "CHF", null, null, null, null, null, null, null))
+        .body(AccountRequests.account("Everyday Checking", "CASH", "CHF").build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);

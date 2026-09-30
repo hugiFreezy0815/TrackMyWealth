@@ -311,20 +311,28 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * US-10-01/FR-CF-004/005: sum per currency, as positive magnitudes, of everything in [{@code
    * from}, {@code to}] that awaits a member's decision before it can count as spending, income or a
    * transfer: a negative {@code SETTLEMENT}, or a payment of any open proposal (card settlement or
-   * transfer); and an unlinked {@code TRANSFER}/{@code PENSION_CONTRIBUTION} leg - except the
-   * credit leg of a proposed transfer pair, whose debit already stands for the pair. Internal
-   * transfers, voided rows and reversals are resolved and left out. Each element is {@code
-   * [currency, sum]}.
+   * transfer); an unlinked {@code TRANSFER}/{@code PENSION_CONTRIBUTION} leg; and the credit leg of
+   * a proposed transfer pair (any type, so an {@code INCOME} kept out of income is not lost). A
+   * credit leg is left out only while one of its proposals' debits already stands for the pair in
+   * this very figure - booked in the same range, on an account in {@code accountIds}, and itself
+   * unresolved - so a pair is counted once, and a pair split across two months or across accounts
+   * the caller cannot all see is still counted. Internal transfers, voided rows and reversals are
+   * resolved and left out. Each element is {@code [currency, sum]}.
    */
   @Query(
       "select t.currency, sum(abs(t.amount)) from Transaction t where t.account.id in :accountIds"
-          + " and t.internalTransfer = false and t.bookingDate between :from and :to"
+          + " and t.internalTransfer = false"
+          + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
           + " and ((t.amount < 0 and (t.transactionType = 'SETTLEMENT' or exists (select 1 from"
           + " SettlementMatch m where m.status = 'PROPOSED' and m.paymentTransaction = t)))"
-          + " or (t.transactionType in ('TRANSFER', 'PENSION_CONTRIBUTION') and not exists"
-          + " (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
-          + " and m.matchKind = 'TRANSFER' and m.cardTransaction = t)))"
+          + " or ((t.transactionType in ('TRANSFER', 'PENSION_CONTRIBUTION')"
+          + " or exists (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
+          + " and m.matchKind = 'TRANSFER' and m.cardTransaction = t))"
+          + " and not exists (select 1 from SettlementMatch m join m.paymentTransaction d"
+          + " where m.status = 'PROPOSED' and m.matchKind = 'TRANSFER' and m.cardTransaction = t"
+          + " and d.account.id in :accountIds and d.bookingDate between :from and :to"
+          + " and d.internalTransfer = false)))"
           + PER_CURRENCY)
   List<Object[]> sumPendingReviewByCurrency(
       @Param(ACCOUNT_IDS) Collection<UUID> accountIds,

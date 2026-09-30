@@ -9,7 +9,6 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
-import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
@@ -27,6 +26,7 @@ import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
+import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -1006,18 +1006,10 @@ class TransactionControllerTest {
             .uri("/api/v1/accounts")
             .contentType(MediaType.APPLICATION_JSON)
             .body(
-                new CreateAccountRequest(
-                    null,
-                    "Home Mortgage",
-                    "MORTGAGE",
-                    "CHF",
-                    null,
-                    null,
-                    new BigDecimal("500000.00"),
-                    new BigDecimal("1.5"),
-                    null,
-                    null,
-                    null))
+                AccountRequests.account("Home Mortgage", "MORTGAGE", "CHF")
+                    .originalPrincipal(new BigDecimal("500000.00"))
+                    .interestRatePercent(new BigDecimal("1.5"))
+                    .build())
             .exchange()
             .expectStatus()
             .isEqualTo(HttpStatus.CREATED)
@@ -2122,18 +2114,10 @@ class TransactionControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(
-                null,
-                "VIAC 3a",
-                "PENSION",
-                "CHF",
-                true,
-                null,
-                null,
-                null,
-                "CH_PILLAR_3A",
-                null,
-                null))
+            AccountRequests.account("VIAC 3a", "PENSION", "CHF")
+                .holdsPositions(true)
+                .pensionScheme("CH_PILLAR_3A")
+                .build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -2446,18 +2430,9 @@ class TransactionControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(
-                null,
-                "Business Card",
-                "CREDIT_CARD",
-                nativeCurrency,
-                null,
-                billingCurrency,
-                null,
-                null,
-                null,
-                null,
-                null))
+            AccountRequests.account("Business Card", "CREDIT_CARD", nativeCurrency)
+                .billingCurrency(billingCurrency)
+                .build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -2476,18 +2451,9 @@ class TransactionControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(
-                null,
-                "Car Loan",
-                "LOAN",
-                "CHF",
-                null,
-                null,
-                new BigDecimal("10000"),
-                null,
-                null,
-                null,
-                null))
+            AccountRequests.account("Car Loan", "LOAN", "CHF")
+                .originalPrincipal(new BigDecimal("10000"))
+                .build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -2502,18 +2468,9 @@ class TransactionControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(
-                null,
-                "Pillar 3a",
-                "PENSION",
-                "CHF",
-                null,
-                null,
-                null,
-                null,
-                "CH_PILLAR_3A",
-                null,
-                null))
+            AccountRequests.account("Pillar 3a", "PENSION", "CHF")
+                .pensionScheme("CH_PILLAR_3A")
+                .build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
@@ -2538,18 +2495,9 @@ class TransactionControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateAccountRequest(
-                null,
-                name,
-                accountType,
-                currency,
-                null,
-                null,
-                null,
-                null,
-                null,
-                customAssetType,
-                null))
+            AccountRequests.account(name, accountType, currency)
+                .customAssetType(customAssetType)
+                .build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

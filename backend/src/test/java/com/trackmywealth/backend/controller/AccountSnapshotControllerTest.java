@@ -7,7 +7,6 @@ import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
@@ -21,6 +20,7 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -546,9 +546,7 @@ class AccountSnapshotControllerTest {
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateAccountRequest(
-                null, name, accountType, "CHF", null, null, null, null, null, null, null))
+        .body(AccountRequests.account(name, accountType, "CHF").build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)

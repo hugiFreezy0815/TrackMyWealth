@@ -30,6 +30,9 @@ public final class SettlementMatchValues {
   /** US-10-01: the two legs of a transfer between two of the workspace's own accounts. */
   public static final String TRANSFER = "TRANSFER";
 
+  /** Every kind of match (V41) - the one place the closed set is spelled out. */
+  public static final Set<String> MATCH_KINDS = Set.of(CARD_SETTLEMENT, TRANSFER);
+
   /** Every status a match can have - the one place the closed set is spelled out. */
   public static final Set<String> STATUSES = Set.of(PROPOSED, CONFIRMED, REJECTED);
 
