@@ -43,6 +43,9 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
   /** Several shipped defaults at once, e.g. UNCATEGORIZED and the type-implied FEES and TAXES. */
   List<Category> findByWorkspaceIdIsNullAndCodeIn(Collection<String> codes);
 
+  /** US-01-04: how many shipped default categories are loaded. */
+  long countByWorkspaceIdIsNull();
+
   /**
    * FR-CAT-005/010: the category the shipped mapping assigns to one source code, e.g. {@code
    * ("MCC", "5411")}. {@code category_source_mapping} is global configuration with at most one row

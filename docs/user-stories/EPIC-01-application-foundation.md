@@ -159,3 +159,20 @@ administration rights, not financial-data access, so this is safe to gate purely
 **Definition of Done:** Endpoint returns `reference_package` row where `is_current = true`;
 covered by an integration test against the seeded baseline.
 **Data-quality behaviour:** N/A.
+
+**Clarified before development (issue #148, 2026-09-29):**
+- **Baseline versions:** V43 records `1.1.0-baseline` (the V37 categories and source-code mappings)
+  as current. `1.0.0-baseline` stays as history, with its publication date corrected to 2026-09-03.
+- **Endpoint:** `GET /api/v1/admin/reference-data` returns the package, content counts and
+  staleness warnings (empty today).
+- **US-02-05:** its API-level tests are added in the same story.
+- **Mobile:** the admin screen is US-01-05 (#184), which needs the mobile sign-in, US-02-06 (#183).
+
+---
+
+## US-01-05 — Reference-data admin screen in the mobile app
+
+Split from US-01-04 on 2026-09-29; the full story is issue #184. A read-only screen for
+`SYSTEM_ADMINISTRATOR` users showing the loaded package, its content counts and staleness warnings,
+backed by `GET /api/v1/admin/reference-data`. **Dependencies:** US-01-04, US-02-06 (mobile
+sign-in). **Priority:** SHOULD. **Size:** S.
