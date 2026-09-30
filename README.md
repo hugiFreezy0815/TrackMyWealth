@@ -125,6 +125,13 @@ amd64, arm64, and 32-bit ARM variants), so this should run unchanged regardless 
 NAS is Intel/AMD or ARM-based - point Synology's Container Manager (or any Docker host) at this
 `docker-compose.yml` the same way.
 
+### Actuator access
+
+The backend exposes `/actuator/health`, `/actuator/info`, and `/actuator/flyway`. Health and
+info remain public so container/platform probes can work without application credentials.
+`/actuator/flyway` contains schema and migration metadata, so it is available only to an
+authenticated `SYSTEM_ADMINISTRATOR`. Ordinary users and anonymous callers cannot read it.
+
 ### Time zone
 
 The backend container runs in UTC, but "today" for a balance or net worth means *your* calendar
