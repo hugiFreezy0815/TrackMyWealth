@@ -160,3 +160,22 @@ same person occupies both roles.
 **Priority:** MUST.
 **Definition of Done:** Cross-tenant test suite includes and passes this case.
 **Data-quality behaviour:** N/A.
+
+**Coverage (2026-09-29, issue #148):** `AdministratorFinancialAccessTest`:
+- `anAdministratorWithoutAWorkspaceLinkReachesNoFinancialData`
+- `anAdministratorIsDeniedAnotherWorkspacesDataExactlyLikeAStandardUser` (same status and body as a
+  standard user)
+
+---
+
+## US-02-06 — Sign in to the mobile app
+
+Split from US-01-04 on 2026-09-29; the full story is issue #183. The mobile/web client covers:
+- login, with the TOTP step when MFA is enabled
+- tokens in iOS Keychain / Android Keystore (expo-secure-store; in memory only on the web build)
+- refresh rotation on a 401
+- sign-out that revokes the session
+- a configurable server URL (FR-CLI-007)
+
+The session exposes the user's role for admin-only screens. **Dependencies:** EPIC-02 backend.
+**Priority:** MUST. **Size:** L.
