@@ -1,129 +1,105 @@
 package com.trackmywealth.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
-import com.trackmywealth.backend.config.AuthorizationDenialAuditProperties;
+import com.trackmywealth.backend.repository.AuthorizationDenialAuditWriteRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.security.DenialAuditBudget;
 import java.time.Duration;
 import java.util.UUID;
-import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-28-02 / #205: object-level denials stay generic while audit work is bounded and detached from
- * the request thread.
+ * US-28-02 / #205: every denial is answered with the same generic 404, and the audit row the budget
+ * calls for is written before that answer - synchronously, never dropped.
  */
 class AuthorizationDenialAuditServiceTest {
 
-  private static final UUID PRINCIPAL =
-      UUID.fromString("11111111-1111-1111-1111-111111111111");
+  private static final int BUDGET = 3;
+
+  private final AuthorizationDenialAuditWriteRepository writeRepository =
+      mock(AuthorizationDenialAuditWriteRepository.class);
+  private final AuthorizationDenialAuditService service =
+      new AuthorizationDenialAuditService(
+          writeRepository, new DenialAuditBudget(BUDGET, Duration.ofMinutes(1), 100, () -> 0L));
 
   @Test
-  void denialRecordsOnlyRequestedIdentityAndReturnsGenericNotFound() {
-    AuthorizationDenialAuditWriterService writer = mock(AuthorizationDenialAuditWriterService.class);
-    AuthorizationDenialAuditService service =
-        new AuthorizationDenialAuditService(Runnable::run, writer, properties(10));
+  void denialRecordsOnlyTheRequestedIdentityAndReturnsTheGenericNotFound() {
+    UUID userId = UUID.randomUUID();
     UUID requestedId = UUID.randomUUID();
     AuthenticatedUserPrincipal actor =
         new AuthenticatedUserPrincipal(
-            PRINCIPAL, "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID());
+            userId, "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID());
 
     ResponseStatusException denial = service.denyAsNotFound(actor, "Account", requestedId);
 
-    assertThat(denial.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-    assertThat(denial.getReason())
-        .isEqualTo(AuthorizationDenialAuditService.GENERIC_NOT_FOUND_DETAIL);
-    verify(writer).recordDenial(PRINCIPAL, "Account", requestedId);
+    assertGenericNotFound(denial);
+    verify(writeRepository).insert(userId, "Account", requestedId, "NOT_FOUND");
+    verifyNoMoreInteractions(writeRepository);
   }
 
   @Test
-  void onePrincipalGetsBoundedExactRowsThenOneSummaryWithoutChanging404() {
-    AuthorizationDenialAuditWriterService writer = mock(AuthorizationDenialAuditWriterService.class);
-    AuthorizationDenialAuditService service =
-        new AuthorizationDenialAuditService(Runnable::run, writer, properties(2));
+  void onePrincipalGetsTheExactBudgetThenOneSummaryThenNothingWithTheSame404() {
+    UUID userId = UUID.randomUUID();
 
-    for (int i = 0; i < 8; i++) {
-      ResponseStatusException denial =
-          service.denyAsNotFound(PRINCIPAL, "Account", UUID.randomUUID());
-
-      assertThat(denial.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-      assertThat(denial.getReason())
-          .isEqualTo(AuthorizationDenialAuditService.GENERIC_NOT_FOUND_DETAIL);
+    for (int i = 0; i < BUDGET + 5; i++) {
+      assertGenericNotFound(service.denyAsNotFound(userId, "Account", UUID.randomUUID()));
     }
 
-    verify(writer, times(2)).recordDenial(eq(PRINCIPAL), eq("Account"), any(UUID.class));
-    verify(writer).recordRateLimitedSummary(PRINCIPAL);
+    InOrder writes = inOrder(writeRepository);
+    writes
+        .verify(writeRepository, times(BUDGET))
+        .insert(eq(userId), eq("Account"), any(UUID.class), eq("NOT_FOUND"));
+    writes
+        .verify(writeRepository)
+        .insert(eq(userId), eq("AuthorizationDenial"), isNull(), eq("RATE_LIMITED"));
+    verifyNoMoreInteractions(writeRepository);
   }
 
   @Test
   void principalBudgetsAreIndependent() {
-    AuthorizationDenialAuditWriterService writer = mock(AuthorizationDenialAuditWriterService.class);
-    AuthorizationDenialAuditService service =
-        new AuthorizationDenialAuditService(Runnable::run, writer, properties(1));
-    UUID secondPrincipal = UUID.fromString("22222222-2222-2222-2222-222222222222");
+    UUID first = UUID.randomUUID();
+    UUID second = UUID.randomUUID();
 
-    service.denyAsNotFound(PRINCIPAL, "Account", UUID.randomUUID());
-    service.denyAsNotFound(secondPrincipal, "Account", UUID.randomUUID());
+    for (int i = 0; i < BUDGET + 1; i++) {
+      service.denyAsNotFound(first, "Account", UUID.randomUUID());
+    }
+    service.denyAsNotFound(second, "Account", UUID.randomUUID());
 
-    verify(writer).recordDenial(eq(PRINCIPAL), eq("Account"), any(UUID.class));
-    verify(writer).recordDenial(eq(secondPrincipal), eq("Account"), any(UUID.class));
-    verify(writer, never()).recordRateLimitedSummary(any());
+    verify(writeRepository).insert(eq(second), eq("Account"), any(UUID.class), eq("NOT_FOUND"));
   }
 
+  // "Never lost" (#205 decision): an audit row that cannot be written fails the request rather
+  // than being silently skipped. The failure is the same whether the id exists or not, so it
+  // reveals nothing.
   @Test
-  void aPersistenceFailureNeverChangesTheGeneric404() {
-    AuthorizationDenialAuditWriterService writer = mock(AuthorizationDenialAuditWriterService.class);
-    org.mockito.Mockito.doThrow(new IllegalStateException("database unavailable"))
-        .when(writer)
-        .recordDenial(any(), any(), any());
-    AuthorizationDenialAuditService service =
-        new AuthorizationDenialAuditService(Runnable::run, writer, properties(10));
+  void anAuditRowThatCannotBeWrittenFailsTheRequestInsteadOfBeingLost() {
+    DataAccessResourceFailureException auditDown =
+        new DataAccessResourceFailureException("audit pool timed out");
+    doThrow(auditDown).when(writeRepository).insert(any(), any(), any(), any());
 
-    ResponseStatusException denial =
-        service.denyAsNotFound(PRINCIPAL, "Account", UUID.randomUUID());
+    assertThatThrownBy(
+            () -> service.denyAsNotFound(UUID.randomUUID(), "Account", UUID.randomUUID()))
+        .isSameAs(auditDown);
+  }
 
+  private static void assertGenericNotFound(ResponseStatusException denial) {
     assertThat(denial.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     assertThat(denial.getReason())
         .isEqualTo(AuthorizationDenialAuditService.GENERIC_NOT_FOUND_DETAIL);
-  }
-
-  @Test
-  void aFullAuditQueueNeverChangesThe404OrFallsBackToRequestThread() {
-    AuthorizationDenialAuditWriterService writer = mock(AuthorizationDenialAuditWriterService.class);
-    Executor rejectingExecutor =
-        command -> {
-          throw new RejectedExecutionException("full");
-        };
-    AuthorizationDenialAuditService service =
-        new AuthorizationDenialAuditService(rejectingExecutor, writer, properties(10));
-
-    ResponseStatusException denial =
-        service.denyAsNotFound(PRINCIPAL, "Account", UUID.randomUUID());
-
-    assertThat(denial.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-    assertThat(denial.getReason())
-        .isEqualTo(AuthorizationDenialAuditService.GENERIC_NOT_FOUND_DETAIL);
-    verify(writer, never()).recordDenial(any(), any(), any());
-    verify(writer, never()).recordRateLimitedSummary(any());
-  }
-
-  private static AuthorizationDenialAuditProperties properties(int maxWrites) {
-    return new AuthorizationDenialAuditProperties(
-        maxWrites,
-        Duration.ofMinutes(1),
-        100,
-        10,
-        1,
-        Duration.ofDays(90),
-        Duration.ofHours(1));
   }
 }

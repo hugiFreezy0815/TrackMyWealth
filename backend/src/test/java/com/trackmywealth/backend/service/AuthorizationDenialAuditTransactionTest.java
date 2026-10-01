@@ -18,13 +18,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BooleanSupplier;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,8 +35,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * US-28-02 / #205: denial auditing survives caller rollback without taking a second connection on
- * the request thread, abusive volume is bounded and expired rows are removed.
+ * US-28-02 / #205: the denial row is written synchronously through the audit pool - committed
+ * before the 404, surviving the caller's rollback, never competing with the request for a main-pool
+ * connection - abusive volume is bounded and expired rows are removed.
  */
 @Testcontainers
 @SpringBootTest
@@ -66,12 +67,13 @@ class AuthorizationDenialAuditTransactionTest {
     registry.add("app.authorization-denial-audit.max-writes-per-principal", () -> "20");
     registry.add("app.authorization-denial-audit.refill-period", () -> "1m");
     registry.add("app.authorization-denial-audit.max-principals", () -> "100");
-    registry.add("app.authorization-denial-audit.queue-capacity", () -> "100");
-    registry.add("app.authorization-denial-audit.writer-threads", () -> "1");
+    registry.add("app.authorization-denial-audit.audit-pool-size", () -> "2");
+    registry.add("app.authorization-denial-audit.audit-connection-timeout", () -> "2s");
     registry.add("app.authorization-denial-audit.retention", () -> "30d");
     registry.add("app.authorization-denial-audit.cleanup-interval", () -> "24h");
   }
 
+  @Autowired ApplicationContext context;
   @Autowired DataSource dataSource;
   @Autowired AuthorizationDenialLogRepository repository;
   @Autowired AuthorizationDenialAuditRetentionService retentionService;
@@ -94,7 +96,7 @@ class AuthorizationDenialAuditTransactionTest {
     assertThatThrownBy(() -> denyingService.denyInsideRollback(principalUserId, requestedId))
         .isInstanceOf(ResponseStatusException.class);
 
-    await(() -> !repository.findByRequestedEntityId(requestedId).isEmpty());
+    // Synchronous: committed before the denial returned, despite the caller's rollback.
     List<AuthorizationDenialLog> rows = repository.findByRequestedEntityId(requestedId);
     assertThat(rows).hasSize(1);
     assertThat(rows.get(0).getPrincipalUserId()).isEqualTo(principalUserId);
@@ -103,7 +105,8 @@ class AuthorizationDenialAuditTransactionTest {
   }
 
   @Test
-  void concurrentDenialsDoNotNeedASecondRequestThreadConnection() throws Exception {
+  void concurrentDenialsWhileEveryMainPoolConnectionIsHeldAllCompleteAndAreAllAudited()
+      throws Exception {
     UUID principalUserId = insertPrincipalUser();
     CountDownLatch allHoldingConnections = new CountDownLatch(POOL_SIZE);
     CountDownLatch denyTogether = new CountDownLatch(1);
@@ -142,10 +145,9 @@ class AuthorizationDenialAuditTransactionTest {
       callers.shutdownNow();
     }
 
-    await(
-        () ->
-            repository.findByPrincipalUserIdOrderByOccurredAtAsc(principalUserId).size()
-                == POOL_SIZE);
+    assertThat(repository.findByPrincipalUserIdOrderByOccurredAtAsc(principalUserId))
+        .as("every denial was audited through the separate pool, none dropped")
+        .hasSize(POOL_SIZE);
   }
 
   @Test
@@ -160,10 +162,6 @@ class AuthorizationDenialAuditTransactionTest {
           .isEqualTo(AuthorizationDenialAuditService.GENERIC_NOT_FOUND_DETAIL);
     }
 
-    await(
-        () ->
-            repository.findByPrincipalUserIdOrderByOccurredAtAsc(principalUserId).size()
-                == 21);
     List<AuthorizationDenialLog> rows =
         repository.findByPrincipalUserIdOrderByOccurredAtAsc(principalUserId);
     assertThat(rows).hasSize(21);
@@ -179,15 +177,22 @@ class AuthorizationDenialAuditTransactionTest {
             });
   }
 
+  // The audit pool is deliberately not a DataSource (or Executor) bean: either would make Spring
+  // Boot back off its own auto-configured one - the DataSource JPA/Flyway use, or the
+  // applicationTaskExecutor @Async and MdcTaskDecorator rely on.
+  @Test
+  void theAuditPoolLeavesSpringBootsOwnDataSourceAndExecutorInPlace() {
+    assertThat(context.getBeansOfType(DataSource.class)).hasSize(1);
+    assertThat(context.containsBean("applicationTaskExecutor")).isTrue();
+  }
+
   @Test
   void retentionDeletesOnlyRowsOlderThanConfiguredPeriod() throws Exception {
     UUID principalUserId = insertPrincipalUser();
     UUID expiredId = UUID.randomUUID();
     UUID freshId = UUID.randomUUID();
-    insertDenial(
-        principalUserId, expiredId, OffsetDateTime.now(ZoneOffset.UTC).minusDays(31));
-    insertDenial(
-        principalUserId, freshId, OffsetDateTime.now(ZoneOffset.UTC).minusDays(29));
+    insertDenial(principalUserId, expiredId, OffsetDateTime.now(ZoneOffset.UTC).minusDays(31));
+    insertDenial(principalUserId, freshId, OffsetDateTime.now(ZoneOffset.UTC).minusDays(29));
 
     retentionService.deleteExpiredRows();
 
@@ -210,8 +215,8 @@ class AuthorizationDenialAuditTransactionTest {
     return userId;
   }
 
-  private void insertDenial(
-      UUID principalUserId, UUID requestedEntityId, OffsetDateTime occurredAt) throws Exception {
+  private void insertDenial(UUID principalUserId, UUID requestedEntityId, OffsetDateTime occurredAt)
+      throws Exception {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
@@ -223,14 +228,6 @@ class AuthorizationDenialAuditTransactionTest {
       statement.setObject(3, occurredAt);
       statement.executeUpdate();
     }
-  }
-
-  private static void await(BooleanSupplier condition) throws Exception {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-    while (!condition.getAsBoolean() && System.nanoTime() < deadline) {
-      Thread.sleep(20);
-    }
-    assertThat(condition.getAsBoolean()).isTrue();
   }
 
   @TestConfiguration
