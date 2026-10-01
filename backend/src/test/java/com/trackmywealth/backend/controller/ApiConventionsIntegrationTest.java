@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.config.JwtProperties;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
@@ -10,7 +11,6 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
-import com.trackmywealth.backend.config.JwtProperties;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -21,8 +21,8 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -163,9 +163,7 @@ class ApiConventionsIntegrationTest {
             .claim("tokenType", "access")
             .claim("tokenVersion", 1)
             .claim("sessionId", UUID.randomUUID().toString())
-            .signWith(
-                Keys.hmacShaKeyFor(
-                    jwtProperties.secret().getBytes(StandardCharsets.UTF_8)))
+            .signWith(Keys.hmacShaKeyFor(jwtProperties.secret().getBytes(StandardCharsets.UTF_8)))
             .compact();
 
     problem(

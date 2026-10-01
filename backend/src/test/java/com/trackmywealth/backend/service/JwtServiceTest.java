@@ -18,8 +18,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * FR-AUT-003/005, #189/#200: access JWTs enforce signature, issuer, lifetime, required claims and
- * explicit token type. Every rejected token below starts from the same otherwise-valid access
- * token and changes exactly the property named by the test.
+ * explicit token type. Every rejected token below starts from the same otherwise-valid access token
+ * and changes exactly the property named by the test.
  */
 class JwtServiceTest {
 
@@ -58,13 +58,15 @@ class JwtServiceTest {
 
   @Test
   void tokenFromDifferentIssuerIsRejected() {
-    assertThat(service.parseAccessToken(validAccessTokenBuilder().issuer("other-service").compact()))
+    assertThat(
+            service.parseAccessToken(validAccessTokenBuilder().issuer("other-service").compact()))
         .isEmpty();
   }
 
   @Test
   void tokenWithoutIssuerIsRejected() {
-    assertThat(service.parseAccessToken(validAccessTokenBuilder().issuer(null).compact())).isEmpty();
+    assertThat(service.parseAccessToken(validAccessTokenBuilder().issuer(null).compact()))
+        .isEmpty();
   }
 
   @Test
@@ -92,7 +94,8 @@ class JwtServiceTest {
 
   @Test
   void tokenWithoutSubjectIsRejected() {
-    assertThat(service.parseAccessToken(validAccessTokenBuilder().subject(null).compact())).isEmpty();
+    assertThat(service.parseAccessToken(validAccessTokenBuilder().subject(null).compact()))
+        .isEmpty();
   }
 
   @Test
@@ -134,7 +137,8 @@ class JwtServiceTest {
 
   @Test
   void tokenWithoutIssuedAtIsRejected() {
-    assertThat(service.parseAccessToken(validAccessTokenBuilder().issuedAt(null).compact())).isEmpty();
+    assertThat(service.parseAccessToken(validAccessTokenBuilder().issuedAt(null).compact()))
+        .isEmpty();
   }
 
   @Test
