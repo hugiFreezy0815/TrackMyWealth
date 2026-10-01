@@ -581,26 +581,19 @@ public class CategoryService {
         : new WorkspaceCategoryOverride(workspaceId, category.getId());
   }
 
-  // V34 rejects an override that overrides nothing, so one back to "inherit everything" is removed.
+  // V44 deliberately keeps an empty override row once one has existed. Its nullable fields still
+  // mean "inherit everything", while its version remains a monotonic concurrency token across
+  // customize -> revert -> customize cycles instead of resetting when the row is deleted/recreated.
   private void saveOrRemove(
       WorkspaceCategoryOverride override, Map<UUID, WorkspaceCategoryOverride> overrides) {
-    if (override.isEmpty()) {
-      if (override.getId() != null) {
-        overrideRepository.delete(override);
-        overrideRepository.flush();
-      }
-      overrides.remove(override.getCategoryId());
-    } else {
-      overrides.put(override.getCategoryId(), overrideRepository.saveAndFlush(override));
-    }
+    overrides.put(override.getCategoryId(), overrideRepository.saveAndFlush(override));
   }
 
   /**
    * The concurrency token a client sends back on update. For a workspace category, its row version.
-   * For a default, what this workspace has made of it: 0 while it has no override, the override's
-   * version plus one while it has. An override removed and later created again starts over, so a
-   * client whose read predates both steps is not caught - an accepted gap, since both steps must
-   * happen between that client's read and its write.
+   * For a default, what this workspace has made of it: 0 until it has ever had an override row,
+   * then the override's version plus one forever. V44 keeps an empty row after a revert, so the
+   * token never resets across customize -> inherit -> customize cycles.
    */
   static int versionOf(Category category, Map<UUID, WorkspaceCategoryOverride> overrides) {
     if (!category.isShared()) {
@@ -655,7 +648,9 @@ public class CategoryService {
         isActive(category, categories, overrides),
         category.isShared(),
         isProtected(category),
-        category.isShared() && overrides.containsKey(category.getId()),
+        category.isShared()
+            && overrides.get(category.getId()) != null
+            && !overrides.get(category.getId()).isEmpty(),
         versionOf(category, overrides),
         canEdit);
   }
