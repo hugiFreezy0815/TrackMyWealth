@@ -116,10 +116,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   @ExceptionHandler(OptimisticLockingFailureException.class)
   public ProblemDetail handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
-    return conflict(
+    return ProblemDetails.of(
+        HttpStatus.PRECONDITION_FAILED,
         ApiErrorCode.VERSION_CONFLICT,
-        "This record was changed by another request in the meantime. Reload it and retry your"
-            + " update.");
+        "This record was changed after you read it. Reload the current state and retry explicitly.");
   }
 
   /**
