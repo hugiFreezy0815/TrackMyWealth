@@ -16,6 +16,11 @@ RUN mvn -B package -DskipTests
 FROM eclipse-temurin:25-jre
 WORKDIR /app
 
+# #153: deterministic fallback for any library code that still consults Locale.getDefault().
+# Request validation itself is request/user-localized and does not depend on this value.
+ENV LANG=C.UTF-8
+ENV JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"
+
 # Runs as a non-root user - unlike the Maven build stage, this is the image that actually faces
 # the network.
 RUN addgroup --system trackmywealth && adduser --system --ingroup trackmywealth trackmywealth
