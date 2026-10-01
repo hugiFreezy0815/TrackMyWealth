@@ -81,6 +81,12 @@ class AdminUserActiveAdministratorLockOrderConcurrencyTest {
   private void raceOneRound(int round) throws InterruptedException, TimeoutException {
     UUID x = newActiveAdministrator("x-round-" + round);
     UUID y = newActiveAdministrator("y-round-" + round);
+    int xVersion =
+        VersionPreconditionService.persistedVersion(
+            appUserRepository.findById(x).orElseThrow().getVersion(), "user");
+    int yVersion =
+        VersionPreconditionService.persistedVersion(
+            appUserRepository.findById(y).orElseThrow().getVersion(), "user");
     // A third active administrator so disabling either X or Y is legitimately allowed
     // (FR-USR-005 only blocks dropping below one remaining) - both calls should succeed cleanly,
     // not merely "fail without deadlocking."
@@ -92,9 +98,11 @@ class AdminUserActiveAdministratorLockOrderConcurrencyTest {
     ExecutorService executor = Executors.newFixedThreadPool(2);
     try {
       Future<?> disableX =
-          executor.submit(raceTask(ready, go, () -> adminUserService.disableUser(x, actor)));
+          executor.submit(
+              raceTask(ready, go, () -> adminUserService.disableUser(x, xVersion, actor)));
       Future<?> disableY =
-          executor.submit(raceTask(ready, go, () -> adminUserService.disableUser(y, actor)));
+          executor.submit(
+              raceTask(ready, go, () -> adminUserService.disableUser(y, yVersion, actor)));
 
       if (!ready.await(10, TimeUnit.SECONDS)) {
         executor.shutdownNow();

@@ -36,24 +36,32 @@ public class TransferResolutionService {
   private final TransactionRepository transactionRepository;
   private final TransferDetectionService transferDetectionService;
   private final TransactionService transactionService;
+  private final VersionPreconditionService versionPreconditionService;
 
   public TransferResolutionService(
       AccountLookupService accountLookupService,
       AccessControlService accessControlService,
       TransactionRepository transactionRepository,
       TransferDetectionService transferDetectionService,
-      TransactionService transactionService) {
+      TransactionService transactionService,
+      VersionPreconditionService versionPreconditionService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
     this.transferDetectionService = transferDetectionService;
     this.transactionService = transactionService;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   @Transactional
   public TransactionResponse confirmUntracked(
-      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+      UUID accountId,
+      UUID transactionId,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Transaction leg = requireOneSidedLeg(accountId, transactionId, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, leg.getVersion(), TransactionService.VERSIONED_RESOURCE);
     if (!leg.isInternalTransfer()) {
       leg.setInternalTransfer(true);
       transactionRepository.saveAndFlush(leg);
@@ -63,12 +71,19 @@ public class TransferResolutionService {
 
   @Transactional
   public TransactionResponse undoUntracked(
-      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+      UUID accountId,
+      UUID transactionId,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Transaction leg = requireOneSidedLeg(accountId, transactionId, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, leg.getVersion(), TransactionService.VERSIONED_RESOURCE);
     if (leg.isInternalTransfer()) {
       leg.setInternalTransfer(false);
       transactionRepository.saveAndFlush(leg);
       transferDetectionService.detectAfterWrite(leg.getAccount(), leg.getBookingDate());
+      // Detection may pair the leg again; flush so the returned version/ETag is the stored one.
+      transactionRepository.flush();
     }
     return transactionService.toResponses(List.of(leg)).get(0);
   }

@@ -7,4 +7,5 @@ import java.util.UUID;
  * when none is set - or when it is set but the caller may not see that account, so the response
  * never reveals an account id the caller has no access to.
  */
-public record SettlementSourceResponse(UUID cardAccountId, UUID settlementSourceAccountId) {}
+public record SettlementSourceResponse(
+    UUID cardAccountId, UUID settlementSourceAccountId, int version) {}

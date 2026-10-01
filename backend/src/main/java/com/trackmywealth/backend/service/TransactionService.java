@@ -91,6 +91,10 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class TransactionService {
 
+  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService); shared by
+  // every service that writes a transaction under If-Match.
+  static final String VERSIONED_RESOURCE = "transaction";
+
   private static final String CREDIT_CARD_PURCHASE = "CREDIT_CARD_PURCHASE";
   private static final String SETTLEMENT = "SETTLEMENT";
   private static final String WITHDRAWAL = "WITHDRAWAL";
@@ -160,6 +164,7 @@ public class TransactionService {
   private final TransferRecordingService transferRecordingService;
   private final ObjectMapper objectMapper;
   private final String fxDefaultSource;
+  private final VersionPreconditionService versionPreconditionService;
 
   public TransactionService(
       AccountLookupService accountLookupService,
@@ -174,7 +179,8 @@ public class TransactionService {
       TransferDetectionService transferDetectionService,
       TransferRecordingService transferRecordingService,
       ObjectMapper objectMapper,
-      @Value("${app.fx.default-source}") String fxDefaultSource) {
+      @Value("${app.fx.default-source}") String fxDefaultSource,
+      VersionPreconditionService versionPreconditionService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -188,6 +194,7 @@ public class TransactionService {
     this.transferRecordingService = transferRecordingService;
     this.objectMapper = objectMapper;
     this.fxDefaultSource = fxDefaultSource;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   /**
@@ -374,8 +381,14 @@ public class TransactionService {
    */
   @Transactional
   public TransactionResponse overrideCategory(
-      UUID accountId, UUID transactionId, UUID categoryId, AuthenticatedUserPrincipal actor) {
+      UUID accountId,
+      UUID transactionId,
+      UUID categoryId,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Transaction transaction = requireCategorizable(accountId, transactionId, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, transaction.getVersion(), VERSIONED_RESOURCE);
     boolean alreadyOverridden =
         categoryId.equals(transaction.getCategoryId())
             && categorizationService.isOverridden(transaction);
@@ -393,8 +406,13 @@ public class TransactionService {
    */
   @Transactional
   public TransactionResponse resetCategory(
-      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+      UUID accountId,
+      UUID transactionId,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Transaction transaction = requireCategorizable(accountId, transactionId, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, transaction.getVersion(), VERSIONED_RESOURCE);
     if (categorizationService.isOverridden(transaction)) {
       categorizationService.resetToAutomatic(transaction);
     }
@@ -955,7 +973,8 @@ public class TransactionService {
         transaction.getVoidReason(),
         transaction.getReplacesTransactionId(),
         transaction.getDeletedAt(),
-        transaction.getCounterpartyAccountId());
+        transaction.getCounterpartyAccountId(),
+        VersionPreconditionService.persistedVersion(transaction.getVersion(), VERSIONED_RESOURCE));
   }
 
   /**

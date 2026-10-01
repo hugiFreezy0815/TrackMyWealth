@@ -486,6 +486,115 @@ class CategorizationControllerTest {
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
   }
 
+  // #207 / FR-CNC-001: a rule deactivation based on a stale read is a 412 and one without
+  // If-Match a 428; the first deactivation is kept.
+  @Test
+  void aStaleRuleDeactivationIsRejectedAndTheFirstIsKept() {
+    String token = bootstrapAdministrator();
+    CategorizationRuleResponse readByBoth =
+        createRule(token, "MERCHANT", "corner shop", defaultId("SHOPPING"), null);
+
+    deactivateRule(token, readByBoth.id(), null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+
+    CurrentVersion.storedEtag(
+        deactivateRule(token, readByBoth.id(), readByBoth.version())
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "categorization_rule",
+        readByBoth.id());
+    deactivateRule(token, readByBoth.id(), readByBoth.version())
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+  }
+
+  // #207 / FR-CNC-001: two clients re-categorize the same transaction from the same read; the
+  // second, stale override is rejected and the first category is kept. Without If-Match: 428.
+  // #207 / FR-CNC-001: "reset to automatic" is a version-checked write like the override itself.
+  @Test
+  void resettingACategoryRequiresTheCurrentVersion() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    TransactionResponse row = record(token, cash.id(), EXPENSE, "Corner Shop", null);
+    TransactionResponse overridden = setCategory(token, cash.id(), row.id(), defaultId("SHOPPING"));
+
+    client(token)
+        .delete()
+        .uri(categoryUri(cash.id(), row.id()))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    client(token)
+        .delete()
+        .uri(categoryUri(cash.id(), row.id()))
+        .headers(headers -> headers.setIfMatch("\"" + row.version() + "\""))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(
+            list(token, cash.id(), false).stream()
+                .filter(t -> t.id().equals(row.id()))
+                .findFirst()
+                .orElseThrow()
+                .categoryId())
+        .as("the override is kept")
+        .isEqualTo(overridden.categoryId());
+  }
+
+  @Test
+  void aStaleCategoryOverrideIsRejectedAndTheFirstIsKept() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    TransactionResponse readByBoth = record(token, cash.id(), EXPENSE, "Corner Shop", null);
+
+    putCategoryWith(token, cash.id(), readByBoth.id(), defaultId("SHOPPING"), null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+
+    CurrentVersion.storedEtag(
+        putCategoryWith(
+                token, cash.id(), readByBoth.id(), defaultId("SHOPPING"), readByBoth.version())
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "transaction",
+        readByBoth.id());
+    putCategoryWith(token, cash.id(), readByBoth.id(), defaultId("LEISURE"), readByBoth.version())
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(
+            list(token, cash.id(), false).stream()
+                .filter(row -> row.id().equals(readByBoth.id()))
+                .findFirst()
+                .orElseThrow()
+                .categoryId())
+        .isEqualTo(defaultId("SHOPPING"));
+  }
+
   @Test
   void aDeactivatedRuleNoLongerAppliesAndDeactivatingIsIdempotent() {
     String token = bootstrapAdministrator();
@@ -495,6 +604,7 @@ class CategorizationControllerTest {
       client(token)
           .post()
           .uri(RULES + "/" + rule.id() + "/deactivate")
+          .headers(CurrentVersion.ifMatch(dataSource, "categorization_rule", rule.id()))
           .exchange()
           .expectStatus()
           .isOk();
@@ -545,6 +655,7 @@ class CategorizationControllerTest {
     client(token)
         .post()
         .uri(RULES + "/" + foreignRule + "/deactivate")
+        .headers(CurrentVersion.ifMatch(dataSource, "categorization_rule", foreignRule))
         .exchange()
         .expectStatus()
         .isNotFound();
@@ -889,6 +1000,35 @@ class CategorizationControllerTest {
 
   // --- helpers ---------------------------------------------------------------------------------
 
+  private RestTestClient.ResponseSpec deactivateRule(String token, UUID ruleId, Integer version) {
+    return client(token)
+        .post()
+        .uri(RULES + "/" + ruleId + "/deactivate")
+        .headers(
+            headers -> {
+              if (version != null) {
+                headers.setIfMatch("\"" + version + "\"");
+              }
+            })
+        .exchange();
+  }
+
+  private RestTestClient.ResponseSpec putCategoryWith(
+      String token, UUID accountId, UUID transactionId, UUID categoryId, Integer version) {
+    return client(token)
+        .put()
+        .uri(categoryUri(accountId, transactionId))
+        .headers(
+            headers -> {
+              if (version != null) {
+                headers.setIfMatch("\"" + version + "\"");
+              }
+            })
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetTransactionCategoryRequest(categoryId))
+        .exchange();
+  }
+
   private String categoryUri(UUID accountId, UUID transactionId) {
     return "/api/v1/accounts/" + accountId + "/transactions/" + transactionId + "/category";
   }
@@ -898,6 +1038,7 @@ class CategorizationControllerTest {
     return client(token)
         .put()
         .uri(categoryUri(accountId, transactionId))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", transactionId))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new SetTransactionCategoryRequest(categoryId))
         .exchange();
@@ -905,24 +1046,31 @@ class CategorizationControllerTest {
 
   private TransactionResponse setCategory(
       String token, UUID accountId, UUID transactionId, UUID categoryId) {
-    return putCategory(token, accountId, transactionId, categoryId)
-        .expectStatus()
-        .isOk()
-        .expectBody(TransactionResponse.class)
-        .returnResult()
-        .getResponseBody();
+    return CurrentVersion.storedEtag(
+        putCategory(token, accountId, transactionId, categoryId)
+            .expectStatus()
+            .isOk()
+            .expectBody(TransactionResponse.class)
+            .returnResult(),
+        dataSource,
+        "transaction",
+        transactionId);
   }
 
   private TransactionResponse resetCategory(String token, UUID accountId, UUID transactionId) {
-    return client(token)
-        .delete()
-        .uri(categoryUri(accountId, transactionId))
-        .exchange()
-        .expectStatus()
-        .isOk()
-        .expectBody(TransactionResponse.class)
-        .returnResult()
-        .getResponseBody();
+    return CurrentVersion.storedEtag(
+        client(token)
+            .delete()
+            .uri(categoryUri(accountId, transactionId))
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", transactionId))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(TransactionResponse.class)
+            .returnResult(),
+        dataSource,
+        "transaction",
+        transactionId);
   }
 
   private String assignedByInList(String token, UUID accountId, UUID transactionId) {

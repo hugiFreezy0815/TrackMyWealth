@@ -20,6 +20,7 @@ import java.sql.Statement;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -198,6 +199,58 @@ class AdminUserControllerTest {
     assertThat(appUserRepository.findAll()).hasSize(2);
   }
 
+  // #207 / FR-CNC-001: two administrators read the same user (GET /admin/users/{id} returns its
+  // ETag); the second, stale edit is rejected and the first one is kept. Without If-Match: 428.
+  @Test
+  void aStaleUserEditIsRejectedAndTheFirstIsKept() {
+    String adminToken = bootstrapAdministrator();
+    AppUser bob = createStandardUser(adminToken, "bob@example.com");
+    String etagReadByBoth =
+        adminClient(adminToken)
+            .get()
+            .uri("/api/v1/admin/users/" + bob.getId())
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .returnResult()
+            .getResponseHeaders()
+            .getETag();
+    assertThat(etagReadByBoth).isNotNull();
+
+    CurrentVersion.storedEtag(
+        editUser(
+                adminToken,
+                bob.getId(),
+                new EditUserRequest("bob.first@example.com", null, null),
+                etagReadByBoth)
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "app_user",
+        bob.getId());
+    editUser(
+            adminToken,
+            bob.getId(),
+            new EditUserRequest("bob.stale@example.com", null, null),
+            etagReadByBoth)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(appUserRepository.findById(bob.getId()).orElseThrow().getEmail())
+        .isEqualTo("bob.first@example.com");
+
+    editUser(adminToken, bob.getId(), new EditUserRequest("bob.none@example.com", null, null), null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+  }
+
   @Test
   void editingAUserToAnAlreadyUsedEmailIsRejected() {
     String adminToken = bootstrapAdministrator();
@@ -207,6 +260,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .patch()
         .uri("/api/v1/admin/users/" + bob.getId())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", bob.getId()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new EditUserRequest("charlie@example.com", null, null))
         .exchange()
@@ -225,6 +279,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .patch()
         .uri("/api/v1/admin/users/" + bob.getId())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", bob.getId()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new EditUserRequest("", null, null))
         .exchange()
@@ -243,6 +298,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .patch()
         .uri("/api/v1/admin/users/" + bob.getId())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", bob.getId()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new EditUserRequest(null, null, "DE"))
         .exchange()
@@ -253,6 +309,105 @@ class AdminUserControllerTest {
     assertThat(updated.getLanguage()).isEqualTo("DE");
     assertThat(adminAuditLogRepository.findAll())
         .anySatisfy(log -> assertThat(log.getAction()).isEqualTo("USER_EDITED"));
+  }
+
+  // #207 / FR-CNC-001: disabling and reactivating are version-checked. Without If-Match nothing
+  // changes (428); with the version from before the other action it is a 412.
+  @Test
+  void disablingAndReactivatingRequireTheCurrentVersion() {
+    String adminToken = bootstrapAdministrator();
+    AppUser charlie = createStandardUser(adminToken, "charlie@example.com");
+    String readByBoth = "\"" + charlie.getVersion() + "\"";
+    String base = "/api/v1/admin/users/" + charlie.getId();
+
+    adminClient(adminToken)
+        .post()
+        .uri(base + "/disable")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    assertThat(appUserRepository.findById(charlie.getId()).orElseThrow().getStatus())
+        .isEqualTo("ACTIVE");
+
+    CurrentVersion.storedEtag(
+        adminClient(adminToken)
+            .post()
+            .uri(base + "/disable")
+            .headers(headers -> headers.setIfMatch(readByBoth))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "app_user",
+        charlie.getId());
+
+    adminClient(adminToken)
+        .post()
+        .uri(base + "/reactivate")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    adminClient(adminToken)
+        .post()
+        .uri(base + "/reactivate")
+        .headers(headers -> headers.setIfMatch(readByBoth))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(appUserRepository.findById(charlie.getId()).orElseThrow().getStatus())
+        .as("the disable is kept")
+        .isEqualTo("DISABLED");
+
+    // The reactivation's ETag is the stored version, so the admin's next edit is not a 412.
+    CurrentVersion.storedEtag(
+        adminClient(adminToken)
+            .post()
+            .uri(base + "/reactivate")
+            .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "app_user",
+        charlie.getId());
+  }
+
+  // #207 review M2: the GET added for refreshing a user's ETag is administrator-only like every
+  // other /admin endpoint - an authenticated STANDARD_USER gets 403, not another user's details.
+  @Test
+  void readingAUserNeedsTheAdministratorRole() {
+    String adminToken = bootstrapAdministrator();
+    AppUser bob = createStandardUser(adminToken, "bob@example.com");
+    AppUser charlie = createStandardUser(adminToken, "charlie@example.com");
+    String charlieToken =
+        tokenIssuanceService.issueTokens(charlie, "test-device", null).accessToken();
+
+    adminClient(charlieToken)
+        .get()
+        .uri("/api/v1/admin/users/" + bob.getId())
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.FORBIDDEN);
+    // Not even their own record through the admin API.
+    adminClient(charlieToken)
+        .get()
+        .uri("/api/v1/admin/users/" + charlie.getId())
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.FORBIDDEN);
   }
 
   @Test
@@ -278,6 +433,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + charlie.getId() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -317,11 +473,13 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + charlie.getId() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
         .exchange();
 
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + charlie.getId() + "/reactivate")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -340,6 +498,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + admin.getId() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", admin.getId()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -347,6 +506,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .patch()
         .uri("/api/v1/admin/users/" + admin.getId())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", admin.getId()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new EditUserRequest(null, "STANDARD_USER", null))
         .exchange()
@@ -385,6 +545,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + secondAdminSummary.id() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", secondAdminSummary.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -393,6 +554,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + firstAdmin.getId() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", firstAdmin.getId()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -447,6 +609,22 @@ class AdminUserControllerTest {
             .returnResult()
             .getResponseBody();
     return appUserRepository.findById(created.id()).orElseThrow();
+  }
+
+  private RestTestClient.ResponseSpec editUser(
+      String adminToken, UUID userId, EditUserRequest request, String ifMatch) {
+    return adminClient(adminToken)
+        .patch()
+        .uri("/api/v1/admin/users/" + userId)
+        .headers(
+            headers -> {
+              if (ifMatch != null) {
+                headers.setIfMatch(ifMatch);
+              }
+            })
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange();
   }
 
   private AppUser onlyAppUser() {

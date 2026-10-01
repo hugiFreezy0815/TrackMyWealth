@@ -5,13 +5,17 @@ import com.trackmywealth.backend.dto.SetStatementConfigRequest;
 import com.trackmywealth.backend.dto.StatementConfigResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CardStatementService;
+import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.VersionedResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,17 +35,23 @@ public class CardStatementController {
   }
 
   @PutMapping("/statement-config")
-  public StatementConfigResponse setStatementConfig(
+  public ResponseEntity<StatementConfigResponse> setStatementConfig(
       @PathVariable UUID cardAccountId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @Valid @RequestBody SetStatementConfigRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return cardStatementService.setStatementConfig(cardAccountId, request, actor);
+    StatementConfigResponse response =
+        cardStatementService.setStatementConfig(
+            cardAccountId, request, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   @GetMapping("/statement-config")
-  public StatementConfigResponse getStatementConfig(
+  public ResponseEntity<StatementConfigResponse> getStatementConfig(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return cardStatementService.getStatementConfig(cardAccountId, actor);
+    StatementConfigResponse response =
+        cardStatementService.getStatementConfig(cardAccountId, actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   /**

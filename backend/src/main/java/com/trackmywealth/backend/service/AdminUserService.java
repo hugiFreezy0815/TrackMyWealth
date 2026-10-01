@@ -48,6 +48,9 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class AdminUserService {
 
+  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
+  private static final String VERSIONED_RESOURCE = "user";
+
   private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
   private static final String ACTIVE = "ACTIVE";
 
@@ -63,6 +66,7 @@ public class AdminUserService {
   private final AdminAuditLogRepository adminAuditLogRepository;
   private final PasswordEncoder passwordEncoder;
   private final ObjectMapper objectMapper;
+  private final VersionPreconditionService versionPreconditionService;
 
   public AdminUserService(
       AppUserRepository appUserRepository,
@@ -72,7 +76,8 @@ public class AdminUserService {
       UserSessionRepository userSessionRepository,
       AdminAuditLogRepository adminAuditLogRepository,
       PasswordEncoder passwordEncoder,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      VersionPreconditionService versionPreconditionService) {
     this.appUserRepository = appUserRepository;
     this.workspaceRepository = workspaceRepository;
     this.workspaceMemberRepository = workspaceMemberRepository;
@@ -81,6 +86,7 @@ public class AdminUserService {
     this.adminAuditLogRepository = adminAuditLogRepository;
     this.passwordEncoder = passwordEncoder;
     this.objectMapper = objectMapper;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   @Transactional
@@ -117,10 +123,17 @@ public class AdminUserService {
     return toSummary(user);
   }
 
+  @Transactional(readOnly = true)
+  public UserSummaryResponse getUser(UUID targetUserId) {
+    return toSummary(findUserOrThrow(targetUserId));
+  }
+
   @Transactional
   public UserSummaryResponse editUser(
-      UUID targetUserId, EditUserRequest request, UUID actorUserId) {
+      UUID targetUserId, EditUserRequest request, Integer expectedVersion, UUID actorUserId) {
     AppUser target = findUserOrThrow(targetUserId);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, target.getVersion(), VERSIONED_RESOURCE);
     Map<String, Object> changes = new LinkedHashMap<>();
 
     if (request.email() != null) {
@@ -152,7 +165,8 @@ public class AdminUserService {
   }
 
   @Transactional
-  public UserSummaryResponse disableUser(UUID targetUserId, UUID actorUserId) {
+  public UserSummaryResponse disableUser(
+      UUID targetUserId, Integer expectedVersion, UUID actorUserId) {
     // Locks the target and every active administrator in one statement - see
     // AppUserRepository.lockTargetAndActiveAdministrators for why this must not be split into a
     // standalone target-row lock followed by a separate assertNotLastActiveAdministrator query
@@ -161,12 +175,14 @@ public class AdminUserService {
     List<AppUser> lockedTargetAndAdministrators =
         appUserRepository.lockTargetAndActiveAdministrators(targetUserId);
     AppUser target = extractTargetOrThrow(lockedTargetAndAdministrators, targetUserId);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, target.getVersion(), VERSIONED_RESOURCE);
     long activeAdministratorCount = countActiveAdministrators(lockedTargetAndAdministrators);
     assertNotLastActiveAdministrator(target, activeAdministratorCount, "disable");
 
     target.setStatus("DISABLED");
     target.incrementTokenVersion();
-    target = appUserRepository.save(target);
+    target = appUserRepository.saveAndFlush(target);
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
     refreshTokenRepository.revokeAllActiveTokensForUser(targetUserId, now);
     // user_session.status is a security-relevant signal now (US-02-03's per-session
@@ -180,14 +196,18 @@ public class AdminUserService {
   }
 
   @Transactional
-  public UserSummaryResponse reactivateUser(UUID targetUserId, UUID actorUserId) {
+  public UserSummaryResponse reactivateUser(
+      UUID targetUserId, Integer expectedVersion, UUID actorUserId) {
     AppUser target = findUserForUpdateOrThrow(targetUserId);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, target.getVersion(), VERSIONED_RESOURCE);
     target.setStatus(ACTIVE);
     // FR-AUT-010: re-enabling a previously locked-out/disabled user must not carry over a stale
     // lockout from before they were disabled.
     target.setFailedLoginCount(0);
     target.setLockedUntil(null);
-    target = appUserRepository.save(target);
+    // Flushed so the returned ETag is the version the trigger stores, not the pre-update one.
+    target = appUserRepository.saveAndFlush(target);
 
     // Without this, a client that still holds its pre-disable refresh token and presents it after
     // reactivation would fall into TokenRotationService's reuse/"theft" branch - the token really
@@ -214,7 +234,7 @@ public class AdminUserService {
   // same 409 rather than letting it surface as an unhandled 500.
   private AppUser saveOrRejectDuplicateEmail(AppUser user) {
     try {
-      return appUserRepository.save(user);
+      return appUserRepository.saveAndFlush(user);
     } catch (DataIntegrityViolationException e) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is already in use.", e);
     }
@@ -307,6 +327,11 @@ public class AdminUserService {
 
   private UserSummaryResponse toSummary(AppUser user) {
     return new UserSummaryResponse(
-        user.getId(), user.getEmail(), user.getRole(), user.getStatus(), user.getLanguage());
+        user.getId(),
+        user.getEmail(),
+        user.getRole(),
+        user.getStatus(),
+        user.getLanguage(),
+        VersionPreconditionService.persistedVersion(user.getVersion(), VERSIONED_RESOURCE));
   }
 }

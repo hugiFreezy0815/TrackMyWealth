@@ -207,6 +207,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + proposal.id() + "/confirm")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", proposal.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -264,6 +265,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + proposal.id() + "/reject")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", proposal.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -301,6 +303,7 @@ class TransferControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + card.id() + "/settlement-source")
+        .headers(CurrentVersion.ifMatchForCard(dataSource, card.id()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new SetSettlementSourceRequest(current.id()))
         .exchange()
@@ -364,26 +367,88 @@ class TransferControllerTest {
     assertThat(pending.complete()).isFalse();
 
     TransactionResponse confirmed =
-        client(token)
-            .post()
-            .uri(rowUri(current.id(), leg.id()) + "/untracked-transfer")
-            .exchange()
-            .expectStatus()
-            .isOk()
-            .expectBody(TransactionResponse.class)
-            .returnResult()
-            .getResponseBody();
+        CurrentVersion.storedEtag(
+            client(token)
+                .post()
+                .uri(rowUri(current.id(), leg.id()) + "/untracked-transfer")
+                .headers(CurrentVersion.ifMatch(dataSource, "transaction", leg.id()))
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(TransactionResponse.class)
+                .returnResult(),
+            dataSource,
+            "transaction",
+            leg.id());
     assertThat(confirmed.internalTransfer()).isTrue();
     assertThat(confirmed.counterpartyAccountId()).isNull();
     assertThat(cashFlow(token).complete()).isTrue();
 
+    CurrentVersion.storedEtag(
+        client(token)
+            .delete()
+            .uri(rowUri(current.id(), leg.id()) + "/untracked-transfer")
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", leg.id()))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "transaction",
+        leg.id());
+    assertThat(cashFlow(token).complete()).isFalse();
+  }
+
+  // #207 / FR-CNC-001: confirming and undoing an untracked transfer are version-checked writes on
+  // the leg. Without If-Match nothing changes (428); with the version from before the other
+  // action it is a 412.
+  @Test
+  void confirmingAndUndoingAnUntrackedTransferRequireTheCurrentVersion() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    TransactionResponse leg = record(token, current.id(), transfer("-300.00", null, null));
+    String untracked = rowUri(current.id(), leg.id()) + "/untracked-transfer";
+
     client(token)
-        .delete()
-        .uri(rowUri(current.id(), leg.id()) + "/untracked-transfer")
+        .post()
+        .uri(untracked)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    assertThat(cashFlow(token).complete()).as("still pending").isFalse();
+
+    client(token)
+        .post()
+        .uri(untracked)
+        .headers(headers -> headers.setIfMatch("\"" + leg.version() + "\""))
         .exchange()
         .expectStatus()
         .isOk();
-    assertThat(cashFlow(token).complete()).isFalse();
+
+    client(token)
+        .delete()
+        .uri(untracked)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    client(token)
+        .delete()
+        .uri(untracked)
+        .headers(headers -> headers.setIfMatch("\"" + leg.version() + "\""))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(cashFlow(token).complete()).as("the confirmation is kept").isTrue();
   }
 
   @Test
@@ -395,6 +460,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri(rowUri(current.id(), leg.id()) + "/untracked-transfer")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", leg.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -409,6 +475,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + match.id() + "/reject")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", match.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -429,12 +496,14 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri(rowUri(current.id(), expense.id()) + "/untracked-transfer")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", expense.id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     client(token)
         .post()
         .uri(rowUri(current.id(), linked.id()) + "/untracked-transfer")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", linked.id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -581,6 +650,7 @@ class TransferControllerTest {
         client(token)
             .delete()
             .uri(rowUri(savings.id(), credit.id()))
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", credit.id()))
             .exchange()
             .expectStatus()
             .isOk()
@@ -595,6 +665,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri(rowUri(savings.id(), credit.id()) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", credit.id()))
         .exchange()
         .expectStatus()
         .isOk();

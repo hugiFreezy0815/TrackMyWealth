@@ -56,6 +56,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -189,6 +190,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .post()
         .uri(rowUri(card.id(), typo.id()) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -269,6 +271,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .delete()
         .uri(rowUri(card.id(), imported))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
@@ -305,12 +308,14 @@ class TransactionRemovalControllerTest {
     client(token)
         .delete()
         .uri(rowUri(card.id(), imported) + "?reason=again")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
     client(token)
         .delete()
         .uri(rowUri(card.id(), voided.reversals().get(0).id()) + "?reason=again")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", voided.reversals().get(0).id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -318,6 +323,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .put()
         .uri(rowUri(card.id(), voided.reversals().get(0).id()) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", voided.reversals().get(0).id()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new SetTransactionCategoryRequest(defaultCategory("SHOPPING")))
         .exchange()
@@ -495,6 +501,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + match + "/reject")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", match))
         .exchange()
         .expectStatus()
         .isOk();
@@ -513,6 +520,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + match + "/confirm")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", match))
         .exchange()
         .expectStatus()
         .isNotFound();
@@ -605,6 +613,7 @@ class TransactionRemovalControllerTest {
     client(memberToken)
         .delete()
         .uri(rowUri(card.id(), typo.id()))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
         .exchange()
         .expectStatus()
         .isNotFound();
@@ -614,6 +623,7 @@ class TransactionRemovalControllerTest {
     client(memberToken)
         .post()
         .uri(rowUri(card.id(), typo.id()) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
         .exchange()
         .expectStatus()
         .isNotFound();
@@ -633,10 +643,82 @@ class TransactionRemovalControllerTest {
     client(token)
         .delete()
         .uri(rowUri(other.id(), typo.id()))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
         .exchange()
         .expectStatus()
         .isNotFound();
     assertThat(list(token, card.id())).hasSize(1);
+  }
+
+  // --- #207: If-Match on removal and restore ---------------------------------------------------
+
+  // FR-CNC-001: removal and restore are read-modify-write on the transaction. Without If-Match
+  // nothing is attempted (428); with the version from before another write it is a 412 and the
+  // row is unchanged.
+  @Test
+  void removalAndRestoreRequireTheCurrentVersion() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse typo = record(token, card.id(), purchase("-85.00"));
+
+    client(token)
+        .delete()
+        .uri(rowUri(card.id(), typo.id()))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    assertThat(list(token, card.id())).hasSize(1);
+
+    remove(token, card.id(), typo.id(), null);
+
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), typo.id()) + "/restore")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), typo.id()) + "/restore")
+        .headers(headers -> headers.setIfMatch("\"" + typo.version() + "\""))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(list(token, card.id())).as("still deleted").isEmpty();
+  }
+
+  // ADR 0004 / US-28-02: an existing row the caller cannot see is the generic 404 even without
+  // If-Match - never the 428 that would confirm the row exists.
+  @Test
+  void aRowTheCallerCannotSeeIsNotFoundEvenWithoutIfMatch() {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
+    TransactionResponse typo = record(adminToken, card.id(), purchase("-85.00"));
+    createSecondMember(adminToken, "member@example.com");
+    String memberToken = login("member@example.com");
+
+    client(memberToken)
+        .delete()
+        .uri(rowUri(card.id(), typo.id()))
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    client(memberToken)
+        .post()
+        .uri(rowUri(card.id(), typo.id()) + "/restore")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    assertThat(list(adminToken, card.id())).hasSize(1);
   }
 
   // --- helpers ---------------------------------------------------------------------------------
@@ -686,27 +768,31 @@ class TransactionRemovalControllerTest {
 
   private TransactionRemovalResponse remove(
       String token, UUID accountId, UUID transactionId, String reason) {
-    return client(token)
-        .delete()
-        .uri(rowUri(accountId, transactionId) + (reason == null ? "" : "?reason=" + reason))
-        .exchange()
-        .expectStatus()
-        .isOk()
-        .expectBody(TransactionRemovalResponse.class)
-        .returnResult()
-        .getResponseBody();
+    EntityExchangeResult<TransactionRemovalResponse> result =
+        client(token)
+            .delete()
+            .uri(rowUri(accountId, transactionId) + (reason == null ? "" : "?reason=" + reason))
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", transactionId))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(TransactionRemovalResponse.class)
+            .returnResult();
+    return CurrentVersion.storedEtag(result, dataSource, "transaction", transactionId);
   }
 
   private TransactionRemovalResponse restore(String token, UUID accountId, UUID transactionId) {
-    return client(token)
-        .post()
-        .uri(rowUri(accountId, transactionId) + "/restore")
-        .exchange()
-        .expectStatus()
-        .isOk()
-        .expectBody(TransactionRemovalResponse.class)
-        .returnResult()
-        .getResponseBody();
+    EntityExchangeResult<TransactionRemovalResponse> result =
+        client(token)
+            .post()
+            .uri(rowUri(accountId, transactionId) + "/restore")
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", transactionId))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(TransactionRemovalResponse.class)
+            .returnResult();
+    return CurrentVersion.storedEtag(result, dataSource, "transaction", transactionId);
   }
 
   record PageOf<T>(List<T> content, long totalElements) {}
@@ -785,6 +871,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + cardAccountId + "/settlement-source")
+        .headers(CurrentVersion.ifMatchForCard(dataSource, cardAccountId))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new SetSettlementSourceRequest(sourceAccountId))
         .exchange()

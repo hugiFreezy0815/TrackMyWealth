@@ -13,4 +13,5 @@ public record SharingGrantResponse(
     String accessLevel,
     UUID grantedByMemberId,
     OffsetDateTime grantedAt,
-    OffsetDateTime revokedAt) {}
+    OffsetDateTime revokedAt,
+    int version) {}

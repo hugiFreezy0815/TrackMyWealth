@@ -3,8 +3,11 @@ package com.trackmywealth.backend.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.util.UUID;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
 
 /** Maps {@code account_credit_card} (V5) - extension of {@link Account} for {@code CREDIT_CARD}. */
@@ -36,6 +39,11 @@ public class AccountCreditCard extends AccountExtension {
   @Column(name = "due_date_offset_days")
   private Short dueDateOffsetDays;
 
+  @Version
+  @Generated(event = {EventType.INSERT, EventType.UPDATE})
+  @Column(name = "version", insertable = false, updatable = false)
+  private Integer version;
+
   public UUID getSettlementSourceAccountId() {
     return settlementSourceAccountId;
   }
@@ -58,6 +66,10 @@ public class AccountCreditCard extends AccountExtension {
 
   public void setDueDateOffsetDays(Short dueDateOffsetDays) {
     this.dueDateOffsetDays = dueDateOffsetDays;
+  }
+
+  public Integer getVersion() {
+    return version;
   }
 
   public String getBillingCurrency() {

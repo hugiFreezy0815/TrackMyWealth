@@ -51,4 +51,5 @@ public record SettlementMatchResponse(
     UUID debitAccountId,
     UUID debitTransactionId,
     UUID creditAccountId,
-    UUID creditTransactionId) {}
+    UUID creditTransactionId,
+    int version) {}

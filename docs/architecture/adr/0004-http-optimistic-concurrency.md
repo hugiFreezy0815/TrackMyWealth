@@ -43,11 +43,35 @@ The first retrofit (#172) covers every existing mutation of the two mutable reso
 accounts (PUT, archive, restore, institution reassignment) and categories (PUT, activate, deactivate,
 delete).
 
-The other existing mutating endpoints (account ownership, snapshot replace, statement config,
-settlement source and matches, sharing-grant revoke, categorization-rule deactivate, transaction
-category/removal/untracked-transfer actions, workspace-member deactivate, admin user edits) do
-**not** check a client version yet and remain last-write-wins until #207 retrofits them or records
-an explicit exception here. New mutable endpoints must follow this ADR from the start.
+#207 retrofits every other existing mutating endpoint: account ownership, snapshot replace,
+statement config, settlement source and matches, sharing-grant revoke, categorization-rule
+deactivate, transaction category/removal/untracked-transfer actions, workspace-member deactivate
+and admin user edits. New mutable endpoints must follow this ADR from the start.
+
+### Not read-modify-write
+
+These mutating endpoints take no `If-Match`, because there is no client-held version of an
+existing resource that a concurrent write could silently overwrite:
+
+- **Creates** (`POST` on a collection): accounts, snapshots, users, categories, categorization
+  rules, institutions, sharing grants, transactions, custom-asset valuations. Transactions and
+  valuations are append-only besides.
+- **Idempotent operations:** `POST /securities` (find-or-create of shared reference data) and
+  `POST .../settlement-matches/run` (re-runs matching; no client-held state).
+- **Credential exchanges and bootstrap:** login, token refresh, MFA verification, and the one-time
+  administrator setup.
+- **The caller's own MFA enrollment** (enroll, confirm, disable): each step is authorized by a fresh
+  TOTP code or the password, which already proves the caller acts on the current state.
+- **Session revocation:** a terminal, idempotent transition; two revocations cannot lose an
+  update.
+- **Error rendering:** `ProblemErrorController` is mapped for every HTTP method so an error
+  forwarded from any request gets the problem body; it writes nothing.
+
+Two tests enforce this from the one reviewed list (`IfMatchExceptions`): `IfMatchCoverageTest`
+fails the build for any other mutating handler without `If-Match` (shortcut annotations and
+`@RequestMapping` alike), and `ApiConventionsIntegrationTest` fails it for any other POST, PUT,
+PATCH or DELETE route Spring serves whose OpenAPI operation lacks a required `If-Match` with its
+412/428 responses. Adding an entry to the list means adding it here too.
 
 ## Why ETag / If-Match
 
@@ -64,3 +88,39 @@ silently retry a stale mutation.
 
 CORS must allow `If-Match` and expose `ETag`. OpenAPI must document the header and response
 version. New mutable resource endpoints must follow this ADR as part of code review.
+
+## #207 retrofit decisions
+
+V48 adds database-owned revisions to the older mutable rows that did not already have one:
+`account_credit_card`, `account_snapshot`, `categorization_rule`, `settlement_match` and
+`sharing_grant`. `transaction` already had the same version/trigger convention from V10; #207
+only maps and exposes it. `app_user`, `workspace_member` and `account` were already versioned.
+
+Statement-cycle configuration and settlement-source configuration intentionally share the
+`account_credit_card.version`: they mutate different fields of the same card-extension resource,
+so changing either invalidates a stale editor of the other. Transaction category, lifecycle and
+untracked-transfer commands similarly share `transaction.version`.
+
+Admin user, workspace member and sharing grant gained narrow authorized GET-by-id endpoints because
+those resources previously had command endpoints but no way to refresh an existing concurrency
+token. List/create responses continue to expose versions where they already serve as reads.
+
+Account ownership is a full-replacement aggregate whose rows are dated history and may
+legitimately be empty, so it uses the parent `account.version` as its token
+(`AccountOwnershipSetResponse.version`); a replacement advances it. Consequences, accepted:
+
+- Ownership and the account's own fields share one token: changing either makes a client's stale
+  copy of the other a 412 - a reload, never a lost update.
+- The replacement advances the token with an UPDATE of the account row that changes no column
+  itself; the row's triggers bump `version` and also set `updated_at`, so an ownership change shows
+  as a change of the account.
+- Two replacements based on the same read cannot both win: `assignOwnership` takes the account row
+  lock (`findByIdForUpdate`) before comparing versions, so the loser waits for the winner's commit
+  and then sees the advanced version (412). `AccountOwnershipControllerTest` races exactly that.
+- `GET`/`PUT .../ownership` answer an object (`accountId`, `version`, `owners`) instead of a bare
+  list - a wire change made while no client consumed the endpoint yet.
+
+Automatic recategorization (a rule change re-running categorization) writes the transaction row
+too, so it advances `transaction.version` like a user's edit does. A client holding an ETag from
+before such a run gets a 412 on its next edit and must reload - deliberate: the category it saw is
+no longer the stored one.

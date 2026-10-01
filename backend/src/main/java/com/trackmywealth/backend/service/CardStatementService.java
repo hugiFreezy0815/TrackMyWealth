@@ -61,6 +61,7 @@ public class CardStatementService {
   private final SettlementMatchRepository settlementMatchRepository;
   private final AccountValuationService accountValuationService;
   private final BusinessDateService businessDateService;
+  private final VersionPreconditionService versionPreconditionService;
 
   public CardStatementService(
       AccountLookupService accountLookupService,
@@ -68,19 +69,24 @@ public class CardStatementService {
       AccountCreditCardRepository accountCreditCardRepository,
       SettlementMatchRepository settlementMatchRepository,
       AccountValuationService accountValuationService,
-      BusinessDateService businessDateService) {
+      BusinessDateService businessDateService,
+      VersionPreconditionService versionPreconditionService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.accountCreditCardRepository = accountCreditCardRepository;
     this.settlementMatchRepository = settlementMatchRepository;
     this.accountValuationService = accountValuationService;
     this.businessDateService = businessDateService;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   /** Sets (or, for a {@code null} field, clears) this card's statement-cycle configuration. */
   @Transactional
   public StatementConfigResponse setStatementConfig(
-      UUID cardAccountId, SetStatementConfigRequest request, AuthenticatedUserPrincipal actor) {
+      UUID cardAccountId,
+      SetStatementConfigRequest request,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Account card = requireCard(cardAccountId, actor, AccessLevelValues.EDIT);
     if (request.statementDay() != null
         && (request.statementDay() < 1 || request.statementDay() > 31)) {
@@ -92,11 +98,12 @@ public class CardStatementService {
           HttpStatus.UNPROCESSABLE_CONTENT, "dueDateOffsetDays must not be negative.");
     }
     AccountCreditCard extension = extensionOf(card);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, extension.getVersion(), "statement configuration");
     extension.setStatementDay(toShort(request.statementDay(), "statementDay"));
     extension.setDueDateOffsetDays(toShort(request.dueDateOffsetDays(), "dueDateOffsetDays"));
-    accountCreditCardRepository.saveAndFlush(extension);
-    return new StatementConfigResponse(
-        cardAccountId, request.statementDay(), request.dueDateOffsetDays());
+    extension = accountCreditCardRepository.saveAndFlush(extension);
+    return toStatementConfig(extension);
   }
 
   @Transactional(readOnly = true)
@@ -104,10 +111,16 @@ public class CardStatementService {
       UUID cardAccountId, AuthenticatedUserPrincipal actor) {
     Account card = requireCard(cardAccountId, actor, AccessLevelValues.BALANCE_ONLY);
     AccountCreditCard extension = extensionOf(card);
+    return toStatementConfig(extension);
+  }
+
+  private static StatementConfigResponse toStatementConfig(AccountCreditCard extension) {
     return new StatementConfigResponse(
-        cardAccountId,
+        extension.getAccountId(),
         toInteger(extension.getStatementDay()),
-        toInteger(extension.getDueDateOffsetDays()));
+        toInteger(extension.getDueDateOffsetDays()),
+        VersionPreconditionService.persistedVersion(
+            extension.getVersion(), "statement configuration"));
   }
 
   // account_credit_card.statement_day/due_date_offset_days are SMALLINT (V5), so the entity holds

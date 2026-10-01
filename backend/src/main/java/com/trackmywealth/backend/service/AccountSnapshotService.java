@@ -75,6 +75,7 @@ public class AccountSnapshotService {
   private final AccountSnapshotRepository snapshotRepository;
   private final SnapshotHoldingRepository holdingRepository;
   private final SecurityRepository securityRepository;
+  private final VersionPreconditionService versionPreconditionService;
   private final Clock clock;
 
   public AccountSnapshotService(
@@ -84,6 +85,7 @@ public class AccountSnapshotService {
       AccountSnapshotRepository snapshotRepository,
       SnapshotHoldingRepository holdingRepository,
       SecurityRepository securityRepository,
+      VersionPreconditionService versionPreconditionService,
       Clock clock) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -91,6 +93,7 @@ public class AccountSnapshotService {
     this.snapshotRepository = snapshotRepository;
     this.holdingRepository = holdingRepository;
     this.securityRepository = securityRepository;
+    this.versionPreconditionService = versionPreconditionService;
     this.clock = clock;
   }
 
@@ -134,6 +137,7 @@ public class AccountSnapshotService {
       UUID accountId,
       UUID snapshotId,
       ReplaceAccountSnapshotRequest request,
+      Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
@@ -142,6 +146,8 @@ public class AccountSnapshotService {
             .findForUpdate(snapshotId, accountId)
             .orElseThrow(
                 () -> accessControlService.denyAsNotFound(actor, "AccountSnapshot", snapshotId));
+    versionPreconditionService.requireCurrent(
+        expectedVersion, snapshot.getVersion(), "account snapshot");
     if (!MANUAL.equals(snapshot.getSource())) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT,
@@ -311,6 +317,7 @@ public class AccountSnapshotService {
         snapshot.isOpeningBalance(),
         snapshot.getCreatedAt(),
         snapshot.getUpdatedAt(),
+        VersionPreconditionService.persistedVersion(snapshot.getVersion(), "account snapshot"),
         holdingResponses);
   }
 

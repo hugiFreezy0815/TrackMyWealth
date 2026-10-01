@@ -14,4 +14,5 @@ public record CategorizationRuleResponse(
     UUID categoryId,
     int priority,
     boolean active,
-    OffsetDateTime createdAt) {}
+    OffsetDateTime createdAt,
+    int version) {}

@@ -41,19 +41,37 @@ public class WorkspaceMemberService {
   private final AppUserRepository appUserRepository;
   private final WorkspaceMemberRepository workspaceMemberRepository;
   private final AuthorizationDenialAuditService authorizationDenialAuditService;
+  private final VersionPreconditionService versionPreconditionService;
 
   public WorkspaceMemberService(
       AppUserRepository appUserRepository,
       WorkspaceMemberRepository workspaceMemberRepository,
-      AuthorizationDenialAuditService authorizationDenialAuditService) {
+      AuthorizationDenialAuditService authorizationDenialAuditService,
+      VersionPreconditionService versionPreconditionService) {
     this.appUserRepository = appUserRepository;
     this.workspaceMemberRepository = workspaceMemberRepository;
     this.authorizationDenialAuditService = authorizationDenialAuditService;
+    this.versionPreconditionService = versionPreconditionService;
+  }
+
+  @Transactional(readOnly = true)
+  public WorkspaceMemberSummaryResponse getMember(
+      UUID targetMemberId, AuthenticatedUserPrincipal actor) {
+    UUID actingMemberId = requireActingMember(actor);
+    requireSelf(targetMemberId, actingMemberId, actor.userId());
+    WorkspaceMember target =
+        workspaceMemberRepository
+            .findById(targetMemberId)
+            .orElseThrow(
+                () ->
+                    authorizationDenialAuditService.denyAsNotFound(
+                        actor.userId(), WORKSPACE_MEMBER_ENTITY_TYPE, targetMemberId));
+    return toSummary(target);
   }
 
   @Transactional
   public WorkspaceMemberSummaryResponse deactivateMember(
-      UUID targetMemberId, AuthenticatedUserPrincipal actor) {
+      UUID targetMemberId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID actingMemberId = requireActingMember(actor);
     requireSelf(targetMemberId, actingMemberId, actor.userId());
 
@@ -64,6 +82,8 @@ public class WorkspaceMemberService {
         workspaceMemberRepository.lockTargetAndActiveMembersInWorkspace(
             targetMemberId, actor.workspaceId());
     WorkspaceMember target = extractTargetOrThrow(lockedMembers, targetMemberId, actor.userId());
+    versionPreconditionService.requireCurrent(
+        expectedVersion, target.getVersion(), "workspace member");
 
     // FR-STA-007 only lists ACTIVE -> INACTIVE as a valid transition out of ACTIVE; rejecting
     // "already not ACTIVE" here the same structured way AccountService.archiveAccount rejects an
@@ -82,7 +102,7 @@ public class WorkspaceMemberService {
 
     target.setStatus(INACTIVE);
     target.setMemberUntil(LocalDate.now());
-    target = workspaceMemberRepository.save(target);
+    target = workspaceMemberRepository.saveAndFlush(target);
     return toSummary(target);
   }
 
@@ -139,6 +159,7 @@ public class WorkspaceMemberService {
         member.isDependent(),
         member.getStatus(),
         member.getMemberSince(),
-        member.getMemberUntil());
+        member.getMemberUntil(),
+        VersionPreconditionService.persistedVersion(member.getVersion(), "workspace member"));
   }
 }

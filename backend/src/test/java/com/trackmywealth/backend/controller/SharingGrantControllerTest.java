@@ -3,7 +3,7 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
-import com.trackmywealth.backend.dto.AccountOwnershipResponse;
+import com.trackmywealth.backend.dto.AccountOwnershipSetResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest.OwnerAllocation;
@@ -44,7 +44,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -303,9 +302,100 @@ class SharingGrantControllerTest {
     client(adminToken)
         .post()
         .uri("/api/v1/sharing-grants/" + grant.id() + "/revoke")
+        .headers(CurrentVersion.ifMatch(dataSource, "sharing_grant", grant.id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  // #207 / FR-CNC-001: two clients read the same grant (GET /sharing-grants/{id} returns its
+  // ETag); the first revokes it, the second's stale revoke is a 412 - not the 409 a fresh revoke
+  // of an already-revoked grant would get - and without If-Match nothing is attempted (428).
+  // #207 review M2/M3: the GET added for refreshing a grant's ETag needs what revoking needs - FULL
+  // access to the grant's scope. A grantee with READ gets the generic 404, for an existing grant
+  // exactly as for an unknown id, and revoking without If-Match is that 404 too, never a 428.
+  @Test
+  void aGrantTheCallerCannotManageCannotBeReadOrProbedWithoutIfMatch() {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(adminToken);
+    String bobToken = createAndLoginSecondMember(adminToken, "bob@example.com");
+    UUID bobMemberId = workspaceMemberIdForEmail("bob@example.com");
+    SharingGrantResponse grant =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId, ScopeTypeValues.ACCOUNT, account.id(), null, AccessLevelValues.READ));
+
+    client(bobToken)
+        .get()
+        .uri("/api/v1/sharing-grants/" + grant.id())
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    client(bobToken)
+        .get()
+        .uri("/api/v1/sharing-grants/" + UUID.randomUUID())
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    revokeWith(bobToken, grant.id(), null).expectStatus().isNotFound();
+
+    client(adminToken)
+        .get()
+        .uri("/api/v1/sharing-grants/" + grant.id())
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.revokedAt")
+        .doesNotExist();
+  }
+
+  @Test
+  void aStaleGrantRevocationIsRejectedAndTheFirstIsKept() {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(adminToken);
+    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    SharingGrantResponse grant =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId, ScopeTypeValues.ACCOUNT, account.id(), null, AccessLevelValues.READ));
+
+    revokeWith(adminToken, grant.id(), null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+
+    String etagReadByBoth =
+        client(adminToken)
+            .get()
+            .uri("/api/v1/sharing-grants/" + grant.id())
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .returnResult()
+            .getResponseHeaders()
+            .getETag();
+    assertThat(etagReadByBoth).isNotNull();
+
+    CurrentVersion.storedEtag(
+        revokeWith(adminToken, grant.id(), etagReadByBoth)
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "sharing_grant",
+        grant.id());
+    revokeWith(adminToken, grant.id(), etagReadByBoth)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
   }
 
   @Test
@@ -637,6 +727,7 @@ class SharingGrantControllerTest {
     client(secondAdminToken)
         .post()
         .uri("/api/v1/sharing-grants/" + grant.id() + "/revoke")
+        .headers(CurrentVersion.ifMatch(dataSource, "sharing_grant", grant.id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
@@ -893,6 +984,19 @@ class SharingGrantControllerTest {
         account.name(), account.accountType(), account.nativeCurrency(), null, null, null, null);
   }
 
+  private RestTestClient.ResponseSpec revokeWith(String token, UUID grantId, String ifMatch) {
+    return client(token)
+        .post()
+        .uri("/api/v1/sharing-grants/" + grantId + "/revoke")
+        .headers(
+            headers -> {
+              if (ifMatch != null) {
+                headers.setIfMatch(ifMatch);
+              }
+            })
+        .exchange();
+  }
+
   private SharingGrantResponse grant(String token, CreateSharingGrantRequest request) {
     return client(token)
         .post()
@@ -911,6 +1015,7 @@ class SharingGrantControllerTest {
     return client(token)
         .post()
         .uri("/api/v1/sharing-grants/" + grantId + "/revoke")
+        .headers(CurrentVersion.ifMatch(dataSource, "sharing_grant", grantId))
         .exchange()
         .expectStatus()
         .isOk()
@@ -923,6 +1028,7 @@ class SharingGrantControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + accountId + "/ownership")
+        .headers(CurrentVersion.ifMatch(dataSource, "account", accountId))
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new AssignAccountOwnershipRequest(
@@ -930,7 +1036,7 @@ class SharingGrantControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<AccountOwnershipResponse>>() {});
+        .expectBody(AccountOwnershipSetResponse.class);
   }
 
   private AccountSummaryResponse createAccount(String token) {

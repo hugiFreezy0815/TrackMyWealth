@@ -48,6 +48,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -356,6 +357,127 @@ class SettlementMatchControllerTest {
     SettlementMatchResponse proposal = matches(token, null).get(0);
     assertThat(proposal.matchBasis()).isEqualTo(SettlementMatchValues.BALANCE_EQUALS_PAYMENT);
     assertThat(proposal.paymentTransactionId()).isEqualTo(payment.id());
+  }
+
+  // #207 / FR-CNC-001: two members look at the same proposal; one confirms it, the other's
+  // reject - based on the proposal as it was - is a 412, and the confirmation is kept. Without
+  // If-Match a decision is not attempted (428).
+  @Test
+  void aStaleDecisionOnAProposalIsRejectedAndTheFirstIsKept() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    purchase(token, a.card(), "-1200.00", AUG_10);
+    withdrawal(token, a.current(), "-1200.00", SEP_3);
+    SettlementMatchResponse readByBoth = matches(token, null).get(0);
+
+    decideWith(token, readByBoth.id(), "confirm", null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+
+    decideWith(token, readByBoth.id(), "confirm", readByBoth.version()).expectStatus().isOk();
+    decideWith(token, readByBoth.id(), "reject", readByBoth.version())
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(matches(token, SettlementMatchValues.CONFIRMED))
+        .extracting(SettlementMatchResponse::id)
+        .containsExactly(readByBoth.id());
+  }
+
+  // #207 / FR-CNC-001: the settlement source shares the card extension's version with the
+  // statement configuration. Without If-Match nothing changes (428); a stale one is a 412.
+  @Test
+  void changingTheSettlementSourceRequiresTheCurrentCardVersion() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    SettlementSourceResponse readByBoth = getSource(token, a.card());
+
+    sourceWith(token, a.card(), null, null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+
+    sourceWith(token, a.card(), null, readByBoth.version()).expectStatus().isOk();
+    sourceWith(token, a.card(), a.current(), readByBoth.version())
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(getSource(token, a.card()).settlementSourceAccountId())
+        .as("the first write - clearing the source - is kept")
+        .isNull();
+  }
+
+  // #207: rejecting a match is a version-checked decision like confirming one.
+  @Test
+  void rejectingAMatchWithoutIfMatchIsAPreconditionRequired() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    purchase(token, a.card(), "-1200.00", AUG_10);
+    withdrawal(token, a.current(), "-1200.00", SEP_3);
+    SettlementMatchResponse proposal = matches(token, null).get(0);
+
+    decideWith(token, proposal.id(), "reject", null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    assertThat(matches(token, null))
+        .extracting(SettlementMatchResponse::id)
+        .contains(proposal.id());
+  }
+
+  // #207 review M1: restoring a deleted payment pairs it again and flags it an internal transfer
+  // after the restore itself was written. The ETag the restore answers with must be the version
+  // the row ends up with, so the client's next edit with it succeeds instead of a self-made 412.
+  @Test
+  void restoringAPairedPaymentAnswersWithTheVersionItWasStoredWith() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    TransactionResponse payment = withdrawal(token, a.current(), "-1200.00", SEP_3);
+    cardCredit(token, a.card(), "1200.00", SEP_4);
+    String row = "/api/v1/accounts/" + a.current() + "/transactions/" + payment.id();
+
+    client(token)
+        .delete()
+        .uri(row)
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", payment.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    EntityExchangeResult<byte[]> restored =
+        client(token)
+            .post()
+            .uri(row + "/restore")
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", payment.id()))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult();
+    CurrentVersion.storedEtag(restored, dataSource, "transaction", payment.id());
+    assertThat(ledger(token, a.current()))
+        .filteredOn(t -> t.id().equals(payment.id()))
+        .singleElement()
+        .satisfies(t -> assertThat(t.internalTransfer()).as("paired again").isTrue());
+
+    // The client's next edit with exactly that ETag is accepted.
+    client(token)
+        .post()
+        .uri(row + "/untracked-transfer")
+        .headers(headers -> headers.setIfMatch(restored.getResponseHeaders().getETag()))
+        .exchange()
+        .expectStatus()
+        .value(status -> assertThat(status).isNotEqualTo(412));
   }
 
   @Test
@@ -1076,12 +1198,16 @@ class SettlementMatchControllerTest {
 
   private TransactionResponse record(
       String token, UUID accountId, String type, String amount, LocalDate date) {
-    return postOn(token, accountId, type, amount, date, "CHF")
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED)
-        .expectBody(TransactionResponse.class)
-        .returnResult()
-        .getResponseBody();
+    // A write that completes a settlement pair flags both legs after the insert; the ETag it
+    // answers with must still be the version the new row was stored with.
+    EntityExchangeResult<TransactionResponse> result =
+        postOn(token, accountId, type, amount, date, "CHF")
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult();
+    return CurrentVersion.storedEtag(
+        result, dataSource, "transaction", result.getResponseBody().id());
   }
 
   private TransactionResponse purchase(String token, UUID card, String amount, LocalDate date) {
@@ -1176,13 +1302,35 @@ class SettlementMatchControllerTest {
     return matches.stream().map(SettlementMatchResponse::id).toList();
   }
 
+  private RestTestClient.ResponseSpec decideWith(
+      String token, UUID matchId, String action, Integer version) {
+    return client(token)
+        .post()
+        .uri("/api/v1/settlement-matches/" + matchId + "/" + action)
+        .headers(
+            headers -> {
+              if (version != null) {
+                headers.setIfMatch("\"" + version + "\"");
+              }
+            })
+        .exchange();
+  }
+
   private SettlementMatchResponse decide(
       String token, UUID matchId, String action, HttpStatus expected) {
     RestTestClient.ResponseSpec response =
-        client(token).post().uri("/api/v1/settlement-matches/" + matchId + "/" + action).exchange();
+        client(token)
+            .post()
+            .uri("/api/v1/settlement-matches/" + matchId + "/" + action)
+            .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", matchId))
+            .exchange();
     response.expectStatus().isEqualTo(expected);
     return expected == HttpStatus.OK
-        ? response.expectBody(SettlementMatchResponse.class).returnResult().getResponseBody()
+        ? CurrentVersion.storedEtag(
+            response.expectBody(SettlementMatchResponse.class).returnResult(),
+            dataSource,
+            "settlement_match",
+            matchId)
         : null;
   }
 
@@ -1192,13 +1340,31 @@ class SettlementMatchControllerTest {
         client(token)
             .put()
             .uri("/api/v1/accounts/" + card + "/settlement-source")
+            .headers(CurrentVersion.ifMatchForCard(dataSource, card))
             .contentType(MediaType.APPLICATION_JSON)
             .body(new SetSettlementSourceRequest(source))
             .exchange();
     response.expectStatus().isEqualTo(expected);
     return expected == HttpStatus.OK
-        ? response.expectBody(SettlementSourceResponse.class).returnResult().getResponseBody()
+        ? CurrentVersion.storedCardEtag(
+            response.expectBody(SettlementSourceResponse.class).returnResult(), dataSource, card)
         : null;
+  }
+
+  private RestTestClient.ResponseSpec sourceWith(
+      String token, UUID card, UUID source, Integer version) {
+    return client(token)
+        .put()
+        .uri("/api/v1/accounts/" + card + "/settlement-source")
+        .headers(
+            headers -> {
+              if (version != null) {
+                headers.setIfMatch("\"" + version + "\"");
+              }
+            })
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetSettlementSourceRequest(source))
+        .exchange();
   }
 
   private SettlementSourceResponse getSource(String token, UUID card) {

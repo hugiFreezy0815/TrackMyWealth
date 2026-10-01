@@ -43,11 +43,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * serializes. So every pair here deliberately races the same single target, repeated across several
  * rounds with a fresh target each round for statistical coverage.
  *
- * <p>The fix ({@code AppUserRepository.findByIdForUpdate}, a {@code SELECT ... FOR UPDATE} both
- * methods now issue as their first statement) closes this by fully serializing any two transactions
- * on the same target - the second can't even read the row until the first commits - so this test's
- * job is to fail the moment a future change removes that upfront lock, not to prove today's
- * ordering of the later statements is safe on its own (it explicitly isn't).
+ * <p>The row lock still serializes writers. Since #207, all racers also carry the same version they
+ * read before the start: after one update wins, later writers may be rejected as stale (412) rather
+ * than mutating the row. Both outcomes are correct; this regression test still specifically rejects
+ * a database deadlock/concurrency failure.
  */
 @Testcontainers
 @SpringBootTest
@@ -91,7 +90,10 @@ class AdminUserDisableReactivateConcurrencyTest {
     target.setPasswordHash("irrelevant-for-this-test");
     target.setRole("STANDARD_USER");
     target.setLanguage("EN");
-    UUID targetId = appUserRepository.save(target).getId();
+    AppUser persistedTarget = appUserRepository.saveAndFlush(target);
+    UUID targetId = persistedTarget.getId();
+    int targetVersion =
+        VersionPreconditionService.persistedVersion(persistedTarget.getVersion(), "user");
 
     // A real, persisted user - admin_audit_log.actor_user_id has an FK to app_user, so a
     // fabricated id would fail that constraint on the very first writeAuditLog() call. Role/
@@ -112,10 +114,16 @@ class AdminUserDisableReactivateConcurrencyTest {
       for (int i = 0; i < PAIR_COUNT; i++) {
         futures.add(
             executor.submit(
-                raceTask(ready, go, () -> adminUserService.disableUser(targetId, actorId))));
+                raceTask(
+                    ready,
+                    go,
+                    () -> adminUserService.disableUser(targetId, targetVersion, actorId))));
         futures.add(
             executor.submit(
-                raceTask(ready, go, () -> adminUserService.reactivateUser(targetId, actorId))));
+                raceTask(
+                    ready,
+                    go,
+                    () -> adminUserService.reactivateUser(targetId, targetVersion, actorId))));
       }
 
       if (!ready.await(10, TimeUnit.SECONDS)) {

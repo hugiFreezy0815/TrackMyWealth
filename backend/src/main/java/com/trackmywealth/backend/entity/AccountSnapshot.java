@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -28,8 +29,9 @@ import org.hibernate.type.SqlTypes;
  * null} for a depot snapshot that reports positions only. {@code currency} is always the account's
  * {@code native_currency} (V33's guard trigger).
  *
- * <p>No {@code @Version} column: the only update path, replacing a {@code MANUAL} snapshot, locks
- * the row first ({@code AccountSnapshotRepository#findForUpdate}).
+ * <p>V48 adds an optimistic-lock revision for FR-CNC-001/002. The existing row lock still keeps
+ * replacement of the holdings set atomic; the client-facing revision additionally protects the
+ * longer read-edit-write interval.
  */
 @Entity
 @Table(name = "account_snapshot")
@@ -77,6 +79,11 @@ public class AccountSnapshot {
 
   @Column(name = "updated_by", columnDefinition = UUID_COLUMN)
   private UUID updatedBy;
+
+  @Version
+  @Generated(event = {EventType.INSERT, EventType.UPDATE})
+  @Column(name = "version", insertable = false, updatable = false)
+  private Integer version;
 
   public UUID getId() {
     return id;
@@ -156,6 +163,10 @@ public class AccountSnapshot {
 
   public void setUpdatedAt(OffsetDateTime updatedAt) {
     this.updatedAt = updatedAt;
+  }
+
+  public Integer getVersion() {
+    return version;
   }
 
   public UUID getUpdatedBy() {

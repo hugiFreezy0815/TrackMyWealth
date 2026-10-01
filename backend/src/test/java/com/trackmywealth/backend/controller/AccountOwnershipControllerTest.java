@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountOwnershipResponse;
+import com.trackmywealth.backend.dto.AccountOwnershipSetResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest.OwnerAllocation;
@@ -31,13 +32,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -198,6 +199,11 @@ class AccountOwnershipControllerTest {
     // no error anywhere. The fix forces the second writer to block until the first commits and
     // then read its result, so exactly one row must be left effective afterward, regardless of
     // which request happened to win.
+    //
+    // #207: both writers read the same account version before racing - two members who opened
+    // the same screen - so exactly one may win (200) and the other must get 412 VERSION_CONFLICT,
+    // never a silent last-write-wins. That holds because findByIdForUpdate makes the loser wait
+    // for the winner's commit and then compare its If-Match against the advanced version.
     String token = bootstrapAdministrator();
     AccountSummaryResponse account = createAccount(token);
     UUID memberA = workspaceMemberIdForEmail("admin@example.com");
@@ -223,58 +229,100 @@ class AccountOwnershipControllerTest {
         account.id(),
         new AssignAccountOwnershipRequest(List.of(new OwnerAllocation(memberA, BigDecimal.ONE))));
 
+    int versionReadByBoth = currentOwnershipVersion(token, account.id());
+
     CountDownLatch ready = new CountDownLatch(2);
     CountDownLatch go = new CountDownLatch(1);
     ExecutorService executor = Executors.newFixedThreadPool(2);
+    int reassertAStatus;
+    int buyoutBStatus;
     try {
-      Future<?> reassertA =
+      Future<Integer> reassertA =
           executor.submit(
-              raceTask(
+              raceStatus(
                   ready,
                   go,
                   () ->
-                      assignOwnership(
+                      assignOwnershipStatus(
                           token,
                           account.id(),
                           new AssignAccountOwnershipRequest(
-                              List.of(new OwnerAllocation(memberA, BigDecimal.ONE))))));
-      Future<?> buyoutB =
+                              List.of(new OwnerAllocation(memberA, BigDecimal.ONE))),
+                          versionReadByBoth)));
+      Future<Integer> buyoutB =
           executor.submit(
-              raceTask(
+              raceStatus(
                   ready,
                   go,
                   () ->
-                      assignOwnership(
+                      assignOwnershipStatus(
                           token,
                           account.id(),
                           new AssignAccountOwnershipRequest(
-                              List.of(new OwnerAllocation(memberB, BigDecimal.ONE))))));
+                              List.of(new OwnerAllocation(memberB, BigDecimal.ONE))),
+                          versionReadByBoth)));
 
       assertThat(ready.await(10, TimeUnit.SECONDS))
           .as("both racing threads must reach the start line before either is released")
           .isTrue();
       go.countDown();
 
-      reassertA.get(20, TimeUnit.SECONDS);
-      buyoutB.get(20, TimeUnit.SECONDS);
+      reassertAStatus = reassertA.get(20, TimeUnit.SECONDS);
+      buyoutBStatus = buyoutB.get(20, TimeUnit.SECONDS);
     } finally {
       executor.shutdown();
     }
+
+    assertThat(List.of(reassertAStatus, buyoutBStatus))
+        .as("one writer wins, the other sees its read is stale")
+        .containsExactlyInAnyOrder(HttpStatus.OK.value(), HttpStatus.PRECONDITION_FAILED.value());
 
     List<AccountOwnership> stillEffective =
         accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(account.id());
     assertThat(stillEffective)
         .as("exactly one row must be effective after two racing disjoint-member assignments")
         .hasSize(1);
+    UUID winner = reassertAStatus == HttpStatus.OK.value() ? memberA : memberB;
+    assertThat(stillEffective.get(0).getWorkspaceMember().getId())
+        .as("the winning write is the one kept")
+        .isEqualTo(winner);
   }
 
-  private static Callable<Void> raceTask(CountDownLatch ready, CountDownLatch go, Runnable action) {
+  private static Callable<Integer> raceStatus(
+      CountDownLatch ready, CountDownLatch go, Supplier<Integer> action) {
     return () -> {
       ready.countDown();
       go.await(15, TimeUnit.SECONDS);
-      action.run();
-      return null;
+      return action.get();
     };
+  }
+
+  // #207: replacing ownership without If-Match is not attempted at all - 428, ownership unchanged.
+  @Test
+  void replacingOwnershipWithoutIfMatchIsAPreconditionRequired() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token);
+    UUID memberA = workspaceMemberIdForEmail("admin@example.com");
+    List<AccountOwnership> before =
+        accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(account.id());
+
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + account.id() + "/ownership")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new AssignAccountOwnershipRequest(
+                List.of(new OwnerAllocation(memberA, new BigDecimal("0.5")))))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+
+    assertThat(accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(account.id()))
+        .extracting(AccountOwnership::getId)
+        .containsExactlyInAnyOrderElementsOf(before.stream().map(AccountOwnership::getId).toList());
   }
 
   @Test
@@ -287,6 +335,7 @@ class AccountOwnershipControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + account.id() + "/ownership")
+        .headers(CurrentVersion.ifMatch(dataSource, "account", account.id()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new AssignAccountOwnershipRequest(
@@ -325,6 +374,7 @@ class AccountOwnershipControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + account.id() + "/ownership")
+        .headers(CurrentVersion.ifMatch(dataSource, "account", account.id()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new AssignAccountOwnershipRequest(
@@ -344,6 +394,7 @@ class AccountOwnershipControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + UUID.randomUUID() + "/ownership")
+        .headers(CurrentVersion.ifMatch(dataSource, "account", UUID.randomUUID()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new AssignAccountOwnershipRequest(
@@ -361,6 +412,7 @@ class AccountOwnershipControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + account.id() + "/ownership")
+        .headers(CurrentVersion.ifMatch(dataSource, "account", account.id()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new AssignAccountOwnershipRequest(
@@ -387,9 +439,10 @@ class AccountOwnershipControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<AccountOwnershipResponse>>() {})
+            .expectBody(AccountOwnershipSetResponse.class)
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .owners();
 
     assertThat(ownership).hasSize(1);
     assertThat(ownership.get(0).workspaceMemberId()).isEqualTo(memberA);
@@ -467,6 +520,7 @@ class AccountOwnershipControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + account.id() + "/ownership")
+        .headers(CurrentVersion.ifMatch(dataSource, "account", account.id()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new AssignAccountOwnershipRequest(
@@ -485,6 +539,7 @@ class AccountOwnershipControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + account.id() + "/ownership")
+        .headers(CurrentVersion.ifMatch(dataSource, "account", account.id()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new AssignAccountOwnershipRequest(
@@ -540,17 +595,50 @@ class AccountOwnershipControllerTest {
 
   private List<AccountOwnershipResponse> assignOwnership(
       String token, UUID accountId, AssignAccountOwnershipRequest request) {
+    // The aggregate token is the account's version, bumped by the replacement itself.
+    return CurrentVersion.storedEtag(
+            client(token)
+                .put()
+                .uri("/api/v1/accounts/" + accountId + "/ownership")
+                .headers(CurrentVersion.ifMatch(dataSource, "account", accountId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(AccountOwnershipSetResponse.class)
+                .returnResult(),
+            dataSource,
+            "account",
+            accountId)
+        .owners();
+  }
+
+  private int assignOwnershipStatus(
+      String token, UUID accountId, AssignAccountOwnershipRequest request, int version) {
     return client(token)
         .put()
         .uri("/api/v1/accounts/" + accountId + "/ownership")
+        .header("If-Match", "\"" + version + "\"")
         .contentType(MediaType.APPLICATION_JSON)
         .body(request)
         .exchange()
+        .returnResult()
+        .getStatus()
+        .value();
+  }
+
+  private int currentOwnershipVersion(String token, UUID accountId) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + accountId + "/ownership")
+        .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<AccountOwnershipResponse>>() {})
+        .expectBody(AccountOwnershipSetResponse.class)
         .returnResult()
-        .getResponseBody();
+        .getResponseBody()
+        .version();
   }
 
   private AccountSummaryResponse createAccount(String token) {

@@ -79,6 +79,8 @@ export const api = {
     request<T>(path, { ...withIfMatch(version, options), method: 'PUT', body }),
   postVersioned: <T>(path: string, version: number, body?: unknown, options?: RequestOptions) =>
     request<T>(path, { ...withIfMatch(version, options), method: 'POST', body }),
+  patchVersioned: <T>(path: string, version: number, body?: unknown, options?: RequestOptions) =>
+    request<T>(path, { ...withIfMatch(version, options), method: 'PATCH', body }),
   delete: <T>(path: string, options?: RequestOptions) =>
     request<T>(path, { ...options, method: 'DELETE' }),
   deleteVersioned: <T>(path: string, version: number, options?: RequestOptions) =>
