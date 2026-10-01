@@ -94,6 +94,21 @@ describe('api client', () => {
     );
   });
 
+  it('sends If-Match and the JSON body on versioned PATCH requests', async () => {
+    const fetchMock = mockFetchOnce({});
+
+    await api.patchVersioned('/admin/users/id', 5, { language: 'DE' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: 'PATCH',
+        headers: expect.objectContaining({ 'If-Match': '"5"' }),
+        body: JSON.stringify({ language: 'DE' }),
+      }),
+    );
+  });
+
   it('throws ApiError with the status and parsed body when the response is not ok', async () => {
     mockFetchOnce({ ok: false, status: 404, json: async () => ({ message: 'not found' }) });
 
