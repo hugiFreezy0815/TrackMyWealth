@@ -205,7 +205,7 @@ public class CategoryService {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
-    Category category = require(categories, id);
+    Category category = requireForActor(categories, id, actor);
     if (isProtected(category)) {
       throw unprocessable(
           "'" + category.getCode() + "' is required by the application and cannot be deactivated.");
@@ -231,7 +231,7 @@ public class CategoryService {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
-    Category category = require(categories, id);
+    Category category = requireForActor(categories, id, actor);
     if (!isActive(category, categories, overrides)) {
       Category parent = categories.get(category.getParentCategoryId());
       if (parent != null && !isActive(parent, categories, overrides)) {
@@ -273,6 +273,18 @@ public class CategoryService {
   public void requireAssignable(UUID categoryId, UUID workspaceId) {
     requireAssignable(List.of(categoryId), workspaceId);
   }
+
+  @Transactional(readOnly = true)
+  public void requireAssignable(
+      UUID categoryId, UUID workspaceId, AuthenticatedUserPrincipal actor) {
+    Map<UUID, Category> categories = loadCategories(workspaceId);
+    Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
+    Category category = requireForActor(categories, categoryId, actor);
+    if (!isActive(category, categories, overrides)) {
+      throw unprocessable("An inactive category cannot be assigned. Reactivate it first.");
+    }
+  }
+
 
   /**
    * {@link #requireAssignable(UUID, UUID)} for many assignments at once (e.g. categorizing an
