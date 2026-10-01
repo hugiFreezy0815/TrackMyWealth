@@ -21,7 +21,8 @@ Use HTTP strong entity tags for client-visible optimistic concurrency.
 
 - Mutable resource DTOs expose a numeric `version`, including list items that may be edited inline.
 - Single-resource responses also send `ETag: "<version>"`.
-- Every read-modify-write endpoint requires `If-Match: "<version>"`.
+- Every read-modify-write endpoint requires `If-Match: "<version>"` (see *Rollout* for which
+  endpoints already do).
 - The tag is a quoted non-negative decimal integer. Weak tags, wildcard tags and unquoted values are
   rejected as malformed.
 - Missing `If-Match` returns **428 Precondition Required** with stable code `VERSION_REQUIRED`.
@@ -31,12 +32,22 @@ Use HTTP strong entity tags for client-visible optimistic concurrency.
   therefore still receives the ordinary non-enumerating 404 for a resource they cannot see.
 - JPA `@Version` remains enabled. If another write wins after the explicit version check but before
   flush, the resulting optimistic-lock failure is translated to the same
-  **412 / VERSION_CONFLICT** contract.
+  **412 / VERSION_CONFLICT** contract when the request carried `If-Match`. A request without
+  `If-Match` sent no precondition that could fail (RFC 9110), so the same race there is
+  **409 / VERSION_CONFLICT**. Clients branch on the code, which is the same in both cases.
 - New APIs are strict immediately; there is no transition mode that accepts a missing version.
 
-The first retrofit covers every existing mutation of the two mutable resource APIs named by #172:
+## Rollout
+
+The first retrofit (#172) covers every existing mutation of the two mutable resource APIs it names:
 accounts (PUT, archive, restore, institution reassignment) and categories (PUT, activate, deactivate,
 delete).
+
+The other existing mutating endpoints (account ownership, snapshot replace, statement config,
+settlement source and matches, sharing-grant revoke, categorization-rule deactivate, transaction
+category/removal/untracked-transfer actions, workspace-member deactivate, admin user edits) do
+**not** check a client version yet and remain last-write-wins until #207 retrofits them or records
+an explicit exception here. New mutable endpoints must follow this ADR from the start.
 
 ## Why ETag / If-Match
 

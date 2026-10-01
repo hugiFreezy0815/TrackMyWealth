@@ -31,7 +31,10 @@ public final class ApiErrorCode {
   /** 428: a state-changing request omitted the version it must protect with If-Match. */
   public static final String VERSION_REQUIRED = "VERSION_REQUIRED";
 
-  /** 409: the record changed since it was read - reload it, then retry (FR-CNC-002, #172). */
+  /**
+   * 412 (or 409 for a race on a request without {@code If-Match}): the record changed since it was
+   * read - reload it, then retry explicitly (FR-CNC-002, ADR 0004).
+   */
   public static final String VERSION_CONFLICT = "VERSION_CONFLICT";
 
   /** 409: a concurrent request won a race for the same key - simply retry the request. */
@@ -67,8 +70,8 @@ public final class ApiErrorCode {
       case 409 -> CONFLICT;
       case 412 -> VERSION_CONFLICT;
       case 422 -> UNPROCESSABLE;
-      case 428 -> VERSION_REQUIRED;
       case 423 -> LOCKED;
+      case 428 -> VERSION_REQUIRED;
       case 429 -> RATE_LIMITED;
       default -> status.is4xxClientError() ? VALIDATION_FAILED : INTERNAL;
     };

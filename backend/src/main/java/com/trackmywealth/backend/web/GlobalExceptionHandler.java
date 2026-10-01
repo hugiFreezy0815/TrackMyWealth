@@ -114,10 +114,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     return problem;
   }
 
+  /**
+   * A write that lost a race to a concurrent one (JPA {@code @Version}). With {@code If-Match} the
+   * client's precondition failed, so it is the same 412 as a stale version caught before the write
+   * (ADR 0004). Without one there was no precondition to fail (RFC 9110), so it stays a 409. The
+   * code is {@code VERSION_CONFLICT} either way - that is what a client branches on.
+   */
   @ExceptionHandler(OptimisticLockingFailureException.class)
-  public ProblemDetail handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
+  public ProblemDetail handleOptimisticLockingFailure(
+      OptimisticLockingFailureException ex, WebRequest request) {
+    HttpStatus status =
+        request.getHeader(HttpHeaders.IF_MATCH) == null
+            ? HttpStatus.CONFLICT
+            : HttpStatus.PRECONDITION_FAILED;
     return ProblemDetails.of(
-        HttpStatus.PRECONDITION_FAILED,
+        status,
         ApiErrorCode.VERSION_CONFLICT,
         "This record was changed after you read it. Reload the current state and retry explicitly.");
   }
