@@ -36,8 +36,9 @@
                security  lines  186/189  missed 3   branches   73/82  missed 9
                web       lines  140/149  missed 9   branches   70/82  missed 12
                config    lines  300/315  missed 15  branches   67/90  missed 23
-             overall and service are large, so they hold a covered ratio one full point below
-             the baseline: room for roughly 88 lines / 24 branches (overall) and 46 / 19
+             overall and service are large, so they hold a covered ratio of the baseline rounded
+             down to the whole percent, minus one point (lines/branches 1.6 / 1.4 points below
+             it overall): room for roughly 88 lines / 24 branches (overall) and 46 / 19
              (service) of honest, partly tested growth before the build goes red.
              security, web and config are small - one branch moves their ratio by more than a
              point - so they cap the absolute number of missed lines/branches instead, at the

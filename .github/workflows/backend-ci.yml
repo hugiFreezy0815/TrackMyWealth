@@ -31,8 +31,15 @@ jobs:
       # needs a Docker daemon - already present on GitHub-hosted ubuntu-latest runners.
       # #194: the Maven Wrapper (committed executable, 100755), so CI builds with exactly the
       # Maven version every contributor gets from ./mvnw - not whatever the runner preinstalls.
-      # setup-java's maven cache still covers ~/.m2/repository; the wrapper's own Maven
-      # distribution is a one-off download per run.
+      # setup-java's maven cache covers ~/.m2/repository; the wrapper's own Maven distribution
+      # lives in ~/.m2/wrapper, cached separately below so it is not downloaded on every run.
+      # The wrapper verifies it against distributionSha256Sum either way.
+      - name: Cache Maven Wrapper distribution
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/wrapper
+          key: maven-wrapper-${{ hashFiles('backend/.mvn/wrapper/maven-wrapper.properties') }}
+
       - name: Run tests
         run: ./mvnw -B verify
 

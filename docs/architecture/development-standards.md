@@ -19,7 +19,7 @@ other tool-generated diff.
 | Vulnerability scanning (Java + JS/TS) | Semgrep | **Automated** (`.github/workflows/semgrep.yml`) |
 | Dependency updates | Dependabot | **Automated** (`.github/dependabot.yml`) |
 | Test coverage | JaCoCo (`check` against minimums in `pom.xml`) | **Automated** (`./mvnw verify`, see below) |
-| Build reproducibility | Maven Wrapper (`./mvnw`) | **Automated** in CI (`backend-ci.yml`) and the Docker build; locally, always use `./mvnw`, not an installed `mvn`, so CI, the image and every contributor build with the same Maven version |
+| Build reproducibility | Maven Wrapper (`./mvnw`) | **Automated** in CI (`backend-ci.yml`) and the Docker build; locally, always use `./mvnw`, not an installed `mvn`, so CI, the image and every contributor build with the same Maven version. The wrapper checks the Maven download against `distributionSha256Sum`; it needs `unzip` (without it, it fetches the `.tar.gz`, which fails that check) |
 
 **Running locally:**
 
@@ -104,8 +104,8 @@ cd backend
 - **Coverage is gated against the measured baseline (#193).** `./mvnw verify` fails when coverage
   breaks the `coverage.*` limits in `pom.xml`, which also records the baseline they come from:
   - the whole backend and `service` (two thirds of all lines) hold a covered-line and
-    covered-branch ratio one full point below the baseline - room for honest, partly tested
-    growth, but not for a real regression;
+    covered-branch ratio of the baseline rounded down to the whole percent, minus one point -
+    room for honest, partly tested growth, but not for a real regression;
   - the small packages `security` (auth-critical), `web` (HTTP contract) and `config`
     (`SecurityConfig`, JWT secret policy, the denial-audit pool) cap the absolute number of missed
     lines and branches at the baseline plus 2. In a package of ~80 branches one branch moves a

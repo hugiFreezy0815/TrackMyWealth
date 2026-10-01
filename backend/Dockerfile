@@ -8,6 +8,11 @@ WORKDIR /build
 # Dependencies are resolved before the source is copied in, so editing application code doesn't
 # invalidate this layer's cache on rebuild. Built through the Maven Wrapper (#194), so the image
 # uses the same pinned Maven version as CI and every local build, not the base image's own.
+# unzip: without it the wrapper silently fetches Maven's .tar.gz instead of the .zip that
+# .mvn/wrapper/maven-wrapper.properties pins by distributionSha256Sum, and the checksum check fails.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/*
 COPY mvnw pom.xml ./
 COPY .mvn ./.mvn
 RUN ./mvnw -B dependency:go-offline
