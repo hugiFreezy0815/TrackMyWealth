@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,6 +35,13 @@ public class SharingGrantController {
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     SharingGrantResponse response = sharingGrantService.grant(request, actor);
     return VersionedResponse.created(response, response.version());
+  }
+
+  @GetMapping("/{grantId}")
+  public ResponseEntity<SharingGrantResponse> get(
+      @PathVariable UUID grantId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    SharingGrantResponse response = sharingGrantService.get(grantId, actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   @PostMapping("/{grantId}/revoke")
