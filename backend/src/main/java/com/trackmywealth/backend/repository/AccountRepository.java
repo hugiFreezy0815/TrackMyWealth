@@ -51,9 +51,6 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
    * account's database-owned version through trg_bump_version().
    */
   @Modifying(clearAutomatically = true, flushAutomatically = true)
-  @Query(
-      value = "UPDATE account SET updated_at = updated_at WHERE id = :id",
-      nativeQuery = true)
+  @Query(value = "UPDATE account SET updated_at = updated_at WHERE id = :id", nativeQuery = true)
   int bumpOwnershipAggregateVersion(@Param("id") UUID id);
-
 }

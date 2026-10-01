@@ -348,8 +348,7 @@ public class SettlementMatchService {
     return new SettlementSourceResponse(
         extension.getAccountId(),
         visibleSourceId,
-        VersionPreconditionService.persistedVersion(
-            extension.getVersion(), "settlement source"));
+        VersionPreconditionService.persistedVersion(extension.getVersion(), "settlement source"));
   }
 
   private ResponseStatusException matchNotFound(AuthenticatedUserPrincipal actor, UUID matchId) {

@@ -60,8 +60,7 @@ public class TransferResolutionService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Transaction leg = requireOneSidedLeg(accountId, transactionId, actor);
-    versionPreconditionService.requireCurrent(
-        expectedVersion, leg.getVersion(), "transaction");
+    versionPreconditionService.requireCurrent(expectedVersion, leg.getVersion(), "transaction");
     if (!leg.isInternalTransfer()) {
       leg.setInternalTransfer(true);
       transactionRepository.saveAndFlush(leg);
@@ -76,8 +75,7 @@ public class TransferResolutionService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Transaction leg = requireOneSidedLeg(accountId, transactionId, actor);
-    versionPreconditionService.requireCurrent(
-        expectedVersion, leg.getVersion(), "transaction");
+    versionPreconditionService.requireCurrent(expectedVersion, leg.getVersion(), "transaction");
     if (leg.isInternalTransfer()) {
       leg.setInternalTransfer(false);
       transactionRepository.saveAndFlush(leg);

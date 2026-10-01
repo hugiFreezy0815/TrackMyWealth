@@ -59,6 +59,9 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AccountOwnershipService {
 
+  // The aggregate-version bump touches exactly the one account row this method has locked.
+  private static final int ONE_ROW = 1;
+
   private final AccountRepository accountRepository;
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
@@ -132,13 +135,14 @@ public class AccountOwnershipService {
             .toList();
     newOwnership = accountOwnershipRepository.saveAllAndFlush(newOwnership);
 
-    if (accountRepository.bumpOwnershipAggregateVersion(accountId) != 1) {
+    if (accountRepository.bumpOwnershipAggregateVersion(accountId) != ONE_ROW) {
       throw new IllegalStateException("Account disappeared while replacing its ownership.");
     }
     Account currentAccount =
         accountRepository
             .findById(accountId)
-            .orElseThrow(() -> new IllegalStateException("Account disappeared after ownership update."));
+            .orElseThrow(
+                () -> new IllegalStateException("Account disappeared after ownership update."));
     return ownershipSet(currentAccount, newOwnership);
   }
 

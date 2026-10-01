@@ -48,6 +48,9 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class AdminUserService {
 
+  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
+  private static final String VERSIONED_RESOURCE = "user";
+
   private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
   private static final String ACTIVE = "ACTIVE";
 
@@ -129,7 +132,8 @@ public class AdminUserService {
   public UserSummaryResponse editUser(
       UUID targetUserId, EditUserRequest request, Integer expectedVersion, UUID actorUserId) {
     AppUser target = findUserOrThrow(targetUserId);
-    versionPreconditionService.requireCurrent(expectedVersion, target.getVersion(), "user");
+    versionPreconditionService.requireCurrent(
+        expectedVersion, target.getVersion(), VERSIONED_RESOURCE);
     Map<String, Object> changes = new LinkedHashMap<>();
 
     if (request.email() != null) {
@@ -171,7 +175,8 @@ public class AdminUserService {
     List<AppUser> lockedTargetAndAdministrators =
         appUserRepository.lockTargetAndActiveAdministrators(targetUserId);
     AppUser target = extractTargetOrThrow(lockedTargetAndAdministrators, targetUserId);
-    versionPreconditionService.requireCurrent(expectedVersion, target.getVersion(), "user");
+    versionPreconditionService.requireCurrent(
+        expectedVersion, target.getVersion(), VERSIONED_RESOURCE);
     long activeAdministratorCount = countActiveAdministrators(lockedTargetAndAdministrators);
     assertNotLastActiveAdministrator(target, activeAdministratorCount, "disable");
 
@@ -194,7 +199,8 @@ public class AdminUserService {
   public UserSummaryResponse reactivateUser(
       UUID targetUserId, Integer expectedVersion, UUID actorUserId) {
     AppUser target = findUserForUpdateOrThrow(targetUserId);
-    versionPreconditionService.requireCurrent(expectedVersion, target.getVersion(), "user");
+    versionPreconditionService.requireCurrent(
+        expectedVersion, target.getVersion(), VERSIONED_RESOURCE);
     target.setStatus(ACTIVE);
     // FR-AUT-010: re-enabling a previously locked-out/disabled user must not carry over a stale
     // lockout from before they were disabled.
@@ -325,6 +331,6 @@ public class AdminUserService {
         user.getRole(),
         user.getStatus(),
         user.getLanguage(),
-        VersionPreconditionService.persistedVersion(user.getVersion(), "user"));
+        VersionPreconditionService.persistedVersion(user.getVersion(), VERSIONED_RESOURCE));
   }
 }

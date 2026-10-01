@@ -217,8 +217,7 @@ public class SharingGrantService {
           grant.getWorkspace().getId());
     }
 
-    versionPreconditionService.requireCurrent(
-        expectedVersion, grant.getVersion(), "sharing grant");
+    versionPreconditionService.requireCurrent(expectedVersion, grant.getVersion(), "sharing grant");
     if (grant.getRevokedAt() != null) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "This grant has already been revoked.");
