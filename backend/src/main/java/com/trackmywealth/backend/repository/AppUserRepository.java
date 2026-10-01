@@ -37,6 +37,12 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   @Query("SELECT u.workspaceMember.id FROM AppUser u WHERE u.id = :userId")
   Optional<UUID> findWorkspaceMemberId(@Param(USER_ID) UUID userId);
 
+  // #192: only used on an authorization-denial path that started from a workspace_member id,
+  // so the audit row still records the authenticated app_user principal without consulting
+  // SecurityContext as hidden ambient state.
+  @Query("SELECT u.id FROM AppUser u WHERE u.workspaceMember.id = :memberId")
+  Optional<UUID> findUserIdByWorkspaceMemberId(@Param("memberId") UUID memberId);
+
   // US-02-02 login: same citext/JDBC parameter-binding caveat as existsByEmail above applies
   // here too - the explicit cast is what actually makes this case-insensitive.
   @Query(value = "SELECT * FROM app_user WHERE email = CAST(:email AS citext)", nativeQuery = true)
