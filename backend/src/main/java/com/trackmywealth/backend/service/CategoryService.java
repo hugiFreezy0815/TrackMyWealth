@@ -6,8 +6,6 @@ import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.entity.Category;
 import com.trackmywealth.backend.entity.WorkspaceCategoryOverride;
-import com.trackmywealth.backend.error.ApiErrorCode;
-import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.CategoryRepository;
 import com.trackmywealth.backend.repository.WorkspaceCategoryOverrideRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
@@ -81,16 +79,19 @@ public class CategoryService {
   private final WorkspaceCategoryOverrideRepository overrideRepository;
   private final WorkspaceRepository workspaceRepository;
   private final AccessControlService accessControlService;
+  private final VersionPreconditionService versionPreconditionService;
 
   public CategoryService(
       CategoryRepository categoryRepository,
       WorkspaceCategoryOverrideRepository overrideRepository,
       WorkspaceRepository workspaceRepository,
-      AccessControlService accessControlService) {
+      AccessControlService accessControlService,
+      VersionPreconditionService versionPreconditionService) {
     this.categoryRepository = categoryRepository;
     this.overrideRepository = overrideRepository;
     this.workspaceRepository = workspaceRepository;
     this.accessControlService = accessControlService;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   /** The taxonomy in tree order (parents first, siblings by English label). */
@@ -157,18 +158,16 @@ public class CategoryService {
    */
   @Transactional
   public CategoryResponse update(
-      UUID id, UpdateCategoryRequest request, AuthenticatedUserPrincipal actor) {
+      UUID id,
+      UpdateCategoryRequest request,
+      int expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
-    if (request.version() != versionOf(category, overrides)) {
-      throw new ApiException(
-          HttpStatus.CONFLICT,
-          ApiErrorCode.VERSION_CONFLICT,
-          "This category was changed by someone else in the meantime. Reload it and retry your"
-              + " update.");
-    }
+    versionPreconditionService.requireCurrent(
+        expectedVersion, versionOf(category, overrides), "category");
 
     UUID parentId =
         category.isShared() && request.parentId() == null
@@ -200,11 +199,14 @@ public class CategoryService {
    * (FR-LIF-001). Idempotent: an already inactive category is returned unchanged.
    */
   @Transactional
-  public CategoryResponse deactivate(UUID id, AuthenticatedUserPrincipal actor) {
+  public CategoryResponse deactivate(
+      UUID id, int expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, versionOf(category, overrides), "category");
     if (isProtected(category)) {
       throw unprocessable(
           "'" + category.getCode() + "' is required by the application and cannot be deactivated.");
@@ -226,11 +228,14 @@ public class CategoryService {
    * reactivated one by one. Requires an active parent. Idempotent.
    */
   @Transactional
-  public CategoryResponse activate(UUID id, AuthenticatedUserPrincipal actor) {
+  public CategoryResponse activate(
+      UUID id, int expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, versionOf(category, overrides), "category");
     if (!isActive(category, categories, overrides)) {
       Category parent = categories.get(category.getParentCategoryId());
       if (parent != null && !isActive(parent, categories, overrides)) {
@@ -246,9 +251,13 @@ public class CategoryService {
    * else is a 409 pointing at deactivation, which keeps historical assignments intact.
    */
   @Transactional
-  public void delete(UUID id, AuthenticatedUserPrincipal actor) {
+  public void delete(UUID id, int expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
-    Category category = requireForActor(loadCategories(workspaceId), id, actor);
+    Map<UUID, Category> categories = loadCategories(workspaceId);
+    Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
+    Category category = requireForActor(categories, id, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, versionOf(category, overrides), "category");
     if (category.isShared()) {
       throw conflict(
           "A default category cannot be deleted because other data may depend on it. Deactivate it"
