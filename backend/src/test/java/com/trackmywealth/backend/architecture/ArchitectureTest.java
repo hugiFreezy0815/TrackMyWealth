@@ -12,8 +12,17 @@ import com.tngtech.archunit.library.Architectures.LayeredArchitecture;
 import com.tngtech.archunit.library.GeneralCodingRules;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.FinancialInstitution;
+import com.trackmywealth.backend.service.AccessControlService;
 import com.trackmywealth.backend.service.AccountService;
+import com.trackmywealth.backend.service.AdminUserService;
+import com.trackmywealth.backend.service.AuthorizationDenialAuditService;
+import com.trackmywealth.backend.service.CategoryService;
+import com.trackmywealth.backend.service.FxRateService;
 import com.trackmywealth.backend.service.InstitutionService;
+import com.trackmywealth.backend.service.NetWorthService;
+import com.trackmywealth.backend.service.SecurityService;
+import com.trackmywealth.backend.service.WorkspaceMemberService;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RestController;
@@ -148,6 +157,39 @@ class ArchitectureTest {
                   + " (US-04-02/FR-INS-008/012, RULE-020/022) - AccountService must never read"
                   + " institution_type at all, not even inside the one sanctioned exception"
                   + " account_type itself gets");
+
+  // US-28-02 / #192: a raw service-layer 404 is an easy way to bypass
+  // authorization_denial_log. The exceptions below are deliberately non-object-denial cases:
+  // identity/bootstrap lookups, globally shared reference data, missing FX data, and admin-only
+  // user management. Adding another exception is a security-review event, not a convenience.
+  @ArchTest
+  static final ArchRule object_level_services_do_not_construct_raw_not_found =
+      noClasses()
+          .that()
+          .resideInAPackage("..service..")
+          .and()
+          .areNotAssignableTo(AuthorizationDenialAuditService.class)
+          .and()
+          .areNotAssignableTo(AccessControlService.class)
+          .and()
+          .areNotAssignableTo(AdminUserService.class)
+          .and()
+          .areNotAssignableTo(CategoryService.class)
+          .and()
+          .areNotAssignableTo(FxRateService.class)
+          .and()
+          .areNotAssignableTo(InstitutionService.class)
+          .and()
+          .areNotAssignableTo(NetWorthService.class)
+          .and()
+          .areNotAssignableTo(SecurityService.class)
+          .and()
+          .areNotAssignableTo(WorkspaceMemberService.class)
+          .should()
+          .accessField(HttpStatus.class, "NOT_FOUND")
+          .because(
+              "single-resource authorization denials must go through AuthorizationDenialAuditService"
+                  + " so US-28-02 records them and returns one non-enumerating 404");
 
   @ArchTest
   static final ArchRule no_standard_streams =
