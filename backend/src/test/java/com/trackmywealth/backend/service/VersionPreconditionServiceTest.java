@@ -19,6 +19,17 @@ class VersionPreconditionServiceTest {
   }
 
   @Test
+  void missingVersionIsRejectedAfterTheCallerReachedTheService() {
+    assertThatThrownBy(() -> service.requireCurrent(null, 4, "account"))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            ex -> {
+              assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
+              assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VERSION_REQUIRED);
+            });
+  }
+
+  @Test
   void staleVersionReturnsStablePreconditionConflict() {
     assertThatThrownBy(() -> service.requireCurrent(4, 5, "account"))
         .isInstanceOfSatisfying(
