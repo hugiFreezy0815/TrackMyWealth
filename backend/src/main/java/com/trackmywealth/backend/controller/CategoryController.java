@@ -64,7 +64,7 @@ public class CategoryController {
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     CategoryResponse updated =
-        categoryService.update(id, request, IfMatchVersionParser.parseRequired(ifMatch), actor);
+        categoryService.update(id, request, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), updated);
   }
 
@@ -75,7 +75,7 @@ public class CategoryController {
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     CategoryResponse deactivated =
-        categoryService.deactivate(id, IfMatchVersionParser.parseRequired(ifMatch), actor);
+        categoryService.deactivate(id, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), deactivated);
   }
 
@@ -86,7 +86,7 @@ public class CategoryController {
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     CategoryResponse activated =
-        categoryService.activate(id, IfMatchVersionParser.parseRequired(ifMatch), actor);
+        categoryService.activate(id, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), activated);
   }
 
@@ -96,7 +96,7 @@ public class CategoryController {
       @PathVariable UUID id,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    categoryService.delete(id, IfMatchVersionParser.parseRequired(ifMatch), actor);
+    categoryService.delete(id, IfMatchVersionParser.parse(ifMatch), actor);
     return ResponseEntity.noContent().build();
   }
 
