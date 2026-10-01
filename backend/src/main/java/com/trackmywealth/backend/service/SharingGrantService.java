@@ -141,13 +141,13 @@ public class SharingGrantService {
     grant.setScopeType(request.scopeType());
     switch (request.scopeType()) {
       case ScopeTypeValues.ACCOUNT -> {
-        Account account = accountLookupService.findAccountOrThrow(request.scopeAccountId());
+        Account account = accountLookupService.findAccountOrThrow(request.scopeAccountId(), actor);
         requireFullAccessToScope(granterMemberId, ScopeTypeValues.ACCOUNT, account, null, null);
         grant.setScopeAccount(account);
       }
       case ScopeTypeValues.INSTITUTION -> {
         FinancialInstitution institution =
-            institutionLookupService.findInstitutionOrThrow(request.scopeInstitutionId());
+            institutionLookupService.findInstitutionOrThrow(request.scopeInstitutionId(), actor);
         if (!tryBootstrapInstitution(actor, institution.getId())) {
           requireFullAccessToScope(
               granterMemberId, ScopeTypeValues.INSTITUTION, null, institution, null);
