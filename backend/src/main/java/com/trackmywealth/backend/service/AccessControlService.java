@@ -293,7 +293,12 @@ public class AccessControlService {
   private ResponseStatusException denyMemberAsNotFound(
       UUID memberId, String entityType, UUID entityId) {
     UUID principalUserId =
-        appUserRepository.findUserIdByWorkspaceMemberId(memberId).orElse(null);
+        appUserRepository
+            .findUserIdByWorkspaceMemberId(memberId)
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Authenticated workspace member has no linked app_user: " + memberId));
     return authorizationDenialAuditService.denyAsNotFound(
         principalUserId, entityType, entityId);
   }
