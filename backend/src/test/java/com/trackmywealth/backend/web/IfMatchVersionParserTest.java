@@ -12,24 +12,19 @@ class IfMatchVersionParserTest {
 
   @Test
   void parsesStrongNumericEtag() {
-    assertThat(IfMatchVersionParser.parseRequired(""17"")).isEqualTo(17);
+    assertThat(IfMatchVersionParser.parse(""17"")).isEqualTo(17);
   }
 
   @Test
-  void missingHeaderIsPreconditionRequired() {
-    assertThatThrownBy(() -> IfMatchVersionParser.parseRequired(null))
-        .isInstanceOfSatisfying(
-            ApiException.class,
-            ex -> {
-              assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
-              assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VERSION_REQUIRED);
-            });
+  void missingHeaderIsDeferredToTheAuthorizedServiceLayer() {
+    assertThat(IfMatchVersionParser.parse(null)).isNull();
+    assertThat(IfMatchVersionParser.parse("   ")).isNull();
   }
 
   @Test
   void weakWildcardAndUnquotedTagsAreRejected() {
     for (String value : new String[] {"W/"7"", "*", "7", ""abc"", """"}) {
-      assertThatThrownBy(() -> IfMatchVersionParser.parseRequired(value))
+      assertThatThrownBy(() -> IfMatchVersionParser.parse(value))
           .as(value)
           .isInstanceOfSatisfying(
               ApiException.class,
