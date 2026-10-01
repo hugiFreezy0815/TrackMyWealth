@@ -8,7 +8,7 @@ import com.trackmywealth.backend.controller.MfaController;
 import com.trackmywealth.backend.controller.SecurityController;
 import com.trackmywealth.backend.controller.SessionController;
 import com.trackmywealth.backend.controller.SetupController;
-import com.trackmywealth.backend.web.ApiErrorCode;
+import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.web.ProblemResponseWriter;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
@@ -183,6 +183,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     long retryAfterSeconds = (probe.getNanosToWaitForRefill() + 999_999_999L) / 1_000_000_000L;
     response.setHeader("Retry-After", String.valueOf(retryAfterSeconds));
     problemResponseWriter.write(
+        request,
         response,
         HttpStatus.TOO_MANY_REQUESTS,
         ApiErrorCode.RATE_LIMITED,

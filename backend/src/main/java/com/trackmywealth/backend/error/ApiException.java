@@ -1,4 +1,4 @@
-package com.trackmywealth.backend.web;
+package com.trackmywealth.backend.error;
 
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.server.ResponseStatusException;
@@ -18,7 +18,7 @@ public class ApiException extends ResponseStatusException {
   public ApiException(HttpStatusCode status, String code, String reason) {
     super(status, reason);
     this.code = code;
-    getBody().setProperty(ProblemDetails.CODE, code);
+    getBody().setProperty(ApiErrorCode.PROPERTY, code);
   }
 
   public String getCode() {

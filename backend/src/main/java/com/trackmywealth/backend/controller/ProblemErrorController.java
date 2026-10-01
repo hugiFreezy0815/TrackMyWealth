@@ -1,6 +1,6 @@
 package com.trackmywealth.backend.controller;
 
-import com.trackmywealth.backend.web.ApiErrorCode;
+import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.web.ProblemDetails;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,8 +40,13 @@ public class ProblemErrorController implements ErrorController {
         LOG.error("Error outside Spring MVC answered with {}", code);
       }
     }
+    // The path the client asked for, not /error, which is only where the container forwarded it.
     ProblemDetail problem =
-        ProblemDetails.of(status, ApiErrorCode.forStatus(status), detailFor(status));
+        ProblemDetails.withInstance(
+            ProblemDetails.of(status, ApiErrorCode.forStatus(status), detailFor(status)),
+            request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI) instanceof String path
+                ? path
+                : null);
     return ResponseEntity.status(status)
         .contentType(MediaType.APPLICATION_PROBLEM_JSON)
         .body(problem);

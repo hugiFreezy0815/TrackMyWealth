@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.web;
 
+import com.trackmywealth.backend.error.ApiErrorCode;
 import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -15,23 +16,23 @@ import org.springframework.http.ProblemDetail;
  */
 public final class ProblemDetails {
 
-  public static final String CODE = "code";
   public static final String CORRELATION_ID = "correlationId";
 
   private ProblemDetails() {}
 
   public static ProblemDetail of(HttpStatusCode status, String code, String detail) {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-    problem.setProperty(CODE, code);
+    problem.setProperty(ApiErrorCode.PROPERTY, code);
     return withCorrelationId(problem);
   }
 
   /** Adds the class-level code if none is set yet, and the current request's correlation id. */
   public static ProblemDetail decorate(ProblemDetail problem) {
     Map<String, Object> properties = problem.getProperties();
-    if (properties == null || !properties.containsKey(CODE)) {
+    if (properties == null || !properties.containsKey(ApiErrorCode.PROPERTY)) {
       problem.setProperty(
-          CODE, ApiErrorCode.forStatus(HttpStatusCode.valueOf(problem.getStatus())));
+          ApiErrorCode.PROPERTY,
+          ApiErrorCode.forStatus(HttpStatusCode.valueOf(problem.getStatus())));
     }
     return withCorrelationId(problem);
   }
@@ -52,11 +53,31 @@ public final class ProblemDetails {
     if (problem.getDetail() != null) {
       body.put("detail", problem.getDetail());
     }
+    URI instance = problem.getInstance();
+    if (instance != null) {
+      body.put("instance", instance.toString());
+    }
     Map<String, Object> properties = problem.getProperties();
     if (properties != null) {
       body.putAll(properties);
     }
     return body;
+  }
+
+  /**
+   * Sets {@code instance} to the request's own path (#197), as Spring MVC does for the errors it
+   * renders, so every error body has the same fields whichever component wrote it. A path that is
+   * not a valid URI - possible for a request the firewall rejects - leaves it unset.
+   */
+  public static ProblemDetail withInstance(ProblemDetail problem, String requestPath) {
+    if (requestPath != null) {
+      try {
+        problem.setInstance(URI.create(requestPath));
+      } catch (IllegalArgumentException notAUri) {
+        problem.setInstance(null);
+      }
+    }
+    return problem;
   }
 
   private static ProblemDetail withCorrelationId(ProblemDetail problem) {
