@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.hibernate.annotations.Generated;
@@ -53,6 +54,11 @@ public class CategorizationRule {
   @Generated(event = EventType.INSERT)
   @Column(name = "created_at", insertable = false, updatable = false)
   private OffsetDateTime createdAt;
+
+  @Version
+  @Generated(event = {EventType.INSERT, EventType.UPDATE})
+  @Column(name = "version", insertable = false, updatable = false)
+  private Integer version;
 
   public UUID getId() {
     return id;
@@ -104,6 +110,10 @@ public class CategorizationRule {
 
   public void setActive(boolean active) {
     this.active = active;
+  }
+
+  public Integer getVersion() {
+    return version;
   }
 
   public OffsetDateTime getCreatedAt() {
