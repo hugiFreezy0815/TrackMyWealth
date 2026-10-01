@@ -48,8 +48,7 @@ public final class RequestLocaleResolver implements LocaleResolver {
   }
 
   @Override
-  public void setLocale(
-      HttpServletRequest request, HttpServletResponse response, Locale locale) {
+  public void setLocale(HttpServletRequest request, HttpServletResponse response, Locale locale) {
     throw new UnsupportedOperationException(
         "Locale changes are not supported; locale comes from user preference or Accept-Language.");
   }
