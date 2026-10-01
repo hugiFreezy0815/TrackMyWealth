@@ -146,20 +146,14 @@ class CategoryControllerTest {
 
     // AC 2: a default with a rule depending on it cannot be hard-deleted ...
     insertRule(workspaceId, leisure);
-    client(token)
-        .delete()
-        .uri(BASE + "/" + leisure)
-        .exchange()
+    delete(token, leisure)
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
     assertThat(count("SELECT count(*) FROM category WHERE id = ?", leisure)).isEqualTo(1);
 
     // ... but deactivating it succeeds, cascades, and preserves what depends on it.
     CategoryResponse deactivated =
-        client(token)
-            .post()
-            .uri(BASE + "/" + leisure + "/deactivate")
-            .exchange()
+        deactivate(token, leisure)
             .expectStatus()
             .isOk()
             .expectBody(CategoryResponse.class)
@@ -198,12 +192,10 @@ class CategoryControllerTest {
     UUID transactionId = insertTransaction(token, workspaceOf("admin@example.com"), groceries);
 
     CategoryResponse renamed =
-        client(token)
-            .put()
-            .uri(BASE + "/" + groceries)
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(new UpdateCategoryRequest(null, "Food & Drink", "Essen & Trinken", 0))
-            .exchange()
+        update(
+            token,
+            groceries,
+            new UpdateCategoryRequest(null, "Food & Drink", "Essen & Trinken", 0))
             .expectStatus()
             .isOk()
             .expectBody(CategoryResponse.class)
@@ -271,14 +263,11 @@ class CategoryControllerTest {
     CategoryResponse music =
         created(token, new CreateCategoryRequest(hobby.id(), "Music", "Musik"));
 
-    client(token)
-        .delete()
-        .uri(BASE + "/" + hobby.id())
-        .exchange()
+    delete(token, hobby.id())
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
-    client(token).delete().uri(BASE + "/" + music.id()).exchange().expectStatus().isNoContent();
-    client(token).delete().uri(BASE + "/" + hobby.id()).exchange().expectStatus().isNoContent();
+    delete(token, music.id()).expectStatus().isNoContent();
+    delete(token, hobby.id()).expectStatus().isNoContent();
     client(token).get().uri(BASE + "/" + hobby.id()).exchange().expectStatus().isNotFound();
   }
 
@@ -286,10 +275,7 @@ class CategoryControllerTest {
   void protectedCategoriesCannotBeDeactivatedOrGivenSubcategories() {
     String token = bootstrapAdministrator();
 
-    client(token)
-        .post()
-        .uri(BASE + "/" + defaultId("UNCATEGORIZED") + "/deactivate")
-        .exchange()
+    deactivate(token, defaultId("UNCATEGORIZED"))
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     create(token, new CreateCategoryRequest(defaultId("TRANSFER_INTERNAL"), "Child", "Kind"))
@@ -492,7 +478,7 @@ class CategoryControllerTest {
         "INSERT INTO category (id, workspace_id, code, name_en, name_de, is_system_default)"
             + " VALUES (?, NULL, 'TEST_RETIRED', 'Retired', 'Ausgemustert', TRUE)",
         retired);
-    client(token).post().uri(BASE + "/" + retired + "/deactivate").exchange().expectStatus().isOk();
+    deactivate(token, retired).expectStatus().isOk();
     assertThat(
             count(
                 "SELECT count(*) FROM workspace_category_override WHERE category_id = ?", retired))
@@ -540,12 +526,42 @@ class CategoryControllerTest {
   }
 
   private RestTestClient.ResponseSpec update(String token, UUID id, UpdateCategoryRequest request) {
+    int version = request.version() == null ? getCategory(token, id).version() : request.version();
     return client(token)
         .put()
         .uri(BASE + "/" + id)
+        .header("If-Match", """ + version + """)
         .contentType(MediaType.APPLICATION_JSON)
         .body(request)
         .exchange();
+  }
+
+  private RestTestClient.ResponseSpec deactivate(String token, UUID id) {
+    return client(token)
+        .post()
+        .uri(BASE + "/" + id + "/deactivate")
+        .header("If-Match", """ + getCategory(token, id).version() + """)
+        .exchange();
+  }
+
+  private RestTestClient.ResponseSpec delete(String token, UUID id) {
+    return client(token)
+        .delete()
+        .uri(BASE + "/" + id)
+        .header("If-Match", """ + getCategory(token, id).version() + """)
+        .exchange();
+  }
+
+  private CategoryResponse getCategory(String token, UUID id) {
+    return client(token)
+        .get()
+        .uri(BASE + "/" + id)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(CategoryResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private List<CategoryResponse> list(String token, boolean includeInactive) {
