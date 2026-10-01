@@ -57,6 +57,43 @@ describe('api client', () => {
     );
   });
 
+  it('sends a strong If-Match tag for versioned PUT requests', async () => {
+    const fetchMock = mockFetchOnce({});
+
+    await api.putVersioned('/accounts/id', 7, { name: 'Updated' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: 'PUT',
+        headers: expect.objectContaining({ 'If-Match': '"7"' }),
+        body: JSON.stringify({ name: 'Updated' }),
+      }),
+    );
+  });
+
+  it('sends If-Match on versioned POST and DELETE requests', async () => {
+    const postFetch = mockFetchOnce({});
+    await api.postVersioned('/accounts/id/archive', 3);
+    expect(postFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'If-Match': '"3"' }),
+      }),
+    );
+
+    const deleteFetch = mockFetchOnce({ status: 204, json: jest.fn() });
+    await api.deleteVersioned('/categories/id', 4);
+    expect(deleteFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: expect.objectContaining({ 'If-Match': '"4"' }),
+      }),
+    );
+  });
+
   it('throws ApiError with the status and parsed body when the response is not ok', async () => {
     mockFetchOnce({ ok: false, status: 404, json: async () => ({ message: 'not found' }) });
 
