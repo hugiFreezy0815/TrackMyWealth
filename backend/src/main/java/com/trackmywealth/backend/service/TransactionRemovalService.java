@@ -166,6 +166,9 @@ public class TransactionRemovalService {
       }
     }
     affected.forEach(row -> unmatched.remove(row.getId()));
+    // Match dissolution may have changed the rows again; flush so every returned version - and
+    // the ETag - is the one stored, not one Hibernate would only write at commit.
+    transactionRepository.flush();
     return new TransactionRemovalResponse(
         removal,
         VersionPreconditionService.persistedVersion(
@@ -232,6 +235,9 @@ public class TransactionRemovalService {
     }
     settlementDetectionService.detectAfterWrite(account, earliest);
     transferDetectionService.detectAfterWrite(account, earliest);
+    // Detection may re-flag the restored rows after their own flush; flush again so the returned
+    // versions and the ETag are the stored ones instead of relying on a later query's auto-flush.
+    transactionRepository.flush();
     return new TransactionRemovalResponse(
         TransactionRemovalValues.SOFT_DELETE,
         VersionPreconditionService.persistedVersion(

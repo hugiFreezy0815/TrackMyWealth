@@ -368,6 +368,21 @@ class AdminUserControllerTest {
     assertThat(appUserRepository.findById(charlie.getId()).orElseThrow().getStatus())
         .as("the disable is kept")
         .isEqualTo("DISABLED");
+
+    // The reactivation's ETag is the stored version, so the admin's next edit is not a 412.
+    CurrentVersion.storedEtag(
+        adminClient(adminToken)
+            .post()
+            .uri(base + "/reactivate")
+            .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "app_user",
+        charlie.getId());
   }
 
   // #207 review M2: the GET added for refreshing a user's ETag is administrator-only like every

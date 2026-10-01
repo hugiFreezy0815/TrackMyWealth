@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.architecture.IfMatchExceptions;
 import com.trackmywealth.backend.config.JwtProperties;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
@@ -23,13 +24,18 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
@@ -40,7 +46,9 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -63,6 +71,9 @@ import tools.jackson.databind.ObjectMapper;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(ApiConventionsIntegrationTest.FailureProbeController.class)
 class ApiConventionsIntegrationTest {
+
+  private static final Set<RequestMethod> MUTATING_METHODS =
+      EnumSet.of(RequestMethod.POST, RequestMethod.PUT, RequestMethod.PATCH, RequestMethod.DELETE);
 
   private static final String PASSWORD = "correct-horse-battery-staple";
   private static final MediaType PROBLEM = MediaType.APPLICATION_PROBLEM_JSON;
@@ -89,6 +100,10 @@ class ApiConventionsIntegrationTest {
   @Autowired ObjectMapper objectMapper;
 
   @Autowired JwtProperties jwtProperties;
+
+  @Autowired
+  @Qualifier("requestMappingHandlerMapping")
+  RequestMappingHandlerMapping handlerMapping;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -477,12 +492,9 @@ class ApiConventionsIntegrationTest {
     // account/category endpoints from #206.
     assertThat(transaction.path("properties").path("version").path("type").asString())
         .isEqualTo("integer");
-    JsonNode updateTransactionCategory =
-        spec.path("paths")
-            .path("/api/v1/accounts/{accountId}/transactions/{transactionId}/category")
-            .path("put");
-    assertThat(updateTransactionCategory.path("parameters").findValuesAsString("name"))
-        .contains("If-Match");
+    assertThat(mutatingOperationsWithoutDocumentedIfMatch(spec))
+        .as("mutating operations whose OpenAPI lacks a required If-Match with 412/428")
+        .isEmpty();
 
     JsonNode problem = spec.path("components").path("schemas").path("ApiProblem");
     assertThat(problem.path("properties").path("code").path("type").asString()).isEqualTo("string");
@@ -658,5 +670,45 @@ class ApiConventionsIntegrationTest {
       throw new IllegalStateException(
           "SELECT password_hash FROM app_user WHERE password_hash = 'super-secret'");
     }
+  }
+
+  /**
+   * Every route Spring actually serves for POST/PUT/PATCH/DELETE, minus ADR 0004's reviewed
+   * exceptions, must be documented with a required {@code If-Match} and its 412/428 responses - the
+   * contract-side twin of {@code IfMatchCoverageTest}, so generated clients cannot miss one.
+   */
+  private List<String> mutatingOperationsWithoutDocumentedIfMatch(JsonNode spec) {
+    List<String> undocumented = new ArrayList<>();
+    handlerMapping
+        .getHandlerMethods()
+        .forEach(
+            (info, handler) -> {
+              String key =
+                  handler.getBeanType().getSimpleName() + "#" + handler.getMethod().getName();
+              if (IfMatchExceptions.REVIEWED_WITHOUT_IF_MATCH.containsKey(key)) {
+                return;
+              }
+              for (RequestMethod method : info.getMethodsCondition().getMethods()) {
+                if (!MUTATING_METHODS.contains(method)) {
+                  continue;
+                }
+                for (String path : info.getPatternValues()) {
+                  JsonNode operation =
+                      spec.path("paths").path(path).path(method.name().toLowerCase(Locale.ROOT));
+                  boolean documented =
+                      operation.path("parameters").findParents("name").stream()
+                              .anyMatch(
+                                  parameter ->
+                                      "If-Match".equals(parameter.path("name").asString())
+                                          && parameter.path("required").asBoolean())
+                          && operation.path("responses").has("412")
+                          && operation.path("responses").has("428");
+                  if (!documented) {
+                    undocumented.add(method + " " + path + " (" + key + ")");
+                  }
+                }
+              }
+            });
+    return undocumented;
   }
 }

@@ -64,9 +64,14 @@ existing resource that a concurrent write could silently overwrite:
   TOTP code or the password, which already proves the caller acts on the current state.
 - **Session revocation:** a terminal, idempotent transition; two revocations cannot lose an
   update.
+- **Error rendering:** `ProblemErrorController` is mapped for every HTTP method so an error
+  forwarded from any request gets the problem body; it writes nothing.
 
-`IfMatchCoverageTest` enforces this: any other mutating handler without `If-Match` fails the
-build, and adding one to its reviewed list means adding it here too.
+Two tests enforce this from the one reviewed list (`IfMatchExceptions`): `IfMatchCoverageTest`
+fails the build for any other mutating handler without `If-Match` (shortcut annotations and
+`@RequestMapping` alike), and `ApiConventionsIntegrationTest` fails it for any other POST, PUT,
+PATCH or DELETE route Spring serves whose OpenAPI operation lacks a required `If-Match` with its
+412/428 responses. Adding an entry to the list means adding it here too.
 
 ## Why ETag / If-Match
 

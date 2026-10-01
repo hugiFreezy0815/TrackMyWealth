@@ -82,6 +82,8 @@ public class TransferResolutionService {
       leg.setInternalTransfer(false);
       transactionRepository.saveAndFlush(leg);
       transferDetectionService.detectAfterWrite(leg.getAccount(), leg.getBookingDate());
+      // Detection may pair the leg again; flush so the returned version/ETag is the stored one.
+      transactionRepository.flush();
     }
     return transactionService.toResponses(List.of(leg)).get(0);
   }

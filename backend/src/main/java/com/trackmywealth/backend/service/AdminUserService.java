@@ -206,7 +206,8 @@ public class AdminUserService {
     // lockout from before they were disabled.
     target.setFailedLoginCount(0);
     target.setLockedUntil(null);
-    target = appUserRepository.save(target);
+    // Flushed so the returned ETag is the version the trigger stores, not the pre-update one.
+    target = appUserRepository.saveAndFlush(target);
 
     // Without this, a client that still holds its pre-disable refresh token and presents it after
     // reactivation would fall into TokenRotationService's reuse/"theft" branch - the token really
