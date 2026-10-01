@@ -15,9 +15,9 @@ import javax.crypto.SecretKey;
 import org.junit.jupiter.api.Test;
 
 /**
- * US-02-04, #189: the MFA challenge token follows the same contract as an access token - signed
- * with the configured key, issued by the configured issuer - and is never interchangeable with one.
- * Each rejected token differs from a valid challenge token in exactly the property its test names.
+ * US-02-04, #189/#200: the MFA challenge token follows the same signature/issuer contract as an
+ * access token but has its own explicit signed token type and purpose. Each rejected token differs
+ * from a valid challenge token in exactly the property its test names.
  */
 class MfaChallengeTokenServiceTest {
 
@@ -46,16 +46,28 @@ class MfaChallengeTokenServiceTest {
   }
 
   @Test
+  void aChallengeTokenWithWrongTypeIsRejected() {
+    assertThat(service.parse(validChallenge().claim("tokenType", "access").compact())).isEmpty();
+  }
+
+  @Test
+  void aChallengeTokenWithoutTypeIsRejected() {
+    assertThat(service.parse(validChallenge().claim("tokenType", null).compact())).isEmpty();
+  }
+
+  @Test
   void aChallengeTokenWithoutASubjectIsRejectedNotAnError() {
     assertThat(service.parse(validChallenge().subject(null).compact())).isEmpty();
   }
 
   @Test
   void aTokenWithoutTheChallengePurposeIsRejected() {
+    assertThat(service.parse(validChallenge().claim("purpose", null).compact())).isEmpty();
+  }
+
+  @Test
+  void aTokenWithTheWrongChallengePurposeIsRejected() {
     assertThat(service.parse(validChallenge().claim("purpose", "other").compact())).isEmpty();
-    // A real access token presented here instead.
-    String accessToken = new JwtService(properties).issueAccessToken(USER_ID, 1, UUID.randomUUID());
-    assertThat(service.parse(accessToken)).isEmpty();
   }
 
   @Test
@@ -71,14 +83,17 @@ class MfaChallengeTokenServiceTest {
   }
 
   @Test
-  void aChallengeTokenIsNeverAnAccessToken() {
-    assertThat(new JwtService(properties).parseAccessToken(service.issue(USER_ID))).isEmpty();
+  void anAccessTokenIsNeverAcceptedAsAChallengeToken() {
+    String accessToken = new JwtService(properties).issueAccessToken(USER_ID, 1, UUID.randomUUID());
+
+    assertThat(service.parse(accessToken)).isEmpty();
   }
 
   private JwtBuilder validChallenge() {
     Instant now = Instant.now();
     return Jwts.builder()
         .subject(USER_ID.toString())
+        .claim("tokenType", "mfa-challenge")
         .claim("purpose", "mfa_challenge")
         .issuer(ISSUER)
         .issuedAt(Date.from(now))
