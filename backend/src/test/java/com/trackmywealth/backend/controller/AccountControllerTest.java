@@ -411,7 +411,7 @@ class AccountControllerTest {
         .expectStatus()
         .isOk()
         .expectHeader()
-        .valueEquals("ETag", """ + created.version() + """)
+        .valueEquals("ETag", "\"" + created.version() + "\"")
         .expectBody()
         .jsonPath("$.version")
         .isEqualTo(created.version());
