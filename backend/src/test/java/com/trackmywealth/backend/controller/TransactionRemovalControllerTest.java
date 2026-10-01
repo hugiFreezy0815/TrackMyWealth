@@ -207,6 +207,35 @@ class TransactionRemovalControllerTest {
   }
 
   @Test
+  void anAccountCorrectionCreatesTheReplacementOnTheDestinationAccount() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse source = createAccount(token, "CREDIT_CARD", "CHF");
+    AccountSummaryResponse destination = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, source.id(), purchase("-85.00"));
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            source.id(),
+            original,
+            "-80.00",
+            null,
+            original.merchantDescription(),
+            original.notes(),
+            destination.id());
+
+    assertThat(corrected.removal().removal()).isEqualTo(SOFT_DELETE);
+    assertThat(corrected.transaction().accountId()).isEqualTo(destination.id());
+    assertThat(corrected.transaction().correctsTransactionId()).isEqualTo(original.id());
+    assertThat(list(token, source.id())).isEmpty();
+    assertThat(list(token, destination.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(corrected.transaction().id());
+    assertThat(balance(token, source.id())).isEqualByComparingTo("0");
+    assertThat(balance(token, destination.id())).isEqualByComparingTo("80.00");
+  }
+
+  @Test
   void aTextOnlyCorrectionUpdatesInPlaceWithoutRemoval() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
