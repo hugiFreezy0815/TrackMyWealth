@@ -202,6 +202,7 @@ class ApiConventionsIntegrationTest {
     client(token)
         .post()
         .uri("/api/v1/accounts/" + cash.id() + "/archive")
+        .header("If-Match", "\"" + cash.version() + "\"")
         .exchange()
         .expectStatus()
         .isOk();
@@ -279,20 +280,37 @@ class ApiConventionsIntegrationTest {
   }
 
   @Test
-  void browserPreflightAllowsTheCorrelationIdRequestHeader() {
+  void browserPreflightAllowsApiConventionHeadersAndExposesEtag() {
     anonymousClient()
         .options()
-        .uri("/api/v1/accounts")
+        .uri("/api/v1/accounts/some-id")
         .header("Origin", "http://localhost:19006")
-        .header("Access-Control-Request-Method", "GET")
-        .header("Access-Control-Request-Headers", "X-Correlation-Id")
+        .header("Access-Control-Request-Method", "PUT")
+        .header("Access-Control-Request-Headers", "X-Correlation-Id, If-Match")
         .exchange()
         .expectStatus()
         .isOk()
         .expectHeader()
         .value(
             "Access-Control-Allow-Headers",
-            value -> assertThat(value.toLowerCase()).contains("x-correlation-id"));
+            value ->
+                assertThat(value.toLowerCase())
+                    .contains("x-correlation-id")
+                    .contains("if-match"));
+
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token, "CASH");
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + account.id())
+        .header("Origin", "http://localhost:19006")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectHeader()
+        .value(
+            "Access-Control-Expose-Headers",
+            value -> assertThat(value.toLowerCase()).contains("etag"));
   }
 
   // --- decimals as strings (#149, #176)
@@ -407,6 +425,27 @@ class ApiConventionsIntegrationTest {
         .contains("X-Correlation-Id");
     assertThat(postTransaction.path("responses").path("default").path("$ref").asString())
         .isEqualTo("#/components/responses/ApiProblemResponse");
+
+    JsonNode account = spec.path("components").path("schemas").path("AccountSummaryResponse");
+    assertThat(account.path("properties").path("version").path("type").asString())
+        .isEqualTo("integer");
+
+    JsonNode updateAccount =
+        spec.path("paths").path("/api/v1/accounts/{accountId}").path("put");
+    JsonNode ifMatch =
+        updateAccount.path("parameters").findParents("name").stream()
+            .filter(parameter -> "If-Match".equals(parameter.path("name").asString()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(ifMatch.path("required").asBoolean()).isTrue();
+    assertThat(updateAccount.path("responses").path("412").path("$ref").asString())
+        .isEqualTo("#/components/responses/ApiProblemResponse");
+    assertThat(updateAccount.path("responses").path("428").path("$ref").asString())
+        .isEqualTo("#/components/responses/ApiProblemResponse");
+
+    JsonNode updateCategory =
+        spec.path("paths").path("/api/v1/categories/{id}").path("put");
+    assertThat(updateCategory.path("parameters").findValuesAsString("name")).contains("If-Match");
 
     JsonNode problem = spec.path("components").path("schemas").path("ApiProblem");
     assertThat(problem.path("properties").path("code").path("type").asString()).isEqualTo("string");
