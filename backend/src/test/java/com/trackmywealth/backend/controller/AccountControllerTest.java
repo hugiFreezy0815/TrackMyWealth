@@ -406,13 +406,11 @@ class AccountControllerTest {
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
-    client(token)
-        .put()
-        .uri("/api/v1/accounts/" + created.id())
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new UpdateAccountRequest("Everyday Checking", "SAVINGS", "CHF", null, null, null, null))
-        .exchange()
+    updateAccount(
+            token,
+            created.id(),
+            new UpdateAccountRequest(
+                "Everyday Checking", "SAVINGS", "CHF", null, null, null, null))
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
@@ -430,12 +428,11 @@ class AccountControllerTest {
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
-    client(token)
-        .put()
-        .uri("/api/v1/accounts/" + created.id())
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new UpdateAccountRequest("Everyday Checking", "CASH", "EUR", null, null, null, null))
-        .exchange()
+    updateAccount(
+            token,
+            created.id(),
+            new UpdateAccountRequest(
+                "Everyday Checking", "CASH", "EUR", null, null, null, null))
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
@@ -452,20 +449,17 @@ class AccountControllerTest {
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
     AccountSummaryResponse updated =
-        client(token)
-            .put()
-            .uri("/api/v1/accounts/" + created.id())
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(
-                new UpdateAccountRequest(
-                    "Renamed Checking",
-                    "CASH",
-                    "CHF",
-                    "**** 1234",
-                    "CH",
-                    LocalDate.of(2020, 1, 1),
-                    null))
-            .exchange()
+        updateAccount(
+            token,
+            created.id(),
+            new UpdateAccountRequest(
+                "Renamed Checking",
+                "CASH",
+                "CHF",
+                "**** 1234",
+                "CH",
+                LocalDate.of(2020, 1, 1),
+                null))
             .expectStatus()
             .isOk()
             .expectBody(AccountSummaryResponse.class)
@@ -511,10 +505,7 @@ class AccountControllerTest {
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
     AccountSummaryResponse archived =
-        client(token)
-            .post()
-            .uri("/api/v1/accounts/" + created.id() + "/archive")
-            .exchange()
+        archive(token, created.id())
             .expectStatus()
             .isOk()
             .expectBody(AccountSummaryResponse.class)
@@ -525,10 +516,7 @@ class AccountControllerTest {
     assertThat(archived.archivedAt()).isNotNull();
 
     AccountSummaryResponse restored =
-        client(token)
-            .post()
-            .uri("/api/v1/accounts/" + created.id() + "/restore")
-            .exchange()
+        restore(token, created.id())
             .expectStatus()
             .isOk()
             .expectBody(AccountSummaryResponse.class)
@@ -548,13 +536,10 @@ class AccountControllerTest {
     String token = bootstrapAdministrator();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
-    client(token).post().uri("/api/v1/accounts/" + created.id() + "/archive").exchange();
+    archive(token, created.id());
     backdateArchivedAt(created.id(), 31);
 
-    client(token)
-        .post()
-        .uri("/api/v1/accounts/" + created.id() + "/restore")
-        .exchange()
+    restore(token, created.id())
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
   }
@@ -566,12 +551,9 @@ class AccountControllerTest {
     String token = bootstrapAdministrator();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
-    client(token).post().uri("/api/v1/accounts/" + created.id() + "/archive").exchange();
+    archive(token, created.id());
 
-    client(token)
-        .post()
-        .uri("/api/v1/accounts/" + created.id() + "/archive")
-        .exchange()
+    archive(token, created.id())
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
   }
@@ -664,12 +646,7 @@ class AccountControllerTest {
     assertThat(beforeB.totalLiabilities()).isEqualByComparingTo(BigDecimal.ZERO);
 
     AccountSummaryResponse reassigned =
-        client(token)
-            .post()
-            .uri("/api/v1/accounts/" + account.id() + "/reassign-institution")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(new ReassignAccountInstitutionRequest(institutionB.id()))
-            .exchange()
+        reassign(token, account.id(), new ReassignAccountInstitutionRequest(institutionB.id()))
             .expectStatus()
             .isOk()
             .expectBody(AccountSummaryResponse.class)
@@ -690,12 +667,7 @@ class AccountControllerTest {
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
-    client(token)
-        .post()
-        .uri("/api/v1/accounts/" + created.id() + "/reassign-institution")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new ReassignAccountInstitutionRequest(UUID.randomUUID()))
-        .exchange()
+    reassign(token, created.id(), new ReassignAccountInstitutionRequest(UUID.randomUUID()))
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
   }
@@ -735,12 +707,7 @@ class AccountControllerTest {
                 null, "Institution A", "CH", "BANK", null, null, "CHF"));
     setStatusDirectly(created.id(), "DELETED");
 
-    client(token)
-        .post()
-        .uri("/api/v1/accounts/" + created.id() + "/reassign-institution")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new ReassignAccountInstitutionRequest(destination.id()))
-        .exchange()
+    reassign(token, created.id(), new ReassignAccountInstitutionRequest(destination.id()))
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
   }
@@ -864,6 +831,65 @@ class AccountControllerTest {
         .expectStatus()
         .isOk()
         .expectBody(InstitutionSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private RestTestClient.ResponseSpec updateAccount(
+      String token, UUID accountId, UpdateAccountRequest request) {
+    return updateAccount(token, accountId, request, getAccount(token, accountId).version());
+  }
+
+  private RestTestClient.ResponseSpec updateAccount(
+      String token, UUID accountId, UpdateAccountRequest request, int version) {
+    return client(token)
+        .put()
+        .uri("/api/v1/accounts/" + accountId)
+        .header("If-Match", """ + version + """)
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange();
+  }
+
+  private RestTestClient.ResponseSpec archive(String token, UUID accountId) {
+    return archive(token, accountId, getAccount(token, accountId).version());
+  }
+
+  private RestTestClient.ResponseSpec archive(String token, UUID accountId, int version) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/archive")
+        .header("If-Match", """ + version + """)
+        .exchange();
+  }
+
+  private RestTestClient.ResponseSpec restore(String token, UUID accountId) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/restore")
+        .header("If-Match", """ + getAccount(token, accountId).version() + """)
+        .exchange();
+  }
+
+  private RestTestClient.ResponseSpec reassign(
+      String token, UUID accountId, ReassignAccountInstitutionRequest request) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/reassign-institution")
+        .header("If-Match", """ + getAccount(token, accountId).version() + """)
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange();
+  }
+
+  private AccountSummaryResponse getAccount(String token, UUID accountId) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + accountId)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(AccountSummaryResponse.class)
         .returnResult()
         .getResponseBody();
   }
