@@ -479,8 +479,16 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   V36's sign rules already did, so a dividend with withholding tax can be voided; `net = gross -
   tax` still holds. The unresolved-settlement figure leaves out reversals too: voiding a card-side
   `SETTLEMENT` credit adds a negative `SETTLEMENT` row that is not a payment awaiting review.
-- **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02, undoing a
-  void is US-07-07, and correction as void plus replacement is US-07-06.
+- **Correction (US-07-06 / FR-LIF-004).** `PUT …/transactions/{id}` compares the requested
+  immutable financial state with the locked row. A merchant-description/notes-only edit stays on
+  the row; a financial change applies the same T1/T2 removal above and inserts a replacement in the
+  same transaction. `V91.corrects_transaction_id` points from that replacement to the row it
+  corrects and is distinct from `replaces_transaction_id`, which only means "reversal of a void".
+  Both lineage columns are frozen by the append-only trigger. The replacement preserves source
+  provenance but not `external_id`; the source row keeps that idempotency identity. A current USER
+  category override is copied to the replacement after normal categorization.
+- **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02, and undoing a
+  void is US-07-07.
 
 ## 5. Time-series data and partitioning
 
