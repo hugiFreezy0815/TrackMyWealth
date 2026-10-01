@@ -142,7 +142,7 @@ public class SharingGrantService {
     switch (request.scopeType()) {
       case ScopeTypeValues.ACCOUNT -> {
         Account account = accountLookupService.findAccountOrThrow(request.scopeAccountId(), actor);
-        requireFullAccessToScope(granterMemberId, ScopeTypeValues.ACCOUNT, account, null, null);
+        requireFullAccessToScope(actor, ScopeTypeValues.ACCOUNT, account, null, null);
         grant.setScopeAccount(account);
       }
       case ScopeTypeValues.INSTITUTION -> {
