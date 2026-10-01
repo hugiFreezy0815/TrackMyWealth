@@ -36,12 +36,11 @@ public class AuthorizationDenialAuditRetentionService {
       fixedDelayString = "${app.authorization-denial-audit.cleanup-interval:PT1H}",
       initialDelayString = "${app.authorization-denial-audit.cleanup-interval:PT1H}")
   @Transactional
-  public int deleteExpiredRows() {
+  public void deleteExpiredRows() {
     OffsetDateTime cutoff = OffsetDateTime.now(ZoneOffset.UTC).minus(properties.retention());
     int deleted = repository.deleteOccurredBefore(cutoff);
     if (deleted > 0) {
       LOG.info("Deleted {} expired authorization-denial audit row(s)", deleted);
     }
-    return deleted;
   }
 }
