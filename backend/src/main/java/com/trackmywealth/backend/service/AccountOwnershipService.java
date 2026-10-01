@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountOwnershipResponse;
+import com.trackmywealth.backend.dto.AccountOwnershipSetResponse;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest;
 import com.trackmywealth.backend.dto.AssignAccountOwnershipRequest.OwnerAllocation;
 import com.trackmywealth.backend.entity.Account;
@@ -63,28 +64,36 @@ public class AccountOwnershipService {
   private final AccessControlService accessControlService;
   private final WorkspaceMemberRepository workspaceMemberRepository;
   private final AccountOwnershipRepository accountOwnershipRepository;
+  private final VersionPreconditionService versionPreconditionService;
 
   public AccountOwnershipService(
       AccountRepository accountRepository,
       AccountLookupService accountLookupService,
       AccessControlService accessControlService,
       WorkspaceMemberRepository workspaceMemberRepository,
-      AccountOwnershipRepository accountOwnershipRepository) {
+      AccountOwnershipRepository accountOwnershipRepository,
+      VersionPreconditionService versionPreconditionService) {
     this.accountRepository = accountRepository;
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.workspaceMemberRepository = workspaceMemberRepository;
     this.accountOwnershipRepository = accountOwnershipRepository;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   @Transactional
-  public List<AccountOwnershipResponse> assignOwnership(
-      UUID accountId, AssignAccountOwnershipRequest request, AuthenticatedUserPrincipal actor) {
+  public AccountOwnershipSetResponse assignOwnership(
+      UUID accountId,
+      AssignAccountOwnershipRequest request,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Account account =
         accountRepository
             .findByIdForUpdate(accountId)
             .orElseThrow(() -> accessControlService.denyAsNotFound(actor, "Account", accountId));
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), "account ownership");
     List<OwnerAllocation> owners = request.owners();
 
     requireNoDuplicateMembers(owners);
@@ -123,17 +132,23 @@ public class AccountOwnershipService {
             .toList();
     newOwnership = accountOwnershipRepository.saveAllAndFlush(newOwnership);
 
-    return newOwnership.stream().map(this::toResponse).toList();
+    if (accountRepository.bumpOwnershipAggregateVersion(accountId) != 1) {
+      throw new IllegalStateException("Account disappeared while replacing its ownership.");
+    }
+    Account currentAccount =
+        accountRepository
+            .findById(accountId)
+            .orElseThrow(() -> new IllegalStateException("Account disappeared after ownership update."));
+    return ownershipSet(currentAccount, newOwnership);
   }
 
   @Transactional(readOnly = true)
-  public List<AccountOwnershipResponse> currentOwnership(
+  public AccountOwnershipSetResponse currentOwnership(
       UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
-    return accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(accountId).stream()
-        .map(this::toResponse)
-        .toList();
+    return ownershipSet(
+        account, accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(accountId));
   }
 
   private void requireNoDuplicateMembers(List<OwnerAllocation> owners) {
@@ -176,6 +191,14 @@ public class AccountOwnershipService {
       }
     }
     return found;
+  }
+
+  private AccountOwnershipSetResponse ownershipSet(
+      Account account, List<AccountOwnership> ownership) {
+    return new AccountOwnershipSetResponse(
+        account.getId(),
+        VersionPreconditionService.persistedVersion(account.getVersion(), "account"),
+        ownership.stream().map(this::toResponse).toList());
   }
 
   private AccountOwnershipResponse toResponse(AccountOwnership ownership) {
