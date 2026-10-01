@@ -16,11 +16,18 @@ import org.springframework.stereotype.Service;
 @Service
 public class VersionPreconditionService {
 
-  public void requireCurrent(int expectedVersion, Integer currentVersion, String resourceName) {
+  public void requireCurrent(
+      Integer expectedVersion, Integer currentVersion, String resourceName) {
     if (currentVersion == null) {
       throw new IllegalStateException(resourceName + " has no persistence version.");
     }
-    if (expectedVersion != currentVersion) {
+    if (expectedVersion == null) {
+      throw new ApiException(
+          HttpStatus.PRECONDITION_REQUIRED,
+          ApiErrorCode.VERSION_REQUIRED,
+          "This update requires If-Match with the version you last read.");
+    }
+    if (!expectedVersion.equals(currentVersion)) {
       throw new ApiException(
           HttpStatus.PRECONDITION_FAILED,
           ApiErrorCode.VERSION_CONFLICT,
