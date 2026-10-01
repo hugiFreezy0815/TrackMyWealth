@@ -70,6 +70,7 @@ public class TransactionRemovalService {
   private final TransactionService transactionService;
   private final BusinessDateService businessDateService;
   private final Clock clock;
+  private final VersionPreconditionService versionPreconditionService;
 
   public TransactionRemovalService(
       AccountLookupService accountLookupService,
@@ -80,7 +81,8 @@ public class TransactionRemovalService {
       TransferDetectionService transferDetectionService,
       TransactionService transactionService,
       BusinessDateService businessDateService,
-      Clock clock) {
+      Clock clock,
+      VersionPreconditionService versionPreconditionService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -90,6 +92,7 @@ public class TransactionRemovalService {
     this.transactionService = transactionService;
     this.businessDateService = businessDateService;
     this.clock = clock;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   /**
@@ -99,7 +102,11 @@ public class TransactionRemovalService {
    */
   @Transactional
   public TransactionRemovalResponse remove(
-      UUID accountId, UUID transactionId, String reason, AuthenticatedUserPrincipal actor) {
+      UUID accountId,
+      UUID transactionId,
+      String reason,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
     // Cards before rows, the order settlement matching takes them, so a concurrent match decision
     // and this removal queue behind each other instead of deadlocking.
@@ -138,6 +145,8 @@ public class TransactionRemovalService {
           .ifPresent(affected::add);
     }
     requireEditOnOtherAccounts(affected, account, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, original.getVersion(), "transaction");
 
     OffsetDateTime now = OffsetDateTime.now(clock);
     SortedSet<UUID> unmatched = new TreeSet<>();
@@ -159,6 +168,7 @@ public class TransactionRemovalService {
     affected.forEach(row -> unmatched.remove(row.getId()));
     return new TransactionRemovalResponse(
         removal,
+        VersionPreconditionService.persistedVersion(original.getVersion(), "transaction"),
         transactionService.toResponses(affected),
         transactionService.toResponses(reversals),
         List.copyOf(unmatched));
@@ -172,7 +182,10 @@ public class TransactionRemovalService {
    */
   @Transactional
   public TransactionRemovalResponse restore(
-      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+      UUID accountId,
+      UUID transactionId,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
     lockCards(account, transactionId);
     Transaction deleted =
@@ -208,6 +221,8 @@ public class TransactionRemovalService {
           .ifPresent(restored::add);
     }
     requireEditOnOtherAccounts(restored, account, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, deleted.getVersion(), "transaction");
     LocalDate earliest = deleted.getBookingDate();
     for (Transaction row : restored) {
       row.setDeletedAt(null);
@@ -218,6 +233,7 @@ public class TransactionRemovalService {
     transferDetectionService.detectAfterWrite(account, earliest);
     return new TransactionRemovalResponse(
         TransactionRemovalValues.SOFT_DELETE,
+        VersionPreconditionService.persistedVersion(deleted.getVersion(), "transaction"),
         transactionService.toResponses(restored),
         List.of(),
         List.of());
