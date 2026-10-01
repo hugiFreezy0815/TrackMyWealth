@@ -205,7 +205,10 @@ public class AccountSnapshotService {
     AccountSnapshot snapshot =
         snapshotRepository
             .findByIdAndAccountId(snapshotId, accountId)
-            .orElseThrow(AccountSnapshotService::snapshotNotFound);
+            .orElseThrow(
+                () ->
+                    accessControlService.denyAsNotFound(
+                        actor, "AccountSnapshot", snapshotId));
     List<SnapshotHolding> holdings = holdingRepository.findBySnapshotIdIn(List.of(snapshotId));
     return toResponse(
         snapshot,
