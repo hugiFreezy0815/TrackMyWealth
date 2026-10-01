@@ -182,7 +182,7 @@ public class AdminUserService {
 
     target.setStatus("DISABLED");
     target.incrementTokenVersion();
-    target = appUserRepository.save(target);
+    target = appUserRepository.saveAndFlush(target);
     OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
     refreshTokenRepository.revokeAllActiveTokensForUser(targetUserId, now);
     // user_session.status is a security-relevant signal now (US-02-03's per-session
@@ -233,7 +233,7 @@ public class AdminUserService {
   // same 409 rather than letting it surface as an unhandled 500.
   private AppUser saveOrRejectDuplicateEmail(AppUser user) {
     try {
-      return appUserRepository.save(user);
+      return appUserRepository.saveAndFlush(user);
     } catch (DataIntegrityViolationException e) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is already in use.", e);
     }
