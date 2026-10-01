@@ -91,7 +91,7 @@ public class AccountValuationService {
    */
   @Transactional(readOnly = true)
   public AccountValuation getBalance(UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.BALANCE_ONLY);
     return valueIn(account, ownCurrency(account), businessDateService.today());
   }
