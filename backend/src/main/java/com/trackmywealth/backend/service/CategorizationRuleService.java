@@ -85,7 +85,10 @@ public class CategorizationRuleService {
     CategorizationRule rule =
         ruleRepository
             .findByIdAndWorkspaceId(id, workspaceId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+            .orElseThrow(
+                () ->
+                    accessControlService.denyAsNotFound(
+                        actor, "CategorizationRule", id));
     if (rule.isActive()) {
       rule.setActive(false);
       rule = ruleRepository.saveAndFlush(rule);
