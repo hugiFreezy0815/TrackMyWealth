@@ -76,6 +76,10 @@ class CategoryServiceTest {
     when(categoryRepository.findVisibleTo(WORKSPACE)).thenAnswer(inv -> List.copyOf(categories));
     when(overrideRepository.findByWorkspaceId(WORKSPACE)).thenAnswer(inv -> List.copyOf(overrides));
     when(accessControlService.requireActingMember(ACTOR)).thenReturn(MEMBER);
+    // #192: a caller-supplied category id that doesn't resolve goes through the audited denial,
+    // which answers with the generic 404 (the audit itself is AuthorizationDenialAuditService's).
+    when(accessControlService.denyAsNotFound(any(), any(), any()))
+        .thenAnswer(inv -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
     when(accessControlService.workspaceAccessLevel(MEMBER, WORKSPACE))
         .thenReturn(AccessLevelValues.EDIT);
     when(workspaceRepository.findByIdForUpdate(WORKSPACE)).thenReturn(Optional.of(new Workspace()));
@@ -157,10 +161,14 @@ class CategoryServiceTest {
 
     @Test
     void anUnknownOrForeignParentIsNotFound() {
+      UUID unknownParent = UUID.randomUUID();
+
       assertStatus(
-          () ->
-              service.create(new CreateCategoryRequest(UUID.randomUUID(), "Child", "Kind"), ACTOR),
+          () -> service.create(new CreateCategoryRequest(unknownParent, "Child", "Kind"), ACTOR),
           HttpStatus.NOT_FOUND);
+
+      // #192: and the denial is the audited one, naming the caller and the id it asked for.
+      verify(accessControlService).denyAsNotFound(ACTOR, "Category", unknownParent);
     }
 
     @ParameterizedTest
@@ -194,7 +202,7 @@ class CategoryServiceTest {
     void aMemberWithoutWorkspaceEditChangesNothing() {
       doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace not found."))
           .when(accessControlService)
-          .requireWorkspaceAccess(MEMBER, WORKSPACE, AccessLevelValues.EDIT);
+          .requireWorkspaceAccess(ACTOR, WORKSPACE, AccessLevelValues.EDIT);
 
       assertStatus(
           () -> service.create(new CreateCategoryRequest(null, "Hobby", "Hobby"), ACTOR),
@@ -506,7 +514,7 @@ class CategoryServiceTest {
     void aMemberWithoutEditNeverTakesTheLock() {
       doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace not found."))
           .when(accessControlService)
-          .requireWorkspaceAccess(MEMBER, WORKSPACE, AccessLevelValues.EDIT);
+          .requireWorkspaceAccess(ACTOR, WORKSPACE, AccessLevelValues.EDIT);
 
       assertStatus(
           () -> service.create(new CreateCategoryRequest(null, "Pets", "Haustiere"), ACTOR),
