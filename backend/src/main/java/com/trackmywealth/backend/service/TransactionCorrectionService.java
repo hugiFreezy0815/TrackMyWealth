@@ -62,14 +62,10 @@ public class TransactionCorrectionService {
       CorrectTransactionRequest request,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    Account sourceAccount = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, sourceAccount, AccessLevelValues.EDIT);
-    Transaction original =
-        transactionRepository
-            .findByIdForUpdate(transactionId)
-            .filter(row -> row.getAccount().getId().equals(accountId))
-            .orElseThrow(
-                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
+    TransactionRemovalService.LockedTransaction locked =
+        transactionRemovalService.lockActiveTransaction(accountId, transactionId, actor);
+    Account sourceAccount = locked.account();
+    Transaction original = locked.transaction();
 
     if (TransactionService.removalOf(original) == null) {
       throw new ResponseStatusException(
