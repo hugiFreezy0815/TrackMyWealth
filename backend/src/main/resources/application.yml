@@ -138,6 +138,20 @@ app:
     # Comma-separated; localhost with any port covers `expo start --web`'s dev server out of the
     # box. Add the deployed web app's real origin here in every non-local environment.
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGINS:http://localhost:*}
+  authorization-denial-audit:
+    # #205 / FR-TEN-004/006: object-level denials are security evidence, but they must never
+    # become a connection-pool or storage DoS vector. Exact rows are capped per principal and
+    # refill window; the first suppressed denial writes one summary row. Writes run on a dedicated
+    # bounded executor, never on the request thread.
+    max-writes-per-principal: ${AUTH_DENIAL_AUDIT_MAX_WRITES_PER_PRINCIPAL:60}
+    refill-period: ${AUTH_DENIAL_AUDIT_REFILL_PERIOD:1m}
+    max-principals: ${AUTH_DENIAL_AUDIT_MAX_PRINCIPALS:10000}
+    queue-capacity: ${AUTH_DENIAL_AUDIT_QUEUE_CAPACITY:1000}
+    writer-threads: ${AUTH_DENIAL_AUDIT_WRITER_THREADS:2}
+    # Operational/security audit data, not immutable financial history. Rows older than this are
+    # deleted by AuthorizationDenialAuditRetentionService.
+    retention: ${AUTH_DENIAL_AUDIT_RETENTION:90d}
+    cleanup-interval: ${AUTH_DENIAL_AUDIT_CLEANUP_INTERVAL:1h}
   rate-limit:
     # FR-AUT-010 (#48): per-source (IP) limits on authentication-adjacent endpoints, independent
     # of app_user's own per-account lockout (US-02-02). "capacity" tokens refill every
