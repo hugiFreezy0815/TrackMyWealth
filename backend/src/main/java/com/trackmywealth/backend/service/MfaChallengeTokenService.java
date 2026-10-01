@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.config.JwtProperties;
+import com.trackmywealth.backend.security.JwtTokenContract;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.JwtParser;
@@ -29,7 +30,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class MfaChallengeTokenService {
 
-  private static final String PURPOSE_CLAIM = "purpose";
   private static final String CHALLENGE_PURPOSE = "mfa_challenge";
   private static final int TTL_MINUTES = 5;
 
@@ -43,9 +43,8 @@ public class MfaChallengeTokenService {
     this.challengeTokenParser =
         Jwts.parser()
             .requireIssuer(issuer)
-            .require(
-                JwtTokenContract.TOKEN_TYPE_CLAIM, JwtTokenContract.MFA_CHALLENGE_TOKEN_TYPE)
-            .require(PURPOSE_CLAIM, CHALLENGE_PURPOSE)
+            .require(JwtTokenContract.TOKEN_TYPE_CLAIM, JwtTokenContract.MFA_CHALLENGE_TOKEN_TYPE)
+            .require(JwtTokenContract.PURPOSE_CLAIM, CHALLENGE_PURPOSE)
             .verifyWith(signingKey)
             .build();
   }
@@ -55,7 +54,7 @@ public class MfaChallengeTokenService {
     return Jwts.builder()
         .subject(userId.toString())
         .claim(JwtTokenContract.TOKEN_TYPE_CLAIM, JwtTokenContract.MFA_CHALLENGE_TOKEN_TYPE)
-        .claim(PURPOSE_CLAIM, CHALLENGE_PURPOSE)
+        .claim(JwtTokenContract.PURPOSE_CLAIM, CHALLENGE_PURPOSE)
         .issuer(issuer)
         .issuedAt(Date.from(now))
         .expiration(Date.from(now.plus(TTL_MINUTES, ChronoUnit.MINUTES)))
@@ -72,7 +71,14 @@ public class MfaChallengeTokenService {
     try {
       Claims claims = challengeTokenParser.parseSignedClaims(token).getPayload();
       String subject = claims.getSubject();
-      return subject == null ? Optional.empty() : Optional.of(UUID.fromString(subject));
+      // Access-only claims never belong on a challenge: rejected as defence in depth, mirroring
+      // JwtService's rejection of the MFA purpose on an access token (#200).
+      if (subject == null
+          || claims.containsKey(JwtTokenContract.TOKEN_VERSION_CLAIM)
+          || claims.containsKey(JwtTokenContract.SESSION_ID_CLAIM)) {
+        return Optional.empty();
+      }
+      return Optional.of(UUID.fromString(subject));
     } catch (JwtException | IllegalArgumentException e) {
       return Optional.empty();
     }

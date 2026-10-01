@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.config.JwtProperties;
 import com.trackmywealth.backend.security.AccessTokenClaims;
+import com.trackmywealth.backend.security.JwtTokenContract;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.JwtParser;
@@ -27,10 +28,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class JwtService {
-
-  private static final String TOKEN_VERSION_CLAIM = "tokenVersion";
-  private static final String SESSION_ID_CLAIM = "sessionId";
-  private static final String MFA_PURPOSE_CLAIM = "purpose";
 
   private final JwtProperties properties;
   private final SecretKey signingKey;
@@ -66,8 +63,8 @@ public class JwtService {
     return Jwts.builder()
         .subject(userId.toString())
         .claim(JwtTokenContract.TOKEN_TYPE_CLAIM, JwtTokenContract.ACCESS_TOKEN_TYPE)
-        .claim(TOKEN_VERSION_CLAIM, tokenVersion)
-        .claim(SESSION_ID_CLAIM, sessionId.toString())
+        .claim(JwtTokenContract.TOKEN_VERSION_CLAIM, tokenVersion)
+        .claim(JwtTokenContract.SESSION_ID_CLAIM, sessionId.toString())
         .issuer(properties.issuer())
         .issuedAt(Date.from(now))
         .expiration(Date.from(now.plus(properties.accessTokenTtlMinutes(), ChronoUnit.MINUTES)))
@@ -85,8 +82,8 @@ public class JwtService {
       Claims claims = accessTokenParser.parseSignedClaims(token).getPayload();
 
       String subject = claims.getSubject();
-      Integer tokenVersion = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
-      String sessionIdClaim = claims.get(SESSION_ID_CLAIM, String.class);
+      Integer tokenVersion = claims.get(JwtTokenContract.TOKEN_VERSION_CLAIM, Integer.class);
+      String sessionIdClaim = claims.get(JwtTokenContract.SESSION_ID_CLAIM, String.class);
 
       // Presence only: JJWT has already checked exp against the clock, and iat is never trusted
       // beyond being there - so neither is read into a java.util.Date here. purpose is MFA-only:
@@ -96,7 +93,7 @@ public class JwtService {
           || claims.getExpiration() == null
           || tokenVersion == null
           || sessionIdClaim == null
-          || claims.containsKey(MFA_PURPOSE_CLAIM)) {
+          || claims.containsKey(JwtTokenContract.PURPOSE_CLAIM)) {
         return Optional.empty();
       }
 

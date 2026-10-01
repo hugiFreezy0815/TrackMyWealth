@@ -68,6 +68,21 @@ class MfaChallengeTokenServiceTest {
     assertThat(service.parse(validChallenge().claim("tokenType", null).compact())).isEmpty();
   }
 
+  // #200: mirrors JwtService rejecting the MFA purpose on an access token - an access-only claim
+  // never belongs on a challenge, even one otherwise correctly typed.
+  @Test
+  void aChallengeTokenCarryingAnAccessTokenVersionIsRejected() {
+    assertThat(service.parse(validChallenge().claim("tokenVersion", 1).compact())).isEmpty();
+  }
+
+  @Test
+  void aChallengeTokenCarryingAnAccessSessionIdIsRejected() {
+    assertThat(
+            service.parse(
+                validChallenge().claim("sessionId", UUID.randomUUID().toString()).compact()))
+        .isEmpty();
+  }
+
   @Test
   void aChallengeTokenWithoutASubjectIsRejectedNotAnError() {
     assertThat(service.parse(validChallenge().subject(null).compact())).isEmpty();
