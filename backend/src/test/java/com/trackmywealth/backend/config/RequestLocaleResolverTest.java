@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.Locale;
@@ -8,6 +9,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -48,6 +50,34 @@ class RequestLocaleResolverTest {
 
     assertThat(resolver.resolveLocale(missing)).isEqualTo(Locale.ENGLISH);
     assertThat(resolver.resolveLocale(unsupported)).isEqualTo(Locale.ENGLISH);
+  }
+
+  // The caller's first choice is unsupported, the second is German: German, not the English
+  // fallback - the header's preference order decides, not just its first entry.
+  @Test
+  void theFirstSupportedLanguageInPreferenceOrderWins() {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    request.addHeader("Accept-Language", "fr-CH, fr;q=0.9, de;q=0.8, en;q=0.7");
+
+    assertThat(resolver.resolveLocale(request)).isEqualTo(Locale.GERMAN);
+  }
+
+  @Test
+  void aBlankHeaderFallsBackToEnglish() {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    request.addHeader("Accept-Language", " ");
+
+    assertThat(resolver.resolveLocale(request)).isEqualTo(Locale.ENGLISH);
+  }
+
+  // The locale is derived, never chosen: nothing may set it, e.g. a LocaleChangeInterceptor.
+  @Test
+  void theLocaleCannotBeSet() {
+    assertThatThrownBy(
+            () ->
+                resolver.setLocale(
+                    new MockHttpServletRequest(), new MockHttpServletResponse(), Locale.GERMAN))
+        .isInstanceOf(UnsupportedOperationException.class);
   }
 
   private void authenticate(String language) {

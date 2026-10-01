@@ -30,8 +30,8 @@ import org.junit.jupiter.api.Test;
 /**
  * #153 / development standards: every Bean Validation message is a message key with an EN and a DE
  * entry, so no response can fall back to hard-coded prose or to Hibernate's own bundle in a
- * language the caller did not ask for. Covers declaration and type-use constraints ({@code
- * List<@NotNull ...>}) anywhere in the production code.
+ * language the caller did not ask for. Covers class-level, declaration and type-use constraints
+ * ({@code List<@NotNull ...>}) anywhere in the production code.
  */
 class ValidationMessageBundleTest {
 
@@ -58,6 +58,8 @@ class ValidationMessageBundleTest {
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
             .importPackages(BASE_PACKAGE)) {
       Class<?> type = imported.reflect();
+      // Class-level constraints (e.g. a cross-field check on a whole request) carry messages too.
+      check(type, type, violations);
       for (Field field : type.getDeclaredFields()) {
         check(type, field, violations);
         checkTypeUse(type, field.getAnnotatedType(), violations);
