@@ -3,14 +3,17 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.trackmywealth.backend.config.AuthorizationDenialAuditPoolHealthIndicator;
 import com.trackmywealth.backend.entity.AuthorizationDenialLog;
 import com.trackmywealth.backend.repository.AuthorizationDenialLogRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -22,11 +25,13 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.health.contributor.Status;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -68,9 +73,12 @@ class AuthorizationDenialAuditTransactionTest {
     registry.add("app.authorization-denial-audit.refill-period", () -> "1m");
     registry.add("app.authorization-denial-audit.max-principals", () -> "100");
     registry.add("app.authorization-denial-audit.audit-pool-size", () -> "2");
-    registry.add("app.authorization-denial-audit.audit-connection-timeout", () -> "2s");
+    // Shorter than the main pool's 1000 ms, as AuthorizationDenialAuditPool requires.
+    registry.add("app.authorization-denial-audit.audit-connection-timeout", () -> "500ms");
+    registry.add("app.authorization-denial-audit.audit-statement-timeout", () -> "1s");
     registry.add("app.authorization-denial-audit.retention", () -> "30d");
     registry.add("app.authorization-denial-audit.cleanup-interval", () -> "24h");
+    registry.add("app.authorization-denial-audit.cleanup-batch-size", () -> "2");
   }
 
   @Autowired ApplicationContext context;
@@ -79,6 +87,7 @@ class AuthorizationDenialAuditTransactionTest {
   @Autowired AuthorizationDenialAuditRetentionService retentionService;
   @Autowired AuthorizationDenialAuditService auditService;
   @Autowired DenyingTransactionalService denyingService;
+  @Autowired AuthorizationDenialAuditPoolHealthIndicator auditPoolHealth;
 
   @BeforeEach
   void cleanDenials() throws Exception {
@@ -177,6 +186,88 @@ class AuthorizationDenialAuditTransactionTest {
             });
   }
 
+  // M2 (#205): a burst far beyond the audit pool's two connections - each from a different
+  // principal, so no budget suppresses anything - queues briefly on the audit pool and still ends
+  // in the generic 404 for every caller, with every row written.
+  @Test
+  void aBurstOfDenialsFarBeyondTheAuditPoolSizeAllGetThe404AndAreAllAudited() throws Exception {
+    int burst = 50;
+    List<UUID> principals = new ArrayList<>();
+    for (int i = 0; i < burst; i++) {
+      principals.add(insertPrincipalUser());
+    }
+    CountDownLatch start = new CountDownLatch(1);
+    ExecutorService callers = Executors.newFixedThreadPool(burst);
+
+    try {
+      List<Future<Integer>> results =
+          principals.stream()
+              .map(
+                  principal ->
+                      callers.submit(
+                          () -> {
+                            start.await();
+                            return auditService
+                                .denyAsNotFound(principal, "Account", UUID.randomUUID())
+                                .getStatusCode()
+                                .value();
+                          }))
+              .toList();
+      start.countDown();
+
+      for (Future<Integer> result : results) {
+        assertThat(result.get(5, TimeUnit.SECONDS)).isEqualTo(404);
+      }
+    } finally {
+      callers.shutdownNow();
+    }
+
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement();
+        java.sql.ResultSet count =
+            statement.executeQuery("SELECT count(*) FROM authorization_denial_log")) {
+      count.next();
+      assertThat(count.getInt(1)).isEqualTo(burst);
+    }
+  }
+
+  // M1 (#205): a hung audit INSERT is cancelled by audit-statement-timeout instead of holding the
+  // request (and its main-pool connection) indefinitely. A lock that conflicts with INSERT stands
+  // in
+  // for a database that stopped answering.
+  @Test
+  void aHungAuditInsertIsCancelledByTheStatementTimeout() throws Exception {
+    UUID principalUserId = insertPrincipalUser();
+    UUID requestedId = UUID.randomUUID();
+
+    try (Connection lockHolder = dataSource.getConnection()) {
+      lockHolder.setAutoCommit(false);
+      try (Statement lock = lockHolder.createStatement()) {
+        lock.execute("LOCK TABLE authorization_denial_log IN SHARE MODE");
+      }
+
+      long startedAt = System.nanoTime();
+      assertThatThrownBy(() -> auditService.denyAsNotFound(principalUserId, "Account", requestedId))
+          .isInstanceOf(DataAccessResourceFailureException.class);
+      Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+      assertThat(elapsed)
+          .as("cancelled after the 1s statement timeout, not left waiting on the lock")
+          .isGreaterThanOrEqualTo(Duration.ofMillis(900))
+          .isLessThan(Duration.ofSeconds(3));
+      lockHolder.rollback();
+    }
+
+    assertThat(repository.findByRequestedEntityId(requestedId))
+        .as("the cancelled INSERT left no row")
+        .isEmpty();
+  }
+
+  @Test
+  void theAuditPoolHasItsOwnHealthCheck() {
+    assertThat(auditPoolHealth.health(false).getStatus()).isEqualTo(Status.UP);
+  }
+
   // The audit pool is deliberately not a DataSource (or Executor) bean: either would make Spring
   // Boot back off its own auto-configured one - the DataSource JPA/Flyway use, or the
   // applicationTaskExecutor @Async and MdcTaskDecorator rely on.
@@ -189,14 +280,21 @@ class AuthorizationDenialAuditTransactionTest {
   @Test
   void retentionDeletesOnlyRowsOlderThanConfiguredPeriod() throws Exception {
     UUID principalUserId = insertPrincipalUser();
-    UUID expiredId = UUID.randomUUID();
+    // Five expired rows against a batch size of 2: deleted over three batches (2, 2, 1).
+    List<UUID> expiredIds = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      UUID expiredId = UUID.randomUUID();
+      expiredIds.add(expiredId);
+      insertDenial(principalUserId, expiredId, OffsetDateTime.now(ZoneOffset.UTC).minusDays(31));
+    }
     UUID freshId = UUID.randomUUID();
-    insertDenial(principalUserId, expiredId, OffsetDateTime.now(ZoneOffset.UTC).minusDays(31));
     insertDenial(principalUserId, freshId, OffsetDateTime.now(ZoneOffset.UTC).minusDays(29));
 
     retentionService.deleteExpiredRows();
 
-    assertThat(repository.findByRequestedEntityId(expiredId)).isEmpty();
+    for (UUID expiredId : expiredIds) {
+      assertThat(repository.findByRequestedEntityId(expiredId)).isEmpty();
+    }
     assertThat(repository.findByRequestedEntityId(freshId)).hasSize(1);
   }
 

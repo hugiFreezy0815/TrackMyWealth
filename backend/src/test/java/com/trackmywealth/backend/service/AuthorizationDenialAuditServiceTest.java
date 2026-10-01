@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -17,6 +18,7 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.security.DenialAuditBudget;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -30,12 +32,23 @@ import org.springframework.web.server.ResponseStatusException;
 class AuthorizationDenialAuditServiceTest {
 
   private static final int BUDGET = 3;
+  private static final Duration WINDOW = Duration.ofMinutes(1);
 
+  private final AtomicLong now = new AtomicLong();
   private final AuthorizationDenialAuditWriteRepository writeRepository =
       mock(AuthorizationDenialAuditWriteRepository.class);
   private final AuthorizationDenialAuditService service =
       new AuthorizationDenialAuditService(
-          writeRepository, new DenialAuditBudget(BUDGET, Duration.ofMinutes(1), 100, () -> 0L));
+          writeRepository,
+          new DenialAuditBudget(
+              BUDGET,
+              WINDOW,
+              100,
+              now::get,
+              (principal, suppressed) ->
+                  AuthorizationDenialAuditService.recordUnreportedSuppressions(
+                      writeRepository, principal, suppressed),
+              Runnable::run));
 
   @Test
   void denialRecordsOnlyTheRequestedIdentityAndReturnsTheGenericNotFound() {
@@ -48,7 +61,7 @@ class AuthorizationDenialAuditServiceTest {
     ResponseStatusException denial = service.denyAsNotFound(actor, "Account", requestedId);
 
     assertGenericNotFound(denial);
-    verify(writeRepository).insert(userId, "Account", requestedId, "NOT_FOUND");
+    verify(writeRepository).insert(userId, "Account", requestedId, "NOT_FOUND", null);
     verifyNoMoreInteractions(writeRepository);
   }
 
@@ -63,11 +76,52 @@ class AuthorizationDenialAuditServiceTest {
     InOrder writes = inOrder(writeRepository);
     writes
         .verify(writeRepository, times(BUDGET))
-        .insert(eq(userId), eq("Account"), any(UUID.class), eq("NOT_FOUND"));
+        .insert(eq(userId), eq("Account"), any(UUID.class), eq("NOT_FOUND"), isNull());
     writes
         .verify(writeRepository)
-        .insert(eq(userId), eq("AuthorizationDenial"), isNull(), eq("RATE_LIMITED"));
+        .insert(eq(userId), eq("AuthorizationDenial"), isNull(), eq("RATE_LIMITED"), isNull());
     verifyNoMoreInteractions(writeRepository);
+  }
+
+  @Test
+  void theFirstDenialAfterTheWindowClosesWritesItsSuppressedCountBeforeItsOwnRow() {
+    UUID userId = UUID.randomUUID();
+    for (int i = 0; i < BUDGET + 1 + 4; i++) {
+      service.denyAsNotFound(userId, "Account", UUID.randomUUID());
+    }
+
+    now.addAndGet(WINDOW.toNanos());
+    UUID requestedId = UUID.randomUUID();
+    assertGenericNotFound(service.denyAsNotFound(userId, "Account", requestedId));
+
+    InOrder writes = inOrder(writeRepository);
+    writes.verify(writeRepository).insert(userId, "AuthorizationDenial", null, "RATE_LIMITED", 4);
+    writes.verify(writeRepository).insert(userId, "Account", requestedId, "NOT_FOUND", null);
+  }
+
+  @Test
+  void shutdownWritesTheSuppressedCountsNoLaterDenialWillCarry() {
+    UUID userId = UUID.randomUUID();
+    for (int i = 0; i < BUDGET + 1 + 2; i++) {
+      service.denyAsNotFound(userId, "Account", UUID.randomUUID());
+    }
+
+    service.recordUnreportedSuppressionsOnShutdown();
+
+    verify(writeRepository).insert(userId, "AuthorizationDenial", null, "RATE_LIMITED", 2);
+  }
+
+  @Test
+  void aSuppressedCountThatCannotBeWrittenOffTheRequestPathIsLoggedNotThrown() {
+    doThrow(new DataAccessResourceFailureException("database down"))
+        .when(writeRepository)
+        .insert(any(), any(), any(), any(), any());
+
+    assertThatCode(
+            () ->
+                AuthorizationDenialAuditService.recordUnreportedSuppressions(
+                    writeRepository, UUID.randomUUID(), 7))
+        .doesNotThrowAnyException();
   }
 
   @Test
@@ -80,7 +134,8 @@ class AuthorizationDenialAuditServiceTest {
     }
     service.denyAsNotFound(second, "Account", UUID.randomUUID());
 
-    verify(writeRepository).insert(eq(second), eq("Account"), any(UUID.class), eq("NOT_FOUND"));
+    verify(writeRepository)
+        .insert(eq(second), eq("Account"), any(UUID.class), eq("NOT_FOUND"), isNull());
   }
 
   // "Never lost" (#205 decision): an audit row that cannot be written fails the request rather
@@ -90,7 +145,7 @@ class AuthorizationDenialAuditServiceTest {
   void anAuditRowThatCannotBeWrittenFailsTheRequestInsteadOfBeingLost() {
     DataAccessResourceFailureException auditDown =
         new DataAccessResourceFailureException("audit pool timed out");
-    doThrow(auditDown).when(writeRepository).insert(any(), any(), any(), any());
+    doThrow(auditDown).when(writeRepository).insert(any(), any(), any(), any(), any());
 
     assertThatThrownBy(
             () -> service.denyAsNotFound(UUID.randomUUID(), "Account", UUID.randomUUID()))
