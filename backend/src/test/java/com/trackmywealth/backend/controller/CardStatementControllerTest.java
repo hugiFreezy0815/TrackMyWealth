@@ -124,15 +124,15 @@ class CardStatementControllerTest {
     String token = bootstrapAdministrator();
     UUID card = createCard(token);
 
-    assertThat(getConfig(token, card)).isEqualTo(new StatementConfigResponse(card, null, null));
+    assertThat(getConfig(token, card)).isEqualTo(new StatementConfigResponse(card, null, null, 0));
 
     StatementConfigResponse set = setConfig(token, card, 5, 20, HttpStatus.OK);
-    assertThat(set).isEqualTo(new StatementConfigResponse(card, 5, 20));
+    assertThat(set).isEqualTo(new StatementConfigResponse(card, 5, 20, 1));
     assertThat(getConfig(token, card)).isEqualTo(set);
 
     // null clears each field independently, same convention as settlement-source.
     StatementConfigResponse cleared = setConfig(token, card, null, null, HttpStatus.OK);
-    assertThat(cleared).isEqualTo(new StatementConfigResponse(card, null, null));
+    assertThat(cleared).isEqualTo(new StatementConfigResponse(card, null, null, 2));
   }
 
   @Test
@@ -143,7 +143,7 @@ class CardStatementControllerTest {
     setConfig(token, card, 0, 10, HttpStatus.UNPROCESSABLE_CONTENT);
     setConfig(token, card, 32, 10, HttpStatus.UNPROCESSABLE_CONTENT);
     setConfig(token, card, 5, -1, HttpStatus.UNPROCESSABLE_CONTENT);
-    assertThat(getConfig(token, card)).isEqualTo(new StatementConfigResponse(card, null, null));
+    assertThat(getConfig(token, card)).isEqualTo(new StatementConfigResponse(card, null, null, 0));
   }
 
   @Test
@@ -331,12 +331,12 @@ class CardStatementControllerTest {
         .isEqualTo(HttpStatus.NOT_FOUND); // no grant at all: deny-as-not-found
 
     grant(adminToken, bobMemberId, card, AccessLevelValues.BALANCE_ONLY);
-    assertThat(getConfig(bobToken, card)).isEqualTo(new StatementConfigResponse(card, 5, 20));
+    assertThat(getConfig(bobToken, card)).isEqualTo(new StatementConfigResponse(card, 5, 20, 1));
     setConfig(bobToken, card, 6, 15, HttpStatus.NOT_FOUND); // BALANCE_ONLY is not enough to write
 
     grant(adminToken, bobMemberId, card, AccessLevelValues.EDIT);
     assertThat(setConfig(bobToken, card, 6, 15, HttpStatus.OK))
-        .isEqualTo(new StatementConfigResponse(card, 6, 15));
+        .isEqualTo(new StatementConfigResponse(card, 6, 15, 2));
   }
 
   // --- helpers -------------------------------------------------------------------------------
@@ -351,9 +351,21 @@ class CardStatementControllerTest {
   private Accounts accountsWithSource(String token) {
     UUID card = createCard(token);
     UUID current = createAccount(token, "Everyday Checking", "CASH", "CHF").id();
+    int sourceVersion =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + card + "/settlement-source")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(com.trackmywealth.backend.dto.SettlementSourceResponse.class)
+            .returnResult()
+            .getResponseBody()
+            .version();
     client(token)
         .put()
         .uri("/api/v1/accounts/" + card + "/settlement-source")
+        .header("If-Match", "\"" + sourceVersion + "\"")
         .contentType(MediaType.APPLICATION_JSON)
         .body(new SetSettlementSourceRequest(current))
         .exchange()
@@ -427,13 +439,16 @@ class CardStatementControllerTest {
       Integer statementDay,
       Integer dueDateOffsetDays,
       HttpStatus expected) {
-    RestTestClient.ResponseSpec response =
+    RestTestClient.RequestBodySpec request =
         client(token)
             .put()
             .uri("/api/v1/accounts/" + card + "/statement-config")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(new SetStatementConfigRequest(statementDay, dueDateOffsetDays))
-            .exchange();
+            .contentType(MediaType.APPLICATION_JSON);
+    if (expected == HttpStatus.OK) {
+      request.header("If-Match", "\"" + getConfig(token, card).version() + "\"");
+    }
+    RestTestClient.ResponseSpec response =
+        request.body(new SetStatementConfigRequest(statementDay, dueDateOffsetDays)).exchange();
     response.expectStatus().isEqualTo(expected);
     return expected == HttpStatus.OK
         ? response.expectBody(StatementConfigResponse.class).returnResult().getResponseBody()
