@@ -59,9 +59,9 @@ import org.springframework.web.server.ResponseStatusException;
  * <p>Every change is a load-check-write over the whole tree, so every change first locks the
  * workspace row: two concurrent changes to one workspace's taxonomy run one after the other and the
  * second sees the first's result. Without that, two concurrent moves could form a cycle or exceed
- * the depth limit, which no constraint catches. Updates additionally carry the version the client
- * last read ({@link CategoryResponse#version()}), so an edit based on a stale read is a 409 rather
- * than a silent overwrite of another member's change.
+ * the depth limit, which no constraint catches. Mutations also require the version the client last
+ * read ({@link CategoryResponse#version()}) through HTTP {@code If-Match}; a stale read is a
+ * 412 VERSION_CONFLICT rather than a silent overwrite of another member's change.
  *
  * <p>Reads need workspace membership; changes need EDIT on the workspace, because the taxonomy is
  * shared by every member and reshapes everyone's reports. {@link CategoryResponse#canEdit()} tells
@@ -154,7 +154,7 @@ public class CategoryService {
    * Relabels and/or moves a category. A default is relabelled through this workspace's override (a
    * label equal to the shipped one is stored as "inherit") and cannot be moved: for a default, a
    * {@code null} parent means "where it is", and only its current parent is accepted otherwise.
-   * {@code version} must be the one the client last read; a different one is a 409.
+   * {@code expectedVersion} comes from the caller's strong {@code If-Match} header.
    */
   @Transactional
   public CategoryResponse update(
