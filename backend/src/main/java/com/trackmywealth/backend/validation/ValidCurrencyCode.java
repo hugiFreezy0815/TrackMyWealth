@@ -19,7 +19,7 @@ import java.lang.annotation.Target;
 @Constraint(validatedBy = CurrencyCodeValidator.class)
 public @interface ValidCurrencyCode {
 
-  String message() default "must be a valid ISO 4217 currency code";
+  String message() default "{tmw.validation.currency}";
 
   Class<?>[] groups() default {};
 
