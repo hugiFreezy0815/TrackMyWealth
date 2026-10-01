@@ -10,9 +10,19 @@ import java.util.UUID;
  * access), which {@link
  * com.trackmywealth.backend.config.WorkspaceContextTransactionExecutionListener} already handles
  * correctly - a {@code null} workspace id leaves {@code app.current_workspace_id} unset, and every
- * RLS policy then denies by default. {@code sessionId} is the {@code user_session} the presented
+ * RLS policy then denies by default. {@code language} is the persisted EN/DE preference used for caller-visible validation messages (NFR-I18N-001..005). {@code sessionId} is the {@code user_session} the presented
  * access token belongs to (US-02-03) - what lets a caller list/revoke "my sessions" and know which
  * one is the one making the current request.
  */
-public record AuthenticatedUserPrincipal(UUID userId, String role, UUID workspaceId, UUID sessionId)
-    implements WorkspacePrincipal {}
+public record AuthenticatedUserPrincipal(
+    UUID userId, String role, UUID workspaceId, UUID sessionId, String language)
+    implements WorkspacePrincipal {
+
+  public AuthenticatedUserPrincipal(UUID userId, String role, UUID workspaceId, UUID sessionId) {
+    this(userId, role, workspaceId, sessionId, "EN");
+  }
+
+  public AuthenticatedUserPrincipal {
+    language = "DE".equalsIgnoreCase(language) ? "DE" : "EN";
+  }
+}
