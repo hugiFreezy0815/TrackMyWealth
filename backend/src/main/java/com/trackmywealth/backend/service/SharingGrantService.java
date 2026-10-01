@@ -133,8 +133,8 @@ public class SharingGrantService {
             .findById(request.grantedToMemberId())
             .orElseThrow(
                 () ->
-                    new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Workspace member not found."));
+                    accessControlService.denyAsNotFound(
+                        actor, "WorkspaceMember", request.grantedToMemberId()));
 
     SharingGrant grant = new SharingGrant();
     grant.setWorkspace(workspace);
@@ -179,7 +179,7 @@ public class SharingGrantService {
         sharingGrantRepository
             .findByIdForUpdate(grantId)
             .orElseThrow(
-                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Grant not found."));
+                () -> accessControlService.denyAsNotFound(actor, "SharingGrant", grantId));
 
     UUID actingMemberId = accessControlService.requireActingMember(actor);
 
