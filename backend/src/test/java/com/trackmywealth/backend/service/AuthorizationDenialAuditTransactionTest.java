@@ -62,6 +62,7 @@ class AuthorizationDenialAuditTransactionTest {
     registry.add("spring.datasource.hikari.minimum-idle", () -> "1");
     registry.add("spring.datasource.hikari.connection-timeout", () -> "1000");
     registry.add("app.rate-limit.enabled", () -> "false");
+    registry.add("spring.quartz.auto-startup", () -> "false");
     registry.add("app.authorization-denial-audit.max-writes-per-principal", () -> "20");
     registry.add("app.authorization-denial-audit.refill-period", () -> "1m");
     registry.add("app.authorization-denial-audit.max-principals", () -> "100");
