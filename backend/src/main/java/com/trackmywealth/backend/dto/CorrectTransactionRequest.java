@@ -12,15 +12,12 @@ import java.util.UUID;
 /**
  * Desired state for correcting a transaction (US-07-06 / FR-LIF-004).
  *
- * <p>This is deliberately separate from {@link CreateTransactionRequest}: a correction cannot
- * supply a new source idempotency key or change source provenance. {@code targetAccountId} is null
- * when the row stays on its current account. The full financial state is supplied like a PUT;
- * changing only {@code merchantDescription} and/or {@code notes} is an in-place non-financial
- * edit. Any immutable financial difference goes through remove/void plus replacement.
+ * <p>This request is separate from {@link CreateTransactionRequest}: callers cannot change source
+ * provenance or supply a new source idempotency key. The body supplies the desired financial state.
+ * Merchant description and notes may be edited in place; financial changes create a replacement.
  *
- * <p>{@code reason} is required only when the original is imported (T2), because that correction
- * voids the original. It is ignored for a manual T1 correction and for an in-place non-financial
- * edit.
+ * <p>Target account is optional and defaults to the current account. Reason is required only when
+ * the original is imported (T2), because that correction voids the original.
  */
 public record CorrectTransactionRequest(
     UUID targetAccountId,
