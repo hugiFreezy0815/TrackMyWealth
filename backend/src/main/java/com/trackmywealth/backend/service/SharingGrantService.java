@@ -175,6 +175,24 @@ public class SharingGrantService {
     return toResponse(grant);
   }
 
+  @Transactional(readOnly = true)
+  public SharingGrantResponse get(UUID grantId, AuthenticatedUserPrincipal actor) {
+    SharingGrant grant =
+        sharingGrantRepository
+            .findById(grantId)
+            .orElseThrow(() -> accessControlService.denyAsNotFound(actor, "SharingGrant", grantId));
+    UUID actingMemberId = accessControlService.requireActingMember(actor);
+    if (!isSoleRemainingGrant(actor, actingMemberId, grant)) {
+      requireFullAccessToScope(
+          actor,
+          grant.getScopeType(),
+          grant.getScopeAccount(),
+          grant.getScopeInstitution(),
+          grant.getWorkspace().getId());
+    }
+    return toResponse(grant);
+  }
+
   @Transactional
   public SharingGrantResponse revoke(
       UUID grantId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
