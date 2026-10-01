@@ -40,7 +40,7 @@ public final class IfMatchVersionParser {
   }
 
   public static String toEtag(int version) {
-    return """ + version + """;
+    return "\"" + version + "\"";
   }
 
   private static ApiException invalid() {
