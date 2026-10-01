@@ -8,7 +8,10 @@
 -- =============================================================================================
 
 ALTER TABLE transaction
-ADD COLUMN corrects_transaction_id UUID REFERENCES transaction (id);
+ADD COLUMN corrects_transaction_id UUID REFERENCES transaction (id),
+ADD CONSTRAINT transaction_lineage_one_kind CHECK (
+    replaces_transaction_id IS NULL OR corrects_transaction_id IS NULL
+);
 
 -- One effective replacement per old row. Further corrections form a chain:
 -- original <- correction-1 <- correction-2.
