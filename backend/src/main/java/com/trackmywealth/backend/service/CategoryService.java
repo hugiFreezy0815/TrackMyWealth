@@ -184,7 +184,7 @@ public class CategoryService {
       WorkspaceCategoryOverride override = overrideFor(category, workspaceId, overrides);
       override.setNameEn(request.nameEn().equals(category.getNameEn()) ? null : request.nameEn());
       override.setNameDe(request.nameDe().equals(category.getNameDe()) ? null : request.nameDe());
-      saveOrRemove(override, overrides);
+      saveOverride(override, overrides);
     } else {
       category.setParentCategoryId(parentId);
       category.setNameEn(request.nameEn());
@@ -566,7 +566,7 @@ public class CategoryService {
     if (category.isShared()) {
       WorkspaceCategoryOverride override = overrideFor(category, workspaceId, overrides);
       override.setActive(active == category.isActive() ? null : active);
-      saveOrRemove(override, overrides);
+      saveOverride(override, overrides);
     } else {
       category.setActive(active);
       categoryRepository.saveAndFlush(category);
@@ -584,7 +584,7 @@ public class CategoryService {
   // V44 deliberately keeps an empty override row once one has existed. Its nullable fields still
   // mean "inherit everything", while its version remains a monotonic concurrency token across
   // customize -> revert -> customize cycles instead of resetting when the row is deleted/recreated.
-  private void saveOrRemove(
+  private void saveOverride(
       WorkspaceCategoryOverride override, Map<UUID, WorkspaceCategoryOverride> overrides) {
     overrides.put(override.getCategoryId(), overrideRepository.saveAndFlush(override));
   }
