@@ -160,7 +160,7 @@ public class CategoryService {
   public CategoryResponse update(
       UUID id,
       UpdateCategoryRequest request,
-      int expectedVersion,
+      Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
@@ -200,7 +200,7 @@ public class CategoryService {
    */
   @Transactional
   public CategoryResponse deactivate(
-      UUID id, int expectedVersion, AuthenticatedUserPrincipal actor) {
+      UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
@@ -229,7 +229,7 @@ public class CategoryService {
    */
   @Transactional
   public CategoryResponse activate(
-      UUID id, int expectedVersion, AuthenticatedUserPrincipal actor) {
+      UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
@@ -251,7 +251,7 @@ public class CategoryService {
    * else is a 409 pointing at deactivation, which keeps historical assignments intact.
    */
   @Transactional
-  public void delete(UUID id, int expectedVersion, AuthenticatedUserPrincipal actor) {
+  public void delete(UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
