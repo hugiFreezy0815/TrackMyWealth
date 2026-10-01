@@ -120,6 +120,11 @@ public class AdminUserService {
     return toSummary(user);
   }
 
+  @Transactional(readOnly = true)
+  public UserSummaryResponse getUser(UUID targetUserId) {
+    return toSummary(findUserOrThrow(targetUserId));
+  }
+
   @Transactional
   public UserSummaryResponse editUser(
       UUID targetUserId, EditUserRequest request, Integer expectedVersion, UUID actorUserId) {
