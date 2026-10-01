@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.hibernate.annotations.Generated;
@@ -70,6 +71,11 @@ public class SharingGrant {
 
   @Column(name = "revoked_at")
   private OffsetDateTime revokedAt;
+
+  @Version
+  @Generated(event = {EventType.INSERT, EventType.UPDATE})
+  @Column(name = "version", insertable = false, updatable = false)
+  private Integer version;
 
   public UUID getId() {
     return id;
@@ -133,6 +139,10 @@ public class SharingGrant {
 
   public OffsetDateTime getGrantedAt() {
     return grantedAt;
+  }
+
+  public Integer getVersion() {
+    return version;
   }
 
   public OffsetDateTime getRevokedAt() {
