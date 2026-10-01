@@ -84,12 +84,12 @@ public class AccountOwnershipService {
         accountRepository
             .findByIdForUpdate(accountId)
             .orElseThrow(
-                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found."));
+                () -> accessControlService.denyAsNotFound(actor, "Account", accountId));
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     List<OwnerAllocation> owners = request.owners();
 
     requireNoDuplicateMembers(owners);
-    Map<UUID, WorkspaceMember> membersById = resolveMembersOrThrow(owners);
+    Map<UUID, WorkspaceMember> membersById = resolveMembersOrThrow(owners, actor);
     requireShareSumDoesNotExceedWhole(owners);
 
     // FR-HOU-006: close every currently-effective row before opening any new one, flushing in
@@ -165,15 +165,15 @@ public class AccountOwnershipService {
   // instead of N round-trips, and returning a Map keyed by id (rather than a same-order List)
   // means the caller pairs each owner with its member by id, not by position - safe regardless of
   // what order the query happens to return rows in.
-  private Map<UUID, WorkspaceMember> resolveMembersOrThrow(List<OwnerAllocation> owners) {
+  private Map<UUID, WorkspaceMember> resolveMembersOrThrow(
+      List<OwnerAllocation> owners, AuthenticatedUserPrincipal actor) {
     List<UUID> requestedIds = owners.stream().map(OwnerAllocation::workspaceMemberId).toList();
     Map<UUID, WorkspaceMember> found =
         workspaceMemberRepository.findAllById(requestedIds).stream()
             .collect(Collectors.toMap(WorkspaceMember::getId, Function.identity()));
     for (UUID requestedId : requestedIds) {
       if (!found.containsKey(requestedId)) {
-        throw new ResponseStatusException(
-            HttpStatus.NOT_FOUND, "Workspace member not found: " + requestedId);
+        throw accessControlService.denyAsNotFound(actor, "WorkspaceMember", requestedId);
       }
     }
     return found;
