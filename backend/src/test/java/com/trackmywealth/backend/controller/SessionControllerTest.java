@@ -302,6 +302,22 @@ class SessionControllerTest {
     listSessionsRaw(null).expectStatus().isEqualTo(HttpStatus.UNAUTHORIZED);
   }
 
+  // JwtAuthenticationFilter only accepts the Bearer scheme: a perfectly valid access token sent
+  // under any other scheme authenticates nothing (#193 review: this branch was untested).
+  @Test
+  void aValidTokenUnderAnotherAuthorizationSchemeIsNotAccepted() {
+    String accessToken = bootstrapAdministrator("laptop");
+    listSessionsRaw(accessToken).expectStatus().isOk();
+
+    client()
+        .get()
+        .uri("/api/v1/sessions")
+        .header("Authorization", "Basic " + accessToken)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
   private RestTestClient.ResponseSpec revoke(String accessToken, UUID sessionId) {
     return client()
         .post()

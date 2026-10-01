@@ -12,14 +12,14 @@ other tool-generated diff.
 
 | Concern | Tool | Enforced |
 |---|---|---|
-| Formatting | Spotless + google-java-format | **Automated** (`mvn verify`) |
-| Static analysis (bug patterns, best practices, security) | PMD | **Automated** (`mvn verify`) |
-| Static analysis (bug detection) | SpotBugs (`spotbugs-exclude.xml` - each exemption named and justified, same standard as `SchemaConventionsTest`'s) | **Automated** (`mvn verify`) |
-| Architecture/layering rules | ArchUnit | **Automated** (`mvn test`, `ArchitectureTest`) |
+| Formatting | Spotless + google-java-format | **Automated** (`./mvnw verify`) |
+| Static analysis (bug patterns, best practices, security) | PMD | **Automated** (`./mvnw verify`) |
+| Static analysis (bug detection) | SpotBugs (`spotbugs-exclude.xml` - each exemption named and justified, same standard as `SchemaConventionsTest`'s) | **Automated** (`./mvnw verify`) |
+| Architecture/layering rules | ArchUnit | **Automated** (`./mvnw test`, `ArchitectureTest`) |
 | Vulnerability scanning (Java + JS/TS) | Semgrep | **Automated** (`.github/workflows/semgrep.yml`) |
 | Dependency updates | Dependabot | **Automated** (`.github/dependabot.yml`) |
-| Test coverage | JaCoCo | Reported, not gated (see below) |
-| Build reproducibility | Maven Wrapper (`./mvnw`) | Always use `./mvnw`, not a locally installed `mvn`, so CI and every contributor build with the same Maven version |
+| Test coverage | JaCoCo (`check` against minimums in `pom.xml`) | **Automated** (`./mvnw verify`, see below) |
+| Build reproducibility | Maven Wrapper (`./mvnw`) | **Automated** in CI (`backend-ci.yml`) and the Docker build; locally, always use `./mvnw`, not an installed `mvn`, so CI, the image and every contributor build with the same Maven version. The wrapper checks the Maven download against `distributionSha256Sum`; it needs `unzip` (without it, it fetches the `.tar.gz`, which fails that check) |
 
 **Running locally:**
 
@@ -101,18 +101,34 @@ cd backend
   trigger, or constraint — this project's whole design (RLS, triggers, generated columns,
   partitioning) lives in the database, not the ORM, so a mocked repository proves nothing about
   correctness here.
-- **Coverage is reported, not gated.** A hard percentage threshold would be meaningless noise
-  at this stage of the project (barely any application code exists yet to cover). Revisit once
-  EPIC-02's services/controllers land and there's a real baseline to hold steady.
+- **Coverage is gated against the measured baseline (#193).** `./mvnw verify` fails when coverage
+  breaks the `coverage.*` limits in `pom.xml`, which also records the baseline they come from:
+  - the whole backend and `service` (two thirds of all lines) hold a covered-line and
+    covered-branch ratio of the baseline rounded down to the whole percent, minus one point -
+    room for honest, partly tested growth, but not for a real regression;
+  - the small packages `security` (auth-critical), `web` (HTTP contract) and `config`
+    (`SecurityConfig`, JWT secret policy, the denial-audit pool) cap the absolute number of missed
+    lines and branches at the baseline plus 2. In a package of ~80 branches one branch moves a
+    ratio by more than a point, so a ratio gate there would either fail on the next small change
+    or have to be loose; a missed-count cap does neither, and fully tested new code never trips
+    it.
+
+  When a build goes red on coverage, test the behavior you changed - never write a test only to
+  move the number, and never loosen a limit to get a build through. Tighten a limit once coverage
+  has grown for good; loosening one (e.g. after deleting well-tested code) needs its reason stated
+  in that PR. Nothing is excluded from measurement; an exclusion would need the same named
+  justification as a `spotbugs-exclude.xml` entry. `controller`, `repository`, `dto`, `entity`,
+  `error` and `validation` are thin and almost fully covered today; they count toward the overall
+  rule and get a package rule of their own only if a regression there would otherwise hide.
 
 ## SQL / PostgreSQL migrations (`backend/src/main/resources/db/migration/`)
 
 | Concern | Tool | Enforced |
 |---|---|---|
 | Style (keyword/function casing, line length) | sqlfluff (`.sqlfluff`) | **Automated**, new/changed migrations only (`.github/workflows/backend-ci.yml`, `sql-lint` job) |
-| No SERIAL/IDENTITY sequence primary keys | `SchemaConventionsTest` | **Automated** (`mvn test`) |
-| Every domain table's primary key includes a UUID column | `SchemaConventionsTest` | **Automated** (`mvn test`) |
-| Migrations apply cleanly end-to-end | `TrackMyWealthApplicationStartupTest` | **Automated** (`mvn test`) |
+| No SERIAL/IDENTITY sequence primary keys | `SchemaConventionsTest` | **Automated** (`./mvnw test`) |
+| Every domain table's primary key includes a UUID column | `SchemaConventionsTest` | **Automated** (`./mvnw test`) |
+| Migrations apply cleanly end-to-end | `TrackMyWealthApplicationStartupTest` | **Automated** (`./mvnw test`) |
 
 **An already-applied migration is never edited, ever** — not for a bug, not for a style fix, not
 even for a one-character typo. Flyway records a checksum of every migration's content

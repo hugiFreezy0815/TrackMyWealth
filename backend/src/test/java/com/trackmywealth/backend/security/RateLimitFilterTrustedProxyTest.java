@@ -117,6 +117,41 @@ class RateLimitFilterTrustedProxyTest {
   }
 
   @Test
+  void compressionInsideThePrefixCollapsesWithTheFullyExpandedForm() {
+    // "2001::5:6:7:8:9:x" has its "::" inside the /64 prefix with prefix groups after it: the
+    // prefix is 2001:0:5:6, read partly from the groups right of the "::". An attacker can write
+    // the same /64 that way or fully expanded; both must land in one bucket, or each textual form
+    // is a fresh allowance (#193 review: this right-hand path of the parser was untested).
+    for (int i = 0; i < CAPACITY; i++) {
+      login("2001::5:6:7:8:9:" + (i + 1), "f" + i + "@example.com")
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    login("2001:0:5:6:0:0:0:99", "one-more-f@example.com")
+        .expectStatus()
+        .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+    // The neighbouring /64 written the same compressed way is a bucket of its own.
+    login("2001::5:7:7:8:9:1", "still-fine-f@example.com")
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  @Test
+  void anInvalidGroupRightOfTheCompressionDegradesToAnOpaqueBucketKey() {
+    // A non-hex group the parser only meets right of the "::", inside the prefix: like any other
+    // malformed value, the whole string becomes the key - no error, no hang, still limited.
+    for (int i = 0; i < CAPACITY; i++) {
+      login("2001::zz:6:7:8:9:1", "g" + i + "@example.com")
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+    login("2001::zz:6:7:8:9:1", "one-more-g@example.com")
+        .expectStatus()
+        .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  @Test
   void malformedForwardedValueDegradesSafelyToAnOpaqueBucketKey() {
     // Contains a colon but isn't a valid IPv6 literal. Proves the hand-rolled parser (#60) falls
     // back to using it as an opaque string key rather than throwing - and, since this request
