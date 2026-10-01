@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
@@ -139,10 +140,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
    */
   @ExceptionHandler(Exception.class)
   public ProblemDetail handleUnexpected(Exception ex) {
-    if (DisconnectedClientHelper.isClientDisconnectedException(ex)) {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Client disconnected before the response was complete: {}", ex.toString());
-      }
+    if (isClientDisconnect(ex)) {
       return null;
     }
     LOG.error("Unexpected error answered with 500", ex);
@@ -150,6 +148,35 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         HttpStatus.INTERNAL_SERVER_ERROR,
         ApiErrorCode.INTERNAL,
         "An unexpected error occurred. Quote the correlation id when reporting it.");
+  }
+
+  /**
+   * The usual way a client disconnect arrives (#197): the client goes away while the body is being
+   * written, and the message converter wraps the failed write in an {@link
+   * HttpMessageNotWritableException}. That is handled here by the base class, never by {@link
+   * #handleUnexpected}, and its default answer is a 500 - so the disconnect check is needed here
+   * too. Any other unwritable body stays the base class's 500.
+   */
+  @Override
+  protected ResponseEntity<Object> handleHttpMessageNotWritable(
+      HttpMessageNotWritableException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    if (isClientDisconnect(ex)) {
+      return null;
+    }
+    return super.handleHttpMessageNotWritable(ex, headers, status, request);
+  }
+
+  private static boolean isClientDisconnect(Exception ex) {
+    if (!DisconnectedClientHelper.isClientDisconnectedException(ex)) {
+      return false;
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Client disconnected before the response was complete: {}", ex.toString());
+    }
+    return true;
   }
 
   /** 400 with one entry per rejected field, so a client can mark each input. */
