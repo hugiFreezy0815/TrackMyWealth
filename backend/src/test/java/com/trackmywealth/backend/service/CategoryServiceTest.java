@@ -55,7 +55,8 @@ class CategoryServiceTest {
       mock(WorkspaceCategoryOverrideRepository.class);
   private final WorkspaceRepository workspaceRepository = mock(WorkspaceRepository.class);
   private final AccessControlService accessControlService = mock(AccessControlService.class);
-  private final VersionPreconditionService versionPreconditionService = new VersionPreconditionService();
+  private final VersionPreconditionService versionPreconditionService =
+      new VersionPreconditionService();
   private final CategoryService service =
       new CategoryService(
           categoryRepository,
@@ -357,8 +358,7 @@ class CategoryServiceTest {
           HttpStatus.UNPROCESSABLE_CONTENT);
       // Under Leisure (level 1) it fits exactly.
       assertThat(
-              service
-                  .update(
+              update(
                       hobby.getId(),
                       new UpdateCategoryRequest(leisure.getId(), "Hobby", "Hobby", 0),
                       ACTOR)
@@ -572,7 +572,7 @@ class CategoryServiceTest {
                   leisure.getId(),
                   new UpdateCategoryRequest(null, "Free Time", "Freizeit", 0),
                   ACTOR),
-          HttpStatus.CONFLICT);
+          HttpStatus.PRECONDITION_FAILED);
       verify(overrideRepository, never()).saveAndFlush(any());
     }
   }
