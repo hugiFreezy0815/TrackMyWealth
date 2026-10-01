@@ -3,10 +3,14 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.WorkspaceMemberService;
+import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.VersionedResponse;
 import java.util.UUID;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -22,8 +26,13 @@ public class WorkspaceMemberController {
   }
 
   @PostMapping("/{memberId}/deactivate")
-  public WorkspaceMemberSummaryResponse deactivateMember(
-      @PathVariable UUID memberId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return workspaceMemberService.deactivateMember(memberId, actor);
+  public ResponseEntity<WorkspaceMemberSummaryResponse> deactivateMember(
+      @PathVariable UUID memberId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    WorkspaceMemberSummaryResponse response =
+        workspaceMemberService.deactivateMember(
+            memberId, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
   }
 }
