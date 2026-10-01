@@ -77,13 +77,16 @@ public class TransferResolutionService {
   // two-sided transfer already says where the money went.
   private Transaction requireOneSidedLeg(
       UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     Transaction leg =
         transactionRepository
             .findByIdForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(accountId))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND));
+            .orElseThrow(
+                () ->
+                    accessControlService.denyAsNotFound(
+                        actor, "Transaction", transactionId));
     if (!TransferRecordingService.TRANSFER_TYPES.contains(leg.getTransactionType())) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
