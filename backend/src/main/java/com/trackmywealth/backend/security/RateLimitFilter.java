@@ -38,9 +38,9 @@ import org.springframework.web.util.UrlPathHelper;
  *
  * <p>Covers {@link AuthController#LOGIN_PATH}, {@link AuthController#REFRESH_PATH}, {@link
  * SetupController#ADMINISTRATOR_PATH} (unauthenticated and brute-forceable until first use), {@link
- * SessionController#REVOKE_PATH} (authenticated, but issue #57 noted a caller can already cheaply
- * hammer it - each denial doubles DB connection usage via {@code AuthorizationDenialAuditService}'s
- * {@code REQUIRES_NEW} write), {@link AuthController#MFA_VERIFY_PATH} (unauthenticated, and a
+ * SessionController#REVOKE_PATH} (authenticated and still worth bounding even though #205 moved
+ * denial auditing off the request thread), {@link AuthController#MFA_VERIFY_PATH} (unauthenticated,
+ * and a
  * 6-digit TOTP code is brute-forceable without a limit here independent of the challenge token's
  * own short expiry), and {@link MfaController#CONFIRM_PATH} (authenticated, but the same
  * brute-forceable 6-digit-code reasoning applies to confirming a pending enrollment). Referencing
