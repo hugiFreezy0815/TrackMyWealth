@@ -380,7 +380,7 @@ public class TransactionService {
         categoryId.equals(transaction.getCategoryId())
             && categorizationService.isOverridden(transaction);
     if (!alreadyOverridden) {
-      categorizationService.override(transaction, categoryId, actor.userId());
+      categorizationService.override(transaction, categoryId, actor);
     }
     return toResponse(
         transaction, latestAssignments(List.of(transaction)).get(transaction.getId()));
