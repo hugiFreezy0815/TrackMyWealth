@@ -399,6 +399,82 @@ class AccountControllerTest {
   }
 
   @Test
+  void accountGetReturnsVersionAndMatchingEtag() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(token, AccountRequests.account("Versioned", "CASH", "CHF").build());
+
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + created.id())
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectHeader()
+        .valueEquals("ETag", """ + created.version() + """)
+        .expectBody()
+        .jsonPath("$.version")
+        .isEqualTo(created.version());
+  }
+
+  @Test
+  void accountUpdateWithoutIfMatchIsPreconditionRequired() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse created =
+        createAccount(token, AccountRequests.account("Versioned", "CASH", "CHF").build());
+
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + created.id())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new UpdateAccountRequest("Missing Version", "CASH", "CHF", null, null, null, null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+  }
+
+  @Test
+  void staleAccountUpdateIsRejectedAndTheWinningWriteIsKept() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse readByBothClients =
+        createAccount(token, AccountRequests.account("Original", "CASH", "CHF").build());
+    int versionReadByBoth = readByBothClients.version();
+
+    AccountSummaryResponse firstWrite =
+        updateAccount(
+                token,
+                readByBothClients.id(),
+                new UpdateAccountRequest(
+                    "First Writer", "CASH", "CHF", null, null, null, null),
+                versionReadByBoth)
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(firstWrite.version()).isGreaterThan(versionReadByBoth);
+
+    updateAccount(
+            token,
+            readByBothClients.id(),
+            new UpdateAccountRequest("Stale Writer", "CASH", "CHF", null, null, null, null),
+            versionReadByBoth)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+
+    AccountSummaryResponse current = getAccount(token, readByBothClients.id());
+    assertThat(current.name()).isEqualTo("First Writer");
+    assertThat(current.version()).isEqualTo(firstWrite.version());
+  }
+
+  @Test
   void changingAccountTypeIsRejectedWithAStructuredConflict() {
     // AC #1 / DoD: the DB's trg_account_type_immutable (V4) rejection must surface as a clean
     // 409, referencing FR-ACC-005, never a raw 500.
