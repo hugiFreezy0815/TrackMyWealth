@@ -19,4 +19,5 @@ public record AccountSummaryResponse(
     boolean manualValuation,
     boolean countsAsSaving,
     String status,
-    OffsetDateTime archivedAt) {}
+    OffsetDateTime archivedAt,
+    int version) {}

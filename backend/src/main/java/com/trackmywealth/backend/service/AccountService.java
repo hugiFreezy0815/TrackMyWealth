@@ -85,6 +85,8 @@ public class AccountService {
       Set.of("SAVINGS", "SECURITIES", "MANAGED_MANDATE", "CRYPTO", PENSION, "VESTED_BENEFITS");
   private static final String ARCHIVED = "ARCHIVED";
   private static final String DELETED = "DELETED";
+  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
+  private static final String VERSIONED_RESOURCE = "account";
 
   // FR-LIF-006: archived accounts are restorable through the interface for 30 days; thereafter
   // they remain in the data but are no longer user-restorable.
@@ -99,6 +101,7 @@ public class AccountService {
   private final WorkspaceAccessService workspaceAccessService;
   private final AccessControlService accessControlService;
   private final AccountLookupService accountLookupService;
+  private final VersionPreconditionService versionPreconditionService;
   private final InstitutionLookupService institutionLookupService;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final AccountRepository accountRepository;
@@ -116,6 +119,7 @@ public class AccountService {
       WorkspaceAccessService workspaceAccessService,
       AccessControlService accessControlService,
       AccountLookupService accountLookupService,
+      VersionPreconditionService versionPreconditionService,
       InstitutionLookupService institutionLookupService,
       FinancialInstitutionRepository financialInstitutionRepository,
       AccountRepository accountRepository,
@@ -131,6 +135,7 @@ public class AccountService {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.accountLookupService = accountLookupService;
+    this.versionPreconditionService = versionPreconditionService;
     this.institutionLookupService = institutionLookupService;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.accountRepository = accountRepository;
@@ -219,9 +224,14 @@ public class AccountService {
   // always has) but before any field is mutated.
   @Transactional
   public AccountSummaryResponse updateAccount(
-      UUID accountId, UpdateAccountRequest request, AuthenticatedUserPrincipal actor) {
+      UUID accountId,
+      UpdateAccountRequest request,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
 
     account.setName(request.name());
     account.setAccountType(request.accountType());
@@ -242,9 +252,12 @@ public class AccountService {
   // list, so it's rejected the same way an out-of-table transition anywhere else in this codebase
   // is (see e.g. V4/V24's immutability triggers) - a structured 409, not a silent no-op.
   @Transactional
-  public AccountSummaryResponse archiveAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
+  public AccountSummaryResponse archiveAccount(
+      UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     // Checking specifically for "not ACTIVE" rather than "already ARCHIVED": status also admits
     // DELETED (V4's own CHECK constraint), which FR-STA-001 defines as terminal - reachable from
     // ACTIVE only, and reachable from nowhere once there. An "already ARCHIVED" check alone would
@@ -267,9 +280,12 @@ public class AccountService {
   // must be rejected the same structured way the UI-hidden path would have been, rather than
   // silently succeeding forever.
   @Transactional
-  public AccountSummaryResponse restoreAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
+  public AccountSummaryResponse restoreAccount(
+      UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     if (!ARCHIVED.equals(account.getStatus())) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Account is not archived.");
     }
@@ -318,9 +334,14 @@ public class AccountService {
   // tracked under EPIC 31 in docs/user-stories/BACKLOG-remaining-epics.md.
   @Transactional
   public AccountSummaryResponse reassignInstitution(
-      UUID accountId, ReassignAccountInstitutionRequest request, AuthenticatedUserPrincipal actor) {
+      UUID accountId,
+      ReassignAccountInstitutionRequest request,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     if (DELETED.equals(account.getStatus())) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT,
@@ -555,6 +576,7 @@ public class AccountService {
         account.isManualValuation(),
         account.isCountsAsSaving(),
         account.getStatus(),
-        account.getArchivedAt());
+        account.getArchivedAt(),
+        VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE));
   }
 }

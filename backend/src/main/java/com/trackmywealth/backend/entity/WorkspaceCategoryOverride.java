@@ -15,9 +15,10 @@ import org.hibernate.generator.EventType;
 /**
  * Maps {@code workspace_category_override} (V34): one workspace's relabelling and/or deactivation
  * of a shared default {@link Category} (US-08-04). A NULL field inherits the shipped value, so a
- * later reference package relabelling a default still reaches workspaces that never changed it. V34
- * rejects a row that overrides nothing, so the service deletes an override once every field is back
- * to inheriting.
+ * later reference package relabelling a default still reaches workspaces that never changed it. V45
+ * allows an all-NULL row to remain as an optimistic-concurrency revision tombstone after a
+ * workspace reverts to the shipped values; {@link #isEmpty()} distinguishes that state from an
+ * effective customization.
  */
 @Entity
 @Table(name = "workspace_category_override")
@@ -103,7 +104,7 @@ public class WorkspaceCategoryOverride {
     return version;
   }
 
-  /** True once every field inherits the shipped value again, i.e. the row overrides nothing. */
+  /** True when every field inherits the shipped value; the row may still persist as a revision. */
   public boolean isEmpty() {
     return nameEn == null && nameDe == null && active == null;
   }

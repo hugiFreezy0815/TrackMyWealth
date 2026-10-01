@@ -55,9 +55,15 @@ class CategoryServiceTest {
       mock(WorkspaceCategoryOverrideRepository.class);
   private final WorkspaceRepository workspaceRepository = mock(WorkspaceRepository.class);
   private final AccessControlService accessControlService = mock(AccessControlService.class);
+  private final VersionPreconditionService versionPreconditionService =
+      new VersionPreconditionService();
   private final CategoryService service =
       new CategoryService(
-          categoryRepository, overrideRepository, workspaceRepository, accessControlService);
+          categoryRepository,
+          overrideRepository,
+          workspaceRepository,
+          accessControlService,
+          versionPreconditionService);
 
   private final List<Category> categories = new ArrayList<>();
   private final List<WorkspaceCategoryOverride> overrides = new ArrayList<>();
@@ -254,8 +260,8 @@ class CategoryServiceTest {
     @Test
     void relabellingASharedDefaultWritesAnOverrideAndNeverTouchesTheSharedRow() {
       CategoryResponse renamed =
-          service.update(
-              leisure.getId(), new UpdateCategoryRequest(null, "Free Time", "Freizeit", 0), ACTOR);
+          update(
+              leisure.getId(), new UpdateCategoryRequest(null, "Free Time", "Freizeit"), 0, ACTOR);
 
       ArgumentCaptor<WorkspaceCategoryOverride> saved =
           ArgumentCaptor.forClass(WorkspaceCategoryOverride.class);
@@ -271,14 +277,15 @@ class CategoryServiceTest {
     }
 
     @Test
-    void relabellingADefaultBackToTheShippedLabelsRemovesTheOverride() {
+    void relabellingADefaultBackToTheShippedLabelsKeepsTheRevisionRow() {
       WorkspaceCategoryOverride existing = override(leisure, "Free Time", null, null);
 
       CategoryResponse restored =
-          service.update(
-              leisure.getId(), new UpdateCategoryRequest(null, "Leisure", "Freizeit", 1), ACTOR);
+          update(leisure.getId(), new UpdateCategoryRequest(null, "Leisure", "Freizeit"), 1, ACTOR);
 
-      verify(overrideRepository).delete(existing);
+      verify(overrideRepository).saveAndFlush(existing);
+      verify(overrideRepository, never()).delete(existing);
+      assertThat(existing.isEmpty()).isTrue();
       assertThat(restored.customised()).isFalse();
       assertThat(restored.nameEn()).isEqualTo("Leisure");
     }
@@ -289,9 +296,10 @@ class CategoryServiceTest {
 
       assertStatus(
           () ->
-              service.update(
+              update(
                   leisure.getId(),
-                  new UpdateCategoryRequest(hobby.getId(), "Leisure", "Freizeit", 0),
+                  new UpdateCategoryRequest(hobby.getId(), "Leisure", "Freizeit"),
+                  0,
                   ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
     }
@@ -301,9 +309,10 @@ class CategoryServiceTest {
       Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
 
       CategoryResponse moved =
-          service.update(
+          update(
               hobby.getId(),
-              new UpdateCategoryRequest(leisure.getId(), "Hobbies", "Hobbys", 0),
+              new UpdateCategoryRequest(leisure.getId(), "Hobbies", "Hobbys"),
+              0,
               ACTOR);
 
       verify(categoryRepository).saveAndFlush(hobby);
@@ -320,16 +329,18 @@ class CategoryServiceTest {
 
       assertStatus(
           () ->
-              service.update(
+              update(
                   hobby.getId(),
-                  new UpdateCategoryRequest(hobby.getId(), "Hobby", "Hobby", 0),
+                  new UpdateCategoryRequest(hobby.getId(), "Hobby", "Hobby"),
+                  0,
                   ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
       assertStatus(
           () ->
-              service.update(
+              update(
                   hobby.getId(),
-                  new UpdateCategoryRequest(music.getId(), "Hobby", "Hobby", 0),
+                  new UpdateCategoryRequest(music.getId(), "Hobby", "Hobby"),
+                  0,
                   ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
     }
@@ -343,17 +354,18 @@ class CategoryServiceTest {
       // Hobby (height 2) under Sport (level 2) would put Music at level 4.
       assertStatus(
           () ->
-              service.update(
+              update(
                   hobby.getId(),
-                  new UpdateCategoryRequest(sport.getId(), "Hobby", "Hobby", 0),
+                  new UpdateCategoryRequest(sport.getId(), "Hobby", "Hobby"),
+                  0,
                   ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
       // Under Leisure (level 1) it fits exactly.
       assertThat(
-              service
-                  .update(
+              update(
                       hobby.getId(),
-                      new UpdateCategoryRequest(leisure.getId(), "Hobby", "Hobby", 0),
+                      new UpdateCategoryRequest(leisure.getId(), "Hobby", "Hobby"),
+                      0,
                       ACTOR)
                   .level())
           .isEqualTo(2);
@@ -364,8 +376,7 @@ class CategoryServiceTest {
       Category sport = own("WS_SPORT", "Sport", "Sport", leisure);
 
       CategoryResponse moved =
-          service.update(
-              sport.getId(), new UpdateCategoryRequest(null, "Sport", "Sport", 0), ACTOR);
+          update(sport.getId(), new UpdateCategoryRequest(null, "Sport", "Sport"), 0, ACTOR);
 
       assertThat(moved.parentId()).isNull();
       assertThat(moved.level()).isEqualTo(1);
@@ -382,7 +393,7 @@ class CategoryServiceTest {
       Category sport = own("WS_SPORT", "Sport", "Sport", leisure);
       Category football = own("WS_FOOTBALL", "Football", "Fussball", sport);
 
-      CategoryResponse result = service.deactivate(leisure.getId(), ACTOR);
+      CategoryResponse result = deactivate(leisure.getId(), ACTOR);
 
       assertThat(result.active()).isFalse();
       assertThat(result.customised()).isTrue();
@@ -398,10 +409,9 @@ class CategoryServiceTest {
     @Test
     void protectedCategoriesCannotBeDeactivated() {
       assertStatus(
-          () -> service.deactivate(uncategorized.getId(), ACTOR), HttpStatus.UNPROCESSABLE_CONTENT);
+          () -> deactivate(uncategorized.getId(), ACTOR), HttpStatus.UNPROCESSABLE_CONTENT);
       assertStatus(
-          () -> service.deactivate(transferInternal.getId(), ACTOR),
-          HttpStatus.UNPROCESSABLE_CONTENT);
+          () -> deactivate(transferInternal.getId(), ACTOR), HttpStatus.UNPROCESSABLE_CONTENT);
       verify(overrideRepository, never()).saveAndFlush(any());
     }
 
@@ -410,7 +420,7 @@ class CategoryServiceTest {
       Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
       hobby.setActive(false);
 
-      assertThat(service.deactivate(hobby.getId(), ACTOR).active()).isFalse();
+      assertThat(deactivate(hobby.getId(), ACTOR).active()).isFalse();
       verify(categoryRepository, never()).saveAndFlush(any());
     }
 
@@ -418,14 +428,15 @@ class CategoryServiceTest {
     void reactivationNeedsAnActiveParentAndDoesNotCascade() {
       Category sport = own("WS_SPORT", "Sport", "Sport", leisure);
       Category football = own("WS_FOOTBALL", "Football", "Fussball", sport);
-      service.deactivate(leisure.getId(), ACTOR);
+      deactivate(leisure.getId(), ACTOR);
 
-      assertStatus(() -> service.activate(sport.getId(), ACTOR), HttpStatus.UNPROCESSABLE_CONTENT);
+      assertStatus(() -> activate(sport.getId(), ACTOR), HttpStatus.UNPROCESSABLE_CONTENT);
 
-      CategoryResponse reactivated = service.activate(leisure.getId(), ACTOR);
+      CategoryResponse reactivated = activate(leisure.getId(), ACTOR);
       assertThat(reactivated.active()).isTrue();
-      assertThat(reactivated.customised()).as("override back to inherit is removed").isFalse();
-      verify(overrideRepository).delete(any(WorkspaceCategoryOverride.class));
+      assertThat(reactivated.customised()).as("override values are back to inherit").isFalse();
+      verify(overrideRepository, times(2)).saveAndFlush(any(WorkspaceCategoryOverride.class));
+      verify(overrideRepository, never()).delete(any(WorkspaceCategoryOverride.class));
       assertThat(sport.isActive()).isFalse();
       assertThat(football.isActive()).isFalse();
     }
@@ -452,7 +463,7 @@ class CategoryServiceTest {
 
     @Test
     void aSharedDefaultIsNeverDeleted() {
-      assertStatus(() -> service.delete(leisure.getId(), ACTOR), HttpStatus.CONFLICT);
+      assertStatus(() -> delete(leisure.getId(), ACTOR), HttpStatus.CONFLICT);
       verify(categoryRepository, never()).delete(any());
     }
 
@@ -461,7 +472,7 @@ class CategoryServiceTest {
       Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
       when(categoryRepository.isReferenced(hobby.getId())).thenReturn(true);
 
-      assertStatus(() -> service.delete(hobby.getId(), ACTOR), HttpStatus.CONFLICT);
+      assertStatus(() -> delete(hobby.getId(), ACTOR), HttpStatus.CONFLICT);
       verify(categoryRepository, never()).delete(any());
     }
 
@@ -469,7 +480,7 @@ class CategoryServiceTest {
     void aNeverUsedOwnCategoryIsDeleted() {
       Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
 
-      service.delete(hobby.getId(), ACTOR);
+      delete(hobby.getId(), ACTOR);
 
       verify(categoryRepository).delete(hobby);
     }
@@ -503,10 +514,10 @@ class CategoryServiceTest {
       Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
 
       service.create(new CreateCategoryRequest(null, "Pets", "Haustiere"), ACTOR);
-      service.update(hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys", 0), ACTOR);
-      service.deactivate(hobby.getId(), ACTOR);
-      service.activate(hobby.getId(), ACTOR);
-      service.delete(hobby.getId(), ACTOR);
+      update(hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys"), 0, ACTOR);
+      deactivate(hobby.getId(), ACTOR);
+      activate(hobby.getId(), ACTOR);
+      delete(hobby.getId(), ACTOR);
 
       verify(workspaceRepository, times(5)).findByIdForUpdate(WORKSPACE);
     }
@@ -538,14 +549,11 @@ class CategoryServiceTest {
 
       assertStatus(
           () ->
-              service.update(
-                  hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys", 2), ACTOR),
-          HttpStatus.CONFLICT);
+              update(hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys"), 2, ACTOR),
+          HttpStatus.PRECONDITION_FAILED);
       verify(categoryRepository, never()).saveAndFlush(any());
       assertThat(
-              service
-                  .update(
-                      hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys", 3), ACTOR)
+              update(hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys"), 3, ACTOR)
                   .nameEn())
           .isEqualTo("Hobbies");
     }
@@ -559,11 +567,12 @@ class CategoryServiceTest {
       assertThat(service.get(leisure.getId(), ACTOR).version()).isEqualTo(5);
       assertStatus(
           () ->
-              service.update(
+              update(
                   leisure.getId(),
-                  new UpdateCategoryRequest(null, "Free Time", "Freizeit", 0),
+                  new UpdateCategoryRequest(null, "Free Time", "Freizeit"),
+                  0,
                   ACTOR),
-          HttpStatus.CONFLICT);
+          HttpStatus.PRECONDITION_FAILED);
       verify(overrideRepository, never()).saveAndFlush(any());
     }
   }
@@ -576,8 +585,7 @@ class CategoryServiceTest {
       Category streaming = shared("STREAMING", "Streaming", "Streaming", leisure);
 
       CategoryResponse renamed =
-          service.update(
-              streaming.getId(), new UpdateCategoryRequest(null, "Video", "Video", 0), ACTOR);
+          update(streaming.getId(), new UpdateCategoryRequest(null, "Video", "Video"), 0, ACTOR);
 
       assertThat(renamed.parentId()).isEqualTo(leisure.getId());
       assertThat(renamed.nameEn()).isEqualTo("Video");
@@ -591,9 +599,10 @@ class CategoryServiceTest {
 
       assertStatus(
           () ->
-              service.update(
+              update(
                   streaming.getId(),
-                  new UpdateCategoryRequest(other.getId(), "Streaming", "Streaming", 0),
+                  new UpdateCategoryRequest(other.getId(), "Streaming", "Streaming"),
+                  0,
                   ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
     }
@@ -628,10 +637,9 @@ class CategoryServiceTest {
       override(leisure, null, null, false);
       Category streaming = shared("STREAMING", "Streaming", "Streaming", leisure);
 
-      assertStatus(
-          () -> service.activate(streaming.getId(), ACTOR), HttpStatus.UNPROCESSABLE_CONTENT);
+      assertStatus(() -> activate(streaming.getId(), ACTOR), HttpStatus.UNPROCESSABLE_CONTENT);
 
-      CategoryResponse reactivated = service.activate(leisure.getId(), ACTOR);
+      CategoryResponse reactivated = activate(leisure.getId(), ACTOR);
       assertThat(reactivated.active()).isTrue();
       assertThat(service.get(streaming.getId(), ACTOR).active())
           .as("its own flag was never cleared")
@@ -728,6 +736,8 @@ class CategoryServiceTest {
     Category category = new Category();
     ReflectionTestUtils.setField(category, "id", UUID.randomUUID());
     ReflectionTestUtils.setField(category, "systemDefault", systemDefault);
+    // As the database does: a new row starts at version 0 (V1's DEFAULT), bumped on every update.
+    ReflectionTestUtils.setField(category, "version", 0);
     category.setWorkspaceId(workspaceId);
     category.setCode(code);
     category.setNameEn(nameEn);
@@ -741,6 +751,7 @@ class CategoryServiceTest {
       Category category, String nameEn, String nameDe, Boolean active) {
     WorkspaceCategoryOverride override = new WorkspaceCategoryOverride(WORKSPACE, category.getId());
     ReflectionTestUtils.setField(override, "id", UUID.randomUUID());
+    ReflectionTestUtils.setField(override, "version", 0);
     override.setNameEn(nameEn);
     override.setNameDe(nameDe);
     override.setActive(active);
@@ -748,9 +759,43 @@ class CategoryServiceTest {
     return override;
   }
 
+  // The If-Match a client would send: the version it last read, i.e. the current one.
+  private CategoryResponse update(
+      UUID id, UpdateCategoryRequest request, AuthenticatedUserPrincipal actor) {
+    return update(id, request, service.get(id, actor).version(), actor);
+  }
+
+  private CategoryResponse update(
+      UUID id,
+      UpdateCategoryRequest request,
+      int expectedVersion,
+      AuthenticatedUserPrincipal actor) {
+    return service.update(id, request, expectedVersion, actor);
+  }
+
+  private CategoryResponse deactivate(UUID id, AuthenticatedUserPrincipal actor) {
+    int expectedVersion = service.get(id, actor).version();
+    return service.deactivate(id, expectedVersion, actor);
+  }
+
+  private CategoryResponse activate(UUID id, AuthenticatedUserPrincipal actor) {
+    int expectedVersion = service.get(id, actor).version();
+    return service.activate(id, expectedVersion, actor);
+  }
+
+  private void delete(UUID id, AuthenticatedUserPrincipal actor) {
+    int expectedVersion = service.get(id, actor).version();
+    service.delete(id, expectedVersion, actor);
+  }
+
   private static <T> T persist(T entity, List<T> table) {
-    if (ReflectionTestUtils.getField(entity, "id") == null) {
+    Object id = ReflectionTestUtils.getField(entity, "id");
+    Integer version = (Integer) ReflectionTestUtils.getField(entity, "version");
+    if (id == null) {
       ReflectionTestUtils.setField(entity, "id", UUID.randomUUID());
+      ReflectionTestUtils.setField(entity, "version", 0);
+    } else {
+      ReflectionTestUtils.setField(entity, "version", version == null ? 1 : version + 1);
     }
     if (!table.contains(entity)) {
       table.add(entity);

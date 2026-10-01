@@ -10,9 +10,10 @@ import java.util.UUID;
  * relabelled or deactivated; {@code protectedCategory} marks one the product relies on
  * (UNCATEGORIZED, TRANSFER_INTERNAL), which can never be deactivated, deleted or given children.
  *
- * <p>{@code version} is the concurrency token to send back on {@code PUT}. {@code canEdit} tells
- * whether the caller may change the taxonomy at all (EDIT on the workspace); it is the same for
- * every category in one response, and a client uses it to hide the actions that would be refused.
+ * <p>{@code version} is the concurrency token to send as a strong {@code If-Match} ETag on every
+ * state-changing request for this category (ADR 0004). {@code canEdit} tells whether the caller may
+ * change the taxonomy at all (EDIT on the workspace); it is the same for every category in one
+ * response, and a client uses it to hide the actions that would be refused.
  */
 public record CategoryResponse(
     UUID id,

@@ -461,7 +461,11 @@ class InstitutionControllerTest {
                 .build());
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
-    client(token).post().uri("/api/v1/accounts/" + asset.id() + "/archive").exchange();
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + asset.id() + "/archive")
+        .header("If-Match", "\"" + asset.version() + "\"")
+        .exchange();
 
     InstitutionSummaryResponse summary = getSummary(token, institution.id());
 

@@ -147,13 +147,32 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
-  void anOptimisticLockingFailureIsTranslatedToAConflictNotA500() {
+  void anOptimisticLockingFailureUnderIfMatchIsTheSamePreconditionConflict() {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    request.addHeader(HttpHeaders.IF_MATCH, "\"3\"");
+
     ProblemDetail problem =
         handler.handleOptimisticLockingFailure(
-            new OptimisticLockingFailureException("Row was updated or deleted by another"));
+            new OptimisticLockingFailureException("Row was updated or deleted by another"),
+            new ServletWebRequest(request));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.PRECONDITION_FAILED.value());
+    assertThat(problem.getProperties())
+        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.VERSION_CONFLICT);
+    assertThat(problem.getDetail()).contains("Reload");
+  }
+
+  // RFC 9110: 412 means a precondition the client sent failed; without If-Match there was none.
+  @Test
+  void anOptimisticLockingFailureWithoutIfMatchStaysAConflict() {
+    ProblemDetail problem =
+        handler.handleOptimisticLockingFailure(
+            new OptimisticLockingFailureException("Row was updated or deleted by another"),
+            new ServletWebRequest(new MockHttpServletRequest()));
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
-    assertThat(problem.getDetail()).contains("changed by another request");
+    assertThat(problem.getProperties())
+        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.VERSION_CONFLICT);
   }
 
   // --- EPIC-29 (#149): stable codes and no leaks ------------------------------------------------
@@ -177,7 +196,8 @@ class GlobalExceptionHandlerTest {
     assertThat(
             handler
                 .handleOptimisticLockingFailure(
-                    new ObjectOptimisticLockingFailureException(Object.class, "id"))
+                    new ObjectOptimisticLockingFailureException(Object.class, "id"),
+                    new ServletWebRequest(new MockHttpServletRequest()))
                 .getProperties())
         .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.VERSION_CONFLICT);
     assertThat(

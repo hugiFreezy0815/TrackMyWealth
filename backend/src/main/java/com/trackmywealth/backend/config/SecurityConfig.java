@@ -13,6 +13,7 @@ import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -150,7 +151,7 @@ public class SecurityConfig {
     configuration.setAllowedOriginPatterns(allowedOriginPatterns);
     configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(
-        List.of("Authorization", "Content-Type", CorrelationIdFilter.HEADER));
+        List.of("Authorization", "Content-Type", CorrelationIdFilter.HEADER, HttpHeaders.IF_MATCH));
     // Bearer tokens are sent via the Authorization header (see mobile/src/api/client.ts), not
     // cookies, so credentialed (cookie-carrying) CORS requests are not needed yet. Revisit
     // if/when EPIC-02's web refresh-token cookie (FR-AUT-006) is implemented.
@@ -160,7 +161,10 @@ public class SecurityConfig {
     // iOS/Android builds (not subject to the same-origin policy) read fine. Any custom response
     // header this API adds must be listed, or it is invisible on exactly one of the three clients.
     configuration.setExposedHeaders(
-        List.of(SecurityController.IGNORED_FIELDS_HEADER, CorrelationIdFilter.HEADER));
+        List.of(
+            SecurityController.IGNORED_FIELDS_HEADER,
+            CorrelationIdFilter.HEADER,
+            HttpHeaders.ETAG));
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);

@@ -199,12 +199,7 @@ class SharingGrantControllerTest {
 
     getAccount(bobToken, account.id()).expectStatus().isOk();
 
-    client(bobToken)
-        .put()
-        .uri("/api/v1/accounts/" + account.id())
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(updateRequestBody(account))
-        .exchange()
+    updateAccount(bobToken, account.id(), updateRequestBody(account))
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
   }
@@ -322,14 +317,7 @@ class SharingGrantControllerTest {
     AccountSummaryResponse account = createAccount(adminToken);
 
     getAccount(adminToken, account.id()).expectStatus().isOk();
-    client(adminToken)
-        .put()
-        .uri("/api/v1/accounts/" + account.id())
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(updateRequestBody(account))
-        .exchange()
-        .expectStatus()
-        .isOk();
+    updateAccount(adminToken, account.id(), updateRequestBody(account)).expectStatus().isOk();
   }
 
   @Test
@@ -419,14 +407,7 @@ class SharingGrantControllerTest {
     // that Bob really does have EDIT on the account (updateAccount requires EDIT) and that the
     // destination institution exists (admin just created it) leaves the destination-institution
     // check as the only possible cause.
-    client(bobToken)
-        .put()
-        .uri("/api/v1/accounts/" + account.id())
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(updateRequestBody(account))
-        .exchange()
-        .expectStatus()
-        .isOk();
+    updateAccount(bobToken, account.id(), updateRequestBody(account)).expectStatus().isOk();
 
     reassignInstitution(bobToken, account.id(), destination.id())
         .expectStatus()
@@ -856,14 +837,39 @@ class SharingGrantControllerTest {
     return client(token).get().uri("/api/v1/accounts/" + accountId).exchange();
   }
 
+  private RestTestClient.ResponseSpec updateAccount(
+      String token, UUID accountId, UpdateAccountRequest request) {
+    return client(token)
+        .put()
+        .uri("/api/v1/accounts/" + accountId)
+        .header("If-Match", "\"" + accountVersion(token, accountId) + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange();
+  }
+
   private RestTestClient.ResponseSpec reassignInstitution(
       String token, UUID accountId, UUID institutionId) {
     return client(token)
         .post()
         .uri("/api/v1/accounts/" + accountId + "/reassign-institution")
+        .header("If-Match", "\"" + accountVersion(token, accountId) + "\"")
         .contentType(MediaType.APPLICATION_JSON)
         .body(new ReassignAccountInstitutionRequest(institutionId))
         .exchange();
+  }
+
+  private int accountVersion(String token, UUID accountId) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + accountId)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .version();
   }
 
   private FinancialInstitutionSummaryResponse createInstitution(String token) {

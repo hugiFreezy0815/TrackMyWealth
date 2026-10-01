@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.web.CorrelationIdFilter;
+import com.trackmywealth.backend.web.IfMatchVersionParser;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.headers.Header;
@@ -69,6 +70,7 @@ public class ApiDocumentationConfig {
                       .forEach(
                           operation -> {
                             documentCorrelationRequestHeader(operation);
+                            documentOptimisticConcurrency(operation);
                             Map<String, ApiResponse> responses = responsesOf(operation);
                             responses.putIfAbsent(
                                 "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
@@ -132,6 +134,29 @@ public class ApiDocumentationConfig {
       operation.setResponses(new ApiResponses());
     }
     return operation.getResponses();
+  }
+
+  private static void documentOptimisticConcurrency(io.swagger.v3.oas.models.Operation operation) {
+    if (operation.getParameters() == null) {
+      return;
+    }
+    operation.getParameters().stream()
+        .filter(
+            parameter ->
+                IfMatchVersionParser.HEADER.equalsIgnoreCase(parameter.getName())
+                    && "header".equals(parameter.getIn()))
+        .findFirst()
+        .ifPresent(
+            parameter -> {
+              parameter.setRequired(true);
+              parameter.setDescription(
+                  "Strong ETag of the resource version last read, for example \"7\". Missing"
+                      + " values return 428 VERSION_REQUIRED; stale values return 412"
+                      + " VERSION_CONFLICT.");
+              Map<String, ApiResponse> responses = responsesOf(operation);
+              responses.putIfAbsent("412", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
+              responses.putIfAbsent("428", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
+            });
   }
 
   private static void documentCorrelationRequestHeader(

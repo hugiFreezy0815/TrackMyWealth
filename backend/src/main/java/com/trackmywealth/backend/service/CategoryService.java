@@ -6,8 +6,6 @@ import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.entity.Category;
 import com.trackmywealth.backend.entity.WorkspaceCategoryOverride;
-import com.trackmywealth.backend.error.ApiErrorCode;
-import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.CategoryRepository;
 import com.trackmywealth.backend.repository.WorkspaceCategoryOverrideRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
@@ -61,9 +59,9 @@ import org.springframework.web.server.ResponseStatusException;
  * <p>Every change is a load-check-write over the whole tree, so every change first locks the
  * workspace row: two concurrent changes to one workspace's taxonomy run one after the other and the
  * second sees the first's result. Without that, two concurrent moves could form a cycle or exceed
- * the depth limit, which no constraint catches. Updates additionally carry the version the client
- * last read ({@link CategoryResponse#version()}), so an edit based on a stale read is a 409 rather
- * than a silent overwrite of another member's change.
+ * the depth limit, which no constraint catches. Mutations also require the version the client last
+ * read ({@link CategoryResponse#version()}) through HTTP {@code If-Match}; a stale read is a 412
+ * VERSION_CONFLICT rather than a silent overwrite of another member's change.
  *
  * <p>Reads need workspace membership; changes need EDIT on the workspace, because the taxonomy is
  * shared by every member and reshapes everyone's reports. {@link CategoryResponse#canEdit()} tells
@@ -76,21 +74,26 @@ public class CategoryService {
   static final Set<String> PROTECTED_CODES = Set.of("UNCATEGORIZED", "TRANSFER_INTERNAL");
   static final String WORKSPACE_CODE_PREFIX = "WS_";
   private static final int CODE_BASE_MAX_LENGTH = 40;
+  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
+  private static final String VERSIONED_RESOURCE = "category";
 
   private final CategoryRepository categoryRepository;
   private final WorkspaceCategoryOverrideRepository overrideRepository;
   private final WorkspaceRepository workspaceRepository;
   private final AccessControlService accessControlService;
+  private final VersionPreconditionService versionPreconditionService;
 
   public CategoryService(
       CategoryRepository categoryRepository,
       WorkspaceCategoryOverrideRepository overrideRepository,
       WorkspaceRepository workspaceRepository,
-      AccessControlService accessControlService) {
+      AccessControlService accessControlService,
+      VersionPreconditionService versionPreconditionService) {
     this.categoryRepository = categoryRepository;
     this.overrideRepository = overrideRepository;
     this.workspaceRepository = workspaceRepository;
     this.accessControlService = accessControlService;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   /** The taxonomy in tree order (parents first, siblings by English label). */
@@ -153,22 +156,20 @@ public class CategoryService {
    * Relabels and/or moves a category. A default is relabelled through this workspace's override (a
    * label equal to the shipped one is stored as "inherit") and cannot be moved: for a default, a
    * {@code null} parent means "where it is", and only its current parent is accepted otherwise.
-   * {@code version} must be the one the client last read; a different one is a 409.
+   * {@code expectedVersion} comes from the caller's strong {@code If-Match} header.
    */
   @Transactional
   public CategoryResponse update(
-      UUID id, UpdateCategoryRequest request, AuthenticatedUserPrincipal actor) {
+      UUID id,
+      UpdateCategoryRequest request,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
-    if (request.version() != versionOf(category, overrides)) {
-      throw new ApiException(
-          HttpStatus.CONFLICT,
-          ApiErrorCode.VERSION_CONFLICT,
-          "This category was changed by someone else in the meantime. Reload it and retry your"
-              + " update.");
-    }
+    versionPreconditionService.requireCurrent(
+        expectedVersion, versionOf(category, overrides), VERSIONED_RESOURCE);
 
     UUID parentId =
         category.isShared() && request.parentId() == null
@@ -185,7 +186,7 @@ public class CategoryService {
       WorkspaceCategoryOverride override = overrideFor(category, workspaceId, overrides);
       override.setNameEn(request.nameEn().equals(category.getNameEn()) ? null : request.nameEn());
       override.setNameDe(request.nameDe().equals(category.getNameDe()) ? null : request.nameDe());
-      saveOrRemove(override, overrides);
+      saveOverride(override, overrides);
     } else {
       category.setParentCategoryId(parentId);
       category.setNameEn(request.nameEn());
@@ -200,11 +201,14 @@ public class CategoryService {
    * (FR-LIF-001). Idempotent: an already inactive category is returned unchanged.
    */
   @Transactional
-  public CategoryResponse deactivate(UUID id, AuthenticatedUserPrincipal actor) {
+  public CategoryResponse deactivate(
+      UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, versionOf(category, overrides), VERSIONED_RESOURCE);
     if (isProtected(category)) {
       throw unprocessable(
           "'" + category.getCode() + "' is required by the application and cannot be deactivated.");
@@ -226,11 +230,14 @@ public class CategoryService {
    * reactivated one by one. Requires an active parent. Idempotent.
    */
   @Transactional
-  public CategoryResponse activate(UUID id, AuthenticatedUserPrincipal actor) {
+  public CategoryResponse activate(
+      UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, versionOf(category, overrides), VERSIONED_RESOURCE);
     if (!isActive(category, categories, overrides)) {
       Category parent = categories.get(category.getParentCategoryId());
       if (parent != null && !isActive(parent, categories, overrides)) {
@@ -246,9 +253,13 @@ public class CategoryService {
    * else is a 409 pointing at deactivation, which keeps historical assignments intact.
    */
   @Transactional
-  public void delete(UUID id, AuthenticatedUserPrincipal actor) {
+  public void delete(UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
-    Category category = requireForActor(loadCategories(workspaceId), id, actor);
+    Map<UUID, Category> categories = loadCategories(workspaceId);
+    Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
+    Category category = requireForActor(categories, id, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, versionOf(category, overrides), VERSIONED_RESOURCE);
     if (category.isShared()) {
       throw conflict(
           "A default category cannot be deleted because other data may depend on it. Deactivate it"
@@ -557,7 +568,7 @@ public class CategoryService {
     if (category.isShared()) {
       WorkspaceCategoryOverride override = overrideFor(category, workspaceId, overrides);
       override.setActive(active == category.isActive() ? null : active);
-      saveOrRemove(override, overrides);
+      saveOverride(override, overrides);
     } else {
       category.setActive(active);
       categoryRepository.saveAndFlush(category);
@@ -572,36 +583,30 @@ public class CategoryService {
         : new WorkspaceCategoryOverride(workspaceId, category.getId());
   }
 
-  // V34 rejects an override that overrides nothing, so one back to "inherit everything" is removed.
-  private void saveOrRemove(
+  // V45 deliberately keeps an empty override row once one has existed. Its nullable fields still
+  // mean "inherit everything", while its version remains a monotonic concurrency token across
+  // customize -> revert -> customize cycles instead of resetting when the row is deleted/recreated.
+  private void saveOverride(
       WorkspaceCategoryOverride override, Map<UUID, WorkspaceCategoryOverride> overrides) {
-    if (override.isEmpty()) {
-      if (override.getId() != null) {
-        overrideRepository.delete(override);
-        overrideRepository.flush();
-      }
-      overrides.remove(override.getCategoryId());
-    } else {
-      overrides.put(override.getCategoryId(), overrideRepository.saveAndFlush(override));
-    }
+    overrides.put(override.getCategoryId(), overrideRepository.saveAndFlush(override));
   }
 
   /**
    * The concurrency token a client sends back on update. For a workspace category, its row version.
-   * For a default, what this workspace has made of it: 0 while it has no override, the override's
-   * version plus one while it has. An override removed and later created again starts over, so a
-   * client whose read predates both steps is not caught - an accepted gap, since both steps must
-   * happen between that client's read and its write.
+   * For a default, what this workspace has made of it: 0 until it has ever had an override row,
+   * then the override's version plus one forever. V45 keeps an empty row after a revert, so the
+   * token never resets across customize -> inherit -> customize cycles.
    */
   static int versionOf(Category category, Map<UUID, WorkspaceCategoryOverride> overrides) {
     if (!category.isShared()) {
-      return category.getVersion() == null ? 0 : category.getVersion();
+      return VersionPreconditionService.persistedVersion(category.getVersion(), VERSIONED_RESOURCE);
     }
     WorkspaceCategoryOverride override = overrides.get(category.getId());
     if (override == null) {
       return 0;
     }
-    return 1 + (override.getVersion() == null ? 0 : override.getVersion());
+    return 1
+        + VersionPreconditionService.persistedVersion(override.getVersion(), VERSIONED_RESOURCE);
   }
 
   // --- loading and mapping -------------------------------------------------------------------
@@ -646,7 +651,9 @@ public class CategoryService {
         isActive(category, categories, overrides),
         category.isShared(),
         isProtected(category),
-        category.isShared() && overrides.containsKey(category.getId()),
+        category.isShared()
+            && overrides.get(category.getId()) != null
+            && !overrides.get(category.getId()).isEmpty(),
         versionOf(category, overrides),
         canEdit);
   }

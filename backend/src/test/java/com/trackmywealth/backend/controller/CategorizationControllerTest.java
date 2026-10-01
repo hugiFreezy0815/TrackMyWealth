@@ -213,12 +213,7 @@ class CategorizationControllerTest {
   void aCategoryTheWorkspaceDeactivatedIsSkippedNotAssigned() {
     String token = bootstrapAdministrator();
     // Deactivating LEISURE deactivates DINING under it for this workspace.
-    client(token)
-        .post()
-        .uri("/api/v1/categories/" + defaultId("LEISURE") + "/deactivate")
-        .exchange()
-        .expectStatus()
-        .isOk();
+    deactivateCategory(token, defaultId("LEISURE")).expectStatus().isOk();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
 
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "HILTL ZUERICH", "5812");
@@ -482,12 +477,7 @@ class CategorizationControllerTest {
   @Test
   void aRuleCannotTargetAnInactiveCategory() {
     String token = bootstrapAdministrator();
-    client(token)
-        .post()
-        .uri("/api/v1/categories/" + defaultId("SHOPPING") + "/deactivate")
-        .exchange()
-        .expectStatus()
-        .isOk();
+    deactivateCategory(token, defaultId("SHOPPING")).expectStatus().isOk();
 
     postRule(
             token,
@@ -688,12 +678,7 @@ class CategorizationControllerTest {
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     AccountSummaryResponse cash = createAccount(token, "CASH");
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
-    client(token)
-        .post()
-        .uri("/api/v1/categories/" + defaultId("SHOPPING") + "/deactivate")
-        .exchange()
-        .expectStatus()
-        .isOk();
+    deactivateCategory(token, defaultId("SHOPPING")).expectStatus().isOk();
 
     putCategory(token, card.id(), recorded.id(), defaultId(UNCATEGORIZED))
         .expectStatus()
@@ -1086,6 +1071,24 @@ class CategorizationControllerTest {
         .returnResult()
         .getResponseBody()
         .id();
+  }
+
+  private RestTestClient.ResponseSpec deactivateCategory(String token, UUID categoryId) {
+    CategoryResponse category =
+        client(token)
+            .get()
+            .uri("/api/v1/categories/" + categoryId)
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(CategoryResponse.class)
+            .returnResult()
+            .getResponseBody();
+    return client(token)
+        .post()
+        .uri("/api/v1/categories/" + categoryId + "/deactivate")
+        .header("If-Match", "\"" + category.version() + "\"")
+        .exchange();
   }
 
   private AccountSummaryResponse createAccount(String token, String accountType) {
