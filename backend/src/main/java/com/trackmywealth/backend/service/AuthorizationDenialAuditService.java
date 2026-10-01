@@ -28,11 +28,6 @@ public class AuthorizationDenialAuditService {
     this.repository = repository;
   }
 
-  public ResponseStatusException denyAsNotFound(
-      AuthenticatedUserPrincipal actor, String requestedEntityType, UUID requestedEntityId) {
-    return denyAsNotFound(actor.userId(), requestedEntityType, requestedEntityId);
-  }
-
   /**
    * Runs in its own transaction, deliberately: the caller always throws the returned exception
    * immediately afterward, which rolls back the caller's own (typically already-open) transaction -
@@ -41,6 +36,17 @@ public class AuthorizationDenialAuditService {
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public ResponseStatusException denyAsNotFound(
+      AuthenticatedUserPrincipal actor, String requestedEntityType, UUID requestedEntityId) {
+    return recordDenial(actor.userId(), requestedEntityType, requestedEntityId);
+  }
+
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public ResponseStatusException denyAsNotFound(
+      UUID principalUserId, String requestedEntityType, UUID requestedEntityId) {
+    return recordDenial(principalUserId, requestedEntityType, requestedEntityId);
+  }
+
+  private ResponseStatusException recordDenial(
       UUID principalUserId, String requestedEntityType, UUID requestedEntityId) {
     AuthorizationDenialLog log = new AuthorizationDenialLog();
     log.setPrincipalUserId(principalUserId);
