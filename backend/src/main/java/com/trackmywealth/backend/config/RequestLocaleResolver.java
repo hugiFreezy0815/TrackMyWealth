@@ -5,7 +5,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Collections;
 import java.util.Locale;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.servlet.LocaleResolver;
@@ -29,6 +30,15 @@ public class RequestLocaleResolver implements LocaleResolver {
       return localeForLanguage(principal.language());
     }
 
+    // Without the header, the Servlet spec makes getLocales() answer the *server's* default locale
+    // -
+    // a German JVM would turn an anonymous English caller German again (#153). Decide that case
+    // here, before asking the container.
+    String acceptLanguage = request.getHeader(HttpHeaders.ACCEPT_LANGUAGE);
+    if (acceptLanguage == null || acceptLanguage.isBlank()) {
+      return Locale.ENGLISH;
+    }
+
     return Collections.list(request.getLocales()).stream()
         .map(Locale::getLanguage)
         .filter(language -> "de".equalsIgnoreCase(language) || "en".equalsIgnoreCase(language))
@@ -37,6 +47,8 @@ public class RequestLocaleResolver implements LocaleResolver {
         .orElse(Locale.ENGLISH);
   }
 
+  // @Nullable as LocaleResolver declares it (JSpecify, Spring 7) - a different annotation reads as
+  // tightening the interface's contract (SpotBugs NP_METHOD_PARAMETER_TIGHTENS_ANNOTATION).
   @Override
   public void setLocale(
       HttpServletRequest request, HttpServletResponse response, @Nullable Locale locale) {

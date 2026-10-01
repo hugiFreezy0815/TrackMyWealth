@@ -70,6 +70,21 @@ class RequestLocaleResolverTest {
     assertThat(resolver.resolveLocale(request)).isEqualTo(Locale.ENGLISH);
   }
 
+  // Without Accept-Language a servlet container answers getLocales() with its own default locale.
+  // Simulated here as German: an anonymous caller without the header must still get English, never
+  // the server's language (#153).
+  @Test
+  void withoutTheHeaderTheServersOwnLocaleIsIgnored() {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    request.addPreferredLocale(Locale.GERMANY);
+    // The mock mirrors preferred locales into the header; a container's default comes without one.
+    request.removeHeader("Accept-Language");
+
+    assertThat(request.getHeader("Accept-Language")).isNull();
+    assertThat(request.getLocale()).isEqualTo(Locale.GERMANY);
+    assertThat(resolver.resolveLocale(request)).isEqualTo(Locale.ENGLISH);
+  }
+
   // The locale is derived, never chosen: nothing may set it, e.g. a LocaleChangeInterceptor.
   @Test
   void theLocaleCannotBeSet() {
