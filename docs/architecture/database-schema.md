@@ -236,6 +236,15 @@ issue #144.
   (`category_code_namespace`), so a future default cannot collide with a workspace code. `V34`
   also replaces V13's `UNIQUE (workspace_id, code)`, which let two defaults share a code (NULLs are
   distinct), with `uq_category_workspace_code ... NULLS NOT DISTINCT`.
+- **Database label/default integrity.** `V46` mirrors the API's 100-character category-label
+  limit at the database boundary for both `category` and `workspace_category_override`, rejects
+  blank-after-trim labels, and enforces `(workspace_id IS NULL) = is_system_default`. This keeps
+  reference-package/import/script writers aligned with the DTO contract and prevents the API's
+  derived `systemDefault` flag from disagreeing with stored data. "Blank" covers tabs and line
+  breaks as well as spaces, as `@NotBlank` does. Two first overrides of the same shipped default
+  cannot race through `CategoryService`, which locks the workspace row before reading overrides;
+  should a writer that bypasses that lock ever hit `uq_workspace_category_override`, the answer is
+  a retryable 409 (`RETRY`) rather than a generic constraint conflict.
 - **Service-layer rules** (`CategoryService`): at most 3 levels (a move checks the moved subtree's
   height) and no cycles; EN and DE labels unique among siblings, ignoring case; deactivation
   cascades to every subcategory, while reactivation affects one category and needs an active
