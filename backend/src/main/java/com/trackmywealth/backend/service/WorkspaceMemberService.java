@@ -102,7 +102,7 @@ public class WorkspaceMemberService {
 
     target.setStatus(INACTIVE);
     target.setMemberUntil(LocalDate.now());
-    target = workspaceMemberRepository.save(target);
+    target = workspaceMemberRepository.saveAndFlush(target);
     return toSummary(target);
   }
 
