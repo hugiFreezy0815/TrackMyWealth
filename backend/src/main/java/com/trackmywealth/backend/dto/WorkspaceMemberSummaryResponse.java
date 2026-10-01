@@ -10,4 +10,5 @@ public record WorkspaceMemberSummaryResponse(
     boolean dependent,
     String status,
     LocalDate memberSince,
-    LocalDate memberUntil) {}
+    LocalDate memberUntil,
+    int version) {}
