@@ -63,7 +63,7 @@ class AuthorizationDenialAuditTransactionTest {
   }
 
   @Test
-  void denialAuditCommitsEvenThoughOuterTransactionRollsBack() {
+  void denialAuditCommitsEvenThoughOuterTransactionRollsBack() throws Exception {
     UUID requestedId = UUID.randomUUID();
     UUID principalUserId = insertPrincipalUser();
 
