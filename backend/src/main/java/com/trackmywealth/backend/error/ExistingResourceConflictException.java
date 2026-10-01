@@ -1,4 +1,4 @@
-package com.trackmywealth.backend.web;
+package com.trackmywealth.backend.error;
 
 import java.util.UUID;
 

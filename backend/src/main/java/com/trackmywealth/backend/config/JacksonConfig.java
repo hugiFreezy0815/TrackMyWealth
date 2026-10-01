@@ -14,6 +14,13 @@ import tools.jackson.core.StreamWriteFeature;
  * (DB-01: no floating point, ever). One rule for every DTO, present and future, instead of an
  * annotation per field. Requests still accept numbers as well as strings, so existing clients keep
  * working.
+ *
+ * <p>The rule is on the application's one shared mapper, so it also shapes the JSON the application
+ * <em>stores</em>: {@code TransactionService} writes {@code raw_source_data} and {@code
+ * AdminUserService} writes audit details with that mapper (#197). A {@code BigDecimal} put into a
+ * JSONB column that way is stored as a decimal string, keeping every digit there too - deliberately
+ * so, not a side effect: a reader of stored JSON must parse such values as {@code BigDecimal} from
+ * a string, exactly like an API client ({@code DecimalWireFormatTest} pins it).
  */
 @Configuration
 public class JacksonConfig {

@@ -2,13 +2,22 @@ package com.trackmywealth.backend.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ExistingResourceConflictException;
+import java.io.IOException;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotWritableException;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.web.context.request.ServletWebRequest;
 
 /**
  * A plain unit test, not an integration one: every branch here is a pure translation from an
@@ -158,24 +167,24 @@ class GlobalExceptionHandlerTest {
                         "ERROR: duplicate key value violates unique constraint"
                             + " \"uq_transaction_external_id\""))
                 .getProperties())
-        .containsEntry(ProblemDetails.CODE, ApiErrorCode.RETRY);
+        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.RETRY);
     assertThat(
             handler
                 .handleDataIntegrityViolation(
                     violationWithRootMessage("ERROR: account_type_immutable: ..."))
                 .getProperties())
-        .containsEntry(ProblemDetails.CODE, ApiErrorCode.IMMUTABLE_FIELD);
+        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.IMMUTABLE_FIELD);
     assertThat(
             handler
                 .handleOptimisticLockingFailure(
                     new ObjectOptimisticLockingFailureException(Object.class, "id"))
                 .getProperties())
-        .containsEntry(ProblemDetails.CODE, ApiErrorCode.VERSION_CONFLICT);
+        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.VERSION_CONFLICT);
     assertThat(
             handler
                 .handleDataIntegrityViolation(violationWithRootMessage("ERROR: something else"))
                 .getProperties())
-        .containsEntry(ProblemDetails.CODE, ApiErrorCode.CONFLICT);
+        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.CONFLICT);
   }
 
   @Test
@@ -185,7 +194,7 @@ class GlobalExceptionHandlerTest {
             new IllegalStateException("SELECT * FROM app_user WHERE password_hash = 'secret'"));
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
-    assertThat(problem.getProperties()).containsEntry(ProblemDetails.CODE, ApiErrorCode.INTERNAL);
+    assertThat(problem.getProperties()).containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.INTERNAL);
     assertThat(problem.getDetail())
         .doesNotContain("SELECT")
         .doesNotContain("secret")
@@ -205,12 +214,47 @@ class GlobalExceptionHandlerTest {
         new ApiException(HttpStatus.CONFLICT, ApiErrorCode.ACCOUNT_ARCHIVED, "Archived.");
 
     assertThat(ProblemDetails.decorate(archived.getBody()).getProperties())
-        .containsEntry(ProblemDetails.CODE, ApiErrorCode.ACCOUNT_ARCHIVED);
+        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.ACCOUNT_ARCHIVED);
     assertThat(archived.getBody().getDetail()).isEqualTo("Archived.");
   }
 
   private DataIntegrityViolationException violationWithRootMessage(String rootMessage) {
     return new DataIntegrityViolationException(
         "could not execute statement", new RuntimeException(rootMessage));
+  }
+
+  // #197: a client that went away mid-response is not answered with a 500 or logged as an error.
+  // ClientDisconnectIntegrationTest shows the same through a real DispatcherServlet.
+  @Test
+  void aClientThatDisconnectedGetsNoErrorResponse() {
+    assertThat(handler.handleUnexpected(new IOException("Broken pipe"))).isNull();
+    assertThat(handler.handleUnexpected(new IllegalStateException("boom")).getStatus())
+        .isEqualTo(500);
+  }
+
+  @Test
+  void aClientThatDisconnectedWhileTheBodyWasWrittenGetsNoErrorResponse() {
+    HttpMessageNotWritableException disconnected =
+        new HttpMessageNotWritableException(
+            "Could not write JSON", new IOException("Connection reset by peer"));
+
+    assertThat(notWritable(disconnected)).isNull();
+  }
+
+  @Test
+  void aBodyThatCannotBeWrittenForAnyOtherReasonIsStillA500() {
+    HttpMessageNotWritableException broken =
+        new HttpMessageNotWritableException(
+            "Could not write JSON", new IllegalStateException("no serializer"));
+
+    assertThat(notWritable(broken).getStatusCode().value()).isEqualTo(500);
+  }
+
+  private ResponseEntity<Object> notWritable(HttpMessageNotWritableException ex) {
+    return handler.handleHttpMessageNotWritable(
+        ex,
+        new HttpHeaders(),
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        new ServletWebRequest(new MockHttpServletRequest()));
   }
 }

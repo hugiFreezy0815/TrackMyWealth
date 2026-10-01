@@ -27,7 +27,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -82,6 +86,22 @@ class DecimalWireFormatTest {
     assertRecordHasComponent(AccountSnapshotResponse.class, "currency");
     assertRecordHasComponent(AccountSnapshotResponse.class, "holdings");
     assertRecordHasComponent(InstitutionSummaryResponse.class, "accounts");
+  }
+
+  // #197: the rule sits on the application's shared mapper - the ObjectMapper bean services also
+  // use to write JSON into the database - not only on the HTTP message converter.
+  @Test
+  void jsonTheApplicationStoresKeepsDecimalsAsStringsToo() {
+    new ApplicationContextRunner()
+        .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class))
+        .withUserConfiguration(JacksonConfig.class)
+        .run(
+            context ->
+                assertThat(
+                        context
+                            .getBean(ObjectMapper.class)
+                            .writeValueAsString(Map.of("grossAmount", new BigDecimal("100.50"))))
+                    .isEqualTo("{\"grossAmount\":\"100.50\"}"));
   }
 
   @Test

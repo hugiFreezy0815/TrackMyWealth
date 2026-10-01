@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.web;
 
+import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ExistingResourceConflictException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import org.springframework.web.util.DisconnectedClientHelper;
 
 /**
  * Translates persistence-layer failures the service layer doesn't itself anticipate into the same
@@ -130,14 +134,49 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   /**
    * Anything unexpected: a 500 that says nothing about its cause (no exception text, class or trace
    * - FR-API-005), only the correlation id to quote. The cause is logged with that id.
+   *
+   * <p>A client that went away mid-response (#197) is not an error of this application, and there
+   * is nobody left to answer: it is logged at debug, and no body is written.
    */
   @ExceptionHandler(Exception.class)
   public ProblemDetail handleUnexpected(Exception ex) {
+    if (isClientDisconnect(ex)) {
+      return null;
+    }
     LOG.error("Unexpected error answered with 500", ex);
     return ProblemDetails.of(
         HttpStatus.INTERNAL_SERVER_ERROR,
         ApiErrorCode.INTERNAL,
         "An unexpected error occurred. Quote the correlation id when reporting it.");
+  }
+
+  /**
+   * The usual way a client disconnect arrives (#197): the client goes away while the body is being
+   * written, and the message converter wraps the failed write in an {@link
+   * HttpMessageNotWritableException}. That is handled here by the base class, never by {@link
+   * #handleUnexpected}, and its default answer is a 500 - so the disconnect check is needed here
+   * too. Any other unwritable body stays the base class's 500.
+   */
+  @Override
+  protected ResponseEntity<Object> handleHttpMessageNotWritable(
+      HttpMessageNotWritableException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    if (isClientDisconnect(ex)) {
+      return null;
+    }
+    return super.handleHttpMessageNotWritable(ex, headers, status, request);
+  }
+
+  private static boolean isClientDisconnect(Exception ex) {
+    if (!DisconnectedClientHelper.isClientDisconnectedException(ex)) {
+      return false;
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Client disconnected before the response was complete: {}", ex.toString());
+    }
+    return true;
   }
 
   /** 400 with one entry per rejected field, so a client can mark each input. */
