@@ -164,7 +164,10 @@ class TransactionRemovalControllerTest {
     assertThat(balance(token, card.id())).isEqualByComparingTo("80.00");
     assertThat(queryDecimal("SELECT count(*) FROM transaction WHERE account_id = ?", card.id()))
         .isEqualByComparingTo("2");
-    assertThat(queryDecimal("SELECT count(*) FROM transaction WHERE id = ? AND deleted_at IS NOT NULL", original.id()))
+    assertThat(
+            queryDecimal(
+                "SELECT count(*) FROM transaction WHERE id = ? AND deleted_at IS NOT NULL",
+                original.id()))
         .isEqualByComparingTo("1");
   }
 
@@ -243,14 +246,7 @@ class TransactionRemovalControllerTest {
 
     TransactionCorrectionResponse corrected =
         correct(
-            token,
-            card.id(),
-            original,
-            "-85.00",
-            null,
-            "Correct merchant",
-            "Correct note",
-            null);
+            token, card.id(), original, "-85.00", null, "Correct merchant", "Correct note", null);
 
     assertThat(corrected.removal()).isNull();
     assertThat(corrected.transaction().id()).isEqualTo(original.id());
@@ -305,14 +301,7 @@ class TransactionRemovalControllerTest {
         .uri(rowUri(card.id(), original.id()))
         .headers(CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            correction(
-                original,
-                "85.00",
-                null,
-                "Invalid positive purchase",
-                null,
-                null))
+        .body(correction(original, "85.00", null, "Invalid positive purchase", null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
