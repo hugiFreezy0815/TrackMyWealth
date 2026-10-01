@@ -220,8 +220,11 @@ issue #144.
   limit at the database boundary for both `category` and `workspace_category_override`, rejects
   blank-after-trim labels, and enforces `(workspace_id IS NULL) = is_system_default`. This keeps
   reference-package/import/script writers aligned with the DTO contract and prevents the API's
-  derived `systemDefault` flag from disagreeing with stored data. A concurrent first override of
-  the same shipped default is a retryable 409 rather than a generic constraint conflict.
+  derived `systemDefault` flag from disagreeing with stored data. "Blank" covers tabs and line
+  breaks as well as spaces, as `@NotBlank` does. Two first overrides of the same shipped default
+  cannot race through `CategoryService`, which locks the workspace row before reading overrides;
+  should a writer that bypasses that lock ever hit `uq_workspace_category_override`, the answer is
+  a retryable 409 (`RETRY`) rather than a generic constraint conflict.
 - **Service-layer rules** (`CategoryService`): at most 3 levels (a move checks the moved subtree's
   height) and no cycles; EN and DE labels unique among siblings, ignoring case; deactivation
   cascades to every subcategory, while reactivation affects one category and needs an active

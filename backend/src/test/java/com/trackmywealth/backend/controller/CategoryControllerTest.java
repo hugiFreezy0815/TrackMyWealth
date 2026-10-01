@@ -504,6 +504,27 @@ class CategoryControllerTest {
         .as("blank category labels are rejected for every writer")
         .hasMessageContaining("category_label_length");
 
+    // Blank is not only spaces: a tab or line break alone is as blank as the API's @NotBlank says.
+    for (String whitespaceOnly : List.of("\t", "\n", " \r\n ")) {
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      "INSERT INTO category (workspace_id, code, name_en, name_de,"
+                          + " is_system_default) VALUES (?, 'WS_WHITESPACE_LABEL', ?, 'Valid',"
+                          + " FALSE)",
+                      workspaceId,
+                      whitespaceOnly))
+          .as(
+              "a label of only %s is blank",
+              whitespaceOnly.replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r"))
+          .hasMessageContaining("category_label_length");
+    }
+    // ...while the trim list never eats letters: a one-letter "v" label is valid (no \v escape).
+    execute(
+        "INSERT INTO category (workspace_id, code, name_en, name_de, is_system_default)"
+            + " VALUES (?, 'WS_LETTER_V', 'v', 'v', FALSE)",
+        workspaceId);
+
     assertThatThrownBy(
             () ->
                 execute(
@@ -562,8 +583,8 @@ class CategoryControllerTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "INSERT INTO category (workspace_id, code, name_en, name_de) VALUES (NULL,"
-                        + " 'LEISURE', 'x', 'x')"))
+                    "INSERT INTO category (workspace_id, code, name_en, name_de,"
+                        + " is_system_default) VALUES (NULL, 'LEISURE', 'x', 'x', TRUE)"))
         .as("default codes are unique too (NULLS NOT DISTINCT)")
         .hasMessageContaining("uq_category_workspace_code");
     assertThatThrownBy(
