@@ -13,6 +13,7 @@ import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -164,7 +165,10 @@ public class SecurityConfig {
     // iOS/Android builds (not subject to the same-origin policy) read fine. Any custom response
     // header this API adds must be listed, or it is invisible on exactly one of the three clients.
     configuration.setExposedHeaders(
-        List.of(SecurityController.IGNORED_FIELDS_HEADER, CorrelationIdFilter.HEADER));
+        List.of(
+            SecurityController.IGNORED_FIELDS_HEADER,
+            CorrelationIdFilter.HEADER,
+            HttpHeaders.ETAG));
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);
