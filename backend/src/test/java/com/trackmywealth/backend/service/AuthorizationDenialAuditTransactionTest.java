@@ -7,6 +7,7 @@ import com.trackmywealth.backend.entity.AuthorizationDenialLog;
 import com.trackmywealth.backend.repository.AuthorizationDenialLogRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
 import java.util.UUID;
@@ -64,14 +65,31 @@ class AuthorizationDenialAuditTransactionTest {
   @Test
   void denialAuditCommitsEvenThoughOuterTransactionRollsBack() {
     UUID requestedId = UUID.randomUUID();
+    UUID principalUserId = insertPrincipalUser();
 
-    assertThatThrownBy(() -> denyingService.denyInsideRollback(requestedId))
+    assertThatThrownBy(() -> denyingService.denyInsideRollback(principalUserId, requestedId))
         .isInstanceOf(ResponseStatusException.class);
 
     List<AuthorizationDenialLog> rows = repository.findByRequestedEntityId(requestedId);
     assertThat(rows).hasSize(1);
+    assertThat(rows.get(0).getPrincipalUserId()).isEqualTo(principalUserId);
     assertThat(rows.get(0).getReason()).isEqualTo("NOT_FOUND");
     assertThat(rows.get(0).getRequestedEntityType()).isEqualTo("Account");
+  }
+
+  private UUID insertPrincipalUser() throws Exception {
+    UUID userId = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO app_user "
+                    + "(id, email, password_hash, role, status, language, reporting_currency) "
+                    + "VALUES (?, ?, 'test-hash', 'STANDARD_USER', 'ACTIVE', 'EN', 'CHF')")) {
+      statement.setObject(1, userId);
+      statement.setString(2, "audit-" + userId + "@example.com");
+      statement.executeUpdate();
+    }
+    return userId;
   }
 
   @TestConfiguration
@@ -93,10 +111,10 @@ class AuthorizationDenialAuditTransactionTest {
     }
 
     @Transactional
-    void denyInsideRollback(UUID requestedId) {
+    void denyInsideRollback(UUID principalUserId, UUID requestedId) {
       AuthenticatedUserPrincipal actor =
           new AuthenticatedUserPrincipal(
-              UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID());
+              principalUserId, "STANDARD_USER", null, UUID.randomUUID());
       throw auditService.denyAsNotFound(actor, "Account", requestedId);
     }
   }
