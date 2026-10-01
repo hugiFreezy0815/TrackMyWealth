@@ -1,7 +1,6 @@
 package com.trackmywealth.backend.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
@@ -12,14 +11,14 @@ import java.util.UUID;
  * its current parent), and any other parent is a 422. Activation has its own endpoints because
  * deactivation cascades.
  *
- * <p>{@code version} is the {@link CategoryResponse#version()} the client last read; if the
- * category has changed since, the update is a 409 and the client should reload it.
+ * <p>The row version is supplied through the mandatory {@code If-Match} header (FR-CNC-001/002).
+ * The deprecated body {@code version} is accepted temporarily for wire compatibility but ignored.
  */
 public record UpdateCategoryRequest(
     UUID parentId,
     @NotBlank @Size(max = CategoryLabels.MAX_LENGTH) String nameEn,
     @NotBlank @Size(max = CategoryLabels.MAX_LENGTH) String nameDe,
-    @NotNull Integer version) {
+    Integer version) {
 
   public UpdateCategoryRequest {
     nameEn = CategoryLabels.normalize(nameEn);
