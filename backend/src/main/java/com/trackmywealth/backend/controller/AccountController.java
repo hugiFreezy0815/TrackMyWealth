@@ -58,7 +58,7 @@ public class AccountController {
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     AccountSummaryResponse updated =
         accountService.updateAccount(
-            accountId, request, IfMatchVersionParser.parseRequired(ifMatch), actor);
+            accountId, request, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), updated);
   }
 
@@ -69,7 +69,7 @@ public class AccountController {
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     AccountSummaryResponse archived =
         accountService.archiveAccount(
-            accountId, IfMatchVersionParser.parseRequired(ifMatch), actor);
+            accountId, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), archived);
   }
 
@@ -80,7 +80,7 @@ public class AccountController {
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     AccountSummaryResponse restored =
         accountService.restoreAccount(
-            accountId, IfMatchVersionParser.parseRequired(ifMatch), actor);
+            accountId, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), restored);
   }
 
@@ -92,7 +92,7 @@ public class AccountController {
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     AccountSummaryResponse reassigned =
         accountService.reassignInstitution(
-            accountId, request, IfMatchVersionParser.parseRequired(ifMatch), actor);
+            accountId, request, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), reassigned);
   }
 
