@@ -13,7 +13,7 @@ import java.util.UUID;
  * "REVOKED"}, but the join is a plain {@code LEFT JOIN} so a missing row degrades safely to "not
  * authenticated" rather than a query failure).
  *
- * <p>{@code workspaceMemberStatus} (US-04-01) is {@code null} exactly when {@code workspaceId} is -
+ * <p>{@code language} is the stored EN/DE preference used by the request locale resolver. Carrying it in this already-per-request snapshot avoids a second user lookup solely for localization. {@code workspaceMemberStatus} (US-04-01) is {@code null} exactly when {@code workspaceId} is -
  * no linked {@code workspace_member} at all, a normal state for a {@code SYSTEM_ADMINISTRATOR} (see
  * {@link AuthenticatedUserPrincipal}'s own Javadoc) that must still be allowed to authenticate.
  * When a membership does exist, {@link JwtAuthenticationFilter} requires it to be {@code "ACTIVE"}
@@ -27,4 +27,29 @@ public record AppUserAuthSnapshot(
     int tokenVersion,
     UUID workspaceId,
     String workspaceMemberStatus,
-    String sessionStatus) {}
+    String sessionStatus,
+    String language) {
+
+  public AppUserAuthSnapshot(
+      UUID userId,
+      String role,
+      String status,
+      int tokenVersion,
+      UUID workspaceId,
+      String workspaceMemberStatus,
+      String sessionStatus) {
+    this(
+        userId,
+        role,
+        status,
+        tokenVersion,
+        workspaceId,
+        workspaceMemberStatus,
+        sessionStatus,
+        "EN");
+  }
+
+  public AppUserAuthSnapshot {
+    language = "DE".equalsIgnoreCase(language) ? "DE" : "EN";
+  }
+}
