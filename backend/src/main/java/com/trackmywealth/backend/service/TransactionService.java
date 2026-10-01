@@ -239,7 +239,7 @@ public class TransactionService {
         && transaction.getAmount().compareTo(request.amount()) == 0
         && transaction.getCurrency().equals(request.currency())
         && sameFxRate(transaction, request)
-        && sameFee(transaction, request)
+        && sameCorrectionFee(transaction, request)
         && sameInvestment(transaction, request)
         && sameCounterparty(transaction, request);
   }
@@ -566,6 +566,19 @@ public class TransactionService {
     return transactionRepository
         .findByRelatedTransactionId(row.getId())
         .map(fee -> fee.getAmount().negate().compareTo(request.feeAmount()) == 0)
+        .orElse(false);
+  }
+
+  // Unlike idempotency replay, correction is a desired-state comparison: null means no linked fee.
+  private boolean sameCorrectionFee(Transaction row, CreateTransactionRequest request) {
+    if (!CREDIT_CARD_PURCHASE.equals(row.getTransactionType())) {
+      return sameDecimal(row.getFeeAmount(), request.feeAmount());
+    }
+    Optional<Transaction> fee = transactionRepository.findByRelatedTransactionId(row.getId());
+    if (request.feeAmount() == null) {
+      return fee.isEmpty();
+    }
+    return fee.map(existing -> existing.getAmount().negate().compareTo(request.feeAmount()) == 0)
         .orElse(false);
   }
 
