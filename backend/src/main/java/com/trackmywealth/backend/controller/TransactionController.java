@@ -8,13 +8,14 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.TransactionRemovalService;
 import com.trackmywealth.backend.service.TransactionService;
 import com.trackmywealth.backend.service.TransferResolutionService;
+import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.VersionedResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -53,8 +55,8 @@ public class TransactionController {
       @PathVariable UUID accountId,
       @Valid @RequestBody CreateTransactionRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return ResponseEntity.status(HttpStatus.CREATED)
-        .body(transactionService.recordTransaction(accountId, request, actor));
+    TransactionResponse response = transactionService.recordTransaction(accountId, request, actor);
+    return VersionedResponse.created(response, response.version());
   }
 
   /**
@@ -75,22 +77,33 @@ public class TransactionController {
    * Needs EDIT on the account.
    */
   @PutMapping("/transactions/{transactionId}/category")
-  public TransactionResponse overrideCategory(
+  public ResponseEntity<TransactionResponse> overrideCategory(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @Valid @RequestBody SetTransactionCategoryRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transactionService.overrideCategory(
-        accountId, transactionId, request.categoryId(), actor);
+    TransactionResponse response =
+        transactionService.overrideCategory(
+            accountId,
+            transactionId,
+            request.categoryId(),
+            IfMatchVersionParser.parse(ifMatch),
+            actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   /** US-08-02 "reset to automatic": gives up the override and categorizes the row again. */
   @DeleteMapping("/transactions/{transactionId}/category")
-  public TransactionResponse resetCategory(
+  public ResponseEntity<TransactionResponse> resetCategory(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transactionService.resetCategory(accountId, transactionId, actor);
+    TransactionResponse response =
+        transactionService.resetCategory(
+            accountId, transactionId, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   /**
@@ -99,21 +112,29 @@ public class TransactionController {
    * {@code reason}. Each row's {@code removal} says which applies. Needs EDIT on the account.
    */
   @DeleteMapping("/transactions/{transactionId}")
-  public TransactionRemovalResponse removeTransaction(
+  public ResponseEntity<TransactionRemovalResponse> removeTransaction(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @RequestParam(required = false) String reason,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transactionRemovalService.remove(accountId, transactionId, reason, actor);
+    TransactionRemovalResponse response =
+        transactionRemovalService.remove(
+            accountId, transactionId, reason, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   /** US-07-02/FR-LIF-006: brings back a soft-deleted transaction within 30 days. */
   @PostMapping("/transactions/{transactionId}/restore")
-  public TransactionRemovalResponse restoreTransaction(
+  public ResponseEntity<TransactionRemovalResponse> restoreTransaction(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transactionRemovalService.restore(accountId, transactionId, actor);
+    TransactionRemovalResponse response =
+        transactionRemovalService.restore(
+            accountId, transactionId, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   /** US-07-02: the account's soft-deleted transactions that can still be restored. */
@@ -128,19 +149,27 @@ public class TransactionController {
    * tracked here - it then counts as neither income nor spending. Needs EDIT on the account.
    */
   @PostMapping("/transactions/{transactionId}/untracked-transfer")
-  public TransactionResponse confirmUntrackedTransfer(
+  public ResponseEntity<TransactionResponse> confirmUntrackedTransfer(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transferResolutionService.confirmUntracked(accountId, transactionId, actor);
+    TransactionResponse response =
+        transferResolutionService.confirmUntracked(
+            accountId, transactionId, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   /** US-10-01: undoes that confirmation; the leg is pending review again. */
   @DeleteMapping("/transactions/{transactionId}/untracked-transfer")
-  public TransactionResponse undoUntrackedTransfer(
+  public ResponseEntity<TransactionResponse> undoUntrackedTransfer(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transferResolutionService.undoUntracked(accountId, transactionId, actor);
+    TransactionResponse response =
+        transferResolutionService.undoUntracked(
+            accountId, transactionId, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
   }
 }
