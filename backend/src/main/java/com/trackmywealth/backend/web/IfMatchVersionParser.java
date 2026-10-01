@@ -17,12 +17,9 @@ public final class IfMatchVersionParser {
 
   private IfMatchVersionParser() {}
 
-  public static int parseRequired(String ifMatch) {
+  public static Integer parse(String ifMatch) {
     if (ifMatch == null || ifMatch.isBlank()) {
-      throw new ApiException(
-          HttpStatus.PRECONDITION_REQUIRED,
-          ApiErrorCode.VERSION_REQUIRED,
-          "This update requires If-Match with the version you last read.");
+      return null;
     }
 
     String value = ifMatch.strip();
