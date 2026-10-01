@@ -11,14 +11,13 @@ import java.util.UUID;
  * its current parent), and any other parent is a 422. Activation has its own endpoints because
  * deactivation cascades.
  *
- * <p>The row version is supplied through the mandatory {@code If-Match} header (FR-CNC-001/002).
- * The deprecated body {@code version} is accepted temporarily for wire compatibility but ignored.
+ * <p>The version the client last read travels in the mandatory {@code If-Match} header
+ * (FR-CNC-001/002, ADR 0004), never in the body.
  */
 public record UpdateCategoryRequest(
     UUID parentId,
     @NotBlank @Size(max = CategoryLabels.MAX_LENGTH) String nameEn,
-    @NotBlank @Size(max = CategoryLabels.MAX_LENGTH) String nameDe,
-    Integer version) {
+    @NotBlank @Size(max = CategoryLabels.MAX_LENGTH) String nameDe) {
 
   public UpdateCategoryRequest {
     nameEn = CategoryLabels.normalize(nameEn);
