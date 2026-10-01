@@ -530,7 +530,7 @@ class CategoryControllerTest {
     return client(token)
         .put()
         .uri(BASE + "/" + id)
-        .header("If-Match", """ + version + """)
+        .header("If-Match", "\"" + version + "\"")
         .contentType(MediaType.APPLICATION_JSON)
         .body(request)
         .exchange();
@@ -540,7 +540,7 @@ class CategoryControllerTest {
     return client(token)
         .post()
         .uri(BASE + "/" + id + "/deactivate")
-        .header("If-Match", """ + getCategory(token, id).version() + """)
+        .header("If-Match", "\"" + getCategory(token, id).version() + "\"")
         .exchange();
   }
 
@@ -548,7 +548,7 @@ class CategoryControllerTest {
     return client(token)
         .delete()
         .uri(BASE + "/" + id)
-        .header("If-Match", """ + getCategory(token, id).version() + """)
+        .header("If-Match", "\"" + getCategory(token, id).version() + "\"")
         .exchange();
   }
 
