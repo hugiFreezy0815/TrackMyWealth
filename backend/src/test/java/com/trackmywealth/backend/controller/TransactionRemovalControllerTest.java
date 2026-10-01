@@ -8,6 +8,7 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
+import com.trackmywealth.backend.dto.CorrectTransactionRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
@@ -20,6 +21,7 @@ import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -133,6 +135,135 @@ class TransactionRemovalControllerTest {
         statement.execute(sql);
       }
     }
+  }
+
+  // --- US-07-06: correction ---------------------------------------------------------------------
+
+  @Test
+  void aManualFinancialCorrectionSoftDeletesAndReplacesAtomically() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+
+    TransactionCorrectionResponse corrected =
+        correct(token, card.id(), original, "-80.00", null, "Corrected shop", "fixed", null);
+
+    assertThat(corrected.removal().removal()).isEqualTo(SOFT_DELETE);
+    assertThat(corrected.transaction())
+        .satisfies(
+            replacement -> {
+              assertThat(replacement.id()).isNotEqualTo(original.id());
+              assertThat(replacement.amount()).isEqualByComparingTo("-80.00");
+              assertThat(replacement.correctsTransactionId()).isEqualTo(original.id());
+              assertThat(replacement.source()).isEqualTo("MANUAL");
+              assertThat(replacement.externalId()).isNull();
+            });
+    assertThat(list(token, card.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(corrected.transaction().id());
+    assertThat(balance(token, card.id())).isEqualByComparingTo("80.00");
+    assertThat(queryDecimal("SELECT count(*) FROM transaction WHERE account_id = ?", card.id()))
+        .isEqualByComparingTo("2");
+    assertThat(queryDecimal("SELECT count(*) FROM transaction WHERE id = ? AND deleted_at IS NOT NULL", original.id()))
+        .isEqualByComparingTo("1");
+  }
+
+  @Test
+  void anImportedFinancialCorrectionVoidsAndLinksTheReplacement() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID importedId = insertImported(card.id(), PURCHASE, "-85.00", today());
+    TransactionResponse imported = list(token, card.id()).get(0);
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            card.id(),
+            imported,
+            "-80.00",
+            "Wrong imported amount",
+            "Imported shop",
+            null,
+            null);
+
+    assertThat(corrected.removal().removal()).isEqualTo(VOID);
+    assertThat(corrected.removal().reversals())
+        .singleElement()
+        .satisfies(
+            reversal -> {
+              assertThat(reversal.replacesTransactionId()).isEqualTo(importedId);
+              assertThat(reversal.amount()).isEqualByComparingTo("85.00");
+            });
+    assertThat(corrected.transaction())
+        .satisfies(
+            replacement -> {
+              assertThat(replacement.amount()).isEqualByComparingTo("-80.00");
+              assertThat(replacement.correctsTransactionId()).isEqualTo(importedId);
+              assertThat(replacement.source()).isEqualTo("CSV");
+              assertThat(replacement.externalId()).isNull();
+            });
+    assertThat(balance(token, card.id())).isEqualByComparingTo("80.00");
+    assertThat(countRows(card.id())).isEqualTo(3);
+  }
+
+  @Test
+  void aTextOnlyCorrectionUpdatesInPlaceWithoutRemoval() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            card.id(),
+            original,
+            "-85.00",
+            null,
+            "Correct merchant",
+            "Correct note",
+            null);
+
+    assertThat(corrected.removal()).isNull();
+    assertThat(corrected.transaction().id()).isEqualTo(original.id());
+    assertThat(corrected.transaction().merchantDescription()).isEqualTo("Correct merchant");
+    assertThat(corrected.transaction().notes()).isEqualTo("Correct note");
+    assertThat(corrected.transaction().correctsTransactionId()).isNull();
+    assertThat(countRows(card.id())).isEqualTo(1);
+  }
+
+  @Test
+  void anInvalidReplacementRollsBackTheRemoval() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+
+    client(token)
+        .put()
+        .uri(rowUri(card.id(), original.id()))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            correction(
+                original,
+                "85.00",
+                null,
+                "Invalid positive purchase",
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+
+    assertThat(list(token, card.id()))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.id()).isEqualTo(original.id());
+              assertThat(row.amount()).isEqualByComparingTo("-85.00");
+              assertThat(row.deletedAt()).isNull();
+              assertThat(row.voidedAt()).isNull();
+            });
+    assertThat(countRows(card.id())).isEqualTo(1);
   }
 
   // --- T1: manual entry, soft delete ------------------------------------------------------------
@@ -764,6 +895,61 @@ class TransactionRemovalControllerTest {
         .expectBody(TransactionResponse.class)
         .returnResult()
         .getResponseBody();
+  }
+
+  private TransactionCorrectionResponse correct(
+      String token,
+      UUID accountId,
+      TransactionResponse original,
+      String amount,
+      String reason,
+      String merchant,
+      String notes,
+      UUID targetAccountId) {
+    EntityExchangeResult<TransactionCorrectionResponse> result =
+        client(token)
+            .put()
+            .uri(rowUri(accountId, original.id()))
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(correction(original, amount, reason, merchant, notes, targetAccountId))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(TransactionCorrectionResponse.class)
+            .returnResult();
+    return CurrentVersion.storedEtag(
+        result, dataSource, "transaction", result.getResponseBody().transaction().id());
+  }
+
+  private static CorrectTransactionRequest correction(
+      TransactionResponse original,
+      String amount,
+      String reason,
+      String merchant,
+      String notes,
+      UUID targetAccountId) {
+    return new CorrectTransactionRequest(
+        targetAccountId,
+        original.transactionType(),
+        original.bookingDate(),
+        new BigDecimal(amount),
+        original.currency(),
+        merchant,
+        notes,
+        original.fxRateToAccountCurrency(),
+        null,
+        original.feeAmount(),
+        original.securityId(),
+        original.quantity(),
+        original.unitPrice(),
+        original.tradeDate(),
+        original.settlementDate(),
+        original.grossAmount(),
+        original.taxWithheldAmount(),
+        original.counterpartyAccountId(),
+        null,
+        reason);
   }
 
   private TransactionRemovalResponse remove(
