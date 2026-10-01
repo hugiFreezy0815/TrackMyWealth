@@ -64,3 +64,19 @@ silently retry a stale mutation.
 
 CORS must allow `If-Match` and expose `ETag`. OpenAPI must document the header and response
 version. New mutable resource endpoints must follow this ADR as part of code review.
+
+## #207 retrofit decisions
+
+V48 adds database-owned revisions to the older mutable rows that did not already have one:
+`account_credit_card`, `account_snapshot`, `categorization_rule`, `settlement_match` and
+`sharing_grant`. `transaction` already had the same version/trigger convention from V10; #207
+only maps and exposes it. `app_user`, `workspace_member` and `account` were already versioned.
+
+Statement-cycle configuration and settlement-source configuration intentionally share the
+`account_credit_card.version`: they mutate different fields of the same card-extension resource,
+so changing either invalidates a stale editor of the other. Transaction category, lifecycle and
+untracked-transfer commands similarly share `transaction.version`.
+
+Admin user, workspace member and sharing grant gained narrow authorized GET-by-id endpoints because
+those resources previously had command endpoints but no way to refresh an existing concurrency
+token. List/create responses continue to expose versions where they already serve as reads.
