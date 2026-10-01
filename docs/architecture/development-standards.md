@@ -178,6 +178,13 @@ npm test                 # what CI runs
 - `src/api/client.ts` is the only thing that talks to `fetch` directly; new API calls go through
   it (or its eventual generated-client successor once the backend publishes an OpenAPI spec — see
   EPIC-29) rather than each screen rolling its own `fetch`.
+- **API decimals are `string` in TypeScript, never `number`** (#176, DB-01). The backend sends
+  every `BigDecimal` - money, quantity, unit price, FX rate, percentage - as a plain decimal string
+  (see the Java section). A JavaScript `number` is an IEEE-754 double and silently rounds values
+  such as `12345678.1234567891`, so a type that declares one as `number` reintroduces the precision
+  loss: a sell-all leaves dust, a replayed transaction becomes a spurious 409. Keep the string as
+  received and send it back unchanged; do arithmetic only through a decimal library, never by
+  converting to `number`.
 - A lint-rule suppression (`eslint-disable`) always carries a comment explaining *why* the rule
   doesn't apply here, not just that it's disabled — see `use-color-scheme.web.ts` for the standard
   it's held to.
