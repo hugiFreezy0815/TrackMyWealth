@@ -1,8 +1,10 @@
 package com.trackmywealth.backend.config;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
@@ -29,9 +31,14 @@ class JwtSecretPolicyTest {
         .withPropertyValues("app.security.jwt.secret=" + JwtSecretPolicy.PLACEHOLDER_SECRET)
         .run(
             context -> {
-              org.assertj.core.api.Assertions.assertThat(context).hasFailed();
-              org.assertj.core.api.Assertions.assertThat(context.getStartupFailure())
-                  .hasMessageContaining("JWT_SECRET");
+              assertThat(context).hasFailed();
+              // Spring wraps the guard's exception in a BeanCreationException whose own message
+              // is generic - the operator-facing text is on the root cause.
+              assertThat(context.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("JWT_SECRET")
+                  .hasMessageNotContaining(JwtSecretPolicy.PLACEHOLDER_SECRET);
             });
   }
 
@@ -41,14 +48,14 @@ class JwtSecretPolicyTest {
         .withPropertyValues(
             "spring.profiles.active=test",
             "app.security.jwt.secret=" + JwtSecretPolicy.PLACEHOLDER_SECRET)
-        .run(context -> org.assertj.core.api.Assertions.assertThat(context).hasNotFailed());
+        .run(context -> assertThat(context).hasNotFailed());
   }
 
   @Test
   void springContextStartsWithRandomSecretWithoutDevelopmentProfile() {
     contextRunner
         .withPropertyValues("app.security.jwt.secret=" + randomSecret())
-        .run(context -> org.assertj.core.api.Assertions.assertThat(context).hasNotFailed());
+        .run(context -> assertThat(context).hasNotFailed());
   }
 
   @Test
@@ -124,6 +131,20 @@ class JwtSecretPolicyTest {
 
     assertThatCode(() -> new JwtSecretPolicy(properties, new MockEnvironment()))
         .doesNotThrowAnyException();
+  }
+
+  @Test
+  void thePlaceholderConstantMatchesApplicationYmlSoTheGuardCannotSilentlyDrift() throws Exception {
+    // The guard recognises the placeholder by value. If application.yml's default ever changes
+    // without this constant, the guard would silently stop matching and the public key would be
+    // accepted again - and every integration test runs under the `test` profile, so none would
+    // notice. Same safeguard as MfaEncryptionServiceTest's for the MFA placeholder.
+    String yml =
+        new String(
+            getClass().getResourceAsStream("/application.yml").readAllBytes(),
+            StandardCharsets.UTF_8);
+
+    assertThat(yml).contains("secret: ${JWT_SECRET:" + JwtSecretPolicy.PLACEHOLDER_SECRET + "}");
   }
 
   private static JwtProperties properties(String secret) {
