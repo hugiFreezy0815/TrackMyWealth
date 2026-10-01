@@ -46,6 +46,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V15` | Template-driven import framework: `import_template`, `import_batch`, `import_row_raw` |
 | `V16` | `refresh_token`, `user_session`, `authorization_denial_log` |
 | `V17` | `financial_audit_log`, `admin_audit_log`, `auth_audit_log` — three separate audit surfaces by design |
+| `V47` | Bounds `authorization_denial_log`: summary reason plus retention index (#205) |
 | `V18` | `reference_package`, `pension_scheme_rule`, `gics_structure_version`, `fallback_sector_taxonomy`, `trading_calendar` |
 | `V19` | Baseline reference-data seed (categories, institution catalogue, fallback taxonomy) — **must run before V20** |
 | `V20` | Row-level security: `current_workspace_id()`, per-table policies, the workspace bootstrap sequence |
@@ -135,6 +136,25 @@ bottom of `V20__tenancy_row_level_security.sql` is the starting point. `FR-TEN-0
 automated cross-tenant test suite that attempts unauthorized access against every endpoint and
 entity type in CI; write it against that runtime role, not the migration role, or it will pass
 for the wrong reason (superusers bypass RLS unconditionally).
+
+### Object-level denial audit lifecycle (US-28-02, #205)
+
+Every audited single-resource denial still returns the same generic 404 and records only the
+principal, requested entity type/id and a non-enumerating reason. Audit persistence no longer uses
+a nested `REQUIRES_NEW` transaction on the request thread: the request offers work to a dedicated
+bounded executor, and the writer opens its own transaction after the request path is free to release
+its JDBC connection. Queue saturation never runs the write on the caller thread and never changes
+the authorization result; the 404 remains fail-closed even if an audit task must be dropped.
+
+To prevent a signed-in caller from growing the table without bound, exact `NOT_FOUND` rows are
+capped per principal/refill window (60 per minute by default). The first denial over that budget
+writes one `RATE_LIMITED` summary row with no requested id; later denials in the same window add no
+rows. The in-memory principal-window cache is itself bounded.
+
+`AuthorizationDenialAuditRetentionService` deletes rows older than
+`app.authorization-denial-audit.retention` (90 days by default), using V47's `occurred_at` index.
+The cleanup interval, queue/thread counts, principal cache bound and throttle values are deployment
+configuration in `application.yml`.
 
 ### Security master: lazy creation and manual mode (US-12-01)
 
