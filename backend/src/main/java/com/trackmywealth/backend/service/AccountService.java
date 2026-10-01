@@ -85,6 +85,8 @@ public class AccountService {
       Set.of("SAVINGS", "SECURITIES", "MANAGED_MANDATE", "CRYPTO", PENSION, "VESTED_BENEFITS");
   private static final String ARCHIVED = "ARCHIVED";
   private static final String DELETED = "DELETED";
+  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
+  private static final String VERSIONED_RESOURCE = "account";
 
   // FR-LIF-006: archived accounts are restorable through the interface for 30 days; thereafter
   // they remain in the data but are no longer user-restorable.
@@ -228,7 +230,8 @@ public class AccountService {
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
-    versionPreconditionService.requireCurrent(expectedVersion, account.getVersion(), "account");
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
 
     account.setName(request.name());
     account.setAccountType(request.accountType());
@@ -253,7 +256,8 @@ public class AccountService {
       UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
-    versionPreconditionService.requireCurrent(expectedVersion, account.getVersion(), "account");
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     // Checking specifically for "not ACTIVE" rather than "already ARCHIVED": status also admits
     // DELETED (V4's own CHECK constraint), which FR-STA-001 defines as terminal - reachable from
     // ACTIVE only, and reachable from nowhere once there. An "already ARCHIVED" check alone would
@@ -280,7 +284,8 @@ public class AccountService {
       UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
-    versionPreconditionService.requireCurrent(expectedVersion, account.getVersion(), "account");
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     if (!ARCHIVED.equals(account.getStatus())) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Account is not archived.");
     }
@@ -335,7 +340,8 @@ public class AccountService {
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
-    versionPreconditionService.requireCurrent(expectedVersion, account.getVersion(), "account");
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     if (DELETED.equals(account.getStatus())) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT,
@@ -571,6 +577,6 @@ public class AccountService {
         account.isCountsAsSaving(),
         account.getStatus(),
         account.getArchivedAt(),
-        account.getVersion() == null ? 0 : account.getVersion());
+        VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE));
   }
 }

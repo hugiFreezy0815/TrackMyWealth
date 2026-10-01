@@ -294,9 +294,7 @@ class ApiConventionsIntegrationTest {
         .value(
             "Access-Control-Allow-Headers",
             value ->
-                assertThat(value.toLowerCase())
-                    .contains("x-correlation-id")
-                    .contains("if-match"));
+                assertThat(value.toLowerCase()).contains("x-correlation-id").contains("if-match"));
 
     String token = bootstrapAdministrator();
     AccountSummaryResponse account = createAccount(token, "CASH");
@@ -430,8 +428,7 @@ class ApiConventionsIntegrationTest {
     assertThat(account.path("properties").path("version").path("type").asString())
         .isEqualTo("integer");
 
-    JsonNode updateAccount =
-        spec.path("paths").path("/api/v1/accounts/{accountId}").path("put");
+    JsonNode updateAccount = spec.path("paths").path("/api/v1/accounts/{accountId}").path("put");
     JsonNode ifMatch =
         updateAccount.path("parameters").findParents("name").stream()
             .filter(parameter -> "If-Match".equals(parameter.path("name").asString()))
@@ -443,8 +440,7 @@ class ApiConventionsIntegrationTest {
     assertThat(updateAccount.path("responses").path("428").path("$ref").asString())
         .isEqualTo("#/components/responses/ApiProblemResponse");
 
-    JsonNode updateCategory =
-        spec.path("paths").path("/api/v1/categories/{id}").path("put");
+    JsonNode updateCategory = spec.path("paths").path("/api/v1/categories/{id}").path("put");
     assertThat(updateCategory.path("parameters").findValuesAsString("name")).contains("If-Match");
 
     JsonNode problem = spec.path("components").path("schemas").path("ApiProblem");

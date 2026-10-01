@@ -60,8 +60,8 @@ import org.springframework.web.server.ResponseStatusException;
  * workspace row: two concurrent changes to one workspace's taxonomy run one after the other and the
  * second sees the first's result. Without that, two concurrent moves could form a cycle or exceed
  * the depth limit, which no constraint catches. Mutations also require the version the client last
- * read ({@link CategoryResponse#version()}) through HTTP {@code If-Match}; a stale read is a
- * 412 VERSION_CONFLICT rather than a silent overwrite of another member's change.
+ * read ({@link CategoryResponse#version()}) through HTTP {@code If-Match}; a stale read is a 412
+ * VERSION_CONFLICT rather than a silent overwrite of another member's change.
  *
  * <p>Reads need workspace membership; changes need EDIT on the workspace, because the taxonomy is
  * shared by every member and reshapes everyone's reports. {@link CategoryResponse#canEdit()} tells
@@ -74,6 +74,8 @@ public class CategoryService {
   static final Set<String> PROTECTED_CODES = Set.of("UNCATEGORIZED", "TRANSFER_INTERNAL");
   static final String WORKSPACE_CODE_PREFIX = "WS_";
   private static final int CODE_BASE_MAX_LENGTH = 40;
+  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
+  private static final String VERSIONED_RESOURCE = "category";
 
   private final CategoryRepository categoryRepository;
   private final WorkspaceCategoryOverrideRepository overrideRepository;
@@ -167,7 +169,7 @@ public class CategoryService {
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
     versionPreconditionService.requireCurrent(
-        expectedVersion, versionOf(category, overrides), "category");
+        expectedVersion, versionOf(category, overrides), VERSIONED_RESOURCE);
 
     UUID parentId =
         category.isShared() && request.parentId() == null
@@ -206,7 +208,7 @@ public class CategoryService {
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
     versionPreconditionService.requireCurrent(
-        expectedVersion, versionOf(category, overrides), "category");
+        expectedVersion, versionOf(category, overrides), VERSIONED_RESOURCE);
     if (isProtected(category)) {
       throw unprocessable(
           "'" + category.getCode() + "' is required by the application and cannot be deactivated.");
@@ -235,7 +237,7 @@ public class CategoryService {
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
     versionPreconditionService.requireCurrent(
-        expectedVersion, versionOf(category, overrides), "category");
+        expectedVersion, versionOf(category, overrides), VERSIONED_RESOURCE);
     if (!isActive(category, categories, overrides)) {
       Category parent = categories.get(category.getParentCategoryId());
       if (parent != null && !isActive(parent, categories, overrides)) {
@@ -257,7 +259,7 @@ public class CategoryService {
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     Category category = requireForActor(categories, id, actor);
     versionPreconditionService.requireCurrent(
-        expectedVersion, versionOf(category, overrides), "category");
+        expectedVersion, versionOf(category, overrides), VERSIONED_RESOURCE);
     if (category.isShared()) {
       throw conflict(
           "A default category cannot be deleted because other data may depend on it. Deactivate it"
@@ -597,13 +599,14 @@ public class CategoryService {
    */
   static int versionOf(Category category, Map<UUID, WorkspaceCategoryOverride> overrides) {
     if (!category.isShared()) {
-      return category.getVersion() == null ? 0 : category.getVersion();
+      return VersionPreconditionService.persistedVersion(category.getVersion(), VERSIONED_RESOURCE);
     }
     WorkspaceCategoryOverride override = overrides.get(category.getId());
     if (override == null) {
       return 0;
     }
-    return 1 + (override.getVersion() == null ? 0 : override.getVersion());
+    return 1
+        + VersionPreconditionService.persistedVersion(override.getVersion(), VERSIONED_RESOURCE);
   }
 
   // --- loading and mapping -------------------------------------------------------------------

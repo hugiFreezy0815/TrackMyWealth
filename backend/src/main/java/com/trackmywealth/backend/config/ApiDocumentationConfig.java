@@ -136,8 +136,7 @@ public class ApiDocumentationConfig {
     return operation.getResponses();
   }
 
-  private static void documentOptimisticConcurrency(
-      io.swagger.v3.oas.models.Operation operation) {
+  private static void documentOptimisticConcurrency(io.swagger.v3.oas.models.Operation operation) {
     if (operation.getParameters() == null) {
       return;
     }
@@ -155,10 +154,8 @@ public class ApiDocumentationConfig {
                       + " values return 428 VERSION_REQUIRED; stale values return 412"
                       + " VERSION_CONFLICT.");
               Map<String, ApiResponse> responses = responsesOf(operation);
-              responses.putIfAbsent(
-                  "412", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
-              responses.putIfAbsent(
-                  "428", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
+              responses.putIfAbsent("412", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
+              responses.putIfAbsent("428", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
             });
   }
 

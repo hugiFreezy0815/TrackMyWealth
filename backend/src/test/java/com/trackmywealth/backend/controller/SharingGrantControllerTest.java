@@ -317,9 +317,7 @@ class SharingGrantControllerTest {
     AccountSummaryResponse account = createAccount(adminToken);
 
     getAccount(adminToken, account.id()).expectStatus().isOk();
-    updateAccount(adminToken, account.id(), updateRequestBody(account))
-        .expectStatus()
-        .isOk();
+    updateAccount(adminToken, account.id(), updateRequestBody(account)).expectStatus().isOk();
   }
 
   @Test
@@ -409,9 +407,7 @@ class SharingGrantControllerTest {
     // that Bob really does have EDIT on the account (updateAccount requires EDIT) and that the
     // destination institution exists (admin just created it) leaves the destination-institution
     // check as the only possible cause.
-    updateAccount(bobToken, account.id(), updateRequestBody(account))
-        .expectStatus()
-        .isOk();
+    updateAccount(bobToken, account.id(), updateRequestBody(account)).expectStatus().isOk();
 
     reassignInstitution(bobToken, account.id(), destination.id())
         .expectStatus()

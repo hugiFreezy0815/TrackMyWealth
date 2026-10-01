@@ -15,6 +15,9 @@ public final class IfMatchVersionParser {
 
   public static final String HEADER = "If-Match";
 
+  // Integer.MAX_VALUE has 10 digits; anything longer cannot be a version, and stays within long.
+  private static final int MAX_VERSION_DIGITS = 10;
+
   private IfMatchVersionParser() {}
 
   public static Integer parse(String ifMatch) {
@@ -28,15 +31,18 @@ public final class IfMatchVersionParser {
     }
 
     String version = value.substring(1, value.length() - 1);
-    if (version.isEmpty() || !version.chars().allMatch(Character::isDigit)) {
+    // ASCII digits only: Character.isDigit (and Integer.parseInt) would also accept e.g.
+    // Arabic-Indic digits, which no ETag this API publishes ever contains.
+    if (version.isEmpty()
+        || version.length() > MAX_VERSION_DIGITS
+        || !version.chars().allMatch(c -> c >= '0' && c <= '9')) {
       throw invalid();
     }
-
-    try {
-      return Integer.parseInt(version);
-    } catch (NumberFormatException ex) {
+    long parsed = Long.parseLong(version);
+    if (parsed > Integer.MAX_VALUE) {
       throw invalid();
     }
+    return (int) parsed;
   }
 
   public static String toEtag(int version) {

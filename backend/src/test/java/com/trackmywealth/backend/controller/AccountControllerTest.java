@@ -447,8 +447,7 @@ class AccountControllerTest {
         updateAccount(
                 token,
                 readByBothClients.id(),
-                new UpdateAccountRequest(
-                    "First Writer", "CASH", "CHF", null, null, null, null),
+                new UpdateAccountRequest("First Writer", "CASH", "CHF", null, null, null, null),
                 versionReadByBoth)
             .expectStatus()
             .isOk()
@@ -485,8 +484,7 @@ class AccountControllerTest {
     updateAccount(
             token,
             created.id(),
-            new UpdateAccountRequest(
-                "Everyday Checking", "SAVINGS", "CHF", null, null, null, null))
+            new UpdateAccountRequest("Everyday Checking", "SAVINGS", "CHF", null, null, null, null))
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
@@ -507,8 +505,7 @@ class AccountControllerTest {
     updateAccount(
             token,
             created.id(),
-            new UpdateAccountRequest(
-                "Everyday Checking", "CASH", "EUR", null, null, null, null))
+            new UpdateAccountRequest("Everyday Checking", "CASH", "EUR", null, null, null, null))
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
@@ -526,16 +523,16 @@ class AccountControllerTest {
 
     AccountSummaryResponse updated =
         updateAccount(
-            token,
-            created.id(),
-            new UpdateAccountRequest(
-                "Renamed Checking",
-                "CASH",
-                "CHF",
-                "**** 1234",
-                "CH",
-                LocalDate.of(2020, 1, 1),
-                null))
+                token,
+                created.id(),
+                new UpdateAccountRequest(
+                    "Renamed Checking",
+                    "CASH",
+                    "CHF",
+                    "**** 1234",
+                    "CH",
+                    LocalDate.of(2020, 1, 1),
+                    null))
             .expectStatus()
             .isOk()
             .expectBody(AccountSummaryResponse.class)
@@ -615,9 +612,7 @@ class AccountControllerTest {
     archive(token, created.id());
     backdateArchivedAt(created.id(), 31);
 
-    restore(token, created.id())
-        .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+    restore(token, created.id()).expectStatus().isEqualTo(HttpStatus.CONFLICT);
   }
 
   @Test
@@ -629,9 +624,7 @@ class AccountControllerTest {
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
     archive(token, created.id());
 
-    archive(token, created.id())
-        .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+    archive(token, created.id()).expectStatus().isEqualTo(HttpStatus.CONFLICT);
   }
 
   @Test
@@ -645,9 +638,7 @@ class AccountControllerTest {
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
     setStatusDirectly(created.id(), "DELETED");
 
-    archive(token, created.id())
-        .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+    archive(token, created.id()).expectStatus().isEqualTo(HttpStatus.CONFLICT);
   }
 
   @Test
@@ -656,9 +647,7 @@ class AccountControllerTest {
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
-    restore(token, created.id())
-        .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+    restore(token, created.id()).expectStatus().isEqualTo(HttpStatus.CONFLICT);
   }
 
   @Test

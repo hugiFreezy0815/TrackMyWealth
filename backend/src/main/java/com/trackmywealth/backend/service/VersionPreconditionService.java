@@ -16,11 +16,20 @@ import org.springframework.stereotype.Service;
 @Service
 public class VersionPreconditionService {
 
-  public void requireCurrent(
-      Integer expectedVersion, Integer currentVersion, String resourceName) {
-    if (currentVersion == null) {
+  /**
+   * The version a persisted row reports to clients. Every versioned row has one (DB default 0, kept
+   * current by Hibernate's {@code @Generated} refresh), so a missing one is a bug - never silently
+   * published as 0, which would hand the client an ETag that can never match.
+   */
+  public static int persistedVersion(Integer version, String resourceName) {
+    if (version == null) {
       throw new IllegalStateException(resourceName + " has no persistence version.");
     }
+    return version;
+  }
+
+  public void requireCurrent(Integer expectedVersion, Integer currentVersion, String resourceName) {
+    persistedVersion(currentVersion, resourceName);
     if (expectedVersion == null) {
       throw new ApiException(
           HttpStatus.PRECONDITION_REQUIRED,

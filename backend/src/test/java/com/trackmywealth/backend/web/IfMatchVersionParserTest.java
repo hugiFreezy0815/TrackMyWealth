@@ -23,7 +23,20 @@ class IfMatchVersionParserTest {
 
   @Test
   void weakWildcardAndUnquotedTagsAreRejected() {
-    for (String value : new String[] {"W/\"7\"", "*", "7", "\"abc\"", "\"\""}) {
+    for (String value :
+        new String[] {
+          "W/\"7\"",
+          "*",
+          "7",
+          "\"abc\"",
+          "\"\"",
+          "\"-1\"",
+          // beyond Integer.MAX_VALUE, and far beyond long
+          "\"2147483648\"",
+          "\"99999999999999999999999\"",
+          // non-ASCII digits (Arabic-Indic three)
+          "\"\u0663\""
+        }) {
       assertThatThrownBy(() -> IfMatchVersionParser.parse(value))
           .as(value)
           .isInstanceOfSatisfying(
@@ -33,6 +46,11 @@ class IfMatchVersionParserTest {
                 assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
               });
     }
+  }
+
+  @Test
+  void theLargestRepresentableVersionIsAccepted() {
+    assertThat(IfMatchVersionParser.parse("\"2147483647\"")).isEqualTo(Integer.MAX_VALUE);
   }
 
   @Test

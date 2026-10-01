@@ -213,9 +213,7 @@ class CategorizationControllerTest {
   void aCategoryTheWorkspaceDeactivatedIsSkippedNotAssigned() {
     String token = bootstrapAdministrator();
     // Deactivating LEISURE deactivates DINING under it for this workspace.
-    deactivateCategory(token, defaultId("LEISURE"))
-        .expectStatus()
-        .isOk();
+    deactivateCategory(token, defaultId("LEISURE")).expectStatus().isOk();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
 
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "HILTL ZUERICH", "5812");
@@ -479,9 +477,7 @@ class CategorizationControllerTest {
   @Test
   void aRuleCannotTargetAnInactiveCategory() {
     String token = bootstrapAdministrator();
-    deactivateCategory(token, defaultId("SHOPPING"))
-        .expectStatus()
-        .isOk();
+    deactivateCategory(token, defaultId("SHOPPING")).expectStatus().isOk();
 
     postRule(
             token,
@@ -682,9 +678,7 @@ class CategorizationControllerTest {
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD");
     AccountSummaryResponse cash = createAccount(token, "CASH");
     TransactionResponse recorded = record(token, card.id(), PURCHASE, "COOP PRONTO", "5411");
-    deactivateCategory(token, defaultId("SHOPPING"))
-        .expectStatus()
-        .isOk();
+    deactivateCategory(token, defaultId("SHOPPING")).expectStatus().isOk();
 
     putCategory(token, card.id(), recorded.id(), defaultId(UNCATEGORIZED))
         .expectStatus()

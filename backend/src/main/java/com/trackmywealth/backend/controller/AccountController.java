@@ -68,8 +68,7 @@ public class AccountController {
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     AccountSummaryResponse archived =
-        accountService.archiveAccount(
-            accountId, IfMatchVersionParser.parse(ifMatch), actor);
+        accountService.archiveAccount(accountId, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), archived);
   }
 
@@ -79,8 +78,7 @@ public class AccountController {
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     AccountSummaryResponse restored =
-        accountService.restoreAccount(
-            accountId, IfMatchVersionParser.parse(ifMatch), actor);
+        accountService.restoreAccount(accountId, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), restored);
   }
 
