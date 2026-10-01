@@ -51,6 +51,8 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V20` | Row-level security: `current_workspace_id()`, per-table policies, the workspace bootstrap sequence |
 | `V21` | Fixes `trg_transaction_append_only` (V10) to also cover `fee_amount`/`fx_rate_to_account_currency`/`fx_rate_date`, which the original trigger omitted |
 | `V47` | Bounds `authorization_denial_log`: `RATE_LIMITED` summary reason, `suppressed_count`, retention index (#205) |
+| `V48` | Adds optimistic-concurrency revisions to remaining mutable API resources (#207) |
+| `V49` | Adds immutable `corrects_transaction_id` lineage for transaction corrections (#178) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -482,7 +484,7 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
 - **Correction (US-07-06 / FR-LIF-004).** `PUT …/transactions/{id}` compares the requested
   immutable financial state with the locked row. A merchant-description/notes-only edit stays on
   the row; a financial change applies the same T1/T2 removal above and inserts a replacement in the
-  same transaction. `V91.corrects_transaction_id` points from that replacement to the row it
+  same transaction. `V49.corrects_transaction_id` points from that replacement to the row it
   corrects and is distinct from `replaces_transaction_id`, which only means "reversal of a void".
   Both lineage columns are frozen by the append-only trigger. The replacement preserves source
   provenance but not `external_id`; the source row keeps that idempotency identity. A current USER
