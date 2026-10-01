@@ -42,6 +42,21 @@ class JwtServiceTest {
   }
 
   @Test
+  void issuedAccessTokenCarriesExplicitSignedType() {
+    String token = service.issueAccessToken(USER_ID, 7, SESSION_ID);
+
+    String tokenType =
+        Jwts.parser()
+            .verifyWith(signingKey)
+            .build()
+            .parseSignedClaims(token)
+            .getPayload()
+            .get("tokenType", String.class);
+
+    assertThat(tokenType).isEqualTo("access");
+  }
+
+  @Test
   void tokenFromDifferentIssuerIsRejected() {
     assertThat(service.parseAccessToken(validAccessTokenBuilder().issuer("other-service").compact()))
         .isEmpty();
