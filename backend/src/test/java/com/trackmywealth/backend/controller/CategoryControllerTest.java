@@ -183,6 +183,140 @@ class CategoryControllerTest {
     assertThat(codes(seenByOther)).contains("LEISURE").doesNotContain("WS_STREAMING_SUBSCRIPTIONS");
   }
 
+  // --- EPIC-29 optimistic concurrency (FR-CNC-001/002) --------------------------------------
+
+  @Test
+  void categoryGetReturnsVersionAndMatchingEtag() {
+    String token = bootstrapAdministrator();
+    CategoryResponse created = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
+
+    client(token)
+        .get()
+        .uri(BASE + "/" + created.id())
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectHeader()
+        .valueEquals("ETag", """ + created.version() + """)
+        .expectBody()
+        .jsonPath("$.version")
+        .isEqualTo(created.version());
+  }
+
+  @Test
+  void categoryUpdateWithoutIfMatchIsPreconditionRequired() {
+    String token = bootstrapAdministrator();
+    CategoryResponse created = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
+
+    client(token)
+        .put()
+        .uri(BASE + "/" + created.id())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new UpdateCategoryRequest(null, "Renamed", "Umbenannt", null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+  }
+
+  @Test
+  void staleCategoryUpdateIsRejectedAndTheWinningWriteIsKept() {
+    String token = bootstrapAdministrator();
+    CategoryResponse readByBothClients =
+        created(token, new CreateCategoryRequest(null, "Original", "Original"));
+    int versionReadByBoth = readByBothClients.version();
+
+    CategoryResponse firstWrite =
+        update(
+                token,
+                readByBothClients.id(),
+                new UpdateCategoryRequest(null, "First Writer", "Erster", null),
+                versionReadByBoth)
+            .expectStatus()
+            .isOk()
+            .expectBody(CategoryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(firstWrite.version()).isGreaterThan(versionReadByBoth);
+
+    update(
+            token,
+            readByBothClients.id(),
+            new UpdateCategoryRequest(null, "Stale Writer", "Veraltet", null),
+            versionReadByBoth)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+
+    CategoryResponse current = getCategory(token, readByBothClients.id());
+    assertThat(current.nameEn()).isEqualTo("First Writer");
+    assertThat(current.version()).isEqualTo(firstWrite.version());
+  }
+
+  @Test
+  void sharedDefaultVersionNeverResetsAcrossCustomizeRevertCustomize() {
+    String token = bootstrapAdministrator();
+    UUID leisure = defaultId("LEISURE");
+    CategoryResponse original = getCategory(token, leisure);
+
+    CategoryResponse customised =
+        update(
+                token,
+                leisure,
+                new UpdateCategoryRequest(null, "Free Time", "Freizeit", null),
+                original.version())
+            .expectStatus()
+            .isOk()
+            .expectBody(CategoryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    CategoryResponse reverted =
+        update(
+                token,
+                leisure,
+                new UpdateCategoryRequest(null, "Leisure", "Freizeit", null),
+                customised.version())
+            .expectStatus()
+            .isOk()
+            .expectBody(CategoryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    CategoryResponse customisedAgain =
+        update(
+                token,
+                leisure,
+                new UpdateCategoryRequest(null, "Fun", "Freizeit", null),
+                reverted.version())
+            .expectStatus()
+            .isOk()
+            .expectBody(CategoryResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(customised.version()).isGreaterThan(original.version());
+    assertThat(reverted.version()).isGreaterThan(customised.version());
+    assertThat(reverted.customised()).isFalse();
+    assertThat(customisedAgain.version()).isGreaterThan(reverted.version());
+
+    update(
+            token,
+            leisure,
+            new UpdateCategoryRequest(null, "Stale", "Veraltet", null),
+            customised.version())
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+  }
+
   // --- Acceptance criteria and decisions -----------------------------------------------------
 
   @Test
@@ -527,6 +661,11 @@ class CategoryControllerTest {
 
   private RestTestClient.ResponseSpec update(String token, UUID id, UpdateCategoryRequest request) {
     int version = request.version() == null ? getCategory(token, id).version() : request.version();
+    return update(token, id, request, version);
+  }
+
+  private RestTestClient.ResponseSpec update(
+      String token, UUID id, UpdateCategoryRequest request, int version) {
     return client(token)
         .put()
         .uri(BASE + "/" + id)
