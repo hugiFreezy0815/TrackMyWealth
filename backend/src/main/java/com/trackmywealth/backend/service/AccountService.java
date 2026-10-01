@@ -224,7 +224,7 @@ public class AccountService {
   public AccountSummaryResponse updateAccount(
       UUID accountId,
       UpdateAccountRequest request,
-      int expectedVersion,
+      Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
@@ -250,7 +250,7 @@ public class AccountService {
   // is (see e.g. V4/V24's immutability triggers) - a structured 409, not a silent no-op.
   @Transactional
   public AccountSummaryResponse archiveAccount(
-      UUID accountId, int expectedVersion, AuthenticatedUserPrincipal actor) {
+      UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     versionPreconditionService.requireCurrent(expectedVersion, account.getVersion(), "account");
@@ -277,7 +277,7 @@ public class AccountService {
   // silently succeeding forever.
   @Transactional
   public AccountSummaryResponse restoreAccount(
-      UUID accountId, int expectedVersion, AuthenticatedUserPrincipal actor) {
+      UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     versionPreconditionService.requireCurrent(expectedVersion, account.getVersion(), "account");
@@ -331,7 +331,7 @@ public class AccountService {
   public AccountSummaryResponse reassignInstitution(
       UUID accountId,
       ReassignAccountInstitutionRequest request,
-      int expectedVersion,
+      Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
