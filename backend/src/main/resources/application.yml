@@ -141,18 +141,26 @@ app:
   authorization-denial-audit:
     # #205 / FR-TEN-004/006: object-level denials are security evidence that must never be lost,
     # but must never become a connection-pool or storage DoS vector either. Exact rows are capped
-    # per principal and refill window; the first denial beyond writes one summary row. Each row is
-    # written synchronously, before the 404, through a small pool of its own (never the main pool);
-    # if it cannot be written within audit-connection-timeout, the request fails instead.
-    max-writes-per-principal: ${AUTH_DENIAL_AUDIT_MAX_WRITES_PER_PRINCIPAL:60}
-    refill-period: ${AUTH_DENIAL_AUDIT_REFILL_PERIOD:1m}
+    # per principal and refill window; the first denial beyond writes one summary row, and the
+    # window's suppressed count is recorded once it closes. The budget lives in memory, so every
+    # bound applies per application instance. Defaults: at most ~202 rows per principal per hour.
+    max-writes-per-principal: ${AUTH_DENIAL_AUDIT_MAX_WRITES_PER_PRINCIPAL:200}
+    refill-period: ${AUTH_DENIAL_AUDIT_REFILL_PERIOD:1h}
     max-principals: ${AUTH_DENIAL_AUDIT_MAX_PRINCIPALS:10000}
+    # Each row is written synchronously, before the 404, through a small pool of its own (never
+    # the main pool; its connections come on top of DB_POOL_MAX). If it cannot be written in time,
+    # the request fails with a 500 instead of losing the row (a decided trade-off, see
+    # database-schema.md). The request keeps its main-pool connection meanwhile, so the connection
+    # timeout must be shorter than spring.datasource.hikari.connection-timeout (checked at
+    # startup), and the statement timeout (whole seconds, >= 1s) bounds a hung INSERT.
     audit-pool-size: ${AUTH_DENIAL_AUDIT_POOL_SIZE:2}
-    audit-connection-timeout: ${AUTH_DENIAL_AUDIT_CONNECTION_TIMEOUT:5s}
+    audit-connection-timeout: ${AUTH_DENIAL_AUDIT_CONNECTION_TIMEOUT:1s}
+    audit-statement-timeout: ${AUTH_DENIAL_AUDIT_STATEMENT_TIMEOUT:2s}
     # Operational/security audit data, not immutable financial history. Rows older than this are
-    # deleted by AuthorizationDenialAuditRetentionService.
+    # deleted by AuthorizationDenialAuditRetentionService, cleanup-batch-size rows per transaction.
     retention: ${AUTH_DENIAL_AUDIT_RETENTION:90d}
     cleanup-interval: ${AUTH_DENIAL_AUDIT_CLEANUP_INTERVAL:1h}
+    cleanup-batch-size: ${AUTH_DENIAL_AUDIT_CLEANUP_BATCH_SIZE:5000}
   rate-limit:
     # FR-AUT-010 (#48): per-source (IP) limits on authentication-adjacent endpoints, independent
     # of app_user's own per-account lockout (US-02-02). "capacity" tokens refill every

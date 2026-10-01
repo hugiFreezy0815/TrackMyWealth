@@ -46,11 +46,11 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V15` | Template-driven import framework: `import_template`, `import_batch`, `import_row_raw` |
 | `V16` | `refresh_token`, `user_session`, `authorization_denial_log` |
 | `V17` | `financial_audit_log`, `admin_audit_log`, `auth_audit_log` — three separate audit surfaces by design |
-| `V47` | Bounds `authorization_denial_log`: summary reason plus retention index (#205) |
 | `V18` | `reference_package`, `pension_scheme_rule`, `gics_structure_version`, `fallback_sector_taxonomy`, `trading_calendar` |
 | `V19` | Baseline reference-data seed (categories, institution catalogue, fallback taxonomy) — **must run before V20** |
 | `V20` | Row-level security: `current_workspace_id()`, per-table policies, the workspace bootstrap sequence |
 | `V21` | Fixes `trg_transaction_append_only` (V10) to also cover `fee_amount`/`fx_rate_to_account_currency`/`fx_rate_date`, which the original trigger omitted |
+| `V47` | Bounds `authorization_denial_log`: `RATE_LIMITED` summary reason, `suppressed_count`, retention index (#205) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -144,24 +144,49 @@ principal, requested entity type/id and a non-enumerating reason. An audit row t
 calls for is **never lost** (decided 2026-10-01): it is written synchronously, as one auto-committed
 `INSERT`, before the 404 is returned, so it is durable and survives the request's rollback.
 
-It is written through a small connection pool of its own (`AuthorizationDenialAuditWriteRepository`,
-`audit-pool-size`, 2 by default), never the main pool. The earlier nested `REQUIRES_NEW` write took
-its second connection from the main pool while the request still held one, so enough concurrent
-denials could wait on each other until the pool timed out. An audit connection is never held while
-waiting for a main-pool one, so that circular wait cannot occur. If the row cannot be written
-within `audit-connection-timeout` (or the database fails), the request fails instead of continuing
-without its audit row - identically whether the id exists or not, so this reveals nothing. The
-audit pool is deliberately not a `DataSource` bean, which would make Spring Boot back off its own.
+**Connections.** Rows are written through a small connection pool of its own
+(`AuthorizationDenialAuditPool`, `audit-pool-size`, 2 by default), never the main pool. The earlier
+nested `REQUIRES_NEW` write took its second connection from the main pool while the request still
+held one, so enough concurrent denials could wait on each other until the pool timed out. An audit
+connection is never held while waiting for a main-pool one, so that circular wait cannot occur.
+The audit pool:
 
-To prevent a signed-in caller from growing the table without bound, exact `NOT_FOUND` rows are
-capped per principal/refill window (60 per minute by default). The first denial over that budget
-writes one `RATE_LIMITED` summary row with no requested id; later denials in the same window add no
-rows. The in-memory principal-window cache is itself bounded.
+- starts from the main pool's `spring.datasource.hikari.*` settings (driver/SSL
+  `data-source-properties`, lifetimes), so the database is configured once;
+- is deliberately not a `DataSource` bean, which would make Spring Boot back off its own;
+- publishes Hikari's Micrometer metrics under `pool=denial-audit` and has its own health check
+  (`authorizationDenialAuditPool`);
+- adds its connections on top of `DB_POOL_MAX`: size PostgreSQL's `max_connections` for
+  `instances × (DB_POOL_MAX + audit-pool-size)`.
 
-`AuthorizationDenialAuditRetentionService` deletes rows older than
-`app.authorization-denial-audit.retention` (90 days by default), using V47's `occurred_at` index.
-The cleanup interval, audit pool size and connection timeout, principal cache bound and throttle
-values are deployment configuration in `application.yml`.
+**Timeouts, and the one 500 (decided trade-off).** A denied request keeps its main-pool connection
+while it writes the audit row, so the write is bounded twice: `audit-connection-timeout` (1s by
+default; startup fails unless it is shorter than the main pool's `connection-timeout`) and
+`audit-statement-timeout` (2s, cancels a hung `INSERT`; a socket timeout of twice that is the
+backstop). If the row still cannot be written - audit pool exhausted beyond its timeout, statement
+cancelled, database down - the request fails with a 500 instead of continuing without its audit
+row. This deliberately deviates from #205's first acceptance criterion ("no 500"): never losing a
+row was decided to outweigh it. It is identical whether the id exists or not, so it reveals
+nothing, and in normal operation it does not occur: a burst of 50 concurrent denials against the
+2-connection pool all complete as 404 (`AuthorizationDenialAuditTransactionTest`).
+
+**Volume.** To prevent a signed-in caller from growing the table without bound, exact `NOT_FOUND`
+rows are capped per principal and refill window (200 per hour by default). The first denial over
+that budget writes one `RATE_LIMITED` summary row with no requested id; later denials in the same
+window add no rows, but are counted. The principal's first denial after the window closes writes a
+second `RATE_LIMITED` row whose `suppressed_count` says how many were suppressed, so the magnitude of
+probing survives. A principal who doesn't return has the count written when its window is evicted
+from the bounded, expiring in-memory cache, or at shutdown; only a crash, or a database failure at
+that moment (logged with the count), can lose it - the window's first summary row is already
+durable. The budget is in memory, so with several application instances each bound applies once per
+instance. By default one principal can cause at most about 202 rows per hour per instance (about
+436,000 over the 90-day retention).
+
+**Retention.** `AuthorizationDenialAuditRetentionService` deletes rows older than
+`app.authorization-denial-audit.retention` (90 days by default), every `cleanup-interval` (1 hour),
+in batches of `cleanup-batch-size` (5,000) rows per transaction, using V47's `occurred_at` index.
+Several instances running it at once is harmless. All of these values are deployment configuration
+in `application.yml`.
 
 ### Security master: lazy creation and manual mode (US-12-01)
 

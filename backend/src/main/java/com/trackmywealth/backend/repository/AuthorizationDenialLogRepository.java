@@ -18,7 +18,16 @@ public interface AuthorizationDenialLogRepository
 
   List<AuthorizationDenialLog> findByPrincipalUserIdOrderByOccurredAtAsc(UUID principalUserId);
 
+  /**
+   * Deletes at most {@code batchSize} rows older than {@code cutoff} (#205 retention), using V47's
+   * {@code occurred_at} index; the caller repeats it until a batch comes back short.
+   */
   @Modifying
-  @Query("DELETE FROM AuthorizationDenialLog log WHERE log.occurredAt < :cutoff")
-  int deleteOccurredBefore(@Param("cutoff") OffsetDateTime cutoff);
+  @Query(
+      value =
+          "DELETE FROM authorization_denial_log WHERE id IN (SELECT id FROM"
+              + " authorization_denial_log WHERE occurred_at < :cutoff LIMIT :batchSize)",
+      nativeQuery = true)
+  int deleteBatchOccurredBefore(
+      @Param("cutoff") OffsetDateTime cutoff, @Param("batchSize") int batchSize);
 }
