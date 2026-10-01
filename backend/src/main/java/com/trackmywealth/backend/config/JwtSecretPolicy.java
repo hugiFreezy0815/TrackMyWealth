@@ -10,11 +10,14 @@ import org.springframework.stereotype.Component;
  *
  * <p>The placeholder exists only to keep deliberately insecure development and test environments
  * convenient. A real deployment must fail closed rather than silently sign authentication tokens
- * with a key that is published in this repository. The {@code dev} and {@code test} Spring
- * profiles are the only explicit exceptions.
+ * with a key that is published in this repository. The {@code dev} and {@code test} Spring profiles
+ * are the only explicit exceptions.
  */
 @Component
-public class JwtSecretPolicy {
+// final: the constructor deliberately throws to abort startup, and a final class cannot be
+// subclassed into the partially-initialised-object (finalizer) attack SpotBugs'
+// CT_CONSTRUCTOR_THROW warns about - no exclusion needed. Never proxied (no AOP on this bean).
+public final class JwtSecretPolicy {
 
   static final String PLACEHOLDER_SECRET = "CHANGE_ME_IN_ENVIRONMENT_CONFIG_MIN_32_BYTES";
 
@@ -26,8 +29,7 @@ public class JwtSecretPolicy {
       return;
     }
 
-    boolean explicitlyInsecureProfile =
-        environment.acceptsProfiles(INSECURE_PLACEHOLDER_PROFILES);
+    boolean explicitlyInsecureProfile = environment.acceptsProfiles(INSECURE_PLACEHOLDER_PROFILES);
     boolean hostedTopology =
         HOSTED_TOPOLOGY.equalsIgnoreCase(
             environment.getProperty("app.deployment.topology", "self-hosted"));
