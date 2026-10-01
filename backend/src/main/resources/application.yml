@@ -97,6 +97,9 @@ app:
       issuer: trackmywealth
       access-token-ttl-minutes: ${JWT_ACCESS_TTL_MIN:15}
       refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
+      # Public placeholder is accepted only with an explicit Spring `dev` or `test` profile.
+      # JwtSecretPolicy rejects it on every real startup. Generate deployment key material with
+      # e.g. `openssl rand -base64 32` and provide it through JWT_SECRET.
       secret: ${JWT_SECRET:CHANGE_ME_IN_ENVIRONMENT_CONFIG_MIN_32_BYTES}
     mfa:
       # US-02-04: AES-256 key (Base64, must decode to exactly 32 bytes) encrypting

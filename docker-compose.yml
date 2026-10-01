@@ -42,10 +42,12 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/trackmywealth
       DB_USERNAME: trackmywealth
       DB_PASSWORD: trackmywealth
-      # No login/JWT issuance is implemented yet (see EPIC-02/28), so the placeholder default in
-      # application.yml is left as-is here. Override with a real secret via a `.env` file
-      # (docker compose reads one automatically) once auth exists:
-      #   JWT_SECRET: ${JWT_SECRET}
+      # FR-AUT-003/005 / #188: a real self-hosted deployment must never sign access tokens
+      # with the repository's public placeholder. A .env file next to this compose file is loaded
+      # automatically. When JWT_SECRET is absent we pass an empty value so postgres-only developer
+      # commands can still parse this compose file; JwtProperties rejects the backend startup.
+      # Generate one with: openssl rand -base64 32
+      JWT_SECRET: ${JWT_SECRET:-}
       # US-02-04: AES-256 key encrypting each user's TOTP secret at rest - Base64 of exactly 32
       # bytes (e.g. `openssl rand -base64 32`). Same override mechanism as JWT_SECRET. Changing or
       # losing it makes every already-enrolled user's stored secret undecryptable (no key rotation
