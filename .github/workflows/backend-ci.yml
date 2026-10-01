@@ -29,8 +29,12 @@ jobs:
 
       # Testcontainers (DatabaseBootstrapInitializerTest, TrackMyWealthApplicationStartupTest)
       # needs a Docker daemon - already present on GitHub-hosted ubuntu-latest runners.
+      # #194: the Maven Wrapper (committed executable, 100755), so CI builds with exactly the
+      # Maven version every contributor gets from ./mvnw - not whatever the runner preinstalls.
+      # setup-java's maven cache still covers ~/.m2/repository; the wrapper's own Maven
+      # distribution is a one-off download per run.
       - name: Run tests
-        run: mvn -B verify
+        run: ./mvnw -B verify
 
       # Verifies the deployment path a self-hosted install (laptop or NAS) actually uses
       # (`docker compose up -d --build`, see the root README's "Running on a NAS" section) still
