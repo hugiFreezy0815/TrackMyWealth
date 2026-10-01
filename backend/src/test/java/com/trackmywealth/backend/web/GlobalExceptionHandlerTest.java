@@ -74,6 +74,20 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  void aRacingFirstCategoryCustomisationIsTranslatedToARetryableConflict() {
+    ProblemDetail problem =
+        handler.handleDataIntegrityViolation(
+            violationWithRootMessage(
+                "ERROR: duplicate key value violates unique constraint "
+                    + "uq_workspace_category_override"));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getDetail()).contains("category").contains("Retry");
+    assertThat(problem.getProperties()).containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.RETRY);
+    assertThat(problem.getDetail()).doesNotContain("uq_workspace_category_override");
+  }
+
+  @Test
   void aRacingDuplicateExternalIdIsTranslatedToAConflictTellingTheCallerToRetry() {
     ProblemDetail problem =
         handler.handleDataIntegrityViolation(

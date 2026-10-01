@@ -2772,8 +2772,9 @@ class TransactionControllerTest {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
-                "INSERT INTO category (code, name_en, name_de) VALUES (?, 'Groceries test',"
-                    + " 'Lebensmittel test') RETURNING id")) {
+                // A shared category, so a system default (V46: workspace_id IS NULL iff TRUE).
+                "INSERT INTO category (code, name_en, name_de, is_system_default) VALUES (?,"
+                    + " 'Groceries test', 'Lebensmittel test', TRUE) RETURNING id")) {
       statement.setString(1, TEST_CATEGORY_CODE);
       try (ResultSet resultSet = statement.executeQuery()) {
         resultSet.next();

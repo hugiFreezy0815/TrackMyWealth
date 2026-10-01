@@ -103,6 +103,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
           ApiErrorCode.RETRY,
           "A category with the same name was created at the same moment. Retry the request.");
     }
+    if (rootMessage.contains("uq_workspace_category_override")) {
+      return conflict(
+          ApiErrorCode.RETRY,
+          "This category was customised by another request at the same moment. Retry the request.");
+    }
     return conflict(
         ApiErrorCode.CONFLICT, "The request conflicts with an existing data constraint.");
   }
