@@ -501,7 +501,15 @@ class CategorizationControllerTest {
         .jsonPath("$.code")
         .isEqualTo("VERSION_REQUIRED");
 
-    deactivateRule(token, readByBoth.id(), readByBoth.version()).expectStatus().isOk();
+    CurrentVersion.storedEtag(
+        deactivateRule(token, readByBoth.id(), readByBoth.version())
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "categorization_rule",
+        readByBoth.id());
     deactivateRule(token, readByBoth.id(), readByBoth.version())
         .expectStatus()
         .isEqualTo(HttpStatus.PRECONDITION_FAILED)
@@ -512,6 +520,43 @@ class CategorizationControllerTest {
 
   // #207 / FR-CNC-001: two clients re-categorize the same transaction from the same read; the
   // second, stale override is rejected and the first category is kept. Without If-Match: 428.
+  // #207 / FR-CNC-001: "reset to automatic" is a version-checked write like the override itself.
+  @Test
+  void resettingACategoryRequiresTheCurrentVersion() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "CASH");
+    TransactionResponse row = record(token, cash.id(), EXPENSE, "Corner Shop", null);
+    TransactionResponse overridden = setCategory(token, cash.id(), row.id(), defaultId("SHOPPING"));
+
+    client(token)
+        .delete()
+        .uri(categoryUri(cash.id(), row.id()))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    client(token)
+        .delete()
+        .uri(categoryUri(cash.id(), row.id()))
+        .headers(headers -> headers.setIfMatch("\"" + row.version() + "\""))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(
+            list(token, cash.id(), false).stream()
+                .filter(t -> t.id().equals(row.id()))
+                .findFirst()
+                .orElseThrow()
+                .categoryId())
+        .as("the override is kept")
+        .isEqualTo(overridden.categoryId());
+  }
+
   @Test
   void aStaleCategoryOverrideIsRejectedAndTheFirstIsKept() {
     String token = bootstrapAdministrator();
@@ -525,9 +570,16 @@ class CategorizationControllerTest {
         .jsonPath("$.code")
         .isEqualTo("VERSION_REQUIRED");
 
-    putCategoryWith(token, cash.id(), readByBoth.id(), defaultId("SHOPPING"), readByBoth.version())
-        .expectStatus()
-        .isOk();
+    CurrentVersion.storedEtag(
+        putCategoryWith(
+                token, cash.id(), readByBoth.id(), defaultId("SHOPPING"), readByBoth.version())
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "transaction",
+        readByBoth.id());
     putCategoryWith(token, cash.id(), readByBoth.id(), defaultId("LEISURE"), readByBoth.version())
         .expectStatus()
         .isEqualTo(HttpStatus.PRECONDITION_FAILED)
@@ -994,25 +1046,31 @@ class CategorizationControllerTest {
 
   private TransactionResponse setCategory(
       String token, UUID accountId, UUID transactionId, UUID categoryId) {
-    return putCategory(token, accountId, transactionId, categoryId)
-        .expectStatus()
-        .isOk()
-        .expectBody(TransactionResponse.class)
-        .returnResult()
-        .getResponseBody();
+    return CurrentVersion.storedEtag(
+        putCategory(token, accountId, transactionId, categoryId)
+            .expectStatus()
+            .isOk()
+            .expectBody(TransactionResponse.class)
+            .returnResult(),
+        dataSource,
+        "transaction",
+        transactionId);
   }
 
   private TransactionResponse resetCategory(String token, UUID accountId, UUID transactionId) {
-    return client(token)
-        .delete()
-        .uri(categoryUri(accountId, transactionId))
-        .headers(CurrentVersion.ifMatch(dataSource, "transaction", transactionId))
-        .exchange()
-        .expectStatus()
-        .isOk()
-        .expectBody(TransactionResponse.class)
-        .returnResult()
-        .getResponseBody();
+    return CurrentVersion.storedEtag(
+        client(token)
+            .delete()
+            .uri(categoryUri(accountId, transactionId))
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", transactionId))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(TransactionResponse.class)
+            .returnResult(),
+        dataSource,
+        "transaction",
+        transactionId);
   }
 
   private String assignedByInList(String token, UUID accountId, UUID transactionId) {

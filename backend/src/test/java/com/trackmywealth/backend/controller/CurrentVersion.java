@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import javax.sql.DataSource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.test.web.servlet.client.EntityExchangeResult;
 
 /**
  * #207 test support: the {@code If-Match} a client that just read a row would send, for tests whose
@@ -39,6 +40,42 @@ final class CurrentVersion {
       throw new IllegalArgumentException("not a versioned table: " + table);
     }
     return headers(dataSource, "SELECT version FROM " + table + " WHERE id = ?", id);
+  }
+
+  /**
+   * Asserts that the {@code ETag} a successful write answered with is the version the row was
+   * actually stored with. A client sends exactly that tag on its next write, so one that lags the
+   * stored row - e.g. a follow-up change that is flushed only at commit - would turn the client's
+   * own next edit into a 412 nobody caused. Returns the response body for chaining.
+   */
+  static <T> T storedEtag(
+      EntityExchangeResult<T> result, DataSource dataSource, String table, UUID id) {
+    if (!TABLES.contains(table)) {
+      throw new IllegalArgumentException("not a versioned table: " + table);
+    }
+    return requireStored(
+        result, read(dataSource, "SELECT version FROM " + table + " WHERE id = ?", id), table, id);
+  }
+
+  /**
+   * {@link #storedEtag} for a credit card's extension row (statement config, settlement source).
+   */
+  static <T> T storedCardEtag(EntityExchangeResult<T> result, DataSource dataSource, UUID card) {
+    return requireStored(
+        result,
+        read(dataSource, "SELECT version FROM account_credit_card WHERE account_id = ?", card),
+        "account_credit_card",
+        card);
+  }
+
+  private static <T> T requireStored(
+      EntityExchangeResult<T> result, Integer stored, String table, UUID id) {
+    String etag = result.getResponseHeaders().getETag();
+    if (stored == null || !("\"" + stored + "\"").equals(etag)) {
+      throw new AssertionError(
+          "ETag " + etag + " is not the stored version " + stored + " of " + table + " " + id);
+    }
+    return result.getResponseBody();
   }
 
   /** {@code If-Match} for a credit card's extension row (statement config, settlement source). */

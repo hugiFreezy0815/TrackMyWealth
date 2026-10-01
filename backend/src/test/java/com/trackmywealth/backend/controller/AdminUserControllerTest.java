@@ -217,13 +217,19 @@ class AdminUserControllerTest {
             .getETag();
     assertThat(etagReadByBoth).isNotNull();
 
-    editUser(
-            adminToken,
-            bob.getId(),
-            new EditUserRequest("bob.first@example.com", null, null),
-            etagReadByBoth)
-        .expectStatus()
-        .isOk();
+    CurrentVersion.storedEtag(
+        editUser(
+                adminToken,
+                bob.getId(),
+                new EditUserRequest("bob.first@example.com", null, null),
+                etagReadByBoth)
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "app_user",
+        bob.getId());
     editUser(
             adminToken,
             bob.getId(),
@@ -303,6 +309,90 @@ class AdminUserControllerTest {
     assertThat(updated.getLanguage()).isEqualTo("DE");
     assertThat(adminAuditLogRepository.findAll())
         .anySatisfy(log -> assertThat(log.getAction()).isEqualTo("USER_EDITED"));
+  }
+
+  // #207 / FR-CNC-001: disabling and reactivating are version-checked. Without If-Match nothing
+  // changes (428); with the version from before the other action it is a 412.
+  @Test
+  void disablingAndReactivatingRequireTheCurrentVersion() {
+    String adminToken = bootstrapAdministrator();
+    AppUser charlie = createStandardUser(adminToken, "charlie@example.com");
+    String readByBoth = "\"" + charlie.getVersion() + "\"";
+    String base = "/api/v1/admin/users/" + charlie.getId();
+
+    adminClient(adminToken)
+        .post()
+        .uri(base + "/disable")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    assertThat(appUserRepository.findById(charlie.getId()).orElseThrow().getStatus())
+        .isEqualTo("ACTIVE");
+
+    CurrentVersion.storedEtag(
+        adminClient(adminToken)
+            .post()
+            .uri(base + "/disable")
+            .headers(headers -> headers.setIfMatch(readByBoth))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "app_user",
+        charlie.getId());
+
+    adminClient(adminToken)
+        .post()
+        .uri(base + "/reactivate")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    adminClient(adminToken)
+        .post()
+        .uri(base + "/reactivate")
+        .headers(headers -> headers.setIfMatch(readByBoth))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(appUserRepository.findById(charlie.getId()).orElseThrow().getStatus())
+        .as("the disable is kept")
+        .isEqualTo("DISABLED");
+  }
+
+  // #207 review M2: the GET added for refreshing a user's ETag is administrator-only like every
+  // other /admin endpoint - an authenticated STANDARD_USER gets 403, not another user's details.
+  @Test
+  void readingAUserNeedsTheAdministratorRole() {
+    String adminToken = bootstrapAdministrator();
+    AppUser bob = createStandardUser(adminToken, "bob@example.com");
+    AppUser charlie = createStandardUser(adminToken, "charlie@example.com");
+    String charlieToken =
+        tokenIssuanceService.issueTokens(charlie, "test-device", null).accessToken();
+
+    adminClient(charlieToken)
+        .get()
+        .uri("/api/v1/admin/users/" + bob.getId())
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.FORBIDDEN);
+    // Not even their own record through the admin API.
+    adminClient(charlieToken)
+        .get()
+        .uri("/api/v1/admin/users/" + charlie.getId())
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.FORBIDDEN);
   }
 
   @Test

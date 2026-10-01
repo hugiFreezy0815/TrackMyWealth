@@ -143,9 +143,14 @@ class CardStatementControllerTest {
     UUID card = createCard(token);
     int versionReadByBoth = getConfig(token, card).version();
 
-    putConfig(token, card, new SetStatementConfigRequest(5, 20), versionReadByBoth)
-        .expectStatus()
-        .isOk();
+    CurrentVersion.storedCardEtag(
+        putConfig(token, card, new SetStatementConfigRequest(5, 20), versionReadByBoth)
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        card);
     putConfig(token, card, new SetStatementConfigRequest(9, 30), versionReadByBoth)
         .expectStatus()
         .isEqualTo(HttpStatus.PRECONDITION_FAILED)

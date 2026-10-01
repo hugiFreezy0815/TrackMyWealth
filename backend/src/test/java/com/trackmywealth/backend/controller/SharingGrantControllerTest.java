@@ -311,6 +311,46 @@ class SharingGrantControllerTest {
   // #207 / FR-CNC-001: two clients read the same grant (GET /sharing-grants/{id} returns its
   // ETag); the first revokes it, the second's stale revoke is a 412 - not the 409 a fresh revoke
   // of an already-revoked grant would get - and without If-Match nothing is attempted (428).
+  // #207 review M2/M3: the GET added for refreshing a grant's ETag needs what revoking needs - FULL
+  // access to the grant's scope. A grantee with READ gets the generic 404, for an existing grant
+  // exactly as for an unknown id, and revoking without If-Match is that 404 too, never a 428.
+  @Test
+  void aGrantTheCallerCannotManageCannotBeReadOrProbedWithoutIfMatch() {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(adminToken);
+    String bobToken = createAndLoginSecondMember(adminToken, "bob@example.com");
+    UUID bobMemberId = workspaceMemberIdForEmail("bob@example.com");
+    SharingGrantResponse grant =
+        grant(
+            adminToken,
+            new CreateSharingGrantRequest(
+                bobMemberId, ScopeTypeValues.ACCOUNT, account.id(), null, AccessLevelValues.READ));
+
+    client(bobToken)
+        .get()
+        .uri("/api/v1/sharing-grants/" + grant.id())
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    client(bobToken)
+        .get()
+        .uri("/api/v1/sharing-grants/" + UUID.randomUUID())
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    revokeWith(bobToken, grant.id(), null).expectStatus().isNotFound();
+
+    client(adminToken)
+        .get()
+        .uri("/api/v1/sharing-grants/" + grant.id())
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.revokedAt")
+        .doesNotExist();
+  }
+
   @Test
   void aStaleGrantRevocationIsRejectedAndTheFirstIsKept() {
     String adminToken = bootstrapAdministrator();
@@ -341,7 +381,15 @@ class SharingGrantControllerTest {
             .getETag();
     assertThat(etagReadByBoth).isNotNull();
 
-    revokeWith(adminToken, grant.id(), etagReadByBoth).expectStatus().isOk();
+    CurrentVersion.storedEtag(
+        revokeWith(adminToken, grant.id(), etagReadByBoth)
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "sharing_grant",
+        grant.id());
     revokeWith(adminToken, grant.id(), etagReadByBoth)
         .expectStatus()
         .isEqualTo(HttpStatus.PRECONDITION_FAILED)

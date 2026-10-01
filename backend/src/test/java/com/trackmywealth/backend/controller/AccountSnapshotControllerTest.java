@@ -276,17 +276,20 @@ class AccountSnapshotControllerTest {
         recordOk(token, account.id(), balanceOnly(today(), "100.00"));
 
     AccountSnapshotResponse first =
-        replace(
-                token,
-                account.id(),
-                readByBoth.id(),
-                balanceOnlyReplacement("150.00"),
-                ifMatch(readByBoth.version()))
-            .expectStatus()
-            .isOk()
-            .expectBody(AccountSnapshotResponse.class)
-            .returnResult()
-            .getResponseBody();
+        CurrentVersion.storedEtag(
+            replace(
+                    token,
+                    account.id(),
+                    readByBoth.id(),
+                    balanceOnlyReplacement("150.00"),
+                    ifMatch(readByBoth.version()))
+                .expectStatus()
+                .isOk()
+                .expectBody(AccountSnapshotResponse.class)
+                .returnResult(),
+            dataSource,
+            "account_snapshot",
+            readByBoth.id());
     assertThat(first.version()).isGreaterThan(readByBoth.version());
 
     replace(

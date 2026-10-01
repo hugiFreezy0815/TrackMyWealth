@@ -145,9 +145,15 @@ class WorkspaceMemberControllerTest {
         .isEqualTo("VERSION_CONFLICT");
     assertThat(memberStatus(partnerMemberId)).isEqualTo("ACTIVE");
 
-    deactivateWith(partnerToken, partnerMemberId, memberEtag(partnerToken, partnerMemberId))
-        .expectStatus()
-        .isOk();
+    CurrentVersion.storedEtag(
+        deactivateWith(partnerToken, partnerMemberId, memberEtag(partnerToken, partnerMemberId))
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult(),
+        dataSource,
+        "workspace_member",
+        partnerMemberId);
     assertThat(memberStatus(partnerMemberId)).isEqualTo("INACTIVE");
   }
 
@@ -192,6 +198,32 @@ class WorkspaceMemberControllerTest {
     assertThat(deactivated.memberUntil()).isEqualTo(LocalDate.now());
     assertThat(memberStatus(partnerMemberId)).isEqualTo("INACTIVE");
     assertThat(memberStatus(adminMemberId)).isEqualTo("ACTIVE");
+  }
+
+  // #207 review M2/M3: the GET added for refreshing a member's ETag is self-only like deactivation.
+  // Another member's row is the audited generic 404 - and so is deactivating it without If-Match,
+  // never the 428 that would confirm it exists.
+  @Test
+  void anotherMembersRowCannotBeReadOrProbedWithoutIfMatch() {
+    String adminToken = bootstrapAdministrator();
+    UUID adminUserId = appUserIdForEmail("admin@example.com");
+    UUID partnerMemberId = createSecondMember("partner@example.com");
+
+    client(adminToken)
+        .get()
+        .uri("/api/v1/workspace-members/" + partnerMemberId)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+    assertThat(authorizationDenialLogged(adminUserId, partnerMemberId)).isTrue();
+
+    client(adminToken)
+        .post()
+        .uri("/api/v1/workspace-members/" + partnerMemberId + "/deactivate")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
+    assertThat(memberStatus(partnerMemberId)).isEqualTo("ACTIVE");
   }
 
   @Test

@@ -595,18 +595,22 @@ class AccountOwnershipControllerTest {
 
   private List<AccountOwnershipResponse> assignOwnership(
       String token, UUID accountId, AssignAccountOwnershipRequest request) {
-    return client(token)
-        .put()
-        .uri("/api/v1/accounts/" + accountId + "/ownership")
-        .headers(CurrentVersion.ifMatch(dataSource, "account", accountId))
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(request)
-        .exchange()
-        .expectStatus()
-        .isOk()
-        .expectBody(AccountOwnershipSetResponse.class)
-        .returnResult()
-        .getResponseBody()
+    // The aggregate token is the account's version, bumped by the replacement itself.
+    return CurrentVersion.storedEtag(
+            client(token)
+                .put()
+                .uri("/api/v1/accounts/" + accountId + "/ownership")
+                .headers(CurrentVersion.ifMatch(dataSource, "account", accountId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(AccountOwnershipSetResponse.class)
+                .returnResult(),
+            dataSource,
+            "account",
+            accountId)
         .owners();
   }
 
