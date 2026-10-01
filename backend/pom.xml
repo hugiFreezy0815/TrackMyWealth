@@ -29,6 +29,24 @@
         <maven-pmd-plugin.version>3.28.0</maven-pmd-plugin.version>
         <spotbugs-maven-plugin.version>4.10.4.1</spotbugs-maven-plugin.version>
         <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
+
+        <!-- JaCoCo coverage gate (#193). Each minimum is the measured baseline rounded down to
+             the whole percent, so a real regression fails `verify` while sub-1-point noise does
+             not. Baseline measured on main 3cf904f (./mvnw clean verify, 834 tests):
+               overall   lines 95.50 %  branches 88.08 %
+               service   lines 97.29 %  branches 89.39 %
+               security  lines 95.24 %  branches 81.71 %
+               web       lines 93.96 %  branches 85.37 %
+             Raise a minimum when coverage has grown for good; lower one only with a stated
+             reason in the PR that does it - never to get a red build through. -->
+        <coverage.overall.line>0.95</coverage.overall.line>
+        <coverage.overall.branch>0.88</coverage.overall.branch>
+        <coverage.service.line>0.97</coverage.service.line>
+        <coverage.service.branch>0.89</coverage.service.branch>
+        <coverage.security.line>0.95</coverage.security.line>
+        <coverage.security.branch>0.81</coverage.security.branch>
+        <coverage.web.line>0.93</coverage.web.line>
+        <coverage.web.branch>0.85</coverage.web.branch>
     </properties>
 
     <dependencies>
@@ -266,10 +284,12 @@
                 </executions>
             </plugin>
 
-            <!-- Coverage reporting only (no minimum-threshold gate yet) - there is barely any
-                 application code to cover at this stage of the project; a hard percentage gate
-                 would be meaningless noise until real services/controllers exist. Revisit once
-                 EPIC-02 lands. -->
+            <!-- Coverage report plus a gate (#193): `check` fails `verify` when coverage drops below
+                 the coverage.* minimums above. The overall rule protects the baseline as a whole;
+                 the per-package rules keep a regression in the auth-critical (security), business
+                 (service) and HTTP-contract (web) code from hiding behind the much larger rest -
+                 service alone is two thirds of all lines. No class is excluded: nothing here is
+                 generated, and the bootstrap main() is three lines that cannot move a ratio. -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -287,6 +307,86 @@
                             <goal>report</goal>
                         </goals>
                         <phase>test</phase>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>verify</phase>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.overall.line}</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.overall.branch}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.trackmywealth.backend.service</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.service.line}</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.service.branch}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.trackmywealth.backend.security</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.security.line}</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.security.branch}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.trackmywealth.backend.web</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.web.line}</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${coverage.web.branch}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

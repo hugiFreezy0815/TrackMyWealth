@@ -18,7 +18,7 @@ other tool-generated diff.
 | Architecture/layering rules | ArchUnit | **Automated** (`mvn test`, `ArchitectureTest`) |
 | Vulnerability scanning (Java + JS/TS) | Semgrep | **Automated** (`.github/workflows/semgrep.yml`) |
 | Dependency updates | Dependabot | **Automated** (`.github/dependabot.yml`) |
-| Test coverage | JaCoCo | Reported, not gated (see below) |
+| Test coverage | JaCoCo (`check` against minimums in `pom.xml`) | **Automated** (`mvn verify`, see below) |
 | Build reproducibility | Maven Wrapper (`./mvnw`) | Always use `./mvnw`, not a locally installed `mvn`, so CI and every contributor build with the same Maven version |
 
 **Running locally:**
@@ -101,9 +101,16 @@ cd backend
   trigger, or constraint — this project's whole design (RLS, triggers, generated columns,
   partitioning) lives in the database, not the ORM, so a mocked repository proves nothing about
   correctness here.
-- **Coverage is reported, not gated.** A hard percentage threshold would be meaningless noise
-  at this stage of the project (barely any application code exists yet to cover). Revisit once
-  EPIC-02's services/controllers land and there's a real baseline to hold steady.
+- **Coverage is gated against the measured baseline (#193).** `./mvnw verify` fails when line or
+  branch coverage drops below the `coverage.*` minimums in `pom.xml`: one rule for the whole
+  backend, plus one each for `service`, `security` and `web`, so a regression in business,
+  auth-critical or HTTP-contract code cannot hide behind the larger rest. Each minimum is the
+  measured baseline rounded down to the whole percent; the POM records the baseline it came
+  from. When a build goes red on coverage, test the behavior you changed - never write a test
+  only to move the number, and never lower a minimum to get a build through. Raise a minimum
+  once coverage has grown for good; lowering one (e.g. after deleting well-tested code) needs
+  its reason stated in that PR. Nothing is excluded from measurement; an exclusion would need
+  the same named justification as a `spotbugs-exclude.xml` entry.
 
 ## SQL / PostgreSQL migrations (`backend/src/main/resources/db/migration/`)
 
