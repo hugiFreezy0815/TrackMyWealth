@@ -107,16 +107,9 @@ public class TransactionRemovalService {
       String reason,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    Account account = requireEditable(accountId, actor);
-    // Cards before rows, the order settlement matching takes them, so a concurrent match decision
-    // and this removal queue behind each other instead of deadlocking.
-    lockCards(account, transactionId);
-    Transaction original =
-        transactionRepository
-            .findByIdForUpdate(transactionId)
-            .filter(row -> row.getAccount().getId().equals(account.getId()))
-            .orElseThrow(
-                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
+    LockedTransaction locked = lockActiveTransaction(accountId, transactionId, actor);
+    Account account = locked.account();
+    Transaction original = locked.transaction();
     String removal = TransactionService.removalOf(original);
     if (removal == null) {
       throw new ResponseStatusException(
@@ -256,6 +249,28 @@ public class TransactionRemovalService {
     return transactionService.toResponses(
         transactionRepository.findDeletedByAccountIdSince(accountId, restoreWindowStart()));
   }
+
+  /**
+   * Locks an active transaction in the same order as removal: affected cards first, then the row.
+   * Correction reuses this path before inspecting the row so it cannot invert the matching lock
+   * order and deadlock with a concurrent detection/decision.
+   */
+  LockedTransaction lockActiveTransaction(
+      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+    Account account = requireEditable(accountId, actor);
+    // Cards before rows, the order settlement matching takes them, so a concurrent match decision
+    // and this lifecycle write queue behind each other instead of deadlocking.
+    lockCards(account, transactionId);
+    Transaction transaction =
+        transactionRepository
+            .findByIdForUpdate(transactionId)
+            .filter(row -> row.getAccount().getId().equals(account.getId()))
+            .orElseThrow(
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
+    return new LockedTransaction(account, transaction);
+  }
+
+  record LockedTransaction(Account account, Transaction transaction) {}
 
   private static boolean isTransferLeg(Transaction row) {
     return TransferRecordingService.TRANSFER_TYPES.contains(row.getTransactionType());
