@@ -45,6 +45,7 @@ public class AuthorizationDenialAuditService {
   private final int maxWritesPerPrincipal;
   private final long refillNanos;
   private final LongAdder rejectedAuditTasks = new LongAdder();
+  private final LongAdder failedAuditWrites = new LongAdder();
 
   public AuthorizationDenialAuditService(
       @Qualifier(AuthorizationDenialAuditConfig.EXECUTOR_BEAN) Executor auditExecutor,
@@ -86,7 +87,22 @@ public class AuthorizationDenialAuditService {
 
   private void submit(Runnable auditWrite) {
     try {
-      auditExecutor.execute(auditWrite);
+      auditExecutor.execute(
+          () -> {
+            try {
+              auditWrite.run();
+            } catch (RuntimeException ex) {
+              failedAuditWrites.increment();
+              long failed = failedAuditWrites.sum();
+              if (failed == 1 || failed % 100 == 0) {
+                LOG.error(
+                    "Authorization-denial audit persistence failed {} time(s); "
+                        + "request responses remain fail-closed/non-enumerating.",
+                    failed,
+                    ex);
+              }
+            }
+          });
     } catch (RejectedExecutionException ex) {
       rejectedAuditTasks.increment();
       long rejected = rejectedAuditTasks.sum();
