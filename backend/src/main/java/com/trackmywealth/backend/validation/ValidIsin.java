@@ -16,7 +16,7 @@ import java.lang.annotation.Target;
 @Constraint(validatedBy = IsinValidator.class)
 public @interface ValidIsin {
 
-  String message() default "must be a valid ISIN (12 characters, ISO 6166 check digit)";
+  String message() default "{tmw.validation.isin}";
 
   Class<?>[] groups() default {};
 
