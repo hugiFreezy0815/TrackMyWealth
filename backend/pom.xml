@@ -30,23 +30,31 @@
         <spotbugs-maven-plugin.version>4.10.4.1</spotbugs-maven-plugin.version>
         <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
 
-        <!-- JaCoCo coverage gate (#193). Each minimum is the measured baseline rounded down to
-             the whole percent, so a real regression fails `verify` while sub-1-point noise does
-             not. Baseline measured on main 3cf904f (./mvnw clean verify, 834 tests):
-               overall   lines 95.50 %  branches 88.08 %
-               service   lines 97.29 %  branches 89.39 %
-               security  lines 95.24 %  branches 81.71 %
-               web       lines 93.96 %  branches 85.37 %
-             Raise a minimum when coverage has grown for good; lower one only with a stated
+        <!-- JaCoCo coverage gate (#193), measured with ./mvnw clean verify (839 tests):
+               overall   lines 5247/5488 (95.61 %)  branches 1513/1711 (88.43 %)
+               service   lines 3481/3578 (97.29 %)  branches 1221/1366 (89.39 %)
+               security  lines  186/189  missed 3   branches   73/82  missed 9
+               web       lines  140/149  missed 9   branches   70/82  missed 12
+               config    lines  300/315  missed 15  branches   67/90  missed 23
+             overall and service are large, so they hold a covered ratio one full point below
+             the baseline: room for roughly 88 lines / 24 branches (overall) and 46 / 19
+             (service) of honest, partly tested growth before the build goes red.
+             security, web and config are small - one branch moves their ratio by more than a
+             point - so they cap the absolute number of missed lines/branches instead, at the
+             baseline plus 2. New code that is fully tested never trips them; more than two new
+             untested branches there does.
+             Tighten a limit when coverage has grown for good; loosen one only with a stated
              reason in the PR that does it - never to get a red build through. -->
-        <coverage.overall.line>0.95</coverage.overall.line>
-        <coverage.overall.branch>0.88</coverage.overall.branch>
-        <coverage.service.line>0.97</coverage.service.line>
-        <coverage.service.branch>0.89</coverage.service.branch>
-        <coverage.security.line>0.95</coverage.security.line>
-        <coverage.security.branch>0.81</coverage.security.branch>
-        <coverage.web.line>0.93</coverage.web.line>
-        <coverage.web.branch>0.85</coverage.web.branch>
+        <coverage.overall.line>0.94</coverage.overall.line>
+        <coverage.overall.branch>0.87</coverage.overall.branch>
+        <coverage.service.line>0.96</coverage.service.line>
+        <coverage.service.branch>0.88</coverage.service.branch>
+        <coverage.security.missed.lines>5</coverage.security.missed.lines>
+        <coverage.security.missed.branches>11</coverage.security.missed.branches>
+        <coverage.web.missed.lines>11</coverage.web.missed.lines>
+        <coverage.web.missed.branches>14</coverage.web.missed.branches>
+        <coverage.config.missed.lines>17</coverage.config.missed.lines>
+        <coverage.config.missed.branches>25</coverage.config.missed.branches>
     </properties>
 
     <dependencies>
@@ -284,12 +292,13 @@
                 </executions>
             </plugin>
 
-            <!-- Coverage report plus a gate (#193): `check` fails `verify` when coverage drops below
-                 the coverage.* minimums above. The overall rule protects the baseline as a whole;
-                 the per-package rules keep a regression in the auth-critical (security), business
-                 (service) and HTTP-contract (web) code from hiding behind the much larger rest -
-                 service alone is two thirds of all lines. No class is excluded: nothing here is
-                 generated, and the bootstrap main() is three lines that cannot move a ratio. -->
+            <!-- Coverage report plus a gate (#193): `check` fails `verify` when coverage breaks the
+                 coverage.* limits above. The overall rule protects the baseline as a whole; the
+                 per-package rules keep a regression in business (service), auth-critical
+                 (security), HTTP-contract (web) or security-configuration (config: SecurityConfig,
+                 JWT secret policy, the denial-audit pool) code from hiding behind the much larger
+                 rest - service alone is two thirds of all lines. No class is excluded: nothing here
+                 is generated, and the bootstrap main() is three lines that cannot move a ratio. -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -357,13 +366,13 @@
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>${coverage.security.line}</minimum>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>${coverage.security.missed.lines}</maximum>
                                         </limit>
                                         <limit>
                                             <counter>BRANCH</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>${coverage.security.branch}</minimum>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>${coverage.security.missed.branches}</maximum>
                                         </limit>
                                     </limits>
                                 </rule>
@@ -375,13 +384,31 @@
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>${coverage.web.line}</minimum>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>${coverage.web.missed.lines}</maximum>
                                         </limit>
                                         <limit>
                                             <counter>BRANCH</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>${coverage.web.branch}</minimum>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>${coverage.web.missed.branches}</maximum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.trackmywealth.backend.config</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>${coverage.config.missed.lines}</maximum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>${coverage.config.missed.branches}</maximum>
                                         </limit>
                                     </limits>
                                 </rule>
