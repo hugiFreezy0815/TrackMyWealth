@@ -1,8 +1,10 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.config.JwtProperties;
+import com.trackmywealth.backend.security.JwtTokenContract;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
@@ -20,34 +22,40 @@ import org.springframework.stereotype.Service;
  * token - is all {@link LoginService} hands back, so the client doesn't need to resend the password
  * for step 2 ({@code POST /api/v1/auth/mfa/verify}).
  *
- * <p>Signed with the same key as {@link JwtService} (deployment configuration, not a second secret
- * to manage) but shaped so the two kinds of token can never be mistaken for one another: this one
- * carries a {@code purpose} claim {@link JwtService} never sets, and omits the {@code
- * tokenVersion}/{@code sessionId} claims {@link JwtService#parseAccessToken} requires - so a
- * challenge token can never pass {@link JwtService#parseAccessToken} even if presented as a bearer
- * token, and a real access token can never pass {@link #parse} either.
+ * <p>It shares {@link JwtService}'s deployment signing key, but carries and requires the explicit
+ * signed {@code mfa-challenge} token type (#200) as well as its purpose. This makes token-kind
+ * separation a parser contract rather than an accidental consequence of which claims happen to be
+ * absent today.
  */
 @Service
 public class MfaChallengeTokenService {
 
-  private static final String PURPOSE_CLAIM = "purpose";
   private static final String CHALLENGE_PURPOSE = "mfa_challenge";
   private static final int TTL_MINUTES = 5;
 
-  private final JwtProperties properties;
+  private final String issuer;
   private final SecretKey signingKey;
+  private final JwtParser challengeTokenParser;
 
   public MfaChallengeTokenService(JwtProperties properties) {
-    this.properties = properties;
+    this.issuer = properties.issuer();
     this.signingKey = Keys.hmacShaKeyFor(properties.secret().getBytes(StandardCharsets.UTF_8));
+    this.challengeTokenParser =
+        Jwts.parser()
+            .requireIssuer(issuer)
+            .require(JwtTokenContract.TOKEN_TYPE_CLAIM, JwtTokenContract.MFA_CHALLENGE_TOKEN_TYPE)
+            .require(JwtTokenContract.PURPOSE_CLAIM, CHALLENGE_PURPOSE)
+            .verifyWith(signingKey)
+            .build();
   }
 
   public String issue(UUID userId) {
     Instant now = Instant.now();
     return Jwts.builder()
         .subject(userId.toString())
-        .claim(PURPOSE_CLAIM, CHALLENGE_PURPOSE)
-        .issuer(properties.issuer())
+        .claim(JwtTokenContract.TOKEN_TYPE_CLAIM, JwtTokenContract.MFA_CHALLENGE_TOKEN_TYPE)
+        .claim(JwtTokenContract.PURPOSE_CLAIM, CHALLENGE_PURPOSE)
+        .issuer(issuer)
         .issuedAt(Date.from(now))
         .expiration(Date.from(now.plus(TTL_MINUTES, ChronoUnit.MINUTES)))
         .signWith(signingKey)
@@ -56,21 +64,18 @@ public class MfaChallengeTokenService {
 
   /**
    * Empty if the token is malformed, expired, signed with a different key, issued by a different
-   * issuer (#189, the same contract as {@link JwtService#parseAccessToken}), without a subject, or
-   * not actually an MFA-challenge token (e.g. a real access token presented here instead) - never
-   * throws.
+   * issuer, has the wrong token type, lacks the MFA purpose/subject, or otherwise violates the
+   * challenge-token contract - never throws.
    */
   public Optional<UUID> parse(String token) {
     try {
-      Claims claims =
-          Jwts.parser()
-              .requireIssuer(properties.issuer())
-              .verifyWith(signingKey)
-              .build()
-              .parseSignedClaims(token)
-              .getPayload();
+      Claims claims = challengeTokenParser.parseSignedClaims(token).getPayload();
       String subject = claims.getSubject();
-      if (subject == null || !CHALLENGE_PURPOSE.equals(claims.get(PURPOSE_CLAIM, String.class))) {
+      // Access-only claims never belong on a challenge: rejected as defence in depth, mirroring
+      // JwtService's rejection of the MFA purpose on an access token (#200).
+      if (subject == null
+          || claims.containsKey(JwtTokenContract.TOKEN_VERSION_CLAIM)
+          || claims.containsKey(JwtTokenContract.SESSION_ID_CLAIM)) {
         return Optional.empty();
       }
       return Optional.of(UUID.fromString(subject));

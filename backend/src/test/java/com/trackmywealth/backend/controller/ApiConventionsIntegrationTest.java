@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.config.JwtProperties;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
@@ -11,12 +12,18 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -81,6 +88,8 @@ class ApiConventionsIntegrationTest {
 
   @Autowired ObjectMapper objectMapper;
 
+  @Autowired JwtProperties jwtProperties;
+
   @BeforeEach
   void cleanDatabase() throws Exception {
     try (Connection connection = dataSource.getConnection();
@@ -140,6 +149,27 @@ class ApiConventionsIntegrationTest {
         client(login("member@example.com")).get().uri("/api/v1/admin/reference-data").exchange(),
         HttpStatus.FORBIDDEN,
         "FORBIDDEN");
+  }
+
+  @Test
+  void aWrongIssuerBearerTokenIsUnauthenticatedInTheStandardErrorShape() {
+    Instant now = Instant.now();
+    String wrongIssuerToken =
+        Jwts.builder()
+            .subject(UUID.randomUUID().toString())
+            .issuer("another-service")
+            .issuedAt(Date.from(now))
+            .expiration(Date.from(now.plus(15, ChronoUnit.MINUTES)))
+            .claim("tokenType", "access")
+            .claim("tokenVersion", 1)
+            .claim("sessionId", UUID.randomUUID().toString())
+            .signWith(Keys.hmacShaKeyFor(jwtProperties.secret().getBytes(StandardCharsets.UTF_8)))
+            .compact();
+
+    problem(
+        client(wrongIssuerToken).get().uri("/api/v1/accounts").exchange(),
+        HttpStatus.UNAUTHORIZED,
+        "UNAUTHENTICATED");
   }
 
   @Test
