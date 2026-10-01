@@ -473,6 +473,17 @@ class ApiConventionsIntegrationTest {
     JsonNode updateCategory = spec.path("paths").path("/api/v1/categories/{id}").path("put");
     assertThat(updateCategory.path("parameters").findValuesAsString("name")).contains("If-Match");
 
+    // #207: the expanded rollout is in the generated contract too, not only the original
+    // account/category endpoints from #206.
+    assertThat(transaction.path("properties").path("version").path("type").asString())
+        .isEqualTo("integer");
+    JsonNode updateTransactionCategory =
+        spec.path("paths")
+            .path("/api/v1/accounts/{accountId}/transactions/{transactionId}/category")
+            .path("put");
+    assertThat(updateTransactionCategory.path("parameters").findValuesAsString("name"))
+        .contains("If-Match");
+
     JsonNode problem = spec.path("components").path("schemas").path("ApiProblem");
     assertThat(problem.path("properties").path("code").path("type").asString()).isEqualTo("string");
     assertThat(problem.path("properties").path("correlationId").path("type").asString())
