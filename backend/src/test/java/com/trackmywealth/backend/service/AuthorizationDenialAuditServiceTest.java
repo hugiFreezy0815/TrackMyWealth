@@ -80,6 +80,23 @@ class AuthorizationDenialAuditServiceTest {
   }
 
   @Test
+  void aPersistenceFailureNeverChangesTheGeneric404() {
+    AuthorizationDenialAuditWriterService writer = mock(AuthorizationDenialAuditWriterService.class);
+    org.mockito.Mockito.doThrow(new IllegalStateException("database unavailable"))
+        .when(writer)
+        .recordDenial(any(), any(), any());
+    AuthorizationDenialAuditService service =
+        new AuthorizationDenialAuditService(Runnable::run, writer, properties(10));
+
+    ResponseStatusException denial =
+        service.denyAsNotFound(PRINCIPAL, "Account", UUID.randomUUID());
+
+    assertThat(denial.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    assertThat(denial.getReason())
+        .isEqualTo(AuthorizationDenialAuditService.GENERIC_NOT_FOUND_DETAIL);
+  }
+
+  @Test
   void aFullAuditQueueNeverChangesThe404OrFallsBackToRequestThread() {
     AuthorizationDenialAuditWriterService writer = mock(AuthorizationDenialAuditWriterService.class);
     Executor rejectingExecutor =
