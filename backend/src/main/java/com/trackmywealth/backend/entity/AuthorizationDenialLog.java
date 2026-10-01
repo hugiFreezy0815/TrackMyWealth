@@ -18,7 +18,9 @@ import org.hibernate.generator.EventType;
  * deliberately indistinguishable to the caller, so this audit trail deliberately doesn't record
  * which one actually happened either. {@code NOT_AUTHORIZED} (the column's other allowed value) is
  * reserved for a caller who knows exactly which resource they were denied - a role/permission
- * failure, not an identity-enumeration risk - which nothing writes to this table yet.
+ * failure, not an identity-enumeration risk - which nothing writes to this table yet. `RATE_LIMITED`
+ * is a #205 summary row emitted after one principal exhausts the exact-row budget for a throttle
+ * window; it carries no requested id and preserves the probing signal without unbounded growth.
  */
 @Entity
 @Table(name = "authorization_denial_log")
