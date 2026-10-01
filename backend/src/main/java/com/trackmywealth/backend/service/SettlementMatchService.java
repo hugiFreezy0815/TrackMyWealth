@@ -54,6 +54,7 @@ public class SettlementMatchService {
   private final SettlementDetectionService settlementDetectionService;
   private final TransferDetectionService transferDetectionService;
   private final Clock clock;
+  private final VersionPreconditionService versionPreconditionService;
 
   public SettlementMatchService(
       AccountLookupService accountLookupService,
@@ -63,7 +64,8 @@ public class SettlementMatchService {
       SettlementMatchRepository settlementMatchRepository,
       SettlementDetectionService settlementDetectionService,
       TransferDetectionService transferDetectionService,
-      Clock clock) {
+      Clock clock,
+      VersionPreconditionService versionPreconditionService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.accountRepository = accountRepository;
@@ -72,6 +74,7 @@ public class SettlementMatchService {
     this.settlementDetectionService = settlementDetectionService;
     this.transferDetectionService = transferDetectionService;
     this.clock = clock;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   /**
@@ -84,7 +87,10 @@ public class SettlementMatchService {
    */
   @Transactional
   public SettlementSourceResponse setSettlementSource(
-      UUID cardAccountId, SetSettlementSourceRequest request, AuthenticatedUserPrincipal actor) {
+      UUID cardAccountId,
+      SetSettlementSourceRequest request,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     Account card = requireCard(cardAccountId, actor, AccessLevelValues.EDIT);
     settlementDetectionService.lockCard(cardAccountId);
     AccountCreditCard extension = extensionOf(card);
@@ -95,20 +101,23 @@ public class SettlementMatchService {
       accessControlService.requireAccountAccess(actor, source, AccessLevelValues.EDIT);
       validateSource(card, source);
     }
+    versionPreconditionService.requireCurrent(
+        expectedVersion, extension.getVersion(), "settlement source");
     extension.setSettlementSourceAccountId(sourceId);
-    accountCreditCardRepository.saveAndFlush(extension);
+    extension = accountCreditCardRepository.saveAndFlush(extension);
 
     settlementDetectionService.detectForCard(cardAccountId);
-    return new SettlementSourceResponse(cardAccountId, sourceId);
+    return settlementSourceResponse(extension, sourceId);
   }
 
   @Transactional(readOnly = true)
   public SettlementSourceResponse getSettlementSource(
       UUID cardAccountId, AuthenticatedUserPrincipal actor) {
     Account card = requireCard(cardAccountId, actor, AccessLevelValues.BALANCE_ONLY);
-    UUID sourceId = extensionOf(card).getSettlementSourceAccountId();
+    AccountCreditCard extension = extensionOf(card);
+    UUID sourceId = extension.getSettlementSourceAccountId();
     if (sourceId == null) {
-      return new SettlementSourceResponse(cardAccountId, null);
+      return settlementSourceResponse(extension, null);
     }
     // An account id the caller cannot see is not revealed through this card.
     UUID memberId = accessControlService.requireActingMember(actor);
@@ -117,7 +126,7 @@ public class SettlementMatchService {
         !accessControlService
             .accountsWithAccess(memberId, List.of(source), AccessLevelValues.BALANCE_ONLY)
             .isEmpty();
-    return new SettlementSourceResponse(cardAccountId, visible ? sourceId : null);
+    return settlementSourceResponse(extension, visible ? sourceId : null);
   }
 
   /**
@@ -180,8 +189,11 @@ public class SettlementMatchService {
    * spending) and rejects any other proposal competing for the same payment or card credit.
    */
   @Transactional
-  public SettlementMatchResponse confirm(UUID matchId, AuthenticatedUserPrincipal actor) {
+  public SettlementMatchResponse confirm(
+      UUID matchId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     SettlementMatch match = lockActionableMatch(matchId, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, match.getVersion(), "settlement match");
     if (!SettlementMatchValues.PROPOSED.equals(match.getStatus())) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "Only a proposed match can be confirmed.");
@@ -210,8 +222,11 @@ public class SettlementMatchService {
    * for the card, since a freed credit may now pair with a different payment.
    */
   @Transactional
-  public SettlementMatchResponse reject(UUID matchId, AuthenticatedUserPrincipal actor) {
+  public SettlementMatchResponse reject(
+      UUID matchId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     SettlementMatch match = lockActionableMatch(matchId, actor);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, match.getVersion(), "settlement match");
     boolean wasConfirmed = SettlementMatchValues.CONFIRMED.equals(match.getStatus());
     if (!wasConfirmed && !SettlementMatchValues.PROPOSED.equals(match.getStatus())) {
       throw new ResponseStatusException(
@@ -328,6 +343,15 @@ public class SettlementMatchService {
     }
   }
 
+  private static SettlementSourceResponse settlementSourceResponse(
+      AccountCreditCard extension, UUID visibleSourceId) {
+    return new SettlementSourceResponse(
+        extension.getAccountId(),
+        visibleSourceId,
+        VersionPreconditionService.persistedVersion(
+            extension.getVersion(), "settlement source"));
+  }
+
   private ResponseStatusException matchNotFound(AuthenticatedUserPrincipal actor, UUID matchId) {
     return accessControlService.denyAsNotFound(actor, "SettlementMatch", matchId);
   }
@@ -355,6 +379,7 @@ public class SettlementMatchService {
         debitAccountId,
         debitTransactionId,
         creditAccountId,
-        creditTransactionId);
+        creditTransactionId,
+        VersionPreconditionService.persistedVersion(match.getVersion(), "settlement match"));
   }
 }
