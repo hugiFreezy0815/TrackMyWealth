@@ -94,7 +94,7 @@ public class CustomAssetValuationService {
   @Transactional(readOnly = true)
   public Optional<CustomAssetValuationResponse> getValuationAsOf(
       UUID accountId, LocalDate asOfDate) {
-    accountLookupService.findAccountOrThrow(accountId, actor);
+    accountLookupService.findAccountOrThrow(accountId);
     return customAssetValuationRepository
         .findFirstByAccountIdAndValuationDateLessThanEqualOrderByValuationDateDesc(
             accountId, asOfDate)
