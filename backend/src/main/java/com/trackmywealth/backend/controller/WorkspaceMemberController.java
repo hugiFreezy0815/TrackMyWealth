@@ -8,6 +8,7 @@ import com.trackmywealth.backend.web.VersionedResponse;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -23,6 +24,13 @@ public class WorkspaceMemberController {
 
   public WorkspaceMemberController(WorkspaceMemberService workspaceMemberService) {
     this.workspaceMemberService = workspaceMemberService;
+  }
+
+  @GetMapping("/{memberId}")
+  public ResponseEntity<WorkspaceMemberSummaryResponse> getMember(
+      @PathVariable UUID memberId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    WorkspaceMemberSummaryResponse response = workspaceMemberService.getMember(memberId, actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   @PostMapping("/{memberId}/deactivate")
