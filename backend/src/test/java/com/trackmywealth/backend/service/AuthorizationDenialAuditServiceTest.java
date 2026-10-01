@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import com.trackmywealth.backend.entity.AuthorizationDenialLog;
@@ -17,8 +18,7 @@ class AuthorizationDenialAuditServiceTest {
 
   @Test
   void denialRecordsOnlyTheRequestedIdentityAndReturnsTheGenericNotFound() {
-    AuthorizationDenialLogRepository repository =
-        org.mockito.Mockito.mock(AuthorizationDenialLogRepository.class);
+    AuthorizationDenialLogRepository repository = mock(AuthorizationDenialLogRepository.class);
     AuthorizationDenialAuditService service = new AuthorizationDenialAuditService(repository);
     UUID userId = UUID.randomUUID();
     UUID workspaceId = UUID.randomUUID();
