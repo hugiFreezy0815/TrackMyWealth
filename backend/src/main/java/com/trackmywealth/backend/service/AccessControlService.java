@@ -58,13 +58,13 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AccessControlService {
 
-  private final AppUserRepository appUserRepository;
-  private final WorkspaceMemberRepository workspaceMemberRepository;
-  private final AccountOwnershipRepository accountOwnershipRepository;
   private static final String ACCOUNT_ENTITY_TYPE = "Account";
   private static final String INSTITUTION_ENTITY_TYPE = "FinancialInstitution";
   private static final String WORKSPACE_ENTITY_TYPE = "Workspace";
 
+  private final AppUserRepository appUserRepository;
+  private final WorkspaceMemberRepository workspaceMemberRepository;
+  private final AccountOwnershipRepository accountOwnershipRepository;
   private final SharingGrantRepository sharingGrantRepository;
   private final AuthorizationDenialAuditService authorizationDenialAuditService;
 
@@ -87,17 +87,6 @@ public class AccessControlService {
     UUID memberId = requireActingMember(actor);
     if (!atLeast(accountAccessLevel(memberId, account), requiredLevel)) {
       throw denyAsNotFound(actor, ACCOUNT_ENTITY_TYPE, account.getId());
-    }
-  }
-
-  // memberId overload: for a caller that has already resolved the acting member's id for its own
-  // purposes (e.g. SharingGrantService.grant() needs it for grantedByMemberId regardless), so it
-  // isn't forced to pay for requireActingMember's AppUserRepository lookup a second time just to
-  // also gate the same request.
-  @Transactional(readOnly = true)
-  public void requireAccountAccess(UUID memberId, Account account, String requiredLevel) {
-    if (!atLeast(accountAccessLevel(memberId, account), requiredLevel)) {
-      throw denyMemberAsNotFound(memberId, ACCOUNT_ENTITY_TYPE, account.getId());
     }
   }
 
@@ -136,26 +125,11 @@ public class AccessControlService {
   }
 
   @Transactional(readOnly = true)
-  public void requireInstitutionAccess(
-      UUID memberId, FinancialInstitution institution, String requiredLevel) {
-    if (!atLeast(institutionAccessLevel(memberId, institution), requiredLevel)) {
-      throw denyMemberAsNotFound(memberId, INSTITUTION_ENTITY_TYPE, institution.getId());
-    }
-  }
-
-  @Transactional(readOnly = true)
   public void requireWorkspaceAccess(
       AuthenticatedUserPrincipal actor, UUID workspaceId, String requiredLevel) {
     UUID memberId = requireActingMember(actor);
     if (!atLeast(workspaceAccessLevel(memberId, workspaceId), requiredLevel)) {
       throw denyAsNotFound(actor, WORKSPACE_ENTITY_TYPE, workspaceId);
-    }
-  }
-
-  @Transactional(readOnly = true)
-  public void requireWorkspaceAccess(UUID memberId, UUID workspaceId, String requiredLevel) {
-    if (!atLeast(workspaceAccessLevel(memberId, workspaceId), requiredLevel)) {
-      throw denyMemberAsNotFound(memberId, WORKSPACE_ENTITY_TYPE, workspaceId);
     }
   }
 
@@ -285,20 +259,11 @@ public class AccessControlService {
         >= 0;
   }
 
+  // #192: every require*Access gate takes the authenticated actor, never a bare member id, so the
+  // audit row always names the principal straight from the request - there is no member-to-user
+  // lookup that could fail or resolve ambiguously on a denial path.
   public ResponseStatusException denyAsNotFound(
       AuthenticatedUserPrincipal actor, String entityType, UUID entityId) {
     return authorizationDenialAuditService.denyAsNotFound(actor, entityType, entityId);
-  }
-
-  private ResponseStatusException denyMemberAsNotFound(
-      UUID memberId, String entityType, UUID entityId) {
-    UUID principalUserId =
-        appUserRepository
-            .findUserIdByWorkspaceMemberId(memberId)
-            .orElseThrow(
-                () ->
-                    new IllegalStateException(
-                        "Authenticated workspace member has no linked app_user: " + memberId));
-    return authorizationDenialAuditService.denyAsNotFound(principalUserId, entityType, entityId);
   }
 }

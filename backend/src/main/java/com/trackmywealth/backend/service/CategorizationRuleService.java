@@ -121,9 +121,7 @@ public class CategorizationRuleService {
   }
 
   private UUID requireEditor(AuthenticatedUserPrincipal actor) {
-    UUID memberId = accessControlService.requireActingMember(actor);
-    accessControlService.requireWorkspaceAccess(
-        memberId, actor.workspaceId(), AccessLevelValues.EDIT);
+    accessControlService.requireWorkspaceAccess(actor, actor.workspaceId(), AccessLevelValues.EDIT);
     return actor.workspaceId();
   }
 
