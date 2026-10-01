@@ -93,6 +93,7 @@ class CustomAssetValuationControllerTest {
               "admin_audit_log",
               "user_session",
               "refresh_token",
+              "authorization_denial_log",
               "app_user",
               "workspace_member",
               "financial_institution",

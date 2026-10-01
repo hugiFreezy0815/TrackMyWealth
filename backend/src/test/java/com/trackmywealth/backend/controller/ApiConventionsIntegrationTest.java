@@ -97,6 +97,7 @@ class ApiConventionsIntegrationTest {
               "DELETE FROM admin_audit_log",
               "DELETE FROM user_session",
               "DELETE FROM refresh_token",
+              "DELETE FROM authorization_denial_log",
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
               "DELETE FROM financial_institution",
