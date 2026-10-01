@@ -489,6 +489,93 @@ class CategoryControllerTest {
   // --- V34 guards --------------------------------------------------------------------------
 
   @Test
+  void theSchemaRejectsInvalidLabelsAndInconsistentSystemDefaultFlags() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID workspaceId = workspaceOf("admin@example.com");
+    UUID defaultCategoryId = defaultId("LEISURE");
+    String tooLong = "x".repeat(101);
+
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "INSERT INTO category (workspace_id, code, name_en, name_de,"
+                        + " is_system_default) VALUES (?, 'WS_BLANK_LABEL', '   ', 'Valid', FALSE)",
+                    workspaceId))
+        .as("blank category labels are rejected for every writer")
+        .hasMessageContaining("category_label_length");
+
+    // Blank is not only spaces: a tab or line break alone is as blank as the API's @NotBlank says.
+    for (String whitespaceOnly : List.of("\t", "\n", " \r\n ")) {
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      "INSERT INTO category (workspace_id, code, name_en, name_de,"
+                          + " is_system_default) VALUES (?, 'WS_WHITESPACE_LABEL', ?, 'Valid',"
+                          + " FALSE)",
+                      workspaceId,
+                      whitespaceOnly))
+          .as(
+              "a label of only %s is blank",
+              whitespaceOnly.replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r"))
+          .hasMessageContaining("category_label_length");
+    }
+    // ...while the trim list never eats letters: a one-letter "v" label is valid (no \v escape).
+    execute(
+        "INSERT INTO category (workspace_id, code, name_en, name_de, is_system_default)"
+            + " VALUES (?, 'WS_LETTER_V', 'v', 'v', FALSE)",
+        workspaceId);
+
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "INSERT INTO category (workspace_id, code, name_en, name_de,"
+                        + " is_system_default) VALUES (?, 'WS_LONG_LABEL', ?, 'Valid', FALSE)",
+                    workspaceId,
+                    tooLong))
+        .as("category labels cannot exceed CategoryLabels.MAX_LENGTH (100)")
+        .hasMessageContaining("category_label_length");
+
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "INSERT INTO category (workspace_id, code, name_en, name_de,"
+                        + " is_system_default) VALUES (NULL, 'TEST_NOT_DEFAULT', 'Test', 'Test',"
+                        + " FALSE)"))
+        .as("a shared category must be a system default")
+        .hasMessageContaining("category_system_default_is_shared");
+
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "INSERT INTO category (workspace_id, code, name_en, name_de,"
+                        + " is_system_default) VALUES (?, 'WS_FALSE_DEFAULT', 'Test', 'Test', TRUE)",
+                    workspaceId))
+        .as("a workspace-owned category cannot be marked as a system default")
+        .hasMessageContaining("category_system_default_is_shared");
+
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "INSERT INTO workspace_category_override"
+                        + " (workspace_id, category_id, name_en) VALUES (?, ?, '   ')",
+                    workspaceId,
+                    defaultCategoryId))
+        .as("blank override labels are rejected")
+        .hasMessageContaining("workspace_category_override_label_length");
+
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "INSERT INTO workspace_category_override"
+                        + " (workspace_id, category_id, name_de) VALUES (?, ?, ?)",
+                    workspaceId,
+                    defaultCategoryId,
+                    tooLong))
+        .as("override labels cannot exceed CategoryLabels.MAX_LENGTH (100)")
+        .hasMessageContaining("workspace_category_override_label_length");
+  }
+
+  @Test
   void theSchemaKeepsCodesUniqueAndInSeparateNamespaces() throws Exception {
     String token = bootstrapAdministrator();
     UUID workspaceId = workspaceOf("admin@example.com");
@@ -496,8 +583,8 @@ class CategoryControllerTest {
     assertThatThrownBy(
             () ->
                 execute(
-                    "INSERT INTO category (workspace_id, code, name_en, name_de) VALUES (NULL,"
-                        + " 'LEISURE', 'x', 'x')"))
+                    "INSERT INTO category (workspace_id, code, name_en, name_de,"
+                        + " is_system_default) VALUES (NULL, 'LEISURE', 'x', 'x', TRUE)"))
         .as("default codes are unique too (NULLS NOT DISTINCT)")
         .hasMessageContaining("uq_category_workspace_code");
     assertThatThrownBy(
