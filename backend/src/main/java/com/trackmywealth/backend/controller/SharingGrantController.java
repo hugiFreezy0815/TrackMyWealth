@@ -4,14 +4,16 @@ import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.SharingGrantResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SharingGrantService;
+import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.VersionedResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -30,13 +32,17 @@ public class SharingGrantController {
   public ResponseEntity<SharingGrantResponse> grant(
       @Valid @RequestBody CreateSharingGrantRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return ResponseEntity.status(HttpStatus.CREATED)
-        .body(sharingGrantService.grant(request, actor));
+    SharingGrantResponse response = sharingGrantService.grant(request, actor);
+    return VersionedResponse.created(response, response.version());
   }
 
   @PostMapping("/{grantId}/revoke")
-  public SharingGrantResponse revoke(
-      @PathVariable UUID grantId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return sharingGrantService.revoke(grantId, actor);
+  public ResponseEntity<SharingGrantResponse> revoke(
+      @PathVariable UUID grantId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    SharingGrantResponse response =
+        sharingGrantService.revoke(grantId, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
   }
 }
