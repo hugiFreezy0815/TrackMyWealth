@@ -101,6 +101,7 @@ public class SharingGrantService {
   private final SharingGrantRepository sharingGrantRepository;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final WorkspaceRepository workspaceRepository;
+  private final VersionPreconditionService versionPreconditionService;
 
   public SharingGrantService(
       WorkspaceAccessService workspaceAccessService,
@@ -110,7 +111,8 @@ public class SharingGrantService {
       WorkspaceMemberRepository workspaceMemberRepository,
       SharingGrantRepository sharingGrantRepository,
       FinancialInstitutionRepository financialInstitutionRepository,
-      WorkspaceRepository workspaceRepository) {
+      WorkspaceRepository workspaceRepository,
+      VersionPreconditionService versionPreconditionService) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.accountLookupService = accountLookupService;
@@ -119,6 +121,7 @@ public class SharingGrantService {
     this.sharingGrantRepository = sharingGrantRepository;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.workspaceRepository = workspaceRepository;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   @Transactional
@@ -173,7 +176,8 @@ public class SharingGrantService {
   }
 
   @Transactional
-  public SharingGrantResponse revoke(UUID grantId, AuthenticatedUserPrincipal actor) {
+  public SharingGrantResponse revoke(
+      UUID grantId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     SharingGrant grant =
         sharingGrantRepository
             .findByIdForUpdate(grantId)
@@ -195,6 +199,8 @@ public class SharingGrantService {
           grant.getWorkspace().getId());
     }
 
+    versionPreconditionService.requireCurrent(
+        expectedVersion, grant.getVersion(), "sharing grant");
     if (grant.getRevokedAt() != null) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "This grant has already been revoked.");
@@ -313,6 +319,7 @@ public class SharingGrantService {
         grant.getAccessLevel(),
         grant.getGrantedByMember().getId(),
         grant.getGrantedAt(),
-        grant.getRevokedAt());
+        grant.getRevokedAt(),
+        VersionPreconditionService.persistedVersion(grant.getVersion(), "sharing grant"));
   }
 }
