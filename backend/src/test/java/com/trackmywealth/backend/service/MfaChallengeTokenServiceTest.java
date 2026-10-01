@@ -36,6 +36,19 @@ class MfaChallengeTokenServiceTest {
   }
 
   @Test
+  void issuedChallengeTokenCarriesExplicitSignedType() {
+    String tokenType =
+        Jwts.parser()
+            .verifyWith(signingKey)
+            .build()
+            .parseSignedClaims(service.issue(USER_ID))
+            .getPayload()
+            .get("tokenType", String.class);
+
+    assertThat(tokenType).isEqualTo("mfa-challenge");
+  }
+
+  @Test
   void aChallengeTokenFromAnotherIssuerIsRejected() {
     assertThat(service.parse(validChallenge().issuer("other-service").compact())).isEmpty();
   }
