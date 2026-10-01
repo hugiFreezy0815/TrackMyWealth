@@ -28,6 +28,9 @@ public final class ApiErrorCode {
   /** 409: conflicts with the current state; {@code detail} says how. */
   public static final String CONFLICT = "CONFLICT";
 
+  /** 428: a state-changing request omitted the version it must protect with If-Match. */
+  public static final String VERSION_REQUIRED = "VERSION_REQUIRED";
+
   /** 409: the record changed since it was read - reload it, then retry (FR-CNC-002, #172). */
   public static final String VERSION_CONFLICT = "VERSION_CONFLICT";
 
