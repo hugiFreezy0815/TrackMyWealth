@@ -48,7 +48,7 @@ class CategoryServiceTest {
   private static final UUID MEMBER = UUID.randomUUID();
   private static final AuthenticatedUserPrincipal ACTOR =
       new AuthenticatedUserPrincipal(
-          UUID.randomUUID(), "STANDARD_USER", WORKSPACE, UUID.randomUUID());
+          UUID.randomUUID(), "STANDARD_USER", WORKSPACE, UUID.randomUUID(), "EN");
 
   private final CategoryRepository categoryRepository = mock(CategoryRepository.class);
   private final WorkspaceCategoryOverrideRepository overrideRepository =

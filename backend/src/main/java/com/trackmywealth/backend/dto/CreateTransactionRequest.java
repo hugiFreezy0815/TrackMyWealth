@@ -93,7 +93,7 @@ public record CreateTransactionRequest(
     @NotNull @Digits(integer = 16, fraction = 4) BigDecimal amount,
     @NotBlank @ValidCurrencyCode String currency,
     @Size(max = 255) String merchantDescription,
-    @Pattern(regexp = "\\d{4}", message = "mcc must be a four-digit ISO 18245 code") String mcc,
+    @Pattern(regexp = "\\d{4}", message = "{tmw.validation.mcc}") String mcc,
     @Size(max = 2000) String notes,
     @Size(max = 255) String externalId,
     @Digits(integer = 10, fraction = 10) BigDecimal fxRateToAccountCurrency,

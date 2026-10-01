@@ -90,6 +90,17 @@ cd backend
     mutating route whose OpenAPI does not document it.
     A successful write's `ETag` must be the version the row was stored with; controller tests
     check it with `CurrentVersion.storedEtag`.
+- **Validation messages are localized at the server boundary** (#153, NFR-I18N-001..005).
+  Authenticated requests use the stored `app_user.language` preference; unauthenticated requests
+  use `Accept-Language`; unsupported or missing languages fall back to English. New Bean Validation
+  messages must be message keys, never hard-coded prose, and must have both EN and DE entries in
+  `messages.properties` / `messages_de.properties` - including a constraint's own `message =`
+  override and the validation problem's `detail`. `ValidationMessageBundleTest` fails the build for
+  a hard-coded constraint message, a key missing from either bundle, or bundles whose keys differ.
+  Keep privacy-sensitive wording semantically identical across languages; localization must never
+  reveal more than the English message. Only validation errors are localized so far: other 400s
+  (malformed JSON, a wrongly typed parameter) and every other hand-written `detail` - business
+  conflicts, `ResponseStatusException` reasons - are still English until EPIC-21.
 - SLF4J (`LoggerFactory.getLogger`) for logging, never `System.out`/`System.err` — enforced by both
   PMD (`SystemPrintln`) and an ArchUnit general coding rule; see `DatabaseBootstrapInitializer` for
   why this is safe even in code that runs before Spring's DI container exists.

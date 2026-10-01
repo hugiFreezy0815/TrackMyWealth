@@ -17,6 +17,11 @@ spring:
   application:
     name: trackmywealth-backend
 
+  # #153: never fall back from a missing message key to the host JVM's locale. RequestLocaleResolver
+  # always selects EN or DE; a missing/unsupported Accept-Language falls back to EN.
+  messages:
+    fallback-to-system-locale: false
+
   # --- Datasource -------------------------------------------------------
   # Points at the *target* application database. DatabaseBootstrapInitializer
   # (see com.trackmywealth.backend.config) runs before this datasource is

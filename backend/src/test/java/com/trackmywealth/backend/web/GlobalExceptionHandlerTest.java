@@ -6,8 +6,12 @@ import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
 import java.io.IOException;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.context.support.ResourceBundleMessageSource;
+import org.springframework.core.MethodParameter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
@@ -17,6 +21,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.validation.ObjectError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.context.request.ServletWebRequest;
 
 /**
@@ -282,6 +290,48 @@ class GlobalExceptionHandlerTest {
             "Could not write JSON", new IllegalStateException("no serializer"));
 
     assertThat(notWritable(broken).getStatusCode().value()).isEqualTo(500);
+  }
+
+  // #153: a field or global error without a message of its own still gets one - "is invalid" - in
+  // the request's language, like every other message and the detail around it.
+  @Test
+  void anErrorWithoutAMessageGetsTheLocalizedFallback() throws Exception {
+    ResourceBundleMessageSource messages = new ResourceBundleMessageSource();
+    messages.setBasename("messages");
+    messages.setDefaultEncoding("UTF-8");
+    messages.setFallbackToSystemLocale(false);
+    GlobalExceptionHandler localized = new GlobalExceptionHandler();
+    localized.setMessageSource(messages);
+    BeanPropertyBindingResult result = new BeanPropertyBindingResult(new Object(), "request");
+    result.addError(new FieldError("request", "amount", null, false, null, null, null));
+    result.addError(new ObjectError("request", null, null, null));
+    MethodArgumentNotValidException invalid =
+        new MethodArgumentNotValidException(
+            new MethodParameter(Object.class.getMethod("equals", Object.class), 0), result);
+
+    try {
+      LocaleContextHolder.setLocale(Locale.GERMAN);
+      assertThat(String.valueOf(notValid(localized, invalid).getBody()))
+          .contains("Die Anfrage ist ungültig.")
+          .contains("message=ist ungültig")
+          .doesNotContain("is invalid");
+
+      LocaleContextHolder.setLocale(Locale.ENGLISH);
+      assertThat(String.valueOf(notValid(localized, invalid).getBody()))
+          .contains("The request is invalid.")
+          .contains("message=is invalid");
+    } finally {
+      LocaleContextHolder.resetLocaleContext();
+    }
+  }
+
+  private static ResponseEntity<Object> notValid(
+      GlobalExceptionHandler localized, MethodArgumentNotValidException ex) {
+    return localized.handleMethodArgumentNotValid(
+        ex,
+        new HttpHeaders(),
+        HttpStatus.BAD_REQUEST,
+        new ServletWebRequest(new MockHttpServletRequest()));
   }
 
   private ResponseEntity<Object> notWritable(HttpMessageNotWritableException ex) {

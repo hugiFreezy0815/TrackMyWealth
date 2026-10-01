@@ -804,7 +804,7 @@ class SecurityControllerTest {
                 + " = wm.id WHERE u.id = ?",
             userId);
     return new AuthenticatedUserPrincipal(
-        userId, "SYSTEM_ADMINISTRATOR", workspaceId, UUID.randomUUID());
+        userId, "SYSTEM_ADMINISTRATOR", workspaceId, UUID.randomUUID(), "EN");
   }
 
   // A second, fully independent workspace: its own member, user and (EDIT-able, as sole member)
@@ -837,7 +837,8 @@ class SecurityControllerTest {
           workspaceId,
           institutionId);
     }
-    return new AuthenticatedUserPrincipal(userId, "STANDARD_USER", workspaceId, UUID.randomUUID());
+    return new AuthenticatedUserPrincipal(
+        userId, "STANDARD_USER", workspaceId, UUID.randomUUID(), "EN");
   }
 
   private static void execute(Connection connection, String sql, Object... parameters)

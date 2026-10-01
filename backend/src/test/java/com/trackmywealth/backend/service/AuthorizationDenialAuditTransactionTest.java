@@ -376,7 +376,8 @@ class AuthorizationDenialAuditTransactionTest {
 
     private ResponseStatusException denial(UUID principalUserId, UUID requestedId) {
       AuthenticatedUserPrincipal actor =
-          new AuthenticatedUserPrincipal(principalUserId, "STANDARD_USER", null, UUID.randomUUID());
+          new AuthenticatedUserPrincipal(
+              principalUserId, "STANDARD_USER", null, UUID.randomUUID(), "EN");
       return auditService.denyAsNotFound(actor, "Account", requestedId);
     }
   }

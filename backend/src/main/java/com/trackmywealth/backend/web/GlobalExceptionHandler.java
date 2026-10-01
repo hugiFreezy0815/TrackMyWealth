@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
@@ -211,9 +213,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       errors.add(
           Map.of("field", error.getObjectName(), "message", messageOf(error.getDefaultMessage())));
     }
+    // #153: the field messages are already in the caller's language (Bean Validation interpolates
+    // them with the request locale); the detail around them must match, not stay English.
     ProblemDetail problem =
         ProblemDetails.of(
-            HttpStatus.BAD_REQUEST, ApiErrorCode.VALIDATION_FAILED, "The request is invalid.");
+            HttpStatus.BAD_REQUEST,
+            ApiErrorCode.VALIDATION_FAILED,
+            localized("tmw.problem.validation.detail", "The request is invalid."));
     problem.setProperty(ERRORS, errors);
     return handleExceptionInternal(ex, problem, headers, HttpStatus.BAD_REQUEST, request);
   }
@@ -233,8 +239,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     return super.createResponseEntity(body, headers, statusCode, request);
   }
 
-  private static String messageOf(String message) {
-    return message == null ? "is invalid" : message;
+  private String messageOf(String message) {
+    return message == null ? localized("tmw.validation.invalid", "is invalid") : message;
+  }
+
+  /**
+   * The message for {@code code} in the request's locale (RequestLocaleResolver: stored preference,
+   * then Accept-Language, then English). The default only applies without a MessageSource, which
+   * the Spring context always injects (MessageSourceAware) - a standalone test may not.
+   */
+  private String localized(String code, String defaultMessage) {
+    MessageSource messageSource = getMessageSource();
+    return messageSource == null
+        ? defaultMessage
+        : messageSource.getMessage(code, null, defaultMessage, LocaleContextHolder.getLocale());
   }
 
   private ProblemDetail conflict(String code, String detail) {
