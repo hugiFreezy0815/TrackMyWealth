@@ -67,12 +67,23 @@ export const api = {
     request<T>(path, { ...options, method: 'POST', body }),
   put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, { ...options, method: 'PUT', body }),
-  putVersioned: <T>(path: string, version: number, body?: unknown, options?: RequestOptions) =>
-    request<T>(path, { ...withIfMatch(version, options), method: 'PUT', body }),
-  postVersioned: <T>(path: string, version: number, body?: unknown, options?: RequestOptions) =>
-    request<T>(path, { ...withIfMatch(version, options), method: 'POST', body }),
+  putVersioned: <T>(
+    path: string,
+    version: number,
+    body?: unknown,
+    options?: RequestOptions,
+  ) => request<T>(path, { ...withIfMatch(version, options), method: 'PUT', body }),
+  postVersioned: <T>(
+    path: string,
+    version: number,
+    body?: unknown,
+    options?: RequestOptions,
+  ) => request<T>(path, { ...withIfMatch(version, options), method: 'POST', body }),
   delete: <T>(path: string, options?: RequestOptions) =>
     request<T>(path, { ...options, method: 'DELETE' }),
-  deleteVersioned: <T>(path: string, version: number, options?: RequestOptions) =>
-    request<T>(path, { ...withIfMatch(version, options), method: 'DELETE' }),
+  deleteVersioned: <T>(
+    path: string,
+    version: number,
+    options?: RequestOptions,
+  ) => request<T>(path, { ...withIfMatch(version, options), method: 'DELETE' }),
 };
