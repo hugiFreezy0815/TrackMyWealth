@@ -5,15 +5,17 @@ import com.trackmywealth.backend.dto.EditUserRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AdminUserService;
+import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.VersionedResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -36,27 +38,39 @@ public class AdminUserController {
   public ResponseEntity<UserSummaryResponse> createUser(
       @Valid @RequestBody CreateUserRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return ResponseEntity.status(HttpStatus.CREATED)
-        .body(adminUserService.createUser(request, actor.userId(), actor.workspaceId()));
+    UserSummaryResponse response =
+        adminUserService.createUser(request, actor.userId(), actor.workspaceId());
+    return VersionedResponse.created(response, response.version());
   }
 
   @PatchMapping("/{id}")
-  public UserSummaryResponse editUser(
+  public ResponseEntity<UserSummaryResponse> editUser(
       @PathVariable UUID id,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @Valid @RequestBody EditUserRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return adminUserService.editUser(id, request, actor.userId());
+    UserSummaryResponse response =
+        adminUserService.editUser(id, request, IfMatchVersionParser.parse(ifMatch), actor.userId());
+    return VersionedResponse.ok(response, response.version());
   }
 
   @PostMapping("/{id}/disable")
-  public UserSummaryResponse disableUser(
-      @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return adminUserService.disableUser(id, actor.userId());
+  public ResponseEntity<UserSummaryResponse> disableUser(
+      @PathVariable UUID id,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    UserSummaryResponse response =
+        adminUserService.disableUser(id, IfMatchVersionParser.parse(ifMatch), actor.userId());
+    return VersionedResponse.ok(response, response.version());
   }
 
   @PostMapping("/{id}/reactivate")
-  public UserSummaryResponse reactivateUser(
-      @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return adminUserService.reactivateUser(id, actor.userId());
+  public ResponseEntity<UserSummaryResponse> reactivateUser(
+      @PathVariable UUID id,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    UserSummaryResponse response =
+        adminUserService.reactivateUser(id, IfMatchVersionParser.parse(ifMatch), actor.userId());
+    return VersionedResponse.ok(response, response.version());
   }
 }
