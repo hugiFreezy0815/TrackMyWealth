@@ -276,14 +276,16 @@ class CategoryServiceTest {
     }
 
     @Test
-    void relabellingADefaultBackToTheShippedLabelsRemovesTheOverride() {
+    void relabellingADefaultBackToTheShippedLabelsKeepsTheRevisionRow() {
       WorkspaceCategoryOverride existing = override(leisure, "Free Time", null, null);
 
       CategoryResponse restored =
           update(
               leisure.getId(), new UpdateCategoryRequest(null, "Leisure", "Freizeit", 1), ACTOR);
 
-      verify(overrideRepository).delete(existing);
+      verify(overrideRepository).saveAndFlush(existing);
+      verify(overrideRepository, never()).delete(existing);
+      assertThat(existing.isEmpty()).isTrue();
       assertThat(restored.customised()).isFalse();
       assertThat(restored.nameEn()).isEqualTo("Leisure");
     }
@@ -429,8 +431,9 @@ class CategoryServiceTest {
 
       CategoryResponse reactivated = activate(leisure.getId(), ACTOR);
       assertThat(reactivated.active()).isTrue();
-      assertThat(reactivated.customised()).as("override back to inherit is removed").isFalse();
-      verify(overrideRepository).delete(any(WorkspaceCategoryOverride.class));
+      assertThat(reactivated.customised()).as("override values are back to inherit").isFalse();
+      verify(overrideRepository, times(2)).saveAndFlush(any(WorkspaceCategoryOverride.class));
+      verify(overrideRepository, never()).delete(any(WorkspaceCategoryOverride.class));
       assertThat(sport.isActive()).isFalse();
       assertThat(football.isActive()).isFalse();
     }
@@ -545,12 +548,13 @@ class CategoryServiceTest {
           () ->
               update(
                   hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys", 2), ACTOR),
-          HttpStatus.CONFLICT);
+          HttpStatus.PRECONDITION_FAILED);
       verify(categoryRepository, never()).saveAndFlush(any());
       assertThat(
-              service
-                  .update(
-                      hobby.getId(), new UpdateCategoryRequest(null, "Hobbies", "Hobbys", 3), ACTOR)
+              update(
+                      hobby.getId(),
+                      new UpdateCategoryRequest(null, "Hobbies", "Hobbys", 3),
+                      ACTOR)
                   .nameEn())
           .isEqualTo("Hobbies");
     }
@@ -776,8 +780,13 @@ class CategoryServiceTest {
   }
 
   private static <T> T persist(T entity, List<T> table) {
-    if (ReflectionTestUtils.getField(entity, "id") == null) {
+    Object id = ReflectionTestUtils.getField(entity, "id");
+    Integer version = (Integer) ReflectionTestUtils.getField(entity, "version");
+    if (id == null) {
       ReflectionTestUtils.setField(entity, "id", UUID.randomUUID());
+      ReflectionTestUtils.setField(entity, "version", 0);
+    } else {
+      ReflectionTestUtils.setField(entity, "version", version == null ? 1 : version + 1);
     }
     if (!table.contains(entity)) {
       table.add(entity);
