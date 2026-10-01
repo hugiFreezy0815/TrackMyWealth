@@ -101,11 +101,69 @@ class WorkspaceMemberControllerTest {
     client(token)
         .post()
         .uri("/api/v1/workspace-members/" + selfMemberId + "/deactivate")
+        .headers(CurrentVersion.ifMatch(dataSource, "workspace_member", selfMemberId))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
 
     assertThat(memberStatus(selfMemberId)).isEqualTo("ACTIVE");
+  }
+
+  // #207 / FR-CNC-001: GET /workspace-members/{id} (own membership only) returns the ETag. Only the
+  // member can deactivate themselves, and a deactivation logs every device out, so the race is
+  // with any other change to the member row in between - simulated by bumping its version directly.
+  // A deactivation based on that stale read is a 412 and changes nothing; one without If-Match is
+  // a 428; one with the current ETag succeeds.
+  @Test
+  void aStaleMemberDeactivationIsRejectedAndTheFirstIsKept() throws Exception {
+    bootstrapAdministrator();
+    createSecondMember("partner@example.com");
+    String partnerToken = login("partner@example.com", SECOND_MEMBER_PASSWORD);
+    UUID partnerMemberId = workspaceMemberIdForEmail("partner@example.com");
+
+    deactivateWith(partnerToken, partnerMemberId, null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+
+    String staleEtag = memberEtag(partnerToken, partnerMemberId);
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "UPDATE workspace_member SET updated_at = now() WHERE id = ?")) {
+      statement.setObject(1, partnerMemberId);
+      statement.executeUpdate();
+    }
+
+    deactivateWith(partnerToken, partnerMemberId, staleEtag)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(memberStatus(partnerMemberId)).isEqualTo("ACTIVE");
+
+    deactivateWith(partnerToken, partnerMemberId, memberEtag(partnerToken, partnerMemberId))
+        .expectStatus()
+        .isOk();
+    assertThat(memberStatus(partnerMemberId)).isEqualTo("INACTIVE");
+  }
+
+  private String memberEtag(String token, UUID memberId) {
+    String etag =
+        client(token)
+            .get()
+            .uri("/api/v1/workspace-members/" + memberId)
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .returnResult()
+            .getResponseHeaders()
+            .getETag();
+    assertThat(etag).isNotNull();
+    return etag;
   }
 
   @Test
@@ -122,6 +180,7 @@ class WorkspaceMemberControllerTest {
         client(partnerToken)
             .post()
             .uri("/api/v1/workspace-members/" + partnerMemberId + "/deactivate")
+            .headers(CurrentVersion.ifMatch(dataSource, "workspace_member", partnerMemberId))
             .exchange()
             .expectStatus()
             .isOk()
@@ -149,6 +208,7 @@ class WorkspaceMemberControllerTest {
     client(adminToken)
         .post()
         .uri("/api/v1/workspace-members/" + partnerMemberId + "/deactivate")
+        .headers(CurrentVersion.ifMatch(dataSource, "workspace_member", partnerMemberId))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
@@ -169,6 +229,7 @@ class WorkspaceMemberControllerTest {
     client(token)
         .post()
         .uri("/api/v1/workspace-members/" + UUID.randomUUID() + "/deactivate")
+        .headers(CurrentVersion.ifMatch(dataSource, "workspace_member", UUID.randomUUID()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
@@ -181,9 +242,23 @@ class WorkspaceMemberControllerTest {
         .build()
         .post()
         .uri("/api/v1/workspace-members/" + UUID.randomUUID() + "/deactivate")
+        .headers(CurrentVersion.ifMatch(dataSource, "workspace_member", UUID.randomUUID()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  private RestTestClient.ResponseSpec deactivateWith(String token, UUID memberId, String ifMatch) {
+    return client(token)
+        .post()
+        .uri("/api/v1/workspace-members/" + memberId + "/deactivate")
+        .headers(
+            headers -> {
+              if (ifMatch != null) {
+                headers.setIfMatch(ifMatch);
+              }
+            })
+        .exchange();
   }
 
   private String memberStatus(UUID memberId) {

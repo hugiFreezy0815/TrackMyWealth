@@ -207,6 +207,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + proposal.id() + "/confirm")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", proposal.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -264,6 +265,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + proposal.id() + "/reject")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", proposal.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -301,6 +303,7 @@ class TransferControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + card.id() + "/settlement-source")
+        .headers(CurrentVersion.ifMatchForCard(dataSource, card.id()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new SetSettlementSourceRequest(current.id()))
         .exchange()
@@ -367,6 +370,7 @@ class TransferControllerTest {
         client(token)
             .post()
             .uri(rowUri(current.id(), leg.id()) + "/untracked-transfer")
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", leg.id()))
             .exchange()
             .expectStatus()
             .isOk()
@@ -380,6 +384,7 @@ class TransferControllerTest {
     client(token)
         .delete()
         .uri(rowUri(current.id(), leg.id()) + "/untracked-transfer")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", leg.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -395,6 +400,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri(rowUri(current.id(), leg.id()) + "/untracked-transfer")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", leg.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -409,6 +415,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + match.id() + "/reject")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", match.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -429,12 +436,14 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri(rowUri(current.id(), expense.id()) + "/untracked-transfer")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", expense.id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
     client(token)
         .post()
         .uri(rowUri(current.id(), linked.id()) + "/untracked-transfer")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", linked.id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -581,6 +590,7 @@ class TransferControllerTest {
         client(token)
             .delete()
             .uri(rowUri(savings.id(), credit.id()))
+            .headers(CurrentVersion.ifMatch(dataSource, "transaction", credit.id()))
             .exchange()
             .expectStatus()
             .isOk()
@@ -595,6 +605,7 @@ class TransferControllerTest {
     client(token)
         .post()
         .uri(rowUri(savings.id(), credit.id()) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", credit.id()))
         .exchange()
         .expectStatus()
         .isOk();

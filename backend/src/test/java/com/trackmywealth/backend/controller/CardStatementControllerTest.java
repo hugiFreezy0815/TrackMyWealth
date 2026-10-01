@@ -135,6 +135,33 @@ class CardStatementControllerTest {
     assertThat(cleared).isEqualTo(new StatementConfigResponse(card, null, null, 2));
   }
 
+  // #207 / FR-CNC-001: two clients read the same card configuration; the second, stale write is
+  // rejected and the first one is kept. Without If-Match: 428.
+  @Test
+  void aStaleStatementConfigWriteIsRejectedAndTheFirstIsKept() {
+    String token = bootstrapAdministrator();
+    UUID card = createCard(token);
+    int versionReadByBoth = getConfig(token, card).version();
+
+    putConfig(token, card, new SetStatementConfigRequest(5, 20), versionReadByBoth)
+        .expectStatus()
+        .isOk();
+    putConfig(token, card, new SetStatementConfigRequest(9, 30), versionReadByBoth)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(getConfig(token, card).statementDay()).isEqualTo(5);
+
+    putConfig(token, card, new SetStatementConfigRequest(9, 30), null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+  }
+
   @Test
   void anOutOfRangeStatementDayOrANegativeOffsetIsRejected() {
     String token = bootstrapAdministrator();
@@ -453,6 +480,22 @@ class CardStatementControllerTest {
     return expected == HttpStatus.OK
         ? response.expectBody(StatementConfigResponse.class).returnResult().getResponseBody()
         : null;
+  }
+
+  private RestTestClient.ResponseSpec putConfig(
+      String token, UUID card, SetStatementConfigRequest request, Integer version) {
+    return client(token)
+        .put()
+        .uri("/api/v1/accounts/" + card + "/statement-config")
+        .headers(
+            headers -> {
+              if (version != null) {
+                headers.setIfMatch("\"" + version + "\"");
+              }
+            })
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange();
   }
 
   private StatementConfigResponse getConfig(String token, UUID card) {

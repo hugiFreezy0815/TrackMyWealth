@@ -80,8 +80,17 @@ class TransactionServiceTest {
     depot.setHoldsPositions(true);
     when(accountLookupService.findAccountOrThrow(eq(ACCOUNT), any())).thenReturn(depot);
     when(securityRepository.existsById(SECURITY)).thenReturn(true);
+    // As the database does on INSERT (V10 DEFAULT 0, read back via @Generated): a saved row has a
+    // version, which every TransactionResponse now carries (#207).
     when(transactionRepository.saveAndFlush(any(Transaction.class)))
-        .thenAnswer(invocation -> invocation.getArgument(0));
+        .thenAnswer(
+            invocation -> {
+              Transaction saved = invocation.getArgument(0);
+              if (saved.getVersion() == null) {
+                ReflectionTestUtils.setField(saved, "version", 0);
+              }
+              return saved;
+            });
   }
 
   // --- trades --------------------------------------------------------------------------------

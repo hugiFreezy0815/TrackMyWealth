@@ -266,6 +266,50 @@ class AccountSnapshotControllerTest {
         .isEqualTo(1);
   }
 
+  // #207 / FR-CNC-001: two clients read the same snapshot; the second, stale replacement is
+  // rejected and the first one is kept. Without If-Match the replacement is not attempted at all.
+  @Test
+  void aStaleSnapshotReplacementIsRejectedAndTheFirstIsKept() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token, "Cash", "CASH");
+    AccountSnapshotResponse readByBoth =
+        recordOk(token, account.id(), balanceOnly(today(), "100.00"));
+
+    AccountSnapshotResponse first =
+        replace(
+                token,
+                account.id(),
+                readByBoth.id(),
+                balanceOnlyReplacement("150.00"),
+                ifMatch(readByBoth.version()))
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSnapshotResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(first.version()).isGreaterThan(readByBoth.version());
+
+    replace(
+            token,
+            account.id(),
+            readByBoth.id(),
+            balanceOnlyReplacement("200.00"),
+            ifMatch(readByBoth.version()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(get(token, account.id(), readByBoth.id()).balance()).isEqualByComparingTo("150.00");
+
+    replace(token, account.id(), readByBoth.id(), balanceOnlyReplacement("300.00"), null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+  }
+
   @Test
   void aProviderReportedSnapshotCannotBeReplaced() throws Exception {
     String token = bootstrapAdministrator();
@@ -525,9 +569,38 @@ class AccountSnapshotControllerTest {
     return client(token)
         .put()
         .uri("/api/v1/accounts/" + accountId + "/snapshots/" + snapshotId)
+        .headers(CurrentVersion.ifMatch(dataSource, "account_snapshot", snapshotId))
         .contentType(MediaType.APPLICATION_JSON)
         .body(request)
         .exchange();
+  }
+
+  private RestTestClient.ResponseSpec replace(
+      String token,
+      UUID accountId,
+      UUID snapshotId,
+      ReplaceAccountSnapshotRequest request,
+      String ifMatch) {
+    return client(token)
+        .put()
+        .uri("/api/v1/accounts/" + accountId + "/snapshots/" + snapshotId)
+        .headers(
+            headers -> {
+              if (ifMatch != null) {
+                headers.setIfMatch(ifMatch);
+              }
+            })
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange();
+  }
+
+  private static ReplaceAccountSnapshotRequest balanceOnlyReplacement(String balance) {
+    return new ReplaceAccountSnapshotRequest(new BigDecimal(balance), List.of());
+  }
+
+  private static String ifMatch(int version) {
+    return "\"" + version + "\"";
   }
 
   private AccountSnapshotResponse get(String token, UUID accountId, UUID snapshotId) {

@@ -189,6 +189,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .post()
         .uri(rowUri(card.id(), typo.id()) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -269,6 +270,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .delete()
         .uri(rowUri(card.id(), imported))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
@@ -305,12 +307,14 @@ class TransactionRemovalControllerTest {
     client(token)
         .delete()
         .uri(rowUri(card.id(), imported) + "?reason=again")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
     client(token)
         .delete()
         .uri(rowUri(card.id(), voided.reversals().get(0).id()) + "?reason=again")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", voided.reversals().get(0).id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -318,6 +322,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .put()
         .uri(rowUri(card.id(), voided.reversals().get(0).id()) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", voided.reversals().get(0).id()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new SetTransactionCategoryRequest(defaultCategory("SHOPPING")))
         .exchange()
@@ -495,6 +500,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + match + "/reject")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", match))
         .exchange()
         .expectStatus()
         .isOk();
@@ -513,6 +519,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .post()
         .uri("/api/v1/settlement-matches/" + match + "/confirm")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", match))
         .exchange()
         .expectStatus()
         .isNotFound();
@@ -605,6 +612,7 @@ class TransactionRemovalControllerTest {
     client(memberToken)
         .delete()
         .uri(rowUri(card.id(), typo.id()))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
         .exchange()
         .expectStatus()
         .isNotFound();
@@ -614,6 +622,7 @@ class TransactionRemovalControllerTest {
     client(memberToken)
         .post()
         .uri(rowUri(card.id(), typo.id()) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
         .exchange()
         .expectStatus()
         .isNotFound();
@@ -633,6 +642,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .delete()
         .uri(rowUri(other.id(), typo.id()))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
         .exchange()
         .expectStatus()
         .isNotFound();
@@ -689,6 +699,7 @@ class TransactionRemovalControllerTest {
     return client(token)
         .delete()
         .uri(rowUri(accountId, transactionId) + (reason == null ? "" : "?reason=" + reason))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", transactionId))
         .exchange()
         .expectStatus()
         .isOk()
@@ -701,6 +712,7 @@ class TransactionRemovalControllerTest {
     return client(token)
         .post()
         .uri(rowUri(accountId, transactionId) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", transactionId))
         .exchange()
         .expectStatus()
         .isOk()
@@ -785,6 +797,7 @@ class TransactionRemovalControllerTest {
     client(token)
         .put()
         .uri("/api/v1/accounts/" + cardAccountId + "/settlement-source")
+        .headers(CurrentVersion.ifMatchForCard(dataSource, cardAccountId))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new SetSettlementSourceRequest(sourceAccountId))
         .exchange()

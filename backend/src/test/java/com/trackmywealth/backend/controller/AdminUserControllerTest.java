@@ -20,6 +20,7 @@ import java.sql.Statement;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -198,6 +199,52 @@ class AdminUserControllerTest {
     assertThat(appUserRepository.findAll()).hasSize(2);
   }
 
+  // #207 / FR-CNC-001: two administrators read the same user (GET /admin/users/{id} returns its
+  // ETag); the second, stale edit is rejected and the first one is kept. Without If-Match: 428.
+  @Test
+  void aStaleUserEditIsRejectedAndTheFirstIsKept() {
+    String adminToken = bootstrapAdministrator();
+    AppUser bob = createStandardUser(adminToken, "bob@example.com");
+    String etagReadByBoth =
+        adminClient(adminToken)
+            .get()
+            .uri("/api/v1/admin/users/" + bob.getId())
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .returnResult()
+            .getResponseHeaders()
+            .getETag();
+    assertThat(etagReadByBoth).isNotNull();
+
+    editUser(
+            adminToken,
+            bob.getId(),
+            new EditUserRequest("bob.first@example.com", null, null),
+            etagReadByBoth)
+        .expectStatus()
+        .isOk();
+    editUser(
+            adminToken,
+            bob.getId(),
+            new EditUserRequest("bob.stale@example.com", null, null),
+            etagReadByBoth)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(appUserRepository.findById(bob.getId()).orElseThrow().getEmail())
+        .isEqualTo("bob.first@example.com");
+
+    editUser(adminToken, bob.getId(), new EditUserRequest("bob.none@example.com", null, null), null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+  }
+
   @Test
   void editingAUserToAnAlreadyUsedEmailIsRejected() {
     String adminToken = bootstrapAdministrator();
@@ -207,6 +254,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .patch()
         .uri("/api/v1/admin/users/" + bob.getId())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", bob.getId()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new EditUserRequest("charlie@example.com", null, null))
         .exchange()
@@ -225,6 +273,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .patch()
         .uri("/api/v1/admin/users/" + bob.getId())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", bob.getId()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new EditUserRequest("", null, null))
         .exchange()
@@ -243,6 +292,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .patch()
         .uri("/api/v1/admin/users/" + bob.getId())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", bob.getId()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new EditUserRequest(null, null, "DE"))
         .exchange()
@@ -278,6 +328,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + charlie.getId() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -317,11 +368,13 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + charlie.getId() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
         .exchange();
 
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + charlie.getId() + "/reactivate")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -340,6 +393,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + admin.getId() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", admin.getId()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -347,6 +401,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .patch()
         .uri("/api/v1/admin/users/" + admin.getId())
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", admin.getId()))
         .contentType(MediaType.APPLICATION_JSON)
         .body(new EditUserRequest(null, "STANDARD_USER", null))
         .exchange()
@@ -385,6 +440,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + secondAdminSummary.id() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", secondAdminSummary.id()))
         .exchange()
         .expectStatus()
         .isOk();
@@ -393,6 +449,7 @@ class AdminUserControllerTest {
     adminClient(adminToken)
         .post()
         .uri("/api/v1/admin/users/" + firstAdmin.getId() + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", firstAdmin.getId()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
@@ -447,6 +504,22 @@ class AdminUserControllerTest {
             .returnResult()
             .getResponseBody();
     return appUserRepository.findById(created.id()).orElseThrow();
+  }
+
+  private RestTestClient.ResponseSpec editUser(
+      String adminToken, UUID userId, EditUserRequest request, String ifMatch) {
+    return adminClient(adminToken)
+        .patch()
+        .uri("/api/v1/admin/users/" + userId)
+        .headers(
+            headers -> {
+              if (ifMatch != null) {
+                headers.setIfMatch(ifMatch);
+              }
+            })
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange();
   }
 
   private AppUser onlyAppUser() {

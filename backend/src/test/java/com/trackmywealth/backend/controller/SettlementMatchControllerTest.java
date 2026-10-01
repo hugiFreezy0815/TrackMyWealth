@@ -358,6 +358,36 @@ class SettlementMatchControllerTest {
     assertThat(proposal.paymentTransactionId()).isEqualTo(payment.id());
   }
 
+  // #207 / FR-CNC-001: two members look at the same proposal; one confirms it, the other's
+  // reject - based on the proposal as it was - is a 412, and the confirmation is kept. Without
+  // If-Match a decision is not attempted (428).
+  @Test
+  void aStaleDecisionOnAProposalIsRejectedAndTheFirstIsKept() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    purchase(token, a.card(), "-1200.00", AUG_10);
+    withdrawal(token, a.current(), "-1200.00", SEP_3);
+    SettlementMatchResponse readByBoth = matches(token, null).get(0);
+
+    decideWith(token, readByBoth.id(), "confirm", null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+
+    decideWith(token, readByBoth.id(), "confirm", readByBoth.version()).expectStatus().isOk();
+    decideWith(token, readByBoth.id(), "reject", readByBoth.version())
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+    assertThat(matches(token, SettlementMatchValues.CONFIRMED))
+        .extracting(SettlementMatchResponse::id)
+        .containsExactly(readByBoth.id());
+  }
+
   @Test
   void confirmingAOneSidedProposalFlagsThePaymentAndTheCardCreditLaterCompletesIt() {
     String token = bootstrapAdministrator();
@@ -1176,10 +1206,28 @@ class SettlementMatchControllerTest {
     return matches.stream().map(SettlementMatchResponse::id).toList();
   }
 
+  private RestTestClient.ResponseSpec decideWith(
+      String token, UUID matchId, String action, Integer version) {
+    return client(token)
+        .post()
+        .uri("/api/v1/settlement-matches/" + matchId + "/" + action)
+        .headers(
+            headers -> {
+              if (version != null) {
+                headers.setIfMatch("\"" + version + "\"");
+              }
+            })
+        .exchange();
+  }
+
   private SettlementMatchResponse decide(
       String token, UUID matchId, String action, HttpStatus expected) {
     RestTestClient.ResponseSpec response =
-        client(token).post().uri("/api/v1/settlement-matches/" + matchId + "/" + action).exchange();
+        client(token)
+            .post()
+            .uri("/api/v1/settlement-matches/" + matchId + "/" + action)
+            .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", matchId))
+            .exchange();
     response.expectStatus().isEqualTo(expected);
     return expected == HttpStatus.OK
         ? response.expectBody(SettlementMatchResponse.class).returnResult().getResponseBody()
@@ -1192,6 +1240,7 @@ class SettlementMatchControllerTest {
         client(token)
             .put()
             .uri("/api/v1/accounts/" + card + "/settlement-source")
+            .headers(CurrentVersion.ifMatchForCard(dataSource, card))
             .contentType(MediaType.APPLICATION_JSON)
             .body(new SetSettlementSourceRequest(source))
             .exchange();
