@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import archfixture.controller.StrayEntityController;
 import archfixture.dto.StrayEntityResponse;
 import archfixture.model.StrayEntity;
+import archfixture.service.CategoryService;
 import archfixture.service.WebCoupledService;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -64,5 +65,17 @@ class ArchitectureRulesBiteTest {
             () -> ArchitectureTest.services_do_not_depend_on_the_web_layer.check(coupled))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("WebCoupledService");
+  }
+
+  // #192: a raw 404 in a service method nobody reviewed fails the build, even in a class that has
+  // another, reviewed one - the exemption is per method, never per class.
+  @Test
+  void anUnreviewedRawNotFoundInAServiceFailsTheBuild() {
+    JavaClasses bypass = new ClassFileImporter().importClasses(CategoryService.class);
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.object_level_services_do_not_construct_raw_not_found.check(bypass))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("CategoryService#findCategory");
   }
 }
