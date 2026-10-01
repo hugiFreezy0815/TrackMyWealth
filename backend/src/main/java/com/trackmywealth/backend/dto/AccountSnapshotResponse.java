@@ -21,6 +21,7 @@ public record AccountSnapshotResponse(
     boolean openingBalance,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt,
+    int version,
     List<SnapshotHoldingResponse> holdings) {
 
   public AccountSnapshotResponse {
