@@ -18,7 +18,11 @@ import org.hibernate.generator.EventType;
  * deliberately indistinguishable to the caller, so this audit trail deliberately doesn't record
  * which one actually happened either. {@code NOT_AUTHORIZED} (the column's other allowed value) is
  * reserved for a caller who knows exactly which resource they were denied - a role/permission
- * failure, not an identity-enumeration risk - which nothing writes to this table yet.
+ * failure, not an identity-enumeration risk - which nothing writes to this table yet. {@code
+ * RATE_LIMITED} (V47, #205) is a summary row: one is written when a principal exhausts the
+ * exact-row budget for a throttle window, and - if that window then suppressed any denials - one
+ * more closes it with {@code suppressed_count}. Neither carries a requested id; together they keep
+ * the probing signal and its magnitude without unbounded growth.
  */
 @Entity
 @Table(name = "authorization_denial_log")
@@ -40,6 +44,9 @@ public class AuthorizationDenialLog {
 
   @Column(nullable = false)
   private String reason;
+
+  @Column(name = "suppressed_count")
+  private Integer suppressedCount;
 
   @Generated(event = EventType.INSERT)
   @Column(name = "occurred_at", insertable = false, updatable = false)
@@ -79,6 +86,10 @@ public class AuthorizationDenialLog {
 
   public void setReason(String reason) {
     this.reason = reason;
+  }
+
+  public Integer getSuppressedCount() {
+    return suppressedCount;
   }
 
   public OffsetDateTime getOccurredAt() {
