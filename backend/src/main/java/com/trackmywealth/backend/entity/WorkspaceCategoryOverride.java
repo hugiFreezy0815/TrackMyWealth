@@ -16,7 +16,7 @@ import org.hibernate.generator.EventType;
  * Maps {@code workspace_category_override} (V34): one workspace's relabelling and/or deactivation
  * of a shared default {@link Category} (US-08-04). A NULL field inherits the shipped value, so a
  * later reference package relabelling a default still reaches workspaces that never changed it.
- * V44 allows an all-NULL row to remain as an optimistic-concurrency revision tombstone after a
+ * V45 allows an all-NULL row to remain as an optimistic-concurrency revision tombstone after a
  * workspace reverts to the shipped values; {@link #isEmpty()} distinguishes that state from an
  * effective customization.
  */
