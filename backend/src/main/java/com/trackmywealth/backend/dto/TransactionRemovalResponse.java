@@ -13,6 +13,7 @@ import java.util.UUID;
  */
 public record TransactionRemovalResponse(
     String removal,
+    int version,
     List<TransactionResponse> affected,
     List<TransactionResponse> reversals,
     List<UUID> unmatchedTransactionIds) {
