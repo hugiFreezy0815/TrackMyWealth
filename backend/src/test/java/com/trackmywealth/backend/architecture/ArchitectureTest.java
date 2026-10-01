@@ -187,7 +187,7 @@ class ArchitectureTest {
   static final Set<String> REVIEWED_RAW_NOT_FOUND_METHODS =
       Set.of(
           // The audited denial itself.
-          "AuthorizationDenialAuditService#recordDenial",
+          "AuthorizationDenialAuditService#denyAsNotFound",
           // The caller's own identity or workspace failing to resolve - no caller-supplied id.
           "AccessControlService#requireActingMember",
           "WorkspaceMemberService#requireActingMember",
