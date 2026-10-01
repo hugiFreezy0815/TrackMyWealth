@@ -91,7 +91,7 @@ public class SettlementMatchService {
 
     UUID sourceId = request.settlementSourceAccountId();
     if (sourceId != null) {
-      Account source = accountLookupService.findAccountOrThrow(sourceId);
+      Account source = accountLookupService.findAccountOrThrow(sourceId, actor);
       accessControlService.requireAccountAccess(actor, source, AccessLevelValues.EDIT);
       validateSource(card, source);
     }
@@ -112,7 +112,7 @@ public class SettlementMatchService {
     }
     // An account id the caller cannot see is not revealed through this card.
     UUID memberId = accessControlService.requireActingMember(actor);
-    Account source = accountLookupService.findAccountOrThrow(sourceId);
+    Account source = accountLookupService.findAccountOrThrow(sourceId, actor);
     boolean visible =
         !accessControlService
             .accountsWithAccess(memberId, List.of(source), AccessLevelValues.BALANCE_ONLY)
@@ -135,7 +135,7 @@ public class SettlementMatchService {
           HttpStatus.UNPROCESSABLE_CONTENT, "This card has no settlement source account set.");
     }
     accessControlService.requireAccountAccess(
-        actor, accountLookupService.findAccountOrThrow(sourceId), AccessLevelValues.EDIT);
+        actor, accountLookupService.findAccountOrThrow(sourceId, actor), AccessLevelValues.EDIT);
 
     settlementDetectionService.detectForCard(cardAccountId);
     Set<UUID> editable = editableAccountIds(actor);
@@ -278,7 +278,7 @@ public class SettlementMatchService {
   }
 
   private Account requireCard(UUID cardAccountId, AuthenticatedUserPrincipal actor, String level) {
-    Account card = accountLookupService.findAccountOrThrow(cardAccountId);
+    Account card = accountLookupService.findAccountOrThrow(cardAccountId, actor);
     accessControlService.requireAccountAccess(actor, card, level);
     if (!card.isHasStatementCycle()) {
       throw new ResponseStatusException(
