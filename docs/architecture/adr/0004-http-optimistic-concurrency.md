@@ -43,11 +43,12 @@ The first retrofit (#172) covers every existing mutation of the two mutable reso
 accounts (PUT, archive, restore, institution reassignment) and categories (PUT, activate, deactivate,
 delete).
 
-The other existing mutating endpoints (account ownership, snapshot replace, statement config,
-settlement source and matches, sharing-grant revoke, categorization-rule deactivate, transaction
-category/removal/untracked-transfer actions, workspace-member deactivate, admin user edits) do
-**not** check a client version yet and remain last-write-wins until #207 retrofits them or records
-an explicit exception here. New mutable endpoints must follow this ADR from the start.
+#207 retrofits every other existing mutating endpoint: account ownership, snapshot replace,
+statement config, settlement source and matches, sharing-grant revoke, categorization-rule
+deactivate, transaction category/removal/untracked-transfer actions, workspace-member deactivate
+and admin user edits. No mutating endpoint is excepted. Creates (`POST` on a collection) and the
+batch `settlement-matches/run` have no prior version to protect. New mutable endpoints must follow
+this ADR from the start.
 
 ## Why ETag / If-Match
 
@@ -80,3 +81,20 @@ untracked-transfer commands similarly share `transaction.version`.
 Admin user, workspace member and sharing grant gained narrow authorized GET-by-id endpoints because
 those resources previously had command endpoints but no way to refresh an existing concurrency
 token. List/create responses continue to expose versions where they already serve as reads.
+
+Account ownership is a full-replacement aggregate whose rows are dated history and may
+legitimately be empty, so it uses the parent `account.version` as its token
+(`AccountOwnershipSetResponse.version`); a replacement advances it. Consequences, accepted:
+
+- Ownership and the account's own fields share one token: changing either makes a client's stale
+  copy of the other a 412 - a reload, never a lost update.
+- Two replacements based on the same read cannot both win: `assignOwnership` takes the account row
+  lock (`findByIdForUpdate`) before comparing versions, so the loser waits for the winner's commit
+  and then sees the advanced version (412). `AccountOwnershipControllerTest` races exactly that.
+- `GET`/`PUT .../ownership` answer an object (`accountId`, `version`, `owners`) instead of a bare
+  list - a wire change made while no client consumed the endpoint yet.
+
+Automatic recategorization (a rule change re-running categorization) writes the transaction row
+too, so it advances `transaction.version` like a user's edit does. A client holding an ETag from
+before such a run gets a 412 on its next edit and must reload - deliberate: the category it saw is
+no longer the stored one.
