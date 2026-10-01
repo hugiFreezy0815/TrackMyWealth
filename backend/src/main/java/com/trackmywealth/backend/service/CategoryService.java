@@ -285,7 +285,6 @@ public class CategoryService {
     }
   }
 
-
   /**
    * {@link #requireAssignable(UUID, UUID)} for many assignments at once (e.g. categorizing an
    * import), loading the taxonomy once instead of once per category. Fails on the first category
