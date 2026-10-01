@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategoryService;
+import com.trackmywealth.backend.web.IfMatchVersionParser;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,45 +43,65 @@ public class CategoryController {
   }
 
   @GetMapping("/{id}")
-  public CategoryResponse get(
+  public ResponseEntity<CategoryResponse> get(
       @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return categoryService.get(id, actor);
+    CategoryResponse category = categoryService.get(id, actor);
+    return withEtag(ResponseEntity.ok(), category);
   }
 
   @PostMapping
   public ResponseEntity<CategoryResponse> create(
       @Valid @RequestBody CreateCategoryRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return ResponseEntity.status(HttpStatus.CREATED).body(categoryService.create(request, actor));
+    CategoryResponse created = categoryService.create(request, actor);
+    return withEtag(ResponseEntity.status(HttpStatus.CREATED), created);
   }
 
   @PutMapping("/{id}")
-  public CategoryResponse update(
+  public ResponseEntity<CategoryResponse> update(
       @PathVariable UUID id,
       @Valid @RequestBody UpdateCategoryRequest request,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return categoryService.update(id, request, actor);
+    CategoryResponse updated =
+        categoryService.update(id, request, IfMatchVersionParser.parseRequired(ifMatch), actor);
+    return withEtag(ResponseEntity.ok(), updated);
   }
 
   /** Cascades to every subcategory. */
   @PostMapping("/{id}/deactivate")
-  public CategoryResponse deactivate(
-      @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return categoryService.deactivate(id, actor);
+  public ResponseEntity<CategoryResponse> deactivate(
+      @PathVariable UUID id,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    CategoryResponse deactivated =
+        categoryService.deactivate(id, IfMatchVersionParser.parseRequired(ifMatch), actor);
+    return withEtag(ResponseEntity.ok(), deactivated);
   }
 
   /** This category only; its parent must be active. */
   @PostMapping("/{id}/activate")
-  public CategoryResponse activate(
-      @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return categoryService.activate(id, actor);
+  public ResponseEntity<CategoryResponse> activate(
+      @PathVariable UUID id,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    CategoryResponse activated =
+        categoryService.activate(id, IfMatchVersionParser.parseRequired(ifMatch), actor);
+    return withEtag(ResponseEntity.ok(), activated);
   }
 
   /** 204 only for a never-used workspace category; otherwise 409, deactivate instead. */
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(
-      @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    categoryService.delete(id, actor);
+      @PathVariable UUID id,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    categoryService.delete(id, IfMatchVersionParser.parseRequired(ifMatch), actor);
     return ResponseEntity.noContent().build();
+  }
+
+  private static ResponseEntity<CategoryResponse> withEtag(
+      ResponseEntity.BodyBuilder builder, CategoryResponse body) {
+    return builder.eTag(IfMatchVersionParser.toEtag(body.version())).body(body);
   }
 }
