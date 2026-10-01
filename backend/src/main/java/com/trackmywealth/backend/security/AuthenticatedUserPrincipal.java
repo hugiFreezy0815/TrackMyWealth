@@ -19,10 +19,8 @@ public record AuthenticatedUserPrincipal(
     UUID userId, String role, UUID workspaceId, UUID sessionId, String language)
     implements WorkspacePrincipal {
 
-  public AuthenticatedUserPrincipal(UUID userId, String role, UUID workspaceId, UUID sessionId) {
-    this(userId, role, workspaceId, sessionId, "EN");
-  }
-
+  // No constructor without a language: one would let a caller silently drop the user's stored
+  // preference. Anything that is not DE is English, the documented fallback (#153).
   public AuthenticatedUserPrincipal {
     language = "DE".equalsIgnoreCase(language) ? "DE" : "EN";
   }

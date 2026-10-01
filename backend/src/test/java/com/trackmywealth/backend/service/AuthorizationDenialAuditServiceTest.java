@@ -56,7 +56,7 @@ class AuthorizationDenialAuditServiceTest {
     UUID requestedId = UUID.randomUUID();
     AuthenticatedUserPrincipal actor =
         new AuthenticatedUserPrincipal(
-            userId, "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID());
+            userId, "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID(), "EN");
 
     ResponseStatusException denial = service.denyAsNotFound(actor, "Account", requestedId);
 

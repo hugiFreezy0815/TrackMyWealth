@@ -62,6 +62,7 @@ class ValidationLocalizationTest {
             .getContentAsString();
 
     assertThat(body)
+        .contains("Die Anfrage ist ungültig.")
         .contains("muss dem Muster")
         .contains("muss eine gültige ISIN sein")
         .doesNotContain("must match")
@@ -84,6 +85,7 @@ class ValidationLocalizationTest {
             .getContentAsString();
 
     assertThat(body)
+        .contains("The request is invalid.")
         .contains("must match")
         .contains("must be a valid ISIN")
         .doesNotContain("muss dem Muster")
@@ -113,8 +115,14 @@ class ValidationLocalizationTest {
             .getResponse()
             .getContentAsString();
 
-    assertThat(german).contains("muss dem Muster").contains("muss eine gültige ISIN sein");
-    assertThat(fallback).contains("must match").contains("must be a valid ISIN");
+    assertThat(german)
+        .contains("Die Anfrage ist ungültig.")
+        .contains("muss dem Muster")
+        .contains("muss eine gültige ISIN sein");
+    assertThat(fallback)
+        .contains("The request is invalid.")
+        .contains("must match")
+        .contains("must be a valid ISIN");
   }
 
   private static MockMvc mockMvc() {
@@ -127,8 +135,12 @@ class ValidationLocalizationTest {
     validator.setValidationMessageSource(messages);
     validator.afterPropertiesSet();
 
+    // The Spring context injects the MessageSource into the advice (MessageSourceAware).
+    GlobalExceptionHandler handler = new GlobalExceptionHandler();
+    handler.setMessageSource(messages);
+
     return MockMvcBuilders.standaloneSetup(new ValidationProbeController())
-        .setControllerAdvice(new GlobalExceptionHandler())
+        .setControllerAdvice(handler)
         .setValidator(validator)
         .setLocaleResolver(new RequestLocaleResolver())
         .build();

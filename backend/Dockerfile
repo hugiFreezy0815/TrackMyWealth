@@ -17,9 +17,10 @@ FROM eclipse-temurin:25-jre
 WORKDIR /app
 
 # #153: deterministic fallback for any library code that still consults Locale.getDefault().
-# Request validation itself is request/user-localized and does not depend on this value.
+# Request validation itself is request/user-localized and does not depend on this value. The JVM
+# locale is pinned on the java command line (ENTRYPOINT) rather than via JAVA_TOOL_OPTIONS, which a
+# deployment setting its own JAVA_TOOL_OPTIONS would silently replace.
 ENV LANG=C.UTF-8
-ENV JAVA_TOOL_OPTIONS="-Duser.language=en -Duser.country=US"
 
 # Runs as a non-root user - unlike the Maven build stage, this is the image that actually faces
 # the network.
@@ -28,4 +29,4 @@ COPY --from=build /build/target/*.jar app.jar
 USER trackmywealth
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Duser.language=en", "-Duser.country=US", "-jar", "app.jar"]

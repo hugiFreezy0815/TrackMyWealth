@@ -838,7 +838,8 @@ class CategoryControllerTest {
             + " 'b@example.com', 'x', ?)",
         userId,
         memberId);
-    return new AuthenticatedUserPrincipal(userId, "STANDARD_USER", workspaceId, UUID.randomUUID());
+    return new AuthenticatedUserPrincipal(
+        userId, "STANDARD_USER", workspaceId, UUID.randomUUID(), "EN");
   }
 
   private void execute(String sql, Object... parameters) throws SQLException {

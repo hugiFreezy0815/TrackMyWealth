@@ -940,7 +940,8 @@ class TransactionRemovalControllerTest {
             (UUID) resultSet.getObject(1),
             "SYSTEM_ADMINISTRATOR",
             (UUID) resultSet.getObject(2),
-            UUID.randomUUID());
+            UUID.randomUUID(),
+            "EN");
       }
     } catch (SQLException e) {
       throw new IllegalStateException(e);

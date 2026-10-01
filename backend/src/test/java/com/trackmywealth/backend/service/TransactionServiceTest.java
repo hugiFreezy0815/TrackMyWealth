@@ -46,7 +46,7 @@ class TransactionServiceTest {
   private static final LocalDate BOOKED = LocalDate.of(2026, 9, 28);
   private static final AuthenticatedUserPrincipal ACTOR =
       new AuthenticatedUserPrincipal(
-          UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID());
+          UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID(), "EN");
 
   private final AccountLookupService accountLookupService = mock(AccountLookupService.class);
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);

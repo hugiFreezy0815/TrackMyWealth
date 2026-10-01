@@ -32,25 +32,7 @@ public record AppUserAuthSnapshot(
     String sessionStatus,
     String language) {
 
-  public AppUserAuthSnapshot(
-      UUID userId,
-      String role,
-      String status,
-      int tokenVersion,
-      UUID workspaceId,
-      String workspaceMemberStatus,
-      String sessionStatus) {
-    this(
-        userId,
-        role,
-        status,
-        tokenVersion,
-        workspaceId,
-        workspaceMemberStatus,
-        sessionStatus,
-        "EN");
-  }
-
+  // app_user.language is EN or DE (V2 CHECK); anything else would still resolve to English.
   public AppUserAuthSnapshot {
     language = "DE".equalsIgnoreCase(language) ? "DE" : "EN";
   }
