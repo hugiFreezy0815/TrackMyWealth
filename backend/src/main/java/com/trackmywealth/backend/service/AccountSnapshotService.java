@@ -97,7 +97,7 @@ public class AccountSnapshotService {
   @Transactional
   public AccountSnapshotResponse record(
       UUID accountId, RecordAccountSnapshotRequest request, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     Map<UUID, Security> securities =
         validate(account, request.snapshotDate(), request.balance(), request.holdings());
@@ -135,12 +135,15 @@ public class AccountSnapshotService {
       UUID snapshotId,
       ReplaceAccountSnapshotRequest request,
       AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     AccountSnapshot snapshot =
         snapshotRepository
             .findForUpdate(snapshotId, accountId)
-            .orElseThrow(AccountSnapshotService::snapshotNotFound);
+            .orElseThrow(
+                () ->
+                    accessControlService.denyAsNotFound(
+                        actor, "AccountSnapshot", snapshotId));
     if (!MANUAL.equals(snapshot.getSource())) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT,
@@ -165,7 +168,7 @@ public class AccountSnapshotService {
   /** Newest first; two sources on the same date are ordered by source name. */
   @Transactional(readOnly = true)
   public List<AccountSnapshotResponse> list(UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     List<AccountSnapshot> snapshots =
         snapshotRepository.findByAccountIdOrderBySnapshotDateDescSourceAsc(accountId);
@@ -197,7 +200,7 @@ public class AccountSnapshotService {
   @Transactional(readOnly = true)
   public AccountSnapshotResponse get(
       UUID accountId, UUID snapshotId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     AccountSnapshot snapshot =
         snapshotRepository
@@ -319,9 +322,5 @@ public class AccountSnapshotService {
 
   private static ResponseStatusException unprocessable(String detail) {
     return new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, detail);
-  }
-
-  private static ResponseStatusException snapshotNotFound() {
-    return new ResponseStatusException(HttpStatus.NOT_FOUND, "Snapshot not found.");
   }
 }
