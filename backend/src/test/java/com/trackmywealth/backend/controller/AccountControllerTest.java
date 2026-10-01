@@ -569,10 +569,7 @@ class AccountControllerTest {
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
     setStatusDirectly(created.id(), "DELETED");
 
-    client(token)
-        .post()
-        .uri("/api/v1/accounts/" + created.id() + "/archive")
-        .exchange()
+    archive(token, created.id())
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
   }
@@ -583,10 +580,7 @@ class AccountControllerTest {
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
-    client(token)
-        .post()
-        .uri("/api/v1/accounts/" + created.id() + "/restore")
-        .exchange()
+    restore(token, created.id())
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
   }
@@ -845,7 +839,7 @@ class AccountControllerTest {
     return client(token)
         .put()
         .uri("/api/v1/accounts/" + accountId)
-        .header("If-Match", """ + version + """)
+        .header("If-Match", "\"" + version + "\"")
         .contentType(MediaType.APPLICATION_JSON)
         .body(request)
         .exchange();
@@ -859,7 +853,7 @@ class AccountControllerTest {
     return client(token)
         .post()
         .uri("/api/v1/accounts/" + accountId + "/archive")
-        .header("If-Match", """ + version + """)
+        .header("If-Match", "\"" + version + "\"")
         .exchange();
   }
 
@@ -867,7 +861,7 @@ class AccountControllerTest {
     return client(token)
         .post()
         .uri("/api/v1/accounts/" + accountId + "/restore")
-        .header("If-Match", """ + getAccount(token, accountId).version() + """)
+        .header("If-Match", "\"" + getAccount(token, accountId).version() + "\"")
         .exchange();
   }
 
@@ -876,7 +870,7 @@ class AccountControllerTest {
     return client(token)
         .post()
         .uri("/api/v1/accounts/" + accountId + "/reassign-institution")
-        .header("If-Match", """ + getAccount(token, accountId).version() + """)
+        .header("If-Match", "\"" + getAccount(token, accountId).version() + "\"")
         .contentType(MediaType.APPLICATION_JSON)
         .body(request)
         .exchange();
