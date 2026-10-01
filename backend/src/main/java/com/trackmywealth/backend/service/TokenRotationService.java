@@ -10,6 +10,9 @@ import com.trackmywealth.backend.repository.UserSessionRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TokenRotationService {
 
+  private static final Logger LOG = LoggerFactory.getLogger(TokenRotationService.class);
   private static final String ACTIVE = "ACTIVE";
 
   private final RefreshTokenRepository refreshTokenRepository;
@@ -69,7 +73,7 @@ public class TokenRotationService {
       // stale client retry after a lost response, or a stolen token racing the legitimate client.
       // Both are indistinguishable from here, so the safe response is the same either way: kill
       // every token in the family and force a fresh login.
-      refreshTokenRepository.markFamilyAsTheftSuspected(current.getFamilyId(), now);
+      revokeCompromisedTokenFamily(user, current.getFamilyId(), now);
       throw refreshTokenAlreadyUsed();
     }
 
@@ -97,7 +101,7 @@ public class TokenRotationService {
       // this family, and the safe response to "this exact race just happened" is the same as any
       // other reuse: kill the whole family.
       refreshTokenRepository.delete(savedNext);
-      refreshTokenRepository.markFamilyAsTheftSuspected(current.getFamilyId(), now);
+      revokeCompromisedTokenFamily(user, current.getFamilyId(), now);
       throw refreshTokenAlreadyUsed();
     }
 
@@ -114,12 +118,50 @@ public class TokenRotationService {
     // no @Version, and US-02-03's revoke can concurrently flip this same row's status/revokedAt
     // via its own bulk update; a plain save() here would write back this method's in-memory
     // (pre-revoke) status, silently resurrecting a session someone just revoked.
-    userSessionRepository.repointRefreshToken(session.getId(), savedNext, now);
+    int repointed = userSessionRepository.repointRefreshToken(session.getId(), savedNext, now);
+    if (repointed == 0) {
+      // #190: the session is no longer ACTIVE, yet `current` was still live - a token rotated in by
+      // a legitimate refresh that raced theft detection. The detection's family-wide update ran on
+      // a snapshot taken before that rotation committed, so it missed this token while its session
+      // was revoked right after. Finish the job now: kill the family, including `savedNext`
+      // (visible to this transaction's own update), and issue nothing.
+      revokeCompromisedTokenFamily(user, current.getFamilyId(), now);
+      throw refreshTokenAlreadyUsed();
+    }
 
     String accessToken =
         jwtService.issueAccessToken(user.getId(), user.getTokenVersion(), session.getId());
     return new AuthTokensResponse(
         accessToken, plaintextNext, "Bearer", jwtService.accessTokenTtlSeconds());
+  }
+
+  /**
+   * Invalidates both credentials belonging to a compromised refresh-token rotation family: every
+   * refresh token in the family and any active session currently pointing at that family.
+   *
+   * <p>Refresh-token rows are updated first, then the session row. Keep that order aligned with
+   * {@link SessionService#revokeSession}: a concurrent refresh/session-revoke operation must never
+   * acquire the same rows in the opposite order and deadlock. The session is matched by refresh
+   * token family rather than the reused token id because successful rotation has already repointed
+   * it to a newer token in that same family.
+   */
+  private void revokeCompromisedTokenFamily(
+      AppUser user, UUID refreshTokenFamilyId, OffsetDateTime revokedAt) {
+    int revokedTokens =
+        refreshTokenRepository.markFamilyAsTheftSuspected(refreshTokenFamilyId, revokedAt);
+    int revokedSessions =
+        userSessionRepository.revokeActiveSessionsByRefreshTokenFamilyId(
+            refreshTokenFamilyId, revokedAt);
+    // Security event for incident response: identifiers only, never token material.
+    if (LOG.isWarnEnabled()) {
+      LOG.warn(
+          "Refresh-token reuse detected for user {}: revoked refresh-token family {} ({} token(s),"
+              + " {} session(s))",
+          user.getId(),
+          refreshTokenFamilyId,
+          revokedTokens,
+          revokedSessions);
+    }
   }
 
   private ResponseStatusException invalidRefreshToken() {
@@ -129,7 +171,7 @@ public class TokenRotationService {
   private ResponseStatusException refreshTokenAlreadyUsed() {
     return new ResponseStatusException(
         HttpStatus.UNAUTHORIZED,
-        "Refresh token has already been used. All sessions in this family have been revoked -"
+        "Refresh token has already been used. This login session has been revoked -"
             + " please log in again.");
   }
 }
