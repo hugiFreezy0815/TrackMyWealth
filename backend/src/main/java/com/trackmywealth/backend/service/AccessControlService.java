@@ -61,23 +61,33 @@ public class AccessControlService {
   private final AppUserRepository appUserRepository;
   private final WorkspaceMemberRepository workspaceMemberRepository;
   private final AccountOwnershipRepository accountOwnershipRepository;
+  private static final String ACCOUNT_ENTITY_TYPE = "Account";
+  private static final String INSTITUTION_ENTITY_TYPE = "FinancialInstitution";
+  private static final String WORKSPACE_ENTITY_TYPE = "Workspace";
+
   private final SharingGrantRepository sharingGrantRepository;
+  private final AuthorizationDenialAuditService authorizationDenialAuditService;
 
   public AccessControlService(
       AppUserRepository appUserRepository,
       WorkspaceMemberRepository workspaceMemberRepository,
       AccountOwnershipRepository accountOwnershipRepository,
-      SharingGrantRepository sharingGrantRepository) {
+      SharingGrantRepository sharingGrantRepository,
+      AuthorizationDenialAuditService authorizationDenialAuditService) {
     this.appUserRepository = appUserRepository;
     this.workspaceMemberRepository = workspaceMemberRepository;
     this.accountOwnershipRepository = accountOwnershipRepository;
     this.sharingGrantRepository = sharingGrantRepository;
+    this.authorizationDenialAuditService = authorizationDenialAuditService;
   }
 
   @Transactional(readOnly = true)
   public void requireAccountAccess(
       AuthenticatedUserPrincipal actor, Account account, String requiredLevel) {
-    requireAccountAccess(requireActingMember(actor), account, requiredLevel);
+    UUID memberId = requireActingMember(actor);
+    if (!atLeast(accountAccessLevel(memberId, account), requiredLevel)) {
+      throw denyAsNotFound(actor, ACCOUNT_ENTITY_TYPE, account.getId());
+    }
   }
 
   // memberId overload: for a caller that has already resolved the acting member's id for its own
@@ -86,7 +96,9 @@ public class AccessControlService {
   // also gate the same request.
   @Transactional(readOnly = true)
   public void requireAccountAccess(UUID memberId, Account account, String requiredLevel) {
-    denyUnless(atLeast(accountAccessLevel(memberId, account), requiredLevel), "Account not found.");
+    if (!atLeast(accountAccessLevel(memberId, account), requiredLevel)) {
+      throw denyMemberAsNotFound(memberId, ACCOUNT_ENTITY_TYPE, account.getId());
+    }
   }
 
   // Non-throwing, bulk counterpart of requireAccountAccess, for an aggregation (e.g. net worth)
@@ -117,28 +129,34 @@ public class AccessControlService {
   @Transactional(readOnly = true)
   public void requireInstitutionAccess(
       AuthenticatedUserPrincipal actor, FinancialInstitution institution, String requiredLevel) {
-    requireInstitutionAccess(requireActingMember(actor), institution, requiredLevel);
+    UUID memberId = requireActingMember(actor);
+    if (!atLeast(institutionAccessLevel(memberId, institution), requiredLevel)) {
+      throw denyAsNotFound(actor, INSTITUTION_ENTITY_TYPE, institution.getId());
+    }
   }
 
   @Transactional(readOnly = true)
   public void requireInstitutionAccess(
       UUID memberId, FinancialInstitution institution, String requiredLevel) {
-    denyUnless(
-        atLeast(institutionAccessLevel(memberId, institution), requiredLevel),
-        "Financial institution not found.");
+    if (!atLeast(institutionAccessLevel(memberId, institution), requiredLevel)) {
+      throw denyMemberAsNotFound(memberId, INSTITUTION_ENTITY_TYPE, institution.getId());
+    }
   }
 
   @Transactional(readOnly = true)
   public void requireWorkspaceAccess(
       AuthenticatedUserPrincipal actor, UUID workspaceId, String requiredLevel) {
-    requireWorkspaceAccess(requireActingMember(actor), workspaceId, requiredLevel);
+    UUID memberId = requireActingMember(actor);
+    if (!atLeast(workspaceAccessLevel(memberId, workspaceId), requiredLevel)) {
+      throw denyAsNotFound(actor, WORKSPACE_ENTITY_TYPE, workspaceId);
+    }
   }
 
   @Transactional(readOnly = true)
   public void requireWorkspaceAccess(UUID memberId, UUID workspaceId, String requiredLevel) {
-    denyUnless(
-        atLeast(workspaceAccessLevel(memberId, workspaceId), requiredLevel),
-        "Workspace not found.");
+    if (!atLeast(workspaceAccessLevel(memberId, workspaceId), requiredLevel)) {
+      throw denyMemberAsNotFound(memberId, WORKSPACE_ENTITY_TYPE, workspaceId);
+    }
   }
 
   // Public, level-returning counterparts of the require* methods above - for a future caller that
@@ -267,9 +285,16 @@ public class AccessControlService {
         >= 0;
   }
 
-  private static void denyUnless(boolean allowed, String notFoundMessage) {
-    if (!allowed) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, notFoundMessage);
-    }
+  public ResponseStatusException denyAsNotFound(
+      AuthenticatedUserPrincipal actor, String entityType, UUID entityId) {
+    return authorizationDenialAuditService.denyAsNotFound(actor, entityType, entityId);
+  }
+
+  private ResponseStatusException denyMemberAsNotFound(
+      UUID memberId, String entityType, UUID entityId) {
+    UUID principalUserId =
+        appUserRepository.findUserIdByWorkspaceMemberId(memberId).orElse(null);
+    return authorizationDenialAuditService.denyAsNotFound(
+        principalUserId, entityType, entityId);
   }
 }
