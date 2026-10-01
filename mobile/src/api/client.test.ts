@@ -1,4 +1,4 @@
-import { api, ApiError, setAccessToken } from './client';
+import { api, ApiError, DecimalString, setAccessToken } from './client';
 
 function mockFetchOnce(response: Partial<Response> & { json?: () => Promise<unknown> }) {
   const fetchMock = jest.fn().mockResolvedValue({
@@ -54,6 +54,25 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: 'Checking' }) }),
+    );
+  });
+
+  // #176: a decimal read as a string goes back out byte for byte. As a JSON number it would not
+  // even survive parsing - which is why API types declare decimals as DecimalString.
+  it('round-trips an exact decimal string unchanged', async () => {
+    const received = '{"quantity":"12345678.1234567891","unitPrice":"1.0000000001"}';
+    mockFetchOnce({ json: async () => JSON.parse(received) });
+    const row = await api.get<{ quantity: DecimalString; unitPrice: DecimalString }>('/row');
+
+    const fetchMock = mockFetchOnce({});
+    await api.post('/rows', { quantity: row.quantity, unitPrice: row.unitPrice });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ body: received }),
+    );
+    expect(String(JSON.parse('{"quantity":12345678.1234567891}').quantity)).not.toBe(
+      '12345678.1234567891',
     );
   });
 
