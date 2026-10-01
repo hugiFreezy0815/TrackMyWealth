@@ -716,6 +716,7 @@ class TransactionControllerTest {
     client(token)
         .post()
         .uri("/api/v1/accounts/" + card.id() + "/archive")
+        .header("If-Match", "\"" + card.version() + "\"")
         .exchange()
         .expectStatus()
         .isOk();
@@ -889,6 +890,7 @@ class TransactionControllerTest {
     client(token)
         .post()
         .uri("/api/v1/accounts/" + card.id() + "/archive")
+        .header("If-Match", "\"" + card.version() + "\"")
         .exchange()
         .expectStatus()
         .isOk();
@@ -1272,6 +1274,7 @@ class TransactionControllerTest {
     client(token)
         .post()
         .uri("/api/v1/accounts/" + cash.id() + "/archive")
+        .header("If-Match", "\"" + cash.version() + "\"")
         .exchange()
         .expectStatus()
         .is2xxSuccessful();
