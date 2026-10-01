@@ -207,12 +207,57 @@ public class TransactionService {
   @Transactional
   public TransactionResponse recordTransaction(
       UUID accountId, CreateTransactionRequest request, AuthenticatedUserPrincipal actor) {
+    return recordTransactionInternal(accountId, request, actor, MANUAL, null, null, true);
+  }
+
+  /**
+   * US-07-06: inserts a correction replacement through the ordinary creation validator and
+   * categorization/detection pipeline, while preserving the original provenance. The source
+   * external id is deliberately not copied: it continues to identify the historical source row.
+   */
+  @Transactional
+  TransactionResponse recordCorrectionReplacement(
+      UUID accountId,
+      CreateTransactionRequest request,
+      String source,
+      String rawSourceData,
+      UUID correctsTransactionId,
+      AuthenticatedUserPrincipal actor) {
+    return recordTransactionInternal(
+        accountId, request, actor, source, rawSourceData, correctsTransactionId, false);
+  }
+
+  /**
+   * Whether a correction request describes the same immutable financial state. Text fields are
+   * intentionally excluded: merchant description and notes may be edited in place (FR-LIF-004).
+   */
+  boolean financialStateMatches(
+      Transaction transaction, UUID targetAccountId, CreateTransactionRequest request) {
+    return transaction.getAccount().getId().equals(targetAccountId)
+        && transaction.getTransactionType().equals(request.transactionType())
+        && transaction.getBookingDate().equals(request.bookingDate())
+        && transaction.getAmount().compareTo(request.amount()) == 0
+        && transaction.getCurrency().equals(request.currency())
+        && sameFxRate(transaction, request)
+        && sameFee(transaction, request)
+        && sameInvestment(transaction, request)
+        && sameCounterparty(transaction, request);
+  }
+
+  private TransactionResponse recordTransactionInternal(
+      UUID accountId,
+      CreateTransactionRequest request,
+      AuthenticatedUserPrincipal actor,
+      String source,
+      String rawSourceData,
+      UUID correctsTransactionId,
+      boolean allowReplay) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
 
     // Before validate(): a replay must answer with the original row even if the account has been
     // archived since, rather than turn a successful earlier request into a 409 on retry.
-    Optional<Transaction> replay = findReplay(accountId, request);
+    Optional<Transaction> replay = allowReplay ? findReplay(accountId, request) : Optional.empty();
     if (replay.isPresent()) {
       return toResponse(
           replay.get(), latestAssignments(List.of(replay.get())).get(replay.get().getId()));
@@ -251,14 +296,17 @@ public class TransactionService {
     transaction.setCurrency(request.currency());
     transaction.setMerchantDescription(request.merchantDescription());
     transaction.setNotes(request.notes());
-    transaction.setSource(MANUAL);
-    transaction.setExternalId(request.externalId());
+    transaction.setSource(source);
+    transaction.setExternalId(allowReplay ? request.externalId() : null);
+    transaction.setCorrectsTransactionId(correctsTransactionId);
     // FR-CC-002/RULE-011: the MCC is source data, kept in raw_source_data - category_id is a
     // separate column a later categorization writes, so neither can overwrite the other.
     transaction.setRawSourceData(
-        request.mcc() == null
-            ? null
-            : objectMapper.writeValueAsString(Map.of(MCC_KEY, request.mcc())));
+        rawSourceData != null
+            ? rawSourceData
+            : request.mcc() == null
+                ? null
+                : objectMapper.writeValueAsString(Map.of(MCC_KEY, request.mcc())));
     transaction.setCreatedBy(actor.userId());
     transaction.setSecurityId(request.securityId());
     transaction.setQuantity(request.quantity());
@@ -309,7 +357,7 @@ public class TransactionService {
       // no FX rate of its own.
       fee.setCurrency(cardExtension.getBillingCurrency());
       fee.setRelatedTransactionId(saved.getId());
-      fee.setSource(MANUAL);
+      fee.setSource(source);
       fee.setCreatedBy(actor.userId());
       categorizationService.categorize(transactionRepository.saveAndFlush(fee));
     }
@@ -972,6 +1020,7 @@ public class TransactionService {
         transaction.getVoidedAt(),
         transaction.getVoidReason(),
         transaction.getReplacesTransactionId(),
+        transaction.getCorrectsTransactionId(),
         transaction.getDeletedAt(),
         transaction.getCounterpartyAccountId(),
         VersionPreconditionService.persistedVersion(transaction.getVersion(), VERSIONED_RESOURCE));
