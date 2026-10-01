@@ -16,6 +16,11 @@ import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.junit.jupiter.api.Test;
 
+/**
+ * FR-AUT-003/005, #189/#200: access JWTs enforce signature, issuer, lifetime, required claims and
+ * explicit token type. Every rejected token below starts from the same otherwise-valid access token
+ * and changes exactly the property named by the test.
+ */
 class JwtServiceTest {
 
   private static final String ISSUER = "trackmywealth";
@@ -28,7 +33,7 @@ class JwtServiceTest {
   private final SecretKey signingKey = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
 
   @Test
-  void issuedTokenWithExpectedIssuerAndClaimsIsAccepted() {
+  void issuedTokenWithExpectedIssuerTypeAndClaimsIsAccepted() {
     String token = service.issueAccessToken(USER_ID, 7, SESSION_ID);
 
     Optional<AccessTokenClaims> parsed = service.parseAccessToken(token);
@@ -37,137 +42,118 @@ class JwtServiceTest {
   }
 
   @Test
-  void tokenFromDifferentIssuerIsRejected() {
-    String token =
-        validTokenBuilder()
-            .issuer("other-service")
-            .claim("tokenVersion", 7)
-            .claim("sessionId", SESSION_ID.toString())
-            .compact();
+  void issuedAccessTokenCarriesExplicitSignedType() {
+    String token = service.issueAccessToken(USER_ID, 7, SESSION_ID);
 
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    String tokenType =
+        Jwts.parser()
+            .verifyWith(signingKey)
+            .build()
+            .parseSignedClaims(token)
+            .getPayload()
+            .get("tokenType", String.class);
+
+    assertThat(tokenType).isEqualTo("access");
+  }
+
+  @Test
+  void tokenFromDifferentIssuerIsRejected() {
+    assertThat(
+            service.parseAccessToken(validAccessTokenBuilder().issuer("other-service").compact()))
+        .isEmpty();
   }
 
   @Test
   void tokenWithoutIssuerIsRejected() {
-    Instant now = Instant.now();
-    String token =
-        Jwts.builder()
-            .subject(USER_ID.toString())
-            .issuedAt(Date.from(now))
-            .expiration(Date.from(now.plus(15, ChronoUnit.MINUTES)))
-            .claim("tokenVersion", 7)
-            .claim("sessionId", SESSION_ID.toString())
-            .signWith(signingKey)
-            .compact();
+    assertThat(service.parseAccessToken(validAccessTokenBuilder().issuer(null).compact()))
+        .isEmpty();
+  }
 
-    assertThat(service.parseAccessToken(token)).isEmpty();
+  @Test
+  void tokenWithWrongTokenTypeIsRejected() {
+    assertThat(
+            service.parseAccessToken(
+                validAccessTokenBuilder().claim("tokenType", "mfa-challenge").compact()))
+        .isEmpty();
+  }
+
+  @Test
+  void tokenWithoutTokenTypeIsRejected() {
+    assertThat(
+            service.parseAccessToken(validAccessTokenBuilder().claim("tokenType", null).compact()))
+        .isEmpty();
+  }
+
+  @Test
+  void accessTokenCarryingMfaPurposeIsRejected() {
+    assertThat(
+            service.parseAccessToken(
+                validAccessTokenBuilder().claim("purpose", "mfa_challenge").compact()))
+        .isEmpty();
   }
 
   @Test
   void tokenWithoutSubjectIsRejected() {
-    Instant now = Instant.now();
-    String token =
-        Jwts.builder()
-            .issuer(ISSUER)
-            .issuedAt(Date.from(now))
-            .expiration(Date.from(now.plus(15, ChronoUnit.MINUTES)))
-            .claim("tokenVersion", 7)
-            .claim("sessionId", SESSION_ID.toString())
-            .signWith(signingKey)
-            .compact();
-
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    assertThat(service.parseAccessToken(validAccessTokenBuilder().subject(null).compact()))
+        .isEmpty();
   }
 
   @Test
   void tokenWithMalformedSubjectIsRejected() {
-    String token =
-        validTokenBuilder()
-            .subject("not-a-uuid")
-            .claim("tokenVersion", 7)
-            .claim("sessionId", SESSION_ID.toString())
-            .compact();
-
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    assertThat(service.parseAccessToken(validAccessTokenBuilder().subject("not-a-uuid").compact()))
+        .isEmpty();
   }
 
   @Test
   void tokenWithoutSessionIdIsRejected() {
-    String token = validTokenBuilder().claim("tokenVersion", 7).compact();
-
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    assertThat(
+            service.parseAccessToken(validAccessTokenBuilder().claim("sessionId", null).compact()))
+        .isEmpty();
   }
 
   @Test
   void tokenWithMalformedSessionIdIsRejected() {
-    String token =
-        validTokenBuilder().claim("tokenVersion", 7).claim("sessionId", "not-a-uuid").compact();
-
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    assertThat(
+            service.parseAccessToken(
+                validAccessTokenBuilder().claim("sessionId", "not-a-uuid").compact()))
+        .isEmpty();
   }
 
   @Test
   void tokenWithoutTokenVersionIsRejected() {
-    String token = validTokenBuilder().claim("sessionId", SESSION_ID.toString()).compact();
-
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    assertThat(
+            service.parseAccessToken(
+                validAccessTokenBuilder().claim("tokenVersion", null).compact()))
+        .isEmpty();
   }
 
   @Test
   void tokenWithWrongTokenVersionTypeIsRejected() {
-    String token =
-        validTokenBuilder()
-            .claim("tokenVersion", "seven")
-            .claim("sessionId", SESSION_ID.toString())
-            .compact();
-
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    assertThat(
+            service.parseAccessToken(
+                validAccessTokenBuilder().claim("tokenVersion", "seven").compact()))
+        .isEmpty();
   }
 
   @Test
   void tokenWithoutIssuedAtIsRejected() {
-    Instant now = Instant.now();
-    String token =
-        Jwts.builder()
-            .subject(USER_ID.toString())
-            .issuer(ISSUER)
-            .expiration(Date.from(now.plus(15, ChronoUnit.MINUTES)))
-            .claim("tokenVersion", 7)
-            .claim("sessionId", SESSION_ID.toString())
-            .signWith(signingKey)
-            .compact();
-
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    assertThat(service.parseAccessToken(validAccessTokenBuilder().issuedAt(null).compact()))
+        .isEmpty();
   }
 
   @Test
   void tokenWithoutExpirationIsRejected() {
-    String token =
-        Jwts.builder()
-            .subject(USER_ID.toString())
-            .issuer(ISSUER)
-            .issuedAt(new Date())
-            .claim("tokenVersion", 7)
-            .claim("sessionId", SESSION_ID.toString())
-            .signWith(signingKey)
-            .compact();
-
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    assertThat(service.parseAccessToken(validAccessTokenBuilder().expiration(null).compact()))
+        .isEmpty();
   }
 
   @Test
   void expiredTokenIsRejected() {
     Instant issuedAt = Instant.now().minus(20, ChronoUnit.MINUTES);
     String token =
-        Jwts.builder()
-            .subject(USER_ID.toString())
-            .issuer(ISSUER)
+        validAccessTokenBuilder()
             .issuedAt(Date.from(issuedAt))
             .expiration(Date.from(issuedAt.plus(15, ChronoUnit.MINUTES)))
-            .claim("tokenVersion", 7)
-            .claim("sessionId", SESSION_ID.toString())
-            .signWith(signingKey)
             .compact();
 
     assertThat(service.parseAccessToken(token)).isEmpty();
@@ -178,27 +164,31 @@ class JwtServiceTest {
     SecretKey otherKey =
         Keys.hmacShaKeyFor(
             "another-test-secret-that-is-at-least-32-bytes".getBytes(StandardCharsets.UTF_8));
-    String token =
-        Jwts.builder()
-            .subject(USER_ID.toString())
-            .issuer(ISSUER)
-            .issuedAt(new Date())
-            .expiration(Date.from(Instant.now().plus(15, ChronoUnit.MINUTES)))
-            .claim("tokenVersion", 7)
-            .claim("sessionId", SESSION_ID.toString())
-            .signWith(otherKey)
-            .compact();
 
-    assertThat(service.parseAccessToken(token)).isEmpty();
+    assertThat(service.parseAccessToken(validAccessTokenBuilder(otherKey).compact())).isEmpty();
   }
 
-  private JwtBuilder validTokenBuilder() {
+  @Test
+  void mfaChallengeTokenIsNeverAcceptedAsAnAccessToken() {
+    String challenge = new MfaChallengeTokenService(properties).issue(USER_ID);
+
+    assertThat(service.parseAccessToken(challenge)).isEmpty();
+  }
+
+  private JwtBuilder validAccessTokenBuilder() {
+    return validAccessTokenBuilder(signingKey);
+  }
+
+  private JwtBuilder validAccessTokenBuilder(SecretKey key) {
     Instant now = Instant.now();
     return Jwts.builder()
         .subject(USER_ID.toString())
         .issuer(ISSUER)
         .issuedAt(Date.from(now))
         .expiration(Date.from(now.plus(15, ChronoUnit.MINUTES)))
-        .signWith(signingKey);
+        .claim("tokenType", "access")
+        .claim("tokenVersion", 7)
+        .claim("sessionId", SESSION_ID.toString())
+        .signWith(key);
   }
 }
