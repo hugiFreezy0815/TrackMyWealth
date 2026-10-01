@@ -65,7 +65,9 @@ public final class ApiErrorCode {
       case 403 -> FORBIDDEN;
       case 404 -> NOT_FOUND;
       case 409 -> CONFLICT;
+      case 412 -> VERSION_CONFLICT;
       case 422 -> UNPROCESSABLE;
+      case 428 -> VERSION_REQUIRED;
       case 423 -> LOCKED;
       case 429 -> RATE_LIMITED;
       default -> status.is4xxClientError() ? VALIDATION_FAILED : INTERNAL;
