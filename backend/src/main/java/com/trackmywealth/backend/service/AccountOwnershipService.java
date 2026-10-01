@@ -83,8 +83,7 @@ public class AccountOwnershipService {
     Account account =
         accountRepository
             .findByIdForUpdate(accountId)
-            .orElseThrow(
-                () -> accessControlService.denyAsNotFound(actor, "Account", accountId));
+            .orElseThrow(() -> accessControlService.denyAsNotFound(actor, "Account", accountId));
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     List<OwnerAllocation> owners = request.owners();
 

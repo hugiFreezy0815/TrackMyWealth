@@ -109,9 +109,7 @@ public class TransactionRemovalService {
             .findByIdForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(account.getId()))
             .orElseThrow(
-                () ->
-                    accessControlService.denyAsNotFound(
-                        actor, "Transaction", transactionId));
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
     String removal = TransactionService.removalOf(original);
     if (removal == null) {
       throw new ResponseStatusException(
@@ -182,9 +180,7 @@ public class TransactionRemovalService {
             .findByIdIncludingDeletedForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(account.getId()))
             .orElseThrow(
-                () ->
-                    accessControlService.denyAsNotFound(
-                        actor, "Transaction", transactionId));
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
     if (deleted.getDeletedAt() == null) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "This transaction is not deleted.");
     }

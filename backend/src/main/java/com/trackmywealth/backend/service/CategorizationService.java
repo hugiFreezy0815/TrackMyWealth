@@ -233,8 +233,7 @@ public class CategorizationService {
    * UNCATEGORIZED: resetting to automatic is the way back to it.
    */
   @Transactional
-  public void override(
-      Transaction transaction, UUID categoryId, AuthenticatedUserPrincipal actor) {
+  public void override(Transaction transaction, UUID categoryId, AuthenticatedUserPrincipal actor) {
     categoryService.requireAssignable(categoryId, transaction.getWorkspace().getId(), actor);
     if (categoryId.equals(uncategorizedCategoryId())) {
       throw new ResponseStatusException(

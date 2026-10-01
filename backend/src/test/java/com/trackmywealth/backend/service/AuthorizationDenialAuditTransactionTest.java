@@ -113,8 +113,7 @@ class AuthorizationDenialAuditTransactionTest {
     @Transactional
     void denyInsideRollback(UUID principalUserId, UUID requestedId) {
       AuthenticatedUserPrincipal actor =
-          new AuthenticatedUserPrincipal(
-              principalUserId, "STANDARD_USER", null, UUID.randomUUID());
+          new AuthenticatedUserPrincipal(principalUserId, "STANDARD_USER", null, UUID.randomUUID());
       throw auditService.denyAsNotFound(actor, "Account", requestedId);
     }
   }

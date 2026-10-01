@@ -155,8 +155,7 @@ public class AccountService {
     validateExtensionFields(request);
     Workspace workspace =
         workspaceAccessService.requireWorkspace(actor.workspaceId(), "an account");
-    FinancialInstitution institution =
-        resolveInstitution(request.financialInstitutionId(), actor);
+    FinancialInstitution institution = resolveInstitution(request.financialInstitutionId(), actor);
 
     Account account = new Account();
     account.setWorkspace(workspace);

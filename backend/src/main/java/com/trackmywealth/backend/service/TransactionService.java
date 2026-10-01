@@ -416,9 +416,7 @@ public class TransactionService {
             .findByIdForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(accountId))
             .orElseThrow(
-                () ->
-                    accessControlService.denyAsNotFound(
-                        actor, "Transaction", transactionId));
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
     if (transaction.isReversal()) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT,

@@ -116,12 +116,12 @@ public class TransferRecordingService {
     if (request.counterpartyAccountId() == null) {
       return null;
     }
-    Account counterparty = accountLookupService.findAccountOrThrow(request.counterpartyAccountId(), actor);
+    Account counterparty =
+        accountLookupService.findAccountOrThrow(request.counterpartyAccountId(), actor);
     // RLS already hides another workspace's accounts; checked here too, since the credit leg is
     // written into this account's workspace. Answered like an account the caller cannot see.
     if (!counterparty.getWorkspace().getId().equals(account.getWorkspace().getId())) {
-      throw accessControlService.denyAsNotFound(
-          actor, "Account", request.counterpartyAccountId());
+      throw accessControlService.denyAsNotFound(actor, "Account", request.counterpartyAccountId());
     }
     accessControlService.requireAccountAccess(actor, counterparty, AccessLevelValues.EDIT);
     String type = request.transactionType();

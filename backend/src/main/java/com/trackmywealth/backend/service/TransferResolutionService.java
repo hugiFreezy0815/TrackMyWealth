@@ -84,9 +84,7 @@ public class TransferResolutionService {
             .findByIdForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(accountId))
             .orElseThrow(
-                () ->
-                    accessControlService.denyAsNotFound(
-                        actor, "Transaction", transactionId));
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
     if (!TransferRecordingService.TRANSFER_TYPES.contains(leg.getTransactionType())) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,

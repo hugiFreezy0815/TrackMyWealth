@@ -149,8 +149,7 @@ public class SharingGrantService {
         FinancialInstitution institution =
             institutionLookupService.findInstitutionOrThrow(request.scopeInstitutionId(), actor);
         if (!tryBootstrapInstitution(actor, institution.getId())) {
-          requireFullAccessToScope(
-              actor, ScopeTypeValues.INSTITUTION, null, institution, null);
+          requireFullAccessToScope(actor, ScopeTypeValues.INSTITUTION, null, institution, null);
         }
         grant.setScopeInstitution(institution);
       }
@@ -178,8 +177,7 @@ public class SharingGrantService {
     SharingGrant grant =
         sharingGrantRepository
             .findByIdForUpdate(grantId)
-            .orElseThrow(
-                () -> accessControlService.denyAsNotFound(actor, "SharingGrant", grantId));
+            .orElseThrow(() -> accessControlService.denyAsNotFound(actor, "SharingGrant", grantId));
 
     UUID actingMemberId = accessControlService.requireActingMember(actor);
 
@@ -224,11 +222,9 @@ public class SharingGrantService {
       case ScopeTypeValues.ACCOUNT ->
           accessControlService.requireAccountAccess(actor, account, AccessLevelValues.FULL);
       case ScopeTypeValues.INSTITUTION ->
-          accessControlService.requireInstitutionAccess(
-              actor, institution, AccessLevelValues.FULL);
+          accessControlService.requireInstitutionAccess(actor, institution, AccessLevelValues.FULL);
       case ScopeTypeValues.WORKSPACE ->
-          accessControlService.requireWorkspaceAccess(
-              actor, workspaceId, AccessLevelValues.FULL);
+          accessControlService.requireWorkspaceAccess(actor, workspaceId, AccessLevelValues.FULL);
       default -> throw new IllegalStateException("Unexpected scopeType: " + scopeType);
     }
   }

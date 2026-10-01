@@ -243,13 +243,19 @@ public class SettlementMatchService {
     // queues
     // behind a card's decision at worst - it changes nothing.
     UUID cardAccountId =
-        settlementMatchRepository.findCardAccountIdById(matchId).orElseThrow(() -> matchNotFound(actor, matchId));
+        settlementMatchRepository
+            .findCardAccountIdById(matchId)
+            .orElseThrow(() -> matchNotFound(actor, matchId));
     settlementDetectionService.lockCard(cardAccountId);
     // Again under the lock: a removal (which takes the same card lock) may have soft-deleted a leg
     // in between, and a match with a hidden leg is not actionable (US-07-02).
-    settlementMatchRepository.findCardAccountIdById(matchId).orElseThrow(() -> matchNotFound(actor, matchId));
+    settlementMatchRepository
+        .findCardAccountIdById(matchId)
+        .orElseThrow(() -> matchNotFound(actor, matchId));
     SettlementMatch match =
-        settlementMatchRepository.findByIdForUpdate(matchId).orElseThrow(() -> matchNotFound(actor, matchId));
+        settlementMatchRepository
+            .findByIdForUpdate(matchId)
+            .orElseThrow(() -> matchNotFound(actor, matchId));
     Set<Account> both = Set.of(match.getCardAccount(), match.getPaymentTransaction().getAccount());
     if (accessControlService.accountsWithAccess(memberId, both, AccessLevelValues.EDIT).size()
         != both.size()) {
@@ -322,8 +328,7 @@ public class SettlementMatchService {
     }
   }
 
-  private ResponseStatusException matchNotFound(
-      AuthenticatedUserPrincipal actor, UUID matchId) {
+  private ResponseStatusException matchNotFound(AuthenticatedUserPrincipal actor, UUID matchId) {
     return accessControlService.denyAsNotFound(actor, "SettlementMatch", matchId);
   }
 

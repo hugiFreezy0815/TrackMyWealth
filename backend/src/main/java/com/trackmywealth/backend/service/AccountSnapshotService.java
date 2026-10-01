@@ -141,9 +141,7 @@ public class AccountSnapshotService {
         snapshotRepository
             .findForUpdate(snapshotId, accountId)
             .orElseThrow(
-                () ->
-                    accessControlService.denyAsNotFound(
-                        actor, "AccountSnapshot", snapshotId));
+                () -> accessControlService.denyAsNotFound(actor, "AccountSnapshot", snapshotId));
     if (!MANUAL.equals(snapshot.getSource())) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT,
@@ -206,9 +204,7 @@ public class AccountSnapshotService {
         snapshotRepository
             .findByIdAndAccountId(snapshotId, accountId)
             .orElseThrow(
-                () ->
-                    accessControlService.denyAsNotFound(
-                        actor, "AccountSnapshot", snapshotId));
+                () -> accessControlService.denyAsNotFound(actor, "AccountSnapshot", snapshotId));
     List<SnapshotHolding> holdings = holdingRepository.findBySnapshotIdIn(List.of(snapshotId));
     return toResponse(
         snapshot,

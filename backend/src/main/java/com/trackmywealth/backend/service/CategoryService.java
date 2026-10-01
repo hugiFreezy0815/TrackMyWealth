@@ -355,8 +355,7 @@ public class CategoryService {
   // EDIT on the workspace, then the workspace row lock that serializes every taxonomy change of
   // this workspace until the transaction ends (see the class comment).
   private UUID requireEditor(AuthenticatedUserPrincipal actor) {
-    accessControlService.requireWorkspaceAccess(
-        actor, actor.workspaceId(), AccessLevelValues.EDIT);
+    accessControlService.requireWorkspaceAccess(actor, actor.workspaceId(), AccessLevelValues.EDIT);
     workspaceRepository
         .findByIdForUpdate(actor.workspaceId())
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));

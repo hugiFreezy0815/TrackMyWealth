@@ -299,7 +299,6 @@ public class AccessControlService {
                 () ->
                     new IllegalStateException(
                         "Authenticated workspace member has no linked app_user: " + memberId));
-    return authorizationDenialAuditService.denyAsNotFound(
-        principalUserId, entityType, entityId);
+    return authorizationDenialAuditService.denyAsNotFound(principalUserId, entityType, entityId);
   }
 }

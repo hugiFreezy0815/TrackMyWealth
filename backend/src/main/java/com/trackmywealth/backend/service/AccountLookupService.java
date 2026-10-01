@@ -27,8 +27,7 @@ public class AccountLookupService {
     this.authorizationDenialAuditService = authorizationDenialAuditService;
   }
 
-  public Account findAccountOrThrow(
-      UUID accountId, AuthenticatedUserPrincipal actor) {
+  public Account findAccountOrThrow(UUID accountId, AuthenticatedUserPrincipal actor) {
     return accountRepository
         .findById(accountId)
         .orElseThrow(
