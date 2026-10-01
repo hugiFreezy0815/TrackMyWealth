@@ -62,10 +62,9 @@ public class TransactionCorrectionService {
       CorrectTransactionRequest request,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    TransactionRemovalService.LockedTransaction locked =
+    Transaction original =
         transactionRemovalService.lockActiveTransaction(accountId, transactionId, actor);
-    Account sourceAccount = locked.account();
-    Transaction original = locked.transaction();
+    Account sourceAccount = original.getAccount();
 
     if (TransactionService.removalOf(original) == null) {
       throw new ResponseStatusException(
