@@ -3,9 +3,9 @@ package com.trackmywealth.backend.config;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.util.Enumeration;
+import java.util.Collections;
 import java.util.Locale;
-import org.springframework.http.HttpHeaders;
+import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.servlet.LocaleResolver;
@@ -19,37 +19,31 @@ import org.springframework.web.servlet.LocaleResolver;
  * Regional variants such as {@code de-CH} and {@code en-GB} resolve to their supported base
  * language.
  */
-public final class RequestLocaleResolver implements LocaleResolver {
+public class RequestLocaleResolver implements LocaleResolver {
 
   @Override
   public Locale resolveLocale(HttpServletRequest request) {
     Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
     if (authentication != null
         && authentication.getPrincipal() instanceof AuthenticatedUserPrincipal principal) {
-      return "DE".equals(principal.language()) ? Locale.GERMAN : Locale.ENGLISH;
+      return localeForLanguage(principal.language());
     }
 
-    String acceptLanguage = request.getHeader(HttpHeaders.ACCEPT_LANGUAGE);
-    if (acceptLanguage == null || acceptLanguage.isBlank()) {
-      return Locale.ENGLISH;
-    }
-
-    Enumeration<Locale> requestedLocales = request.getLocales();
-    while (requestedLocales.hasMoreElements()) {
-      String language = requestedLocales.nextElement().getLanguage();
-      if (Locale.GERMAN.getLanguage().equals(language)) {
-        return Locale.GERMAN;
-      }
-      if (Locale.ENGLISH.getLanguage().equals(language)) {
-        return Locale.ENGLISH;
-      }
-    }
-    return Locale.ENGLISH;
+    return Collections.list(request.getLocales()).stream()
+        .map(Locale::getLanguage)
+        .filter(language -> "de".equalsIgnoreCase(language) || "en".equalsIgnoreCase(language))
+        .findFirst()
+        .map(RequestLocaleResolver::localeForLanguage)
+        .orElse(Locale.ENGLISH);
   }
 
   @Override
-  public void setLocale(HttpServletRequest request, HttpServletResponse response, Locale locale) {
-    throw new UnsupportedOperationException(
-        "Locale changes are not supported; locale comes from user preference or Accept-Language.");
+  public void setLocale(
+      HttpServletRequest request, HttpServletResponse response, @Nullable Locale locale) {
+    throw new UnsupportedOperationException("Request locale is read-only");
+  }
+
+  private static Locale localeForLanguage(String language) {
+    return "de".equalsIgnoreCase(language) ? Locale.GERMAN : Locale.ENGLISH;
   }
 }
