@@ -581,7 +581,7 @@ public class CategoryService {
         : new WorkspaceCategoryOverride(workspaceId, category.getId());
   }
 
-  // V44 deliberately keeps an empty override row once one has existed. Its nullable fields still
+  // V45 deliberately keeps an empty override row once one has existed. Its nullable fields still
   // mean "inherit everything", while its version remains a monotonic concurrency token across
   // customize -> revert -> customize cycles instead of resetting when the row is deleted/recreated.
   private void saveOverride(
@@ -592,7 +592,7 @@ public class CategoryService {
   /**
    * The concurrency token a client sends back on update. For a workspace category, its row version.
    * For a default, what this workspace has made of it: 0 until it has ever had an override row,
-   * then the override's version plus one forever. V44 keeps an empty row after a revert, so the
+   * then the override's version plus one forever. V45 keeps an empty row after a revert, so the
    * token never resets across customize -> inherit -> customize cycles.
    */
   static int versionOf(Category category, Map<UUID, WorkspaceCategoryOverride> overrides) {
