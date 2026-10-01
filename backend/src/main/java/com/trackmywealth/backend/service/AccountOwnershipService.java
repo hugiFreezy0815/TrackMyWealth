@@ -130,7 +130,7 @@ public class AccountOwnershipService {
   @Transactional(readOnly = true)
   public List<AccountOwnershipResponse> currentOwnership(
       UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     return accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(accountId).stream()
         .map(this::toResponse)
