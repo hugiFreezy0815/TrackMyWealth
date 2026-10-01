@@ -27,7 +27,6 @@ public class AuthorizationDenialAuditConfig {
     executor.setThreadNamePrefix("denial-audit-");
     executor.setWaitForTasksToCompleteOnShutdown(true);
     executor.setAwaitTerminationSeconds(5);
-    executor.initialize();
     return executor;
   }
 }
