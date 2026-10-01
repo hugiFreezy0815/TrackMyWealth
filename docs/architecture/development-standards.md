@@ -76,6 +76,12 @@ cd backend
     the optional correlation-id request/response header and the shared RFC 9457 problem response.
     `ApiConventionsIntegrationTest` guards the generated contract so runtime serialization and
     generated clients cannot silently drift apart.
+  - **Mutable resources use optimistic HTTP preconditions** (FR-CNC-001/002, ADR 0004).
+    Responses expose a numeric `version`; single-resource responses also send
+    `ETag: "<version>"`. Every read-modify-write operation requires the same strong tag in
+    `If-Match`. Check authorization before the version. Missing preconditions are
+    `428 VERSION_REQUIRED`; stale ones are `412 VERSION_CONFLICT`; JPA `@Version` remains the
+    race-condition fallback. Never add a mutable endpoint that silently accepts last-write-wins.
 - SLF4J (`LoggerFactory.getLogger`) for logging, never `System.out`/`System.err` — enforced by both
   PMD (`SystemPrintln`) and an ArchUnit general coding rule; see `DatabaseBootstrapInitializer` for
   why this is safe even in code that runs before Spring's DI container exists.
