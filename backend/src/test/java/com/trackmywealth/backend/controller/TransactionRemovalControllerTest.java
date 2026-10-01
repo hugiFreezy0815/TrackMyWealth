@@ -232,6 +232,40 @@ class TransactionRemovalControllerTest {
   }
 
   @Test
+  void aUserCategoryOverrideCarriesToTheReplacement() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+    UUID shopping = defaultCategory("SHOPPING");
+
+    client(token)
+        .put()
+        .uri(rowUri(card.id(), original.id()) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetTransactionCategoryRequest(shopping))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    TransactionResponse overridden = list(token, card.id()).get(0);
+    assertThat(overridden.categoryAssignedBy()).isEqualTo("USER");
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            card.id(),
+            overridden,
+            "-80.00",
+            null,
+            overridden.merchantDescription(),
+            overridden.notes(),
+            null);
+
+    assertThat(corrected.transaction().categoryId()).isEqualTo(shopping);
+    assertThat(corrected.transaction().categoryAssignedBy()).isEqualTo("USER");
+  }
+
+  @Test
   void anInvalidReplacementRollsBackTheRemoval() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
