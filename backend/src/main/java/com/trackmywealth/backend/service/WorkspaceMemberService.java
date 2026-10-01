@@ -54,6 +54,21 @@ public class WorkspaceMemberService {
     this.versionPreconditionService = versionPreconditionService;
   }
 
+  @Transactional(readOnly = true)
+  public WorkspaceMemberSummaryResponse getMember(
+      UUID targetMemberId, AuthenticatedUserPrincipal actor) {
+    UUID actingMemberId = requireActingMember(actor);
+    requireSelf(targetMemberId, actingMemberId, actor.userId());
+    WorkspaceMember target =
+        workspaceMemberRepository
+            .findById(targetMemberId)
+            .orElseThrow(
+                () ->
+                    authorizationDenialAuditService.denyAsNotFound(
+                        actor.userId(), WORKSPACE_MEMBER_ENTITY_TYPE, targetMemberId));
+    return toSummary(target);
+  }
+
   @Transactional
   public WorkspaceMemberSummaryResponse deactivateMember(
       UUID targetMemberId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
