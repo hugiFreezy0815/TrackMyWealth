@@ -37,14 +37,17 @@ public class CategorizationRuleService {
   private final CategorizationRuleRepository ruleRepository;
   private final CategoryService categoryService;
   private final AccessControlService accessControlService;
+  private final VersionPreconditionService versionPreconditionService;
 
   public CategorizationRuleService(
       CategorizationRuleRepository ruleRepository,
       CategoryService categoryService,
-      AccessControlService accessControlService) {
+      AccessControlService accessControlService,
+      VersionPreconditionService versionPreconditionService) {
     this.ruleRepository = ruleRepository;
     this.categoryService = categoryService;
     this.accessControlService = accessControlService;
+    this.versionPreconditionService = versionPreconditionService;
   }
 
   /** In evaluation order: lowest priority first, then the older rule. */
@@ -80,13 +83,16 @@ public class CategorizationRuleService {
 
   /** Idempotent: an already inactive rule is returned unchanged. */
   @Transactional
-  public CategorizationRuleResponse deactivate(UUID id, AuthenticatedUserPrincipal actor) {
+  public CategorizationRuleResponse deactivate(
+      UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
     CategorizationRule rule =
         ruleRepository
             .findByIdAndWorkspaceId(id, workspaceId)
             .orElseThrow(
                 () -> accessControlService.denyAsNotFound(actor, "CategorizationRule", id));
+    versionPreconditionService.requireCurrent(
+        expectedVersion, rule.getVersion(), "categorization rule");
     if (rule.isActive()) {
       rule.setActive(false);
       rule = ruleRepository.saveAndFlush(rule);
@@ -133,7 +139,8 @@ public class CategorizationRuleService {
         rule.getCategoryId(),
         rule.getPriority(),
         rule.isActive(),
-        rule.getCreatedAt());
+        rule.getCreatedAt(),
+        VersionPreconditionService.persistedVersion(rule.getVersion(), "categorization rule"));
   }
 
   private static ResponseStatusException unprocessable(String detail) {
