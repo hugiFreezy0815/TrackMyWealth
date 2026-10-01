@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,6 +42,12 @@ public class AdminUserController {
     UserSummaryResponse response =
         adminUserService.createUser(request, actor.userId(), actor.workspaceId());
     return VersionedResponse.created(response, response.version());
+  }
+
+  @GetMapping("/{id}")
+  public ResponseEntity<UserSummaryResponse> getUser(@PathVariable UUID id) {
+    UserSummaryResponse response = adminUserService.getUser(id);
+    return VersionedResponse.ok(response, response.version());
   }
 
   @PatchMapping("/{id}")
