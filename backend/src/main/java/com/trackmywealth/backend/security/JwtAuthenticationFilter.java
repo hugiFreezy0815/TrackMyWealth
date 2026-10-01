@@ -85,7 +85,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
     AuthenticatedUserPrincipal principal =
         new AuthenticatedUserPrincipal(
-            snapshot.userId(), snapshot.role(), snapshot.workspaceId(), claims.sessionId(), snapshot.language());
+            snapshot.userId(),
+            snapshot.role(),
+            snapshot.workspaceId(),
+            claims.sessionId(),
+            snapshot.language());
     List<SimpleGrantedAuthority> authorities =
         List.of(new SimpleGrantedAuthority("ROLE_" + snapshot.role()));
     return Optional.of(new UsernamePasswordAuthenticationToken(principal, null, authorities));
