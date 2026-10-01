@@ -150,14 +150,14 @@ public class SharingGrantService {
             institutionLookupService.findInstitutionOrThrow(request.scopeInstitutionId(), actor);
         if (!tryBootstrapInstitution(actor, institution.getId())) {
           requireFullAccessToScope(
-              granterMemberId, ScopeTypeValues.INSTITUTION, null, institution, null);
+              actor, ScopeTypeValues.INSTITUTION, null, institution, null);
         }
         grant.setScopeInstitution(institution);
       }
       case ScopeTypeValues.WORKSPACE -> {
         if (!tryBootstrapWorkspace(actor)) {
           requireFullAccessToScope(
-              granterMemberId, ScopeTypeValues.WORKSPACE, null, null, actor.workspaceId());
+              actor, ScopeTypeValues.WORKSPACE, null, null, actor.workspaceId());
         }
       }
       default ->
@@ -190,7 +190,7 @@ public class SharingGrantService {
     // granted this, and it is the scope's sole remaining grant - see this class's own Javadoc.
     if (!isSoleRemainingGrant(actor, actingMemberId, grant)) {
       requireFullAccessToScope(
-          actingMemberId,
+          actor,
           grant.getScopeType(),
           grant.getScopeAccount(),
           grant.getScopeInstitution(),
@@ -215,20 +215,20 @@ public class SharingGrantService {
   // grantedByMemberId) doesn't pay for AccessControlService.requireActingMember's
   // AppUserRepository lookup a second time - revoke() resolves it once itself instead.
   private void requireFullAccessToScope(
-      UUID memberId,
+      AuthenticatedUserPrincipal actor,
       String scopeType,
       Account account,
       FinancialInstitution institution,
       UUID workspaceId) {
     switch (scopeType) {
       case ScopeTypeValues.ACCOUNT ->
-          accessControlService.requireAccountAccess(memberId, account, AccessLevelValues.FULL);
+          accessControlService.requireAccountAccess(actor, account, AccessLevelValues.FULL);
       case ScopeTypeValues.INSTITUTION ->
           accessControlService.requireInstitutionAccess(
-              memberId, institution, AccessLevelValues.FULL);
+              actor, institution, AccessLevelValues.FULL);
       case ScopeTypeValues.WORKSPACE ->
           accessControlService.requireWorkspaceAccess(
-              memberId, workspaceId, AccessLevelValues.FULL);
+              actor, workspaceId, AccessLevelValues.FULL);
       default -> throw new IllegalStateException("Unexpected scopeType: " + scopeType);
     }
   }
