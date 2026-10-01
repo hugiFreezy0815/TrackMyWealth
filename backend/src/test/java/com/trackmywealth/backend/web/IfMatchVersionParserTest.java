@@ -12,7 +12,7 @@ class IfMatchVersionParserTest {
 
   @Test
   void parsesStrongNumericEtag() {
-    assertThat(IfMatchVersionParser.parse(""17"")).isEqualTo(17);
+    assertThat(IfMatchVersionParser.parse("\"17\"")).isEqualTo(17);
   }
 
   @Test
@@ -23,7 +23,7 @@ class IfMatchVersionParserTest {
 
   @Test
   void weakWildcardAndUnquotedTagsAreRejected() {
-    for (String value : new String[] {"W/"7"", "*", "7", ""abc"", """"}) {
+    for (String value : new String[] {"W/\"7\"", "*", "7", "\"abc\"", "\"\""}) {
       assertThatThrownBy(() -> IfMatchVersionParser.parse(value))
           .as(value)
           .isInstanceOfSatisfying(
@@ -37,6 +37,6 @@ class IfMatchVersionParserTest {
 
   @Test
   void writesStrongEtag() {
-    assertThat(IfMatchVersionParser.toEtag(9)).isEqualTo(""9"");
+    assertThat(IfMatchVersionParser.toEtag(9)).isEqualTo("\"9\"");
   }
 }
