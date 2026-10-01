@@ -13,7 +13,10 @@ export class ApiError extends Error {
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown };
 
-function withIfMatch(version: number, options: RequestOptions = {}): RequestOptions {
+function withIfMatch(
+  version: number,
+  options: RequestOptions = {},
+): RequestOptions {
   return {
     ...options,
     headers: {
