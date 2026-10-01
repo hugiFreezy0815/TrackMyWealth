@@ -410,6 +410,51 @@ class AdminUserControllerTest {
         .isEqualTo(HttpStatus.FORBIDDEN);
   }
 
+  // FR-AUT / US-02-01: disabling bumps token_version, and reactivating does not undo that. A token
+  // issued before the disable stays dead once the user is ACTIVE again - only the version check
+  // rejects it then, since the status check passes (#193 review: this branch was untested).
+  @Test
+  void aTokenIssuedBeforeADisableStaysInvalidAfterReactivation() {
+    String adminToken = bootstrapAdministrator();
+    AppUser charlie = createStandardUser(adminToken, "charlie@example.com");
+    String tokenBeforeDisable =
+        tokenIssuanceService.issueTokens(charlie, "test-device", null).accessToken();
+    String base = "/api/v1/admin/users/" + charlie.getId();
+
+    adminClient(adminToken)
+        .post()
+        .uri(base + "/disable")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    adminClient(adminToken)
+        .post()
+        .uri(base + "/reactivate")
+        .headers(CurrentVersion.ifMatch(dataSource, "app_user", charlie.getId()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    AppUser reactivated = appUserRepository.findById(charlie.getId()).orElseThrow();
+    assertThat(reactivated.getStatus()).isEqualTo("ACTIVE");
+    adminClient(tokenBeforeDisable)
+        .get()
+        .uri("/api/v1/sessions")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+
+    String tokenAfterReactivation =
+        tokenIssuanceService.issueTokens(reactivated, "test-device", null).accessToken();
+    adminClient(tokenAfterReactivation)
+        .get()
+        .uri("/api/v1/sessions")
+        .exchange()
+        .expectStatus()
+        .isOk();
+  }
+
   @Test
   void disablingAUserRevokesTokensAndInvalidatesAccessImmediately() {
     String adminToken = bootstrapAdministrator();

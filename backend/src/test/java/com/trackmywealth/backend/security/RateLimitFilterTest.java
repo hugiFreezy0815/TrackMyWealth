@@ -217,6 +217,22 @@ class RateLimitFilterTest {
         .isEqualTo(HttpStatus.UNAUTHORIZED);
   }
 
+  // The limiter covers exactly its listed endpoints: any other POST - here an ordinary create far
+  // past every configured capacity - passes straight through to authentication (401), never 429.
+  @Test
+  void aPostToAnUnlistedPathIsNeverRateLimited() {
+    for (int i = 0; i < CAPACITY * 3; i++) {
+      client()
+          .post()
+          .uri("/api/v1/accounts")
+          .contentType(MediaType.APPLICATION_JSON)
+          .body("{}")
+          .exchange()
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+  }
+
   private RestTestClient.ResponseSpec createSecurity() {
     return client()
         .post()
