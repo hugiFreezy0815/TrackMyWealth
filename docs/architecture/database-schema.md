@@ -140,11 +140,18 @@ for the wrong reason (superusers bypass RLS unconditionally).
 ### Object-level denial audit lifecycle (US-28-02, #205)
 
 Every audited single-resource denial still returns the same generic 404 and records only the
-principal, requested entity type/id and a non-enumerating reason. Audit persistence no longer uses
-a nested `REQUIRES_NEW` transaction on the request thread: the request offers work to a dedicated
-bounded executor, and the writer opens its own transaction after the request path is free to release
-its JDBC connection. Queue saturation never runs the write on the caller thread and never changes
-the authorization result; the 404 remains fail-closed even if an audit task must be dropped.
+principal, requested entity type/id and a non-enumerating reason. An audit row the budget below
+calls for is **never lost** (decided 2026-10-01): it is written synchronously, as one auto-committed
+`INSERT`, before the 404 is returned, so it is durable and survives the request's rollback.
+
+It is written through a small connection pool of its own (`AuthorizationDenialAuditWriteRepository`,
+`audit-pool-size`, 2 by default), never the main pool. The earlier nested `REQUIRES_NEW` write took
+its second connection from the main pool while the request still held one, so enough concurrent
+denials could wait on each other until the pool timed out. An audit connection is never held while
+waiting for a main-pool one, so that circular wait cannot occur. If the row cannot be written
+within `audit-connection-timeout` (or the database fails), the request fails instead of continuing
+without its audit row - identically whether the id exists or not, so this reveals nothing. The
+audit pool is deliberately not a `DataSource` bean, which would make Spring Boot back off its own.
 
 To prevent a signed-in caller from growing the table without bound, exact `NOT_FOUND` rows are
 capped per principal/refill window (60 per minute by default). The first denial over that budget
@@ -153,8 +160,8 @@ rows. The in-memory principal-window cache is itself bounded.
 
 `AuthorizationDenialAuditRetentionService` deletes rows older than
 `app.authorization-denial-audit.retention` (90 days by default), using V47's `occurred_at` index.
-The cleanup interval, queue/thread counts, principal cache bound and throttle values are deployment
-configuration in `application.yml`.
+The cleanup interval, audit pool size and connection timeout, principal cache bound and throttle
+values are deployment configuration in `application.yml`.
 
 ### Security master: lazy creation and manual mode (US-12-01)
 

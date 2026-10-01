@@ -7,46 +7,43 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Bounds the cost and retention of object-level authorization-denial auditing (#205).
  *
  * <p>Exact denial rows are rate-limited per principal. Once the budget is exhausted, one summary
- * row is written per refill window and further rows are suppressed until capacity returns. Writes
- * use a dedicated bounded executor so a denied request never waits for a second JDBC connection.
+ * row is written per refill window and further rows are suppressed until capacity returns. Every
+ * row that is written is written synchronously through a small connection pool of its own ({@code
+ * auditPoolSize}), never the request's pool, so a denied request can neither starve the main pool
+ * nor lose its audit row.
  */
 @ConfigurationProperties(prefix = "app.authorization-denial-audit")
 public record AuthorizationDenialAuditProperties(
     int maxWritesPerPrincipal,
     Duration refillPeriod,
     int maxPrincipals,
-    int queueCapacity,
-    int writerThreads,
+    int auditPoolSize,
+    Duration auditConnectionTimeout,
     Duration retention,
     Duration cleanupInterval) {
 
+  private static final int MIN_COUNT = 1;
+  private static final String PREFIX = "app.authorization-denial-audit.";
+
   public AuthorizationDenialAuditProperties {
-    if (maxWritesPerPrincipal < 1) {
-      throw new IllegalArgumentException(
-          "app.authorization-denial-audit.max-writes-per-principal must be >= 1");
+    requireAtLeastOne(maxWritesPerPrincipal, "max-writes-per-principal");
+    requirePositive(refillPeriod, "refill-period");
+    requireAtLeastOne(maxPrincipals, "max-principals");
+    requireAtLeastOne(auditPoolSize, "audit-pool-size");
+    requirePositive(auditConnectionTimeout, "audit-connection-timeout");
+    requirePositive(retention, "retention");
+    requirePositive(cleanupInterval, "cleanup-interval");
+  }
+
+  private static void requireAtLeastOne(int value, String name) {
+    if (value < MIN_COUNT) {
+      throw new IllegalArgumentException(PREFIX + name + " must be >= " + MIN_COUNT);
     }
-    if (refillPeriod == null || refillPeriod.isZero() || refillPeriod.isNegative()) {
-      throw new IllegalArgumentException(
-          "app.authorization-denial-audit.refill-period must be positive");
-    }
-    if (maxPrincipals < 1) {
-      throw new IllegalArgumentException(
-          "app.authorization-denial-audit.max-principals must be >= 1");
-    }
-    if (queueCapacity < 1) {
-      throw new IllegalArgumentException(
-          "app.authorization-denial-audit.queue-capacity must be >= 1");
-    }
-    if (writerThreads < 1) {
-      throw new IllegalArgumentException(
-          "app.authorization-denial-audit.writer-threads must be >= 1");
-    }
-    if (retention == null || retention.isZero() || retention.isNegative()) {
-      throw new IllegalArgumentException("app.authorization-denial-audit.retention must be positive");
-    }
-    if (cleanupInterval == null || cleanupInterval.isZero() || cleanupInterval.isNegative()) {
-      throw new IllegalArgumentException(
-          "app.authorization-denial-audit.cleanup-interval must be positive");
+  }
+
+  private static void requirePositive(Duration value, String name) {
+    if (value == null || value.isZero() || value.isNegative()) {
+      throw new IllegalArgumentException(PREFIX + name + " must be positive");
     }
   }
 }

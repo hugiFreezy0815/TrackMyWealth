@@ -39,13 +39,12 @@ import org.springframework.web.util.UrlPathHelper;
  * <p>Covers {@link AuthController#LOGIN_PATH}, {@link AuthController#REFRESH_PATH}, {@link
  * SetupController#ADMINISTRATOR_PATH} (unauthenticated and brute-forceable until first use), {@link
  * SessionController#REVOKE_PATH} (authenticated and still worth bounding even though #205 moved
- * denial auditing off the request thread), {@link AuthController#MFA_VERIFY_PATH} (unauthenticated,
- * and a
- * 6-digit TOTP code is brute-forceable without a limit here independent of the challenge token's
- * own short expiry), and {@link MfaController#CONFIRM_PATH} (authenticated, but the same
- * brute-forceable 6-digit-code reasoning applies to confirming a pending enrollment). Referencing
- * each controller's own constant, rather than a re-typed literal, means the two can never silently
- * drift apart the way a second hardcoded copy of the same path could.
+ * denial auditing onto its own small connection pool), {@link AuthController#MFA_VERIFY_PATH}
+ * (unauthenticated, and a 6-digit TOTP code is brute-forceable without a limit here independent of
+ * the challenge token's own short expiry), and {@link MfaController#CONFIRM_PATH} (authenticated,
+ * but the same brute-forceable 6-digit-code reasoning applies to confirming a pending enrollment).
+ * Referencing each controller's own constant, rather than a re-typed literal, means the two can
+ * never silently drift apart the way a second hardcoded copy of the same path could.
  *
  * <p>US-12-01 adds {@link SecurityController#BASE_PATH} on both verbs, for a different reason from
  * every rule above: not brute-forcing a credential, but bounding write and read access to global,
