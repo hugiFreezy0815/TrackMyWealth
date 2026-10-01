@@ -1,5 +1,6 @@
-package com.trackmywealth.backend.web;
+package com.trackmywealth.backend.config;
 
+import com.trackmywealth.backend.web.CorrelationIdFilter;
 import java.util.Map;
 import org.slf4j.MDC;
 import org.springframework.core.task.TaskDecorator;
@@ -11,6 +12,10 @@ import org.springframework.stereotype.Component;
  * submitting thread's MDC onto the worker for the task's duration, so its log lines quote the same
  * id. Spring Boot applies a single {@link TaskDecorator} bean to its auto-configured application
  * task executor. Scheduled and Quartz jobs start outside any request and have no id to carry.
+ *
+ * <p>Spring Boot applies a {@link TaskDecorator} bean only while it is the only one: adding a
+ * second would silently drop this one from the executor. Combine them (e.g. Spring's {@code
+ * CompositeTaskDecorator}) in a single bean instead.
  */
 @Component
 public class MdcTaskDecorator implements TaskDecorator {

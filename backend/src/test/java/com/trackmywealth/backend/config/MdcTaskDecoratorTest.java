@@ -1,7 +1,8 @@
-package com.trackmywealth.backend.web;
+package com.trackmywealth.backend.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.web.CorrelationIdFilter;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;

@@ -16,23 +16,23 @@ import org.springframework.http.ProblemDetail;
  */
 public final class ProblemDetails {
 
-  public static final String CODE = ApiErrorCode.PROPERTY;
   public static final String CORRELATION_ID = "correlationId";
 
   private ProblemDetails() {}
 
   public static ProblemDetail of(HttpStatusCode status, String code, String detail) {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-    problem.setProperty(CODE, code);
+    problem.setProperty(ApiErrorCode.PROPERTY, code);
     return withCorrelationId(problem);
   }
 
   /** Adds the class-level code if none is set yet, and the current request's correlation id. */
   public static ProblemDetail decorate(ProblemDetail problem) {
     Map<String, Object> properties = problem.getProperties();
-    if (properties == null || !properties.containsKey(CODE)) {
+    if (properties == null || !properties.containsKey(ApiErrorCode.PROPERTY)) {
       problem.setProperty(
-          CODE, ApiErrorCode.forStatus(HttpStatusCode.valueOf(problem.getStatus())));
+          ApiErrorCode.PROPERTY,
+          ApiErrorCode.forStatus(HttpStatusCode.valueOf(problem.getStatus())));
     }
     return withCorrelationId(problem);
   }
