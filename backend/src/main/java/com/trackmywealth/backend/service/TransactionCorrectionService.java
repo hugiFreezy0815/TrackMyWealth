@@ -84,6 +84,13 @@ public class TransactionCorrectionService {
 
     UUID targetAccountId =
         request.targetAccountId() == null ? sourceAccount.getId() : request.targetAccountId();
+    if (!targetAccountId.equals(sourceAccount.getId())) {
+      Account targetAccount = accountLookupService.findAccountOrThrow(targetAccountId, actor);
+      accessControlService.requireAccountAccess(actor, targetAccount, AccessLevelValues.EDIT);
+      if (!targetAccount.getWorkspace().getId().equals(sourceAccount.getWorkspace().getId())) {
+        throw accessControlService.denyAsNotFound(actor, "Account", targetAccountId);
+      }
+    }
     CreateTransactionRequest replacementRequest = request.replacementRequest();
     boolean financialChange =
         !transactionService.financialStateMatches(original, targetAccountId, replacementRequest);
