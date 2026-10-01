@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -76,7 +77,7 @@ class TransactionServiceTest {
     depot.setNativeCurrency("CHF");
     depot.setStatus("ACTIVE");
     depot.setHoldsPositions(true);
-    when(accountLookupService.findAccountOrThrow(ACCOUNT)).thenReturn(depot);
+    when(accountLookupService.findAccountOrThrow(eq(ACCOUNT), any())).thenReturn(depot);
     when(securityRepository.existsById(SECURITY)).thenReturn(true);
     when(transactionRepository.saveAndFlush(any(Transaction.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));

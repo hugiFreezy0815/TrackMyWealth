@@ -200,7 +200,7 @@ public class TransactionService {
   @Transactional
   public TransactionResponse recordTransaction(
       UUID accountId, CreateTransactionRequest request, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
 
     // Before validate(): a replay must answer with the original row even if the account has been
@@ -325,7 +325,7 @@ public class TransactionService {
   @Transactional(readOnly = true)
   public Page<TransactionResponse> listTransactions(
       UUID accountId, boolean uncategorized, Pageable pageable, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     Pageable bounded =
         PageRequest.of(
@@ -380,7 +380,7 @@ public class TransactionService {
         categoryId.equals(transaction.getCategoryId())
             && categorizationService.isOverridden(transaction);
     if (!alreadyOverridden) {
-      categorizationService.override(transaction, categoryId, actor.userId());
+      categorizationService.override(transaction, categoryId, actor);
     }
     return toResponse(
         transaction, latestAssignments(List.of(transaction)).get(transaction.getId()));
@@ -409,13 +409,14 @@ public class TransactionService {
   // interleaving with the override check and write (RULE-031).
   private Transaction requireCategorizable(
       UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     Transaction transaction =
         transactionRepository
             .findByIdForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(accountId))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+            .orElseThrow(
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
     if (transaction.isReversal()) {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT,

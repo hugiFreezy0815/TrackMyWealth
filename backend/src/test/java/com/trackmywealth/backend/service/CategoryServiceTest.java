@@ -76,6 +76,10 @@ class CategoryServiceTest {
     when(categoryRepository.findVisibleTo(WORKSPACE)).thenAnswer(inv -> List.copyOf(categories));
     when(overrideRepository.findByWorkspaceId(WORKSPACE)).thenAnswer(inv -> List.copyOf(overrides));
     when(accessControlService.requireActingMember(ACTOR)).thenReturn(MEMBER);
+    // #192: a caller-supplied category id that doesn't resolve goes through the audited denial,
+    // which answers with the generic 404 (the audit itself is AuthorizationDenialAuditService's).
+    when(accessControlService.denyAsNotFound(any(), any(), any()))
+        .thenAnswer(inv -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
     when(accessControlService.workspaceAccessLevel(MEMBER, WORKSPACE))
         .thenReturn(AccessLevelValues.EDIT);
     when(workspaceRepository.findByIdForUpdate(WORKSPACE)).thenReturn(Optional.of(new Workspace()));
@@ -157,10 +161,14 @@ class CategoryServiceTest {
 
     @Test
     void anUnknownOrForeignParentIsNotFound() {
+      UUID unknownParent = UUID.randomUUID();
+
       assertStatus(
-          () ->
-              service.create(new CreateCategoryRequest(UUID.randomUUID(), "Child", "Kind"), ACTOR),
+          () -> service.create(new CreateCategoryRequest(unknownParent, "Child", "Kind"), ACTOR),
           HttpStatus.NOT_FOUND);
+
+      // #192: and the denial is the audited one, naming the caller and the id it asked for.
+      verify(accessControlService).denyAsNotFound(ACTOR, "Category", unknownParent);
     }
 
     @ParameterizedTest
@@ -194,7 +202,7 @@ class CategoryServiceTest {
     void aMemberWithoutWorkspaceEditChangesNothing() {
       doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace not found."))
           .when(accessControlService)
-          .requireWorkspaceAccess(MEMBER, WORKSPACE, AccessLevelValues.EDIT);
+          .requireWorkspaceAccess(ACTOR, WORKSPACE, AccessLevelValues.EDIT);
 
       assertStatus(
           () -> service.create(new CreateCategoryRequest(null, "Hobby", "Hobby"), ACTOR),
@@ -427,12 +435,13 @@ class CategoryServiceTest {
       Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
       override(leisure, null, null, false);
 
-      service.requireAssignable(hobby.getId(), WORKSPACE);
+      service.requireAssignable(hobby.getId(), WORKSPACE, ACTOR);
       assertStatus(
-          () -> service.requireAssignable(leisure.getId(), WORKSPACE),
+          () -> service.requireAssignable(leisure.getId(), WORKSPACE, ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
       assertStatus(
-          () -> service.requireAssignable(UUID.randomUUID(), WORKSPACE), HttpStatus.NOT_FOUND);
+          () -> service.requireAssignable(UUID.randomUUID(), WORKSPACE, ACTOR),
+          HttpStatus.NOT_FOUND);
     }
   }
 
@@ -506,7 +515,7 @@ class CategoryServiceTest {
     void aMemberWithoutEditNeverTakesTheLock() {
       doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace not found."))
           .when(accessControlService)
-          .requireWorkspaceAccess(MEMBER, WORKSPACE, AccessLevelValues.EDIT);
+          .requireWorkspaceAccess(ACTOR, WORKSPACE, AccessLevelValues.EDIT);
 
       assertStatus(
           () -> service.create(new CreateCategoryRequest(null, "Pets", "Haustiere"), ACTOR),
@@ -604,7 +613,7 @@ class CategoryServiceTest {
       assertThat(service.get(streaming.getId(), ACTOR).active()).isFalse();
       assertThat(service.get(netflix.getId(), ACTOR).active()).isFalse();
       assertStatus(
-          () -> service.requireAssignable(netflix.getId(), WORKSPACE),
+          () -> service.requireAssignable(netflix.getId(), WORKSPACE, ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
       assertStatus(
           () -> service.create(new CreateCategoryRequest(streaming.getId(), "X", "X"), ACTOR),
@@ -638,7 +647,9 @@ class CategoryServiceTest {
       Category hobby = own("WS_HOBBY", "Hobby", "Hobby", null);
 
       service.requireAssignable(
-          List.of(hobby.getId(), leisure.getId(), hobby.getId(), uncategorized.getId()), WORKSPACE);
+          List.of(hobby.getId(), leisure.getId(), hobby.getId(), uncategorized.getId()),
+          WORKSPACE,
+          ACTOR);
 
       verify(categoryRepository, times(1)).findVisibleTo(WORKSPACE);
       verify(overrideRepository, times(1)).findByWorkspaceId(WORKSPACE);
@@ -650,16 +661,20 @@ class CategoryServiceTest {
       override(leisure, null, null, false);
 
       assertStatus(
-          () -> service.requireAssignable(List.of(hobby.getId(), leisure.getId()), WORKSPACE),
+          () ->
+              service.requireAssignable(List.of(hobby.getId(), leisure.getId()), WORKSPACE, ACTOR),
           HttpStatus.UNPROCESSABLE_CONTENT);
+      UUID unknown = UUID.randomUUID();
       assertStatus(
-          () -> service.requireAssignable(List.of(hobby.getId(), UUID.randomUUID()), WORKSPACE),
+          () -> service.requireAssignable(List.of(hobby.getId(), unknown), WORKSPACE, ACTOR),
           HttpStatus.NOT_FOUND);
+      // #192: an id from the caller that the workspace cannot see is the audited denial.
+      verify(accessControlService).denyAsNotFound(ACTOR, "Category", unknown);
     }
 
     @Test
     void anEmptyBatchLoadsNothing() {
-      service.requireAssignable(List.of(), WORKSPACE);
+      service.requireAssignable(List.of(), WORKSPACE, ACTOR);
 
       verify(categoryRepository, never()).findVisibleTo(any());
     }

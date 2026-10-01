@@ -12,6 +12,7 @@ import com.trackmywealth.backend.repository.CategorizationRuleRepository;
 import com.trackmywealth.backend.repository.CategoryRepository;
 import com.trackmywealth.backend.repository.TransactionCategorizationLogRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -232,8 +233,8 @@ public class CategorizationService {
    * UNCATEGORIZED: resetting to automatic is the way back to it.
    */
   @Transactional
-  public void override(Transaction transaction, UUID categoryId, UUID userId) {
-    categoryService.requireAssignable(categoryId, transaction.getWorkspace().getId());
+  public void override(Transaction transaction, UUID categoryId, AuthenticatedUserPrincipal actor) {
+    categoryService.requireAssignable(categoryId, transaction.getWorkspace().getId(), actor);
     if (categoryId.equals(uncategorizedCategoryId())) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
@@ -242,7 +243,8 @@ public class CategorizationService {
     transaction.setCategoryId(categoryId);
     transactionRepository.saveAndFlush(transaction);
     logRepository.save(
-        TransactionCategorizationLog.ofUserOverride(transaction.getId(), categoryId, userId));
+        TransactionCategorizationLog.ofUserOverride(
+            transaction.getId(), categoryId, actor.userId()));
   }
 
   /**

@@ -155,8 +155,7 @@ public class AccountService {
     validateExtensionFields(request);
     Workspace workspace =
         workspaceAccessService.requireWorkspace(actor.workspaceId(), "an account");
-    FinancialInstitution institution =
-        resolveInstitution(request.financialInstitutionId(), actor.workspaceId());
+    FinancialInstitution institution = resolveInstitution(request.financialInstitutionId(), actor);
 
     Account account = new Account();
     account.setWorkspace(workspace);
@@ -201,7 +200,7 @@ public class AccountService {
   // diverge in practice.
   @Transactional(readOnly = true)
   public AccountSummaryResponse getAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.BALANCE_ONLY);
     return toSummary(account);
   }
@@ -221,7 +220,7 @@ public class AccountService {
   @Transactional
   public AccountSummaryResponse updateAccount(
       UUID accountId, UpdateAccountRequest request, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
 
     account.setName(request.name());
@@ -244,7 +243,7 @@ public class AccountService {
   // is (see e.g. V4/V24's immutability triggers) - a structured 409, not a silent no-op.
   @Transactional
   public AccountSummaryResponse archiveAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     // Checking specifically for "not ACTIVE" rather than "already ARCHIVED": status also admits
     // DELETED (V4's own CHECK constraint), which FR-STA-001 defines as terminal - reachable from
@@ -269,7 +268,7 @@ public class AccountService {
   // silently succeeding forever.
   @Transactional
   public AccountSummaryResponse restoreAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     if (!ARCHIVED.equals(account.getStatus())) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Account is not archived.");
@@ -320,7 +319,7 @@ public class AccountService {
   @Transactional
   public AccountSummaryResponse reassignInstitution(
       UUID accountId, ReassignAccountInstitutionRequest request, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     if (DELETED.equals(account.getStatus())) {
       throw new ResponseStatusException(
@@ -329,11 +328,12 @@ public class AccountService {
     }
 
     FinancialInstitution destination =
-        institutionLookupService.findInstitutionOrThrow(request.financialInstitutionId());
+        institutionLookupService.findInstitutionOrThrow(request.financialInstitutionId(), actor);
     accessControlService.requireInstitutionAccess(actor, destination, AccessLevelValues.EDIT);
 
     if (!account.getWorkspace().getId().equals(destination.getWorkspace().getId())) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Financial institution not found.");
+      throw accessControlService.denyAsNotFound(
+          actor, "FinancialInstitution", request.financialInstitutionId());
     }
 
     account.setFinancialInstitution(destination);
@@ -353,12 +353,13 @@ public class AccountService {
   // cross-workspace id simply isn't found, degrading safely to 404 rather than needing a
   // separate equality check (same reasoning as AdminUserService/InstitutionService) - delegated to
   // InstitutionLookupService, shared with reassignInstitution/SharingGrantService.
-  private FinancialInstitution resolveInstitution(UUID financialInstitutionId, UUID workspaceId) {
+  private FinancialInstitution resolveInstitution(
+      UUID financialInstitutionId, AuthenticatedUserPrincipal actor) {
     if (financialInstitutionId != null) {
-      return institutionLookupService.findInstitutionOrThrow(financialInstitutionId);
+      return institutionLookupService.findInstitutionOrThrow(financialInstitutionId, actor);
     }
     return financialInstitutionRepository
-        .findByWorkspaceIdAndPersonalAssetsDefaultTrue(workspaceId)
+        .findByWorkspaceIdAndPersonalAssetsDefaultTrue(actor.workspaceId())
         .orElseThrow(
             () ->
                 new ResponseStatusException(

@@ -108,7 +108,8 @@ public class TransactionRemovalService {
         transactionRepository
             .findByIdForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(account.getId()))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND));
+            .orElseThrow(
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
     String removal = TransactionService.removalOf(original);
     if (removal == null) {
       throw new ResponseStatusException(
@@ -178,7 +179,8 @@ public class TransactionRemovalService {
         transactionRepository
             .findByIdIncludingDeletedForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(account.getId()))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND));
+            .orElseThrow(
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
     if (deleted.getDeletedAt() == null) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "This transaction is not deleted.");
     }
@@ -225,7 +227,7 @@ public class TransactionRemovalService {
   @Transactional(readOnly = true)
   public List<TransactionResponse> listRestorable(
       UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     return transactionService.toResponses(
         transactionRepository.findDeletedByAccountIdSince(accountId, restoreWindowStart()));
@@ -247,7 +249,7 @@ public class TransactionRemovalService {
   }
 
   private Account requireEditable(UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     return account;
   }

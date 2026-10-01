@@ -76,7 +76,6 @@ public class CategoryService {
   static final Set<String> PROTECTED_CODES = Set.of("UNCATEGORIZED", "TRANSFER_INTERNAL");
   static final String WORKSPACE_CODE_PREFIX = "WS_";
   private static final int CODE_BASE_MAX_LENGTH = 40;
-  private static final String NOT_FOUND = "Category not found.";
 
   private final CategoryRepository categoryRepository;
   private final WorkspaceCategoryOverrideRepository overrideRepository;
@@ -114,7 +113,7 @@ public class CategoryService {
     boolean canEdit = canEdit(actor);
     Map<UUID, Category> categories = loadCategories(actor.workspaceId());
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(actor.workspaceId());
-    return toResponse(require(categories, id), categories, overrides, canEdit);
+    return toResponse(requireForActor(categories, id, actor), categories, overrides, canEdit);
   }
 
   @Transactional
@@ -124,7 +123,7 @@ public class CategoryService {
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
 
     if (request.parentId() != null) {
-      Category parent = require(categories, request.parentId());
+      Category parent = requireForActor(categories, request.parentId(), actor);
       requireMayHoldChildren(parent, categories, overrides);
       if (level(parent, categories) + 1 > MAX_DEPTH) {
         throw unprocessable(
@@ -162,7 +161,7 @@ public class CategoryService {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
-    Category category = require(categories, id);
+    Category category = requireForActor(categories, id, actor);
     if (request.version() != versionOf(category, overrides)) {
       throw new ApiException(
           HttpStatus.CONFLICT,
@@ -177,7 +176,7 @@ public class CategoryService {
             : request.parentId();
     boolean moving = !Objects.equals(parentId, category.getParentCategoryId());
     if (moving) {
-      requireMovable(category, parentId, categories, overrides);
+      requireMovable(category, parentId, categories, overrides, actor);
     }
     requireUniqueAmongSiblings(
         parentId, id, request.nameEn(), request.nameDe(), categories, overrides);
@@ -205,7 +204,7 @@ public class CategoryService {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
-    Category category = require(categories, id);
+    Category category = requireForActor(categories, id, actor);
     if (isProtected(category)) {
       throw unprocessable(
           "'" + category.getCode() + "' is required by the application and cannot be deactivated.");
@@ -231,7 +230,7 @@ public class CategoryService {
     UUID workspaceId = requireEditor(actor);
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
-    Category category = require(categories, id);
+    Category category = requireForActor(categories, id, actor);
     if (!isActive(category, categories, overrides)) {
       Category parent = categories.get(category.getParentCategoryId());
       if (parent != null && !isActive(parent, categories, overrides)) {
@@ -249,7 +248,7 @@ public class CategoryService {
   @Transactional
   public void delete(UUID id, AuthenticatedUserPrincipal actor) {
     UUID workspaceId = requireEditor(actor);
-    Category category = require(loadCategories(workspaceId), id);
+    Category category = requireForActor(loadCategories(workspaceId), id, actor);
     if (category.isShared()) {
       throw conflict(
           "A default category cannot be deleted because other data may depend on it. Deactivate it"
@@ -267,27 +266,30 @@ public class CategoryService {
   /**
    * The check every assignment of a category (a rule, a manual or automatic categorization) must
    * pass: the category is visible to the workspace and active, including every ancestor. An
-   * inactive one is a 422; historical assignments to it are untouched.
+   * inactive one is a 422; historical assignments to it are untouched. An id the workspace cannot
+   * see is the audited 404 (US-28-02, #192) - the id always comes from the caller.
    */
   @Transactional(readOnly = true)
-  public void requireAssignable(UUID categoryId, UUID workspaceId) {
-    requireAssignable(List.of(categoryId), workspaceId);
+  public void requireAssignable(
+      UUID categoryId, UUID workspaceId, AuthenticatedUserPrincipal actor) {
+    requireAssignable(List.of(categoryId), workspaceId, actor);
   }
 
   /**
-   * {@link #requireAssignable(UUID, UUID)} for many assignments at once (e.g. categorizing an
-   * import), loading the taxonomy once instead of once per category. Fails on the first category
-   * that is unknown (404) or inactive (422).
+   * {@link #requireAssignable(UUID, UUID, AuthenticatedUserPrincipal)} for many assignments at once
+   * (e.g. categorizing an import), loading the taxonomy once instead of once per category. Fails on
+   * the first category that is unknown (audited 404) or inactive (422).
    */
   @Transactional(readOnly = true)
-  public void requireAssignable(Collection<UUID> categoryIds, UUID workspaceId) {
+  public void requireAssignable(
+      Collection<UUID> categoryIds, UUID workspaceId, AuthenticatedUserPrincipal actor) {
     if (categoryIds.isEmpty()) {
       return;
     }
     Map<UUID, Category> categories = loadCategories(workspaceId);
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(workspaceId);
     for (UUID categoryId : new LinkedHashSet<>(categoryIds)) {
-      Category category = require(categories, categoryId);
+      Category category = requireForActor(categories, categoryId, actor);
       if (!isActive(category, categories, overrides)) {
         throw unprocessable("An inactive category cannot be assigned. Reactivate it first.");
       }
@@ -296,9 +298,10 @@ public class CategoryService {
 
   /**
    * The ids of every category the workspace may assign right now, by the same rule as {@link
-   * #requireAssignable(UUID, UUID)}: visible and active, every ancestor included. For a caller that
-   * chooses among candidates (automatic categorization, US-08-01) rather than validating a single
-   * user choice, so an inactive candidate is skipped instead of failing the request.
+   * #requireAssignable(UUID, UUID, AuthenticatedUserPrincipal)}: visible and active, every ancestor
+   * included. For a caller that chooses among candidates (automatic categorization, US-08-01)
+   * rather than validating a single user choice, so an inactive candidate is skipped instead of
+   * failing the request.
    */
   @Transactional(readOnly = true)
   public Set<UUID> assignableCategoryIds(UUID workspaceId) {
@@ -344,9 +347,7 @@ public class CategoryService {
   // EDIT on the workspace, then the workspace row lock that serializes every taxonomy change of
   // this workspace until the transaction ends (see the class comment).
   private UUID requireEditor(AuthenticatedUserPrincipal actor) {
-    UUID memberId = accessControlService.requireActingMember(actor);
-    accessControlService.requireWorkspaceAccess(
-        memberId, actor.workspaceId(), AccessLevelValues.EDIT);
+    accessControlService.requireWorkspaceAccess(actor, actor.workspaceId(), AccessLevelValues.EDIT);
     workspaceRepository
         .findByIdForUpdate(actor.workspaceId())
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
@@ -379,7 +380,8 @@ public class CategoryService {
       Category category,
       UUID newParentId,
       Map<UUID, Category> categories,
-      Map<UUID, WorkspaceCategoryOverride> overrides) {
+      Map<UUID, WorkspaceCategoryOverride> overrides,
+      AuthenticatedUserPrincipal actor) {
     if (category.isShared()) {
       throw unprocessable(
           "A default category keeps its shipped position; only your own categories can be moved.");
@@ -387,7 +389,7 @@ public class CategoryService {
     if (newParentId == null) {
       return;
     }
-    Category newParent = require(categories, newParentId);
+    Category newParent = requireForActor(categories, newParentId, actor);
     if (isSelfOrDescendant(newParent, category.getId(), categories)) {
       throw unprocessable("A category cannot be moved under itself or one of its subcategories.");
     }
@@ -620,10 +622,11 @@ public class CategoryService {
     return overrides;
   }
 
-  private static Category require(Map<UUID, Category> categories, UUID id) {
+  private Category requireForActor(
+      Map<UUID, Category> categories, UUID id, AuthenticatedUserPrincipal actor) {
     Category category = categories.get(id);
     if (category == null) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND);
+      throw accessControlService.denyAsNotFound(actor, "Category", id);
     }
     return category;
   }

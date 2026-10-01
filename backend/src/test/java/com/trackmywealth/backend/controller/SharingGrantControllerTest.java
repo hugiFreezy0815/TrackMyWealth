@@ -21,6 +21,8 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SharingGrantResponse;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.entity.AuthorizationDenialLog;
+import com.trackmywealth.backend.repository.AuthorizationDenialLogRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -91,6 +93,7 @@ class SharingGrantControllerTest {
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
+  @Autowired AuthorizationDenialLogRepository authorizationDenialLogRepository;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -101,6 +104,7 @@ class SharingGrantControllerTest {
         Statement statement = connection.createStatement()) {
       for (String table :
           List.of(
+              "authorization_denial_log",
               "sharing_grant",
               "account_ownership",
               "custom_asset_valuation",
@@ -119,12 +123,57 @@ class SharingGrantControllerTest {
   }
 
   @Test
-  void withNoGrantAccessIsDeniedByDefault() {
+  void deniedAndNonexistentAccountsUseTheSame404AndAuditShape() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse account = createAccount(adminToken);
     String bobToken = createAndLoginSecondMember(adminToken, "bob@example.com");
+    UUID nonexistentId = UUID.randomUUID();
+    UUID foreignAccountId = insertForeignAccount();
 
-    getAccount(bobToken, account.id()).expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+    getAccount(bobToken, account.id())
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND)
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Not found.")
+        .jsonPath("$.code")
+        .isEqualTo("NOT_FOUND");
+    getAccount(bobToken, nonexistentId)
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND)
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Not found.")
+        .jsonPath("$.code")
+        .isEqualTo("NOT_FOUND");
+
+    getAccount(bobToken, foreignAccountId)
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND)
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Not found.")
+        .jsonPath("$.code")
+        .isEqualTo("NOT_FOUND");
+
+    List<AuthorizationDenialLog> denied =
+        authorizationDenialLogRepository.findByRequestedEntityId(account.id());
+    List<AuthorizationDenialLog> missing =
+        authorizationDenialLogRepository.findByRequestedEntityId(nonexistentId);
+    List<AuthorizationDenialLog> foreign =
+        authorizationDenialLogRepository.findByRequestedEntityId(foreignAccountId);
+    assertThat(denied).hasSize(1);
+    assertThat(missing).hasSize(1);
+    assertThat(foreign).hasSize(1);
+    assertThat(denied.get(0).getPrincipalUserId())
+        .isEqualTo(missing.get(0).getPrincipalUserId())
+        .isEqualTo(foreign.get(0).getPrincipalUserId());
+    assertThat(List.of(denied.get(0), missing.get(0), foreign.get(0)))
+        .allSatisfy(
+            row -> {
+              assertThat(row.getRequestedEntityType()).isEqualTo("Account");
+              assertThat(row.getReason()).isEqualTo("NOT_FOUND");
+            });
   }
 
   @Test
@@ -672,6 +721,41 @@ class SharingGrantControllerTest {
       throw new IllegalStateException(e);
     } finally {
       pool.shutdownNow();
+    }
+  }
+
+  private UUID insertForeignAccount() {
+    UUID workspaceId = UUID.randomUUID();
+    UUID institutionId = UUID.randomUUID();
+    UUID accountId = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection()) {
+      try (PreparedStatement workspace =
+          connection.prepareStatement("INSERT INTO workspace (id, name) VALUES (?, 'Foreign')")) {
+        workspace.setObject(1, workspaceId);
+        workspace.executeUpdate();
+      }
+      try (PreparedStatement institution =
+          connection.prepareStatement(
+              "INSERT INTO financial_institution "
+                  + "(id, workspace_id, name, institution_type, container_currency) "
+                  + "VALUES (?, ?, 'Foreign Bank', 'BANK', 'CHF')")) {
+        institution.setObject(1, institutionId);
+        institution.setObject(2, workspaceId);
+        institution.executeUpdate();
+      }
+      try (PreparedStatement account =
+          connection.prepareStatement(
+              "INSERT INTO account "
+                  + "(id, workspace_id, financial_institution_id, account_type, name, native_currency) "
+                  + "VALUES (?, ?, ?, 'CASH', 'Foreign Account', 'CHF')")) {
+        account.setObject(1, accountId);
+        account.setObject(2, workspaceId);
+        account.setObject(3, institutionId);
+        account.executeUpdate();
+      }
+      return accountId;
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
     }
   }
 

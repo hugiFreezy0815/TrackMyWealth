@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.entity.AuthorizationDenialLog;
 import com.trackmywealth.backend.repository.AuthorizationDenialLogRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AuthorizationDenialAuditService {
 
+  public static final String GENERIC_NOT_FOUND_DETAIL = "Not found.";
+
   private final AuthorizationDenialLogRepository repository;
 
   public AuthorizationDenialAuditService(AuthorizationDenialLogRepository repository) {
@@ -33,13 +36,24 @@ public class AuthorizationDenialAuditService {
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public ResponseStatusException denyAsNotFound(
+      AuthenticatedUserPrincipal actor, String requestedEntityType, UUID requestedEntityId) {
+    return recordDenial(actor.userId(), requestedEntityType, requestedEntityId);
+  }
+
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public ResponseStatusException denyAsNotFound(
+      UUID principalUserId, String requestedEntityType, UUID requestedEntityId) {
+    return recordDenial(principalUserId, requestedEntityType, requestedEntityId);
+  }
+
+  private ResponseStatusException recordDenial(
       UUID principalUserId, String requestedEntityType, UUID requestedEntityId) {
     AuthorizationDenialLog log = new AuthorizationDenialLog();
     log.setPrincipalUserId(principalUserId);
     log.setRequestedEntityType(requestedEntityType);
     log.setRequestedEntityId(requestedEntityId);
     log.setReason("NOT_FOUND");
-    repository.save(log);
-    return new ResponseStatusException(HttpStatus.NOT_FOUND);
+    repository.saveAndFlush(log);
+    return new ResponseStatusException(HttpStatus.NOT_FOUND, GENERIC_NOT_FOUND_DETAIL);
   }
 }

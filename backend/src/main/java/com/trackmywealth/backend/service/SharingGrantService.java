@@ -133,31 +133,30 @@ public class SharingGrantService {
             .findById(request.grantedToMemberId())
             .orElseThrow(
                 () ->
-                    new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Workspace member not found."));
+                    accessControlService.denyAsNotFound(
+                        actor, "WorkspaceMember", request.grantedToMemberId()));
 
     SharingGrant grant = new SharingGrant();
     grant.setWorkspace(workspace);
     grant.setScopeType(request.scopeType());
     switch (request.scopeType()) {
       case ScopeTypeValues.ACCOUNT -> {
-        Account account = accountLookupService.findAccountOrThrow(request.scopeAccountId());
-        requireFullAccessToScope(granterMemberId, ScopeTypeValues.ACCOUNT, account, null, null);
+        Account account = accountLookupService.findAccountOrThrow(request.scopeAccountId(), actor);
+        requireFullAccessToScope(actor, ScopeTypeValues.ACCOUNT, account, null, null);
         grant.setScopeAccount(account);
       }
       case ScopeTypeValues.INSTITUTION -> {
         FinancialInstitution institution =
-            institutionLookupService.findInstitutionOrThrow(request.scopeInstitutionId());
+            institutionLookupService.findInstitutionOrThrow(request.scopeInstitutionId(), actor);
         if (!tryBootstrapInstitution(actor, institution.getId())) {
-          requireFullAccessToScope(
-              granterMemberId, ScopeTypeValues.INSTITUTION, null, institution, null);
+          requireFullAccessToScope(actor, ScopeTypeValues.INSTITUTION, null, institution, null);
         }
         grant.setScopeInstitution(institution);
       }
       case ScopeTypeValues.WORKSPACE -> {
         if (!tryBootstrapWorkspace(actor)) {
           requireFullAccessToScope(
-              granterMemberId, ScopeTypeValues.WORKSPACE, null, null, actor.workspaceId());
+              actor, ScopeTypeValues.WORKSPACE, null, null, actor.workspaceId());
         }
       }
       default ->
@@ -178,8 +177,7 @@ public class SharingGrantService {
     SharingGrant grant =
         sharingGrantRepository
             .findByIdForUpdate(grantId)
-            .orElseThrow(
-                () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Grant not found."));
+            .orElseThrow(() -> accessControlService.denyAsNotFound(actor, "SharingGrant", grantId));
 
     UUID actingMemberId = accessControlService.requireActingMember(actor);
 
@@ -190,7 +188,7 @@ public class SharingGrantService {
     // granted this, and it is the scope's sole remaining grant - see this class's own Javadoc.
     if (!isSoleRemainingGrant(actor, actingMemberId, grant)) {
       requireFullAccessToScope(
-          actingMemberId,
+          actor,
           grant.getScopeType(),
           grant.getScopeAccount(),
           grant.getScopeInstitution(),
@@ -215,20 +213,18 @@ public class SharingGrantService {
   // grantedByMemberId) doesn't pay for AccessControlService.requireActingMember's
   // AppUserRepository lookup a second time - revoke() resolves it once itself instead.
   private void requireFullAccessToScope(
-      UUID memberId,
+      AuthenticatedUserPrincipal actor,
       String scopeType,
       Account account,
       FinancialInstitution institution,
       UUID workspaceId) {
     switch (scopeType) {
       case ScopeTypeValues.ACCOUNT ->
-          accessControlService.requireAccountAccess(memberId, account, AccessLevelValues.FULL);
+          accessControlService.requireAccountAccess(actor, account, AccessLevelValues.FULL);
       case ScopeTypeValues.INSTITUTION ->
-          accessControlService.requireInstitutionAccess(
-              memberId, institution, AccessLevelValues.FULL);
+          accessControlService.requireInstitutionAccess(actor, institution, AccessLevelValues.FULL);
       case ScopeTypeValues.WORKSPACE ->
-          accessControlService.requireWorkspaceAccess(
-              memberId, workspaceId, AccessLevelValues.FULL);
+          accessControlService.requireWorkspaceAccess(actor, workspaceId, AccessLevelValues.FULL);
       default -> throw new IllegalStateException("Unexpected scopeType: " + scopeType);
     }
   }

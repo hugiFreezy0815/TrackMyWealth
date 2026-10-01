@@ -67,7 +67,7 @@ public class CategorizationRuleService {
     UUID workspaceId = requireEditor(actor);
     String value = normalizedValue(request.matchType(), request.matchValue());
     // 404 for a category the workspace cannot see, 422 for an inactive one.
-    categoryService.requireAssignable(request.categoryId(), workspaceId);
+    categoryService.requireAssignable(request.categoryId(), workspaceId, actor);
 
     CategorizationRule rule = new CategorizationRule();
     rule.setWorkspaceId(workspaceId);
@@ -85,7 +85,8 @@ public class CategorizationRuleService {
     CategorizationRule rule =
         ruleRepository
             .findByIdAndWorkspaceId(id, workspaceId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+            .orElseThrow(
+                () -> accessControlService.denyAsNotFound(actor, "CategorizationRule", id));
     if (rule.isActive()) {
       rule.setActive(false);
       rule = ruleRepository.saveAndFlush(rule);
@@ -120,9 +121,7 @@ public class CategorizationRuleService {
   }
 
   private UUID requireEditor(AuthenticatedUserPrincipal actor) {
-    UUID memberId = accessControlService.requireActingMember(actor);
-    accessControlService.requireWorkspaceAccess(
-        memberId, actor.workspaceId(), AccessLevelValues.EDIT);
+    accessControlService.requireWorkspaceAccess(actor, actor.workspaceId(), AccessLevelValues.EDIT);
     return actor.workspaceId();
   }
 

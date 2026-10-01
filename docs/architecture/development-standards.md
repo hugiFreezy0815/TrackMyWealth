@@ -47,6 +47,12 @@ cd backend
 - **Services never depend on the web layer** (`services_do_not_depend_on_the_web_layer`). The
   error types a service throws (`ApiException`, `ApiErrorCode`,
   `ExistingResourceConflictException`) live in `..error..` for that reason.
+- **Object-level denials are audited** (US-28-02, #192). When a caller-supplied id does not
+  resolve to something the caller may use, deny through `AuthorizationDenialAuditService` (via
+  the actor-aware lookups and `AccessControlService.require*Access(actor, ...)`), never with a raw
+  `HttpStatus.NOT_FOUND`: that writes `authorization_denial_log` and answers the one generic 404.
+  `object_level_services_do_not_construct_raw_not_found` lists, per method, the few service
+  methods allowed a raw 404 and why; `ArchitectureRulesBiteTest` proves any other one fails.
 - **API wire conventions (EPIC-29, #149)** — mandatory for every new endpoint:
   - **Decimals travel as strings.** Every `BigDecimal` (money, quantity, price, FX rate,
     percentage) is serialized as a plain decimal string with its scale kept (`"1005.0000"`) by

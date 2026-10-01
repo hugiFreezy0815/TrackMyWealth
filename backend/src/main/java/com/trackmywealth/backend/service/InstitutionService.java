@@ -136,7 +136,7 @@ public class InstitutionService {
   public InstitutionSummaryResponse getSummary(
       UUID institutionId, AuthenticatedUserPrincipal actor) {
     FinancialInstitution institution =
-        institutionLookupService.findInstitutionOrThrow(institutionId);
+        institutionLookupService.findInstitutionOrThrow(institutionId, actor);
     accessControlService.requireInstitutionAccess(
         actor, institution, AccessLevelValues.BALANCE_ONLY);
 

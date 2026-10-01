@@ -54,7 +54,7 @@ public class CustomAssetValuationService {
   @Transactional
   public CustomAssetValuationResponse recordValuation(
       UUID accountId, CreateCustomAssetValuationRequest request, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
 
     CustomAssetValuation valuation = new CustomAssetValuation();
@@ -78,7 +78,7 @@ public class CustomAssetValuationService {
   @Transactional(readOnly = true)
   public List<CustomAssetValuationResponse> listValuations(
       UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId);
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     return customAssetValuationRepository
         .findByAccountIdOrderByValuationDateDesc(accountId)

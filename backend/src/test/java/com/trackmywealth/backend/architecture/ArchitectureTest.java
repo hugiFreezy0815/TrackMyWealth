@@ -5,11 +5,16 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaCodeUnit;
+import com.tngtech.archunit.core.domain.JavaFieldAccess;
 import com.tngtech.archunit.core.domain.properties.CanBeAnnotated;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.library.Architectures;
 import com.tngtech.archunit.library.Architectures.LayeredArchitecture;
 import com.tngtech.archunit.library.GeneralCodingRules;
@@ -18,6 +23,8 @@ import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.service.InstitutionService;
 import jakarta.persistence.Entity;
+import java.util.Set;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RestController;
@@ -172,6 +179,67 @@ class ArchitectureTest {
                   + " (US-04-02/FR-INS-008/012, RULE-020/022) - AccountService must never read"
                   + " institution_type at all, not even inside the one sanctioned exception"
                   + " account_type itself gets");
+
+  // US-28-02 / #192: a raw service-layer 404 is an easy way to bypass authorization_denial_log.
+  // Every service method that still constructs one is listed here by name, with the reason it is
+  // not an object-level denial; any other method - including a new one in a listed class - fails
+  // the build. Adding an entry is a security-review event, not a convenience.
+  static final Set<String> REVIEWED_RAW_NOT_FOUND_METHODS =
+      Set.of(
+          // The audited denial itself.
+          "AuthorizationDenialAuditService#recordDenial",
+          // The caller's own identity or workspace failing to resolve - no caller-supplied id.
+          "AccessControlService#requireActingMember",
+          "WorkspaceMemberService#requireActingMember",
+          "NetWorthService#getNetWorth",
+          "CategoryService#requireEditor",
+          // A capability gate ("may this caller create securities at all"), not one object.
+          "SecurityService#requireMayCreate",
+          // Globally shared reference data, identical for every tenant.
+          "SecurityService#get",
+          "SecurityService#lookup",
+          "InstitutionService#applyCatalogueEntry",
+          // Missing FX data, not an authorization decision.
+          "FxRateService#getRate",
+          "FxRateService#noConversionRateAvailable",
+          // SYSTEM_ADMINISTRATOR-only user management (SecurityConfig), outside tenant data.
+          "AdminUserService#findUserOrThrow",
+          "AdminUserService#findUserForUpdateOrThrow",
+          "AdminUserService#extractTargetOrThrow");
+
+  @ArchTest
+  static final ArchRule object_level_services_do_not_construct_raw_not_found =
+      classes()
+          .that()
+          .resideInAPackage("..service..")
+          .should(constructRawNotFoundOnlyIn(REVIEWED_RAW_NOT_FOUND_METHODS))
+          .because(
+              "single-resource authorization denials must go through AuthorizationDenialAuditService"
+                  + " so US-28-02 records them and returns one non-enumerating 404");
+
+  // A method is named Class#method; a lambda counts as the method it is written in.
+  private static ArchCondition<JavaClass> constructRawNotFoundOnlyIn(Set<String> reviewed) {
+    return new ArchCondition<>("construct a raw 404 only in a reviewed method") {
+      @Override
+      public void check(JavaClass javaClass, ConditionEvents events) {
+        for (JavaFieldAccess access : javaClass.getFieldAccessesFromSelf()) {
+          if (access.getTargetOwner().isEquivalentTo(HttpStatus.class)
+              && "NOT_FOUND".equals(access.getName())) {
+            String method = javaClass.getSimpleName() + "#" + enclosingMethod(access.getOrigin());
+            if (!reviewed.contains(method)) {
+              events.add(
+                  SimpleConditionEvent.violated(access, method + ": " + access.getDescription()));
+            }
+          }
+        }
+      }
+    };
+  }
+
+  private static String enclosingMethod(JavaCodeUnit codeUnit) {
+    String name = codeUnit.getName();
+    return name.startsWith("lambda$") ? name.substring(7, name.lastIndexOf('$')) : name;
+  }
 
   @ArchTest
   static final ArchRule no_standard_streams =

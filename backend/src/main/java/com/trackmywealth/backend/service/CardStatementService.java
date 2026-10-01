@@ -206,7 +206,7 @@ public class CardStatementService {
   }
 
   private Account requireCard(UUID cardAccountId, AuthenticatedUserPrincipal actor, String level) {
-    Account card = accountLookupService.findAccountOrThrow(cardAccountId);
+    Account card = accountLookupService.findAccountOrThrow(cardAccountId, actor);
     accessControlService.requireAccountAccess(actor, card, level);
     if (!card.isHasStatementCycle()) {
       throw new ResponseStatusException(
