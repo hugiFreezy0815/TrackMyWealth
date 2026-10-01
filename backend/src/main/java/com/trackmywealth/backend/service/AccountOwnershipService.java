@@ -61,6 +61,8 @@ public class AccountOwnershipService {
 
   // The aggregate-version bump touches exactly the one account row this method has locked.
   private static final int ONE_ROW = 1;
+  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
+  private static final String VERSIONED_RESOURCE = "account ownership";
 
   private final AccountRepository accountRepository;
   private final AccountLookupService accountLookupService;
@@ -96,7 +98,7 @@ public class AccountOwnershipService {
             .orElseThrow(() -> accessControlService.denyAsNotFound(actor, "Account", accountId));
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     versionPreconditionService.requireCurrent(
-        expectedVersion, account.getVersion(), "account ownership");
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     List<OwnerAllocation> owners = request.owners();
 
     requireNoDuplicateMembers(owners);
@@ -201,7 +203,7 @@ public class AccountOwnershipService {
       Account account, List<AccountOwnership> ownership) {
     return new AccountOwnershipSetResponse(
         account.getId(),
-        VersionPreconditionService.persistedVersion(account.getVersion(), "account"),
+        VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE),
         ownership.stream().map(this::toResponse).toList());
   }
 

@@ -47,8 +47,10 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
   /**
    * #207: ownership is a full-replacement aggregate whose concurrency token is the parent account.
    * The ownership rows themselves are dated history and there may legitimately be zero current
-   * rows, so no child row can carry the aggregate revision. This harmless UPDATE advances the
-   * account's database-owned version through trg_bump_version().
+   * rows, so no child row can carry the aggregate revision. This UPDATE changes no column itself;
+   * its BEFORE UPDATE triggers advance the account's database-owned version (trg_bump_version) and,
+   * as a side effect, set {@code updated_at} to now (trg_set_updated_at) - an ownership change
+   * counts as a change of the account (ADR 0004).
    */
   @Modifying(clearAutomatically = true, flushAutomatically = true)
   @Query(value = "UPDATE account SET updated_at = updated_at WHERE id = :id", nativeQuery = true)

@@ -91,6 +91,10 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class TransactionService {
 
+  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService); shared by
+  // every service that writes a transaction under If-Match.
+  static final String VERSIONED_RESOURCE = "transaction";
+
   private static final String CREDIT_CARD_PURCHASE = "CREDIT_CARD_PURCHASE";
   private static final String SETTLEMENT = "SETTLEMENT";
   private static final String WITHDRAWAL = "WITHDRAWAL";
@@ -384,7 +388,7 @@ public class TransactionService {
       AuthenticatedUserPrincipal actor) {
     Transaction transaction = requireCategorizable(accountId, transactionId, actor);
     versionPreconditionService.requireCurrent(
-        expectedVersion, transaction.getVersion(), "transaction");
+        expectedVersion, transaction.getVersion(), VERSIONED_RESOURCE);
     boolean alreadyOverridden =
         categoryId.equals(transaction.getCategoryId())
             && categorizationService.isOverridden(transaction);
@@ -408,7 +412,7 @@ public class TransactionService {
       AuthenticatedUserPrincipal actor) {
     Transaction transaction = requireCategorizable(accountId, transactionId, actor);
     versionPreconditionService.requireCurrent(
-        expectedVersion, transaction.getVersion(), "transaction");
+        expectedVersion, transaction.getVersion(), VERSIONED_RESOURCE);
     if (categorizationService.isOverridden(transaction)) {
       categorizationService.resetToAutomatic(transaction);
     }
@@ -970,7 +974,7 @@ public class TransactionService {
         transaction.getReplacesTransactionId(),
         transaction.getDeletedAt(),
         transaction.getCounterpartyAccountId(),
-        VersionPreconditionService.persistedVersion(transaction.getVersion(), "transaction"));
+        VersionPreconditionService.persistedVersion(transaction.getVersion(), VERSIONED_RESOURCE));
   }
 
   /**

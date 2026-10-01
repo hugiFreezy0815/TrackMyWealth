@@ -57,9 +57,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TransactionRemovalService {
 
-  // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
-  private static final String VERSIONED_RESOURCE = "transaction";
-
   static final int RESTORE_WINDOW_DAYS = 30;
   private static final int MAX_REASON_LENGTH = 500;
   private static final String NOT_FOUND = "Not found.";
@@ -149,7 +146,7 @@ public class TransactionRemovalService {
     }
     requireEditOnOtherAccounts(affected, account, actor);
     versionPreconditionService.requireCurrent(
-        expectedVersion, original.getVersion(), VERSIONED_RESOURCE);
+        expectedVersion, original.getVersion(), TransactionService.VERSIONED_RESOURCE);
 
     OffsetDateTime now = OffsetDateTime.now(clock);
     SortedSet<UUID> unmatched = new TreeSet<>();
@@ -171,7 +168,8 @@ public class TransactionRemovalService {
     affected.forEach(row -> unmatched.remove(row.getId()));
     return new TransactionRemovalResponse(
         removal,
-        VersionPreconditionService.persistedVersion(original.getVersion(), VERSIONED_RESOURCE),
+        VersionPreconditionService.persistedVersion(
+            original.getVersion(), TransactionService.VERSIONED_RESOURCE),
         transactionService.toResponses(affected),
         transactionService.toResponses(reversals),
         List.copyOf(unmatched));
@@ -225,7 +223,7 @@ public class TransactionRemovalService {
     }
     requireEditOnOtherAccounts(restored, account, actor);
     versionPreconditionService.requireCurrent(
-        expectedVersion, deleted.getVersion(), VERSIONED_RESOURCE);
+        expectedVersion, deleted.getVersion(), TransactionService.VERSIONED_RESOURCE);
     LocalDate earliest = deleted.getBookingDate();
     for (Transaction row : restored) {
       row.setDeletedAt(null);
@@ -236,7 +234,8 @@ public class TransactionRemovalService {
     transferDetectionService.detectAfterWrite(account, earliest);
     return new TransactionRemovalResponse(
         TransactionRemovalValues.SOFT_DELETE,
-        VersionPreconditionService.persistedVersion(deleted.getVersion(), VERSIONED_RESOURCE),
+        VersionPreconditionService.persistedVersion(
+            deleted.getVersion(), TransactionService.VERSIONED_RESOURCE),
         transactionService.toResponses(restored),
         List.of(),
         List.of());

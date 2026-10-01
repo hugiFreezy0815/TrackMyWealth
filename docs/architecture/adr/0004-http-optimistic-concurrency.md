@@ -46,9 +46,27 @@ delete).
 #207 retrofits every other existing mutating endpoint: account ownership, snapshot replace,
 statement config, settlement source and matches, sharing-grant revoke, categorization-rule
 deactivate, transaction category/removal/untracked-transfer actions, workspace-member deactivate
-and admin user edits. No mutating endpoint is excepted. Creates (`POST` on a collection) and the
-batch `settlement-matches/run` have no prior version to protect. New mutable endpoints must follow
-this ADR from the start.
+and admin user edits. New mutable endpoints must follow this ADR from the start.
+
+### Not read-modify-write
+
+These mutating endpoints take no `If-Match`, because there is no client-held version of an
+existing resource that a concurrent write could silently overwrite:
+
+- **Creates** (`POST` on a collection): accounts, snapshots, users, categories, categorization
+  rules, institutions, sharing grants, transactions, custom-asset valuations. Transactions and
+  valuations are append-only besides.
+- **Idempotent operations:** `POST /securities` (find-or-create of shared reference data) and
+  `POST .../settlement-matches/run` (re-runs matching; no client-held state).
+- **Credential exchanges and bootstrap:** login, token refresh, MFA verification, and the one-time
+  administrator setup.
+- **The caller's own MFA enrollment** (enroll, confirm, disable): each step is authorized by a fresh
+  TOTP code or the password, which already proves the caller acts on the current state.
+- **Session revocation:** a terminal, idempotent transition; two revocations cannot lose an
+  update.
+
+`IfMatchCoverageTest` enforces this: any other mutating handler without `If-Match` fails the
+build, and adding one to its reviewed list means adding it here too.
 
 ## Why ETag / If-Match
 
@@ -88,6 +106,9 @@ legitimately be empty, so it uses the parent `account.version` as its token
 
 - Ownership and the account's own fields share one token: changing either makes a client's stale
   copy of the other a 412 - a reload, never a lost update.
+- The replacement advances the token with an UPDATE of the account row that changes no column
+  itself; the row's triggers bump `version` and also set `updated_at`, so an ownership change shows
+  as a change of the account.
 - Two replacements based on the same read cannot both win: `assignOwnership` takes the account row
   lock (`findByIdForUpdate`) before comparing versions, so the loser waits for the winner's commit
   and then sees the advanced version (412). `AccountOwnershipControllerTest` races exactly that.

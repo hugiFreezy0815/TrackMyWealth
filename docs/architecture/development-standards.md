@@ -84,7 +84,10 @@ cd backend
     race-condition fallback (412 under `If-Match`, otherwise 409, code `VERSION_CONFLICT` both
     times). Never add a mutable endpoint that silently accepts last-write-wins. Every mutating
     endpoint follows this: accounts and categories since #172, all others since #207 (ADR 0004,
-    *Rollout*).
+    *Rollout*). The only exceptions are ADR 0004's *Not read-modify-write* list, and
+    `IfMatchCoverageTest` fails the build for any other mutating handler without `If-Match`.
+    A successful write's `ETag` must be the version the row was stored with; controller tests
+    check it with `CurrentVersion.storedEtag`.
 - SLF4J (`LoggerFactory.getLogger`) for logging, never `System.out`/`System.err` — enforced by both
   PMD (`SystemPrintln`) and an ArchUnit general coding rule; see `DatabaseBootstrapInitializer` for
   why this is safe even in code that runs before Spring's DI container exists.
