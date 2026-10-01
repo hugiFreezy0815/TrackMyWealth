@@ -36,7 +36,6 @@ public class TransferRecordingService {
 
   private static final String SETTLEMENT = "SETTLEMENT";
   private static final String ACTIVE = "ACTIVE";
-  private static final String MANUAL = "MANUAL";
   private static final String NOT_FOUND = "Account not found.";
 
   private final AccountLookupService accountLookupService;
@@ -190,7 +189,7 @@ public class TransferRecordingService {
     credit.setCurrency(counterparty.getNativeCurrency());
     credit.setMerchantDescription(debit.getMerchantDescription());
     credit.setNotes(debit.getNotes());
-    credit.setSource(MANUAL);
+    credit.setSource(debit.getSource());
     credit.setInternalTransfer(true);
     credit.setCounterpartyAccountId(debit.getAccount().getId());
     credit.setRelatedTransactionId(debit.getId());
