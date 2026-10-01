@@ -67,7 +67,7 @@ public class CategorizationRuleService {
     UUID workspaceId = requireEditor(actor);
     String value = normalizedValue(request.matchType(), request.matchValue());
     // 404 for a category the workspace cannot see, 422 for an inactive one.
-    categoryService.requireAssignable(request.categoryId(), workspaceId);
+    categoryService.requireAssignable(request.categoryId(), workspaceId, actor);
 
     CategorizationRule rule = new CategorizationRule();
     rule.setWorkspaceId(workspaceId);
