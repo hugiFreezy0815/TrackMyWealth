@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.entity.AuthorizationDenialLog;
 import com.trackmywealth.backend.repository.AuthorizationDenialLogRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.List;
@@ -93,7 +94,10 @@ class AuthorizationDenialAuditTransactionTest {
 
     @Transactional
     void denyInsideRollback(UUID requestedId) {
-      throw auditService.denyAsNotFound(null, "Account", requestedId);
+      AuthenticatedUserPrincipal actor =
+          new AuthenticatedUserPrincipal(
+              UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID());
+      throw auditService.denyAsNotFound(actor, "Account", requestedId);
     }
   }
 }
