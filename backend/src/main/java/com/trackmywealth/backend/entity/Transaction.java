@@ -198,6 +198,11 @@ public class Transaction {
   @Column(name = "corrects_transaction_id", columnDefinition = UUID_COLUMN)
   private UUID correctsTransactionId;
 
+  // US-07-07/FR-LIF-006: on a row that re-instates a voided original, that original. The original
+  // stays voided and its reversal stays; this row is an ordinary, effective copy of it (V50).
+  @Column(name = "restores_transaction_id", columnDefinition = UUID_COLUMN)
+  private UUID restoresTransactionId;
+
   // US-07-02/FR-LIF-002a T1: a soft-deleted manual row. The entity's @SQLRestriction hides it from
   // every JPA query; only TransactionRepository's native queries for restoring see it (V39).
   @Column(name = "deleted_at")
@@ -468,6 +473,14 @@ public class Transaction {
 
   public void setReplacesTransactionId(UUID replacesTransactionId) {
     this.replacesTransactionId = replacesTransactionId;
+  }
+
+  public UUID getRestoresTransactionId() {
+    return restoresTransactionId;
+  }
+
+  public void setRestoresTransactionId(UUID restoresTransactionId) {
+    this.restoresTransactionId = restoresTransactionId;
   }
 
   /** A reversing row of a void: it goes with its original and is never removed on its own. */

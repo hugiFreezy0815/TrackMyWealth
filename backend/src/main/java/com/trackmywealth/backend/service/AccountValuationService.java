@@ -239,7 +239,7 @@ public class AccountValuationService {
       // a client can tell an assumed zero from a measured one. Caveat: with no opening-balance
       // mechanism yet (EPIC 25 snapshots), a card that already carried debt when tracking began
       // reads 0 until that debt is recorded.
-      // Voided rows count, see TransactionRepository#sumAmountByAccountIdAsOf. US-09-04: a
+      // A void pair counts as zero, see TransactionRepository#sumAmountByAccountIdAsOf. US-09-04: a
       // foreign-currency card row's `amount` is in its own original currency, not the account's -
       // that query already converts each row via fxRateToAccountCurrency before summing, so this
       // call site needs no change of its own.

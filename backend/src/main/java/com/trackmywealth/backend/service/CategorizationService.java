@@ -248,6 +248,24 @@ public class CategorizationService {
   }
 
   /**
+   * US-07-07: carries a member's override (US-08-02) from {@code from} to {@code to}, a row that
+   * re-instates it and has just been categorized automatically. Only while the overridden category
+   * is still assignable for the workspace; otherwise {@code to} keeps its automatic category, as
+   * any new row would. Returns whether the override was carried.
+   */
+  @Transactional
+  public boolean carryOverride(Transaction from, Transaction to, AuthenticatedUserPrincipal actor) {
+    UUID categoryId = from.getCategoryId();
+    if (categoryId == null
+        || !isOverridden(from)
+        || !categoryService.assignableCategoryIds(to.getWorkspace().getId()).contains(categoryId)) {
+      return false;
+    }
+    override(to, categoryId, actor);
+    return true;
+  }
+
+  /**
    * US-08-02 "reset to automatic": runs the automatic layers again as for a new row and returns how
    * the category was assigned (empty for UNCATEGORIZED). A type the engine never categorizes goes
    * back to having no category. The override log row stays as history; it stops counting because it

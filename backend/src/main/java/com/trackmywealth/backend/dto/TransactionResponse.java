@@ -35,10 +35,11 @@ import java.util.UUID;
  * row, {@code VOID} for an imported one, see {@link TransactionRemovalValues}), {@code null} when
  * it cannot be removed any more (already voided, a reversing row, or soft-deleted). A voided
  * original stays listed with {@code voidedAt} and {@code voidReason} (FR-LIF-003); its reversing
- * row points back at it through {@code replacesTransactionId}. A correction replacement points to
- * the prior ledger row through {@code correctsTransactionId}; correction chains therefore remain
- * explicit without overloading reversal semantics. {@code deletedAt} is set only in the restore
- * list of soft-deleted rows.
+ * row points back at it through {@code replacesTransactionId}. Restoring a void (US-07-07) keeps
+ * both and adds an ordinary copy of the original, whose {@code restoresTransactionId} names it. A
+ * correction replacement points to the prior ledger row through {@code correctsTransactionId};
+ * correction chains therefore remain explicit without overloading reversal semantics. {@code
+ * deletedAt} is set only in the restore list of soft-deleted rows.
  */
 public record TransactionResponse(
     UUID id,
@@ -73,6 +74,7 @@ public record TransactionResponse(
     String voidReason,
     UUID replacesTransactionId,
     UUID correctsTransactionId,
+    UUID restoresTransactionId,
     OffsetDateTime deletedAt,
     UUID counterpartyAccountId,
     int version) {}
