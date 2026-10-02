@@ -8,4 +8,5 @@ import java.util.UUID;
  * {@code TransferRecheckService}; it lives in {@code dto} for the same ArchUnit reason as {@link
  * ResolvedFxRate}.
  */
-public record PendingTransferDetection(UUID id, UUID workspaceId, LocalDate bookingDate) {}
+public record PendingTransferDetection(
+    UUID id, UUID workspaceId, LocalDate bookingDate, int rechecks) {}

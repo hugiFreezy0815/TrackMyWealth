@@ -271,6 +271,32 @@ class TransferControllerTest {
     assertThat(pendingDetections(workspaceId)).isZero();
   }
 
+  // #225 review: a currency the provider never publishes leaves its date unjudged for good. The job
+  // stops re-running detection there after MAX_RECHECKS imports; the entry stays for the next
+  // write nearby.
+  @Test
+  void aPairWhoseCurrencyIsNeverPublishedIsRecheckedOnlyAFewTimes() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse yen = createAccount(token, "SAVINGS", "JPY");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    insertImported(yen.id(), TRANSFER, "160000.00", "JPY", sent.plusDays(2));
+    UUID workspaceId = workspaceOf(current.id());
+    // Rates cover the date, but none reaches JPY.
+    insertFxRate("EUR", "CHF", sent.minusDays(1), "0.9615384615");
+
+    transferDetectionService.detectAround(workspaceId, sent);
+    assertThat(pendingDetections(workspaceId)).isEqualTo(1L);
+
+    for (int run = 0; run < TransferRecheckService.MAX_RECHECKS; run++) {
+      assertThat(transferRecheckService.recheckPending()).isEqualTo(1);
+    }
+    assertThat(transferRecheckService.recheckPending()).isZero();
+    assertThat(pendingDetections(workspaceId)).isEqualTo(1L);
+    assertThat(matches(token, "PROPOSED")).isEmpty();
+  }
+
   @Test
   void rejectedCrossCurrencyPairIsNeverProposedAgain() throws Exception {
     String token = bootstrapAdministrator();

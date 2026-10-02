@@ -24,12 +24,17 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>Each entry runs in its own transaction inside its workspace ({@link SystemWorkspaceContext}),
  * the entry removed in the same transaction: a run that fails leaves it for the next one, and one
  * workspace's failure does not stop the others. A date the rates still do not cover (a currency the
- * provider does not publish) is recorded again by the detection itself.
+ * provider does not publish) is recorded again by the detection itself, its count of re-runs
+ * carried over; after {@value #MAX_RECHECKS} the job leaves it to the next write nearby, which runs
+ * detection there anyway.
  */
 @Service
 public class TransferRecheckService {
 
   private static final Logger LOG = LoggerFactory.getLogger(TransferRecheckService.class);
+
+  // Re-runs after imports that stored new rates; three cover a long weekend's late publication.
+  public static final int MAX_RECHECKS = 3;
 
   private final TransferDetectionFxPendingRepository pendingRepository;
   private final FxRateRepository fxRateRepository;
@@ -60,7 +65,8 @@ public class TransferRecheckService {
     if (earliestRate.isEmpty()) {
       return 0;
     }
-    List<PendingTransferDetection> due = pendingRepository.findFrom(earliestRate.get());
+    List<PendingTransferDetection> due =
+        pendingRepository.findFrom(earliestRate.get(), MAX_RECHECKS);
     int rechecked = 0;
     for (PendingTransferDetection pending : due) {
       try {
@@ -72,6 +78,9 @@ public class TransferRecheckService {
                       pendingRepository.delete(pending.id());
                       transferDetectionService.detectAround(
                           pending.workspaceId(), pending.bookingDate());
+                      // Still unjudged, so recorded again: keep counting.
+                      pendingRepository.setRechecks(
+                          pending.workspaceId(), pending.bookingDate(), pending.rechecks() + 1);
                     }));
         rechecked++;
       } catch (RuntimeException e) {

@@ -32,17 +32,32 @@ public class TransferDetectionFxPendingRepository {
         Date.valueOf(bookingDate));
   }
 
-  /** Every recorded detection for a date on or after {@code from}, oldest first. */
-  public List<PendingTransferDetection> findFrom(LocalDate from) {
+  /**
+   * Every recorded detection for a date on or after {@code from} that was re-run fewer than {@code
+   * maxRechecks} times, oldest first.
+   */
+  public List<PendingTransferDetection> findFrom(LocalDate from, int maxRechecks) {
     return jdbcTemplate.query(
-        "SELECT id, workspace_id, booking_date FROM transfer_detection_fx_pending"
-            + " WHERE booking_date >= ? ORDER BY booking_date, workspace_id",
+        "SELECT id, workspace_id, booking_date, rechecks FROM transfer_detection_fx_pending"
+            + " WHERE booking_date >= ? AND rechecks < ? ORDER BY booking_date, workspace_id",
         (rs, rowNum) ->
             new PendingTransferDetection(
                 rs.getObject("id", UUID.class),
                 rs.getObject("workspace_id", UUID.class),
-                rs.getObject("booking_date", LocalDate.class)),
-        Date.valueOf(from));
+                rs.getObject("booking_date", LocalDate.class),
+                rs.getInt("rechecks")),
+        Date.valueOf(from),
+        maxRechecks);
+  }
+
+  /** Sets how often the detection recorded for this workspace and date was re-run. */
+  public void setRechecks(UUID workspaceId, LocalDate bookingDate, int rechecks) {
+    jdbcTemplate.update(
+        "UPDATE transfer_detection_fx_pending SET rechecks = ?"
+            + " WHERE workspace_id = ? AND booking_date = ?",
+        rechecks,
+        workspaceId,
+        Date.valueOf(bookingDate));
   }
 
   public void delete(UUID id) {
