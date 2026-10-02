@@ -7,6 +7,7 @@ import java.util.TimeZone;
 import org.quartz.CronScheduleBuilder;
 import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
+import org.quartz.JobKey;
 import org.quartz.SimpleScheduleBuilder;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
@@ -29,11 +30,12 @@ import org.springframework.context.annotation.Configuration;
 public class FxRateImportJobConfig {
 
   public static final String JOB_GROUP = "fx-rate-import";
+  public static final JobKey JOB_KEY = JobKey.jobKey("import", JOB_GROUP);
 
   @Bean
   JobDetail fxRateImportJobDetail() {
     return JobBuilder.newJob(FxRateImportJob.class)
-        .withIdentity("import", JOB_GROUP)
+        .withIdentity(JOB_KEY)
         .withDescription("Imports the ECB FX rates, their history and cross rates (#223)")
         .storeDurably()
         .build();
