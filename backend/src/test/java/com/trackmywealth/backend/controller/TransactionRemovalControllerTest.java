@@ -38,6 +38,7 @@ import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -971,6 +972,127 @@ class TransactionRemovalControllerTest {
     assertThat(list(token, current.id()))
         .singleElement()
         .satisfies(row -> assertThat(row.amount()).isEqualByComparingTo("-120.00"));
+  }
+
+  // #216: the incoming leg exists only as part of its transfer. Correcting it on its own used to
+  // remove both legs and record only a one-sided incoming row, so the outgoing leg vanished.
+  @Test
+  void theIncomingLegOfATransferIsCorrectedThroughItsOutgoingLeg() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
+    TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
+    TransactionResponse credit = list(token, savings.id()).get(0);
+
+    for (UUID counterparty : Arrays.asList(credit.counterpartyAccountId(), null)) {
+      correctRaw(
+              token,
+              savings.id(),
+              credit.id(),
+              desiredState(credit, "120.00", null, null, null, counterparty),
+              CurrentVersion.ifMatch(dataSource, "transaction", credit.id()))
+          .expectStatus()
+          .isEqualTo(HttpStatus.CONFLICT)
+          .expectBody()
+          .jsonPath("$.detail")
+          .value(detail -> assertThat(detail.toString()).contains(debit.id().toString()));
+    }
+
+    assertThat(list(token, current.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(debit.id());
+    assertThat(list(token, savings.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(credit.id());
+
+    // Its description and notes are its own.
+    TransactionCorrectionResponse described =
+        correct(
+            token,
+            savings.id(),
+            credit.id(),
+            desiredState(credit, "100.00", null, "Rainy-day fund", null));
+    assertThat(described.removal()).isNull();
+    assertThat(described.transaction().id()).isEqualTo(credit.id());
+    assertThat(described.transaction().merchantDescription()).isEqualTo("Rainy-day fund");
+  }
+
+  // #216: a fee row is part of its purchase; its amount is corrected as the purchase's feeAmount.
+  @Test
+  void aFeeRowIsCorrectedThroughItsPurchase() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse purchase =
+        record(
+            token,
+            card.id(),
+            TransactionRequests.cash(
+                PURCHASE,
+                today(),
+                new BigDecimal("-100.00"),
+                "EUR",
+                "Shop",
+                null,
+                null,
+                null,
+                new BigDecimal("0.95"),
+                null,
+                new BigDecimal("1.50")));
+    UUID feeId = feeOf(purchase.id());
+    TransactionResponse fee =
+        list(token, card.id()).stream()
+            .filter(row -> row.id().equals(feeId))
+            .findFirst()
+            .orElseThrow();
+
+    correctRaw(
+            token,
+            card.id(),
+            feeId,
+            desiredState(fee, "-2.00", null, null, null),
+            CurrentVersion.ifMatch(dataSource, "transaction", feeId))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.detail")
+        .value(detail -> assertThat(detail.toString()).contains(purchase.id().toString()));
+    assertThat(list(token, card.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactlyInAnyOrder(purchase.id(), feeId);
+
+    TransactionCorrectionResponse described =
+        correct(token, card.id(), feeId, desiredState(fee, "-1.50", null, "FX fee", null));
+    assertThat(described.removal()).isNull();
+    assertThat(described.transaction().merchantDescription()).isEqualTo("FX fee");
+  }
+
+  // #216: removing the pair and recording its replacement is one unit - a replacement that fails
+  // validation leaves both legs exactly as they were.
+  @Test
+  void aRejectedTransferReplacementLeavesBothLegsInPlace() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
+    TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
+    UUID creditId = list(token, savings.id()).get(0).id();
+
+    correctRaw(
+            token,
+            current.id(),
+            debit.id(),
+            desiredState(debit, "120.00", null, null, null),
+            CurrentVersion.ifMatch(dataSource, "transaction", debit.id()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+
+    assertThat(list(token, current.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(debit.id());
+    assertThat(list(token, savings.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(creditId);
+    assertThat(restorable(token, current.id())).isEmpty();
+    assertThat(restorable(token, savings.id())).isEmpty();
   }
 
   // An explicit FX rate left out means "derive it": the replacement gets the estimated daily rate.

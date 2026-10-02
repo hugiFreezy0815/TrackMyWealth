@@ -497,6 +497,11 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
     override stays. The category itself is not part of a correction: `PUT/DELETE …/category`.
   - A corrected row cannot be restored (409), nor its fee row or transfer leg on its own: next to
     its replacement it would count twice. The replacement is the entry to restore or correct.
+  - A row that only exists as part of another one (its `related_transaction_id` is set: the
+    incoming leg of a two-sided transfer, or a card purchase's FEE row) is never corrected on
+    its own (409, naming the row to correct instead, #216). Removing it removes its whole group,
+    which a request for this one row could not re-create. Its description and notes stay
+    editable.
 - **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02, and undoing a
   void is US-07-07.
 
