@@ -7,7 +7,7 @@ on:
 
 jobs:
   gitleaks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       # gitleaks-action calls the PR-commits API to scan just the PR's diff on a pull_request

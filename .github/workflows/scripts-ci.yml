@@ -1,0 +1,25 @@
+name: Scripts CI
+
+# #187: unit tests for the merge gate (scripts/merge_pr.py), the main-health alert
+# (scripts/main_health.py), and the consistency checks that keep the required checks, the ruleset
+# and the workflows naming the same jobs. Standard library only, so no dependencies to install.
+# Runs on every pull request: it is cheap, and its "scripts" check is one of the required checks.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - ".github/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s scripts/tests -v

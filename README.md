@@ -244,14 +244,14 @@ cd backend
                      # see docs/architecture/development-standards.md
 ```
 
-`.github/workflows/backend-ci.yml` runs `./mvnw -B verify` on every push/PR touching `backend/**`,
-lints new or changed migrations with sqlfluff, and builds the Docker image. GitHub-hosted runners
+`.github/workflows/backend-ci.yml` runs `./mvnw -B verify` and builds the Docker image whenever a
+push or pull request touches `backend/**`, and lints new or changed migrations with sqlfluff. GitHub-hosted runners
 have Docker preinstalled, so no extra CI setup is needed for Testcontainers.
 
 `.github/workflows/mobile-web-ci.yml` type-checks, lints, formats-checks and tests `mobile/`, then
-builds its web export (`npx expo export -p web`) on every push/PR touching `mobile/**`. It does
-not deploy anywhere yet — wire your chosen static host's deploy step in once you've picked one
-(Vercel, Netlify, Cloudflare Pages, ...).
+builds its web export (`npx expo export -p web`) whenever a push or pull request touches
+`mobile/**`. It does not deploy anywhere yet — wire your chosen static host's deploy step in once
+you've picked one (Vercel, Netlify, Cloudflare Pages, ...).
 
 `.github/workflows/semgrep.yml` (SAST, both languages) and `.github/workflows/gitleaks.yml` (secret
 scanning) run on every push/PR across the whole repo; `.github/dependabot.yml` opens weekly
@@ -260,9 +260,12 @@ themselves.
 
 See **`docs/architecture/development-standards.md`** for the full picture — what's enforced
 automatically vs. convention-only, per language, and how to run each check locally before pushing.
-A red check does not block merging on GitHub: branch protection and rulesets, which could
-require these checks, are not available on this private repository's current GitHub plan (#187),
-so check the PR's results before you merge.
+Every pull request runs the same required checks (both workflows above skip their work when their
+part of the repository is untouched). GitHub cannot enforce them yet - branch protection and
+rulesets are not available on this private repository's current plan (#187) - so merge with
+`scripts/merge_pr.py`, which refuses unless every required check passed, and see
+**`CONTRIBUTING.md`** for the checks, what to do when one is red, and the prepared ruleset for when
+the plan allows it.
 
 ## Where to start as a developer
 

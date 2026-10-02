@@ -6,14 +6,51 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
+  # #187: every pull request runs this workflow, so its checks ("test", "sql-lint") always report
+  # and can be required (scripts/merge_pr.py, .github/rulesets/main.json). A check that never runs
+  # would leave a docs-only PR waiting forever. The "backend-changes" job skips the work when
+  # backend/ is untouched; a skipped job counts as passed.
   pull_request:
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend-ci.yml"
 
 jobs:
+  backend-changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      backend: ${{ steps.diff.outputs.backend }}
+      migrations: ${{ steps.diff.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      # A push to main is already filtered by `paths` above. A pull request is checked out as its
+      # merge commit, so diffing against the base commit gives exactly the PR's changes.
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "migrations=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed() { ! git diff --quiet "$BASE_SHA" HEAD -- "$@"; }
+          if changed backend .github/workflows/backend-ci.yml; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
+          if changed 'backend/src/main/resources/db/migration/*.sql'; then
+            echo "migrations=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "migrations=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
-    runs-on: ubuntu-latest
+    needs: backend-changes
+    if: needs.backend-changes.outputs.backend == 'true'
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: backend
@@ -28,7 +65,7 @@ jobs:
           cache: maven
 
       # Testcontainers (DatabaseBootstrapInitializerTest, TrackMyWealthApplicationStartupTest)
-      # needs a Docker daemon - already present on GitHub-hosted ubuntu-latest runners.
+      # needs a Docker daemon - already present on GitHub-hosted Ubuntu runners.
       # #194: the Maven Wrapper (committed executable, 100755), so CI builds with exactly the
       # Maven version every contributor gets from ./mvnw - not whatever the runner preinstalls.
       # setup-java's maven cache covers ~/.m2/repository; the wrapper's own Maven distribution
@@ -55,8 +92,9 @@ jobs:
     # `flyway.validate-on-migrate` for every environment that already ran it - see
     # docs/architecture/database-schema.md). See .sqlfluff for the project's SQL style and
     # .sqlfluffignore for V90 (vendored verbatim from the Quartz jar, not this project's style).
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    needs: backend-changes
+    if: github.event_name == 'pull_request' && needs.backend-changes.outputs.migrations == 'true'
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
