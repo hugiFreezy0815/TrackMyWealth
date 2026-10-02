@@ -58,6 +58,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V52` | `fx_rate_history_requirement`: the earliest booking date across all workspaces, kept by a trigger on `transaction` - how far back the FX import loads history (#223) |
 | `V53` | `fx_rate_pre_2023`: one partition for FX history before 2023, moving any such rows out of `fx_rate_default` (#223) |
 | `V54` | `fx_rate.derived` and `fx_rate_currency_in_use` (kept by triggers on `account`, `transaction`, `financial_institution`, `app_user`, `listing`): the FX import stores the cross rates between the currencies in use as master data; `transfer_detection_fx_pending`: transfer detection re-run once FX rates cover a date (#223) |
+| `V55` | Row-level security for `savings_rate_methodology`, which `V20` had missed (#223 review) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16

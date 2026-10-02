@@ -210,4 +210,60 @@ class SchemaConventionsTest {
                 + " generator")
         .isEmpty();
   }
+
+  // Tables with a workspace_id that are deliberately outside RLS, and why (database-schema.md,
+  // section 4). Every other table naming a workspace is tenant data and must be under RLS that
+  // also binds the table owner - FORCE, as V20 sets up - or a new table could leak across
+  // workspaces with nothing failing.
+  private static final java.util.Map<String, String> WORKSPACE_TABLES_OUTSIDE_RLS =
+      java.util.Map.of(
+          "transfer_detection_fx_pending",
+          "V54: a background job reads it across workspaces to re-run transfer detection once FX"
+              + " rates cover a date. A workspace id and a date only, no endpoint reads it, and"
+              + " the detection itself runs inside that workspace under RLS"
+              + " (SystemWorkspaceContext).");
+
+  @Test
+  void everyTableNamingAWorkspaceIsUnderForcedRowLevelSecurity() throws Exception {
+    String sql =
+        """
+        SELECT c.relname AS table_name, c.relrowsecurity, c.relforcerowsecurity
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE n.nspname = 'public'
+          AND c.relkind IN ('r', 'p')
+          AND NOT c.relispartition
+          AND a.attname = 'workspace_id'
+          AND NOT a.attisdropped
+        """;
+
+    List<String> unprotected = new ArrayList<>();
+    List<String> workspaceTables = new ArrayList<>();
+    try (Statement stmt = connection.createStatement();
+        ResultSet rs = stmt.executeQuery(sql)) {
+      while (rs.next()) {
+        String tableName = rs.getString("table_name");
+        workspaceTables.add(tableName);
+        boolean protectedByRls =
+            rs.getBoolean("relrowsecurity") && rs.getBoolean("relforcerowsecurity");
+        if (!protectedByRls && !WORKSPACE_TABLES_OUTSIDE_RLS.containsKey(tableName)) {
+          unprotected.add(tableName);
+        }
+      }
+    }
+
+    assertThat(workspaceTables)
+        .as("the catalog query found the workspace tables at all")
+        .isNotEmpty();
+    assertThat(workspaceTables)
+        .as("stale WORKSPACE_TABLES_OUTSIDE_RLS entries - remove them")
+        .containsAll(WORKSPACE_TABLES_OUTSIDE_RLS.keySet());
+    assertThat(unprotected)
+        .as(
+            "tables with a workspace_id but without ENABLE + FORCE ROW LEVEL SECURITY; add RLS, or"
+                + " name and justify the exception in WORKSPACE_TABLES_OUTSIDE_RLS and"
+                + " database-schema.md")
+        .isEmpty();
+  }
 }
