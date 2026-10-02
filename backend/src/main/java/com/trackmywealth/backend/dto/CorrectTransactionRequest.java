@@ -23,8 +23,13 @@ import java.util.UUID;
  * rate), not "unchanged". The one exception is {@code mcc}: omitted keeps the original's MCC, which
  * is source data; a different MCC is corrected like a financial field (a replacement carries it).
  *
+ * <p>An FX rate equal to the server's estimate counts as omitted: a client sending back the row it
+ * read echoes that estimate, which is no disclosed rate. So a correction cannot confirm an estimate
+ * at the same value; a different rate, or a {@code billedAmount}, does replace it.
+ *
  * <p>The category is not part of a correction: it is set and reset on {@code PUT/DELETE
- * .../category} (US-08-02), and a member's override carries over to a replacement.
+ * .../category} (US-08-02), and a member's override carries over to a replacement whose type is
+ * categorized, while its category is still assignable.
  */
 public record CorrectTransactionRequest(
     UUID targetAccountId,
@@ -81,5 +86,31 @@ public record CorrectTransactionRequest(
         taxWithheldAmount,
         counterpartyAccountId,
         counterpartyAmount);
+  }
+
+  /** The same desired state with no FX rate: "let the server derive it". */
+  public CorrectTransactionRequest withoutFxRate() {
+    return new CorrectTransactionRequest(
+        targetAccountId,
+        transactionType,
+        bookingDate,
+        amount,
+        currency,
+        merchantDescription,
+        mcc,
+        notes,
+        null,
+        billedAmount,
+        feeAmount,
+        securityId,
+        quantity,
+        unitPrice,
+        tradeDate,
+        settlementDate,
+        grossAmount,
+        taxWithheldAmount,
+        counterpartyAccountId,
+        counterpartyAmount,
+        reason);
   }
 }

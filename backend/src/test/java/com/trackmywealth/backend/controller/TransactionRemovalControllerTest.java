@@ -8,8 +8,10 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
+import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
 import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
+import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
@@ -140,6 +142,10 @@ class TransactionRemovalControllerTest {
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
               "DELETE FROM financial_institution",
+              // a member's own categories (only a flat one is created here); V19's shipped
+              // defaults have no workspace and stay
+              "DELETE FROM workspace_category_override",
+              "DELETE FROM category WHERE workspace_id IS NOT NULL",
               "DELETE FROM workspace")) {
         statement.execute(sql);
       }
@@ -1944,8 +1950,9 @@ class TransactionRemovalControllerTest {
         .containsExactly(credit.id());
   }
 
-  // The same explicit FX rate is no financial change; an explicit rate where the server had
-  // estimated one is.
+  // The same explicit FX rate is no financial change, and neither is an estimated rate sent back
+  // as read (a client echoing the row); a different explicit rate where the server had estimated
+  // one is.
   @Test
   void anExplicitFxRateIsComparedAsDesiredState() throws Exception {
     String token = bootstrapAdministrator();
@@ -1965,20 +1972,200 @@ class TransactionRemovalControllerTest {
                 desiredState(explicit, "-100.00", null, "Renamed", null),
                 new BigDecimal("0.95"),
                 null));
+    TransactionCorrectionResponse echoed =
+        correct(
+            token,
+            card.id(),
+            estimated.id(),
+            withFxAndFee(
+                desiredState(estimated, "-50.00", null, "Renamed", null),
+                estimated.fxRateToAccountCurrency(),
+                null));
     TransactionCorrectionResponse pinned =
         correct(
             token,
             card.id(),
             estimated.id(),
             withFxAndFee(
-                desiredState(estimated, "-50.00", null, "Shop", null),
-                new BigDecimal("0.90"),
+                desiredState(echoed.transaction(), "-50.00", null, "Renamed", null),
+                new BigDecimal("0.92"),
                 null));
 
     assertThat(kept.removal()).isNull();
     assertThat(kept.transaction().id()).isEqualTo(explicit.id());
+    assertThat(echoed.removal()).isNull();
+    assertThat(echoed.transaction().id()).isEqualTo(estimated.id());
+    assertThat(echoed.transaction().fxRateEstimated()).isTrue();
     assertThat(pinned.removal()).isNotNull();
     assertThat(pinned.transaction().fxRateEstimated()).isFalse();
+    assertThat(pinned.transaction().fxRateToAccountCurrency()).isEqualByComparingTo("0.92");
+  }
+
+  // The echo's worst symptom before #220: a description edit of an imported row that sent back its
+  // estimated rate counted as a financial change - a void, which needs a reason, so 422. It is an
+  // in-place edit, no reason needed.
+  @Test
+  void anImportedRowWithAnEstimatedRateTakesADescriptionEditInPlace() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImportedEstimated(card.id(), "-100.00", "0.9000000000");
+    TransactionResponse row = list(token, card.id()).get(0);
+    assertThat(row.fxRateEstimated()).isTrue();
+
+    TransactionCorrectionResponse edited =
+        correct(
+            token,
+            card.id(),
+            imported,
+            withFxAndFee(
+                desiredState(row, "-100.00", null, "Renamed", null),
+                row.fxRateToAccountCurrency(),
+                null));
+
+    assertThat(edited.removal()).isNull();
+    assertThat(edited.transaction().id()).isEqualTo(imported);
+    assertThat(edited.transaction().voidedAt()).isNull();
+    assertThat(edited.transaction().merchantDescription()).isEqualTo("Renamed");
+    assertThat(edited.transaction().fxRateEstimated()).isTrue();
+  }
+
+  // An estimated rate echoed back with a corrected amount is not a disclosed rate either: the
+  // replacement estimates its own instead of pinning the old estimate as if the member stated it.
+  @Test
+  void anEchoedEstimateIsEstimatedAgainForTheReplacement() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    seedFxRate("EUR", "CHF", "0.9000000000");
+    TransactionResponse estimated = record(token, card.id(), eurPurchase("-50.00", null));
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            card.id(),
+            estimated.id(),
+            withFxAndFee(
+                desiredState(estimated, "-60.00", null, "Shop", null),
+                estimated.fxRateToAccountCurrency(),
+                null));
+
+    assertThat(corrected.removal()).isNotNull();
+    assertThat(corrected.transaction().amount()).isEqualByComparingTo("-60.00");
+    assertThat(corrected.transaction().fxRateEstimated()).isTrue();
+  }
+
+  // A member's override follows the correction only while its category can still be assigned;
+  // a deactivated one does not block the correction - the replacement is categorized like any new
+  // row instead.
+  @Test
+  void anOverrideToADeactivatedCategoryDoesNotCarryOver() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    CategoryResponse hobby =
+        client(token)
+            .post()
+            .uri("/api/v1/categories")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(new CreateCategoryRequest(null, "Hobby", "Hobby"))
+            .exchange()
+            .expectStatus()
+            .isCreated()
+            .expectBody(CategoryResponse.class)
+            .returnResult()
+            .getResponseBody();
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+    client(token)
+        .put()
+        .uri(rowUri(card.id(), original.id()) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetTransactionCategoryRequest(hobby.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    client(token)
+        .post()
+        .uri("/api/v1/categories/" + hobby.id() + "/deactivate")
+        .header("If-Match", "\"" + hobby.version() + "\"")
+        .exchange()
+        .expectStatus()
+        .isOk();
+    TransactionResponse overridden = list(token, card.id()).get(0);
+
+    TransactionCorrectionResponse corrected =
+        correct(token, card.id(), overridden, "-80.00", null, "Shop", null, null);
+
+    // No rule matches "Shop", so a new row with it is UNCATEGORIZED.
+    assertThat(corrected.removal()).isNotNull();
+    assertThat(corrected.transaction().categoryId()).isEqualTo(defaultCategory("UNCATEGORIZED"));
+    assertThat(corrected.transaction().categoryAssignedBy()).isNotEqualTo("USER");
+  }
+
+  // An override follows the correction only to a type that is categorized at all: corrected into
+  // a transfer, the row has no category, as a recorded transfer would not.
+  @Test
+  void anOverrideDoesNotCarryOverToAnUncategorizedType() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    TransactionResponse original =
+        record(
+            token,
+            current.id(),
+            TransactionRequests.cash(
+                "EXPENSE",
+                today(),
+                new BigDecimal("-100.00"),
+                "CHF",
+                "Rent",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+    client(token)
+        .put()
+        .uri(rowUri(current.id(), original.id()) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetTransactionCategoryRequest(defaultCategory("SHOPPING")))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    TransactionResponse overridden = list(token, current.id()).get(0);
+    assertThat(overridden.categoryAssignedBy()).isEqualTo("USER");
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            current.id(),
+            overridden.id(),
+            new CorrectTransactionRequest(
+                null,
+                "TRANSFER",
+                overridden.bookingDate(),
+                new BigDecimal("-100.00"),
+                "CHF",
+                "Rent",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+
+    assertThat(corrected.removal()).isNotNull();
+    assertThat(corrected.transaction().transactionType()).isEqualTo("TRANSFER");
+    assertThat(corrected.transaction().categoryId()).isNull();
+    assertThat(corrected.transaction().categoryAssignedBy()).isNull();
   }
 
   // Sending the current state again changes nothing - not even the version; a notes-only edit
@@ -2513,6 +2700,30 @@ class TransactionRemovalControllerTest {
       statement.setObject(3, bookedOn);
       statement.setBigDecimal(4, new BigDecimal(amount));
       statement.setObject(5, accountId);
+      statement.executeUpdate();
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+    return id;
+  }
+
+  // An imported EUR row on a CHF account whose rate the server estimated (fx_rate_estimated).
+  private UUID insertImportedEstimated(UUID accountId, String amount, String rate) {
+    UUID id = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, fx_rate_to_account_currency, fx_rate_date,"
+                    + " fx_rate_estimated, source) SELECT ?, workspace_id, id, ?, ?, ?, 'EUR', ?,"
+                    + " ?, TRUE, 'CSV' FROM account WHERE id = ?")) {
+      statement.setObject(1, id);
+      statement.setString(2, PURCHASE);
+      statement.setObject(3, today());
+      statement.setBigDecimal(4, new BigDecimal(amount));
+      statement.setBigDecimal(5, new BigDecimal(rate));
+      statement.setObject(6, today());
+      statement.setObject(7, accountId);
       statement.executeUpdate();
     } catch (Exception e) {
       throw new IllegalStateException(e);
