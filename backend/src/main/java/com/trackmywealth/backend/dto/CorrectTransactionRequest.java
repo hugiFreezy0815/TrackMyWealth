@@ -82,4 +82,30 @@ public record CorrectTransactionRequest(
         counterpartyAccountId,
         counterpartyAmount);
   }
+
+  /** The same desired state with no FX rate: "let the server derive it". */
+  public CorrectTransactionRequest withoutFxRate() {
+    return new CorrectTransactionRequest(
+        targetAccountId,
+        transactionType,
+        bookingDate,
+        amount,
+        currency,
+        merchantDescription,
+        mcc,
+        notes,
+        null,
+        billedAmount,
+        feeAmount,
+        securityId,
+        quantity,
+        unitPrice,
+        tradeDate,
+        settlementDate,
+        grossAmount,
+        taxWithheldAmount,
+        counterpartyAccountId,
+        counterpartyAmount,
+        reason);
+  }
 }

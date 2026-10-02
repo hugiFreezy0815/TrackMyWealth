@@ -36,6 +36,7 @@ public class TransactionCorrectionService {
   private final TransactionRemovalService transactionRemovalService;
   private final TransactionService transactionService;
   private final CategorizationService categorizationService;
+  private final CategoryService categoryService;
   private final VersionPreconditionService versionPreconditionService;
 
   public TransactionCorrectionService(
@@ -45,6 +46,7 @@ public class TransactionCorrectionService {
       TransactionRemovalService transactionRemovalService,
       TransactionService transactionService,
       CategorizationService categorizationService,
+      CategoryService categoryService,
       VersionPreconditionService versionPreconditionService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -52,6 +54,7 @@ public class TransactionCorrectionService {
     this.transactionRemovalService = transactionRemovalService;
     this.transactionService = transactionService;
     this.categorizationService = categorizationService;
+    this.categoryService = categoryService;
     this.versionPreconditionService = versionPreconditionService;
   }
 
@@ -77,8 +80,14 @@ public class TransactionCorrectionService {
     versionPreconditionService.requireCurrent(
         expectedVersion, original.getVersion(), TransactionService.VERSIONED_RESOURCE);
 
+    // A client that sends back the row it read echoes a server-estimated rate as if it were an
+    // explicit one. Unchanged, it is not a disclosed rate: left out, it counts as "derive it", so
+    // a description edit stays in place and a replacement estimates its own rate again.
+    CorrectTransactionRequest desired =
+        echoesEstimatedRate(original, request) ? request.withoutFxRate() : request;
+
     UUID targetAccountId =
-        request.targetAccountId() == null ? sourceAccount.getId() : request.targetAccountId();
+        desired.targetAccountId() == null ? sourceAccount.getId() : desired.targetAccountId();
     if (!targetAccountId.equals(sourceAccount.getId())) {
       Account targetAccount = accountLookupService.findAccountOrThrow(targetAccountId, actor);
       accessControlService.requireAccountAccess(actor, targetAccount, AccessLevelValues.EDIT);
@@ -86,20 +95,27 @@ public class TransactionCorrectionService {
         throw accessControlService.denyAsNotFound(actor, "Account", targetAccountId);
       }
     }
-    CreateTransactionRequest replacementRequest = request.replacementRequest();
+    CreateTransactionRequest replacementRequest = desired.replacementRequest();
     boolean financialChange =
         !transactionService.financialStateMatches(original, targetAccountId, replacementRequest);
 
     if (!financialChange) {
-      return editTextOnly(original, request);
+      return editTextOnly(original, desired);
     }
 
-    boolean carryOverride = categorizationService.isOverridden(original);
-    UUID overriddenCategory = carryOverride ? original.getCategoryId() : null;
+    // An override carries over only while its category can still be assigned; otherwise the
+    // replacement keeps the automatic category it got like any new row (US-08-01/02).
+    UUID overriddenCategory =
+        categorizationService.isOverridden(original)
+                && categoryService
+                    .assignableCategoryIds(sourceAccount.getWorkspace().getId())
+                    .contains(original.getCategoryId())
+            ? original.getCategoryId()
+            : null;
 
     TransactionRemovalResponse removal =
         transactionRemovalService.remove(
-            accountId, transactionId, request.reason(), expectedVersion, actor);
+            accountId, transactionId, desired.reason(), expectedVersion, actor);
 
     TransactionResponse created =
         transactionService.recordCorrectionReplacement(
@@ -120,6 +136,14 @@ public class TransactionCorrectionService {
     }
 
     return new TransactionCorrectionResponse(created.version(), created, removal);
+  }
+
+  static boolean echoesEstimatedRate(Transaction original, CorrectTransactionRequest request) {
+    return original.isFxRateEstimated()
+        && request.billedAmount() == null
+        && request.fxRateToAccountCurrency() != null
+        && original.getFxRateToAccountCurrency() != null
+        && original.getFxRateToAccountCurrency().compareTo(request.fxRateToAccountCurrency()) == 0;
   }
 
   private TransactionCorrectionResponse editTextOnly(
