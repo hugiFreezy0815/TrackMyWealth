@@ -32,12 +32,13 @@ cd backend
 **Conventions** (not all mechanically enforceable, but reviewed for):
 
 - Package layout: `controller` (REST), `service` (business logic), `repository` (Spring Data),
-  `entity` (JPA), `dto` (REST request/response shapes), `config` (what exists today). `ArchitectureTest`
-  encodes the allowed dependency direction between these — Controller → Service → Repository →
+  `entity` (JPA), `dto` (REST request/response shapes), `config`, plus `security` (authentication
+  filter, token contract, rate limiting), `web` (HTTP-boundary helpers: errors, If-Match/ETag,
+  correlation ids), `error` (error types services throw) and `validation` (custom constraints).
+  `ArchitectureTest` encodes the allowed dependency direction — Controller → Service → Repository →
   Entity, Repository never called directly from a Controller, Entities never returned from a
-  Controller — and starts enforcing each rule automatically the moment the first class lands in
-  the relevant package (see that class's Javadoc for why rules over an empty package don't
-  silently no-op).
+  Controller. A rule for a new package is written before its first class lands (see that class's
+  Javadoc), so it enforces from the start.
 - **DTOs only across the REST boundary, never JPA entities** (`controllers_do_not_expose_entities`
   in `ArchitectureTest`) — this is explicitly called out in `docs/user-stories/BACKLOG-remaining-epics.md`
   (EPIC 29) as a rule that "erodes easily if not enforced."

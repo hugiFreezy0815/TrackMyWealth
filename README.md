@@ -1,10 +1,11 @@
 # TrackMyWealth
 
 Privacy-first personal finance and wealth-management platform for individuals and households in
-Switzerland and Germany. This repository contains the database design and the Spring Boot backend
-scaffold derived from the project's requirements baseline (see the `TrackMyWealth` Claude project
-for `requirements-personal-wealth-platform.md` and
-`TrackMyWealth_Consolidated_Requirements_Specification_v5.docx`).
+Switzerland and Germany. This repository contains the database schema, the Spring Boot backend
+(a REST API under `/api/v1`) and the Expo client, built from the project's requirements baseline
+(`docs/requirements-personal-wealth-platform.md` and
+`docs/TrackMyWealth_Consolidated_Requirements_Specification_v5.docx`). See **Status** below for what is
+implemented today and what is still backlog.
 
 ## What's here
 
@@ -15,19 +16,24 @@ for `requirements-personal-wealth-platform.md` and
 .github/workflows/gitleaks.yml      Secret scanning, every push/PR
 .github/dependabot.yml              Weekly dependency-update PRs (Maven, npm, Docker, Actions)
 .sqlfluff / .sqlfluffignore         SQL lint config - see docs/architecture/development-standards.md
-backend/                         Spring Boot 3 / Java 17 backend
-  mvnw / mvnw.cmd / .mvn/          Maven Wrapper - always build via ./mvnw, not a local mvn
-  Dockerfile                     Multi-stage build -> runtime image (amd64/arm64/armv7)
-  pom.xml                        Spotless/PMD/SpotBugs/JaCoCo wired into the verify phase
-  src/main/java/.../TrackMyWealthApplication.java
+backend/                         Spring Boot 4.1 backend, compiled for Java 17
+  mvnw / mvnw.cmd / .mvn/          Maven Wrapper (Maven 3.9.16, download checksum-verified) - always
+                                 build via ./mvnw, not a local mvn
+  Dockerfile                     Multi-stage build -> runtime image (amd64/arm64, see "Running on a NAS")
+  pom.xml                        Spotless/PMD/SpotBugs/JaCoCo coverage gate wired into the verify phase
+  src/main/java/.../controller/  REST API under /api/v1 - 23 controllers; DTOs only at the boundary
+  src/main/java/.../service/     Business logic, object-level authorization (AccessControlService),
+                                 denial audit, categorization, FX, transaction lifecycle
+  src/main/java/.../repository/, entity/, dto/        Spring Data JPA, JPA mappings, REST shapes
+  src/main/java/.../security/    JWT authentication filter and token contract, rate limiting
+  src/main/java/.../web/, error/ RFC 9457 errors, If-Match/ETag, correlation ids
   src/main/java/.../config/DatabaseBootstrapInitializer.java   <- see "Database" below
-  src/main/java/.../config/SecurityConfig.java                  <- placeholder posture + CORS, see EPIC-02/28
   src/main/resources/application.yml
-  src/main/resources/db/migration/V1..V21__*.sql               <- the full MVP schema
+  src/main/resources/messages*.properties                       <- EN/DE validation messages
+  src/main/resources/db/migration/V1..V50__*.sql               <- the schema, evolved forward-only
   src/main/resources/db/migration/V90__quartz_schema.sql       <- background-job store (EPIC 30)
-  src/test/java/.../architecture/ArchitectureTest.java           <- layering rules (ArchUnit)
-  src/test/java/.../db/SchemaConventionsTest.java                 <- US-28-03 (no SERIAL PKs)
-  src/test/java/.../TrackMyWealthApplicationStartupTest.java    <- US-01-02
+  src/test/java/...              ~70 test classes: integration tests against real PostgreSQL
+                                 (Testcontainers), ArchUnit layering rules, unit tests
 mobile/                          React Native + Expo (SDK 57) client - iOS, Android, AND web
   app.json
   eslint.config.js / .prettierrc.json  Lint + format config
@@ -35,10 +41,15 @@ mobile/                          React Native + Expo (SDK 57) client - iOS, Andr
   src/api/client.ts               Fetch wrapper around the backend (EXPO_PUBLIC_API_URL), tested
   README.md                      Mobile + web setup, run, and deploy instructions
 docs/
+  requirements-personal-wealth-platform.md, TrackMyWealth_Consolidated_Requirements_Specification_v5.docx
+                                Requirements baseline (FR-/NFR-/RULE- ids cited across the code)
+  backlog/SPRINT-3.md           Sprint 3 plan (later sprints: GitHub sprint labels and project board)
   architecture/
-    database-schema.md          Design rationale, migration index, ERD
+    database-schema.md          Design rationale, migration index, ERD, ledger lifecycle rules
     development-standards.md    Coding standards per language, what's automated vs. convention
-    adr/0001-database-auto-migration.md
+    calculation-methodology.md  How figures are calculated (FX date convention so far)
+    adr/0001..0004-*.md         Decisions: auto-migration, workspace context, shared security
+                                master, HTTP optimistic concurrency (ETag/If-Match)
   user-stories/
     README.md                   Backlog index and suggested sequencing
     EPIC-01-*.md ... EPIC-28-*.md   Development-ready stories (section-40 template)
@@ -61,9 +72,8 @@ step in any environment**:
 See `docs/architecture/adr/0001-database-auto-migration.md` for the full rationale, and
 `docs/architecture/database-schema.md` for what the schema actually contains and why.
 
-All 20 migrations have been run end-to-end against a real PostgreSQL 16 instance as part of
-producing this repository, including a positive/negative row-level-security isolation test run as
-a non-superuser database role.
+The test suite applies every migration from scratch to a real PostgreSQL 16 instance
+(Testcontainers) on each `./mvnw verify`, so a migration that does not apply fails the build.
 
 ## Running locally
 
@@ -89,8 +99,8 @@ The backend refuses to start when `JWT_SECRET` is absent on this deployment path
 the PostgreSQL service for development still works without it. Do not commit the generated `.env`;
 keep the secret with the same care as other deployment credentials.
 
-Either way, the API comes up on `:8080`; OpenAPI UI at `/api-docs/ui` once the controller layer is
-built out (see `docs/user-stories/EPIC-29-*` in the backlog).
+Either way, the API comes up on `:8080` under `/api/v1`. The OpenAPI document is at `/api-docs`
+and its UI at `/api-docs/ui`; both need a signed-in user, like every non-public endpoint.
 
 In a second terminal, start the mobile app (see `mobile/README.md` for target-specific backend
 URLs - Android emulators can't reach `localhost` directly):
@@ -134,10 +144,11 @@ deployment profile.
 
 That's the whole deployment: `docker-compose.yml` builds `backend/Dockerfile` (multi-stage Maven
 build -> a plain JRE runtime image) and starts it alongside `postgres`, wired together on Docker's
-internal network. Both images are multi-arch (`postgres:16` and `eclipse-temurin:17-jre` each ship
-amd64, arm64, and 32-bit ARM variants), so this should run unchanged regardless of whether your
-NAS is Intel/AMD or ARM-based - point Synology's Container Manager (or any Docker host) at this
-`docker-compose.yml` the same way.
+internal network. Both images are multi-arch for amd64 and arm64 (`postgres:16`, and
+`eclipse-temurin:25-jre` for the backend's runtime), so this runs unchanged on an Intel/AMD or a
+64-bit ARM NAS - point Synology's Container Manager (or any Docker host) at this
+`docker-compose.yml` the same way. **32-bit ARM (armv7) is not supported:** the Java 25 runtime
+image has no such variant.
 
 ### Actuator access
 
@@ -214,14 +225,14 @@ means one client's failed logins can throttle every other client behind the same
 ```bash
 cd backend
 ./mvnw verify        # requires a local Docker daemon - Testcontainers starts real PostgreSQL 16
-                     # instances for the DB-level tests, and this also runs formatting/static
-                     # analysis (Spotless, PMD, SpotBugs) - see docs/architecture/development-standards.md
+                     # instances. Runs the whole suite (~930 tests) and every gate: Spotless, PMD,
+                     # SpotBugs, ArchUnit and the JaCoCo coverage minimums -
+                     # see docs/architecture/development-standards.md
 ```
 
-`.github/workflows/backend-ci.yml` runs the same command on every push/PR touching `backend/**` —
-GitHub-hosted runners have Docker preinstalled, so no extra CI setup is needed for Testcontainers.
-This is the first slice of test coverage; most epics' Definition of Done (see
-`docs/user-stories/`) still needs its corresponding implementation and tests written.
+`.github/workflows/backend-ci.yml` runs `./mvnw -B verify` on every push/PR touching `backend/**`,
+lints new or changed migrations with sqlfluff, and builds the Docker image. GitHub-hosted runners
+have Docker preinstalled, so no extra CI setup is needed for Testcontainers.
 
 `.github/workflows/mobile-web-ci.yml` type-checks, lints, formats-checks and tests `mobile/`, then
 builds its web export (`npx expo export -p web`) on every push/PR touching `mobile/**`. It does
@@ -235,21 +246,26 @@ themselves.
 
 See **`docs/architecture/development-standards.md`** for the full picture — what's enforced
 automatically vs. convention-only, per language, and how to run each check locally before pushing.
+A red check does not yet block merging on GitHub: required status checks are not configured for
+this repository (#187), so check the PR's results before you merge.
 
 ## Where to start as a developer
 
 Read `docs/user-stories/README.md` first — it lists every epic with development-ready stories,
 which migrations each depends on, and a suggested build sequence (foundation → tenancy/auth →
 workspace/institution/account → transaction ledger/imports/reconciliation → investment
-core → budgeting/net worth/consolidated reporting).
+core → budgeting/net worth/consolidated reporting). The working backlog is GitHub Issues (labels
+`epic-NN`, `priority-must|should`, and `sprint-N` for the current sprint) on the repository's
+project board; `docs/user-stories/` keeps the full story texts, including epics not yet turned
+into issues.
 
 ## Loading the backlog into GitHub Issues
 
-`scripts/create_github_issues.py` creates a real GitHub Issue for every one of the 87 user
-stories in `docs/user-stories/EPIC-*.md` (plus one issue per not-yet-decomposed backlog epic in
-`BACKLOG-remaining-epics.md`), labelled by epic and priority. It uses your own `gh` CLI login, so
-it must be run from a machine where you're authenticated to GitHub — it is not run as part of
-producing this repository.
+`scripts/create_github_issues.py` creates a GitHub Issue for every user story in
+`docs/user-stories/EPIC-*.md` (plus one issue per not-yet-decomposed backlog epic in
+`BACKLOG-remaining-epics.md`), labelled by epic and priority. This repository's issues already
+exist, so it is only for a fresh repository or fork. It uses your own `gh` CLI login, so it must be
+run from a machine where you're authenticated to GitHub.
 
 ```bash
 gh auth login                      # once, if you haven't already
@@ -262,20 +278,45 @@ partial run, running a single epic, and label/priority conventions.
 
 ## Status
 
-This is architecture and schema design output: the database schema (20 Flyway migrations,
-validated against a live PostgreSQL instance), the automatic-provisioning mechanism, and the full
-MVP user-story backlog are complete. The Spring Boot application currently contains only the
-startup/migration scaffolding described above (plus a placeholder security posture and CORS
-config), and the Expo app (`mobile/`) is currently only the generated navigation/theming shell
-plus a backend API client stub — controllers, services, repositories, and real screens are not yet
-implemented; they are what the user stories in `docs/user-stories/` hand off to a development team
-to build. The web app is real and independently deployable (static export, own CI build), but it
-is exactly the mobile scaffold's screens reflowed into a browser, not a web-native layout — that's
-a deliberate simplification, not yet revisited.
+**Backend: implemented for the core household-finance scope, in active development.** What exists
+today (closed stories on GitHub; details in `docs/architecture/database-schema.md`):
+
+- **Foundation, authentication and tenancy** (EPIC 01, 02, 28): automatic database creation and
+  migration, first-administrator setup, shipped reference data, user administration, JWT login with
+  rotating refresh tokens, session management, TOTP MFA; per-transaction workspace context with
+  row-level security, object-level authorization with audited, non-enumerating 404s, and a
+  cross-tenant test suite.
+- **Workspace, institutions and accounts** (EPIC 03-05): fractional/joint ownership, sharing grants,
+  last-member protection; institutions with summaries; every account type, archive/restore,
+  institution reassignment, custom assets with dated valuations.
+- **Currency** (EPIC 06): dated FX rates and direct-pair conversion.
+- **Transaction ledger** (EPIC 07): manual recording of every supported type; append-only removal
+  (soft delete or void with a reversing entry), correction as removal plus replacement, restore
+  within 30 days.
+- **Categorization** (EPIC 08): automatic categorization with rules and fallback, member overrides
+  that are never replaced silently, a custom hierarchical taxonomy.
+- **Credit cards and transfers** (EPIC 09, US-10-01): card purchases as a liability, settlement
+  matching, statement cycles, foreign-currency fees; internal transfers kept out of income and
+  spending; a cash-flow summary.
+- **Securities, snapshots, net worth** (US-12-01, US-25-01): lazy security master, manual account
+  snapshots, and net-worth and account-balance reads.
+- **API conventions** (EPIC 29, #153): RFC 9457 errors with stable codes, decimals as strings,
+  correlation ids, ETag/If-Match on every read-modify-write endpoint, a published OpenAPI document,
+  validation messages in English and German.
+
+**Not built yet** (story texts in `docs/user-stories/`): the CSV import framework (the rest of EPIC
+07 - the only planned import path), budgeting (EPIC 10), market prices, portfolios, performance and
+allocation (EPIC 13-17), consolidated reporting (EPIC 19), pensions (EPIC 26), calculation
+verification (EPIC 27) and the Quartz-based background jobs (EPIC 30; today only a Spring-scheduled
+retention of the authorization-denial log runs in the background).
+
+**Mobile and web:** `mobile/` is still the generated Expo Router shell with theming and a tested
+backend API client (including the If-Match helpers); its first product screens - sign-in (#183)
+and the reference-data admin screen (#184) - are open stories. The web app is the same codebase
+exported as a static site and independently deployable, not a web-native layout.
 
 Deployment target is self-hosted, single-workspace (a laptop or a home NAS) — not a multi-tenant
 hosted service, per current scope. `docker compose up -d --build` runs the whole backend + database
-stack this way today, verified end-to-end (built the image, started both containers, confirmed
-`/actuator/health` returns `200 UP` through the containerized backend talking to the containerized
-Postgres); see "Running on a NAS" above. Swiss bLink / PSD2 bank connectors (EPIC 24) are out of
-scope entirely — CSV import via the template-driven framework (EPIC 07) is the only import path.
+stack this way; see "Running on a NAS" above. Swiss bLink / PSD2 bank connectors (EPIC 24) are out
+of scope entirely — CSV import via the template-driven framework (EPIC 07) is the only planned
+import path.

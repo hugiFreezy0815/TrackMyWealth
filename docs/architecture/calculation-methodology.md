@@ -9,9 +9,9 @@ inputs, edge-case treatment, and a worked example matching its golden-dataset fi
 
 This file is seeded ahead of that story by **US-06-03** with the one methodology EPIC 06 already
 has the machinery to state precisely: the FX conversion date convention (FR-CUR-011). The other ten
-rows are `docs/user-stories/EPIC-27-calculation-verification.md`'s to fill in once the calculation
-engines they document (transactions/EPIC 07, positions/EPIC 15, net worth/EPIC 11, performance/EPIC
-16) exist — writing their sections here now would be documenting code that doesn't exist yet.
+rows are `docs/user-stories/EPIC-27-calculation-verification.md`'s to fill in, each with its
+golden-dataset fixture. The transaction ledger (EPIC 07) and a first net-worth read exist now;
+positions (EPIC 15) and performance (EPIC 16) do not yet, and their sections wait for that code.
 
 ## FX conversion date convention (US-06-03, FR-CUR-011)
 

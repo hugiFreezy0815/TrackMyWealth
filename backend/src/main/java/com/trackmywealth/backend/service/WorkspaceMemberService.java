@@ -18,12 +18,10 @@ import org.springframework.web.server.ResponseStatusException;
  * {@link AdminUserService}'s FR-USR-005 "last active administrator" guard, which this mirrors.
  *
  * <p>Self-service only for now: {@link #deactivateMember} rejects any target other than the
- * caller's own {@code workspace_member} row. US-03-03 (not yet merged at the time of writing) will
- * introduce {@code AccessControlService}, the one sanctioned place to compute whether a caller has
- * {@code FULL} access to someone else's membership - that check belongs there, not reimplemented
- * here, once it exists. Extending this method to let a {@code FULL}-access member deactivate
- * another is then a small follow-up: relax {@link #requireSelf}, nothing else about the guard below
- * changes.
+ * caller's own {@code workspace_member} row. Whether a caller has {@code FULL} access to someone
+ * else's membership belongs to {@code AccessControlService} (US-03-03), not reimplemented here.
+ * Letting a {@code FULL}-access member deactivate another is a small follow-up: relax {@link
+ * #requireSelf} through that service; nothing else about the guard below changes.
  */
 @Service
 public class WorkspaceMemberService {
@@ -107,8 +105,9 @@ public class WorkspaceMemberService {
   }
 
   // Mirrors AccessControlService.requireActingMember (US-03-03) in spirit - resolving "who is
-  // making this request" as a workspace_member id - but is deliberately not a call to that class:
-  // it does not exist on this branch yet (see class Javadoc). This is a narrow identity lookup,
+  // making this request" as a workspace_member id. It predates that class and stays separate until
+  // the follow-up in the class Javadoc routes this service through it. This is a narrow identity
+  // lookup,
   // not a reimplementation of access-level computation, so duplicating it here is not the
   // per-service authorization reimplementation AccessControlService exists to prevent. Not routed
   // through AuthorizationDenialAuditService below: that service's own Javadoc scopes it to a
