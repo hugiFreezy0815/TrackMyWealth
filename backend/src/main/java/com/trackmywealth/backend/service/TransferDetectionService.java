@@ -154,7 +154,7 @@ public class TransferDetectionService {
 
     Map<UUID, List<Transaction>> creditsByDebit = new LinkedHashMap<>();
     Map<UUID, List<Transaction>> debitsByCredit = new HashMap<>();
-    Map<FxLookupKey, Optional<CurrencyConversionResult>> fxRates = new HashMap<>();
+    Map<String, Optional<CurrencyConversionResult>> fxRates = new HashMap<>();
     for (Transaction debit : debits) {
       for (Transaction credit : credits) {
         if (pairs(debit, credit, fxRates) && !isRejected(known, debit, credit)) {
@@ -203,7 +203,7 @@ public class TransferDetectionService {
   private boolean pairs(
       Transaction debit,
       Transaction credit,
-      Map<FxLookupKey, Optional<CurrencyConversionResult>> fxRates) {
+      Map<String, Optional<CurrencyConversionResult>> fxRates) {
     if (debit.getAccount().getId().equals(credit.getAccount().getId())
         || !withinWindow(debit.getBookingDate(), credit.getBookingDate())) {
       return false;
@@ -212,14 +212,17 @@ public class TransferDetectionService {
       return debit.getAmount().negate().compareTo(credit.getAmount()) == 0;
     }
 
-    FxLookupKey key =
-        new FxLookupKey(debit.getCurrency(), credit.getCurrency(), debit.getBookingDate());
+    String key =
+        debit.getCurrency() + "|" + credit.getCurrency() + "|" + debit.getBookingDate();
     Optional<CurrencyConversionResult> conversion =
         fxRates.computeIfAbsent(
             key,
             ignored ->
                 fxRateService.tryGetConversionRate(
-                    key.baseCurrency(), key.quoteCurrency(), key.date(), fxDefaultSource));
+                    debit.getCurrency(),
+                    credit.getCurrency(),
+                    debit.getBookingDate(),
+                    fxDefaultSource));
     return conversion.isPresent()
         && amountsWithinTolerance(
             debit.getAmount().negate(),
@@ -243,7 +246,6 @@ public class TransferDetectionService {
         <= 0;
   }
 
-  private record FxLookupKey(String baseCurrency, String quoteCurrency, LocalDate date) {}
 
   private static SettlementMatch existing(
       List<SettlementMatch> known, Transaction debit, Transaction credit) {
