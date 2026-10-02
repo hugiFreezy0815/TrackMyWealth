@@ -172,10 +172,10 @@ public class TransactionRemovalService {
   }
 
   /**
-   * FR-LIF-006: brings back a soft-deleted row, and the FEE row deleted with it, within {@value
-   * #RESTORE_WINDOW_DAYS} days of its deletion. Settlement matching then runs again for the
-   * account, since a restored payment or credit may pair again. A void is not restored here (later
-   * story).
+   * FR-LIF-006: restores either removal tier within {@value #RESTORE_WINDOW_DAYS} days. A
+   * soft-deleted T1 row is unhidden as before. A voided T2 row keeps its void metadata and first
+   * reversal; restoration marks the original restored and inserts a reversal of that reversal, so
+   * the ledger remains append-only while balances and figures include the original effect again.
    */
   @Transactional
   public TransactionRemovalResponse restore(
@@ -185,21 +185,28 @@ public class TransactionRemovalService {
       AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
     lockCards(account, transactionId);
-    Transaction deleted =
+    Transaction removed =
         transactionRepository
             .findByIdIncludingDeletedForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(account.getId()))
             .orElseThrow(
                 () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
-    if (deleted.getDeletedAt() == null) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "This transaction is not deleted.");
+    if (removed.getDeletedAt() != null) {
+      return restoreSoftDeleted(account, removed, expectedVersion, actor);
     }
+    if (removed.getVoidedAt() != null) {
+      return restoreVoided(account, removed, expectedVersion, actor);
+    }
+    throw new ResponseStatusException(HttpStatus.CONFLICT, "This transaction is not removed.");
+  }
+
+  private TransactionRemovalResponse restoreSoftDeleted(
+      Account account,
+      Transaction deleted,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     if (deleted.getDeletedAt().isBefore(restoreWindowStart())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT,
-          "This transaction was deleted more than "
-              + RESTORE_WINDOW_DAYS
-              + " days ago and can no longer be restored.");
+      throw expiredRestore("deleted");
     }
     List<Transaction> restored = new ArrayList<>();
     restored.add(deleted);
@@ -227,10 +234,7 @@ public class TransactionRemovalService {
       row.setDeletedBy(null);
       transactionRepository.saveAndFlush(row);
     }
-    settlementDetectionService.detectAfterWrite(account, earliest);
-    transferDetectionService.detectAfterWrite(account, earliest);
-    // Detection may re-flag the restored rows after their own flush; flush again so the returned
-    // versions and the ETag are the stored ones instead of relying on a later query's auto-flush.
+    detectAfterRestore(account, earliest);
     transactionRepository.flush();
     return new TransactionRemovalResponse(
         TransactionRemovalValues.SOFT_DELETE,
@@ -239,6 +243,61 @@ public class TransactionRemovalService {
         transactionService.toResponses(restored),
         List.of(),
         List.of());
+  }
+
+  private TransactionRemovalResponse restoreVoided(
+      Account account,
+      Transaction original,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
+    if (original.getRestoredAt() != null) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "This transaction is already restored.");
+    }
+    if (original.getVoidedAt().isBefore(restoreWindowStart())) {
+      throw expiredRestore("voided");
+    }
+    versionPreconditionService.requireCurrent(
+        expectedVersion, original.getVersion(), TransactionService.VERSIONED_RESOURCE);
+
+    Transaction reversal =
+        transactionRepository
+            .findByReplacesTransactionId(original.getId())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Voided transaction " + original.getId() + " has no reversing entry."));
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    original.setRestoredAt(now);
+    original.setRestoredBy(actor.userId());
+    transactionRepository.saveAndFlush(original);
+
+    // Reversing the first reversal makes the original financial effect effective again. The undo
+    // row points at the first reversal, preserving the full original -> reversal -> undo history.
+    Transaction undo = transactionRepository.saveAndFlush(reversalOf(reversal, actor.userId()));
+    detectAfterRestore(account, original.getBookingDate());
+    transactionRepository.flush();
+    return new TransactionRemovalResponse(
+        TransactionRemovalValues.VOID,
+        VersionPreconditionService.persistedVersion(
+            original.getVersion(), TransactionService.VERSIONED_RESOURCE),
+        transactionService.toResponses(List.of(original)),
+        transactionService.toResponses(List.of(undo)),
+        List.of());
+  }
+
+  private ResponseStatusException expiredRestore(String removal) {
+    return new ResponseStatusException(
+        HttpStatus.CONFLICT,
+        "This transaction was "
+            + removal
+            + " more than "
+            + RESTORE_WINDOW_DAYS
+            + " days ago and can no longer be restored.");
+  }
+
+  private void detectAfterRestore(Account account, LocalDate earliest) {
+    settlementDetectionService.detectAfterWrite(account, earliest);
+    transferDetectionService.detectAfterWrite(account, earliest);
   }
 
   /** The account's soft-deleted rows still restorable, most recently deleted first. */
