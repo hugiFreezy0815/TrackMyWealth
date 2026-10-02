@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.SettlementMatch;
@@ -7,6 +8,7 @@ import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -17,8 +19,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,8 +36,10 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * A <em>debit</em> is a negative {@code TRANSFER}/{@code WITHDRAWAL}/{@code EXPENSE}, a
  * <em>credit</em> a positive {@code TRANSFER}/{@code DEPOSIT}/{@code INCOME}, on two different
- * accounts of the workspace, in the same currency, of exactly opposite amounts, booked at most
- * {@value #WINDOW_DAYS} days apart. Cross-currency legs are not matched (a later story, #181). Card
+ * accounts of the workspace and booked at most {@value #WINDOW_DAYS} days apart. Same-currency
+ * amounts must be exactly opposite. US-10-06/#181 also accepts cross-currency amounts whose credit
+ * is within the configured FX tolerance of the debit converted at the debit booking date. A missing
+ * rate means no match; cross-currency pairs are always proposed for a member to confirm. Card
  * accounts take no part: a card is settled through {@link SettlementDetectionService}.
  *
  * <ul>
@@ -80,19 +86,31 @@ public class TransferDetectionService {
   private final SettlementMatchRepository settlementMatchRepository;
   private final SettlementDetectionService settlementDetectionService;
   private final WorkspaceRepository workspaceRepository;
+  private final FxRateService fxRateService;
   private final Clock clock;
+  private final String fxDefaultSource;
+  private final BigDecimal crossCurrencyTolerance;
 
   public TransferDetectionService(
       TransactionRepository transactionRepository,
       SettlementMatchRepository settlementMatchRepository,
       SettlementDetectionService settlementDetectionService,
       WorkspaceRepository workspaceRepository,
-      Clock clock) {
+      FxRateService fxRateService,
+      Clock clock,
+      @Value("${app.fx.default-source}") String fxDefaultSource,
+      @Value("${app.fx.transfer-match-tolerance}") BigDecimal crossCurrencyTolerance) {
     this.transactionRepository = transactionRepository;
     this.settlementMatchRepository = settlementMatchRepository;
     this.settlementDetectionService = settlementDetectionService;
     this.workspaceRepository = workspaceRepository;
+    this.fxRateService = fxRateService;
     this.clock = clock;
+    this.fxDefaultSource = fxDefaultSource;
+    if (crossCurrencyTolerance.signum() < 0 || crossCurrencyTolerance.compareTo(BigDecimal.ONE) > 0) {
+      throw new IllegalArgumentException("app.fx.transfer-match-tolerance must be between 0 and 1.");
+    }
+    this.crossCurrencyTolerance = crossCurrencyTolerance;
   }
 
   /**
@@ -135,9 +153,10 @@ public class TransferDetectionService {
 
     Map<UUID, List<Transaction>> creditsByDebit = new LinkedHashMap<>();
     Map<UUID, List<Transaction>> debitsByCredit = new HashMap<>();
+    Map<FxLookupKey, Optional<CurrencyConversionResult>> fxRates = new HashMap<>();
     for (Transaction debit : debits) {
       for (Transaction credit : credits) {
-        if (pairs(debit, credit) && !isRejected(known, debit, credit)) {
+        if (pairs(debit, credit, fxRates) && !isRejected(known, debit, credit)) {
           creditsByDebit.computeIfAbsent(debit.getId(), k -> new ArrayList<>()).add(credit);
           debitsByCredit.computeIfAbsent(credit.getId(), k -> new ArrayList<>()).add(debit);
         }
@@ -152,6 +171,7 @@ public class TransferDetectionService {
       Transaction only = fitting.size() == 1 ? fitting.get(0) : null;
       boolean unambiguous = only != null && debitsByCredit.get(only.getId()).size() == 1;
       if (unambiguous
+          && debit.getCurrency().equals(only.getCurrency())
           && TRANSFER.equals(debit.getTransactionType())
           && TRANSFER.equals(only.getTransactionType())
           && existing(known, debit, only) == null) {
@@ -179,12 +199,50 @@ public class TransferDetectionService {
     return Math.abs(ChronoUnit.DAYS.between(a, b)) <= WINDOW_DAYS;
   }
 
-  private static boolean pairs(Transaction debit, Transaction credit) {
-    return !debit.getAccount().getId().equals(credit.getAccount().getId())
-        && debit.getCurrency().equals(credit.getCurrency())
-        && debit.getAmount().negate().compareTo(credit.getAmount()) == 0
-        && withinWindow(debit.getBookingDate(), credit.getBookingDate());
+  private boolean pairs(
+      Transaction debit,
+      Transaction credit,
+      Map<FxLookupKey, Optional<CurrencyConversionResult>> fxRates) {
+    if (debit.getAccount().getId().equals(credit.getAccount().getId())
+        || !withinWindow(debit.getBookingDate(), credit.getBookingDate())) {
+      return false;
+    }
+    if (debit.getCurrency().equals(credit.getCurrency())) {
+      return debit.getAmount().negate().compareTo(credit.getAmount()) == 0;
+    }
+
+    FxLookupKey key =
+        new FxLookupKey(debit.getCurrency(), credit.getCurrency(), debit.getBookingDate());
+    Optional<CurrencyConversionResult> conversion =
+        fxRates.computeIfAbsent(
+            key,
+            ignored ->
+                fxRateService.tryGetConversionRate(
+                    key.baseCurrency(), key.quoteCurrency(), key.date(), fxDefaultSource));
+    return conversion.isPresent()
+        && amountsWithinTolerance(
+            debit.getAmount().negate(),
+            credit.getAmount(),
+            conversion.get().rate(),
+            crossCurrencyTolerance);
   }
+
+  /**
+   * US-10-06: relative FX difference without division or intermediate rounding. Since transfer legs
+   * are non-zero and FX rates are positive, {@code |actual - expected| <= expected * tolerance} is
+   * exactly the configured {@code |actual - expected| / expected <= tolerance} rule.
+   */
+  static boolean amountsWithinTolerance(
+      BigDecimal debitMagnitude,
+      BigDecimal actualCredit,
+      BigDecimal rate,
+      BigDecimal tolerance) {
+    BigDecimal expectedCredit = debitMagnitude.multiply(rate);
+    return actualCredit.subtract(expectedCredit).abs().compareTo(expectedCredit.multiply(tolerance))
+        <= 0;
+  }
+
+  private record FxLookupKey(String baseCurrency, String quoteCurrency, LocalDate date) {}
 
   private static SettlementMatch existing(
       List<SettlementMatch> known, Transaction debit, Transaction credit) {
