@@ -291,13 +291,13 @@ class TransactionControllerTest {
 
   @Test
   void aVoidedPurchaseAndItsReversingEntryNetToZero() {
-    // FR-LIF-002: "both records remain in the ledger". Summing only non-voided rows would drop the
-    // voided original and count the +85.00 reversal alone - a balance of -85.00 (a phantom credit)
-    // instead of the correct 0.
+    // FR-LIF-002: "both records remain in the ledger". Dropping only the voided original would
+    // count the +85.00 reversal alone - a balance of -85.00 (a phantom credit) instead of the
+    // correct 0; the pair counts as zero together.
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(token);
-    insertLedgerRow(card.id(), "-85.00", true);
-    insertLedgerRow(card.id(), "85.00", false);
+    UUID voided = insertLedgerRow(card.id(), "-85.00", true);
+    insertReversalOf(card.id(), "85.00", voided);
     insertLedgerRow(card.id(), "-20.00", false);
 
     assertThat(balance(token, card.id()).value()).isEqualByComparingTo("20.00");
@@ -2747,21 +2747,42 @@ class TransactionControllerTest {
 
   // Direct ledger inserts, the way US-07-02's void path leaves the table: a voided original keeps
   // its financial fields and gets voided_at and a reason (V39 requires one), and the reversing row
-  // is an ordinary new row of the opposite sign.
-  private void insertLedgerRow(UUID accountId, String amount, boolean voided) {
+  // (insertReversalOf) is a new row of the opposite sign linked by replaces_transaction_id.
+  private UUID insertLedgerRow(UUID accountId, String amount, boolean voided) {
+    UUID id = UUID.randomUUID();
+    UUID workspaceId = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", accountId);
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, voided_at, void_reason) VALUES (?, ?, ?,"
+                    + " 'CREDIT_CARD_PURCHASE', CURRENT_DATE, ?, 'CHF', CASE WHEN ? THEN now() END,"
+                    + " CASE WHEN ? THEN 'test' END)")) {
+      statement.setObject(1, id);
+      statement.setObject(2, workspaceId);
+      statement.setObject(3, accountId);
+      statement.setBigDecimal(4, new BigDecimal(amount));
+      statement.setBoolean(5, voided);
+      statement.setBoolean(6, voided);
+      statement.executeUpdate();
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+    return id;
+  }
+
+  private void insertReversalOf(UUID accountId, String amount, UUID originalId) {
     UUID workspaceId = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", accountId);
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
                 "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
-                    + " amount, currency, voided_at, void_reason) VALUES (?, ?,"
-                    + " 'CREDIT_CARD_PURCHASE', CURRENT_DATE, ?, 'CHF', CASE WHEN ? THEN now() END,"
-                    + " CASE WHEN ? THEN 'test' END)")) {
+                    + " amount, currency, replaces_transaction_id) VALUES (?, ?,"
+                    + " 'CREDIT_CARD_PURCHASE', CURRENT_DATE, ?, 'CHF', ?)")) {
       statement.setObject(1, workspaceId);
       statement.setObject(2, accountId);
       statement.setBigDecimal(3, new BigDecimal(amount));
-      statement.setBoolean(4, voided);
-      statement.setBoolean(5, voided);
+      statement.setObject(4, originalId);
       statement.executeUpdate();
     } catch (Exception e) {
       throw new IllegalStateException(e);

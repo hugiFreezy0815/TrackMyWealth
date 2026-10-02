@@ -25,6 +25,7 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
+import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SettlementDetectionService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
@@ -35,6 +36,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
@@ -105,6 +107,8 @@ class TransactionRemovalControllerTest {
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
+
+  @Autowired TransactionRepository transactionRepository;
 
   @Autowired SettlementDetectionService settlementDetectionService;
 
@@ -517,6 +521,506 @@ class TransactionRemovalControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  // --- US-07-07: restoring a void ------------------------------------------------------------
+
+  // The DoD's restore within the window: the void and its reversal stay, an ordinary copy of the
+  // original re-instates it (A, -A, A'), and balances and figures count it again.
+  @Test
+  void aVoidIsRestoredByAnOrdinaryCopyWithinThirtyDays() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    TransactionRemovalResponse voided = remove(token, card.id(), imported, "Duplicate import");
+    assertThat(balance(token, card.id())).isEqualByComparingTo("0");
+    assertThat(spending(token)).isEqualByComparingTo("0");
+    // FR-LIF-006: restorable through the interface - the restore list offers the void.
+    assertThat(restorable(token, card.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(imported);
+
+    TransactionRemovalResponse restored = restore(token, card.id(), imported);
+
+    assertThat(restored.removal()).isEqualTo(VOID);
+    assertThat(restored.reversals()).isEmpty();
+    assertThat(restored.affected())
+        .singleElement()
+        .satisfies(
+            original -> {
+              assertThat(original.id()).isEqualTo(imported);
+              assertThat(original.voidedAt()).isNotNull(); // the void stays history
+              assertThat(original.voidReason()).isEqualTo("Duplicate import");
+            });
+    TransactionResponse copy = restored.restored().get(0);
+    assertThat(restored.restored()).hasSize(1);
+    assertThat(copy.restoresTransactionId()).isEqualTo(imported);
+    assertThat(copy.amount()).isEqualByComparingTo("-85.00");
+    assertThat(copy.source()).as("still imported, so still T2").isEqualTo("CSV");
+    assertThat(copy.voidedAt()).isNull();
+    assertThat(copy.removal()).isEqualTo(VOID);
+    assertThat(list(token, card.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactlyInAnyOrder(imported, voided.reversals().get(0).id(), copy.id());
+    assertThat(balance(token, card.id())).isEqualByComparingTo("85.00");
+    assertThat(spending(token)).isEqualByComparingTo("85.00");
+    assertThat(restorable(token, card.id())).isEmpty();
+
+    // A second restore of the same void is refused and adds nothing.
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), imported) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.detail")
+        .value(detail -> assertThat(detail.toString()).contains(copy.id().toString()));
+    assertThat(countRows(card.id())).isEqualTo(3);
+  }
+
+  @Test
+  void aVoidCannotBeRestoredAfterThirtyDays() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    remove(token, card.id(), imported, "Duplicate import");
+    execute("UPDATE transaction SET voided_at = now() - interval '31 days' WHERE id = ?", imported);
+
+    assertThat(restorable(token, card.id())).isEmpty();
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), imported) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+
+    assertThat(countRows(card.id())).isEqualTo(2);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("0");
+    assertThat(spending(token)).isEqualByComparingTo("0");
+  }
+
+  // Just inside the window the void is still restorable.
+  @Test
+  void aVoidIsRestorableUntilTheWindowCloses() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    remove(token, card.id(), imported, "Duplicate import");
+    execute(
+        "UPDATE transaction SET voided_at = now() - interval '29 days 23 hours' WHERE id = ?",
+        imported);
+
+    assertThat(restore(token, card.id(), imported).restored()).hasSize(1);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("85.00");
+  }
+
+  // The copy is dated like the original, so a balance on a date between the booking and the void
+  // must count the transaction once: the void pair counts as zero on every date (restated).
+  @Test
+  void aRestoreDoesNotCountThePurchaseTwiceInAPastBalance() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today().minusDays(10));
+    remove(token, card.id(), imported, "Duplicate import");
+    assertThat(pastBalance(card.id(), today().minusDays(5))).isEqualByComparingTo("0");
+    assertThat(valueBasis(token, card.id()))
+        .as("all rows voided: a measured zero")
+        .isEqualTo("LEDGER");
+
+    restore(token, card.id(), imported);
+
+    assertThat(pastBalance(card.id(), today().minusDays(5))).isEqualByComparingTo("-85.00");
+    assertThat(pastBalance(card.id(), today())).isEqualByComparingTo("-85.00");
+    assertThat(balance(token, card.id())).isEqualByComparingTo("85.00");
+  }
+
+  // The same holds for a correction (US-07-06): the replacement is dated like the original.
+  @Test
+  void aCorrectionDoesNotCountThePurchaseTwiceInAPastBalance() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    insertImported(card.id(), PURCHASE, "-85.00", today().minusDays(10));
+    TransactionResponse read = list(token, card.id()).get(0);
+
+    correct(token, card.id(), read, "-80.00", "Statement shows 80.00", null, null, null);
+
+    assertThat(pastBalance(card.id(), today().minusDays(5))).isEqualByComparingTo("-80.00");
+    assertThat(balance(token, card.id())).isEqualByComparingTo("80.00");
+  }
+
+  // A fee voided on its own belongs to its purchase: while the purchase is voided too, the fee
+  // cannot come back alone, or it would count without it and miss the purchase's later restore.
+  @Test
+  void aFeeCannotBeRestoredWhileItsPurchaseIsStillVoided() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID purchase = insertImported(card.id(), PURCHASE, "-100.00", today());
+    UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
+    remove(token, card.id(), fee, "Fee waived");
+    remove(token, card.id(), purchase, "Duplicate import");
+
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), fee) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", fee))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.detail")
+        .value(detail -> assertThat(detail.toString()).contains(purchase.toString()));
+    assertThat(countRows(card.id())).isEqualTo(4);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("0");
+  }
+
+  // The copy keeps a foreign-currency row's amount in its own currency and the rate it was
+  // converted at, so it counts exactly as the original did.
+  @Test
+  void aForeignCurrencyVoidIsRestoredWithItsRate() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, fx_rate_to_account_currency,"
+                    + " fx_rate_date, fx_rate_estimated, source) SELECT ?, workspace_id, id, ?,"
+                    + " CURRENT_DATE, -100, 'EUR', 0.95, CURRENT_DATE, FALSE, 'CSV'"
+                    + " FROM account WHERE id = ?")) {
+      statement.setObject(1, imported);
+      statement.setString(2, PURCHASE);
+      statement.setObject(3, card.id());
+      statement.executeUpdate();
+    }
+    remove(token, card.id(), imported, "Duplicate import");
+
+    TransactionResponse copy = restore(token, card.id(), imported).restored().get(0);
+
+    assertThat(copy.currency()).isEqualTo("EUR");
+    assertThat(copy.amount()).isEqualByComparingTo("-100");
+    assertThat(copy.fxRateToAccountCurrency()).isEqualByComparingTo("0.95");
+    assertThat(copy.fxRateEstimated()).isFalse();
+    assertThat(balance(token, card.id())).isEqualByComparingTo("95.00");
+  }
+
+  // A trade's copy carries the security, quantity, price and fee, so the position is back too.
+  @Test
+  void aVoidedTradeIsRestoredWithItsQuantity() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse depot = createAccount(token, "SECURITIES", "CHF");
+    UUID security = createSecurity(token);
+    UUID buy = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, security_id, quantity, unit_price,"
+                    + " fee_amount, source) SELECT ?, workspace_id, id, 'BUY', CURRENT_DATE,"
+                    + " -1005, 'CHF', ?, 10, 100, 5, 'CSV' FROM account WHERE id = ?")) {
+      statement.setObject(1, buy);
+      statement.setObject(2, security);
+      statement.setObject(3, depot.id());
+      statement.executeUpdate();
+    }
+    remove(token, depot.id(), buy, "Wrong depot");
+
+    TransactionResponse copy = restore(token, depot.id(), buy).restored().get(0);
+
+    assertThat(copy.securityId()).isEqualTo(security);
+    assertThat(copy.quantity()).isEqualByComparingTo("10");
+    assertThat(copy.unitPrice()).isEqualByComparingTo("100");
+    assertThat(copy.feeAmount()).isEqualByComparingTo("5");
+    assertThat(
+            queryDecimal("SELECT sum(quantity) FROM transaction WHERE account_id = ?", depot.id()))
+        .isEqualByComparingTo("10");
+  }
+
+  // A restored transaction is a normal one again: it can be categorized, removed and restored
+  // again, any number of times; the voided original points the member at it.
+  @Test
+  void aRestoredTransactionCanBeCategorizedVoidedAndRestoredAgain() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    remove(token, card.id(), imported, "Duplicate import");
+    TransactionResponse copy = restore(token, card.id(), imported).restored().get(0);
+    assertThat(copy.categoryId()).as("categorized like a new row").isNotNull();
+
+    UUID shopping = defaultCategory("SHOPPING");
+    client(token)
+        .put()
+        .uri(rowUri(card.id(), copy.id()) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", copy.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetTransactionCategoryRequest(shopping))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    // The voided original stays voided and names the entry to act on instead.
+    client(token)
+        .delete()
+        .uri(rowUri(card.id(), imported) + "?reason=Again")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.detail")
+        .value(detail -> assertThat(detail.toString()).contains(copy.id().toString()));
+
+    remove(token, card.id(), copy.id(), "Duplicate after all");
+    assertThat(balance(token, card.id())).isEqualByComparingTo("0");
+    TransactionResponse again = restore(token, card.id(), copy.id()).restored().get(0);
+
+    assertThat(again.restoresTransactionId()).isEqualTo(copy.id());
+    assertThat(again.categoryId()).as("the member's override carries over").isEqualTo(shopping);
+    assertThat(again.categoryAssignedBy()).isEqualTo("USER");
+    assertThat(balance(token, card.id())).isEqualByComparingTo("85.00");
+    assertThat(spending(token)).isEqualByComparingTo("85.00");
+  }
+
+  // A FEE row voided with its purchase comes back with it - also when the member restores the fee -
+  // and its copy belongs to the purchase's copy, never to the voided purchase.
+  @Test
+  void aPurchaseAndItsFeeAreRestoredTogetherFromEitherRow() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID purchase = insertImported(card.id(), PURCHASE, "-100.00", today());
+    UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
+    TransactionRemovalResponse voided = remove(token, card.id(), purchase, "Duplicate import");
+    assertThat(voided.affected())
+        .extracting(TransactionResponse::id)
+        .containsExactly(purchase, fee);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("0");
+
+    TransactionRemovalResponse restored = restore(token, card.id(), fee);
+
+    assertThat(restored.affected())
+        .extracting(TransactionResponse::id)
+        .containsExactly(purchase, fee);
+    assertThat(restored.restored())
+        .extracting(TransactionResponse::restoresTransactionId)
+        .containsExactly(purchase, fee);
+    TransactionResponse purchaseCopy = restored.restored().get(0);
+    TransactionResponse feeCopy = restored.restored().get(1);
+    assertThat(feeCopy.relatedTransactionId()).isEqualTo(purchaseCopy.id());
+    assertThat(countRows(card.id())).isEqualTo(6);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("102.00");
+  }
+
+  // A fee voided on its own earlier stays voided when its purchase's void is restored; restored
+  // later, its copy joins the purchase's copy.
+  @Test
+  void aSeparatelyVoidedFeeStaysVoidedUntilRestoredItself() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID purchase = insertImported(card.id(), PURCHASE, "-100.00", today());
+    UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
+    remove(token, card.id(), fee, "Fee waived");
+    remove(token, card.id(), purchase, "Duplicate import");
+
+    TransactionRemovalResponse purchaseRestored = restore(token, card.id(), purchase);
+
+    assertThat(purchaseRestored.restored())
+        .extracting(TransactionResponse::restoresTransactionId)
+        .containsExactly(purchase);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("100.00");
+    assertThat(restorable(token, card.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(fee);
+
+    TransactionResponse feeCopy = restore(token, card.id(), fee).restored().get(0);
+
+    assertThat(feeCopy.relatedTransactionId()).isEqualTo(purchaseRestored.restored().get(0).id());
+    assertThat(balance(token, card.id())).isEqualByComparingTo("102.00");
+  }
+
+  // A two-sided transfer comes back whole, from either leg, and only with EDIT on both accounts.
+  @Test
+  void aVoidedTransferIsRestoredWithBothLegsAndNeedsEditOnBothAccounts() {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(adminToken, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(adminToken, "CASH", "CHF");
+    UUID[] legs = insertImportedTransfer(current.id(), savings.id(), "100.00");
+    UUID debit = legs[0];
+    UUID credit = legs[1];
+    TransactionRemovalResponse voided = remove(adminToken, current.id(), debit, "Duplicate import");
+    assertThat(voided.affected())
+        .extracting(TransactionResponse::id)
+        .containsExactly(debit, credit);
+    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    String memberToken = login("member@example.com");
+    grantAccount(adminToken, memberId, savings.id(), AccessLevelValues.EDIT);
+    grantAccount(adminToken, memberId, current.id(), AccessLevelValues.READ);
+
+    client(memberToken)
+        .post()
+        .uri(rowUri(savings.id(), credit) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", credit))
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    assertThat(countRows(current.id()) + countRows(savings.id())).isEqualTo(4);
+
+    grantAccount(adminToken, memberId, current.id(), AccessLevelValues.EDIT);
+    TransactionRemovalResponse restored = restore(memberToken, savings.id(), credit);
+
+    assertThat(restored.restored())
+        .extracting(TransactionResponse::restoresTransactionId)
+        .containsExactly(debit, credit);
+    TransactionResponse debitCopy = restored.restored().get(0);
+    TransactionResponse creditCopy = restored.restored().get(1);
+    assertThat(debitCopy.accountId()).isEqualTo(current.id());
+    assertThat(debitCopy.counterpartyAccountId()).isEqualTo(savings.id());
+    assertThat(debitCopy.internalTransfer()).isTrue();
+    assertThat(creditCopy.relatedTransactionId()).isEqualTo(debitCopy.id());
+    assertThat(creditCopy.amount()).isEqualByComparingTo("100.00");
+    assertThat(countRows(current.id()) + countRows(savings.id())).isEqualTo(6);
+  }
+
+  @Test
+  void restoringAVoidedPaymentMatchesItsCopyAgain() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
+    setSettlementSource(token, card.id(), checking.id());
+    UUID payment = insertImported(checking.id(), "WITHDRAWAL", "-300.00", today());
+    record(token, card.id(), cashRow("SETTLEMENT", "300.00"));
+    assertThat(matches(card.id())).isEqualByComparingTo("1");
+    remove(token, checking.id(), payment, "Duplicate import");
+    assertThat(matches(card.id())).isEqualByComparingTo("0");
+
+    TransactionResponse copy = restore(token, checking.id(), payment).restored().get(0);
+
+    assertThat(matches(card.id())).isEqualByComparingTo("1");
+    assertThat(list(token, checking.id()))
+        .filteredOn(row -> row.id().equals(copy.id()))
+        .singleElement()
+        .satisfies(row -> assertThat(row.internalTransfer()).isTrue());
+  }
+
+  // AC3: as with a soft delete, a pair the member rejected stays rejected through a void and its
+  // restore - the copy inherits the decision instead of being matched to the same credit again.
+  @Test
+  void aRejectedPairStaysRejectedThroughAVoidAndRestore() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
+    setSettlementSource(token, card.id(), checking.id());
+    UUID payment = insertImported(checking.id(), "WITHDRAWAL", "-300.00", today());
+    record(token, card.id(), cashRow("SETTLEMENT", "300.00"));
+    UUID match = matchIdOf(card.id());
+    client(token)
+        .post()
+        .uri("/api/v1/settlement-matches/" + match + "/reject")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", match))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    remove(token, checking.id(), payment, "Duplicate import");
+
+    TransactionResponse copy = restore(token, checking.id(), payment).restored().get(0);
+
+    assertThat(matches(card.id())).isEqualByComparingTo("2");
+    assertThat(rejectedMatches(card.id())).isEqualByComparingTo("2");
+    assertThat(list(token, checking.id()))
+        .filteredOn(row -> row.id().equals(copy.id()))
+        .singleElement()
+        .satisfies(row -> assertThat(row.internalTransfer()).isFalse());
+  }
+
+  // A void made by a correction (US-07-06) is not restorable: the replacement is the current entry.
+  @Test
+  void aCorrectedImportedTransactionIsNotRestorable() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    TransactionResponse read = list(token, card.id()).get(0);
+    correct(token, card.id(), read, "-80.00", "Statement shows 80.00", null, null, null);
+
+    assertThat(restorable(token, card.id())).isEmpty();
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), imported) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("80.00");
+  }
+
+  // FR-CNC-001: restoring a void is read-modify-write on the voided row too.
+  @Test
+  void restoringAVoidRequiresTheCurrentVersion() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    int beforeVoid = list(token, card.id()).get(0).version();
+    remove(token, card.id(), imported, "Duplicate import");
+
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), imported) + "/restore")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), imported) + "/restore")
+        .headers(headers -> headers.setIfMatch("\"" + beforeVoid + "\""))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED);
+    assertThat(countRows(card.id())).isEqualTo(2);
+  }
+
+  @Test
+  void restoringAVoidNeedsEditOnTheAccount() {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    remove(adminToken, card.id(), imported, "Duplicate import");
+    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    String memberToken = login("member@example.com");
+
+    // No grant: the generic 404, also without If-Match. READ: still 404, the same as for removal.
+    client(memberToken)
+        .post()
+        .uri(rowUri(card.id(), imported) + "/restore")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.READ);
+    assertThat(restorable(memberToken, card.id())).hasSize(1);
+    client(memberToken)
+        .post()
+        .uri(rowUri(card.id(), imported) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    assertThat(countRows(card.id())).isEqualTo(2);
+  }
+
+  // V50: the restore lineage is frozen like the other lineage columns (RULE-024).
+  @Test
+  void theRestoreLinkCannotBeRewritten() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    remove(token, card.id(), imported, "Duplicate import");
+    UUID copy = restore(token, card.id(), imported).restored().get(0).id();
+
+    assertThatThrownBy(
+            () ->
+                execute("UPDATE transaction SET restores_transaction_id = NULL WHERE id = ?", copy))
+        .isInstanceOf(SQLException.class)
+        .hasMessageContaining("transaction_ledger_append_only");
   }
 
   @Test
@@ -1812,6 +2316,24 @@ class TransactionRemovalControllerTest {
         .getResponseBody();
   }
 
+  // The signed ledger sum on a past date, which statements, snapshots and matching read.
+  private BigDecimal pastBalance(UUID accountId, LocalDate asOf) {
+    return transactionRepository.sumAmountByAccountIdAsOf(accountId, asOf).orElseThrow();
+  }
+
+  private String valueBasis(String token, UUID accountId) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + accountId + "/balance")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(AccountValuation.class)
+        .returnResult()
+        .getResponseBody()
+        .valueBasis();
+  }
+
   private BigDecimal balance(String token, UUID accountId) {
     return client(token)
         .get()
@@ -1965,6 +2487,60 @@ class TransactionRemovalControllerTest {
       statement.setObject(5, accountId);
       statement.executeUpdate();
     } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+    return id;
+  }
+
+  private BigDecimal matches(UUID cardAccountId) {
+    return queryDecimal(
+        "SELECT count(*) FROM settlement_match WHERE card_account_id = ?", cardAccountId);
+  }
+
+  // A two-sided transfer as an import would leave it: both legs CSV, linked and flagged (US-10-01).
+  private UUID[] insertImportedTransfer(UUID fromAccount, UUID toAccount, String amount) {
+    UUID debit = UUID.randomUUID();
+    UUID credit = UUID.randomUUID();
+    String insert =
+        "INSERT INTO transaction (id, workspace_id, account_id, transaction_type, booking_date,"
+            + " amount, currency, source, is_internal_transfer, counterparty_account_id,"
+            + " related_transaction_id) SELECT ?, workspace_id, id, 'TRANSFER', CURRENT_DATE, ?,"
+            + " 'CHF', 'CSV', TRUE, ?, ? FROM account WHERE id = ?";
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement(insert)) {
+      statement.setObject(1, debit);
+      statement.setBigDecimal(2, new BigDecimal(amount).negate());
+      statement.setObject(3, toAccount);
+      statement.setNull(4, Types.OTHER);
+      statement.setObject(5, fromAccount);
+      statement.executeUpdate();
+      statement.setObject(1, credit);
+      statement.setBigDecimal(2, new BigDecimal(amount));
+      statement.setObject(3, fromAccount);
+      statement.setObject(4, debit);
+      statement.setObject(5, toAccount);
+      statement.executeUpdate();
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+    return new UUID[] {debit, credit};
+  }
+
+  private UUID insertImportedFee(UUID accountId, UUID purchaseId, String amount) {
+    UUID id = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, source, related_transaction_id)"
+                    + " SELECT ?, workspace_id, id, 'FEE', CURRENT_DATE, ?, 'CHF', 'CSV', ?"
+                    + " FROM account WHERE id = ?")) {
+      statement.setObject(1, id);
+      statement.setBigDecimal(2, new BigDecimal(amount));
+      statement.setObject(3, purchaseId);
+      statement.setObject(4, accountId);
+      statement.executeUpdate();
+    } catch (SQLException e) {
       throw new IllegalStateException(e);
     }
     return id;
