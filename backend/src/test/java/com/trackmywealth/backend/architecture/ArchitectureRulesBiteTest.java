@@ -58,6 +58,17 @@ class ArchitectureRulesBiteTest {
         .hasMessageContaining("StrayEntityResponse");
   }
 
+  // #223: a request path acting as a workspace it chose itself fails the build.
+  @Test
+  void aRequestPathUsingTheSystemWorkspaceContextFailsTheBuild() {
+    JavaClasses impersonating =
+        new ClassFileImporter().importClasses(WorkspaceImpersonatingService.class);
+    assertThatThrownBy(
+            () -> ArchitectureTest.only_background_work_acts_as_a_workspace.check(impersonating))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("WorkspaceImpersonatingService");
+  }
+
   @Test
   void aServiceDependingOnTheWebLayerFailsTheBuild() {
     JavaClasses coupled = new ClassFileImporter().importClasses(WebCoupledService.class);
@@ -77,5 +88,12 @@ class ArchitectureRulesBiteTest {
                 ArchitectureTest.object_level_services_do_not_construct_raw_not_found.check(bypass))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("CategoryService#findCategory");
+  }
+
+  static class WorkspaceImpersonatingService {
+    void actAs(java.util.UUID workspaceId) {
+      com.trackmywealth.backend.security.SystemWorkspaceContext.runInWorkspace(
+          workspaceId, () -> {});
+    }
   }
 }

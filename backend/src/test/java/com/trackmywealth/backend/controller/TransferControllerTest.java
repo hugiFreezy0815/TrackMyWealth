@@ -18,6 +18,7 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.service.TransferDetectionService;
+import com.trackmywealth.backend.service.TransferRecheckService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
@@ -79,6 +80,8 @@ class TransferControllerTest {
   @Autowired DataSource dataSource;
 
   @Autowired TransferDetectionService transferDetectionService;
+
+  @Autowired TransferRecheckService transferRecheckService;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -237,22 +240,61 @@ class TransferControllerTest {
     assertThat(matches(token, "CONFIRMED")).isEmpty();
   }
 
+  // #223: without a rate the pair cannot be judged yet. Detection records the date, and once the
+  // background import has stored rates for it the FX job re-runs detection there.
   @Test
-  void crossCurrencyImportedLegsWithoutAnFxRateStayUnmatched() throws Exception {
+  void crossCurrencyLegsWithoutAnFxRateAreProposedOnceTheRateIsImported() throws Exception {
     String token = bootstrapAdministrator();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
     LocalDate sent = today().withDayOfMonth(10);
-    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    UUID debit = insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
     insertImported(euro.id(), TRANSFER, "1040.00", "EUR", sent.plusDays(2));
+    UUID workspaceId = workspaceOf(current.id());
 
-    transferDetectionService.detectAround(workspaceOf(current.id()), sent);
+    transferDetectionService.detectAround(workspaceId, sent);
 
     assertThat(matches(token, "PROPOSED")).isEmpty();
     assertThat(matches(token, "CONFIRMED")).isEmpty();
     CashFlowResponse flow = cashFlow(token);
     assertThat(flow.pendingReview()).isNotEmpty();
     assertThat(flow.complete()).isFalse();
+    assertThat(pendingDetections(workspaceId)).isEqualTo(1L);
+    assertThat(transferRecheckService.recheckPending()).isZero(); // still no rate
+
+    insertFxRate("EUR", "CHF", sent.minusDays(1), "0.9615384615");
+    assertThat(transferRecheckService.recheckPending()).isEqualTo(1);
+
+    assertThat(matches(token, "PROPOSED"))
+        .singleElement()
+        .satisfies(match -> assertThat(match.debitTransactionId()).isEqualTo(debit));
+    assertThat(pendingDetections(workspaceId)).isZero();
+  }
+
+  // #225 review: a currency the provider never publishes leaves its date unjudged for good. The job
+  // stops re-running detection there after MAX_RECHECKS imports; the entry stays for the next
+  // write nearby.
+  @Test
+  void aPairWhoseCurrencyIsNeverPublishedIsRecheckedOnlyAFewTimes() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse yen = createAccount(token, "SAVINGS", "JPY");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    insertImported(yen.id(), TRANSFER, "160000.00", "JPY", sent.plusDays(2));
+    UUID workspaceId = workspaceOf(current.id());
+    // Rates cover the date, but none reaches JPY.
+    insertFxRate("EUR", "CHF", sent.minusDays(1), "0.9615384615");
+
+    transferDetectionService.detectAround(workspaceId, sent);
+    assertThat(pendingDetections(workspaceId)).isEqualTo(1L);
+
+    for (int run = 0; run < TransferRecheckService.MAX_RECHECKS; run++) {
+      assertThat(transferRecheckService.recheckPending()).isEqualTo(1);
+    }
+    assertThat(transferRecheckService.recheckPending()).isZero();
+    assertThat(pendingDetections(workspaceId)).isEqualTo(1L);
+    assertThat(matches(token, "PROPOSED")).isEmpty();
   }
 
   @Test
@@ -1054,7 +1096,7 @@ class TransferControllerTest {
       throws Exception {
     execute(
         "INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source)"
-            + " VALUES (?, ?, ?, ?, 'MANUAL')",
+            + " VALUES (?, ?, ?, ?, 'ECB')",
         base,
         quote,
         date,
@@ -1074,6 +1116,13 @@ class TransferControllerTest {
   private long matchCount(UUID workspaceId) {
     return (Long)
         query("SELECT count(*) FROM settlement_match WHERE workspace_id = ?", workspaceId);
+  }
+
+  private long pendingDetections(UUID workspaceId) {
+    return (Long)
+        query(
+            "SELECT count(*) FROM transfer_detection_fx_pending WHERE workspace_id = ?",
+            workspaceId);
   }
 
   private UUID workspaceOf(UUID accountId) {

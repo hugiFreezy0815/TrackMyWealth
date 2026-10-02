@@ -191,6 +191,20 @@ until a real secret is supplied; a Compose backend start without it fails immedi
   can only be unlocked directly in the database:
   `UPDATE app_user SET mfa_enabled = false, mfa_totp_secret = NULL WHERE email = '...';`
 
+### FX rates
+
+The backend loads the European Central Bank's daily euro reference rates by itself (#223) and keeps
+them as master data: once at every start and every two hours (Europe/Berlin), with history back to
+the first booked transaction. When an older transaction is imported, its history is loaded in the
+background within minutes, and transfer pairs that were waiting for those rates are proposed then.
+The cross rates between the currencies in use (e.g. CHF/USD) are stored too. Only creating a
+foreign-currency transaction for a date before all stored rates waits for the ECB (at most
+`FX_IMPORT_ON_DEMAND_READ_TIMEOUT`, default 20 s), because its rate is fixed when it is created.
+The request carries no user data. Conversions read source `ECB` (`FX_DEFAULT_SOURCE`); a rate older
+than `FX_STALE_AFTER` (default `P5D`) is shown as stale. To run without outbound calls, set
+`FX_IMPORT_ENABLED=false` and `FX_DEFAULT_SOURCE=MANUAL`, and enter rates yourself. The other
+`FX_IMPORT_*` settings are documented in `application.yml`.
+
 The web build (`mobile/`, see above) is not part of this compose file - export it
 (`npx expo export -p web`) and serve `mobile/dist/` from any static file host, including one
 running on the same NAS if you want everything on one box.
@@ -290,7 +304,10 @@ today (closed stories on GitHub; details in `docs/architecture/database-schema.m
 - **Workspace, institutions and accounts** (EPIC 03-05): fractional/joint ownership, sharing grants,
   last-member protection; institutions with summaries; every account type, archive/restore,
   institution reassignment, custom assets with dated valuations.
-- **Currency** (EPIC 06): dated FX rates and direct-pair conversion.
+- **Currency** (EPIC 06): dated FX rates, conversion between any two currencies (direct pair,
+  inverted, or via the euro), and an import of the ECB's euro reference rates every two hours
+  (#223) with history from the first booking on and the cross rates between the currencies in use
+  stored as master data.
 - **Transaction ledger** (EPIC 07): manual recording of every supported type; append-only removal
   (soft delete or void with a reversing entry), correction as removal plus replacement, restore
   within 30 days.
@@ -312,9 +329,9 @@ GitHub issues. In short:
 - **Not started:** the CSV import framework (the rest of EPIC 07 - the only planned import path),
   budgeting (EPIC 10 beyond transfers), market prices, portfolios, performance and allocation
   (EPIC 13-17), consolidated reporting (EPIC 19), pensions (EPIC 26), calculation verification
-  (EPIC 27), financial goals (EPIC 20), backup/restore (EPIC 23) and the Quartz-based background
-  jobs (EPIC 30; today only a Spring-scheduled retention of the authorization-denial log runs in the
-  background).
+  (EPIC 27), financial goals (EPIC 20), backup/restore (EPIC 23) and most of the Quartz-based
+  background jobs (EPIC 30; today the FX import is the only Quartz job, next to a Spring-scheduled
+  retention of the authorization-denial log).
 - **Started, with stories still open:**
   - EPIC 11: net worth over time, real estate net of financing, the liquidity view (US-11-02..04).
   - EPIC 12: identifier resolution, funds as weighted asset classes, protected overrides
@@ -328,7 +345,6 @@ GitHub issues. In short:
     above (e.g. validation messages, MFA and rate limiting, the API conventions, the Docker
     deployment, the transaction lifecycle, the admin reference-data API); their remaining stories
     are in `BACKLOG-remaining-epics.md`.
-  - Open issues: cross-currency transfer matching (#181), daily ECB FX rate import (#223).
 
 **Mobile and web:** `mobile/` is still the generated Expo Router shell with theming and a tested
 backend API client (including the If-Match helpers); its first product screens - sign-in (#183)

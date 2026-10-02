@@ -34,7 +34,12 @@ cd backend
 - Package layout: `controller` (REST), `service` (business logic), `repository` (Spring Data),
   `entity` (JPA), `dto` (REST request/response shapes), `config`, plus `security` (authentication
   filter, token contract, rate limiting), `web` (HTTP-boundary helpers: errors, If-Match/ETag,
-  correlation ids), `error` (error types services throw) and `validation` (custom constraints).
+  correlation ids), `error` (error types services throw), `validation` (custom constraints),
+  `client` (calls to external providers such as `EcbFxRateProvider`; returns its own records,
+  never entities) and `job` (Quartz jobs: thin wrappers that run a service under a correlation id
+  of their own, see `CorrelatedJob`). A repository uses `JdbcTemplate` where JPA does not fit, e.g.
+  `FxRateBatchRepository`'s bulk insert. A job that must act inside one workspace runs through
+  `SystemWorkspaceContext`, which sets that workspace for row-level security and nothing else.
   `ArchitectureTest` encodes the allowed dependency direction — Controller → Service → Repository →
   Entity, Repository never called directly from a Controller, Entities never returned from a
   Controller. A rule for a new package is written before its first class lands (see that class's
@@ -175,7 +180,9 @@ verbatim from the `quartz-2.3.2.jar` and must track that source exactly, not thi
 - `workspace_id` on every workspace-scoped table, protected by row-level security (`V20`) —
   directly, or transitively via a join where the table doesn't carry the column itself (see
   `database-schema.md` section 4 for which tables are transitive and why they need explicit
-  cross-tenant test coverage of their own).
+  cross-tenant test coverage of their own). `SchemaConventionsTest` fails the build for a table
+  with a `workspace_id` that is not under `ENABLE` + `FORCE ROW LEVEL SECURITY`, unless it is named
+  and justified in its `WORKSPACE_TABLES_OUTSIDE_RLS` (today only `transfer_detection_fx_pending`).
 - Forward-only, one change per migration file, numbered `V<n>__snake_case_description.sql`.
 
 ## React Native / TypeScript / Web (`mobile/`)

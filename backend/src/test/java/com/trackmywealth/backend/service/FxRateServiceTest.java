@@ -9,6 +9,7 @@ import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Period;
 import java.util.stream.Stream;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
@@ -81,6 +82,36 @@ class FxRateServiceTest {
     return fxRateRepository.save(fxRate);
   }
 
+  // Review of PR #225, finding 4: a non-positive stale-after would mark a weekend's rate stale.
+  @Test
+  void aNonPositiveStaleAfterIsRejectedAtStartup() {
+    for (Period invalid : new Period[] {Period.ZERO, Period.ofDays(-5)}) {
+      assertThatThrownBy(() -> new FxRateService(fxRateRepository, null, invalid))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("app.fx.stale-after must be a positive period.");
+    }
+  }
+
+  // V54: a cross rate the import derived is a stored pair, but says it went through the euro.
+  @Test
+  void aStoredDerivedCrossRateIsUsedAsStoredAndReportedAsViaTheEuro() {
+    LocalDate date = LocalDate.of(2026, 9, 15);
+    FxRate derived = new FxRate();
+    derived.setBaseCurrency("USD");
+    derived.setQuoteCurrency("CHF");
+    derived.setRateDate(date);
+    derived.setRate(new BigDecimal("0.7956000000"));
+    derived.setSource(SOURCE);
+    derived.setDerived(true);
+    fxRateRepository.save(derived);
+
+    CurrencyConversionResult result = fxRateService.getConversionRate("USD", "CHF", date, SOURCE);
+
+    assertThat(result.rate()).isEqualByComparingTo("0.7956");
+    assertThat(result.direct()).isFalse();
+    assertThat(result.intermediateCurrency()).isEqualTo("EUR");
+  }
+
   @Test
   void exactSameDayRateIsReturnedUnmarked() {
     LocalDate today = LocalDate.of(2026, 9, 15); // a Tuesday
@@ -108,11 +139,9 @@ class FxRateServiceTest {
   }
 
   @Test
-  void longerGapIsStillCarriedForwardFromTheLastStoredValue() {
-    // Simulates NFR-CON-003's "provider unavailable" case: the last stored value is served and
-    // marked, however long ago it was actually retrieved - the same mechanism as the weekend
-    // case above, since no scheduled job exists yet in this sprint to distinguish "weekend" from
-    // "provider outage" (see the class Javadoc and US-06-01's own scoping note).
+  void longerGapIsStillCarriedForwardFromTheLastStoredValueAndMarkedStale() {
+    // NFR-CON-003's "provider unavailable" case: the last stored value is served, carried forward
+    // and - being older than app.fx.stale-after (P5D) - marked stale.
     LocalDate lastKnown = LocalDate.of(2026, 8, 1);
     LocalDate today = LocalDate.of(2026, 9, 15);
     seedRate("USD", "CHF", lastKnown, "0.9050000000", SOURCE);
@@ -121,6 +150,30 @@ class FxRateServiceTest {
 
     assertThat(result.rateDate()).isEqualTo(lastKnown);
     assertThat(result.carriedForward()).isTrue();
+    assertThat(result.stale()).isTrue();
+  }
+
+  @Test
+  void aWeekendOrHolidayGapIsCarriedForwardButNotStale() {
+    // Easter: Thursday's rate serves Good Friday to Easter Monday - four days, within P5D.
+    LocalDate maundyThursday = LocalDate.of(2026, 4, 2);
+    LocalDate easterMonday = LocalDate.of(2026, 4, 6);
+    seedRate("USD", "CHF", maundyThursday, "0.9050000000", SOURCE);
+
+    CurrencyConversionResult result =
+        fxRateService.getConversionRate("USD", "CHF", easterMonday, SOURCE);
+
+    assertThat(result.carriedForward()).isTrue();
+    assertThat(result.stale()).isFalse();
+  }
+
+  @Test
+  void aRateExactlyStaleAfterOldIsNotYetStaleOneDayMoreIs() {
+    LocalDate rateDate = LocalDate.of(2026, 9, 10);
+    seedRate("USD", "CHF", rateDate, "0.9050000000", SOURCE);
+
+    assertThat(fxRateService.getRate("USD", "CHF", rateDate.plusDays(5), SOURCE).stale()).isFalse();
+    assertThat(fxRateService.getRate("USD", "CHF", rateDate.plusDays(6), SOURCE).stale()).isTrue();
   }
 
   @Test
@@ -235,44 +288,111 @@ class FxRateServiceTest {
 
   @Test
   void noDirectPairChainsThroughTheDocumentedIntermediateCurrency() {
-    // AC #2: no direct GBP/EUR rate exists, but both legs to USD (this codebase's documented
+    // AC #2: no direct GBP/CHF rate exists, but both legs to EUR (this codebase's documented
     // fallback intermediate) do - chosen so the chained rate is a clean round number.
     LocalDate today = LocalDate.of(2026, 9, 15);
-    seedRate("GBP", "USD", today, "2.0000000000", SOURCE);
-    seedRate("USD", "EUR", today, "0.5000000000", SOURCE);
+    seedRate("GBP", "EUR", today, "2.0000000000", SOURCE);
+    seedRate("EUR", "CHF", today, "0.5000000000", SOURCE);
 
     CurrencyConversionResult conversion =
-        fxRateService.getConversionRate("GBP", "EUR", today, SOURCE);
+        fxRateService.getConversionRate("GBP", "CHF", today, SOURCE);
 
     assertThat(conversion.direct()).isFalse();
-    assertThat(conversion.intermediateCurrency()).isEqualTo("USD");
+    assertThat(conversion.intermediateCurrency()).isEqualTo("EUR");
     assertThat(conversion.rate()).isEqualByComparingTo("1.0000000000");
     assertThat(conversion.carriedForward()).isFalse();
-    assertThat(fxRateService.convert(new BigDecimal("100"), "GBP", "EUR", today, SOURCE))
+    assertThat(fxRateService.convert(new BigDecimal("100"), "GBP", "CHF", today, SOURCE))
         .isEqualByComparingTo("100.0000");
+  }
+
+  @Test
+  void reverseStoredPairIsInvertedAndCountsAsDirect() {
+    // #223: the ECB publishes EUR/CHF only; a CHF amount in EUR is the same fact read backwards.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("EUR", "CHF", today, "0.8000000000", SOURCE);
+
+    CurrencyConversionResult conversion =
+        fxRateService.getConversionRate("CHF", "EUR", today, SOURCE);
+
+    assertThat(conversion.rate()).isEqualByComparingTo("1.25");
+    assertThat(conversion.direct()).isTrue();
+    assertThat(conversion.intermediateCurrency()).isNull();
+    assertThat(fxRateService.convert(new BigDecimal("80.00"), "CHF", "EUR", today, SOURCE))
+        .isEqualByComparingTo("100.0000");
+  }
+
+  @Test
+  void pairOfTwoEcbPublishedCurrenciesIsCrossedThroughTheEuro() {
+    // #223: with nothing but the ECB's EUR-based rates stored, USD/CHF = USD/EUR * EUR/CHF, the
+    // first leg itself inverted from EUR/USD: (1 / 1.25) * 0.9 = 0.72.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("EUR", "USD", today, "1.2500000000", SOURCE);
+    seedRate("EUR", "CHF", today, "0.9000000000", SOURCE);
+
+    CurrencyConversionResult usdToChf =
+        fxRateService.getConversionRate("USD", "CHF", today, SOURCE);
+    CurrencyConversionResult chfToUsd =
+        fxRateService.getConversionRate("CHF", "USD", today, SOURCE);
+
+    assertThat(usdToChf.rate()).isEqualByComparingTo("0.72");
+    assertThat(usdToChf.direct()).isFalse();
+    assertThat(usdToChf.intermediateCurrency()).isEqualTo("EUR");
+    // 0.9 inverted is 1.111...; times 1.25 = 1.3888..., rounded once at the end.
+    assertThat(chfToUsd.rate()).isEqualByComparingTo("1.3888888889");
+  }
+
+  @Test
+  void derivedRateIsRoundedOnceToTheStoredRatePrecision() {
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("EUR", "CHF", today, "3", SOURCE);
+
+    BigDecimal rate = fxRateService.getConversionRate("CHF", "EUR", today, SOURCE).rate();
+
+    assertThat(rate).isEqualTo(new BigDecimal("0.3333333333"));
+  }
+
+  @Test
+  void storedPairWinsOverTheInvertedReversePair() {
+    // Independently sourced rates are never exact reciprocals; the pair as asked for is used.
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("CHF", "EUR", today, "1.1000000000", SOURCE);
+    seedRate("EUR", "CHF", today, "0.9500000000", SOURCE);
+
+    assertThat(fxRateService.getConversionRate("CHF", "EUR", today, SOURCE).rate())
+        .isEqualByComparingTo("1.1");
   }
 
   @Test
   void chainedConversionIsMarkedCarriedForwardWhenEitherLegIs() {
     LocalDate monday = LocalDate.of(2026, 9, 14);
     LocalDate tuesday = monday.plusDays(1);
-    seedRate("GBP", "USD", monday, "2.0000000000", SOURCE); // stale by one day
-    seedRate("USD", "EUR", tuesday, "0.5000000000", SOURCE); // exact
+    seedRate("EUR", "GBP", monday, "0.5000000000", SOURCE); // one day old
+    seedRate("EUR", "CHF", tuesday, "0.9000000000", SOURCE); // exact
 
     CurrencyConversionResult conversion =
-        fxRateService.getConversionRate("GBP", "EUR", tuesday, SOURCE);
+        fxRateService.getConversionRate("GBP", "CHF", tuesday, SOURCE);
 
     assertThat(conversion.carriedForward()).isTrue();
+    assertThat(conversion.stale()).isFalse();
+  }
+
+  @Test
+  void chainedConversionIsStaleWhenEitherLegIs() {
+    LocalDate today = LocalDate.of(2026, 9, 15);
+    seedRate("EUR", "GBP", today.minusDays(10), "0.5000000000", SOURCE);
+    seedRate("EUR", "CHF", today, "0.9000000000", SOURCE);
+
+    assertThat(fxRateService.getConversionRate("GBP", "CHF", today, SOURCE).stale()).isTrue();
   }
 
   @Test
   void chainFallbackFailsClosedWhenOnlyOneLegExists() {
     // Refuse rather than silently compute with a missing rate defaulted to 1.0 (PR-011) - even
-    // though one leg (GBP/USD) is available, EUR/USD is not, so no complete chain exists.
+    // though one leg (GBP/EUR) is available, CHF against EUR is not, so no complete chain exists.
     LocalDate today = LocalDate.of(2026, 9, 15);
-    seedRate("GBP", "USD", today, "2.0000000000", SOURCE);
+    seedRate("GBP", "EUR", today, "2.0000000000", SOURCE);
 
-    assertThatThrownBy(() -> fxRateService.getConversionRate("GBP", "EUR", today, SOURCE))
+    assertThatThrownBy(() -> fxRateService.getConversionRate("GBP", "CHF", today, SOURCE))
         .isInstanceOf(ResponseStatusException.class)
         .satisfies(
             e ->
@@ -282,13 +402,13 @@ class FxRateServiceTest {
 
   @Test
   void missingDirectPairInvolvingTheIntermediateItselfCannotBeRecoveredByChaining() {
-    // USD is this codebase's own fallback intermediate (see FxRateService's class Javadoc) - a
-    // missing USD/JPY pair can't be recovered by "chaining via USD" since USD is already one side
+    // EUR is this codebase's own fallback intermediate (see FxRateService's class Javadoc) - a
+    // missing EUR/JPY pair can't be recovered by "chaining via EUR" since EUR is already one side
     // of the request; there is no third currency to chain through.
     LocalDate today = LocalDate.of(2026, 9, 15);
-    seedRate("USD", "EUR", today, "0.9200000000", SOURCE); // present, but irrelevant here
+    seedRate("USD", "JPY", today, "150.0000000000", SOURCE); // present, but irrelevant here
 
-    assertThatThrownBy(() -> fxRateService.getConversionRate("USD", "JPY", today, SOURCE))
+    assertThatThrownBy(() -> fxRateService.getConversionRate("EUR", "JPY", today, SOURCE))
         .isInstanceOf(ResponseStatusException.class)
         .satisfies(
             e ->
@@ -346,13 +466,13 @@ class FxRateServiceTest {
   }
 
   @Test
-  void usdToUsdConversionSucceedsRatherThanFailingAsIfUsdCouldNotChainThroughItself() {
-    // The specific case the review flagged: USD is this codebase's own fallback intermediate, so
-    // before the same-currency short-circuit existed, USD/USD hit the "can't chain through
-    // yourself" guard and 404'd instead of trivially succeeding.
+  void intermediateToItselfSucceedsRatherThanFailingAsIfItCouldNotChainThroughItself() {
+    // The specific case a review flagged: without the same-currency short-circuit, the fallback
+    // intermediate (EUR) to itself hit the "can't chain through yourself" guard and 404'd instead
+    // of trivially succeeding.
     LocalDate today = LocalDate.of(2026, 9, 15);
 
-    assertThat(fxRateService.getConversionRate("USD", "USD", today, SOURCE).rate())
+    assertThat(fxRateService.getConversionRate("EUR", "EUR", today, SOURCE).rate())
         .isEqualByComparingTo("1");
   }
 

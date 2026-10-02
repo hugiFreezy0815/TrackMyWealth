@@ -49,6 +49,10 @@ public record InstitutionSummaryResponse(
    *     earlier date rather than resolved exactly for {@code conversionRateDate} (FR-CUR-012/PR-011
    *     - {@code FxRateService.CurrencyConversionResult#carriedForward()}) - always {@code false}
    *     when {@code conversionRate} is {@code null}
+   * @param conversionRateStale {@code true} when that earlier rate is older than {@code
+   *     app.fx.stale-after} - more than a weekend or holiday explains, e.g. the rate provider has
+   *     been unavailable (NFR-CON-003/PR-011, #223); the figure must be marked as such. Always
+   *     {@code false} when {@code conversionRateCarriedForward} is {@code false}
    * @param valueKnown {@code false} when this account's type has no value source yet in this
    *     codebase (every type except {@code CUSTOM_ASSET}, {@code MORTGAGE} and {@code LOAN}, or a
    *     {@code CUSTOM_ASSET} account with no valuation recorded at all) - excluded from the
@@ -63,5 +67,6 @@ public record InstitutionSummaryResponse(
       BigDecimal conversionRate,
       LocalDate conversionRateDate,
       boolean conversionRateCarriedForward,
+      boolean conversionRateStale,
       boolean valueKnown) {}
 }

@@ -33,6 +33,10 @@ import java.util.UUID;
  * @param conversionRateCarriedForward {@code true} when the rate used was carried forward from an
  *     earlier date rather than resolved exactly for {@code conversionRateDate} (FR-CUR-012/PR-011)
  *     - always {@code false} when {@code conversionRate} is {@code null}
+ * @param conversionRateStale {@code true} when that earlier rate is older than {@code
+ *     app.fx.stale-after} - more than a weekend or holiday explains, e.g. the rate provider has
+ *     been unavailable (NFR-CON-003/PR-011, #223). Always {@code false} when {@code
+ *     conversionRateCarriedForward} is {@code false}
  * @param valueKnown {@code false} when this account has no resolvable value: its type has no value
  *     source yet, or it has a source but no data (a {@code CUSTOM_ASSET} never valued) - excluded
  *     from any total rather than counted as zero (PR-011)
@@ -52,5 +56,6 @@ public record AccountValuation(
     BigDecimal conversionRate,
     LocalDate conversionRateDate,
     boolean conversionRateCarriedForward,
+    boolean conversionRateStale,
     boolean valueKnown,
     String valueBasis) {}

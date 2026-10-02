@@ -14,9 +14,11 @@ import java.time.LocalDate;
  * @param requestedDate the date that was asked for
  * @param rateDate the date the returned rate actually applies to - equal to {@code requestedDate}
  *     for an exact match, earlier when carried forward
+ * @param stale true when {@code rateDate} is older than {@code app.fx.stale-after} before {@code
+ *     requestedDate} - see {@link CurrencyConversionResult#stale()}
  */
 public record FxRateLookupResult(
-    BigDecimal rate, LocalDate requestedDate, LocalDate rateDate, String source) {
+    BigDecimal rate, LocalDate requestedDate, LocalDate rateDate, String source, boolean stale) {
 
   /**
    * True when no rate was stored for {@code requestedDate} itself and the last available prior rate

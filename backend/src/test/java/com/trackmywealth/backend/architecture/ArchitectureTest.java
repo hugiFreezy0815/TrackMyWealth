@@ -20,8 +20,10 @@ import com.tngtech.archunit.library.Architectures.LayeredArchitecture;
 import com.tngtech.archunit.library.GeneralCodingRules;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.FinancialInstitution;
+import com.trackmywealth.backend.security.SystemWorkspaceContext;
 import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.service.InstitutionService;
+import com.trackmywealth.backend.service.TransferRecheckService;
 import jakarta.persistence.Entity;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
@@ -88,6 +90,26 @@ class ArchitectureTest {
               "the API speaks DTOs only (FR-API contract, EPIC-29) - a DTO holding an entity puts"
                   + " the entity on the wire all the same")
           .allowEmptyShould(true);
+
+  // #223: SystemWorkspaceContext runs work inside any workspace it is given, so only the system's
+  // own background work may reach it - Quartz jobs and the re-detection they trigger, which take
+  // their workspace ids from the system's own data. A request path must never act as a workspace
+  // it chose itself.
+  @ArchTest
+  static final ArchRule only_background_work_acts_as_a_workspace =
+      noClasses()
+          .that()
+          .resideOutsideOfPackage("com.trackmywealth.backend.job..")
+          .and()
+          .doNotHaveFullyQualifiedName(TransferRecheckService.class.getName())
+          .and()
+          .doNotHaveFullyQualifiedName(SystemWorkspaceContext.class.getName())
+          .should()
+          .dependOnClassesThat()
+          .haveFullyQualifiedName(SystemWorkspaceContext.class.getName())
+          .because(
+              "it binds a workspace without a user; only background work with workspace ids from"
+                  + " the system's own data may use it (#223)");
 
   // #197: business rules throw ApiException/ResponseStatusException (..error.., spring-web) but
   // never depend on the application's web layer - its filters, handlers and response writers.

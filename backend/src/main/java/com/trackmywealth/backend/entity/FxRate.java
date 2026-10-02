@@ -55,6 +55,10 @@ public class FxRate {
   @Column(nullable = false)
   private String source;
 
+  // V54 (#223): a cross rate the FX import derived from published rates of the same day.
+  @Column(nullable = false, updatable = false)
+  private boolean derived;
+
   @Generated(event = EventType.INSERT)
   @Column(name = "retrieved_at", insertable = false, updatable = false)
   private OffsetDateTime retrievedAt;
@@ -101,6 +105,14 @@ public class FxRate {
 
   public void setSource(String source) {
     this.source = source;
+  }
+
+  public boolean isDerived() {
+    return derived;
+  }
+
+  public void setDerived(boolean derived) {
+    this.derived = derived;
   }
 
   public OffsetDateTime getRetrievedAt() {

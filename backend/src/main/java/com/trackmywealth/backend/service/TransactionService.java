@@ -1016,8 +1016,10 @@ public class TransactionService {
       }
       return new ForeignCurrencyResolution(rate, false);
     }
+    // #223: the rate is fixed at insert, so a date the stored rates do not reach yet is fetched
+    // from the provider now rather than left to the background import.
     Optional<CurrencyConversionResult> fallback =
-        fxRateService.tryGetConversionRate(
+        fxRateService.tryGetConversionRateFetchingMissing(
             request.currency(), accountCurrency, request.bookingDate(), fxDefaultSource);
     if (fallback.isEmpty()) {
       throw new ResponseStatusException(

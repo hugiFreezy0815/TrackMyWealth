@@ -55,6 +55,12 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V49` | Adds immutable `corrects_transaction_id` lineage for transaction corrections (#178) |
 | `V50` | Adds immutable `restores_transaction_id` lineage for restoring a void (#179) |
 | `V51` | Adds `settlement_match.transfer_fx_rate`, the rate a confirmed cross-currency transfer implies (#181) |
+| `V52` | `fx_rate_history_requirement`: the earliest booking date across all workspaces, kept by a trigger on `transaction` - how far back the FX import loads history (#223) |
+| `V53` | `fx_rate_pre_2023`: one partition for FX history before 2023, moving any such rows out of `fx_rate_default` (#223) |
+| `V54` | `fx_rate.derived` and `fx_rate_currency_in_use` (kept by triggers on `account`, `transaction`, `financial_institution`, `app_user`, `listing`): the FX import stores the cross rates between the currencies in use as master data; `transfer_detection_fx_pending`: transfer detection re-run once FX rates cover a date (#223) |
+| `V55` | Row-level security for `savings_rate_methodology`, which `V20` had missed (#223 review) |
+| `V56` | `transfer_detection_fx_pending.rechecks`: the FX job stops re-running a date no rate can ever cover (#223 review) |
+| `V57` | `transaction`'s currency-in-use trigger reads `NEW.currency` directly instead of serialising the row (#223 review) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -127,9 +133,15 @@ exception to the "never edit an applied migration" rule - see `development-stand
 Tables that hang off a workspace-scoped table but do not carry `workspace_id` directly
 (`account_credit_card`, `tax_lot`, `price`, `snapshot_holding`, ...) are protected **transitively**
 through a join to `account`/`security`/`account_snapshot`. `security`, `listing`, `price`,
-`fx_rate`, `issuer`, `institution_catalogue` and the reference-data tables in `V18` carry **no**
-`workspace_id` at all and are **not** RLS-protected — this is deliberate: they are shared,
+`fx_rate`, `fx_rate_history_requirement`, `fx_rate_currency_in_use`, `issuer`, `institution_catalogue` and the reference-data
+tables in `V18` carry **no** `workspace_id` at all and are **not** RLS-protected — this is deliberate: they are shared,
 global reference data (DM-25, NFR-LIC-006/007), not tenant data.
+
+`transfer_detection_fx_pending` (`V54`) is the one table with a `workspace_id` outside RLS: a
+background job reads it across workspaces to re-run transfer detection once FX rates cover a date
+(#223). It holds a workspace id and a date only - no amount, account or description - no endpoint
+reads it, and the job does the detection itself inside that workspace (`SystemWorkspaceContext`),
+under RLS like any request.
 
 **Production hardening not yet wired up:** the application runs migrations and its own queries
 under the same database role for local-development simplicity. Before a multi-workspace hosted
@@ -548,6 +560,8 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
 `price`, `fx_rate` and `daily_valuation` are the volume-dominant tables (DB-02, NFR-TEC-003) and
 are all `PARTITION BY RANGE` on their date column, with explicit yearly partitions for
 2023–2027 and a `DEFAULT` catch-all partition so an out-of-range insert never fails outright.
+`fx_rate` also has `fx_rate_pre_2023` (`V53`) for everything earlier: the FX import (#223) loads
+history from the first booking on, and the ECB series reaches back to 1999.
 **Operational note:** add a new year's partition (`CREATE TABLE price_y2028 PARTITION OF price
 FOR VALUES FROM ('2028-01-01') TO ('2029-01-01');`, and the equivalent for `fx_rate` and
 `daily_valuation`) via a normal numbered migration before each table's `DEFAULT` partition
