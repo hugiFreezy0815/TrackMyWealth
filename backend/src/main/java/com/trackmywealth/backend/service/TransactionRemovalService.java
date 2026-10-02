@@ -43,10 +43,11 @@ import org.springframework.web.server.ResponseStatusException;
  *       #143).
  *   <li><b>T2, an imported row</b>: void. The original is marked voided with a required reason and
  *       stays listed as voided; a reversing row of the same type with every amount and the quantity
- *       negated is added, dated to the void, linked by {@code replaces_transaction_id}. Balances
- *       sum both (they net to zero from the void on); cash-flow and category figures leave both
- *       out. Restoring the void within {@value #RESTORE_WINDOW_DAYS} days (US-07-07) keeps both and
- *       adds an ordinary copy of the original, linked by {@code restores_transaction_id} (V50).
+ *       negated is added, dated to the void, linked by {@code replaces_transaction_id}. Every
+ *       figure leaves both out - balances too, on every date, so history reads as restated (see
+ *       {@code TransactionRepository#sumAmountByAccountIdAsOf}). Restoring the void within {@value
+ *       #RESTORE_WINDOW_DAYS} days (US-07-07) keeps both and adds an ordinary copy of the original,
+ *       linked by {@code restores_transaction_id} (V50).
  * </ul>
  *
  * <p>Nothing goes silently (FR-LIF-007): a card purchase's linked FEE row is removed with it, and
@@ -298,11 +299,13 @@ public class TransactionRemovalService {
     requireEditOnOtherAccounts(group, account, actor);
     requireNotCorrected(head, group);
     requireNotRestored(group);
+    UUID parent = currentVersionOf(head.getRelatedTransactionId());
+    requireParentInEffect(parent);
     versionPreconditionService.requireCurrent(
         expectedVersion, voided.getVersion(), TransactionService.VERSIONED_RESOURCE);
 
     Map<UUID, Transaction> copies = new LinkedHashMap<>();
-    Transaction headCopy = reinstate(head, currentVersionOf(head.getRelatedTransactionId()), actor);
+    Transaction headCopy = reinstate(head, parent, actor);
     copies.put(head.getId(), headCopy);
     for (Transaction dependant : group.subList(1, group.size())) {
       copies.put(dependant.getId(), reinstate(dependant, headCopy.getId(), actor));
@@ -325,8 +328,8 @@ public class TransactionRemovalService {
 
   // A rejected match is a member's decision about this transaction, and the void kept it (see the
   // class comment). The copy is the same transaction, so it inherits the decision - before
-  // detection
-  // runs, which would otherwise propose or even confirm the very pair the member rejected.
+  // detection runs, which would otherwise propose or even confirm the very pair the member
+  // rejected.
   private void carryRejectedMatches(Map<UUID, Transaction> copies) {
     List<SettlementMatch> carried = new ArrayList<>();
     for (Map.Entry<UUID, Transaction> entry : copies.entrySet()) {
@@ -370,8 +373,7 @@ public class TransactionRemovalService {
   }
 
   // The row a group was voided through: a FEE row's purchase or an incoming leg's outgoing leg,
-  // when
-  // voided in the same step; otherwise the row itself (e.g. a fee voided on its own).
+  // when voided in the same step; otherwise the row itself (e.g. a fee voided on its own).
   private Transaction groupHeadOf(Transaction voided) {
     if (voided.getRelatedTransactionId() == null) {
       return voided;
@@ -381,6 +383,23 @@ public class TransactionRemovalService {
         .filter(parent -> parent.getVoidedAt() != null)
         .filter(parent -> parent.getVoidedAt().isEqual(voided.getVoidedAt()))
         .orElse(voided);
+  }
+
+  // A row voided on its own (a waived fee) belongs to its parent. While that parent is voided too,
+  // a copy would count without it and stay behind when the parent's own void is restored or voided
+  // again, so the parent comes back first.
+  private void requireParentInEffect(UUID parentId) {
+    if (parentId != null
+        && transactionRepository
+            .findByIdIncludingDeletedForUpdate(parentId)
+            .filter(parent -> parent.getVoidedAt() != null || parent.getDeletedAt() != null)
+            .isPresent()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "The transaction this one belongs to is removed; restore transaction "
+              + parentId
+              + " first.");
+    }
   }
 
   private void requireNotRestored(List<Transaction> group) {
@@ -397,9 +416,9 @@ public class TransactionRemovalService {
   }
 
   // An ordinary copy of a voided row, categorized like a new row. A transfer leg keeps what makes
-  // it
-  // a transfer (its counterparty, and the internal-transfer flag of a two-sided entry or a member's
-  // untracked-transfer confirmation); any other row starts unmatched, for detection to pair again.
+  // it a transfer (its counterparty, and the internal-transfer flag of a two-sided entry or a
+  // member's untracked-transfer confirmation); any other row starts unmatched, for detection to
+  // pair again.
   private Transaction reinstate(
       Transaction original, UUID relatedTransactionId, AuthenticatedUserPrincipal actor) {
     Transaction copy = new Transaction();
@@ -412,8 +431,7 @@ public class TransactionRemovalService {
     copy.setMerchantDescription(original.getMerchantDescription());
     copy.setNotes(original.getNotes());
     // Provenance and source data describe the same real-world transaction; the idempotency key
-    // stays
-    // with the original, which an import's de-duplication still finds.
+    // stays with the original, which an import's de-duplication still finds.
     copy.setSource(original.getSource());
     copy.setRawSourceData(original.getRawSourceData());
     copy.setFxRateToAccountCurrency(original.getFxRateToAccountCurrency());

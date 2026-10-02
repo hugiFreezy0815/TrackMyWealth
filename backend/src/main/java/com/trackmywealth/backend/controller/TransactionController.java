@@ -153,7 +153,8 @@ public class TransactionController {
   /**
    * US-07-02/07-07, FR-LIF-006: restores a soft-deleted or voided transaction within 30 days. A
    * soft-deleted row comes back in place; a void is restored by a new copy of the original, listed
-   * in the response's {@code restored} (the voided row and its reversal stay as history).
+   * in the response's {@code restored} (the voided row and its reversal stay as history). The
+   * {@code ETag} is then the unchanged voided row's version; each copy carries its own.
    */
   @PostMapping("/transactions/{transactionId}/restore")
   public ResponseEntity<TransactionRemovalResponse> restoreTransaction(

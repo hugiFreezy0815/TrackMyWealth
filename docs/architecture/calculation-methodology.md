@@ -131,11 +131,13 @@ expressed as a positive "amount owed" with `nature = LIABILITY`:
 
 Three rules are load-bearing and each has a test in `TransactionControllerTest`:
 
-- **Voided rows count.** A void leaves the original in the ledger and adds a reversing row of the
-  opposite sign (FR-LIF-002, "both records remain"). The pair nets to zero only if both are summed;
-  filtering `voided_at IS NULL` would drop the original and count the reversal alone, misstating the
-  balance by the full amount. A voided row is therefore *shown* as voided (FR-LIF-003), never
-  excluded from the sum.
+- **A void pair counts as zero, on every date.** A void leaves the original in the ledger and adds
+  a reversing row of the opposite sign (FR-LIF-002, "both records remain"), dated to the void. A
+  correction (US-07-06) or a restore (US-07-07) re-enters the transaction on the original booking
+  date, so summing the pair would count it twice between the booking and the void. The balance
+  therefore leaves the original and its reversal out together (restated history); dropping only
+  `voided_at IS NOT NULL` rows would count the reversal alone. A voided row is still *shown* as
+  voided (FR-LIF-003), and an account whose rows are all voided reads a measured zero (`LEDGER`).
 - **An empty ledger is a known zero, flagged as assumed.** A card with no rows owes exactly 0 and
   does not make an aggregate incomplete - but its `valueBasis` is `LEDGER_EMPTY`, not `LEDGER`, so
   a client can tell an assumed zero from a measured one. Known limitation: there is no

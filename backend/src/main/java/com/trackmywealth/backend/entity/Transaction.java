@@ -475,7 +475,6 @@ public class Transaction {
     this.replacesTransactionId = replacesTransactionId;
   }
 
-  /** A reversing row of a void: it goes with its original and is never removed on its own. */
   public UUID getRestoresTransactionId() {
     return restoresTransactionId;
   }
@@ -484,6 +483,7 @@ public class Transaction {
     this.restoresTransactionId = restoresTransactionId;
   }
 
+  /** A reversing row of a void: it goes with its original and is never removed on its own. */
   public boolean isReversal() {
     return replacesTransactionId != null;
   }

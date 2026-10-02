@@ -216,14 +216,19 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * not a bare {@code sum(amount)} - a foreign-currency row's {@code amount} is in its own original
    * currency, never the account's, so summing it unconverted would silently mix currencies.
    *
-   * <p>Deliberately <b>includes voided rows</b>. A void leaves the original in the ledger and adds
-   * a reversing row of the opposite sign (FR-LIF-002: "both records remain in the ledger"), so the
-   * pair nets to zero only if both are summed - filtering on {@code voided_at IS NULL} would drop
-   * the original and count the reversal on its own, misstating the balance by the full amount.
+   * <p>Leaves out <b>a voided original and its reversal together</b>, so history reads as restated.
+   * Both stay in the ledger (FR-LIF-002) and net to zero, but on different dates: the original on
+   * its booking date, the reversal on the void's. A correction replacement (US-07-06) or a restore
+   * copy (US-07-07) re-enters the transaction on the original booking date, so summing the pair as
+   * well would count it twice on every date between the booking and the void. Dropping only the
+   * original would count the reversal alone; dropping both changes no current balance. The pair
+   * counts as zero rather than being filtered out, so an account whose rows are all voided still
+   * has history (a measured zero, not "no rows").
    */
   @Query(
-      "select sum(t.amount * coalesce(t.fxRateToAccountCurrency, 1)) from Transaction t"
-          + " where t.account.id = :accountId and t.bookingDate <= :asOf")
+      "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
+          + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
+          + " from Transaction t where t.account.id = :accountId and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdAsOf(
       @Param(ACCOUNT_ID) UUID accountId, @Param("asOf") LocalDate asOf);
 
@@ -290,7 +295,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * currency (US-09-04: {@code amount * fxRateToAccountCurrency}, same as {@link
    * #sumAmountByAccountIdAsOf}) - a payment is a candidate only in the card's currency itself
    * ({@code currency = :currency} above, unchanged), so this comparison is already apples-to-apples
-   * once the card side is converted.
+   * once the card side is converted. A voided row and its reversal are left out, as there.
    */
   @Query(
       "select t from Transaction t where t.account.id = :sourceAccountId and t.amount < 0"
@@ -300,7 +305,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + " and not exists (select 1 from SettlementMatch m"
           + " where m.cardAccount.id = :cardAccountId and m.paymentTransaction = t)"
           + " and (select sum(c.amount * coalesce(c.fxRateToAccountCurrency, 1)) from Transaction c"
-          + " where c.account.id = :cardAccountId and c.bookingDate <= t.bookingDate) = t.amount"
+          + " where c.account.id = :cardAccountId and c.bookingDate <= t.bookingDate"
+          + " and c.voidedAt is null and c.replacesTransactionId is null) = t.amount"
           + IN_LEDGER_ORDER)
   List<Transaction> findPaymentsEqualToCardBalance(
       @Param("sourceAccountId") UUID sourceAccountId,

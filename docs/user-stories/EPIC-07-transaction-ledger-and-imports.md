@@ -99,9 +99,9 @@ silently omitted (FR-LIF-003).
   OPEN-032.
 - **One endpoint:** a single `DELETE`; the system picks soft delete (manual) or void (imported). A
   void needs a reason, and each row shows its removal kind.
-- **Restore:** only soft deletes can be restored, within 30 days. Restoring a void is US-07-07.
-- **Figures:** a voided original and its reversal net to zero in balances and stay out of spending
-  and category figures.
+- **Restore:** both tiers can be restored within 30 days; restoring a void is US-07-07.
+- **Figures:** a voided original and its reversal are left out of balances (on every date, so
+  history reads as restated), spending and category figures.
 - **Linked rows:** a card purchase's FEE row is removed with it, and settlement matches are
   dissolved.
 - **Correction** (void plus replacement, FR-LIF-004) is US-07-06.
