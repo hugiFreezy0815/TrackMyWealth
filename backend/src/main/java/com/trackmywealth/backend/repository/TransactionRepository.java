@@ -29,9 +29,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   String IN_LEDGER_ORDER = " order by t.bookingDate, t.createdAt, t.id";
   String PER_CURRENCY = " group by t.currency order by t.currency";
 
-  // US-07-02: neither a voided original nor its reversing row - the pair nets to zero in a
-  // balance, but must not count as spending or pair with a settlement.
-  String NOT_VOIDED_OR_REVERSAL = " and t.voidedAt is null and t.replacesTransactionId is null";
+  // US-07-02/07-07: an effective original is either never voided or has since been restored.
+  // Reversal rows never become effective candidates/figures; balance queries deliberately sum the
+  // complete ledger instead.
+  String NOT_VOIDED_OR_REVERSAL =
+      " and (t.voidedAt is null or t.restoredAt is not null)"
+          + " and t.replacesTransactionId is null";
 
   // The caller supplies the sort (TransactionService fixes it): a Pageable's own sort is client
   // input and must not decide which columns the query orders by.
@@ -49,8 +52,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   @Query(
       value =
           "SELECT * FROM transaction t WHERE t.workspace_id = :workspaceId"
-              + " AND t.voided_at IS NULL AND t.deleted_at IS NULL"
-              + " AND t.replaces_transaction_id IS NULL"
+              + " AND (t.voided_at IS NULL OR t.restored_at IS NOT NULL)"
+              + " AND t.deleted_at IS NULL AND t.replaces_transaction_id IS NULL"
               + " AND t.transaction_type IN (:transactionTypes)"
               + " AND (t.created_at, t.id) > (:afterCreatedAt, :afterId)"
               + " ORDER BY t.created_at, t.id LIMIT :limit FOR UPDATE",
@@ -102,7 +105,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " AS similarity"
               + " FROM transaction t"
               + " WHERE t.workspace_id = :workspaceId AND t.id <> :excludedId"
-              + " AND t.voided_at IS NULL AND t.deleted_at IS NULL AND t.category_id IS NOT NULL"
+              + " AND (t.voided_at IS NULL OR t.restored_at IS NOT NULL)"
+              + " AND t.deleted_at IS NULL AND t.category_id IS NOT NULL"
               + " AND t.merchant_description IS NOT NULL"
               // % is what the GIN trigram index serves (similarity() alone is a full scan of the
               // workspace's history); the explicit >= keeps the exact configured threshold.
@@ -152,6 +156,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       nativeQuery = true)
   List<Transaction> findDeletedByAccountIdSince(
       @Param(ACCOUNT_ID) UUID accountId, @Param("since") OffsetDateTime since);
+
+  /** US-07-07: the first reversing row of a void, locked with its original for restoration. */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  Optional<Transaction> findByReplacesTransactionId(UUID replacesTransactionId);
 
   /** US-07-02: the soft-deleted FEE row of a purchase, restored together with it. */
   @Query(
