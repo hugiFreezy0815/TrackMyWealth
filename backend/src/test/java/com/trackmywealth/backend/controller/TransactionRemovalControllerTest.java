@@ -1342,6 +1342,34 @@ class TransactionRemovalControllerTest {
     assertThat(pinned.transaction().fxRateToAccountCurrency()).isEqualByComparingTo("0.92");
   }
 
+  // The echo's worst symptom before #220: a description edit of an imported row that sent back its
+  // estimated rate counted as a financial change - a void, which needs a reason, so 422. It is an
+  // in-place edit, no reason needed.
+  @Test
+  void anImportedRowWithAnEstimatedRateTakesADescriptionEditInPlace() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImportedEstimated(card.id(), "-100.00", "0.9000000000");
+    TransactionResponse row = list(token, card.id()).get(0);
+    assertThat(row.fxRateEstimated()).isTrue();
+
+    TransactionCorrectionResponse edited =
+        correct(
+            token,
+            card.id(),
+            imported,
+            withFxAndFee(
+                desiredState(row, "-100.00", null, "Renamed", null),
+                row.fxRateToAccountCurrency(),
+                null));
+
+    assertThat(edited.removal()).isNull();
+    assertThat(edited.transaction().id()).isEqualTo(imported);
+    assertThat(edited.transaction().voidedAt()).isNull();
+    assertThat(edited.transaction().merchantDescription()).isEqualTo("Renamed");
+    assertThat(edited.transaction().fxRateEstimated()).isTrue();
+  }
+
   // An estimated rate echoed back with a corrected amount is not a disclosed rate either: the
   // replacement estimates its own instead of pinning the old estimate as if the member stated it.
   @Test
@@ -1985,6 +2013,30 @@ class TransactionRemovalControllerTest {
       statement.setObject(3, bookedOn);
       statement.setBigDecimal(4, new BigDecimal(amount));
       statement.setObject(5, accountId);
+      statement.executeUpdate();
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+    return id;
+  }
+
+  // An imported EUR row on a CHF account whose rate the server estimated (fx_rate_estimated).
+  private UUID insertImportedEstimated(UUID accountId, String amount, String rate) {
+    UUID id = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, fx_rate_to_account_currency, fx_rate_date,"
+                    + " fx_rate_estimated, source) SELECT ?, workspace_id, id, ?, ?, ?, 'EUR', ?,"
+                    + " ?, TRUE, 'CSV' FROM account WHERE id = ?")) {
+      statement.setObject(1, id);
+      statement.setString(2, PURCHASE);
+      statement.setObject(3, today());
+      statement.setBigDecimal(4, new BigDecimal(amount));
+      statement.setBigDecimal(5, new BigDecimal(rate));
+      statement.setObject(6, today());
+      statement.setObject(7, accountId);
       statement.executeUpdate();
     } catch (Exception e) {
       throw new IllegalStateException(e);

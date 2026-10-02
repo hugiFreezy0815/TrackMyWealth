@@ -494,7 +494,9 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   - The request body is the desired state: an omitted FX rate means "derive it" (a row with an
     explicit rate is then corrected), an omitted fee or counterparty means "none". An estimated
     rate sent back unchanged (a client echoing the row it read) counts as omitted, so it never
-    turns a description edit into a correction and a replacement estimates its rate anew. Only an
+    turns a description edit into a correction and a replacement estimates its rate anew. The
+    flip side: a correction cannot confirm an estimate as a disclosed rate at the same value
+    (`fx_rate_estimated` stays true); only a different rate or a `billedAmount` replaces it. Only an
     omitted `mcc` keeps the original's; a different MCC is source data and corrected by
     replacement, set in the original's `raw_source_data`.
   - A description-only edit re-runs automatic categorization (rules match on that text); a member's
