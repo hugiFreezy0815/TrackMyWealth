@@ -87,6 +87,7 @@ class TransferControllerTest {
       for (String sql :
           List.of(
               "DELETE FROM settlement_match",
+              "DELETE FROM fx_rate",
               "DELETE FROM transaction_categorization_log",
               "DELETE FROM transaction WHERE replaces_transaction_id IS NOT NULL",
               "DELETE FROM transaction WHERE related_transaction_id IS NOT NULL",
