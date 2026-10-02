@@ -154,7 +154,11 @@ app:
       # Background calls: a year of rates arrives as one response.
       read-timeout: ${FX_IMPORT_READ_TIMEOUT:60s}
       # The one call a user's request waits for: a transaction created for a date the stored rates
-      # do not reach yet (its rate is fixed at insert).
+      # do not reach yet (its rate is fixed at insert). A budget, not per step: waiting for another
+      # request's fetch and the request's own call share it, because the request holds a database
+      # connection meanwhile (and storing the rates takes a second one). Keep it well below
+      # spring.datasource.hikari.connection-timeout's scale of concern: many such requests at once
+      # could otherwise use up the pool.
       on-demand-read-timeout: ${FX_IMPORT_ON_DEMAND_READ_TIMEOUT:20s}
       # A fetch-on-missing that found nothing is not repeated for the same date for this long.
       on-demand-retry-after: ${FX_IMPORT_ON_DEMAND_RETRY_AFTER:1h}

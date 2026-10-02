@@ -19,6 +19,7 @@ import com.trackmywealth.backend.testsupport.MutableClock;
 import com.trackmywealth.backend.testsupport.TestClockConfig;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -325,6 +326,33 @@ class FxRateImportServiceTest {
     assertThat(provider.calls).hasSize(1);
   }
 
+  // The request waiting for another's fetch holds its database connection meanwhile: waiting and
+  // its own provider call share one on-demand budget instead of each getting the full timeout.
+  @Test
+  void waitingForAnotherFetchShortensTheWaitingRequestsOwnCall() throws Exception {
+    importService.importLatest();
+    provider.calls.clear();
+    provider.gate = new CountDownLatch(1);
+
+    CompletableFuture<Optional<CurrencyConversionResult>> first =
+        CompletableFuture.supplyAsync(() -> fetching("USD", "CHF", LocalDate.of(2026, 5, 12)));
+    awaitCalls(1);
+    // Older than everything the first fetch loads, so it needs a provider call of its own.
+    CompletableFuture<Optional<CurrencyConversionResult>> second =
+        CompletableFuture.supplyAsync(() -> fetching("USD", "CHF", LocalDate.of(2025, 2, 11)));
+    Thread.sleep(1500);
+    provider.gate.countDown();
+
+    assertThat(first.get(10, TimeUnit.SECONDS)).isPresent();
+    assertThat(second.get(10, TimeUnit.SECONDS)).isPresent();
+    assertThat(provider.onDemandTimeouts).hasSize(2);
+    Duration budget = provider.onDemandTimeouts.get(0);
+    assertThat(budget).isLessThanOrEqualTo(Duration.ofSeconds(20));
+    assertThat(provider.onDemandTimeouts.get(1))
+        .as("the second call gets only what its wait left of the budget")
+        .isLessThanOrEqualTo(budget.minusMillis(1400));
+  }
+
   @Test
   void crossRatesBetweenTheCurrenciesInUseAreStoredAsMasterData() {
     useCurrencies("CHF", "USD");
@@ -508,6 +536,8 @@ class FxRateImportServiceTest {
     private static final LocalDate ECB_SERIES_START = LocalDate.of(1999, 1, 4);
 
     final List<List<LocalDate>> calls = new CopyOnWriteArrayList<>();
+    // The timeout each on-demand call got: what was left of its request's budget.
+    final List<Duration> onDemandTimeouts = new CopyOnWriteArrayList<>();
     volatile boolean down;
     volatile boolean unstorable;
     volatile LocalDate seriesStart = ECB_SERIES_START;
@@ -516,6 +546,7 @@ class FxRateImportServiceTest {
 
     void reset() {
       calls.clear();
+      onDemandTimeouts.clear();
       gate = null;
       down = false;
       unstorable = false;
@@ -546,6 +577,12 @@ class FxRateImportServiceTest {
                 rates.add(new ProvidedFxRate("EUR", "USD", date, rate("USD", date)));
               });
       return rates;
+    }
+
+    @Override
+    public List<ProvidedFxRate> fetchOnDemand(LocalDate from, LocalDate to, Duration timeout) {
+      onDemandTimeouts.add(timeout);
+      return fetch(from, to);
     }
 
     private void awaitGate() {

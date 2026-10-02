@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Currency;
 import java.util.List;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,22 +47,30 @@ public class EcbFxRateProvider implements FxRateProvider {
   private static final int MAX_QUOTED_CHARS = 120;
 
   private final RestClient restClient;
-  private final RestClient onDemandRestClient;
+  // An on-demand call gets what is left of its request's budget as timeout, so its client is
+  // built per call, over one shared HttpClient. Such calls are rare: a transaction dated before
+  // every stored rate.
+  private final Function<Duration, RestClient> onDemandRestClients;
 
   @Autowired
   public EcbFxRateProvider(FxRateImportProperties properties) {
+    this(properties, HttpClient.newBuilder().connectTimeout(properties.connectTimeout()).build());
+  }
+
+  private EcbFxRateProvider(FxRateImportProperties properties, HttpClient httpClient) {
     this(
-        buildRestClient(properties, properties.readTimeout()),
-        buildRestClient(properties, properties.onDemandReadTimeout()));
+        buildRestClient(properties, httpClient, properties.readTimeout()),
+        timeout -> buildRestClient(properties, httpClient, timeout));
   }
 
   EcbFxRateProvider(RestClient restClient) {
-    this(restClient, restClient);
+    this(restClient, timeout -> restClient);
   }
 
-  private EcbFxRateProvider(RestClient restClient, RestClient onDemandRestClient) {
+  private EcbFxRateProvider(
+      RestClient restClient, Function<Duration, RestClient> onDemandRestClients) {
     this.restClient = restClient;
-    this.onDemandRestClient = onDemandRestClient;
+    this.onDemandRestClients = onDemandRestClients;
   }
 
   @Override
@@ -75,8 +84,8 @@ public class EcbFxRateProvider implements FxRateProvider {
   }
 
   @Override
-  public List<ProvidedFxRate> fetchOnDemand(LocalDate from, LocalDate to) {
-    return fetch(onDemandRestClient, from, to);
+  public List<ProvidedFxRate> fetchOnDemand(LocalDate from, LocalDate to, Duration timeout) {
+    return fetch(onDemandRestClients.apply(timeout), from, to);
   }
 
   private static List<ProvidedFxRate> fetch(RestClient client, LocalDate from, LocalDate to) {
@@ -201,10 +210,8 @@ public class EcbFxRateProvider implements FxRateProvider {
   }
 
   private static RestClient buildRestClient(
-      FxRateImportProperties properties, Duration readTimeout) {
-    JdkClientHttpRequestFactory factory =
-        new JdkClientHttpRequestFactory(
-            HttpClient.newBuilder().connectTimeout(properties.connectTimeout()).build());
+      FxRateImportProperties properties, HttpClient httpClient, Duration readTimeout) {
+    JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
     factory.setReadTimeout(readTimeout);
     return RestClient.builder()
         .baseUrl(properties.ecbBaseUrl().toString())

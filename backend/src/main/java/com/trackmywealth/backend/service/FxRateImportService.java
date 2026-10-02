@@ -10,6 +10,7 @@ import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateBatchRepository;
 import com.trackmywealth.backend.repository.FxRateHistoryRequirementRepository;
 import com.trackmywealth.backend.repository.FxRateRepository;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -75,6 +76,8 @@ public class FxRateImportService {
   private static final LocalDate ALL_HISTORY_FROM = LocalDate.of(1900, 1, 1);
   private static final LocalDate ALL_HISTORY_TO = LocalDate.of(9999, 12, 31);
   private static final int MAX_REMEMBERED_ON_DEMAND_DATES = 10_000;
+  // Less than this left of a request's on-demand budget is not worth a provider call.
+  static final Duration MIN_ON_DEMAND_CALL = Duration.ofSeconds(1);
 
   private final FxRateProvider provider;
   private final FxRateRepository fxRateRepository;
@@ -140,7 +143,7 @@ public class FxRateImportService {
             .findLatestRateDate(provider.source())
             .map(latest -> latest.plusDays(1))
             .orElseGet(() -> historyStart(today));
-    return importRange(from, today, "scheduled FX import", false);
+    return importRange(from, today, "scheduled FX import", null);
   }
 
   /**
@@ -166,7 +169,7 @@ public class FxRateImportService {
     if (!required.get().isBefore(runStart.get()) || from.equals(exhaustedHistoryStart.get())) {
       return 0;
     }
-    int stored = importRange(from, runStart.get().minusDays(1), "FX history backfill", false);
+    int stored = importRange(from, runStart.get().minusDays(1), "FX history backfill", null);
     if (stored == 0) {
       exhaustedHistoryStart.set(from);
     }
@@ -181,9 +184,10 @@ public class FxRateImportService {
    * nothing for a date that already has a stored rate on or before it - such a conversion carries
    * that rate forward (FR-CUR-012) - and never throws.
    *
-   * <p>While another request's fetch runs, waits for it (at most the on-demand timeout) and then
-   * checks again, so the second of two requests for the same old year is answered from what the
-   * first stored instead of failing.
+   * <p>While another request's fetch runs, waits for it and then checks again, so the second of two
+   * requests for the same old year is answered from what the first stored instead of failing.
+   * Waiting and the provider call share one budget, {@code app.fx.import.on-demand-read-timeout}:
+   * the request holds its database connection meanwhile, so it must not wait twice that long.
    *
    * @return {@code true} when rates now cover {@code date}, so a lookup is worth repeating
    */
@@ -191,9 +195,9 @@ public class FxRateImportService {
     if (!properties.enabled() || isCovered(date)) {
       return false;
     }
+    long budgetEnd = System.nanoTime() + properties.onDemandReadTimeout().toNanos();
     try {
-      if (!onDemandLock.tryLock(
-          properties.onDemandReadTimeout().toMillis(), TimeUnit.MILLISECONDS)) {
+      if (!onDemandLock.tryLock(properties.onDemandReadTimeout().toNanos(), TimeUnit.NANOSECONDS)) {
         return false;
       }
     } catch (InterruptedException e) {
@@ -205,6 +209,10 @@ public class FxRateImportService {
       if (covers(earliestStored, date)) {
         return true; // stored by the request this one waited for
       }
+      Duration remaining = Duration.ofNanos(budgetEnd - System.nanoTime());
+      if (remaining.compareTo(MIN_ON_DEMAND_CALL) < 0) {
+        return false; // the wait used up the budget; the background import loads it instead
+      }
       if (onDemandAttempts.asMap().putIfAbsent(date, Boolean.TRUE) != null) {
         return false;
       }
@@ -213,7 +221,7 @@ public class FxRateImportService {
           min(
               earliestStored.map(d -> d.minusDays(1)).orElseGet(businessDateService::today),
               from.plusDays(CHUNK_DAYS - 1L));
-      return importRange(from, to, "FX fetch-on-missing", true) > 0;
+      return importRange(from, to, "FX fetch-on-missing", remaining) > 0;
     } finally {
       onDemandLock.unlock();
     }
@@ -270,7 +278,8 @@ public class FxRateImportService {
     return start.isAfter(today) ? today : start;
   }
 
-  private int importRange(LocalDate from, LocalDate to, String purpose, boolean onDemand) {
+  // onDemandTimeout: what is left of a waiting request's budget, or null for background work.
+  private int importRange(LocalDate from, LocalDate to, String purpose, Duration onDemandTimeout) {
     if (!properties.enabled() || from.isAfter(to)) {
       return 0;
     }
@@ -279,7 +288,7 @@ public class FxRateImportService {
     try {
       while (!chunkStart.isAfter(to)) {
         LocalDate chunkEnd = min(chunkStart.plusDays(CHUNK_DAYS - 1L), to);
-        stored += importChunk(chunkStart, chunkEnd, onDemand);
+        stored += importChunk(chunkStart, chunkEnd, onDemandTimeout);
         chunkStart = chunkEnd.plusDays(1);
       }
     } catch (FxRateProviderException | DataAccessException | TransactionException e) {
@@ -302,9 +311,11 @@ public class FxRateImportService {
   }
 
   // Published rates and the cross rates derived from them are committed together.
-  private int importChunk(LocalDate from, LocalDate to, boolean onDemand) {
+  private int importChunk(LocalDate from, LocalDate to, Duration onDemandTimeout) {
     List<ProvidedFxRate> provided =
-        onDemand ? provider.fetchOnDemand(from, to) : provider.fetch(from, to);
+        onDemandTimeout == null
+            ? provider.fetch(from, to)
+            : provider.fetchOnDemand(from, to, onDemandTimeout);
     List<FxRate> rates = provided.stream().map(this::toEntity).toList();
     if (rates.isEmpty()) {
       return 0;

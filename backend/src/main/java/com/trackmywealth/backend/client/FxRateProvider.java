@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.client;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -23,11 +24,12 @@ public interface FxRateProvider {
   List<ProvidedFxRate> fetch(LocalDate from, LocalDate to);
 
   /**
-   * {@link #fetch} for a call a user's request is waiting for, with the shorter on-demand timeout.
+   * {@link #fetch} for a call a user's request is waiting for: the answer must arrive within {@code
+   * timeout}, what is left of the request's on-demand budget.
    *
-   * @throws FxRateProviderException as {@link #fetch}
+   * @throws FxRateProviderException as {@link #fetch}, also when {@code timeout} runs out
    */
-  default List<ProvidedFxRate> fetchOnDemand(LocalDate from, LocalDate to) {
+  default List<ProvidedFxRate> fetchOnDemand(LocalDate from, LocalDate to, Duration timeout) {
     return fetch(from, to);
   }
 }
