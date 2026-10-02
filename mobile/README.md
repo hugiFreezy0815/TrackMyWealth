@@ -54,9 +54,9 @@ npx expo export -p web    # -> dist/ (static HTML/JS/CSS)
 ```
 
 `dist/` can be deployed to any static host (Vercel, Netlify, Cloudflare Pages, an S3 bucket, ...).
-`.github/workflows/mobile-web-ci.yml` builds this export whenever a push or pull request touches
-`mobile/**`, as a build-verification smoke test; wire your host's own deploy step into that
-workflow (or a separate one) once you've picked one.
+`.github/workflows/mobile-web-ci.yml` builds this export on every push/PR touching `mobile/**` as
+a build-verification smoke test; wire your host's own deploy step into that workflow (or a
+separate one) once you've picked one.
 
 **The backend must allow the web app's origin via CORS**, since a browser enforces same-origin
 restrictions that a native app is not subject to - see `backend/src/main/java/.../config/

@@ -60,8 +60,8 @@ def red_body(env: Dict[str, str]) -> str:
     return (
         f"`{env['WORKFLOW']}` concluded **{env['CONCLUSION']}** on main at"
         f" {env['HEAD_SHA'][:7]}: {env['RUN_URL']}\n\n"
-        "main is the base of every open pull request, so fix it before merging anything else"
-        " (CONTRIBUTING.md). If the run's log says the job was not started, it is a billing or"
+        "main is the base of every open pull request, so fix it before merging anything else."
+        " If the run's log says the job was not started, it is a billing or"
         " spending-limit problem, not the code: fix it in the account settings and re-run.\n\n"
         "This issue closes itself when the workflow is green on main again."
     )

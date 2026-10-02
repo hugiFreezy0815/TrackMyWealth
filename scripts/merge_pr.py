@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Merge a pull request only when every required check passed on its current head (#187).
+"""Merge a pull request only when every check passed on its current head (#187).
 
-GitHub can enforce required checks only through branch protection or rulesets, and neither is
-available on this private repository's current plan (the API answers 403). Until it is, this
-script is the way to merge: it refuses unless every required check ran and passed on the PR's
-current head commit, no other check failed, and the PR has no conflicts. It then squash-merges
-with --match-head-commit, so a commit pushed after the check cannot be merged unverified. It
-never uses --admin. See CONTRIBUTING.md.
+GitHub can enforce required checks only through branch protection or rulesets, which this free
+private repository does not have (the API answers 403), and the owner keeps it that way. So this
+script is the way to merge: it refuses unless the PR is up to date with its base, every check that
+applies to its changes ran and passed on its current head commit, no other check failed, and the
+PR has no conflicts. It then squash-merges with --match-head-commit, so a commit pushed after the
+check cannot be merged unverified. It never uses --admin.
 
-The required checks are the job names in REQUIRED_CHECKS. Every workflow that defines one runs on
-every pull request and skips its work when its part of the repository is untouched, so all of
-them always report; a skipped job counts as passed. .github/rulesets/main.json requires the same
-checks for when the plan allows a ruleset, and scripts/tests/test_merge_pr.py keeps the three in
-step.
+Which checks apply follows the workflows' own triggers: Semgrep and secret scanning run on every
+pull request, Backend CI, Mobile Web CI and Scripts CI only when their part of the repository
+changed (REQUIRED_CHECKS). scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in step with the
+workflows.
 
 Usage: scripts/merge_pr.py <pr-number> [--dry-run] [--delete-branch]
 Needs the GitHub CLI (gh), logged in with access to the repository.
@@ -25,16 +24,18 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-# Job name -> workflow it belongs to. A check run is named after its job.
-REQUIRED_CHECKS: Dict[str, str] = {
-    "test": "Backend CI",
-    "sql-lint": "Backend CI",
-    "build-web": "Mobile Web CI",
-    "semgrep": "Semgrep",
-    "gitleaks": "Secret scanning",
-    "scripts": "Scripts CI",
+# Job name -> (workflow it belongs to, the paths whose change makes that workflow run on a pull
+# request; None when it runs on every pull request). A check run is named after its job. A path
+# ending in "/" covers everything below it.
+REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
+    "semgrep": ("Semgrep", None),
+    "gitleaks": ("Secret scanning", None),
+    "test": ("Backend CI", ("backend/", ".github/workflows/backend-ci.yml")),
+    "sql-lint": ("Backend CI", ("backend/", ".github/workflows/backend-ci.yml")),
+    "build-web": ("Mobile Web CI", ("mobile/", ".github/workflows/mobile-web-ci.yml")),
+    "scripts": ("Scripts CI", ("scripts/", ".github/workflows/scripts-ci.yml")),
 }
 
 PASSED = {"success", "skipped", "neutral"}
@@ -64,6 +65,17 @@ class PullRequest:
     base: str
     head_sha: str
     mergeable: str
+    # Commits on the base branch the PR does not contain yet.
+    behind_by: int = 0
+
+
+def required_checks(changed_files: Sequence[str]) -> List[str]:
+    """The checks that must report for a PR changing these files, in REQUIRED_CHECKS order."""
+
+    def touches(paths: Tuple[str, ...]) -> bool:
+        return any(f == p or (p.endswith("/") and f.startswith(p)) for f in changed_files for p in paths)
+
+    return [name for name, (_, paths) in REQUIRED_CHECKS.items() if paths is None or touches(paths)]
 
 
 def latest_by_name(check_runs: Sequence[CheckRun]) -> Dict[str, CheckRun]:
@@ -78,10 +90,13 @@ def latest_by_name(check_runs: Sequence[CheckRun]) -> Dict[str, CheckRun]:
 def problems(
     pr: PullRequest,
     check_runs: Sequence[CheckRun],
-    required: Sequence[str] = tuple(REQUIRED_CHECKS),
+    required: Optional[Sequence[str]] = None,
     base: str = "main",
 ) -> List[str]:
-    """Every reason not to merge, empty when the PR may be merged."""
+    """Every reason not to merge, empty when the PR may be merged. {required} defaults to every
+    check, the strictest choice."""
+    if required is None:
+        required = list(REQUIRED_CHECKS)
     found: List[str] = []
     if pr.state != "OPEN":
         found.append(f"PR #{pr.number} is {pr.state.lower()}, not open.")
@@ -98,6 +113,12 @@ def problems(
             f"GitHub has not worked out yet whether PR #{pr.number} can be merged"
             f" ({pr.mergeable}); try again in a moment."
         )
+    elif pr.behind_by > 0:
+        # Its checks ran against an older base; what main has gained since was never tested with it.
+        found.append(
+            f"PR #{pr.number} is {pr.behind_by} commit(s) behind {pr.base}: update it"
+            f" (gh pr update-branch {pr.number}) and merge once its checks passed again."
+        )
 
     latest = latest_by_name(check_runs)
     for name in required:
@@ -108,7 +129,7 @@ def problems(
             found.append(f"Required check '{name}' is still {run.status}: {run.url}")
         elif run.conclusion not in PASSED:
             found.append(f"Required check '{name}' {run.conclusion}: {run.url}. {NOT_STARTED_HINT}")
-    # A failure outside the required set (e.g. "backend-changes") is still a failure.
+    # A failure outside the required set (e.g. a check of a workflow added later) is still one.
     for name, run in sorted(latest.items()):
         if name in required:
             continue
@@ -146,7 +167,19 @@ def fetch_pull_request(number: int, gh: Runner = run_gh) -> PullRequest:
         base=data["baseRefName"],
         head_sha=data["headRefOid"],
         mergeable=data["mergeable"],
+        behind_by=fetch_behind_by(data["baseRefName"], data["headRefOid"], gh),
     )
+
+
+def fetch_behind_by(base: str, head_sha: str, gh: Runner = run_gh) -> int:
+    path = f"repos/{{owner}}/{{repo}}/compare/{base}...{head_sha}"
+    return int(json.loads(gh(["api", path]))["behind_by"])
+
+
+def fetch_changed_files(number: int, gh: Runner = run_gh) -> List[str]:
+    path = f"repos/{{owner}}/{{repo}}/pulls/{number}/files?per_page=100"
+    output = gh(["api", "--paginate", path, "--jq", ".[].filename"])
+    return [line for line in output.splitlines() if line]
 
 
 def fetch_check_runs(sha: str, gh: Runner = run_gh) -> List[CheckRun]:
@@ -175,13 +208,14 @@ def main(argv: Optional[Sequence[str]] = None, gh: Runner = run_gh) -> int:
     args = parser.parse_args(argv)
 
     pr = fetch_pull_request(args.pr, gh)
-    reasons = problems(pr, fetch_check_runs(pr.head_sha, gh))
+    required = required_checks(fetch_changed_files(pr.number, gh))
+    reasons = problems(pr, fetch_check_runs(pr.head_sha, gh), required)
     if reasons:
         print(f"Not merging PR #{pr.number}:", file=sys.stderr)
         for reason in reasons:
             print(f"  - {reason}", file=sys.stderr)
         return 1
-    print(f"PR #{pr.number}: every required check passed on {pr.head_sha[:7]}.")
+    print(f"PR #{pr.number}: up to date, every check passed on {pr.head_sha[:7]} ({', '.join(required)}).")
     if args.dry_run:
         return 0
     merge = ["pr", "merge", str(pr.number), "--squash", "--match-head-commit", pr.head_sha]

@@ -1,12 +1,12 @@
 name: Main health
 
-# #187: without branch protection (not available on this repository's plan) nothing stops a red
-# run on main from going unnoticed. When a watched workflow completes on main, this keeps one
-# "[CI] main is red: <workflow>" issue open while it is red and closes it once it is green again.
-# The logic lives in scripts/main_health.py, which has unit tests.
+# #187: without branch protection (not available on this free private repository, which the owner
+# keeps) a red run on main could go unnoticed. When Backend CI, Semgrep or secret scanning completes
+# on main, this keeps one "[CI] main is red: <workflow>" issue open while it is red and closes it
+# once it is green again. The logic lives in scripts/main_health.py, which has unit tests.
 on:
   workflow_run:
-    workflows: [Backend CI, Mobile Web CI, Semgrep, Secret scanning, Scripts CI]
+    workflows: [Backend CI, Semgrep, Secret scanning]
     types: [completed]
     branches: [main]
 
@@ -18,7 +18,7 @@ jobs:
   report:
     # Pull-request runs have their own checks; only runs of main itself are reported here.
     if: github.event.workflow_run.event != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       # workflow_run always checks out the default branch, never pull-request code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

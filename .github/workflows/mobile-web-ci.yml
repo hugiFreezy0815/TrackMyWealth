@@ -6,37 +6,14 @@ on:
     paths:
       - "mobile/**"
       - ".github/workflows/mobile-web-ci.yml"
-  # #187: every pull request runs this workflow so "build-web" always reports and can be required;
-  # the "mobile-changes" job skips the build when mobile/ is untouched (see backend-ci.yml).
   pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-web-ci.yml"
 
 jobs:
-  mobile-changes:
-    runs-on: ubuntu-24.04
-    outputs:
-      mobile: ${{ steps.diff.outputs.mobile }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
-      - id: diff
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          paths="mobile .github/workflows/mobile-web-ci.yml"
-          # shellcheck disable=SC2086 # two pathspecs, split on purpose
-          if [ "$EVENT" != "pull_request" ] || ! git diff --quiet "$BASE_SHA" HEAD -- $paths; then
-            echo "mobile=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "mobile=false" >> "$GITHUB_OUTPUT"
-          fi
-
   build-web:
-    needs: mobile-changes
-    if: needs.mobile-changes.outputs.mobile == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: mobile
