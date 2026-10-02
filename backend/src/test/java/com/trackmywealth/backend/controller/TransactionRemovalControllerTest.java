@@ -1004,8 +1004,8 @@ class TransactionRemovalControllerTest {
     assertThat(list(token, savings.id()))
         .extracting(TransactionResponse::id)
         .containsExactly(credit.id());
-    assertThat(activeLedgerTotal(current.id())).isEqualByComparingTo("-100.00");
-    assertThat(activeLedgerTotal(savings.id())).isEqualByComparingTo("100.00");
+    assertThat(balance(token, current.id())).isEqualByComparingTo("100.00");
+    assertThat(balance(token, savings.id())).isEqualByComparingTo("-100.00");
 
     // Its description and notes are its own.
     TransactionCorrectionResponse described =
@@ -1094,8 +1094,8 @@ class TransactionRemovalControllerTest {
     assertThat(list(token, savings.id()))
         .extracting(TransactionResponse::id)
         .containsExactly(creditId);
-    assertThat(activeLedgerTotal(current.id())).isEqualByComparingTo("-100.00");
-    assertThat(activeLedgerTotal(savings.id())).isEqualByComparingTo("100.00");
+    assertThat(balance(token, current.id())).isEqualByComparingTo("100.00");
+    assertThat(balance(token, savings.id())).isEqualByComparingTo("-100.00");
     assertThat(restorable(token, current.id())).isEmpty();
     assertThat(restorable(token, savings.id())).isEmpty();
   }
