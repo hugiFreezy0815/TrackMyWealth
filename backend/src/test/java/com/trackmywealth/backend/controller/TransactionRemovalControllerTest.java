@@ -519,6 +519,93 @@ class TransactionRemovalControllerTest {
   }
 
   @Test
+  void aVoidedImportedTransactionCanBeRestoredAppendOnlyWithinThirtyDays() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+
+    TransactionRemovalResponse voided = remove(token, card.id(), imported, "Duplicate import");
+    assertThat(balance(token, card.id())).isEqualByComparingTo("0");
+    assertThat(spending(token)).isEqualByComparingTo("0");
+
+    TransactionRemovalResponse restored = restore(token, card.id(), imported);
+
+    assertThat(restored.removal()).isEqualTo(VOID);
+    assertThat(restored.affected())
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.id()).isEqualTo(imported);
+              assertThat(row.voidedAt()).isNotNull();
+              assertThat(row.restoredAt()).isNotNull();
+            });
+    assertThat(restored.reversals())
+        .singleElement()
+        .satisfies(
+            undo -> {
+              assertThat(undo.amount()).isEqualByComparingTo("-85.00");
+              assertThat(undo.replacesTransactionId()).isEqualTo(voided.reversals().get(0).id());
+            });
+    assertThat(countRows(card.id())).isEqualTo(3);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("85.00");
+    assertThat(spending(token)).isEqualByComparingTo("85.00");
+
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), imported) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(countRows(card.id())).isEqualTo(3);
+  }
+
+  @Test
+  void aVoidCannotBeRestoredAfterThirtyDays() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    remove(token, card.id(), imported, "Duplicate import");
+    execute(
+        "UPDATE transaction SET voided_at = now() - interval '31 days' WHERE id = ?", imported);
+
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), imported) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+
+    assertThat(countRows(card.id())).isEqualTo(2);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("0");
+    assertThat(spending(token)).isEqualByComparingTo("0");
+  }
+
+  @Test
+  void restoringAVoidedPurchaseAlsoRestoresItsLinkedFee() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID purchase = insertImported(card.id(), PURCHASE, "-100.00", today());
+    UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
+
+    TransactionRemovalResponse voided = remove(token, card.id(), purchase, "Duplicate import");
+    assertThat(voided.affected()).extracting(TransactionResponse::id).containsExactly(purchase, fee);
+    assertThat(voided.reversals()).hasSize(2);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("0");
+
+    TransactionRemovalResponse restored = restore(token, card.id(), purchase);
+
+    assertThat(restored.affected())
+        .extracting(TransactionResponse::id)
+        .containsExactly(purchase, fee);
+    assertThat(restored.affected()).allSatisfy(row -> assertThat(row.restoredAt()).isNotNull());
+    assertThat(restored.reversals()).hasSize(2);
+    assertThat(countRows(card.id())).isEqualTo(6);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("102.00");
+  }
+
+  @Test
   void aVoidedTradeIsReversedWithItsQuantityNegated() throws Exception {
     String token = bootstrapAdministrator();
     AccountSummaryResponse depot = createAccount(token, "SECURITIES", "CHF");
@@ -1828,6 +1915,26 @@ class TransactionRemovalControllerTest {
       statement.setObject(5, accountId);
       statement.executeUpdate();
     } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+    return id;
+  }
+
+  private UUID insertImportedFee(UUID accountId, UUID purchaseId, String amount) {
+    UUID id = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, source, related_transaction_id)"
+                    + " SELECT ?, workspace_id, id, 'FEE', CURRENT_DATE, ?, 'CHF', 'CSV', ?"
+                    + " FROM account WHERE id = ?")) {
+      statement.setObject(1, id);
+      statement.setBigDecimal(2, new BigDecimal(amount));
+      statement.setObject(3, purchaseId);
+      statement.setObject(4, accountId);
+      statement.executeUpdate();
+    } catch (SQLException e) {
       throw new IllegalStateException(e);
     }
     return id;
