@@ -1004,6 +1004,8 @@ class TransactionRemovalControllerTest {
     assertThat(list(token, savings.id()))
         .extracting(TransactionResponse::id)
         .containsExactly(credit.id());
+    assertThat(activeLedgerTotal(current.id())).isEqualByComparingTo("-100.00");
+    assertThat(activeLedgerTotal(savings.id())).isEqualByComparingTo("100.00");
 
     // Its description and notes are its own.
     TransactionCorrectionResponse described =
@@ -1059,6 +1061,7 @@ class TransactionRemovalControllerTest {
     assertThat(list(token, card.id()))
         .extracting(TransactionResponse::id)
         .containsExactlyInAnyOrder(purchase.id(), feeId);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("96.50");
 
     TransactionCorrectionResponse described =
         correct(token, card.id(), feeId, desiredState(fee, "-1.50", null, "FX fee", null));
@@ -1091,6 +1094,8 @@ class TransactionRemovalControllerTest {
     assertThat(list(token, savings.id()))
         .extracting(TransactionResponse::id)
         .containsExactly(creditId);
+    assertThat(activeLedgerTotal(current.id())).isEqualByComparingTo("-100.00");
+    assertThat(activeLedgerTotal(savings.id())).isEqualByComparingTo("100.00");
     assertThat(restorable(token, current.id())).isEmpty();
     assertThat(restorable(token, savings.id())).isEmpty();
   }
@@ -1818,6 +1823,13 @@ class TransactionRemovalControllerTest {
         .returnResult()
         .getResponseBody()
         .value();
+  }
+
+  private BigDecimal activeLedgerTotal(UUID accountId) {
+    return queryDecimal(
+        "SELECT COALESCE(sum(amount), 0) FROM transaction"
+            + " WHERE account_id = ? AND deleted_at IS NULL AND voided_at IS NULL",
+        accountId);
   }
 
   // This month's CHF spending across the workspace.
