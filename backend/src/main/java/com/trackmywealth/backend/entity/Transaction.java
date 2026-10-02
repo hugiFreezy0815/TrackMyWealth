@@ -190,6 +190,14 @@ public class Transaction {
   @Column(name = "void_reason")
   private String voidReason;
 
+  // US-07-07/FR-LIF-006: lifecycle metadata only. Restoring a void never clears voidedAt; the
+  // financial undo is another append-only ledger row that reverses the original reversal.
+  @Column(name = "restored_at")
+  private OffsetDateTime restoredAt;
+
+  @Column(name = "restored_by", columnDefinition = UUID_COLUMN)
+  private UUID restoredBy;
+
   @Column(name = "replaces_transaction_id", columnDefinition = UUID_COLUMN)
   private UUID replacesTransactionId;
 
@@ -460,6 +468,22 @@ public class Transaction {
 
   public void setVoidReason(String voidReason) {
     this.voidReason = voidReason;
+  }
+
+  public OffsetDateTime getRestoredAt() {
+    return restoredAt;
+  }
+
+  public void setRestoredAt(OffsetDateTime restoredAt) {
+    this.restoredAt = restoredAt;
+  }
+
+  public UUID getRestoredBy() {
+    return restoredBy;
+  }
+
+  public void setRestoredBy(UUID restoredBy) {
+    this.restoredBy = restoredBy;
   }
 
   public UUID getReplacesTransactionId() {
