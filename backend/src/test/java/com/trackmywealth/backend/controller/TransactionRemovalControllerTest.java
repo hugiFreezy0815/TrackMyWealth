@@ -1407,9 +1407,78 @@ class TransactionRemovalControllerTest {
     TransactionCorrectionResponse corrected =
         correct(token, card.id(), overridden, "-80.00", null, "Shop", null, null);
 
+    // No rule matches "Shop", so a new row with it is UNCATEGORIZED.
     assertThat(corrected.removal()).isNotNull();
-    assertThat(corrected.transaction().categoryId()).isNotEqualTo(hobby.id());
+    assertThat(corrected.transaction().categoryId()).isEqualTo(defaultCategory("UNCATEGORIZED"));
     assertThat(corrected.transaction().categoryAssignedBy()).isNotEqualTo("USER");
+  }
+
+  // An override follows the correction only to a type that is categorized at all: corrected into
+  // a transfer, the row has no category, as a recorded transfer would not.
+  @Test
+  void anOverrideDoesNotCarryOverToAnUncategorizedType() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    TransactionResponse original =
+        record(
+            token,
+            current.id(),
+            TransactionRequests.cash(
+                "EXPENSE",
+                today(),
+                new BigDecimal("-100.00"),
+                "CHF",
+                "Rent",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+    client(token)
+        .put()
+        .uri(rowUri(current.id(), original.id()) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetTransactionCategoryRequest(defaultCategory("SHOPPING")))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    TransactionResponse overridden = list(token, current.id()).get(0);
+    assertThat(overridden.categoryAssignedBy()).isEqualTo("USER");
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            current.id(),
+            overridden.id(),
+            new CorrectTransactionRequest(
+                null,
+                "TRANSFER",
+                overridden.bookingDate(),
+                new BigDecimal("-100.00"),
+                "CHF",
+                "Rent",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+
+    assertThat(corrected.removal()).isNotNull();
+    assertThat(corrected.transaction().transactionType()).isEqualTo("TRANSFER");
+    assertThat(corrected.transaction().categoryId()).isNull();
+    assertThat(corrected.transaction().categoryAssignedBy()).isNull();
   }
 
   // Sending the current state again changes nothing - not even the version; a notes-only edit

@@ -24,7 +24,8 @@ import java.util.UUID;
  * is source data; a different MCC is corrected like a financial field (a replacement carries it).
  *
  * <p>The category is not part of a correction: it is set and reset on {@code PUT/DELETE
- * .../category} (US-08-02), and a member's override carries over to a replacement.
+ * .../category} (US-08-02), and a member's override carries over to a replacement whose type is
+ * categorized, while its category is still assignable.
  */
 public record CorrectTransactionRequest(
     UUID targetAccountId,

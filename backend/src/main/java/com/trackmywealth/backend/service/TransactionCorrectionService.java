@@ -25,7 +25,8 @@ import org.springframework.web.server.ResponseStatusException;
  * financial difference uses the existing lifecycle rules atomically: T1 is soft-deleted, T2 is
  * voided and reversed, then a validated replacement is inserted with an immutable correction link.
  * A member's current category override is carried to the replacement after ordinary automatic
- * categorization has run.
+ * categorization has run, as long as the replacement's type is categorized and the category is
+ * still assignable.
  */
 @Service
 public class TransactionCorrectionService {
@@ -103,10 +104,12 @@ public class TransactionCorrectionService {
       return editTextOnly(original, desired);
     }
 
-    // An override carries over only while its category can still be assigned; otherwise the
-    // replacement keeps the automatic category it got like any new row (US-08-01/02).
+    // An override carries over only to a type that is categorized at all, and only while its
+    // category can still be assigned; otherwise the replacement keeps whatever category it got
+    // like any new row (US-08-01/02).
     UUID overriddenCategory =
-        categorizationService.isOverridden(original)
+        CategorizationService.CATEGORIZED_TYPES.contains(replacementRequest.transactionType())
+                && categorizationService.isOverridden(original)
                 && categoryService
                     .assignableCategoryIds(sourceAccount.getWorkspace().getId())
                     .contains(original.getCategoryId())
