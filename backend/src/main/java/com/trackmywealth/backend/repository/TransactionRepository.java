@@ -161,6 +161,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   Optional<Transaction> findByReplacesTransactionId(UUID replacesTransactionId);
 
+  /** US-07-07: voided FEE rows of a purchase, locked so the lifecycle group restores atomically. */
+  @Query(
+      value =
+          "SELECT * FROM transaction WHERE related_transaction_id = :purchaseId"
+              + " AND voided_at IS NOT NULL FOR UPDATE",
+      nativeQuery = true)
+  List<Transaction> findVoidedFeeRowsForUpdate(@Param("purchaseId") UUID purchaseId);
+
   /** US-07-02: the soft-deleted FEE row of a purchase, restored together with it. */
   @Query(
       value =
