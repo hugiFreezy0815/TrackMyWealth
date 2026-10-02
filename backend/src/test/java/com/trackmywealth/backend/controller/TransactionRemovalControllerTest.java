@@ -1004,8 +1004,8 @@ class TransactionRemovalControllerTest {
     assertThat(list(token, savings.id()))
         .extracting(TransactionResponse::id)
         .containsExactly(credit.id());
-    assertThat(balance(token, current.id())).isEqualByComparingTo("100.00");
-    assertThat(balance(token, savings.id())).isEqualByComparingTo("-100.00");
+    assertThat(activeLedgerTotal(current.id())).isEqualByComparingTo("-100.00");
+    assertThat(activeLedgerTotal(savings.id())).isEqualByComparingTo("100.00");
 
     // Its description and notes are its own.
     TransactionCorrectionResponse described =
@@ -1094,8 +1094,8 @@ class TransactionRemovalControllerTest {
     assertThat(list(token, savings.id()))
         .extracting(TransactionResponse::id)
         .containsExactly(creditId);
-    assertThat(balance(token, current.id())).isEqualByComparingTo("100.00");
-    assertThat(balance(token, savings.id())).isEqualByComparingTo("-100.00");
+    assertThat(activeLedgerTotal(current.id())).isEqualByComparingTo("-100.00");
+    assertThat(activeLedgerTotal(savings.id())).isEqualByComparingTo("100.00");
     assertThat(restorable(token, current.id())).isEmpty();
     assertThat(restorable(token, savings.id())).isEmpty();
   }
@@ -1825,6 +1825,9 @@ class TransactionRemovalControllerTest {
         .value();
   }
 
+  // What a cash account's rows add up to. Its /balance cannot show this: a cash account is valued
+  // from manual valuations only (no opening balance yet, AccountValuationService), so its value is
+  // unknown here - only a card is valued from its ledger.
   private BigDecimal activeLedgerTotal(UUID accountId) {
     return queryDecimal(
         "SELECT COALESCE(sum(amount), 0) FROM transaction"

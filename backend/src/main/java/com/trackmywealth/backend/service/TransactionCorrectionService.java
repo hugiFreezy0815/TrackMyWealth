@@ -30,6 +30,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TransactionCorrectionService {
 
+  private static final String FEE = "FEE";
+
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final TransactionRepository transactionRepository;
@@ -137,14 +139,24 @@ public class TransactionCorrectionService {
       return;
     }
     throw new ResponseStatusException(
-        HttpStatus.CONFLICT,
-        TransferRecordingService.TRANSFER_TYPES.contains(transaction.getTransactionType())
-            ? "This is the incoming leg of a transfer; correct the transfer from its outgoing leg ("
-                + owner
-                + ")."
-            : "This fee belongs to a card purchase; correct the purchase ("
-                + owner
-                + ") and its feeAmount instead.");
+        HttpStatus.CONFLICT, notCorrectableOnItsOwn(transaction, owner));
+  }
+
+  // Named for what the row is, so a linked type added later gets a true message, not the fee's.
+  private static String notCorrectableOnItsOwn(Transaction transaction, UUID owner) {
+    if (TransferRecordingService.TRANSFER_TYPES.contains(transaction.getTransactionType())) {
+      return "This is the incoming leg of a transfer; correct the transfer from its outgoing leg ("
+          + owner
+          + ").";
+    }
+    if (FEE.equals(transaction.getTransactionType())) {
+      return "This fee belongs to a card purchase; correct the purchase ("
+          + owner
+          + ") and its feeAmount instead.";
+    }
+    return "This transaction is part of transaction "
+        + owner
+        + " and is corrected through it, not on its own.";
   }
 
   private TransactionCorrectionResponse editTextOnly(
