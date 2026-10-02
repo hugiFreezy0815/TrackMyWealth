@@ -1065,6 +1065,7 @@ public class TransactionService {
         removalOf(transaction),
         transaction.getVoidedAt(),
         transaction.getVoidReason(),
+        transaction.getRestoredAt(),
         transaction.getReplacesTransactionId(),
         transaction.getCorrectsTransactionId(),
         transaction.getDeletedAt(),
