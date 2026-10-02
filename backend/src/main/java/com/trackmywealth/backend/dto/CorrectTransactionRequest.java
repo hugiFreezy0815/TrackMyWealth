@@ -4,6 +4,7 @@ import com.trackmywealth.backend.validation.ValidCurrencyCode;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -17,7 +18,13 @@ import java.util.UUID;
  * Merchant description and notes may be edited in place; financial changes create a replacement.
  *
  * <p>Target account is optional and defaults to the current account. Reason is required only when
- * the original is imported (T2), because that correction voids the original.
+ * the original is imported (T2), because that correction voids the original. The body is the
+ * desired state: an omitted FX rate, fee or counterparty means "none" (or "derive it", for the FX
+ * rate), not "unchanged". The one exception is {@code mcc}: omitted keeps the original's MCC, which
+ * is source data; a different MCC is corrected like a financial field (a replacement carries it).
+ *
+ * <p>The category is not part of a correction: it is set and reset on {@code PUT/DELETE
+ * .../category} (US-08-02), and a member's override carries over to a replacement.
  */
 public record CorrectTransactionRequest(
     UUID targetAccountId,
@@ -26,6 +33,7 @@ public record CorrectTransactionRequest(
     @NotNull @Digits(integer = 16, fraction = 4) BigDecimal amount,
     @NotBlank @ValidCurrencyCode String currency,
     @Size(max = 255) String merchantDescription,
+    @Pattern(regexp = "\\d{4}", message = "{tmw.validation.mcc}") String mcc,
     @Size(max = 2000) String notes,
     @Digits(integer = 10, fraction = 10) BigDecimal fxRateToAccountCurrency,
     @Digits(integer = 16, fraction = 4) BigDecimal billedAmount,
@@ -45,6 +53,7 @@ public record CorrectTransactionRequest(
     transactionType = RequestStrings.blankToNull(transactionType);
     currency = RequestStrings.blankToNull(currency);
     merchantDescription = RequestStrings.blankToNull(merchantDescription);
+    mcc = RequestStrings.blankToNull(mcc);
     notes = RequestStrings.blankToNull(notes);
     reason = RequestStrings.blankToNull(reason);
   }
@@ -57,7 +66,7 @@ public record CorrectTransactionRequest(
         amount,
         currency,
         merchantDescription,
-        null,
+        mcc,
         notes,
         null,
         fxRateToAccountCurrency,

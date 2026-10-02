@@ -68,7 +68,9 @@ public class TransactionController {
   /**
    * US-07-06: corrects one ledger row. Financial changes never update committed financial fields:
    * the original is removed according to provenance and a linked replacement is inserted. A
-   * merchant-description/notes-only change stays on the row. Needs EDIT and the current ETag.
+   * merchant-description/notes-only change stays on the row. Needs EDIT and the current ETag. The
+   * response and its ETag describe the effective row - after a financial correction that is the
+   * replacement, which has a new id (see {@link TransactionCorrectionResponse}).
    */
   @PutMapping("/transactions/{transactionId}")
   public ResponseEntity<TransactionCorrectionResponse> correctTransaction(

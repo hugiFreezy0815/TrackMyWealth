@@ -124,13 +124,21 @@ public class TransactionCorrectionService {
 
   private TransactionCorrectionResponse editTextOnly(
       Transaction transaction, CorrectTransactionRequest request) {
+    boolean descriptionChanged =
+        !Objects.equals(transaction.getMerchantDescription(), request.merchantDescription());
     boolean changed =
-        !Objects.equals(transaction.getMerchantDescription(), request.merchantDescription())
-            || !Objects.equals(transaction.getNotes(), request.notes());
+        descriptionChanged || !Objects.equals(transaction.getNotes(), request.notes());
     if (changed) {
       transaction.setMerchantDescription(request.merchantDescription());
       transaction.setNotes(request.notes());
       transactionRepository.saveAndFlush(transaction);
+    }
+    if (descriptionChanged) {
+      // Rules and fuzzy matching read the merchant description, so the automatic category may
+      // change with it. categorize() leaves a member's override alone (RULE-031, FR-CAT-014).
+      categorizationService.categorize(transaction);
+      // Flushed so the returned ETag is the stored version (ADR 0004).
+      transactionRepository.flush();
     }
     TransactionResponse response = transactionService.toResponses(List.of(transaction)).get(0);
     return new TransactionCorrectionResponse(response.version(), response, null);

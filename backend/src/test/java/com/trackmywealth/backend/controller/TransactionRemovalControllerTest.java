@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
+import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
@@ -45,6 +46,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -113,6 +116,7 @@ class TransactionRemovalControllerTest {
       for (String sql :
           List.of(
               "DELETE FROM settlement_match",
+              "DELETE FROM fx_rate",
               "DELETE FROM transaction_categorization_log",
               "DELETE FROM categorization_rule",
               // reversals first: they reference their originals
@@ -904,6 +908,441 @@ class TransactionRemovalControllerTest {
     assertThat(list(adminToken, card.id())).hasSize(1);
   }
 
+  // --- US-07-06 review: correction edges ---------------------------------------------------------
+
+  // A T1 correction only soft-deletes the original. Restoring it next to its replacement would
+  // count the transaction twice, so restore refuses it.
+  @Test
+  void aCorrectedOriginalCannotBeRestored() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+    correct(token, card.id(), original, "-80.00", null, null, null, null);
+
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), original.id()) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(list(token, card.id())).hasSize(1);
+    assertThat(balance(token, card.id())).isEqualByComparingTo("80.00");
+  }
+
+  // The body is the desired state: no counterparty means a one-sided transfer, not "unchanged".
+  @Test
+  void droppingTheCounterpartyIsAFinancialCorrection() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
+    TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            current.id(),
+            debit.id(),
+            desiredState(debit, "-100.00", null, null, null, null));
+
+    assertThat(corrected.removal()).isNotNull();
+    assertThat(corrected.transaction().counterpartyAccountId()).isNull();
+    assertThat(list(token, savings.id())).isEmpty();
+    assertThat(list(token, current.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(corrected.transaction().id());
+  }
+
+  // A two-sided transfer corrected with its counterparty kept replaces both legs.
+  @Test
+  void correctingATransferAmountReplacesBothLegs() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
+    TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
+
+    TransactionCorrectionResponse corrected =
+        correct(token, current.id(), debit.id(), desiredState(debit, "-120.00", null, null, null));
+
+    assertThat(corrected.transaction().counterpartyAccountId()).isEqualTo(savings.id());
+    assertThat(list(token, savings.id()))
+        .singleElement()
+        .satisfies(credit -> assertThat(credit.amount()).isEqualByComparingTo("120.00"));
+    assertThat(list(token, current.id()))
+        .singleElement()
+        .satisfies(row -> assertThat(row.amount()).isEqualByComparingTo("-120.00"));
+  }
+
+  // An explicit FX rate left out means "derive it": the replacement gets the estimated daily rate.
+  @Test
+  void droppingAnExplicitFxRateIsAFinancialCorrection() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    seedFxRate("EUR", "CHF", "0.9000000000");
+    TransactionResponse original =
+        record(
+            token,
+            card.id(),
+            TransactionRequests.cash(
+                PURCHASE,
+                today(),
+                new BigDecimal("-100.00"),
+                "EUR",
+                "Shop",
+                null,
+                null,
+                null,
+                new BigDecimal("0.95"),
+                null,
+                null));
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            card.id(),
+            original.id(),
+            withFxAndFee(desiredState(original, "-100.00", null, "Shop", null), null, null));
+
+    assertThat(corrected.removal()).isNotNull();
+    assertThat(corrected.transaction().fxRateEstimated()).isTrue();
+    assertThat(corrected.transaction().fxRateToAccountCurrency()).isEqualByComparingTo("0.90");
+  }
+
+  // A different MCC is source data: corrected through a replacement. Omitted, it is kept.
+  @Test
+  void aDifferentMccIsCorrectedByReplacementAndAnOmittedOneIsKept() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original =
+        record(
+            token,
+            card.id(),
+            TransactionRequests.cash(
+                PURCHASE,
+                today(),
+                new BigDecimal("-85.00"),
+                "CHF",
+                "Shop",
+                "5411",
+                null,
+                null,
+                null,
+                null,
+                null));
+
+    TransactionCorrectionResponse recoded =
+        correct(
+            token,
+            card.id(),
+            original.id(),
+            desiredState(original, "-85.00", "5812", "Shop", null));
+    assertThat(recoded.removal()).isNotNull();
+    assertThat(recoded.transaction().mcc()).isEqualTo("5812");
+
+    TransactionResponse replacement = recoded.transaction();
+    TransactionCorrectionResponse renamed =
+        correct(
+            token,
+            card.id(),
+            replacement.id(),
+            desiredState(replacement, "-85.00", null, "Shop renamed", null));
+    assertThat(renamed.removal()).isNull();
+    assertThat(renamed.transaction().id()).isEqualTo(replacement.id());
+    assertThat(renamed.transaction().mcc()).isEqualTo("5812");
+  }
+
+  // Rules match on the merchant description, so an in-place description edit re-runs automatic
+  // categorization; a member's override stays.
+  @Test
+  void aDescriptionEditRecategorizesUnlessOverridden() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID groceries = defaultCategory("GROCERIES");
+    createMerchantRule(token, "coop pronto", groceries);
+    TransactionResponse automatic = record(token, card.id(), purchase("-85.00"));
+    TransactionResponse overridden = record(token, card.id(), purchase("-12.00"));
+    UUID shopping = defaultCategory("SHOPPING");
+    client(token)
+        .put()
+        .uri(rowUri(card.id(), overridden.id()) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", overridden.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetTransactionCategoryRequest(shopping))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    TransactionCorrectionResponse recategorized =
+        correct(
+            token,
+            card.id(),
+            automatic.id(),
+            desiredState(automatic, "-85.00", null, "Coop Pronto Zurich", null));
+    TransactionCorrectionResponse kept =
+        correct(
+            token,
+            card.id(),
+            overridden.id(),
+            desiredState(overridden, "-12.00", null, "Coop Pronto Zurich", null));
+
+    assertThat(recategorized.removal()).isNull();
+    assertThat(recategorized.transaction().categoryId()).isEqualTo(groceries);
+    assertThat(kept.transaction().categoryId()).isEqualTo(shopping);
+    assertThat(kept.transaction().categoryAssignedBy()).isEqualTo("USER");
+  }
+
+  // FR-CNC-001 per endpoint (#207): no If-Match is 428, a stale one 412; neither changes anything.
+  @Test
+  void aCorrectionNeedsTheCurrentVersion() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+    String staleEtag = "\"" + original.version() + "\"";
+    CorrectTransactionRequest request = desiredState(original, "-80.00", null, "Shop", null);
+
+    correctRaw(token, card.id(), original.id(), request, headers -> {})
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_REQUIRED");
+    correct(
+        token, card.id(), original.id(), desiredState(original, "-85.00", null, "Renamed", null));
+    correctRaw(token, card.id(), original.id(), request, headers -> headers.setIfMatch(staleEtag))
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VERSION_CONFLICT");
+
+    assertThat(list(token, card.id()))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.id()).isEqualTo(original.id());
+              assertThat(row.amount()).isEqualByComparingTo("-85.00");
+            });
+  }
+
+  // A T2 correction voids the original, and a void needs its reason (FR-LIF-002b): without one
+  // nothing happens at all.
+  @Test
+  void anImportedCorrectionWithoutAReasonChangesNothing() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID importedId = insertImported(card.id(), PURCHASE, "-85.00", today());
+    TransactionResponse imported = list(token, card.id()).get(0);
+
+    correctRaw(
+            token,
+            card.id(),
+            importedId,
+            desiredState(imported, "-80.00", null, null, null),
+            CurrentVersion.ifMatch(dataSource, "transaction", importedId))
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+
+    assertThat(list(token, card.id()))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.voidedAt()).isNull();
+              assertThat(row.amount()).isEqualByComparingTo("-85.00");
+            });
+  }
+
+  // Moving a row writes to the destination too: without EDIT there it is the generic 404, checked
+  // before anything is removed.
+  @Test
+  void aMoveToAnAccountWithoutEditChangesNothing() {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
+    AccountSummaryResponse target = createAccount(adminToken, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(adminToken, card.id(), purchase("-85.00"));
+    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    String memberToken = login("member@example.com");
+    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.EDIT);
+    grantAccount(adminToken, memberId, target.id(), AccessLevelValues.READ);
+
+    correctRaw(
+            memberToken,
+            card.id(),
+            original.id(),
+            correction(original, "-85.00", null, null, null, target.id()),
+            CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
+        .expectStatus()
+        .isNotFound();
+
+    assertThat(list(adminToken, card.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(original.id());
+    assertThat(list(adminToken, target.id())).isEmpty();
+  }
+
+  // A reversing entry goes with its void; it is never corrected on its own.
+  @Test
+  void aReversingEntryCannotBeCorrected() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID importedId = insertImported(card.id(), PURCHASE, "-85.00", today());
+    TransactionResponse reversal = remove(token, card.id(), importedId, "wrong").reversals().get(0);
+
+    correctRaw(
+            token,
+            card.id(),
+            reversal.id(),
+            desiredState(reversal, "80.00", null, null, "again"),
+            CurrentVersion.ifMatch(dataSource, "transaction", reversal.id()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  // Corrections chain: each replacement points at the row it corrected; only the latest counts.
+  @Test
+  void aCorrectionOfACorrectionChains() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+    TransactionResponse first =
+        correct(token, card.id(), original, "-80.00", null, null, null, null).transaction();
+    TransactionResponse second =
+        correct(token, card.id(), first, "-75.00", null, null, null, null).transaction();
+
+    assertThat(first.correctsTransactionId()).isEqualTo(original.id());
+    assertThat(second.correctsTransactionId()).isEqualTo(first.id());
+    assertThat(list(token, card.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(second.id());
+    assertThat(balance(token, card.id())).isEqualByComparingTo("75.00");
+  }
+
+  // A card purchase's FX fee is part of it: the correction replaces the fee too, and the old fee
+  // cannot be restored on its own next to the new one.
+  @Test
+  void correctingAPurchaseReplacesItsFee() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original =
+        record(
+            token,
+            card.id(),
+            TransactionRequests.cash(
+                PURCHASE,
+                today(),
+                new BigDecimal("-100.00"),
+                "EUR",
+                "Shop",
+                null,
+                null,
+                null,
+                new BigDecimal("0.95"),
+                null,
+                new BigDecimal("1.50")));
+    UUID oldFee = feeOf(original.id());
+
+    TransactionCorrectionResponse corrected =
+        correct(
+            token,
+            card.id(),
+            original.id(),
+            withFxAndFee(
+                desiredState(original, "-120.00", null, "Shop", null),
+                new BigDecimal("0.95"),
+                new BigDecimal("1.50")));
+
+    UUID newFee = feeOf(corrected.transaction().id());
+    assertThat(newFee).isNotEqualTo(oldFee);
+    assertThat(list(token, card.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactlyInAnyOrder(corrected.transaction().id(), newFee);
+    client(token)
+        .post()
+        .uri(rowUri(card.id(), oldFee) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", oldFee))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  // A transfer whose counterparty and amounts stay as they are is edited in place, both legs kept.
+  @Test
+  void aTransferDescriptionEditIsNotAVoid() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(token, "CASH", "CHF");
+    TransactionResponse debit = record(token, current.id(), transfer("-100.00", savings.id()));
+    TransactionResponse credit = list(token, savings.id()).get(0);
+
+    TransactionCorrectionResponse edited =
+        correct(
+            token, current.id(), debit.id(), desiredState(debit, "-100.00", null, "Rent", null));
+
+    assertThat(edited.removal()).isNull();
+    assertThat(edited.transaction().id()).isEqualTo(debit.id());
+    assertThat(edited.transaction().merchantDescription()).isEqualTo("Rent");
+    assertThat(list(token, savings.id()))
+        .extracting(TransactionResponse::id)
+        .containsExactly(credit.id());
+  }
+
+  // The same explicit FX rate is no financial change; an explicit rate where the server had
+  // estimated one is.
+  @Test
+  void anExplicitFxRateIsComparedAsDesiredState() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    seedFxRate("EUR", "CHF", "0.9000000000");
+    TransactionResponse explicit =
+        record(token, card.id(), eurPurchase("-100.00", new BigDecimal("0.95")));
+    TransactionResponse estimated = record(token, card.id(), eurPurchase("-50.00", null));
+    assertThat(estimated.fxRateEstimated()).isTrue();
+
+    TransactionCorrectionResponse kept =
+        correct(
+            token,
+            card.id(),
+            explicit.id(),
+            withFxAndFee(
+                desiredState(explicit, "-100.00", null, "Renamed", null),
+                new BigDecimal("0.95"),
+                null));
+    TransactionCorrectionResponse pinned =
+        correct(
+            token,
+            card.id(),
+            estimated.id(),
+            withFxAndFee(
+                desiredState(estimated, "-50.00", null, "Shop", null),
+                new BigDecimal("0.90"),
+                null));
+
+    assertThat(kept.removal()).isNull();
+    assertThat(kept.transaction().id()).isEqualTo(explicit.id());
+    assertThat(pinned.removal()).isNotNull();
+    assertThat(pinned.transaction().fxRateEstimated()).isFalse();
+  }
+
+  // Sending the current state again changes nothing - not even the version; a notes-only edit
+  // stays on the row.
+  @Test
+  void anUnchangedCorrectionIsANoOpAndANotesEditStaysOnTheRow() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+
+    TransactionCorrectionResponse unchanged =
+        correct(token, card.id(), original, "-85.00", null, "Shop", null, null);
+    TransactionCorrectionResponse noted =
+        correct(token, card.id(), original, "-85.00", null, "Shop", "receipt filed", null);
+
+    assertThat(unchanged.removal()).isNull();
+    assertThat(unchanged.version()).isEqualTo(original.version());
+    assertThat(noted.removal()).isNull();
+    assertThat(noted.transaction().id()).isEqualTo(original.id());
+    assertThat(noted.transaction().notes()).isEqualTo("receipt filed");
+    assertThat(noted.version()).isGreaterThan(original.version());
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
 
   private static LocalDate today() {
@@ -974,6 +1413,183 @@ class TransactionRemovalControllerTest {
         result, dataSource, "transaction", result.getResponseBody().transaction().id());
   }
 
+  private TransactionCorrectionResponse correct(
+      String token, UUID accountId, UUID transactionId, CorrectTransactionRequest request) {
+    EntityExchangeResult<TransactionCorrectionResponse> result =
+        correctRaw(
+                token,
+                accountId,
+                transactionId,
+                request,
+                CurrentVersion.ifMatch(dataSource, "transaction", transactionId))
+            .expectStatus()
+            .isOk()
+            .expectBody(TransactionCorrectionResponse.class)
+            .returnResult();
+    return CurrentVersion.storedEtag(
+        result, dataSource, "transaction", result.getResponseBody().transaction().id());
+  }
+
+  private RestTestClient.ResponseSpec correctRaw(
+      String token,
+      UUID accountId,
+      UUID transactionId,
+      CorrectTransactionRequest request,
+      Consumer<HttpHeaders> ifMatch) {
+    return client(token)
+        .put()
+        .uri(rowUri(accountId, transactionId))
+        .headers(ifMatch)
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(request)
+        .exchange();
+  }
+
+  // The row's current state with amount, MCC and description replaced and no counterparty amount:
+  // what a client that read the row and edited those fields would send.
+  private static CorrectTransactionRequest desiredState(
+      TransactionResponse row, String amount, String mcc, String merchant, String reason) {
+    return desiredState(row, amount, mcc, merchant, reason, row.counterpartyAccountId());
+  }
+
+  private static CorrectTransactionRequest desiredState(
+      TransactionResponse row,
+      String amount,
+      String mcc,
+      String merchant,
+      String reason,
+      UUID counterpartyAccountId) {
+    return new CorrectTransactionRequest(
+        null,
+        row.transactionType(),
+        row.bookingDate(),
+        new BigDecimal(amount),
+        row.currency(),
+        merchant,
+        mcc,
+        row.notes(),
+        row.fxRateEstimated() ? null : row.fxRateToAccountCurrency(),
+        null,
+        row.feeAmount(),
+        row.securityId(),
+        row.quantity(),
+        row.unitPrice(),
+        row.tradeDate(),
+        row.settlementDate(),
+        row.grossAmount(),
+        row.taxWithheldAmount(),
+        counterpartyAccountId,
+        null,
+        reason);
+  }
+
+  // A card purchase's response carries neither its fee (a row of its own) nor, once estimated, an
+  // explicit rate; a client sets both explicitly in the desired state.
+  private static CorrectTransactionRequest withFxAndFee(
+      CorrectTransactionRequest request, BigDecimal fxRate, BigDecimal feeAmount) {
+    return new CorrectTransactionRequest(
+        request.targetAccountId(),
+        request.transactionType(),
+        request.bookingDate(),
+        request.amount(),
+        request.currency(),
+        request.merchantDescription(),
+        request.mcc(),
+        request.notes(),
+        fxRate,
+        request.billedAmount(),
+        feeAmount,
+        request.securityId(),
+        request.quantity(),
+        request.unitPrice(),
+        request.tradeDate(),
+        request.settlementDate(),
+        request.grossAmount(),
+        request.taxWithheldAmount(),
+        request.counterpartyAccountId(),
+        request.counterpartyAmount(),
+        request.reason());
+  }
+
+  private static CreateTransactionRequest eurPurchase(String amount, BigDecimal fxRate) {
+    return TransactionRequests.cash(
+        PURCHASE,
+        today(),
+        new BigDecimal(amount),
+        "EUR",
+        "Shop",
+        null,
+        null,
+        null,
+        fxRate,
+        null,
+        null);
+  }
+
+  private static CreateTransactionRequest transfer(String amount, UUID counterparty) {
+    return new CreateTransactionRequest(
+        "TRANSFER",
+        today(),
+        new BigDecimal(amount),
+        "CHF",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        counterparty,
+        null);
+  }
+
+  private void createMerchantRule(String token, String matchValue, UUID categoryId) {
+    client(token)
+        .post()
+        .uri("/api/v1/categorization-rules")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new CreateCategorizationRuleRequest("MERCHANT", matchValue, categoryId, null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+  }
+
+  private void seedFxRate(String base, String quote, String rate) throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source)"
+                    + " VALUES (?, ?, ?, ?, 'MANUAL')")) {
+      statement.setString(1, base);
+      statement.setString(2, quote);
+      statement.setObject(3, today());
+      statement.setBigDecimal(4, new BigDecimal(rate));
+      statement.executeUpdate();
+    }
+  }
+
+  // The fee row a card purchase's disclosed FX fee was recorded as (US-09-04).
+  private UUID feeOf(UUID purchaseId) throws SQLException {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT id FROM transaction WHERE related_transaction_id = ?"
+                    + " AND deleted_at IS NULL AND voided_at IS NULL")) {
+      statement.setObject(1, purchaseId);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        assertThat(resultSet.next()).as("a fee row for " + purchaseId).isTrue();
+        return (UUID) resultSet.getObject(1);
+      }
+    }
+  }
+
   private static CorrectTransactionRequest correction(
       TransactionResponse original,
       String amount,
@@ -988,6 +1604,7 @@ class TransactionRemovalControllerTest {
         new BigDecimal(amount),
         original.currency(),
         merchant,
+        null,
         notes,
         original.fxRateToAccountCurrency(),
         null,

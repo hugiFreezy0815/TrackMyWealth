@@ -489,6 +489,14 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   Both lineage columns are frozen by the append-only trigger. The replacement preserves source
   provenance but not `external_id`; the source row keeps that idempotency identity. A current USER
   category override is copied to the replacement after normal categorization.
+  - The request body is the desired state: an omitted FX rate means "derive it" (a row with an
+    explicit rate is then corrected), an omitted fee or counterparty means "none". Only an omitted
+    `mcc` keeps the original's; a different MCC is source data and corrected by replacement, set
+    in the original's `raw_source_data`.
+  - A description-only edit re-runs automatic categorization (rules match on that text); a member's
+    override stays. The category itself is not part of a correction: `PUT/DELETE …/category`.
+  - A corrected row cannot be restored (409), nor its fee row or transfer leg on its own: next to
+    its replacement it would count twice. The replacement is the entry to restore or correct.
 - **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02, and undoing a
   void is US-07-07.
 

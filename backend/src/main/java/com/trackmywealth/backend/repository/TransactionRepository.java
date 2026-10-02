@@ -379,4 +379,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param("intoSaving") boolean intoSaving,
       @Param(FROM) LocalDate from,
       @Param("to") LocalDate to);
+
+  /**
+   * US-07-06: whether any of these rows has been corrected, i.e. a replacement points at it via
+   * {@code corrects_transaction_id}. Native, so a replacement deleted since still counts: restoring
+   * a corrected original next to its replacement would count the transaction twice, and the
+   * original's one replacement slot (uq_transaction_correction) stays taken either way.
+   */
+  @Query(
+      value =
+          "SELECT EXISTS (SELECT 1 FROM transaction"
+              + " WHERE corrects_transaction_id IN (:transactionIds))",
+      nativeQuery = true)
+  boolean existsCorrectionOfAny(@Param("transactionIds") Collection<UUID> transactionIds);
 }

@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
@@ -217,6 +218,7 @@ public class TransactionRemovalService {
           .ifPresent(restored::add);
     }
     requireEditOnOtherAccounts(restored, account, actor);
+    requireNotCorrected(deleted, restored);
     versionPreconditionService.requireCurrent(
         expectedVersion, deleted.getVersion(), TransactionService.VERSIONED_RESOURCE);
     LocalDate earliest = deleted.getBookingDate();
@@ -267,6 +269,24 @@ public class TransactionRemovalService {
             .orElseThrow(
                 () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
     return transaction;
+  }
+
+  // US-07-06: a corrected row was soft-deleted by its correction, and its replacement now carries
+  // the transaction. Restoring it - or its fee row or transfer leg, whose related row is the
+  // corrected one - would count the transaction twice. The replacement is what to restore or
+  // correct instead.
+  private void requireNotCorrected(Transaction deleted, List<Transaction> restored) {
+    Set<UUID> ids = new HashSet<>();
+    restored.forEach(row -> ids.add(row.getId()));
+    if (deleted.getRelatedTransactionId() != null) {
+      ids.add(deleted.getRelatedTransactionId());
+    }
+    if (transactionRepository.existsCorrectionOfAny(ids)) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "This transaction was corrected and cannot be restored; its replacement is the current"
+              + " entry.");
+    }
   }
 
   private static boolean isTransferLeg(Transaction row) {
