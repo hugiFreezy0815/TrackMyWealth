@@ -130,6 +130,10 @@ app:
     # custom_asset_valuation.source's own "MANUAL" default for the same reason (self-hosted, no
     # real data provider wired up yet). Revisit once EPIC 30 picks a real provider name.
     default-source: ${FX_DEFAULT_SOURCE:MANUAL}
+    # US-10-06: maximum relative difference between the received credit and the debit converted
+    # at its booking-date FX rate for separately imported cross-currency transfer legs. Such a
+    # match is only proposed, never auto-confirmed.
+    transfer-match-tolerance: ${FX_TRANSFER_MATCH_TOLERANCE:0.02}
   categorization:
     # US-08-01 FALLBACK_MATCH: the minimum pg_trgm similarity (0..1) between a new merchant
     # description and an earlier rule- or user-categorized one before its category is copied. The
