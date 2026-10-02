@@ -183,6 +183,102 @@ class TransferControllerTest {
   }
 
   @Test
+  void crossCurrencyImportedLegsWithinToleranceAreProposedAndConfirmedAsOneTransfer()
+      throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertFxRate("CHF", "EUR", sent, "1.0400000000");
+    UUID debit = insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    UUID credit = insertImported(euro.id(), TRANSFER, "1040.00", "EUR", sent.plusDays(2));
+
+    transferDetectionService.detectAround(workspaceOf(current.id()), sent);
+
+    assertThat(matches(token, "CONFIRMED")).isEmpty();
+    SettlementMatchResponse proposal = matches(token, "PROPOSED").get(0);
+    assertThat(proposal.debitTransactionId()).isEqualTo(debit);
+    assertThat(proposal.creditTransactionId()).isEqualTo(credit);
+
+    client(token)
+        .post()
+        .uri("/api/v1/settlement-matches/" + proposal.id() + "/confirm")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", proposal.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    assertThat(counterpartyOf(debit)).isEqualTo(euro.id());
+    assertThat(counterpartyOf(credit)).isEqualTo(current.id());
+    CashFlowResponse flow = cashFlow(token);
+    assertThat(flow.income()).isEmpty();
+    assertThat(flow.spending()).isEmpty();
+    assertThat(flow.pendingReview()).isEmpty();
+  }
+
+  @Test
+  void crossCurrencyImportedLegsOutsideToleranceAreNotProposed() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertFxRate("CHF", "EUR", sent, "1.0400000000");
+    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    insertImported(euro.id(), TRANSFER, "1061.00", "EUR", sent.plusDays(2));
+
+    transferDetectionService.detectAround(workspaceOf(current.id()), sent);
+
+    assertThat(matches(token, "PROPOSED")).isEmpty();
+    assertThat(matches(token, "CONFIRMED")).isEmpty();
+  }
+
+  @Test
+  void crossCurrencyImportedLegsWithoutAnFxRateStayUnmatched() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    insertImported(euro.id(), TRANSFER, "1040.00", "EUR", sent.plusDays(2));
+
+    transferDetectionService.detectAround(workspaceOf(current.id()), sent);
+
+    assertThat(matches(token, "PROPOSED")).isEmpty();
+    assertThat(matches(token, "CONFIRMED")).isEmpty();
+    CashFlowResponse flow = cashFlow(token);
+    assertThat(flow.pendingReview()).isNotEmpty();
+    assertThat(flow.complete()).isFalse();
+  }
+
+  @Test
+  void rejectedCrossCurrencyPairIsNeverProposedAgain() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertFxRate("CHF", "EUR", sent, "1.0400000000");
+    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    insertImported(euro.id(), TRANSFER, "1040.00", "EUR", sent.plusDays(2));
+    UUID workspace = workspaceOf(current.id());
+    transferDetectionService.detectAround(workspace, sent);
+    SettlementMatchResponse proposal = matches(token, "PROPOSED").get(0);
+
+    client(token)
+        .post()
+        .uri("/api/v1/settlement-matches/" + proposal.id() + "/reject")
+        .headers(CurrentVersion.ifMatch(dataSource, "settlement_match", proposal.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    transferDetectionService.detectAround(workspace, sent);
+
+    assertThat(matches(token, "PROPOSED")).isEmpty();
+    assertThat(matches(token, "REJECTED"))
+        .singleElement()
+        .satisfies(match -> assertThat(match.id()).isEqualTo(proposal.id()));
+  }
+
+  @Test
   void aWithdrawalAndADepositOfTheSameAmountAreOnlyProposed() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
@@ -846,21 +942,38 @@ class TransferControllerTest {
   // An imported row as an import (EPIC 07) would leave it, before matching has run.
   private UUID insertImported(UUID accountId, String type, String amount, LocalDate bookedOn)
       throws Exception {
+    return insertImported(accountId, type, amount, "CHF", bookedOn);
+  }
+
+  private UUID insertImported(
+      UUID accountId, String type, String amount, String currency, LocalDate bookedOn)
+      throws Exception {
     UUID id = UUID.randomUUID();
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
                 "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
                     + " booking_date, amount, currency, source) SELECT ?, workspace_id, id, ?, ?,"
-                    + " ?, 'CHF', 'CSV' FROM account WHERE id = ?")) {
+                    + " ?, ?, 'CSV' FROM account WHERE id = ?")) {
       statement.setObject(1, id);
       statement.setString(2, type);
       statement.setObject(3, bookedOn);
       statement.setBigDecimal(4, new BigDecimal(amount));
-      statement.setObject(5, accountId);
+      statement.setString(5, currency);
+      statement.setObject(6, accountId);
       statement.executeUpdate();
     }
     return id;
+  }
+
+  private void insertFxRate(String base, String quote, LocalDate date, String rate) throws Exception {
+    execute(
+        "INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source)"
+            + " VALUES (?, ?, ?, ?, 'MANUAL')",
+        base,
+        quote,
+        date,
+        new BigDecimal(rate));
   }
 
   private UUID insertSecurity() throws Exception {
