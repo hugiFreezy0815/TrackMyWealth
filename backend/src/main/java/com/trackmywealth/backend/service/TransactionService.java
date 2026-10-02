@@ -40,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Records individual transactions on the append-only ledger (US-07-01, widened from the slice the
@@ -207,12 +208,64 @@ public class TransactionService {
   @Transactional
   public TransactionResponse recordTransaction(
       UUID accountId, CreateTransactionRequest request, AuthenticatedUserPrincipal actor) {
+    return recordTransactionInternal(accountId, request, actor, MANUAL, null, null, true);
+  }
+
+  /**
+   * US-07-06: inserts a correction replacement through the ordinary creation validator and
+   * categorization/detection pipeline, while preserving the original provenance. The source
+   * external id is deliberately not copied: it continues to identify the historical source row.
+   */
+  @Transactional
+  TransactionResponse recordCorrectionReplacement(
+      UUID accountId,
+      CreateTransactionRequest request,
+      String source,
+      String rawSourceData,
+      UUID correctsTransactionId,
+      AuthenticatedUserPrincipal actor) {
+    return recordTransactionInternal(
+        accountId, request, actor, source, rawSourceData, correctsTransactionId, false);
+  }
+
+  /**
+   * Whether a correction request describes the same immutable financial state. Text fields are
+   * intentionally excluded: merchant description and notes may be edited in place (FR-LIF-004).
+   *
+   * <p>A correction is the desired end state, not an idempotent retry: a field the request leaves
+   * out means "not set", where {@link #findReplay} reads it as "not specified". So FX rate, fee and
+   * counterparty use their own comparisons here; using the replay ones would answer a correction
+   * that drops one of them with a silent text-only edit. An omitted MCC keeps the original's.
+   */
+  boolean financialStateMatches(
+      Transaction transaction, UUID targetAccountId, CreateTransactionRequest request) {
+    return transaction.getAccount().getId().equals(targetAccountId)
+        && transaction.getTransactionType().equals(request.transactionType())
+        && transaction.getBookingDate().equals(request.bookingDate())
+        && transaction.getAmount().compareTo(request.amount()) == 0
+        && transaction.getCurrency().equals(request.currency())
+        && sameCorrectionFx(transaction, request)
+        && sameCorrectionFee(transaction, request)
+        && sameInvestment(transaction, request)
+        && sameCorrectionCounterparty(transaction, request)
+        && (request.mcc() == null
+            || request.mcc().equals(extractMcc(transaction.getRawSourceData())));
+  }
+
+  private TransactionResponse recordTransactionInternal(
+      UUID accountId,
+      CreateTransactionRequest request,
+      AuthenticatedUserPrincipal actor,
+      String source,
+      String rawSourceData,
+      UUID correctsTransactionId,
+      boolean allowReplay) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
 
     // Before validate(): a replay must answer with the original row even if the account has been
     // archived since, rather than turn a successful earlier request into a 409 on retry.
-    Optional<Transaction> replay = findReplay(accountId, request);
+    Optional<Transaction> replay = allowReplay ? findReplay(accountId, request) : Optional.empty();
     if (replay.isPresent()) {
       return toResponse(
           replay.get(), latestAssignments(List.of(replay.get())).get(replay.get().getId()));
@@ -251,14 +304,12 @@ public class TransactionService {
     transaction.setCurrency(request.currency());
     transaction.setMerchantDescription(request.merchantDescription());
     transaction.setNotes(request.notes());
-    transaction.setSource(MANUAL);
-    transaction.setExternalId(request.externalId());
+    transaction.setSource(source);
+    transaction.setExternalId(allowReplay ? request.externalId() : null);
+    transaction.setCorrectsTransactionId(correctsTransactionId);
     // FR-CC-002/RULE-011: the MCC is source data, kept in raw_source_data - category_id is a
     // separate column a later categorization writes, so neither can overwrite the other.
-    transaction.setRawSourceData(
-        request.mcc() == null
-            ? null
-            : objectMapper.writeValueAsString(Map.of(MCC_KEY, request.mcc())));
+    transaction.setRawSourceData(sourceDataWithMcc(rawSourceData, request.mcc()));
     transaction.setCreatedBy(actor.userId());
     transaction.setSecurityId(request.securityId());
     transaction.setQuantity(request.quantity());
@@ -309,7 +360,7 @@ public class TransactionService {
       // no FX rate of its own.
       fee.setCurrency(cardExtension.getBillingCurrency());
       fee.setRelatedTransactionId(saved.getId());
-      fee.setSource(MANUAL);
+      fee.setSource(source);
       fee.setCreatedBy(actor.userId());
       categorizationService.categorize(transactionRepository.saveAndFlush(fee));
     }
@@ -518,6 +569,49 @@ public class TransactionService {
     return transactionRepository
         .findByRelatedTransactionId(row.getId())
         .map(fee -> fee.getAmount().negate().compareTo(request.feeAmount()) == 0)
+        .orElse(false);
+  }
+
+  // Desired state: no rate given means "let the server derive it", which matches a row whose rate
+  // was derived (estimated) or that needs none (same currency); an explicit rate or billedAmount
+  // matches only an explicit rate of the same value. sameFxRate compares the value only.
+  private static boolean sameCorrectionFx(Transaction row, CreateTransactionRequest request) {
+    if (request.fxRateToAccountCurrency() == null && request.billedAmount() == null) {
+      return row.getFxRateToAccountCurrency() == null || row.isFxRateEstimated();
+    }
+    return !row.isFxRateEstimated() && sameFxRate(row, request);
+  }
+
+  // Desired state: the counterparty must be the same, including none. For a two-sided transfer the
+  // credit leg must hold what creation would write: counterpartyAmount, or the mirrored amount when
+  // both accounts share a currency. A counterparty gained by matching has no credit leg of ours.
+  private boolean sameCorrectionCounterparty(Transaction row, CreateTransactionRequest request) {
+    if (!Objects.equals(row.getCounterpartyAccountId(), request.counterpartyAccountId())) {
+      return false;
+    }
+    if (request.counterpartyAccountId() == null) {
+      return true;
+    }
+    BigDecimal expectedCredit =
+        request.counterpartyAmount() != null
+            ? request.counterpartyAmount()
+            : request.amount().negate();
+    return transactionRepository
+        .findByRelatedTransactionId(row.getId())
+        .map(credit -> credit.getAmount().compareTo(expectedCredit) == 0)
+        .orElse(request.counterpartyAmount() == null);
+  }
+
+  // Unlike idempotency replay, correction is a desired-state comparison: null means no linked fee.
+  private boolean sameCorrectionFee(Transaction row, CreateTransactionRequest request) {
+    if (!CREDIT_CARD_PURCHASE.equals(row.getTransactionType())) {
+      return sameDecimal(row.getFeeAmount(), request.feeAmount());
+    }
+    Optional<Transaction> fee = transactionRepository.findByRelatedTransactionId(row.getId());
+    if (request.feeAmount() == null) {
+      return fee.isEmpty();
+    }
+    return fee.map(existing -> existing.getAmount().negate().compareTo(request.feeAmount()) == 0)
         .orElse(false);
   }
 
@@ -972,6 +1066,7 @@ public class TransactionService {
         transaction.getVoidedAt(),
         transaction.getVoidReason(),
         transaction.getReplacesTransactionId(),
+        transaction.getCorrectsTransactionId(),
         transaction.getDeletedAt(),
         transaction.getCounterpartyAccountId(),
         VersionPreconditionService.persistedVersion(transaction.getVersion(), VERSIONED_RESOURCE));
@@ -999,6 +1094,22 @@ public class TransactionService {
     return transactions.stream()
         .map(transaction -> toResponse(transaction, assignments.get(transaction.getId())))
         .toList();
+  }
+
+  // A correction keeps the original's raw_source_data (US-07-06) and sets a corrected MCC in it;
+  // a new row's raw_source_data is just its MCC. Anything else an import wrote stays as it was.
+  private String sourceDataWithMcc(String rawSourceData, String mcc) {
+    if (rawSourceData == null) {
+      return mcc == null ? null : objectMapper.writeValueAsString(Map.of(MCC_KEY, mcc));
+    }
+    if (mcc == null) {
+      return rawSourceData;
+    }
+    JsonNode existing = objectMapper.readTree(rawSourceData);
+    ObjectNode merged =
+        existing instanceof ObjectNode object ? object : objectMapper.createObjectNode();
+    merged.put(MCC_KEY, mcc);
+    return objectMapper.writeValueAsString(merged);
   }
 
   // raw_source_data may in future carry a richer, import-defined shape (EPIC 07); only the "mcc"

@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
@@ -107,16 +108,8 @@ public class TransactionRemovalService {
       String reason,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    Account account = requireEditable(accountId, actor);
-    // Cards before rows, the order settlement matching takes them, so a concurrent match decision
-    // and this removal queue behind each other instead of deadlocking.
-    lockCards(account, transactionId);
-    Transaction original =
-        transactionRepository
-            .findByIdForUpdate(transactionId)
-            .filter(row -> row.getAccount().getId().equals(account.getId()))
-            .orElseThrow(
-                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
+    Transaction original = lockActiveTransaction(accountId, transactionId, actor);
+    Account account = original.getAccount();
     String removal = TransactionService.removalOf(original);
     if (removal == null) {
       throw new ResponseStatusException(
@@ -225,6 +218,7 @@ public class TransactionRemovalService {
           .ifPresent(restored::add);
     }
     requireEditOnOtherAccounts(restored, account, actor);
+    requireNotCorrected(deleted, restored);
     versionPreconditionService.requireCurrent(
         expectedVersion, deleted.getVersion(), TransactionService.VERSIONED_RESOURCE);
     LocalDate earliest = deleted.getBookingDate();
@@ -255,6 +249,44 @@ public class TransactionRemovalService {
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     return transactionService.toResponses(
         transactionRepository.findDeletedByAccountIdSince(accountId, restoreWindowStart()));
+  }
+
+  /**
+   * Locks an active transaction in the same order as removal: affected cards first, then the row.
+   * Correction reuses this path before inspecting the row so it cannot invert the matching lock
+   * order and deadlock with a concurrent detection/decision.
+   */
+  Transaction lockActiveTransaction(
+      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+    Account account = requireEditable(accountId, actor);
+    // Cards before rows, the order settlement matching takes them, so a concurrent match decision
+    // and this lifecycle write queue behind each other instead of deadlocking.
+    lockCards(account, transactionId);
+    Transaction transaction =
+        transactionRepository
+            .findByIdForUpdate(transactionId)
+            .filter(row -> row.getAccount().getId().equals(account.getId()))
+            .orElseThrow(
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
+    return transaction;
+  }
+
+  // US-07-06: a corrected row was soft-deleted by its correction, and its replacement now carries
+  // the transaction. Restoring it - or its fee row or transfer leg, whose related row is the
+  // corrected one - would count the transaction twice. The replacement is what to restore or
+  // correct instead.
+  private void requireNotCorrected(Transaction deleted, List<Transaction> restored) {
+    Set<UUID> ids = new HashSet<>();
+    restored.forEach(row -> ids.add(row.getId()));
+    if (deleted.getRelatedTransactionId() != null) {
+      ids.add(deleted.getRelatedTransactionId());
+    }
+    if (transactionRepository.existsCorrectionOfAny(ids)) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "This transaction was corrected and cannot be restored; its replacement is the current"
+              + " entry.");
+    }
   }
 
   private static boolean isTransferLeg(Transaction row) {

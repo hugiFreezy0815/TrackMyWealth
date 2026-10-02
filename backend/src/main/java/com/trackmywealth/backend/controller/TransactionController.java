@@ -1,10 +1,13 @@
 package com.trackmywealth.backend.controller;
 
+import com.trackmywealth.backend.dto.CorrectTransactionRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
+import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.TransactionCorrectionService;
 import com.trackmywealth.backend.service.TransactionRemovalService;
 import com.trackmywealth.backend.service.TransactionService;
 import com.trackmywealth.backend.service.TransferResolutionService;
@@ -38,14 +41,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class TransactionController {
 
   private final TransactionService transactionService;
+  private final TransactionCorrectionService transactionCorrectionService;
   private final TransactionRemovalService transactionRemovalService;
   private final TransferResolutionService transferResolutionService;
 
   public TransactionController(
       TransactionService transactionService,
+      TransactionCorrectionService transactionCorrectionService,
       TransactionRemovalService transactionRemovalService,
       TransferResolutionService transferResolutionService) {
     this.transactionService = transactionService;
+    this.transactionCorrectionService = transactionCorrectionService;
     this.transactionRemovalService = transactionRemovalService;
     this.transferResolutionService = transferResolutionService;
   }
@@ -57,6 +63,26 @@ public class TransactionController {
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     TransactionResponse response = transactionService.recordTransaction(accountId, request, actor);
     return VersionedResponse.created(response, response.version());
+  }
+
+  /**
+   * US-07-06: corrects one ledger row. Financial changes never update committed financial fields:
+   * the original is removed according to provenance and a linked replacement is inserted. A
+   * merchant-description/notes-only change stays on the row. Needs EDIT and the current ETag. The
+   * response and its ETag describe the effective row - after a financial correction that is the
+   * replacement, which has a new id (see {@link TransactionCorrectionResponse}).
+   */
+  @PutMapping("/transactions/{transactionId}")
+  public ResponseEntity<TransactionCorrectionResponse> correctTransaction(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @Valid @RequestBody CorrectTransactionRequest request,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    TransactionCorrectionResponse response =
+        transactionCorrectionService.correct(
+            accountId, transactionId, request, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
   }
 
   /**
