@@ -150,7 +150,12 @@ public class TransactionController {
     return VersionedResponse.ok(response, response.version());
   }
 
-  /** US-07-02/FR-LIF-006: brings back a soft-deleted transaction within 30 days. */
+  /**
+   * US-07-02/07-07, FR-LIF-006: restores a soft-deleted or voided transaction within 30 days. A
+   * soft-deleted row comes back in place; a void is restored by a new copy of the original, listed
+   * in the response's {@code restored} (the voided row and its reversal stay as history). The
+   * {@code ETag} is then the unchanged voided row's version; each copy carries its own.
+   */
   @PostMapping("/transactions/{transactionId}/restore")
   public ResponseEntity<TransactionRemovalResponse> restoreTransaction(
       @PathVariable UUID accountId,
@@ -163,7 +168,10 @@ public class TransactionController {
     return VersionedResponse.ok(response, response.version());
   }
 
-  /** US-07-02: the account's soft-deleted transactions that can still be restored. */
+  /**
+   * US-07-02/07-07: the account's transactions that can still be restored - soft-deleted or voided
+   * within the window, not yet restored or corrected.
+   */
   @GetMapping("/transactions/deleted")
   public List<TransactionResponse> listRestorableTransactions(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {

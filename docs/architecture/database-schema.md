@@ -53,6 +53,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V47` | Bounds `authorization_denial_log`: `RATE_LIMITED` summary reason, `suppressed_count`, retention index (#205) |
 | `V48` | Adds optimistic-concurrency revisions to remaining mutable API resources (#207) |
 | `V49` | Adds immutable `corrects_transaction_id` lineage for transaction corrections (#178) |
+| `V50` | Adds immutable `restores_transaction_id` lineage for restoring a void (#179) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -497,8 +498,26 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
     override stays. The category itself is not part of a correction: `PUT/DELETE …/category`.
   - A corrected row cannot be restored (409), nor its fee row or transfer leg on its own: next to
     its replacement it would count twice. The replacement is the entry to restore or correct.
-- **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02, and undoing a
-  void is US-07-07.
+- **Restoring a void (US-07-07, FR-LIF-006).** `POST …/transactions/{id}/restore` also restores a
+  void within 30 days of it. The void stays untouched: the original keeps `voided_at`/`void_reason`
+  and its reversal stays. An ordinary copy of the original is inserted (same account, type, date,
+  amounts, provenance and `raw_source_data`; no `external_id`, which stays with the original),
+  linked by `restores_transaction_id` (`V50`, at most one per voided row, frozen by the append-only
+  trigger). The ledger reads A, -A, A', so the balance includes the original again from the copy
+  on and history still shows the void. Decisions are on issue #179 / PR #218.
+  - The copy is a normal row: no query special-cases "voided but restored". It is categorized
+    like a new row (a member's override carries over while assignable), matched again by
+    detection, and can be corrected, voided and restored again any number of times.
+  - A FEE row or incoming transfer leg voided with its purchase or outgoing leg is restored
+    through that head row, from whichever row the member restores: the group comes back whole and
+    the copies link to each other. A row voided on its own (e.g. a waived fee) is restored alone,
+    linked to its parent's current copy. A two-sided transfer needs EDIT on both accounts, and
+    both accounts' cards are locked before any row.
+  - A rejected settlement match on a voided row is carried to its copy, so detection never
+    re-proposes a pair the member rejected (as for a soft delete).
+  - A void older than 30 days, already restored, or made by a correction (`corrects_transaction_id`)
+    is not restorable (409). `GET …/transactions/deleted` lists every restorable row of both tiers.
+- **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02.
 
 ## 5. Time-series data and partitioning
 

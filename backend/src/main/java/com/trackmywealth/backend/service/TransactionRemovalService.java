@@ -18,7 +18,10 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -40,9 +43,11 @@ import org.springframework.web.server.ResponseStatusException;
  *       #143).
  *   <li><b>T2, an imported row</b>: void. The original is marked voided with a required reason and
  *       stays listed as voided; a reversing row of the same type with every amount and the quantity
- *       negated is added, dated to the void, linked by {@code replaces_transaction_id}. Balances
- *       sum both (they net to zero from the void on); cash-flow and category figures leave both
- *       out. Restoring a void is a later story.
+ *       negated is added, dated to the void, linked by {@code replaces_transaction_id}. Every
+ *       figure leaves both out - balances too, on every date, so history reads as restated (see
+ *       {@code TransactionRepository#sumAmountByAccountIdAsOf}). Restoring the void within {@value
+ *       #RESTORE_WINDOW_DAYS} days (US-07-07) keeps both and adds an ordinary copy of the original,
+ *       linked by {@code restores_transaction_id} (V50).
  * </ul>
  *
  * <p>Nothing goes silently (FR-LIF-007): a card purchase's linked FEE row is removed with it, and
@@ -69,6 +74,7 @@ public class TransactionRemovalService {
   private final SettlementDetectionService settlementDetectionService;
   private final TransferDetectionService transferDetectionService;
   private final TransactionService transactionService;
+  private final CategorizationService categorizationService;
   private final BusinessDateService businessDateService;
   private final Clock clock;
   private final VersionPreconditionService versionPreconditionService;
@@ -81,6 +87,7 @@ public class TransactionRemovalService {
       SettlementDetectionService settlementDetectionService,
       TransferDetectionService transferDetectionService,
       TransactionService transactionService,
+      CategorizationService categorizationService,
       BusinessDateService businessDateService,
       Clock clock,
       VersionPreconditionService versionPreconditionService) {
@@ -91,6 +98,7 @@ public class TransactionRemovalService {
     this.settlementDetectionService = settlementDetectionService;
     this.transferDetectionService = transferDetectionService;
     this.transactionService = transactionService;
+    this.categorizationService = categorizationService;
     this.businessDateService = businessDateService;
     this.clock = clock;
     this.versionPreconditionService = versionPreconditionService;
@@ -112,11 +120,7 @@ public class TransactionRemovalService {
     Account account = original.getAccount();
     String removal = TransactionService.removalOf(original);
     if (removal == null) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT,
-          original.isReversal()
-              ? "A reversing entry cannot be removed on its own; it goes with its original."
-              : "This transaction is already voided.");
+      throw new ResponseStatusException(HttpStatus.CONFLICT, notRemovable(original));
     }
     boolean softDelete = TransactionRemovalValues.SOFT_DELETE.equals(removal);
     String voidReason = softDelete ? null : requireReason(reason);
@@ -168,14 +172,31 @@ public class TransactionRemovalService {
             original.getVersion(), TransactionService.VERSIONED_RESOURCE),
         transactionService.toResponses(affected),
         transactionService.toResponses(reversals),
-        List.copyOf(unmatched));
+        List.copyOf(unmatched),
+        List.of());
+  }
+
+  // Why a row the API still lists cannot be removed (again).
+  private String notRemovable(Transaction row) {
+    if (row.isReversal()) {
+      return "A reversing entry cannot be removed on its own; it goes with its original.";
+    }
+    return transactionRepository
+        .findByRestoresTransactionId(row.getId())
+        .map(
+            copy ->
+                "This transaction is voided; its void was restored as transaction "
+                    + copy.getId()
+                    + ", which is the entry to remove.")
+        .orElse("This transaction is already voided.");
   }
 
   /**
-   * FR-LIF-006: brings back a soft-deleted row, and the FEE row deleted with it, within {@value
-   * #RESTORE_WINDOW_DAYS} days of its deletion. Settlement matching then runs again for the
-   * account, since a restored payment or credit may pair again. A void is not restored here (later
-   * story).
+   * FR-LIF-006: restores either removal tier within {@value #RESTORE_WINDOW_DAYS} days of the
+   * removal. A soft-deleted T1 row is unhidden in place. A voided T2 row is re-instated by a copy
+   * (see {@link #restoreVoided}). Either way the rows removed together with it (a purchase's FEE
+   * row, a transfer's other leg) come back too, and settlement and transfer detection run again on
+   * every account involved.
    */
   @Transactional
   public TransactionRemovalResponse restore(
@@ -184,22 +205,29 @@ public class TransactionRemovalService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
-    lockCards(account, transactionId);
-    Transaction deleted =
+    lockCards(accountsToLockForRestore(account, transactionId, actor), transactionId);
+    Transaction removed =
         transactionRepository
             .findByIdIncludingDeletedForUpdate(transactionId)
             .filter(row -> row.getAccount().getId().equals(account.getId()))
             .orElseThrow(
                 () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
-    if (deleted.getDeletedAt() == null) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "This transaction is not deleted.");
+    if (removed.getDeletedAt() != null) {
+      return restoreSoftDeleted(account, removed, expectedVersion, actor);
     }
+    if (removed.getVoidedAt() != null) {
+      return restoreVoided(account, removed, expectedVersion, actor);
+    }
+    throw new ResponseStatusException(HttpStatus.CONFLICT, "This transaction is not removed.");
+  }
+
+  private TransactionRemovalResponse restoreSoftDeleted(
+      Account account,
+      Transaction deleted,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     if (deleted.getDeletedAt().isBefore(restoreWindowStart())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT,
-          "This transaction was deleted more than "
-              + RESTORE_WINDOW_DAYS
-              + " days ago and can no longer be restored.");
+      throw expiredRestore("deleted");
     }
     List<Transaction> restored = new ArrayList<>();
     restored.add(deleted);
@@ -227,10 +255,7 @@ public class TransactionRemovalService {
       row.setDeletedBy(null);
       transactionRepository.saveAndFlush(row);
     }
-    settlementDetectionService.detectAfterWrite(account, earliest);
-    transferDetectionService.detectAfterWrite(account, earliest);
-    // Detection may re-flag the restored rows after their own flush; flush again so the returned
-    // versions and the ETag are the stored ones instead of relying on a later query's auto-flush.
+    detectAfterRestore(restored, earliest);
     transactionRepository.flush();
     return new TransactionRemovalResponse(
         TransactionRemovalValues.SOFT_DELETE,
@@ -238,17 +263,234 @@ public class TransactionRemovalService {
             deleted.getVersion(), TransactionService.VERSIONED_RESOURCE),
         transactionService.toResponses(restored),
         List.of(),
+        List.of(),
         List.of());
   }
 
-  /** The account's soft-deleted rows still restorable, most recently deleted first. */
+  /**
+   * US-07-07: re-instates a void without touching it. The voided rows keep their void metadata and
+   * their reversals stay; each gets an ordinary copy - same account, type, date, amounts,
+   * provenance and source data - that points back at it through {@code restores_transaction_id}.
+   * The ledger then reads A, -A, A': balances include the original effect again from the copy on,
+   * while history still shows the void. The copy is a normal row (categorized like a new one, with
+   * a member's override carried over; matched again by detection), so it can be categorized,
+   * corrected, removed and restored again like any other.
+   *
+   * <p>A FEE row or incoming transfer leg voided together with its purchase or outgoing leg is
+   * restored through that head row, so the group always comes back whole and its copies link to
+   * each other, never to a voided row. The window counts from the void. A void already restored or
+   * a row since corrected cannot be restored (409).
+   */
+  private TransactionRemovalResponse restoreVoided(
+      Account account,
+      Transaction voided,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
+    Transaction head = groupHeadOf(voided);
+    if (head.getVoidedAt().isBefore(restoreWindowStart())) {
+      throw expiredRestore("voided");
+    }
+    List<Transaction> group = new ArrayList<>();
+    group.add(head);
+    // Only rows voided in the same step: a fee voided on its own earlier stays voided.
+    transactionRepository.findVoidedDependantsForUpdate(head.getId()).stream()
+        .filter(row -> row.getVoidedAt().isEqual(head.getVoidedAt()))
+        .forEach(group::add);
+    requireEditOnOtherAccounts(group, account, actor);
+    requireNotCorrected(head, group);
+    requireNotRestored(group);
+    UUID parent = currentVersionOf(head.getRelatedTransactionId());
+    requireParentInEffect(parent);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, voided.getVersion(), TransactionService.VERSIONED_RESOURCE);
+
+    Map<UUID, Transaction> copies = new LinkedHashMap<>();
+    Transaction headCopy = reinstate(head, parent, actor);
+    copies.put(head.getId(), headCopy);
+    for (Transaction dependant : group.subList(1, group.size())) {
+      copies.put(dependant.getId(), reinstate(dependant, headCopy.getId(), actor));
+    }
+    carryRejectedMatches(copies);
+    LocalDate earliest =
+        group.stream().map(Transaction::getBookingDate).min(LocalDate::compareTo).orElseThrow();
+    detectAfterRestore(List.copyOf(copies.values()), earliest);
+    // Detection may flag the copies after their own flush; flush so returned versions are stored.
+    transactionRepository.flush();
+    return new TransactionRemovalResponse(
+        TransactionRemovalValues.VOID,
+        VersionPreconditionService.persistedVersion(
+            voided.getVersion(), TransactionService.VERSIONED_RESOURCE),
+        transactionService.toResponses(group),
+        List.of(),
+        List.of(),
+        transactionService.toResponses(List.copyOf(copies.values())));
+  }
+
+  // A rejected match is a member's decision about this transaction, and the void kept it (see the
+  // class comment). The copy is the same transaction, so it inherits the decision - before
+  // detection runs, which would otherwise propose or even confirm the very pair the member
+  // rejected.
+  private void carryRejectedMatches(Map<UUID, Transaction> copies) {
+    List<SettlementMatch> carried = new ArrayList<>();
+    for (Map.Entry<UUID, Transaction> entry : copies.entrySet()) {
+      for (SettlementMatch rejected :
+          settlementMatchRepository.findByTransactionId(entry.getKey())) {
+        if (!SettlementMatchValues.REJECTED.equals(rejected.getStatus())) {
+          continue;
+        }
+        SettlementMatch match = new SettlementMatch();
+        match.setWorkspace(rejected.getWorkspace());
+        match.setCardAccount(rejected.getCardAccount());
+        match.setPaymentTransaction(copyOf(rejected.getPaymentTransaction(), copies));
+        match.setCardTransaction(copyOf(rejected.getCardTransaction(), copies));
+        match.setStatus(SettlementMatchValues.REJECTED);
+        match.setMatchBasis(rejected.getMatchBasis());
+        match.setMatchKind(rejected.getMatchKind());
+        match.setDecidedBy(rejected.getDecidedBy());
+        match.setDecidedAt(rejected.getDecidedAt());
+        carried.add(match);
+      }
+    }
+    settlementMatchRepository.saveAllAndFlush(carried);
+  }
+
+  private static Transaction copyOf(Transaction leg, Map<UUID, Transaction> copies) {
+    return leg == null ? null : copies.getOrDefault(leg.getId(), leg);
+  }
+
+  // A head row voided on its own (a fee whose purchase stayed) links to its parent as it stands
+  // now: if that parent was itself voided and restored since, to the copy that re-instated it.
+  private UUID currentVersionOf(UUID transactionId) {
+    UUID current = transactionId;
+    while (current != null) {
+      Optional<Transaction> copy = transactionRepository.findByRestoresTransactionId(current);
+      if (copy.isEmpty()) {
+        return current;
+      }
+      current = copy.get().getId();
+    }
+    return null;
+  }
+
+  // The row a group was voided through: a FEE row's purchase or an incoming leg's outgoing leg,
+  // when voided in the same step; otherwise the row itself (e.g. a fee voided on its own).
+  private Transaction groupHeadOf(Transaction voided) {
+    if (voided.getRelatedTransactionId() == null) {
+      return voided;
+    }
+    return transactionRepository
+        .findByIdIncludingDeletedForUpdate(voided.getRelatedTransactionId())
+        .filter(parent -> parent.getVoidedAt() != null)
+        .filter(parent -> parent.getVoidedAt().isEqual(voided.getVoidedAt()))
+        .orElse(voided);
+  }
+
+  // A row voided on its own (a waived fee) belongs to its parent. While that parent is voided too,
+  // a copy would count without it and stay behind when the parent's own void is restored or voided
+  // again, so the parent comes back first.
+  private void requireParentInEffect(UUID parentId) {
+    if (parentId != null
+        && transactionRepository
+            .findByIdIncludingDeletedForUpdate(parentId)
+            .filter(parent -> parent.getVoidedAt() != null || parent.getDeletedAt() != null)
+            .isPresent()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "The transaction this one belongs to is removed; restore transaction "
+              + parentId
+              + " first.");
+    }
+  }
+
+  private void requireNotRestored(List<Transaction> group) {
+    for (Transaction row : group) {
+      transactionRepository
+          .findByRestoresTransactionId(row.getId())
+          .ifPresent(
+              copy -> {
+                throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "This void was already restored as transaction " + copy.getId() + ".");
+              });
+    }
+  }
+
+  // An ordinary copy of a voided row, categorized like a new row. A transfer leg keeps what makes
+  // it a transfer (its counterparty, and the internal-transfer flag of a two-sided entry or a
+  // member's untracked-transfer confirmation); any other row starts unmatched, for detection to
+  // pair again.
+  private Transaction reinstate(
+      Transaction original, UUID relatedTransactionId, AuthenticatedUserPrincipal actor) {
+    Transaction copy = new Transaction();
+    copy.setWorkspace(original.getWorkspace());
+    copy.setAccount(original.getAccount());
+    copy.setTransactionType(original.getTransactionType());
+    copy.setBookingDate(original.getBookingDate());
+    copy.setAmount(original.getAmount());
+    copy.setCurrency(original.getCurrency());
+    copy.setMerchantDescription(original.getMerchantDescription());
+    copy.setNotes(original.getNotes());
+    // Provenance and source data describe the same real-world transaction; the idempotency key
+    // stays with the original, which an import's de-duplication still finds.
+    copy.setSource(original.getSource());
+    copy.setRawSourceData(original.getRawSourceData());
+    copy.setFxRateToAccountCurrency(original.getFxRateToAccountCurrency());
+    copy.setFxRateDate(original.getFxRateDate());
+    copy.setFxRateEstimated(original.isFxRateEstimated());
+    copy.setSecurityId(original.getSecurityId());
+    copy.setQuantity(original.getQuantity());
+    copy.setUnitPrice(original.getUnitPrice());
+    copy.setFeeAmount(original.getFeeAmount());
+    copy.setTradeDate(original.getTradeDate());
+    copy.setSettlementDate(original.getSettlementDate());
+    copy.setGrossAmount(original.getGrossAmount());
+    copy.setTaxWithheldAmount(original.getTaxWithheldAmount());
+    copy.setNetAmount(original.getNetAmount());
+    copy.setRelatedTransactionId(relatedTransactionId);
+    if (isTransferLeg(original)) {
+      copy.setInternalTransfer(original.isInternalTransfer());
+      copy.setCounterpartyAccountId(original.getCounterpartyAccountId());
+    }
+    copy.setRestoresTransactionId(original.getId());
+    copy.setCreatedBy(actor.userId());
+    Transaction saved = transactionRepository.saveAndFlush(copy);
+    categorizationService.categorize(saved);
+    categorizationService.carryOverride(original, saved, actor);
+    return saved;
+  }
+
+  private ResponseStatusException expiredRestore(String removal) {
+    return new ResponseStatusException(
+        HttpStatus.CONFLICT,
+        "This transaction was "
+            + removal
+            + " more than "
+            + RESTORE_WINDOW_DAYS
+            + " days ago and can no longer be restored.");
+  }
+
+  // Every account a restored row is on, once each: a transfer's other leg sits on another one.
+  private void detectAfterRestore(List<Transaction> rows, LocalDate earliest) {
+    Map<UUID, Account> accounts = new LinkedHashMap<>();
+    rows.forEach(row -> accounts.putIfAbsent(row.getAccount().getId(), row.getAccount()));
+    for (Account account : accounts.values()) {
+      settlementDetectionService.detectAfterWrite(account, earliest);
+      transferDetectionService.detectAfterWrite(account, earliest);
+    }
+  }
+
+  /**
+   * FR-LIF-006: the account's removed rows still restorable through {@link #restore} - soft-deleted
+   * ({@code deletedAt} set) or voided ({@code voidedAt} set) within the window, and not yet
+   * restored or corrected - most recently removed first.
+   */
   @Transactional(readOnly = true)
   public List<TransactionResponse> listRestorable(
       UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     return transactionService.toResponses(
-        transactionRepository.findDeletedByAccountIdSince(accountId, restoreWindowStart()));
+        transactionRepository.findRestorableByAccountIdSince(accountId, restoreWindowStart()));
   }
 
   /**
@@ -316,11 +558,29 @@ public class TransactionRemovalService {
   // Plus the cards of any existing match, which a former settlement source may still have. Sorted,
   // so two removals take them in the same order.
   private void lockCards(Account account, UUID transactionId) {
-    SortedSet<UUID> cards = new TreeSet<>(settlementDetectionService.cardsAffectedBy(account));
+    lockCards(List.of(account), transactionId);
+  }
+
+  private void lockCards(List<Account> accounts, UUID transactionId) {
+    SortedSet<UUID> cards = new TreeSet<>();
+    accounts.forEach(account -> cards.addAll(settlementDetectionService.cardsAffectedBy(account)));
     settlementMatchRepository
         .findByTransactionId(transactionId)
         .forEach(match -> cards.add(match.getCardAccount().getId()));
     cards.forEach(settlementDetectionService::lockCard);
+  }
+
+  // A restore may bring back a transfer's other leg, on another account whose cards' matching it
+  // takes part in too. That account is read before any row is locked (cards before rows); the
+  // caller must be able to edit it anyway, which requireEditOnOtherAccounts checks again.
+  private List<Account> accountsToLockForRestore(
+      Account account, UUID transactionId, AuthenticatedUserPrincipal actor) {
+    return transactionRepository
+        .findTransferCounterpartyAccountId(
+            transactionId, account.getId(), TransferRecordingService.TRANSFER_TYPES)
+        .filter(other -> !other.equals(account.getId()))
+        .map(other -> List.of(account, accountLookupService.findAccountOrThrow(other, actor)))
+        .orElseGet(() -> List.of(account));
   }
 
   // A confirmed match flagged both legs an internal transfer; dissolving it makes the other leg an

@@ -1067,6 +1067,7 @@ public class TransactionService {
         transaction.getVoidReason(),
         transaction.getReplacesTransactionId(),
         transaction.getCorrectsTransactionId(),
+        transaction.getRestoresTransactionId(),
         transaction.getDeletedAt(),
         transaction.getCounterpartyAccountId(),
         VersionPreconditionService.persistedVersion(transaction.getVersion(), VERSIONED_RESOURCE));
