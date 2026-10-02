@@ -251,7 +251,8 @@ public class TransactionRemovalService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     if (original.getRestoredAt() != null) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "This transaction is already restored.");
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "This transaction is already restored.");
     }
     if (original.getVoidedAt().isBefore(restoreWindowStart())) {
       throw expiredRestore("voided");
