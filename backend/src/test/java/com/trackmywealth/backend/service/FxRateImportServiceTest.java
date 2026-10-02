@@ -401,6 +401,28 @@ class FxRateImportServiceTest {
     assertThat(provider.calls).isEmpty();
   }
 
+  // Only the new currency's pairs are derived over the history: those between the others were
+  // derived when they came into use, and redoing them would cost every pair on every day again.
+  @Test
+  void aCurrencyNewlyInUseDerivesOnlyItsOwnPairs() {
+    useCurrencies("CHF");
+    // As the job runs it: import, then mark the currencies in use as derived.
+    importService.importLatest();
+    importService.deriveCrossRatesForNewCurrencies();
+    String chfEur =
+        "FROM fx_rate WHERE derived AND base_currency = 'CHF' AND quote_currency = 'EUR'";
+    assertThat(jdbcTemplate.update("DELETE " + chfEur)).isEqualTo(6);
+
+    useCurrencies("USD");
+
+    assertThat(importService.deriveCrossRatesForNewCurrencies())
+        .as("USD/CHF, CHF/USD and USD/EUR on six weekdays")
+        .isEqualTo(3 * 6);
+    assertThat(jdbcTemplate.queryForObject("SELECT count(*) " + chfEur, Integer.class))
+        .as("a pair of currencies already in use is not derived again")
+        .isZero();
+  }
+
   @Test
   void providerDownLeavesStoredRatesInUseMarkedStaleAndLogsWithTheRunsCorrelationId(
       CapturedOutput output) throws Exception {

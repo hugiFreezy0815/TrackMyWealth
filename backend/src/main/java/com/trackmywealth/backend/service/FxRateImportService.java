@@ -247,7 +247,7 @@ public class FxRateImportService {
                   return 0;
                 }
                 int derived =
-                    fxRateBatchRepository.deriveCrossRates(
+                    fxRateBatchRepository.deriveCrossRatesOfNewCurrencies(
                         provider.source(), ALL_HISTORY_FROM, ALL_HISTORY_TO);
                 fxRateBatchRepository.markCrossRatesDerived(pending);
                 return derived;

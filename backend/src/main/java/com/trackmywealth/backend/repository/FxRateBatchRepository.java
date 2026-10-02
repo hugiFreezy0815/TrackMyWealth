@@ -32,7 +32,7 @@ public class FxRateBatchRepository {
   // x/y = (EUR/y) / (EUR/x), the euro's own rate being 1. The dividend is widened so the quotient
   // carries 30 decimal places before the single rounding to fx_rate's ten - the same value
   // FxRateService computes for an unstored pair. A quotient fx_rate cannot hold is left out.
-  private static final String DERIVE_CROSS_RATES =
+  private static final String DERIVE_CROSS_RATES_TEMPLATE =
       """
       WITH published AS (
           SELECT f.rate_date, f.quote_currency AS currency, f.rate
@@ -51,7 +51,7 @@ public class FxRateBatchRepository {
                  round(b.rate::NUMERIC(40, 30) / a.rate, 10) AS rate
           FROM day_rates a
           JOIN day_rates b ON b.rate_date = a.rate_date AND b.currency <> a.currency
-          WHERE a.currency <> 'EUR'
+          WHERE a.currency <> 'EUR'%s
       )
       INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source, derived)
       SELECT base_currency, quote_currency, rate_date, rate, ?, TRUE
@@ -59,6 +59,19 @@ public class FxRateBatchRepository {
       WHERE rate > 0 AND rate < 1e10
       ON CONFLICT (base_currency, quote_currency, rate_date, source) DO NOTHING
       """;
+
+  private static final String DERIVE_CROSS_RATES = DERIVE_CROSS_RATES_TEMPLATE.formatted("");
+
+  // For a currency newly in use only its own pairs are missing - those between the others were
+  // derived when they came into use - so over the whole history only pairs naming one of them.
+  private static final String DERIVE_CROSS_RATES_OF_NEW_CURRENCIES =
+      DERIVE_CROSS_RATES_TEMPLATE.formatted(
+          """
+
+            AND (a.currency IN (SELECT currency FROM fx_rate_currency_in_use
+                                WHERE NOT cross_rates_derived)
+              OR b.currency IN (SELECT currency FROM fx_rate_currency_in_use
+                                WHERE NOT cross_rates_derived))""");
 
   private final JdbcTemplate jdbcTemplate;
 
@@ -103,6 +116,17 @@ public class FxRateBatchRepository {
   public int deriveCrossRates(String source, LocalDate from, LocalDate to) {
     return jdbcTemplate.update(
         DERIVE_CROSS_RATES, source, Date.valueOf(from), Date.valueOf(to), source);
+  }
+
+  /**
+   * {@link #deriveCrossRates} for {@code from} to {@code to}, limited to the pairs that name a
+   * currency in use whose cross rates have not been derived yet.
+   *
+   * @return how many rows were inserted
+   */
+  public int deriveCrossRatesOfNewCurrencies(String source, LocalDate from, LocalDate to) {
+    return jdbcTemplate.update(
+        DERIVE_CROSS_RATES_OF_NEW_CURRENCIES, source, Date.valueOf(from), Date.valueOf(to), source);
   }
 
   /** The ids of the currencies in use whose cross rates have not been derived yet. */
