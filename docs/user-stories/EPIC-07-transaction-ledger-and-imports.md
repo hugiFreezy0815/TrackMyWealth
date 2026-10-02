@@ -224,6 +224,13 @@ currency, date, quantity, price or account records a removal of the original (so
 manual row, void for an imported one) plus a replacement row, atomically. A non-financial edit
 stays a normal update. **Dependencies:** US-07-02. **Priority:** MUST. **Size:** M.
 
+**Decisions (2026-10-02, #178):** one `PUT …/transactions/{id}` with `If-Match` takes the full
+editable state, and the server decides between an in-place edit and a correction. Voiding an
+imported row requires the member's `reason` (422 without it), as for a delete. Transfer legs and
+card purchases with a FEE row return 409 for a financial change until US-07-08 (#216); a
+settlement match is dissolved. The replacement links back via `corrects_transaction_id` (V49).
+See `database-schema.md`, "Correcting a transaction".
+
 ---
 
 ## US-07-07 — Restore a voided transaction within 30 days

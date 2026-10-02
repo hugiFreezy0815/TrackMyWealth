@@ -217,6 +217,49 @@ public class TransactionService {
       return toResponse(
           replay.get(), latestAssignments(List.of(replay.get())).get(replay.get().getId()));
     }
+    return response(insert(account, request, null, actor));
+  }
+
+  /**
+   * US-07-06/FR-LIF-004: records {@code request} on {@code account} as the replacement of {@code
+   * original}, which the caller has just removed in the same transaction. Exactly what recording a
+   * new transaction does - the same validation, FX resolution, FEE row and settlement/transfer
+   * detection - except that the replacement keeps the original's provenance ({@code source}, so an
+   * imported row's correction stays T2, and its {@code raw_source_data}), points back at it through
+   * {@code corrects_transaction_id}, and inherits a member's category override ({@link
+   * CategorizationService#categorizeReplacement}). The caller has checked EDIT on {@code account}
+   * and runs this inside its own transaction, together with the removal.
+   */
+  TransactionResponse recordReplacement(
+      Account account,
+      CreateTransactionRequest request,
+      Transaction original,
+      AuthenticatedUserPrincipal actor) {
+    Transaction replacement = insert(account, request, original, actor);
+    // Detection may have flagged the replacement after its own flush; flush again so the returned
+    // version - the response's ETag - is the stored one.
+    transactionRepository.flush();
+    return response(replacement);
+  }
+
+  // How the row got its category is read back from the log written in this same transaction.
+  private TransactionResponse response(Transaction transaction) {
+    // A row without a category (an uncategorized type) has nothing to look up.
+    String assignedBy =
+        transaction.getCategoryId() == null
+            ? null
+            : latestAssignments(List.of(transaction)).get(transaction.getId());
+    return toResponse(transaction, assignedBy);
+  }
+
+  // The write shared by a new transaction and a correction's replacement: validation through to
+  // detection. {@code corrected} is the original a replacement corrects, null for a new row.
+  private Transaction insert(
+      Account account,
+      CreateTransactionRequest request,
+      Transaction corrected,
+      AuthenticatedUserPrincipal actor) {
+    UUID accountId = account.getId();
     // Only a CREDIT_CARD_PURCHASE ever needs the card's billing_currency (the FX check, resolution
     // and any FEE row below) - every other card write (e.g. the card-side SETTLEMENT leg)
     // previously
@@ -251,14 +294,22 @@ public class TransactionService {
     transaction.setCurrency(request.currency());
     transaction.setMerchantDescription(request.merchantDescription());
     transaction.setNotes(request.notes());
-    transaction.setSource(MANUAL);
     transaction.setExternalId(request.externalId());
-    // FR-CC-002/RULE-011: the MCC is source data, kept in raw_source_data - category_id is a
-    // separate column a later categorization writes, so neither can overwrite the other.
-    transaction.setRawSourceData(
-        request.mcc() == null
-            ? null
-            : objectMapper.writeValueAsString(Map.of(MCC_KEY, request.mcc())));
+    if (corrected == null) {
+      transaction.setSource(MANUAL);
+      // FR-CC-002/RULE-011: the MCC is source data, kept in raw_source_data - category_id is a
+      // separate column a later categorization writes, so neither can overwrite the other.
+      transaction.setRawSourceData(
+          request.mcc() == null
+              ? null
+              : objectMapper.writeValueAsString(Map.of(MCC_KEY, request.mcc())));
+    } else {
+      // A correction fixes what was recorded, not where it came from: the source data (an MCC, an
+      // import's raw record) still describes the same real-world transaction.
+      transaction.setSource(corrected.getSource());
+      transaction.setRawSourceData(corrected.getRawSourceData());
+      transaction.setCorrectsTransactionId(corrected.getId());
+    }
     transaction.setCreatedBy(actor.userId());
     transaction.setSecurityId(request.securityId());
     transaction.setQuantity(request.quantity());
@@ -290,8 +341,12 @@ public class TransactionService {
     // here, inside this method, rather than deferred to end-of-transaction commit - same reasoning
     // as AccountService's own saveAndFlush calls.
     Transaction saved = transactionRepository.saveAndFlush(transaction);
-    // US-08-01: once per new row, in this same transaction; a replay above is never re-categorized.
-    Optional<String> assignedBy = categorizationService.categorize(saved);
+    // US-08-01: once per new row, in this same transaction; a replay is never re-categorized.
+    if (corrected == null) {
+      categorizationService.categorize(saved);
+    } else {
+      categorizationService.categorizeReplacement(saved, corrected, actor);
+    }
 
     if (isCardPurchase && foreignCurrency && request.feeAmount() != null) {
       Transaction fee = new Transaction();
@@ -322,7 +377,7 @@ public class TransactionService {
     // just completed a settlement pair or an own-account transfer.
     settlementDetectionService.detectAfterWrite(account, request.bookingDate());
     transferDetectionService.detectAfterWrite(account, request.bookingDate());
-    return toResponse(saved, assignedBy.orElse(null));
+    return saved;
   }
 
   /**
@@ -497,8 +552,7 @@ public class TransactionService {
     if (request.fxRateToAccountCurrency() != null) {
       requestedRate = request.fxRateToAccountCurrency();
     } else if (request.billedAmount() != null && request.amount().signum() != 0) {
-      requestedRate =
-          request.billedAmount().divide(request.amount(), FX_RATE_SCALE, RoundingMode.HALF_UP);
+      requestedRate = rateFromBilledAmount(request.billedAmount(), request.amount());
     } else if (request.billedAmount() != null) {
       return false; // a zero amount can't derive a comparable rate - not the same request
     } else {
@@ -549,9 +603,18 @@ public class TransactionService {
         && sameDecimal(row.getTaxWithheldAmount(), request.taxWithheldAmount());
   }
 
+  /**
+   * The rate a disclosed {@code billedAmount} implies for {@code amount}, scaled to {@value
+   * #FX_RATE_SCALE} places like {@code fx_rate_to_account_currency}. {@code amount} must not be
+   * zero.
+   */
+  static BigDecimal rateFromBilledAmount(BigDecimal billedAmount, BigDecimal amount) {
+    return billedAmount.divide(amount, FX_RATE_SCALE, RoundingMode.HALF_UP);
+  }
+
   // compareTo, not equals: the stored NUMERIC comes back at the column's scale (10.0000000000),
   // the request at whatever scale the client sent (10).
-  private static boolean sameDecimal(BigDecimal stored, BigDecimal requested) {
+  static boolean sameDecimal(BigDecimal stored, BigDecimal requested) {
     return stored == null
         ? requested == null
         : requested != null && stored.compareTo(requested) == 0;
@@ -912,8 +975,7 @@ public class TransactionService {
       return new ForeignCurrencyResolution(request.fxRateToAccountCurrency(), false);
     }
     if (request.billedAmount() != null) {
-      BigDecimal rate =
-          request.billedAmount().divide(request.amount(), FX_RATE_SCALE, RoundingMode.HALF_UP);
+      BigDecimal rate = rateFromBilledAmount(request.billedAmount(), request.amount());
       if (rate.abs().compareTo(MAX_FX_RATE) >= 0) {
         throw new ResponseStatusException(
             HttpStatus.UNPROCESSABLE_CONTENT,
@@ -972,6 +1034,7 @@ public class TransactionService {
         transaction.getVoidedAt(),
         transaction.getVoidReason(),
         transaction.getReplacesTransactionId(),
+        transaction.getCorrectsTransactionId(),
         transaction.getDeletedAt(),
         transaction.getCounterpartyAccountId(),
         VersionPreconditionService.persistedVersion(transaction.getVersion(), VERSIONED_RESOURCE));

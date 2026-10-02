@@ -479,8 +479,35 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   V36's sign rules already did, so a dividend with withholding tax can be voided; `net = gross -
   tax` still holds. The unresolved-settlement figure leaves out reversals too: voiding a card-side
   `SETTLEMENT` credit adds a negative `SETTLEMENT` row that is not a payment awaiting review.
-- **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02, undoing a
-  void is US-07-07, and correction as void plus replacement is US-07-06.
+- **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02, and undoing
+  a void is US-07-07.
+
+### Correcting a transaction (US-07-06)
+
+`PUT …/transactions/{id}` takes the row's full editable state (FR-LIF-004, issue #178). The
+server compares it with the stored row, and the member never chooses the mechanism (FR-LIF-002b):
+
+- **Only `merchant_description`/`notes` differ:** a normal in-place update. Neither column is
+  frozen by `trg_transaction_append_only`. The category keeps its own endpoint.
+- **Any frozen field differs** (account, dates, amount, currency, FX rate, fee, security,
+  quantity, price, dividend gross/tax): the original is removed exactly as above, soft-deleted
+  if manual and voided with the member's reason if imported. A replacement is then recorded in
+  the same database transaction, through the same validation, FX resolution and detection as a
+  new row. It keeps the original's `source` (an imported row's correction stays T2) and
+  `raw_source_data`, and links back through `corrects_transaction_id` (`V49`, at most one per
+  original, `uq_transaction_correction`). It is an ordinary row: it counts, and it can be
+  corrected or removed again. A row is never both a reversal and a replacement
+  (`transaction_correction_not_reversal`).
+- **Category:** a member's override on the original carries over to the replacement while its
+  category is still assignable, recorded as an override by the member making the correction.
+  Otherwise the replacement is categorized like a new row.
+- **FX rate:** a rate counts as changed only when the request states a different one. An
+  estimated rate (PR-011) sent back unchanged is estimated again for the replacement's own values,
+  never recorded as a disclosed rate.
+- **Not yet:** a row linked to another one (a transfer leg, or a card purchase with its FEE row,
+  or that FEE row) gets 409 for a financial change; it is deleted and recorded again (correcting it is US-07-08, #216). Its
+  description and notes can still be edited. A settlement match on a corrected row is dissolved,
+  as for a removal.
 
 ## 5. Time-series data and partitioning
 

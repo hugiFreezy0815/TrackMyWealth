@@ -37,6 +37,10 @@ import java.util.UUID;
  * original stays listed with {@code voidedAt} and {@code voidReason} (FR-LIF-003); its reversing
  * row points back at it through {@code replacesTransactionId}. {@code deletedAt} is set only in the
  * restore list of soft-deleted rows.
+ *
+ * <p>US-07-06: {@code correctsTransactionId} is set on a replacement row and names the original
+ * whose financial fields it corrected (that original is soft-deleted or voided); {@code null} on
+ * every other row.
  */
 public record TransactionResponse(
     UUID id,
@@ -70,6 +74,7 @@ public record TransactionResponse(
     OffsetDateTime voidedAt,
     String voidReason,
     UUID replacesTransactionId,
+    UUID correctsTransactionId,
     OffsetDateTime deletedAt,
     UUID counterpartyAccountId,
     int version) {}

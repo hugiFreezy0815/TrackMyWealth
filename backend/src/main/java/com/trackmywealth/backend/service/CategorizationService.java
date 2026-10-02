@@ -248,6 +248,33 @@ public class CategorizationService {
   }
 
   /**
+   * US-07-06: categorizes a just-saved replacement row like a new one (US-08-01), except that a
+   * member's override on the original it corrects carries over (US-08-02) - recorded as an override
+   * by the member making the correction, who is the one now asserting it. An override whose
+   * category is no longer assignable does not carry over; the automatic layers decide instead, as
+   * they would for any new row. Returns how the category was assigned, as {@link #categorize}.
+   */
+  @Transactional
+  public Optional<String> categorizeReplacement(
+      Transaction replacement, Transaction original, AuthenticatedUserPrincipal actor) {
+    UUID overridden = original.getCategoryId();
+    if (overridden != null
+        && isOverridden(original)
+        && categoryService
+            .assignableCategoryIds(replacement.getWorkspace().getId())
+            .contains(overridden)) {
+      replacement.setCategoryId(overridden);
+      transactionRepository.saveAndFlush(replacement);
+      TransactionCategorizationLog log =
+          logRepository.save(
+              TransactionCategorizationLog.ofUserOverride(
+                  replacement.getId(), overridden, actor.userId()));
+      return Optional.of(log.getAssignedBy());
+    }
+    return categorize(replacement);
+  }
+
+  /**
    * US-08-02 "reset to automatic": runs the automatic layers again as for a new row and returns how
    * the category was assigned (empty for UNCATEGORIZED). A type the engine never categorizes goes
    * back to having no category. The override log row stays as history; it stops counting because it

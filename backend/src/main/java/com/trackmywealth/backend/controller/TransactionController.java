@@ -2,9 +2,12 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
+import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
+import com.trackmywealth.backend.dto.UpdateTransactionRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.TransactionCorrectionService;
 import com.trackmywealth.backend.service.TransactionRemovalService;
 import com.trackmywealth.backend.service.TransactionService;
 import com.trackmywealth.backend.service.TransferResolutionService;
@@ -39,14 +42,17 @@ public class TransactionController {
 
   private final TransactionService transactionService;
   private final TransactionRemovalService transactionRemovalService;
+  private final TransactionCorrectionService transactionCorrectionService;
   private final TransferResolutionService transferResolutionService;
 
   public TransactionController(
       TransactionService transactionService,
       TransactionRemovalService transactionRemovalService,
+      TransactionCorrectionService transactionCorrectionService,
       TransferResolutionService transferResolutionService) {
     this.transactionService = transactionService;
     this.transactionRemovalService = transactionRemovalService;
+    this.transactionCorrectionService = transactionCorrectionService;
     this.transferResolutionService = transferResolutionService;
   }
 
@@ -103,6 +109,26 @@ public class TransactionController {
     TransactionResponse response =
         transactionService.resetCategory(
             accountId, transactionId, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(response, response.version());
+  }
+
+  /**
+   * US-07-06/FR-LIF-004: edits the transaction. A change to description or notes only is made in
+   * place; a change to any financial field removes the original the way its provenance requires (an
+   * imported row's void needs a {@code reason}) and records a replacement, atomically. The
+   * response's {@code transaction} and ETag are the row as it now stands. Needs EDIT on the account
+   * (and on the target account when the edit moves the row).
+   */
+  @PutMapping("/transactions/{transactionId}")
+  public ResponseEntity<TransactionCorrectionResponse> updateTransaction(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @Valid @RequestBody UpdateTransactionRequest request,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    TransactionCorrectionResponse response =
+        transactionCorrectionService.update(
+            accountId, transactionId, request, IfMatchVersionParser.parse(ifMatch), actor);
     return VersionedResponse.ok(response, response.version());
   }
 

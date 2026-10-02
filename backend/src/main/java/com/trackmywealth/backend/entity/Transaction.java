@@ -193,6 +193,11 @@ public class Transaction {
   @Column(name = "replaces_transaction_id", columnDefinition = UUID_COLUMN)
   private UUID replacesTransactionId;
 
+  // US-07-06/FR-LIF-004: on a replacement row, the original whose financial fields it corrects
+  // (that original is soft-deleted or voided in the same step). An ordinary row otherwise (V49).
+  @Column(name = "corrects_transaction_id", columnDefinition = UUID_COLUMN)
+  private UUID correctsTransactionId;
+
   // US-07-02/FR-LIF-002a T1: a soft-deleted manual row. The entity's @SQLRestriction hides it from
   // every JPA query; only TransactionRepository's native queries for restoring see it (V39).
   @Column(name = "deleted_at")
@@ -466,6 +471,14 @@ public class Transaction {
   }
 
   /** A reversing row of a void: it goes with its original and is never removed on its own. */
+  public UUID getCorrectsTransactionId() {
+    return correctsTransactionId;
+  }
+
+  public void setCorrectsTransactionId(UUID correctsTransactionId) {
+    this.correctsTransactionId = correctsTransactionId;
+  }
+
   public boolean isReversal() {
     return replacesTransactionId != null;
   }

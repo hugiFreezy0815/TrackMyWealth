@@ -148,12 +148,37 @@ public class TransactionRemovalService {
     versionPreconditionService.requireCurrent(
         expectedVersion, original.getVersion(), TransactionService.VERSIONED_RESOURCE);
 
-    OffsetDateTime now = OffsetDateTime.now(clock);
     SortedSet<UUID> unmatched = new TreeSet<>();
+    List<Transaction> reversals = removeRows(affected, voidReason, actor, unmatched);
+    // Match dissolution may have changed the rows again; flush so every returned version - and
+    // the ETag - is the one stored, not one Hibernate would only write at commit.
+    transactionRepository.flush();
+    return new TransactionRemovalResponse(
+        removal,
+        VersionPreconditionService.persistedVersion(
+            original.getVersion(), TransactionService.VERSIONED_RESOURCE),
+        transactionService.toResponses(affected),
+        transactionService.toResponses(reversals),
+        List.copyOf(unmatched));
+  }
+
+  /**
+   * Removes the given rows, already locked and checked by the caller: soft-deleted when {@code
+   * voidReason} is null, otherwise voided with it and each reversed by a new row, which are
+   * returned. Every open settlement match on a row is dissolved first; the other leg of each is
+   * added to {@code unmatched}, unless it is one of the rows removed here. Shared with {@link
+   * TransactionCorrectionService}, whose removal is the first half of a correction.
+   */
+  List<Transaction> removeRows(
+      List<Transaction> rows,
+      String voidReason,
+      AuthenticatedUserPrincipal actor,
+      SortedSet<UUID> unmatched) {
+    OffsetDateTime now = OffsetDateTime.now(clock);
     List<Transaction> reversals = new ArrayList<>();
-    for (Transaction row : affected) {
+    for (Transaction row : rows) {
       dissolveMatches(row, unmatched);
-      if (softDelete) {
+      if (voidReason == null) {
         row.setDeletedAt(now);
         row.setDeletedBy(actor.userId());
         transactionRepository.saveAndFlush(row);
@@ -165,17 +190,8 @@ public class TransactionRemovalService {
         reversals.add(transactionRepository.saveAndFlush(reversalOf(row, actor.userId())));
       }
     }
-    affected.forEach(row -> unmatched.remove(row.getId()));
-    // Match dissolution may have changed the rows again; flush so every returned version - and
-    // the ETag - is the one stored, not one Hibernate would only write at commit.
-    transactionRepository.flush();
-    return new TransactionRemovalResponse(
-        removal,
-        VersionPreconditionService.persistedVersion(
-            original.getVersion(), TransactionService.VERSIONED_RESOURCE),
-        transactionService.toResponses(affected),
-        transactionService.toResponses(reversals),
-        List.copyOf(unmatched));
+    rows.forEach(row -> unmatched.remove(row.getId()));
+    return reversals;
   }
 
   /**
@@ -284,7 +300,14 @@ public class TransactionRemovalService {
   // Plus the cards of any existing match, which a former settlement source may still have. Sorted,
   // so two removals take them in the same order.
   private void lockCards(Account account, UUID transactionId) {
-    SortedSet<UUID> cards = new TreeSet<>(settlementDetectionService.cardsAffectedBy(account));
+    lockCards(List.of(account), transactionId);
+  }
+
+  // The same for a correction, which may also move the row to another account: the cards of both
+  // are taken together, in one sorted order.
+  void lockCards(List<Account> accounts, UUID transactionId) {
+    SortedSet<UUID> cards = new TreeSet<>();
+    accounts.forEach(account -> cards.addAll(settlementDetectionService.cardsAffectedBy(account)));
     settlementMatchRepository
         .findByTransactionId(transactionId)
         .forEach(match -> cards.add(match.getCardAccount().getId()));
@@ -357,7 +380,7 @@ public class TransactionRemovalService {
     return value == null ? null : value.negate();
   }
 
-  private static String requireReason(String reason) {
+  static String requireReason(String reason) {
     String trimmed = reason == null ? "" : reason.strip();
     if (trimmed.isEmpty()) {
       throw new ResponseStatusException(
