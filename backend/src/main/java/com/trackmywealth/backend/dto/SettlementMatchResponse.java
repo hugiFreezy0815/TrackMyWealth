@@ -33,6 +33,8 @@ import java.util.UUID;
  * @param creditAccountId the account money entered - same as {@code cardAccountId}
  * @param creditTransactionId the incoming leg, {@code null} for a one-sided candidate - same as
  *     {@code cardTransactionId}
+ * @param transferFxRate on a confirmed cross-currency transfer (US-10-06), the rate its two amounts
+ *     imply: one unit of the debit's currency in the credit's; {@code null} otherwise
  */
 public record SettlementMatchResponse(
     UUID id,
@@ -52,4 +54,5 @@ public record SettlementMatchResponse(
     UUID debitTransactionId,
     UUID creditAccountId,
     UUID creditTransactionId,
+    BigDecimal transferFxRate,
     int version) {}

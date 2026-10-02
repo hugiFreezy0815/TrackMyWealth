@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.hibernate.annotations.Generated;
@@ -68,6 +69,11 @@ public class SettlementMatch {
   // leg, cardTransaction the credit leg and cardAccount the credit leg's account.
   @Column(name = "match_kind", nullable = false)
   private String matchKind = SettlementMatchValues.CARD_SETTLEMENT;
+
+  // US-10-06 (V51): on a confirmed cross-currency transfer, the rate its two amounts imply - one
+  // unit of the debit's currency in the credit's. Null for every other match.
+  @Column(name = "transfer_fx_rate", precision = 20, scale = 10)
+  private BigDecimal transferFxRate;
 
   // Null when the system decided (an unambiguous exact pair, or a competing proposal that lost).
   @Column(name = "decided_by", columnDefinition = "uuid")
@@ -143,6 +149,14 @@ public class SettlementMatch {
 
   public void setMatchKind(String matchKind) {
     this.matchKind = matchKind;
+  }
+
+  public BigDecimal getTransferFxRate() {
+    return transferFxRate;
+  }
+
+  public void setTransferFxRate(BigDecimal transferFxRate) {
+    this.transferFxRate = transferFxRate;
   }
 
   /** US-10-01: an own-account transfer pair rather than a card settlement. */

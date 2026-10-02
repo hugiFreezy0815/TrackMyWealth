@@ -43,7 +43,7 @@ scenarios, asserting exclusion from cash-flow totals.
   untracked account.
 - **Cash flow:** income, spending, saving (a new `counts_as_saving` account flag) and pending
   review.
-- **Cross-currency matching** is US-10-06.
+- **Cross-currency matching** is US-10-06 (delivered with #181).
 
 See `docs/architecture/database-schema.md`.
 
@@ -169,3 +169,12 @@ Split from US-10-01 on 2026-09-29; the full story is issue #181. Two imported le
 between accounts in different currencies are proposed as a pair (never auto-applied) when their
 amounts agree within a tolerance at the daily FX rate; without a rate, no pair is proposed.
 **Dependencies:** US-10-01, the import framework. **Priority:** SHOULD. **Size:** M.
+
+**Decided (2026-10-02, PR #221 review):**
+- **Tolerance:** 2% (`app.fx.transfer-match-tolerance`), only to recognise the pair; no margin is
+  charged or recorded.
+- **Rate:** a leg's own imported rate where it bridges the two currencies (the debit's first),
+  else the latest stored rate on or before the debit's booking date, in either direction.
+- **Stored rate:** confirming a pair stores the rate its two amounts imply on the match (V51).
+- **Realised FX difference:** not reported.
+- **Missing rates:** fetched by a daily ECB import and on demand - a separate story.

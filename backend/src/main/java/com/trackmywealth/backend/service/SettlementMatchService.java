@@ -8,12 +8,15 @@ import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.SettlementMatch;
+import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -42,6 +45,9 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class SettlementMatchService {
+
+  // fx_rate.rate and settlement_match.transfer_fx_rate are NUMERIC(20,10).
+  private static final int FX_RATE_SCALE = 10;
 
   // The list is a work queue, not a history browser: bounded, newest first.
   static final int MAX_LISTED = 200;
@@ -211,9 +217,24 @@ public class SettlementMatchService {
     match.setStatus(SettlementMatchValues.CONFIRMED);
     match.setDecidedBy(actor.userId());
     match.setDecidedAt(now);
+    match.setTransferFxRate(impliedTransferRate(match));
     settlementMatchRepository.saveAndFlush(match);
     settlementDetectionService.applyFlags(match);
     return toResponse(match);
+  }
+
+  // US-10-06 (V51, DM-06): a confirmed cross-currency transfer carries the rate the bank actually
+  // applied, which follows from its two amounts - one unit of the debit's currency in the credit's,
+  // at fx_rate's scale. A same-currency transfer or a card settlement has none.
+  static BigDecimal impliedTransferRate(SettlementMatch match) {
+    Transaction debit = match.getPaymentTransaction();
+    Transaction credit = match.getCardTransaction();
+    if (!match.isTransfer() || credit == null || debit.getCurrency().equals(credit.getCurrency())) {
+      return null;
+    }
+    return credit
+        .getAmount()
+        .divide(debit.getAmount().negate(), FX_RATE_SCALE, RoundingMode.HALF_EVEN);
   }
 
   /**
@@ -379,6 +400,7 @@ public class SettlementMatchService {
         debitTransactionId,
         creditAccountId,
         creditTransactionId,
+        match.getTransferFxRate(),
         VersionPreconditionService.persistedVersion(match.getVersion(), "settlement match"));
   }
 }
