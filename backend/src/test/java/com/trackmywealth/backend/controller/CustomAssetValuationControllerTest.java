@@ -41,8 +41,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * correct historical attribution); {@link
  * #theValuationAsOfADateIsTheLatestOneOnOrBeforeItNeverAnInterpolation} is AC #2's "no silent
  * interpolation" requirement (PR-011), verified directly against {@link
- * CustomAssetValuationService#getValuationAsOf} since no net-worth/reporting feature exists yet to
- * expose it through an endpoint (the same gap US-05-03/#68 already documented).
+ * CustomAssetValuationService#getValuationAsOf}. Net worth (AccountValuationService) has since
+ * applied the same "latest on or before" rule through its own repository query.
  *
  * <p>{@code currency} is deliberately not settable through the API ({@link
  * CreateCustomAssetValuationRequest}'s own Javadoc), so {@link

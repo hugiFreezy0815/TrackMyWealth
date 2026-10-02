@@ -6,8 +6,8 @@ import java.time.LocalDate;
 /**
  * Result of {@code FxRateService.getRate}. Lives in {@code dto}, not {@code service}, purely for
  * ArchUnit's {@code services_are_named_consistently} rule (every class in {@code ..service..} must
- * be {@code @Service}-annotated and end with "Service") - nothing crosses the REST boundary with
- * this shape yet (US-06-01 is storage/read-contract only, no controller consumes it this sprint).
+ * be {@code @Service}-annotated and end with "Service"). It is internal: no endpoint returns this
+ * shape; services use the rate it carries (see {@code FxRateService}).
  *
  * @param rate multiply an amount in the queried base currency by this to get the quote currency
  *     amount

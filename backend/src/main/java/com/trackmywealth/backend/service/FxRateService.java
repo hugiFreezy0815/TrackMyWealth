@@ -32,8 +32,9 @@ import org.springframework.web.server.ResponseStatusException;
  * reciprocal division would need its own rounding-policy decision this story doesn't otherwise need
  * to make - left for whichever future story actually needs it.
  *
- * <p>No controller yet - nothing consumes either read contract outside of tests this sprint (EPIC
- * 15/16/18/19, which would, are not built yet).
+ * <p>No FX endpoint of its own: {@link TransactionService} (rates for foreign-currency rows) and
+ * {@link AccountValuationService} (net worth and institution summaries) consume these lookups.
+ * Portfolios and performance (EPIC 15/16) will be further consumers.
  */
 @Service
 public class FxRateService {

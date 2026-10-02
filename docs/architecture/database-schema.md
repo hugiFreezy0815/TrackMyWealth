@@ -131,15 +131,15 @@ through a join to `account`/`security`/`account_snapshot`. `security`, `listing`
 `workspace_id` at all and are **not** RLS-protected — this is deliberate: they are shared,
 global reference data (DM-25, NFR-LIC-006/007), not tenant data.
 
-**Production hardening not yet wired up:** this scaffold runs migrations and the application
+**Production hardening not yet wired up:** the application runs migrations and its own queries
 under the same database role for local-development simplicity. Before a multi-workspace hosted
 deployment goes live, split this into a migration-owner role (used only by Flyway, at deploy
 time) and a `NOSUPERUSER`, non-owner runtime role (used only by the running application, granted
 `SELECT/INSERT/UPDATE/DELETE` but not `CREATEDB`/`ALTER`) — the commented-out template at the
-bottom of `V20__tenancy_row_level_security.sql` is the starting point. `FR-TEN-010` requires an
-automated cross-tenant test suite that attempts unauthorized access against every endpoint and
-entity type in CI; write it against that runtime role, not the migration role, or it will pass
-for the wrong reason (superusers bypass RLS unconditionally).
+bottom of `V20__tenancy_row_level_security.sql` is the starting point. The automated cross-tenant
+suite `FR-TEN-010` requires (`CrossTenantIsolationTest`, US-28-04) already runs as such a role -
+`NOSUPERUSER NOBYPASSRLS` - because a superuser bypasses RLS unconditionally and the suite would
+pass for the wrong reason; keep any new isolation test on that role, not the migration role.
 
 ### Object-level denial audit lifecycle (US-28-02, #205)
 
@@ -578,7 +578,7 @@ Post-MVP list (section 38) and open decisions (section 42):
 - **User-facing data export** (OOS-008) is out of scope per the specification; the schema
   satisfies FR-DAT-008 (everything derived is rebuildable from source) so it costs nothing to add
   later if that decision reverses (OPEN-031).
-- A dedicated `refresh_token`/`user_session` pair exists (V16) but the Spring Security
-  configuration, JWT filter chain and password-hashing service that consume them are **not**
-  implemented in this scaffold — see `docs/user-stories/EPIC-02-user-administration-and-auth.md`
-  and `EPIC-28-tenancy-authentication-authorization.md` for the corresponding developer stories.
+- The `refresh_token`/`user_session` pair (V16) is consumed by the Spring Security configuration,
+  the JWT filter chain and the password-hashing and token-rotation services (EPIC 02, EPIC 28);
+  see `docs/user-stories/EPIC-02-user-administration-and-auth.md` and
+  `EPIC-28-tenancy-auth-authorization.md` for the stories.

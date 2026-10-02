@@ -38,10 +38,10 @@ import org.springframework.web.server.ResponseStatusException;
  * </ol>
  *
  * The general-purpose "set the workspace context for any request" mechanism this pattern
- * foreshadows is US-28-01's job (see {@code
- * docs/architecture/adr/0002-workspace-context-propagation.md}) - this class only needs it for its
- * own one-off bootstrap transaction, so it calls {@code set_config} directly rather than depending
- * on infrastructure that doesn't exist yet.
+ * foreshadowed is US-28-01's {@code WorkspaceContextTransactionExecutionListener} (see {@code
+ * docs/architecture/adr/0002-workspace-context-propagation.md}), which takes the workspace from the
+ * authenticated principal. Setup runs before any principal or workspace exists, so this class sets
+ * the context itself with {@code set_config} for its one-off bootstrap transaction.
  */
 @Service
 public class SetupService {

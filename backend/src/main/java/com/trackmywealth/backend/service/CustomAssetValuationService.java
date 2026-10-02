@@ -22,12 +22,11 @@ import org.springframework.transaction.annotation.Transactional;
  * isn't client input at all - {@link #recordValuation} derives it from the account's own {@code
  * native_currency} - so the matching DB trigger only ever fires as defense-in-depth.
  *
- * <p>Net worth itself - reflecting a valuation in current totals, or in a historical net-worth
- * chart - is out of scope: no net-worth/reporting feature exists anywhere in this codebase yet (a
- * gap this story shares with US-05-03/#68). {@link #getValuationAsOf} is this story's complete
- * answer to "which valuation applies as of a given date" - the query a future net-worth feature
- * would call - verified directly here rather than through a reporting endpoint that doesn't exist,
- * so it deliberately has no {@link AccessControlService} check of its own yet either.
+ * <p>Net worth was out of this story's scope. It exists since: {@link AccountValuationService}
+ * reflects a custom asset's latest valuation as of a date in net worth and institution summaries,
+ * reading the repository itself. {@link #getValuationAsOf} answers the same "which valuation
+ * applies as of a given date" question for tests and has no {@link AccessControlService} check of
+ * its own; a caller exposing it must check access first.
  *
  * <p>US-03-03 follow-up: {@link #recordValuation}/{@link #listValuations} are now gated via {@code
  * AccessControlService} ({@code EDIT}/{@code READ} respectively) - a dollar-valued valuation is

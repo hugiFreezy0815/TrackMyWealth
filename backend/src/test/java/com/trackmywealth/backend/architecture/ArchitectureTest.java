@@ -34,11 +34,11 @@ import org.springframework.web.bind.annotation.RestController;
  * docs/architecture/development-standards.md} as executable rules, not just documentation - see
  * that file for the full rationale and for how this class is expected to grow.
  *
- * <p>Deliberately covers packages (controller, service, repository, entity, dto) that don't exist
- * yet at this stage of the project: ArchUnit rules over an empty package are vacuously true, so
- * these start enforcing automatically the moment the first class lands in one of them, rather than
- * needing to be written retroactively - the same pattern EPIC-28's cross-tenant test suite
- * (US-28-04) uses for entity coverage.
+ * <p>The rules were written before the packages they cover (controller, service, repository,
+ * entity, dto) had any classes - ArchUnit rules over an empty package are vacuously true - so each
+ * started enforcing the moment its first class landed instead of being written retroactively, the
+ * same pattern EPIC-28's cross-tenant test suite (US-28-04) uses for entity coverage. All of these
+ * packages are populated now; a new package gets its rule the same way, before its first class.
  */
 @AnalyzeClasses(
     packagesOf = com.trackmywealth.backend.TrackMyWealthApplication.class,
