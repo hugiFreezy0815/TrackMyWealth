@@ -1,7 +1,6 @@
 package com.trackmywealth.backend.config;
 
-import com.trackmywealth.backend.job.FxRateDailyImportJob;
-import com.trackmywealth.backend.job.FxRateHistoryCheckJob;
+import com.trackmywealth.backend.job.FxRateImportJob;
 import java.time.Instant;
 import java.util.Date;
 import java.util.TimeZone;
@@ -16,13 +15,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Registers the FX import's Quartz jobs (US-06-04, #223) - the first jobs on the clustered JDBC job
+ * Registers the FX import's Quartz job (US-06-04, #223) - the first job on the clustered JDBC job
  * store V90 created for EPIC 30. Spring Boot schedules every {@link JobDetail} and {@link Trigger}
  * bean; {@code spring.quartz.overwrite-existing-jobs} makes a changed schedule replace the stored
  * one on the next start. Not registered at all with {@code app.fx.import.enabled=false}.
  *
- * <p>A missed daily firing (the application was down at 16:30) fires once as soon as the scheduler
- * is back; the import itself resumes from the last stored day, so it never loses one.
+ * <p>One job with three triggers, so its runs never overlap ({@link FxRateImportJob}). A missed
+ * scheduled firing (the application was down) fires once as soon as the scheduler is back; the
+ * import itself resumes from the last stored day, so it never loses one.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "app.fx.import", name = "enabled", havingValue = "true")
@@ -31,57 +31,53 @@ public class FxRateImportJobConfig {
   public static final String JOB_GROUP = "fx-rate-import";
 
   @Bean
-  JobDetail fxRateDailyImportJobDetail() {
-    return JobBuilder.newJob(FxRateDailyImportJob.class)
-        .withIdentity("daily-import", JOB_GROUP)
-        .withDescription("Imports the latest ECB FX rates and any missing history (#223)")
+  JobDetail fxRateImportJobDetail() {
+    return JobBuilder.newJob(FxRateImportJob.class)
+        .withIdentity("import", JOB_GROUP)
+        .withDescription("Imports the ECB FX rates, their history and cross rates (#223)")
         .storeDurably()
         .build();
   }
 
+  // Every two hours by default (product owner, 2026-10-02).
   @Bean
-  Trigger fxRateDailyImportTrigger(
-      JobDetail fxRateDailyImportJobDetail, FxRateImportProperties properties) {
+  Trigger fxRateScheduledImportTrigger(
+      JobDetail fxRateImportJobDetail, FxRateImportProperties properties) {
     return TriggerBuilder.newTrigger()
-        .forJob(fxRateDailyImportJobDetail)
-        .withIdentity("daily-import", JOB_GROUP)
+        .forJob(fxRateImportJobDetail)
+        .withIdentity("scheduled-import", JOB_GROUP)
+        .usingJobData(FxRateImportJob.MODE, FxRateImportJob.IMPORT)
         .withSchedule(
-            CronScheduleBuilder.cronSchedule(properties.dailyCron())
-                .inTimeZone(TimeZone.getTimeZone(properties.dailyCronZone()))
+            CronScheduleBuilder.cronSchedule(properties.importCron())
+                .inTimeZone(TimeZone.getTimeZone(properties.importCronZone()))
                 .withMisfireHandlingInstructionFireAndProceed())
         .build();
   }
 
   // Once at every start: a fresh installation loads its history straight away rather than at the
-  // next 16:30, and one that was down catches up. The import resumes from the last stored day, so
-  // an extra run costs one small provider call at most.
+  // next scheduled run, and one that was down catches up. The import resumes from the last stored
+  // day, so an extra run costs one small provider call at most.
   @Bean
-  Trigger fxRateStartupImportTrigger(JobDetail fxRateDailyImportJobDetail) {
+  Trigger fxRateStartupImportTrigger(JobDetail fxRateImportJobDetail) {
     return TriggerBuilder.newTrigger()
-        .forJob(fxRateDailyImportJobDetail)
+        .forJob(fxRateImportJobDetail)
         .withIdentity("startup-import", JOB_GROUP)
+        .usingJobData(FxRateImportJob.MODE, FxRateImportJob.IMPORT)
         .startNow()
         .withSchedule(
             SimpleScheduleBuilder.simpleSchedule().withMisfireHandlingInstructionFireNow())
         .build();
   }
 
-  @Bean
-  JobDetail fxRateHistoryCheckJobDetail() {
-    return JobBuilder.newJob(FxRateHistoryCheckJob.class)
-        .withIdentity("history-check", JOB_GROUP)
-        .withDescription("Loads older FX history once an older transaction is booked (#223)")
-        .storeDurably()
-        .build();
-  }
-
+  // Loads the history an older booking needs soon after it is booked; no provider call otherwise.
   @Bean
   Trigger fxRateHistoryCheckTrigger(
-      JobDetail fxRateHistoryCheckJobDetail, FxRateImportProperties properties) {
+      JobDetail fxRateImportJobDetail, FxRateImportProperties properties) {
     long intervalMillis = properties.historyCheckInterval().toMillis();
     return TriggerBuilder.newTrigger()
-        .forJob(fxRateHistoryCheckJobDetail)
+        .forJob(fxRateImportJobDetail)
         .withIdentity("history-check", JOB_GROUP)
+        .usingJobData(FxRateImportJob.MODE, FxRateImportJob.HISTORY_CHECK)
         .startAt(Date.from(Instant.now().plusMillis(intervalMillis)))
         .withSchedule(
             SimpleScheduleBuilder.simpleSchedule()

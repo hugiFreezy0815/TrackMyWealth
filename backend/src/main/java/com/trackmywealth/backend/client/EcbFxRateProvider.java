@@ -3,6 +3,7 @@ package com.trackmywealth.backend.client;
 import com.trackmywealth.backend.config.FxRateImportProperties;
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -41,20 +42,26 @@ public class EcbFxRateProvider implements FxRateProvider {
   private static final String EURO = "EUR";
   // fx_rate.rate is NUMERIC(20,10): at most ten integer digits.
   private static final BigDecimal MAX_RATE = BigDecimal.TEN.pow(10);
+  // How much of an unreadable answer an error message quotes.
+  private static final int MAX_QUOTED_CHARS = 120;
 
   private final RestClient restClient;
+  private final RestClient onDemandRestClient;
 
   @Autowired
   public EcbFxRateProvider(FxRateImportProperties properties) {
     this(
-        RestClient.builder()
-            .baseUrl(properties.ecbBaseUrl().toString())
-            .requestFactory(requestFactory(properties))
-            .build());
+        buildRestClient(properties, properties.readTimeout()),
+        buildRestClient(properties, properties.onDemandReadTimeout()));
   }
 
   EcbFxRateProvider(RestClient restClient) {
+    this(restClient, restClient);
+  }
+
+  private EcbFxRateProvider(RestClient restClient, RestClient onDemandRestClient) {
     this.restClient = restClient;
+    this.onDemandRestClient = onDemandRestClient;
   }
 
   @Override
@@ -64,13 +71,22 @@ public class EcbFxRateProvider implements FxRateProvider {
 
   @Override
   public List<ProvidedFxRate> fetch(LocalDate from, LocalDate to) {
+    return fetch(restClient, from, to);
+  }
+
+  @Override
+  public List<ProvidedFxRate> fetchOnDemand(LocalDate from, LocalDate to) {
+    return fetch(onDemandRestClient, from, to);
+  }
+
+  private static List<ProvidedFxRate> fetch(RestClient client, LocalDate from, LocalDate to) {
     if (from.isAfter(to)) {
       return List.of();
     }
     String body;
     try {
       body =
-          restClient
+          client
               .get()
               .uri(
                   uri ->
@@ -114,7 +130,7 @@ public class EcbFxRateProvider implements FxRateProvider {
     for (String line : lines.subList(1, lines.size())) {
       String[] fields = line.split(",", -1);
       if (fields.length <= lastColumn) {
-        throw new FxRateProviderException("ECB answered with an unreadable row: " + line);
+        throw new FxRateProviderException("ECB answered with an unreadable row: " + quote(line));
       }
       ProvidedFxRate rate =
           toRate(
@@ -153,7 +169,7 @@ public class EcbFxRateProvider implements FxRateProvider {
     try {
       return new ProvidedFxRate(EURO, currency, LocalDate.parse(date), rate);
     } catch (DateTimeParseException e) {
-      throw new FxRateProviderException("ECB answered with an unreadable date: " + date, e);
+      throw new FxRateProviderException("ECB answered with an unreadable date: " + quote(date), e);
     }
   }
 
@@ -169,16 +185,30 @@ public class EcbFxRateProvider implements FxRateProvider {
   private static int column(List<String> header, String name) {
     int index = header.indexOf(name);
     if (index < 0) {
-      throw new FxRateProviderException("ECB answer has no " + name + " column: " + header);
+      throw new FxRateProviderException(
+          "ECB answer has no " + name + " column: " + quote(String.join(",", header)));
     }
     return index;
   }
 
-  private static JdkClientHttpRequestFactory requestFactory(FxRateImportProperties properties) {
+  // Provider text in a message ends up in the log: control characters (a forged line break) are
+  // replaced and the quote is cut short.
+  static String quote(String text) {
+    String printable = text.replaceAll("\\p{Cntrl}", "?");
+    return printable.length() <= MAX_QUOTED_CHARS
+        ? printable
+        : printable.substring(0, MAX_QUOTED_CHARS) + "...";
+  }
+
+  private static RestClient buildRestClient(
+      FxRateImportProperties properties, Duration readTimeout) {
     JdkClientHttpRequestFactory factory =
         new JdkClientHttpRequestFactory(
             HttpClient.newBuilder().connectTimeout(properties.connectTimeout()).build());
-    factory.setReadTimeout(properties.readTimeout());
-    return factory;
+    factory.setReadTimeout(readTimeout);
+    return RestClient.builder()
+        .baseUrl(properties.ecbBaseUrl().toString())
+        .requestFactory(factory)
+        .build();
   }
 }

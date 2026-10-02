@@ -9,6 +9,7 @@ import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Period;
 import java.util.stream.Stream;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
@@ -79,6 +80,36 @@ class FxRateServiceTest {
     fxRate.setRate(new BigDecimal(rate));
     fxRate.setSource(source);
     return fxRateRepository.save(fxRate);
+  }
+
+  // Review of PR #225, finding 4: a non-positive stale-after would mark a weekend's rate stale.
+  @Test
+  void aNonPositiveStaleAfterIsRejectedAtStartup() {
+    for (Period invalid : new Period[] {Period.ZERO, Period.ofDays(-5)}) {
+      assertThatThrownBy(() -> new FxRateService(fxRateRepository, null, invalid))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("app.fx.stale-after must be a positive period.");
+    }
+  }
+
+  // V54: a cross rate the import derived is a stored pair, but says it went through the euro.
+  @Test
+  void aStoredDerivedCrossRateIsUsedAsStoredAndReportedAsViaTheEuro() {
+    LocalDate date = LocalDate.of(2026, 9, 15);
+    FxRate derived = new FxRate();
+    derived.setBaseCurrency("USD");
+    derived.setQuoteCurrency("CHF");
+    derived.setRateDate(date);
+    derived.setRate(new BigDecimal("0.7956000000"));
+    derived.setSource(SOURCE);
+    derived.setDerived(true);
+    fxRateRepository.save(derived);
+
+    CurrencyConversionResult result = fxRateService.getConversionRate("USD", "CHF", date, SOURCE);
+
+    assertThat(result.rate()).isEqualByComparingTo("0.7956");
+    assertThat(result.direct()).isFalse();
+    assertThat(result.intermediateCurrency()).isEqualTo("EUR");
   }
 
   @Test

@@ -193,8 +193,13 @@ until a real secret is supplied; a Compose backend start without it fails immedi
 
 ### FX rates
 
-The backend loads the European Central Bank's daily euro reference rates by itself (#223): once at
-every start and daily at 16:30 Europe/Berlin, with history back to the first booked transaction.
+The backend loads the European Central Bank's daily euro reference rates by itself (#223) and keeps
+them as master data: once at every start and every two hours (Europe/Berlin), with history back to
+the first booked transaction. When an older transaction is imported, its history is loaded in the
+background within minutes, and transfer pairs that were waiting for those rates are proposed then.
+The cross rates between the currencies in use (e.g. CHF/USD) are stored too. Only creating a
+foreign-currency transaction for a date before all stored rates waits for the ECB (at most
+`FX_IMPORT_ON_DEMAND_READ_TIMEOUT`, default 20 s), because its rate is fixed when it is created.
 The request carries no user data. Conversions read source `ECB` (`FX_DEFAULT_SOURCE`); a rate older
 than `FX_STALE_AFTER` (default `P5D`) is shown as stale. To run without outbound calls, set
 `FX_IMPORT_ENABLED=false` and `FX_DEFAULT_SOURCE=MANUAL`, and enter rates yourself. The other
@@ -300,8 +305,9 @@ today (closed stories on GitHub; details in `docs/architecture/database-schema.m
   last-member protection; institutions with summaries; every account type, archive/restore,
   institution reassignment, custom assets with dated valuations.
 - **Currency** (EPIC 06): dated FX rates, conversion between any two currencies (direct pair,
-  inverted, or via the euro), and a daily import of the ECB's euro reference rates (#223) with
-  history from the first booking on and fetch-on-missing.
+  inverted, or via the euro), and an import of the ECB's euro reference rates every two hours
+  (#223) with history from the first booking on and the cross rates between the currencies in use
+  stored as master data.
 - **Transaction ledger** (EPIC 07): manual recording of every supported type; append-only removal
   (soft delete or void with a reversing entry), correction as removal plus replacement, restore
   within 30 days.

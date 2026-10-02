@@ -21,4 +21,13 @@ public interface FxRateProvider {
    *     read
    */
   List<ProvidedFxRate> fetch(LocalDate from, LocalDate to);
+
+  /**
+   * {@link #fetch} for a call a user's request is waiting for, with the shorter on-demand timeout.
+   *
+   * @throws FxRateProviderException as {@link #fetch}
+   */
+  default List<ProvidedFxRate> fetchOnDemand(LocalDate from, LocalDate to) {
+    return fetch(from, to);
+  }
 }

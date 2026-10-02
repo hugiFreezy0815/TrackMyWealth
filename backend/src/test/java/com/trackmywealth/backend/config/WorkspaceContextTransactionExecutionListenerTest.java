@@ -2,6 +2,7 @@ package com.trackmywealth.backend.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.security.SystemWorkspaceContext;
 import com.trackmywealth.backend.security.WorkspacePrincipal;
 import com.zaxxer.hikari.HikariDataSource;
 import jakarta.persistence.EntityManager;
@@ -88,6 +89,24 @@ class WorkspaceContextTransactionExecutionListenerTest {
     String setting = tx.execute(status -> currentWorkspaceIdSetting());
 
     assertThat(setting).isEqualTo(workspaceId.toString());
+  }
+
+  // #223: a background job re-running transfer detection has no request principal; the system
+  // context sets the workspace for the transactions it starts and restores the thread afterwards.
+  @Test
+  void systemWorkProvidesItsWorkspaceToRowLevelSecurityAndRestoresTheThread() {
+    UUID callersWorkspace = UUID.randomUUID();
+    authenticateAs(callersWorkspace);
+    UUID jobsWorkspace = UUID.randomUUID();
+    TransactionTemplate tx = new TransactionTemplate(transactionManager);
+    List<String> seen = new ArrayList<>();
+
+    SystemWorkspaceContext.runInWorkspace(
+        jobsWorkspace, () -> seen.add(tx.execute(status -> currentWorkspaceIdSetting())));
+
+    assertThat(seen).containsExactly(jobsWorkspace.toString());
+    String afterwards = tx.execute(status -> currentWorkspaceIdSetting());
+    assertThat(afterwards).isEqualTo(callersWorkspace.toString());
   }
 
   @Test

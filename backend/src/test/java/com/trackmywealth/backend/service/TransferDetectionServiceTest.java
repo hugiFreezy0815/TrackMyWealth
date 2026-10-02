@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
+import com.trackmywealth.backend.repository.TransferDetectionFxPendingRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -58,6 +59,7 @@ class TransferDetectionServiceTest {
         mock(SettlementDetectionService.class),
         mock(WorkspaceRepository.class),
         mock(FxRateService.class),
+        mock(TransferDetectionFxPendingRepository.class),
         Clock.systemUTC(),
         "MANUAL",
         new BigDecimal(tolerance));

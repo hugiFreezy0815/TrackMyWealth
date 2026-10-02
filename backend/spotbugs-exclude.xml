@@ -80,6 +80,14 @@ holds itself to for its own exemption list.
         <Class name="com.trackmywealth.backend.service.TransferDetectionService"/>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
+
+    <!-- Same reasoning again, for #223: FxRateService rejects a non-positive app.fx.stale-after,
+         which would mark every carried-forward rate stale, a weekend's included. It must fail
+         application startup. The class has no finalizer, so the attack is not reachable. -->
+    <Match>
+        <Class name="com.trackmywealth.backend.service.FxRateService"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
     <!-- EPIC-29 (#149): CorrelationIdFilter echoes a caller's X-Correlation-Id on the response so
          a request can be traced end to end. It echoes only a value that matched
          [A-Za-z0-9._-]{8,64} in full - no CR/LF, no separators, nothing a header-injection or

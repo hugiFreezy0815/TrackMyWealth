@@ -144,14 +144,18 @@ app:
       # registered and a missing rate is never fetched (the request sends no user data).
       enabled: ${FX_IMPORT_ENABLED:true}
       ecb-base-url: ${FX_IMPORT_ECB_BASE_URL:https://data-api.ecb.europa.eu/service/data/EXR}
-      # Quartz cron (seconds first). The ECB publishes around 16:00 CET on TARGET business days.
-      daily-cron: ${FX_IMPORT_DAILY_CRON:0 30 16 * * ?}
-      daily-cron-zone: ${FX_IMPORT_DAILY_CRON_ZONE:Europe/Berlin}
+      # Quartz cron (seconds first): every two hours. The ECB publishes once, around 16:00 CET on
+      # TARGET business days; a run with nothing new costs one small provider call.
+      import-cron: ${FX_IMPORT_CRON:0 0 0/2 * * ?}
+      import-cron-zone: ${FX_IMPORT_CRON_ZONE:Europe/Berlin}
       # How soon history is loaded after a transaction older than every stored rate is booked.
-      history-check-interval: ${FX_IMPORT_HISTORY_CHECK_INTERVAL:1h}
+      history-check-interval: ${FX_IMPORT_HISTORY_CHECK_INTERVAL:5m}
       connect-timeout: ${FX_IMPORT_CONNECT_TIMEOUT:5s}
-      # A backfill of several years arrives as one response.
+      # Background calls: a year of rates arrives as one response.
       read-timeout: ${FX_IMPORT_READ_TIMEOUT:60s}
+      # The one call a user's request waits for: a transaction created for a date the stored rates
+      # do not reach yet (its rate is fixed at insert).
+      on-demand-read-timeout: ${FX_IMPORT_ON_DEMAND_READ_TIMEOUT:20s}
       # A fetch-on-missing that found nothing is not repeated for the same date for this long.
       on-demand-retry-after: ${FX_IMPORT_ON_DEMAND_RETRY_AFTER:1h}
     # US-10-06: maximum relative difference between the received credit and the debit converted

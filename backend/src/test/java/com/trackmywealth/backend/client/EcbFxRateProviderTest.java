@@ -160,4 +160,11 @@ class EcbFxRateProviderTest {
         .andExpect(method(HttpMethod.GET))
         .andRespond(withSuccess(body, MediaType.parseMediaType("text/csv")));
   }
+
+  // Review of PR #225, finding 5: provider text quoted in an error ends up in the log.
+  @Test
+  void providerTextQuotedInAnErrorCannotForgeALogLineAndIsCutShort() {
+    assertThat(EcbFxRateProvider.quote("D,CHF\n2026-01-01 ERROR forged")).doesNotContain("\n");
+    assertThat(EcbFxRateProvider.quote("x".repeat(500))).hasSize(123).endsWith("...");
+  }
 }

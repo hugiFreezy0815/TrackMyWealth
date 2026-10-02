@@ -13,6 +13,8 @@ import com.trackmywealth.backend.repository.FxRateRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
@@ -26,16 +28,25 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * US-06-04 (#223): fills {@code fx_rate} from the configured {@link FxRateProvider} (the ECB) so
- * that no conversion depends on rates entered by hand. Three entry points:
+ * that no conversion depends on rates entered by hand. FX rates are master data (product owner,
+ * 2026-10-02): loaded in the background, and read, never fetched, by calculations. Entry points:
  *
  * <ul>
- *   <li>{@link #importLatest} - the daily job: every day since the last stored one, up to today. On
- *       the very first run that is the full history from the first transaction booking on.
- *   <li>{@link #backfillHistory} - the history check: when a transaction older than the stored
- *       history has been booked (an import of old statements), loads the rates back to it.
- *   <li>{@link #fetchMissingHistory} - fetch-on-missing: a conversion for a date before every
- *       stored rate loads the rates around it before it gives up.
+ *   <li>{@link #importLatest} - the scheduled import, every two hours: every day since the last
+ *       stored one, up to today. On the very first run that is the full history from the first
+ *       transaction booking on.
+ *   <li>{@link #backfillHistory} - the history check, every few minutes: when a transaction older
+ *       than the stored history has been booked (an import of old statements), loads the rates from
+ *       that day on.
+ *   <li>{@link #deriveCrossRatesForNewCurrencies} - after either: a currency newly in use gets its
+ *       cross rates over the whole stored history.
+ *   <li>{@link #fetchMissingHistory} - the one call a request waits for: a transaction created for
+ *       a date before every stored rate, whose rate is fixed at insert.
  * </ul>
+ *
+ * <p>Every chunk stored also stores the cross rates between the currencies in use for its days
+ * ({@code FxRateBatchRepository#deriveCrossRates}, V54), so a conversion between two of them is a
+ * lookup of a stored rate.
  *
  * <p>Every provider call covers {@value #LOOKBACK_DAYS} days before the date it is for, so a date
  * that falls on a weekend or a holiday still finds the last published rate to carry forward
@@ -47,7 +58,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * it returned: stored rates stay in use - {@code FxRateService} marks them stale once they are old
  * enough - and the failure is logged, with the request's or the job run's correlation id from the
  * MDC. Each chunk of at most {@value #CHUNK_DAYS} days is fetched and stored in its own
- * transaction, so a long backfill that fails halfway keeps what it stored, and a caller's read-only
+ * transaction, so a long backfill that fails halfway keeps what it stored, and a caller's
  * transaction is never written to.
  */
 @Service
@@ -58,7 +69,11 @@ public class FxRateImportService {
   static final int LOOKBACK_DAYS = 7;
   static final int CHUNK_DAYS = 366;
   // The ECB's longest regular pause: Maundy Thursday to the Tuesday after Easter.
+  // app.fx.stale-after
+  // (FxRateService) defaults to the same five days for the same reason.
   static final int MAX_PUBLICATION_GAP_DAYS = 5;
+  private static final LocalDate ALL_HISTORY_FROM = LocalDate.of(1900, 1, 1);
+  private static final LocalDate ALL_HISTORY_TO = LocalDate.of(9999, 12, 31);
   private static final int MAX_REMEMBERED_ON_DEMAND_DATES = 10_000;
 
   private final FxRateProvider provider;
@@ -69,8 +84,9 @@ public class FxRateImportService {
   private final FxRateImportProperties properties;
   private final TransactionTemplate ownTransaction;
 
-  // Fetch-on-missing runs inside a user's request: one fetch at a time per instance, and a date
-  // that found nothing is not asked for again until onDemandRetryAfter has passed.
+  // Fetch-on-missing runs inside a user's request: one fetch at a time per instance - a second
+  // request waits for it rather than fetching the same year again - and a date that found nothing
+  // is not asked for again until onDemandRetryAfter has passed.
   private final ReentrantLock onDemandLock = new ReentrantLock();
   private final Cache<LocalDate, Boolean> onDemandAttempts;
   // The oldest history start the provider had nothing for (e.g. before its series begins), so
@@ -124,7 +140,7 @@ public class FxRateImportService {
             .findLatestRateDate(provider.source())
             .map(latest -> latest.plusDays(1))
             .orElseGet(() -> historyStart(today));
-    return importRange(from, today, "daily FX import");
+    return importRange(from, today, "scheduled FX import", false);
   }
 
   /**
@@ -150,7 +166,7 @@ public class FxRateImportService {
     if (!required.get().isBefore(runStart.get()) || from.equals(exhaustedHistoryStart.get())) {
       return 0;
     }
-    int stored = importRange(from, runStart.get().minusDays(1), "FX history backfill");
+    int stored = importRange(from, runStart.get().minusDays(1), "FX history backfill", false);
     if (stored == 0) {
       exhaustedHistoryStart.set(from);
     }
@@ -158,31 +174,37 @@ public class FxRateImportService {
   }
 
   /**
-   * Fetch-on-missing: when {@code date} lies before every stored rate, loads the rates from {@value
-   * #LOOKBACK_DAYS} days before it up to the earliest stored one - at most {@value #CHUNK_DAYS}
-   * days of them, so a user's request waits for one provider call of about a year at most. A gap
-   * left between those and the stored history is filled by {@link #backfillHistory} once a booking
-   * needs it; until then a conversion inside it carries the last rate forward and, past {@code
-   * app.fx.stale-after}, says it is stale. Does nothing for a date that already has a stored rate
-   * on or before it - such a conversion is answered by carrying that rate forward (FR-CUR-012) -
-   * and never throws.
+   * Fetch-on-missing, for a transaction being created: when {@code date} lies before every stored
+   * rate, loads the rates from {@value #LOOKBACK_DAYS} days before it up to the earliest stored one
+   * - at most {@value #CHUNK_DAYS} days of them, one provider call with the on-demand timeout. A
+   * gap left between those and the stored history is filled by {@link #backfillHistory}. Does
+   * nothing for a date that already has a stored rate on or before it - such a conversion carries
+   * that rate forward (FR-CUR-012) - and never throws.
    *
-   * @return {@code true} when new rates were stored, so a lookup is worth repeating
+   * <p>While another request's fetch runs, waits for it (at most the on-demand timeout) and then
+   * checks again, so the second of two requests for the same old year is answered from what the
+   * first stored instead of failing.
+   *
+   * @return {@code true} when rates now cover {@code date}, so a lookup is worth repeating
    */
   public boolean fetchMissingHistory(LocalDate date) {
-    if (!properties.enabled()) {
-      return false;
-    }
-    Optional<LocalDate> earliestStored = fxRateRepository.findEarliestRateDate(provider.source());
-    if (earliestStored.isPresent() && !date.isBefore(earliestStored.get())) {
-      return false;
-    }
-    // Another request's fetch is running: answer from what is stored rather than queue up while
-    // holding a database connection.
-    if (!onDemandLock.tryLock()) {
+    if (!properties.enabled() || isCovered(date)) {
       return false;
     }
     try {
+      if (!onDemandLock.tryLock(
+          properties.onDemandReadTimeout().toMillis(), TimeUnit.MILLISECONDS)) {
+        return false;
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
+    try {
+      Optional<LocalDate> earliestStored = fxRateRepository.findEarliestRateDate(provider.source());
+      if (covers(earliestStored, date)) {
+        return true; // stored by the request this one waited for
+      }
       if (onDemandAttempts.asMap().putIfAbsent(date, Boolean.TRUE) != null) {
         return false;
       }
@@ -191,10 +213,52 @@ public class FxRateImportService {
           min(
               earliestStored.map(d -> d.minusDays(1)).orElseGet(businessDateService::today),
               from.plusDays(CHUNK_DAYS - 1L));
-      return importRange(from, to, "FX fetch-on-missing") > 0;
+      return importRange(from, to, "FX fetch-on-missing", true) > 0;
     } finally {
       onDemandLock.unlock();
     }
+  }
+
+  /**
+   * Stores the cross rates of every currency that came into use since the last run (V54) over the
+   * whole stored history - new pairs of an account, transaction or institution in a currency not
+   * used before. Never throws.
+   *
+   * @return how many cross rates were stored
+   */
+  public int deriveCrossRatesForNewCurrencies() {
+    if (!properties.enabled()) {
+      return 0;
+    }
+    try {
+      Integer stored =
+          ownTransaction.execute(
+              status -> {
+                List<UUID> pending = fxRateBatchRepository.findCurrenciesNotYetDerived();
+                if (pending.isEmpty()) {
+                  return 0;
+                }
+                int derived =
+                    fxRateBatchRepository.deriveCrossRates(
+                        provider.source(), ALL_HISTORY_FROM, ALL_HISTORY_TO);
+                fxRateBatchRepository.markCrossRatesDerived(pending);
+                return derived;
+              });
+      return stored == null ? 0 : stored;
+    } catch (DataAccessException | TransactionException e) {
+      if (LOG.isWarnEnabled()) {
+        LOG.warn("Deriving FX cross rates for new currencies failed: {}", e.getMessage(), e);
+      }
+      return 0;
+    }
+  }
+
+  private boolean isCovered(LocalDate date) {
+    return covers(fxRateRepository.findEarliestRateDate(provider.source()), date);
+  }
+
+  private static boolean covers(Optional<LocalDate> earliestStored, LocalDate date) {
+    return earliestStored.isPresent() && !date.isBefore(earliestStored.get());
   }
 
   private LocalDate historyStart(LocalDate today) {
@@ -206,7 +270,7 @@ public class FxRateImportService {
     return start.isAfter(today) ? today : start;
   }
 
-  private int importRange(LocalDate from, LocalDate to, String purpose) {
+  private int importRange(LocalDate from, LocalDate to, String purpose, boolean onDemand) {
     if (!properties.enabled() || from.isAfter(to)) {
       return 0;
     }
@@ -215,7 +279,7 @@ public class FxRateImportService {
     try {
       while (!chunkStart.isAfter(to)) {
         LocalDate chunkEnd = min(chunkStart.plusDays(CHUNK_DAYS - 1L), to);
-        stored += importChunk(chunkStart, chunkEnd);
+        stored += importChunk(chunkStart, chunkEnd, onDemand);
         chunkStart = chunkEnd.plusDays(1);
       }
     } catch (FxRateProviderException | DataAccessException | TransactionException e) {
@@ -237,12 +301,23 @@ public class FxRateImportService {
     return stored;
   }
 
-  private int importChunk(LocalDate from, LocalDate to) {
-    List<FxRate> rates = provider.fetch(from, to).stream().map(this::toEntity).toList();
+  // Published rates and the cross rates derived from them are committed together.
+  private int importChunk(LocalDate from, LocalDate to, boolean onDemand) {
+    List<ProvidedFxRate> provided =
+        onDemand ? provider.fetchOnDemand(from, to) : provider.fetch(from, to);
+    List<FxRate> rates = provided.stream().map(this::toEntity).toList();
     if (rates.isEmpty()) {
       return 0;
     }
-    Integer stored = ownTransaction.execute(status -> fxRateBatchRepository.insertIfAbsent(rates));
+    Integer stored =
+        ownTransaction.execute(
+            status -> {
+              int inserted = fxRateBatchRepository.insertIfAbsent(rates);
+              if (inserted > 0) {
+                fxRateBatchRepository.deriveCrossRates(provider.source(), from, to);
+              }
+              return inserted;
+            });
     return stored == null ? 0 : stored;
   }
 

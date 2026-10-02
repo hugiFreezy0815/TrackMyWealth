@@ -7,6 +7,7 @@ import com.trackmywealth.backend.entity.SettlementMatch;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
+import com.trackmywealth.backend.repository.TransferDetectionFxPendingRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -15,6 +16,7 @@ import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,9 +44,11 @@ import org.springframework.transaction.annotation.Transactional;
  * recognise the pair, nothing is charged or stored as a margin. The rate is the most specific one
  * available: a leg's own imported rate where it converts between the two currencies (the debit's
  * first), else the stored daily rate on the debit's booking date - the latest on or before it,
- * direct in either direction before a chain via USD. No rate at all means no match; cross-currency
- * pairs are always proposed for a member to confirm. Card accounts take no part: a card is settled
- * through {@link SettlementDetectionService}.
+ * direct in either direction before a chain via EUR (#223). No rate at all means no match for now:
+ * the date is recorded and detection re-runs there once the background import has stored rates for
+ * it ({@link TransferRecheckService}). Cross-currency pairs are always proposed for a member to
+ * confirm. Card accounts take no part: a card is settled through {@link
+ * SettlementDetectionService}.
  *
  * <ul>
  *   <li><b>Applied automatically</b> - only an unambiguous <em>same-currency</em> pair (each leg
@@ -92,6 +96,7 @@ public class TransferDetectionService {
   private final SettlementDetectionService settlementDetectionService;
   private final WorkspaceRepository workspaceRepository;
   private final FxRateService fxRateService;
+  private final TransferDetectionFxPendingRepository fxPendingRepository;
   private final Clock clock;
   private final String fxDefaultSource;
   private final BigDecimal crossCurrencyTolerance;
@@ -102,6 +107,7 @@ public class TransferDetectionService {
       SettlementDetectionService settlementDetectionService,
       WorkspaceRepository workspaceRepository,
       FxRateService fxRateService,
+      TransferDetectionFxPendingRepository fxPendingRepository,
       Clock clock,
       @Value("${app.fx.default-source}") String fxDefaultSource,
       @Value("${app.fx.transfer-match-tolerance}") BigDecimal crossCurrencyTolerance) {
@@ -110,6 +116,7 @@ public class TransferDetectionService {
     this.settlementDetectionService = settlementDetectionService;
     this.workspaceRepository = workspaceRepository;
     this.fxRateService = fxRateService;
+    this.fxPendingRepository = fxPendingRepository;
     this.clock = clock;
     this.fxDefaultSource = fxDefaultSource;
     if (crossCurrencyTolerance.signum() < 0
@@ -161,14 +168,17 @@ public class TransferDetectionService {
     Map<UUID, List<Transaction>> creditsByDebit = new LinkedHashMap<>();
     Map<UUID, List<Transaction>> debitsByCredit = new HashMap<>();
     Map<String, Optional<CurrencyConversionResult>> fxRates = new HashMap<>();
+    Set<LocalDate> unrated = new HashSet<>();
     for (Transaction debit : debits) {
       for (Transaction credit : credits) {
-        if (pairs(debit, credit, fxRates) && !isRejected(known, debit, credit)) {
+        if (pairs(debit, credit, fxRates, unrated) && !isRejected(known, debit, credit)) {
           creditsByDebit.computeIfAbsent(debit.getId(), k -> new ArrayList<>()).add(credit);
           debitsByCredit.computeIfAbsent(credit.getId(), k -> new ArrayList<>()).add(debit);
         }
       }
     }
+    // #223: judged again once the background import has stored rates for these dates.
+    unrated.forEach(bookingDate -> fxPendingRepository.record(workspaceId, bookingDate));
 
     Map<UUID, Transaction> debitsById = new HashMap<>();
     debits.forEach(debit -> debitsById.put(debit.getId(), debit));
@@ -209,7 +219,8 @@ public class TransferDetectionService {
   private boolean pairs(
       Transaction debit,
       Transaction credit,
-      Map<String, Optional<CurrencyConversionResult>> fxRates) {
+      Map<String, Optional<CurrencyConversionResult>> fxRates,
+      Set<LocalDate> unrated) {
     if (debit.getAccount().getId().equals(credit.getAccount().getId())
         || !withinWindow(debit.getBookingDate(), credit.getBookingDate())) {
       return false;
@@ -235,8 +246,11 @@ public class TransferDetectionService {
             debit.getCurrency() + "|" + credit.getCurrency() + "|" + debit.getBookingDate(),
             ignored ->
                 storedRate(debit.getCurrency(), credit.getCurrency(), debit.getBookingDate()));
-    return stored.isPresent()
-        && amountsWithinTolerance(sent, received, stored.get().rate(), crossCurrencyTolerance);
+    if (stored.isEmpty()) {
+      unrated.add(debit.getBookingDate());
+      return false;
+    }
+    return amountsWithinTolerance(sent, received, stored.get().rate(), crossCurrencyTolerance);
   }
 
   // A leg's own fx_rate_to_account_currency converts its currency into its account's; it bridges
@@ -250,7 +264,8 @@ public class TransferDetectionService {
 
   // The rate from -> to on the date, the latest on or before it (FR-CUR-012). FxRateService
   // answers a pair either way round and through the euro (#223), so the ECB's EUR-based rates
-  // match a CHF -> USD transfer as well as a EUR -> CHF one.
+  // match a CHF -> USD transfer as well as a EUR -> CHF one. Never calls the provider: a missing
+  // rate is loaded in the background and the pair judged again then.
   private Optional<CurrencyConversionResult> storedRate(String from, String to, LocalDate date) {
     return fxRateService.tryGetConversionRate(from, to, date, fxDefaultSource);
   }

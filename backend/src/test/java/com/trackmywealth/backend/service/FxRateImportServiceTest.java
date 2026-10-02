@@ -12,7 +12,7 @@ import com.trackmywealth.backend.client.ProvidedFxRate;
 import com.trackmywealth.backend.config.FxRateImportJobConfig;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.entity.FxRate;
-import com.trackmywealth.backend.job.FxRateDailyImportJob;
+import com.trackmywealth.backend.job.FxRateImportJob;
 import com.trackmywealth.backend.repository.FxRateBatchRepository;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.MutableClock;
@@ -23,7 +23,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,9 +56,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * US-06-04 (#223) Definition of Done, against a real PostgreSQL and a stubbed provider that
- * publishes EUR/CHF and EUR/USD on every weekday: the daily import, the first run's full history,
- * the history backfill after an older booking, fetch-on-missing, the weekend carry-forward that
- * fetches nothing, and the provider-down fallback to the last stored rate, marked stale.
+ * publishes EUR/CHF and EUR/USD on every weekday: the scheduled import, the first run's full
+ * history, the history backfill after an older booking, fetch-on-missing for a transaction being
+ * created (and no fetch for any other read), the weekend carry-forward that fetches nothing, the
+ * provider-down fallback to the last stored rate, marked stale, and the cross rates between the
+ * currencies in use stored as master data (V54).
  *
  * <p>"Today" is Wednesday 2026-09-16 unless a test moves the clock. Each test asks for dates of its
  * own: the service remembers on-demand attempts and an exhausted history start in memory.
@@ -94,6 +100,7 @@ class FxRateImportServiceTest {
   @Autowired MutableClock clock;
   @Autowired JdbcTemplate jdbcTemplate;
   @Autowired Scheduler scheduler;
+  @Autowired TransferRecheckService transferRecheckService;
 
   @BeforeEach
   void setUp() {
@@ -104,6 +111,7 @@ class FxRateImportServiceTest {
   @AfterEach
   void cleanDatabase() {
     fxRateRepository.deleteAll();
+    jdbcTemplate.update("DELETE FROM fx_rate_currency_in_use");
     setEarliestBooking(null);
   }
 
@@ -193,13 +201,12 @@ class FxRateImportServiceTest {
   }
 
   @Test
-  void conversionForADateBeforeEveryStoredRateFetchesStoresAndUsesIt() {
+  void aTransactionsConversionForADateBeforeEveryStoredRateFetchesStoresAndUsesIt() {
     importService.importLatest();
     provider.calls.clear();
     LocalDate tuesday = LocalDate.of(2026, 3, 10);
 
-    CurrencyConversionResult conversion =
-        fxRateService.getConversionRate("USD", "CHF", tuesday, "ECB");
+    CurrencyConversionResult conversion = fetching("USD", "CHF", tuesday).orElseThrow();
 
     // Fetched from a week before the date up to the earliest stored rate, so history has no gap.
     assertThat(provider.calls).containsExactly(range("2026-03-03", "2026-09-08"));
@@ -218,7 +225,7 @@ class FxRateImportServiceTest {
     LocalDate oldBooking = LocalDate.of(2024, 1, 10);
     setEarliestBooking(oldBooking);
 
-    fxRateService.getConversionRate("USD", "CHF", oldBooking, "ECB");
+    fetching("USD", "CHF", oldBooking).orElseThrow();
 
     assertThat(provider.calls).containsExactly(range("2024-01-03", "2025-01-02"));
     LocalDate inTheGap = LocalDate.of(2025, 6, 3);
@@ -258,8 +265,8 @@ class FxRateImportServiceTest {
   void aDateTheProviderHasNothingForIsFetchedOnceThenRefusedWithoutAsking() {
     LocalDate beforeTheSeries = LocalDate.of(1998, 6, 2);
 
-    assertThat(fxRateService.tryGetConversionRate("USD", "CHF", beforeTheSeries, "ECB")).isEmpty();
-    assertThat(fxRateService.tryGetConversionRate("USD", "CHF", beforeTheSeries, "ECB")).isEmpty();
+    assertThat(fetching("USD", "CHF", beforeTheSeries)).isEmpty();
+    assertThat(fetching("USD", "CHF", beforeTheSeries)).isEmpty();
 
     assertThat(provider.calls).hasSize(1);
   }
@@ -270,7 +277,7 @@ class FxRateImportServiceTest {
     provider.unstorable = true;
     LocalDate date = LocalDate.of(2026, 2, 3);
 
-    assertThat(fxRateService.tryGetConversionRate("USD", "CHF", date, "ECB")).isEmpty();
+    assertThat(fetching("USD", "CHF", date)).isEmpty();
 
     assertThat(provider.calls).hasSize(1);
     assertThat(fxRateRepository.count()).isZero();
@@ -279,8 +286,90 @@ class FxRateImportServiceTest {
 
   @Test
   void anotherSourceNeverTriggersAFetch() {
-    assertThat(fxRateService.tryGetConversionRate("USD", "CHF", TODAY, "MANUAL")).isEmpty();
+    assertThat(fxRateService.tryGetConversionRateFetchingMissing("USD", "CHF", TODAY, "MANUAL"))
+        .isEmpty();
 
+    assertThat(provider.calls).isEmpty();
+  }
+
+  // Product owner, 2026-10-02: rates are master data, loaded in the background. Only a transaction
+  // being created waits for the provider; every other read answers from what is stored.
+  @Test
+  void anyOtherReadNeverCallsTheProvider() {
+    importService.importLatest();
+    provider.calls.clear();
+    LocalDate beforeEveryStoredRate = LocalDate.of(2026, 3, 10);
+
+    assertThat(fxRateService.tryGetConversionRate("USD", "CHF", beforeEveryStoredRate, "ECB"))
+        .isEmpty();
+
+    assertThat(provider.calls).isEmpty();
+  }
+
+  // Dates of its own: the service remembers on-demand attempts in memory.
+  @Test
+  void aSecondRequestWaitsForARunningFetchAndUsesWhatItStored() throws Exception {
+    importService.importLatest();
+    provider.calls.clear();
+    provider.gate = new CountDownLatch(1);
+
+    CompletableFuture<Optional<CurrencyConversionResult>> first =
+        CompletableFuture.supplyAsync(() -> fetching("USD", "CHF", LocalDate.of(2026, 4, 7)));
+    awaitCalls(1);
+    CompletableFuture<Optional<CurrencyConversionResult>> second =
+        CompletableFuture.supplyAsync(() -> fetching("USD", "CHF", LocalDate.of(2026, 4, 9)));
+    provider.gate.countDown();
+
+    assertThat(first.get(10, TimeUnit.SECONDS)).isPresent();
+    assertThat(second.get(10, TimeUnit.SECONDS)).isPresent();
+    assertThat(provider.calls).hasSize(1);
+  }
+
+  @Test
+  void crossRatesBetweenTheCurrenciesInUseAreStoredAsMasterData() {
+    useCurrencies("CHF", "USD");
+
+    importService.importLatest();
+
+    // 12 published (EUR/CHF, EUR/USD on six weekdays) and, per day, CHF/USD, USD/CHF, CHF/EUR and
+    // USD/EUR derived from them - EUR/x is published already.
+    assertThat(fxRateRepository.count()).isEqualTo(12 + 4 * 6);
+    assertThat(derivedRate("CHF", "USD", TODAY))
+        .isEqualByComparingTo(
+            provider.rate("USD", TODAY).divide(provider.rate("CHF", TODAY), 10, HALF_UP));
+    assertThat(derivedRate("USD", "EUR", TODAY))
+        .isEqualByComparingTo(BigDecimal.ONE.divide(provider.rate("USD", TODAY), 10, HALF_UP));
+
+    CurrencyConversionResult conversion =
+        fxRateService.getConversionRate("CHF", "USD", TODAY, "ECB");
+    assertThat(conversion.rate()).isEqualByComparingTo(derivedRate("CHF", "USD", TODAY));
+    assertThat(conversion.intermediateCurrency()).isEqualTo("EUR");
+    assertThat(fxRateService.getConversionRate("USD", "EUR", TODAY, "ECB").direct()).isTrue();
+  }
+
+  @Test
+  void theStoredCrossRateIsTheOneAConversionWouldOtherwiseCompute() {
+    importService.importLatest();
+    CurrencyConversionResult computed = fxRateService.getConversionRate("USD", "CHF", TODAY, "ECB");
+
+    useCurrencies("CHF", "USD");
+    importService.deriveCrossRatesForNewCurrencies();
+
+    assertThat(derivedRate("USD", "CHF", TODAY)).isEqualByComparingTo(computed.rate());
+  }
+
+  @Test
+  void aCurrencyNewlyInUseGetsItsCrossRatesOverTheWholeStoredHistory() {
+    useCurrencies("CHF");
+    importService.importLatest();
+    assertThat(fxRateRepository.count()).isEqualTo(12 + 6); // CHF/EUR only
+    provider.calls.clear();
+
+    useCurrencies("USD"); // e.g. the first account in US dollars
+    assertThat(importService.deriveCrossRatesForNewCurrencies()).isEqualTo(3 * 6);
+    assertThat(importService.deriveCrossRatesForNewCurrencies()).isZero();
+
+    assertThat(derivedRate("USD", "CHF", TODAY.minusDays(7))).isPositive();
     assertThat(provider.calls).isEmpty();
   }
 
@@ -292,7 +381,7 @@ class FxRateImportServiceTest {
     setToday(twelveDaysLater);
     provider.down = true;
 
-    dailyJob().execute(jobContext());
+    importJob().execute(jobContext());
 
     assertThat(fxRateRepository.findLatestRateDate("ECB")).contains(TODAY);
     CurrencyConversionResult conversion =
@@ -301,31 +390,69 @@ class FxRateImportServiceTest {
     assertThat(conversion.stale()).isTrue();
     assertThat(output.getAll())
         .containsPattern(
-            "\\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\] .*daily FX import"
+            "\\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\] .*scheduled FX import"
                 + " for 2026-09-17 to 2026-09-28 failed");
   }
 
+  // One job, three triggers: @DisallowConcurrentExecution then keeps every run apart (review of
+  // PR #225, finding 6). Stored in V90's clustered JDBC store, which needs PostgreSQLDelegate.
   @Test
-  void bothJobsAreRegisteredOnTheClusteredScheduler() throws Exception {
-    JobKey daily = JobKey.jobKey("daily-import", FxRateImportJobConfig.JOB_GROUP);
-    JobKey history = JobKey.jobKey("history-check", FxRateImportJobConfig.JOB_GROUP);
+  void theImportJobIsRegisteredOnTheClusteredSchedulerWithItsThreeTriggers() throws Exception {
+    JobKey job = JobKey.jobKey("import", FxRateImportJobConfig.JOB_GROUP);
 
-    assertThat(scheduler.getJobDetail(daily).getJobClass()).isEqualTo(FxRateDailyImportJob.class);
-    assertThat(scheduler.checkExists(history)).isTrue();
-    CronTrigger trigger =
+    assertThat(scheduler.getJobDetail(job).getJobClass()).isEqualTo(FxRateImportJob.class);
+    assertThat(scheduler.getJobDetail(job).isConcurrentExecutionDisallowed()).isTrue();
+    assertThat(scheduler.getTriggersOfJob(job))
+        .extracting(trigger -> trigger.getKey().getName())
+        .containsExactlyInAnyOrder("scheduled-import", "startup-import", "history-check");
+    CronTrigger scheduled =
         (CronTrigger)
             scheduler.getTrigger(
-                TriggerKey.triggerKey("daily-import", FxRateImportJobConfig.JOB_GROUP));
-    assertThat(trigger.getCronExpression()).isEqualTo("0 30 16 * * ?");
-    assertThat(trigger.getTimeZone().getID()).isEqualTo("Europe/Berlin");
+                TriggerKey.triggerKey("scheduled-import", FxRateImportJobConfig.JOB_GROUP));
+    assertThat(scheduled.getCronExpression()).isEqualTo("0 0 0/2 * * ?"); // every two hours
+    assertThat(scheduled.getTimeZone().getID()).isEqualTo("Europe/Berlin");
+    assertThat(scheduled.getJobDataMap().getString(FxRateImportJob.MODE))
+        .isEqualTo(FxRateImportJob.IMPORT);
     assertThat(
-            scheduler.checkExists(
-                TriggerKey.triggerKey("startup-import", FxRateImportJobConfig.JOB_GROUP)))
-        .isTrue();
+            scheduler
+                .getTrigger(TriggerKey.triggerKey("history-check", FxRateImportJobConfig.JOB_GROUP))
+                .getJobDataMap()
+                .getString(FxRateImportJob.MODE))
+        .isEqualTo(FxRateImportJob.HISTORY_CHECK);
   }
 
-  private FxRateDailyImportJob dailyJob() {
-    return new FxRateDailyImportJob(importService);
+  private FxRateImportJob importJob() {
+    return new FxRateImportJob(importService, transferRecheckService);
+  }
+
+  private Optional<CurrencyConversionResult> fetching(String base, String quote, LocalDate date) {
+    return fxRateService.tryGetConversionRateFetchingMissing(base, quote, date, "ECB");
+  }
+
+  private void useCurrencies(String... currencies) {
+    for (String currency : currencies) {
+      jdbcTemplate.update(
+          "INSERT INTO fx_rate_currency_in_use (currency) VALUES (?) ON CONFLICT DO NOTHING",
+          currency);
+    }
+  }
+
+  private BigDecimal derivedRate(String base, String quote, LocalDate date) {
+    return jdbcTemplate.queryForObject(
+        "SELECT rate FROM fx_rate WHERE base_currency = ? AND quote_currency = ?"
+            + " AND rate_date = ? AND source = 'ECB' AND derived",
+        BigDecimal.class,
+        base,
+        quote,
+        date);
+  }
+
+  private void awaitCalls(int count) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (provider.calls.size() < count && System.nanoTime() < deadline) {
+      Thread.sleep(10);
+    }
+    assertThat(provider.calls).hasSize(count);
   }
 
   // QuartzJobBean.execute binds the scheduler context and job data onto the job; both are empty.
@@ -384,9 +511,12 @@ class FxRateImportServiceTest {
     volatile boolean down;
     volatile boolean unstorable;
     volatile LocalDate seriesStart = ECB_SERIES_START;
+    // When set, a fetch waits for it - a provider call still running.
+    volatile CountDownLatch gate;
 
     void reset() {
       calls.clear();
+      gate = null;
       down = false;
       unstorable = false;
       seriesStart = ECB_SERIES_START;
@@ -400,6 +530,7 @@ class FxRateImportServiceTest {
     @Override
     public List<ProvidedFxRate> fetch(LocalDate from, LocalDate to) {
       calls.add(List.of(from, to));
+      awaitGate();
       if (down) {
         throw new FxRateProviderException("ECB rates for " + from + " to " + to + " unavailable");
       }
@@ -415,6 +546,18 @@ class FxRateImportServiceTest {
                 rates.add(new ProvidedFxRate("EUR", "USD", date, rate("USD", date)));
               });
       return rates;
+    }
+
+    private void awaitGate() {
+      CountDownLatch waitFor = gate;
+      if (waitFor == null) {
+        return;
+      }
+      try {
+        waitFor.await(10, TimeUnit.SECONDS);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
     }
 
     BigDecimal rate(String currency, LocalDate date) {

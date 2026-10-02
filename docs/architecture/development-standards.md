@@ -38,7 +38,8 @@ cd backend
   `client` (calls to external providers such as `EcbFxRateProvider`; returns its own records,
   never entities) and `job` (Quartz jobs: thin wrappers that run a service under a correlation id
   of their own, see `CorrelatedJob`). A repository uses `JdbcTemplate` where JPA does not fit, e.g.
-  `FxRateBatchRepository`'s bulk insert.
+  `FxRateBatchRepository`'s bulk insert. A job that must act inside one workspace runs through
+  `SystemWorkspaceContext`, which sets that workspace for row-level security and nothing else.
   `ArchitectureTest` encodes the allowed dependency direction — Controller → Service → Repository →
   Entity, Repository never called directly from a Controller, Entities never returned from a
   Controller. A rule for a new package is written before its first class lands (see that class's

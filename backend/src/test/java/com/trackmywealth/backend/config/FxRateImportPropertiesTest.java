@@ -20,7 +20,7 @@ class FxRateImportPropertiesTest {
     assertThatCode(
             () ->
                 new FxRateImportProperties(
-                    true, URL, "0 30 16 * * ?", BERLIN, HOUR, HOUR, HOUR, HOUR))
+                    true, URL, "0 0 0/2 * * ?", BERLIN, HOUR, HOUR, HOUR, HOUR, HOUR))
         .doesNotThrowAnyException();
   }
 
@@ -29,25 +29,38 @@ class FxRateImportPropertiesTest {
     assertThatThrownBy(
             () ->
                 new FxRateImportProperties(
-                    true, null, "0 30 16 * * ?", BERLIN, HOUR, HOUR, HOUR, HOUR))
+                    true, null, "0 0 0/2 * * ?", BERLIN, HOUR, HOUR, HOUR, HOUR, HOUR))
         .hasMessage("app.fx.import.ecb-base-url is required");
     assertThatThrownBy(
-            () -> new FxRateImportProperties(true, URL, " ", BERLIN, HOUR, HOUR, HOUR, HOUR))
-        .hasMessage("app.fx.import.daily-cron is required");
+            () -> new FxRateImportProperties(true, URL, " ", BERLIN, HOUR, HOUR, HOUR, HOUR, HOUR))
+        .hasMessage("app.fx.import.import-cron is required");
     assertThatThrownBy(
             () ->
                 new FxRateImportProperties(
-                    true, URL, "0 30 16 * * ?", null, HOUR, HOUR, HOUR, HOUR))
-        .hasMessage("app.fx.import.daily-cron-zone is required");
+                    true, URL, "0 0 0/2 * * ?", null, HOUR, HOUR, HOUR, HOUR, HOUR))
+        .hasMessage("app.fx.import.import-cron-zone is required");
     assertThatThrownBy(
             () ->
                 new FxRateImportProperties(
-                    true, URL, "0 30 16 * * ?", BERLIN, Duration.ZERO, HOUR, HOUR, HOUR))
+                    true, URL, "0 0 0/2 * * ?", BERLIN, Duration.ZERO, HOUR, HOUR, HOUR, HOUR))
         .hasMessage("app.fx.import.history-check-interval must be positive");
     assertThatThrownBy(
             () ->
                 new FxRateImportProperties(
-                    true, URL, "0 30 16 * * ?", BERLIN, HOUR, HOUR, HOUR, Duration.ofSeconds(-1)))
+                    true,
+                    URL,
+                    "0 0 0/2 * * ?",
+                    BERLIN,
+                    HOUR,
+                    HOUR,
+                    HOUR,
+                    HOUR,
+                    Duration.ofSeconds(-1)))
         .hasMessage("app.fx.import.on-demand-retry-after must be positive");
+    assertThatThrownBy(
+            () ->
+                new FxRateImportProperties(
+                    true, URL, "0 0 0/2 * * ?", BERLIN, HOUR, HOUR, HOUR, Duration.ZERO, HOUR))
+        .hasMessage("app.fx.import.on-demand-read-timeout must be positive");
   }
 }

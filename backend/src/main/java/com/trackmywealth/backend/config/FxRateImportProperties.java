@@ -14,13 +14,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     on the network.
  * @param ecbBaseUrl the ECB data API's EXR dataflow; the daily euro reference rates are read from
  *     it
- * @param dailyCron when the daily import runs (Quartz cron, seconds first). The ECB publishes
- *     around 16:00 CET on TARGET business days.
- * @param dailyCronZone the zone {@code dailyCron} is read in
+ * @param importCron when the import runs (Quartz cron, seconds first) - every two hours by default
+ *     (product owner, 2026-10-02). The ECB publishes once, around 16:00 CET on TARGET business
+ *     days; a run with nothing new costs one small provider call.
+ * @param importCronZone the zone {@code importCron} is read in
  * @param historyCheckInterval how often the backfill checks whether an older transaction now needs
  *     older rates; without such a need the check makes no provider call
  * @param connectTimeout connection timeout of a provider call
- * @param readTimeout read timeout of a provider call; a backfill of several years is one response
+ * @param readTimeout read timeout of a background provider call; a year of rates is one response
+ * @param onDemandReadTimeout read timeout of the one provider call a user's request waits for - a
+ *     transaction created for a date the stored rates do not reach yet
  * @param onDemandRetryAfter how long a fetch-on-missing that found nothing is not repeated for the
  *     same date, so a date the provider has no rate for costs one call, not one per conversion
  */
@@ -28,22 +31,24 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record FxRateImportProperties(
     boolean enabled,
     URI ecbBaseUrl,
-    String dailyCron,
-    ZoneId dailyCronZone,
+    String importCron,
+    ZoneId importCronZone,
     Duration historyCheckInterval,
     Duration connectTimeout,
     Duration readTimeout,
+    Duration onDemandReadTimeout,
     Duration onDemandRetryAfter) {
 
   private static final String PREFIX = "app.fx.import.";
 
   public FxRateImportProperties {
     requireNonNull(ecbBaseUrl, "ecb-base-url");
-    requireNonBlank(dailyCron, "daily-cron");
-    requireNonNull(dailyCronZone, "daily-cron-zone");
+    requireNonBlank(importCron, "import-cron");
+    requireNonNull(importCronZone, "import-cron-zone");
     requirePositive(historyCheckInterval, "history-check-interval");
     requirePositive(connectTimeout, "connect-timeout");
     requirePositive(readTimeout, "read-timeout");
+    requirePositive(onDemandReadTimeout, "on-demand-read-timeout");
     requirePositive(onDemandRetryAfter, "on-demand-retry-after");
   }
 

@@ -2,7 +2,9 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.FxRate;
 import java.sql.Date;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -11,6 +13,10 @@ import org.springframework.stereotype.Repository;
  * backfill of several years is tens of thousands of rows, which JPA would insert one statement and
  * one round trip at a time, and a rate already stored must be skipped rather than fail the whole
  * batch on {@code fx_rate}'s {@code UNIQUE(base_currency, quote_currency, rate_date, source)}.
+ *
+ * <p>Also derives the cross rates between the currencies in use (V54) from the published {@code
+ * EUR/<currency>} rows, in the database: tens of thousands of rows for a long history, none of
+ * which needs to pass through Java.
  */
 @Repository
 public class FxRateBatchRepository {
@@ -21,6 +27,38 @@ public class FxRateBatchRepository {
       "INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source)"
           + " VALUES (?, ?, ?, ?, ?)"
           + " ON CONFLICT (base_currency, quote_currency, rate_date, source) DO NOTHING";
+
+  // Every ordered pair of distinct currencies in use (and EUR), except EUR/x, which is published:
+  // x/y = (EUR/y) / (EUR/x), the euro's own rate being 1. The dividend is widened so the quotient
+  // carries 30 decimal places before the single rounding to fx_rate's ten - the same value
+  // FxRateService computes for an unstored pair. A quotient fx_rate cannot hold is left out.
+  private static final String DERIVE_CROSS_RATES =
+      """
+      WITH published AS (
+          SELECT f.rate_date, f.quote_currency AS currency, f.rate
+          FROM fx_rate f
+          WHERE f.source = ? AND f.base_currency = 'EUR' AND NOT f.derived
+            AND f.rate_date BETWEEN ? AND ?
+            AND f.quote_currency IN (SELECT currency FROM fx_rate_currency_in_use)
+      ),
+      day_rates AS (
+          SELECT rate_date, currency, rate FROM published
+          UNION ALL
+          SELECT DISTINCT rate_date, 'EUR', 1 FROM published
+      ),
+      crosses AS (
+          SELECT a.currency AS base_currency, b.currency AS quote_currency, a.rate_date,
+                 round(b.rate::NUMERIC(40, 30) / a.rate, 10) AS rate
+          FROM day_rates a
+          JOIN day_rates b ON b.rate_date = a.rate_date AND b.currency <> a.currency
+          WHERE a.currency <> 'EUR'
+      )
+      INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source, derived)
+      SELECT base_currency, quote_currency, rate_date, rate, ?, TRUE
+      FROM crosses
+      WHERE rate > 0 AND rate < 1e10
+      ON CONFLICT (base_currency, quote_currency, rate_date, source) DO NOTHING
+      """;
 
   private final JdbcTemplate jdbcTemplate;
 
@@ -54,5 +92,31 @@ public class FxRateBatchRepository {
       }
     }
     return inserted;
+  }
+
+  /**
+   * Stores the cross rates between the currencies in use for every day from {@code from} to {@code
+   * to} that has published rates of {@code source}, skipping any already stored.
+   *
+   * @return how many rows were inserted
+   */
+  public int deriveCrossRates(String source, LocalDate from, LocalDate to) {
+    return jdbcTemplate.update(
+        DERIVE_CROSS_RATES, source, Date.valueOf(from), Date.valueOf(to), source);
+  }
+
+  /** The ids of the currencies in use whose cross rates have not been derived yet. */
+  public List<UUID> findCurrenciesNotYetDerived() {
+    return jdbcTemplate.queryForList(
+        "SELECT id FROM fx_rate_currency_in_use WHERE NOT cross_rates_derived", UUID.class);
+  }
+
+  /** Marks these currencies' cross rates as derived over the whole stored history. */
+  public void markCrossRatesDerived(List<UUID> currencyIds) {
+    jdbcTemplate.batchUpdate(
+        "UPDATE fx_rate_currency_in_use SET cross_rates_derived = TRUE WHERE id = ?",
+        currencyIds,
+        BATCH_SIZE,
+        (statement, id) -> statement.setObject(1, id));
   }
 }

@@ -8,6 +8,8 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
@@ -18,11 +20,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * #223's two migrations, applied to a database that already holds data: V52 seeds the earliest
- * booking date from the existing ledger and keeps it current through a trigger on {@code
- * transaction}; V53 moves FX rates before 2023 out of {@code fx_rate_default} into their own
- * partition. Runs Flyway directly, like {@code TransactionAppendOnlyTriggerTest}: both are pure SQL
- * behaviour.
+ * #223's migrations, applied to a database that already holds data: V52 seeds the earliest booking
+ * date from the existing ledger and keeps it current through a trigger on {@code transaction}; V53
+ * moves FX rates before 2023 out of {@code fx_rate_default} into their own partition; V54 seeds the
+ * currencies in use and keeps them current through triggers. Runs Flyway directly, like {@code
+ * TransactionAppendOnlyTriggerTest}: both are pure SQL behaviour.
  */
 @Testcontainers
 class FxRateHistoryMigrationTest {
@@ -135,6 +137,58 @@ class FxRateHistoryMigrationTest {
     }
   }
 
+  @Test
+  void currenciesInUseAreSeededFromTheExistingDataAndFollowNewOnesOnce() throws Exception {
+    assertThat(currenciesInUse()).contains("CHF");
+
+    insertReturningId(
+        "INSERT INTO account(workspace_id, financial_institution_id, account_type, name,"
+            + " native_currency) SELECT workspace_id, financial_institution_id, 'SAVINGS',"
+            + " 'Dollar savings', 'USD' FROM account WHERE id = ? RETURNING id",
+        accountId);
+    book(LocalDate.of(2025, 2, 3), "GBP");
+    book(LocalDate.of(2025, 2, 4), "GBP");
+
+    assertThat(currenciesInUse()).contains("CHF", "USD", "GBP").doesNotHaveDuplicates();
+    try (PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT cross_rates_derived FROM fx_rate_currency_in_use WHERE currency = 'GBP'");
+        ResultSet rs = statement.executeQuery()) {
+      assertThat(rs.next()).isTrue();
+      assertThat(rs.getBoolean(1)).isFalse(); // the import derives its cross rates next
+    }
+  }
+
+  @Test
+  void aPendingTransferDetectionIsOneEntryPerWorkspaceAndDate() throws Exception {
+    String record =
+        "INSERT INTO transfer_detection_fx_pending (workspace_id, booking_date)"
+            + " VALUES ('"
+            + workspaceId
+            + "', DATE '2025-03-03') ON CONFLICT (workspace_id, booking_date) DO NOTHING";
+    execute(record);
+    execute(record);
+
+    try (PreparedStatement statement =
+            connection.prepareStatement("SELECT count(*) FROM transfer_detection_fx_pending");
+        ResultSet rs = statement.executeQuery()) {
+      rs.next();
+      assertThat(rs.getLong(1)).isEqualTo(1);
+    }
+  }
+
+  private static List<String> currenciesInUse() throws Exception {
+    List<String> currencies = new ArrayList<>();
+    try (PreparedStatement statement =
+            connection.prepareStatement("SELECT currency FROM fx_rate_currency_in_use");
+        ResultSet rs = statement.executeQuery()) {
+      while (rs.next()) {
+        currencies.add(rs.getString(1));
+      }
+    }
+    return currencies;
+  }
+
   private static Flyway flyway(String target) {
     var configuration =
         Flyway.configure()
@@ -146,13 +200,18 @@ class FxRateHistoryMigrationTest {
   }
 
   private static void book(LocalDate bookingDate) throws Exception {
+    book(bookingDate, "CHF");
+  }
+
+  private static void book(LocalDate bookingDate, String currency) throws Exception {
     try (PreparedStatement statement =
         connection.prepareStatement(
             "INSERT INTO transaction(workspace_id, account_id, transaction_type, booking_date,"
-                + " amount, currency) VALUES (?, ?, 'DEPOSIT', ?, 100.00, 'CHF')")) {
+                + " amount, currency) VALUES (?, ?, 'DEPOSIT', ?, 100.00, ?)")) {
       statement.setObject(1, workspaceId);
       statement.setObject(2, accountId);
       statement.setObject(3, bookingDate);
+      statement.setString(4, currency);
       statement.executeUpdate();
     }
   }

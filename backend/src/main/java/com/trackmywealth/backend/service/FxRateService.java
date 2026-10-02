@@ -27,7 +27,9 @@ import org.springframework.web.server.ResponseStatusException;
  * the stored rates of one source, in this order:
  *
  * <ol>
- *   <li>the stored {@code baseCurrency}/{@code quoteCurrency} pair;
+ *   <li>the stored {@code baseCurrency}/{@code quoteCurrency} pair - for the ECB also a cross rate
+ *       the import derived and stored as master data (V54), reported as via {@value
+ *       #INTERMEDIATE_CURRENCY};
  *   <li>the stored reverse pair, inverted - the ECB publishes {@code EUR/CHF}, never {@code
  *       CHF/EUR}, and a currency's value in another is the same fact whichever way round it is
  *       quoted;
@@ -38,9 +40,9 @@ import org.springframework.web.server.ResponseStatusException;
  *       hand-entered {@code USD/CHF} rate is used as entered.
  * </ol>
  *
- * <p>When nothing resolves and {@code source} is the import's own, {@link
- * FxRateImportService#fetchMissingHistory} loads the rates around a date that lies before every
- * stored one, and the lookup is repeated once (#223 fetch-on-missing).
+ * <p>Reads never call the rate provider: missing rates are loaded in the background (#223). The one
+ * exception is {@link #tryGetConversionRateFetchingMissing}, for a transaction whose rate is fixed
+ * when it is created.
  *
  * <p>Every result says whether a rate older than the requested date was carried forward
  * (FR-CUR-012) and whether that rate is older than {@code app.fx.stale-after} - stale, the mark a
@@ -72,6 +74,10 @@ public class FxRateService {
       @Value("${app.fx.stale-after:P5D}") Period staleAfter) {
     this.fxRateRepository = fxRateRepository;
     this.fxRateImportService = fxRateImportService;
+    // A non-positive period would mark every carried-forward rate stale, a weekend's included.
+    if (staleAfter.isNegative() || staleAfter.isZero()) {
+      throw new IllegalArgumentException("app.fx.stale-after must be a positive period.");
+    }
     this.staleAfter = staleAfter;
   }
 
@@ -87,8 +93,7 @@ public class FxRateService {
    *     404's "nothing stored for this pair" (a lowercase or malformed code would otherwise just
    *     never match any stored row)
    * @throws ResponseStatusException 404 if no rate exists for this pair/source on or before {@code
-   *     date} at all, even after fetch-on-missing (PR-011: refuse rather than silently default to
-   *     1.0)
+   *     date} at all (PR-011: refuse rather than silently default to 1.0)
    */
   @Transactional(readOnly = true)
   public FxRateLookupResult getRate(
@@ -98,24 +103,21 @@ public class FxRateService {
     requireNonNull(date, "date");
     requireNonBlank(source, "source");
 
-    Optional<FxRate> stored = findOnOrBefore(baseCurrency, quoteCurrency, source, date);
-    if (stored.isEmpty() && fetchedMissingHistory(source, date)) {
-      stored = findOnOrBefore(baseCurrency, quoteCurrency, source, date);
-    }
     FxRate fxRate =
-        stored.orElseThrow(
-            () ->
-                new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "No FX rate available for "
-                        + baseCurrency
-                        + "/"
-                        + quoteCurrency
-                        + " from '"
-                        + source
-                        + "' on or before "
-                        + date
-                        + "."));
+        findOnOrBefore(baseCurrency, quoteCurrency, source, date)
+            .orElseThrow(
+                () ->
+                    new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "No FX rate available for "
+                            + baseCurrency
+                            + "/"
+                            + quoteCurrency
+                            + " from '"
+                            + source
+                            + "' on or before "
+                            + date
+                            + "."));
 
     return new FxRateLookupResult(
         fxRate.getRate(),
@@ -175,9 +177,25 @@ public class FxRateService {
               BigDecimal.ONE, baseCurrency, quoteCurrency, date, true, null, false, false));
     }
 
+    return resolve(baseCurrency, quoteCurrency, date, source);
+  }
+
+  /**
+   * {@link #tryGetConversionRate}, except that when nothing resolves and {@code source} is the FX
+   * import's own, the rates around {@code date} are fetched from the provider first and the lookup
+   * repeated ({@link FxRateImportService#fetchMissingHistory}). Only for a transaction being
+   * created: its rate is fixed at insert (append-only, V31), so it cannot wait for the background
+   * import. The request waits for the provider, at most {@code
+   * app.fx.import.on-demand-read-timeout}.
+   */
+  @Transactional(readOnly = true)
+  public Optional<CurrencyConversionResult> tryGetConversionRateFetchingMissing(
+      String baseCurrency, String quoteCurrency, LocalDate date, String source) {
     Optional<CurrencyConversionResult> resolved =
-        resolve(baseCurrency, quoteCurrency, date, source);
-    if (resolved.isEmpty() && fetchedMissingHistory(source, date)) {
+        tryGetConversionRate(baseCurrency, quoteCurrency, date, source);
+    if (resolved.isEmpty()
+        && fxRateImportService.fetchesOnDemandFor(source)
+        && fxRateImportService.fetchMissingHistory(date)) {
       resolved = resolve(baseCurrency, quoteCurrency, date, source);
     }
     return resolved;
@@ -213,13 +231,22 @@ public class FxRateService {
 
   private Optional<CurrencyConversionResult> resolve(
       String baseCurrency, String quoteCurrency, LocalDate date, String source) {
+    // One side is already the intermediate - there is no third currency to chain through, and a
+    // derived X/EUR row is just the published EUR/X inverted.
+    boolean involvesIntermediate =
+        INTERMEDIATE_CURRENCY.equals(baseCurrency) || INTERMEDIATE_CURRENCY.equals(quoteCurrency);
     Optional<ResolvedFxRate> direct = leg(baseCurrency, quoteCurrency, date, source);
     if (direct.isPresent()) {
-      return Optional.of(toResult(direct.get(), baseCurrency, quoteCurrency, date, null));
+      boolean viaIntermediate = direct.get().derived() && !involvesIntermediate;
+      return Optional.of(
+          toResult(
+              direct.get(),
+              baseCurrency,
+              quoteCurrency,
+              date,
+              viaIntermediate ? INTERMEDIATE_CURRENCY : null));
     }
-
-    // One side is already the intermediate - there is no third currency left to chain through.
-    if (INTERMEDIATE_CURRENCY.equals(baseCurrency) || INTERMEDIATE_CURRENCY.equals(quoteCurrency)) {
+    if (involvesIntermediate) {
       return Optional.empty();
     }
 
@@ -236,7 +263,8 @@ public class FxRateService {
     ResolvedFxRate chain =
         new ResolvedFxRate(
             firstLeg.get().rate().multiply(secondLeg.get().rate(), MathContext.DECIMAL128),
-            earlier(firstLeg.get().rateDate(), secondLeg.get().rateDate()));
+            earlier(firstLeg.get().rateDate(), secondLeg.get().rateDate()),
+            true);
     return Optional.of(toResult(chain, baseCurrency, quoteCurrency, date, INTERMEDIATE_CURRENCY));
   }
 
@@ -244,14 +272,17 @@ public class FxRateService {
   private Optional<ResolvedFxRate> leg(String from, String to, LocalDate date, String source) {
     Optional<FxRate> stored = findOnOrBefore(from, to, source, date);
     if (stored.isPresent()) {
-      return Optional.of(new ResolvedFxRate(stored.get().getRate(), stored.get().getRateDate()));
+      return Optional.of(
+          new ResolvedFxRate(
+              stored.get().getRate(), stored.get().getRateDate(), stored.get().isDerived()));
     }
     return findOnOrBefore(to, from, source, date)
         .map(
             reverse ->
                 new ResolvedFxRate(
                     BigDecimal.ONE.divide(reverse.getRate(), MathContext.DECIMAL128),
-                    reverse.getRateDate()));
+                    reverse.getRateDate(),
+                    reverse.isDerived()));
   }
 
   private CurrencyConversionResult toResult(
@@ -278,11 +309,6 @@ public class FxRateService {
 
   private boolean isStale(LocalDate rateDate, LocalDate requestedDate) {
     return rateDate.isBefore(requestedDate.minus(staleAfter));
-  }
-
-  private boolean fetchedMissingHistory(String source, LocalDate date) {
-    return fxRateImportService.fetchesOnDemandFor(source)
-        && fxRateImportService.fetchMissingHistory(date);
   }
 
   private static LocalDate earlier(LocalDate a, LocalDate b) {
