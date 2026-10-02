@@ -498,6 +498,12 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
     override stays. The category itself is not part of a correction: `PUT/DELETE …/category`.
   - A corrected row cannot be restored (409), nor its fee row or transfer leg on its own: next to
     its replacement it would count twice. The replacement is the entry to restore or correct.
+  - A row that only exists as part of another one (its `related_transaction_id` is set: the
+    incoming leg of a two-sided transfer, or a card purchase's FEE row) is never corrected on
+    its own (409, naming the row to correct instead, #216). Removing it removes its whole group,
+    which a request for this one row could not re-create. Its description and notes stay
+    editable. A restored copy of such a row (US-07-07) is linked the same way and follows the
+    same rule.
 - **Restoring a void (US-07-07, FR-LIF-006).** `POST …/transactions/{id}/restore` also restores a
   void within 30 days of it. The void stays untouched: the original keeps `voided_at`/`void_reason`
   and its reversal stays. An ordinary copy of the original is inserted (same account, type, date,

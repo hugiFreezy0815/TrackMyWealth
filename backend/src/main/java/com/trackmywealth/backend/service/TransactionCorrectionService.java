@@ -30,6 +30,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TransactionCorrectionService {
 
+  private static final String FEE = "FEE";
+
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final TransactionRepository transactionRepository;
@@ -93,6 +95,7 @@ public class TransactionCorrectionService {
     if (!financialChange) {
       return editTextOnly(original, request);
     }
+    requireCorrectableOnItsOwn(original);
 
     boolean carryOverride = categorizationService.isOverridden(original);
     UUID overriddenCategory = carryOverride ? original.getCategoryId() : null;
@@ -120,6 +123,40 @@ public class TransactionCorrectionService {
     }
 
     return new TransactionCorrectionResponse(created.version(), created, removal);
+  }
+
+  /**
+   * #216: a row that only exists as part of another one is corrected through that one. Its {@code
+   * related_transaction_id} names it - set only on the incoming leg of a two-sided transfer and on
+   * a card purchase's FEE row, and frozen once written (V49). Removing either removes its group,
+   * but the request describes only this row, so a replacement could not re-create the group: an
+   * incoming leg would come back one-sided while its outgoing leg vanished from the other account.
+   * Text-only edits never reach this check.
+   */
+  private static void requireCorrectableOnItsOwn(Transaction transaction) {
+    UUID owner = transaction.getRelatedTransactionId();
+    if (owner == null) {
+      return;
+    }
+    throw new ResponseStatusException(
+        HttpStatus.CONFLICT, notCorrectableOnItsOwn(transaction, owner));
+  }
+
+  // Named for what the row is, so a linked type added later gets a true message, not the fee's.
+  private static String notCorrectableOnItsOwn(Transaction transaction, UUID owner) {
+    if (TransferRecordingService.TRANSFER_TYPES.contains(transaction.getTransactionType())) {
+      return "This is the incoming leg of a transfer; correct the transfer from its outgoing leg ("
+          + owner
+          + ").";
+    }
+    if (FEE.equals(transaction.getTransactionType())) {
+      return "This fee belongs to a card purchase; correct the purchase ("
+          + owner
+          + ") and its feeAmount instead.";
+    }
+    return "This transaction is part of transaction "
+        + owner
+        + " and is corrected through it, not on its own.";
   }
 
   private TransactionCorrectionResponse editTextOnly(
