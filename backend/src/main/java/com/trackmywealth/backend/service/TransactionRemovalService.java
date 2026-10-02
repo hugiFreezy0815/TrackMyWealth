@@ -259,29 +259,54 @@ public class TransactionRemovalService {
     versionPreconditionService.requireCurrent(
         expectedVersion, original.getVersion(), TransactionService.VERSIONED_RESOURCE);
 
-    Transaction reversal =
-        transactionRepository
-            .findByReplacesTransactionId(original.getId())
-            .orElseThrow(
-                () ->
-                    new IllegalStateException(
-                        "Voided transaction " + original.getId() + " has no reversing entry."));
-    OffsetDateTime now = OffsetDateTime.now(clock);
-    original.setRestoredAt(now);
-    original.setRestoredBy(actor.userId());
-    transactionRepository.saveAndFlush(original);
+    List<Transaction> restored = new ArrayList<>();
+    restored.add(original);
+    // A fee voided in the same operation belongs to the purchase lifecycle and must come back with
+    // it. A fee voided separately has a different timestamp and remains voided.
+    transactionRepository.findVoidedFeeRowsForUpdate(original.getId()).stream()
+        .filter(fee -> fee.getVoidedAt().isEqual(original.getVoidedAt()))
+        .forEach(restored::add);
+    if (isTransferLeg(original) && original.getRelatedTransactionId() != null) {
+      transactionRepository
+          .findByIdIncludingDeletedForUpdate(original.getRelatedTransactionId())
+          .filter(row -> row.getVoidedAt() != null)
+          .filter(row -> row.getVoidedAt().isEqual(original.getVoidedAt()))
+          .ifPresent(restored::add);
+    }
+    requireEditOnOtherAccounts(restored, account, actor);
+    requireNotCorrected(original, restored);
 
-    // Reversing the first reversal makes the original financial effect effective again. The undo
-    // row points at the first reversal, preserving the full original -> reversal -> undo history.
-    Transaction undo = transactionRepository.saveAndFlush(reversalOf(reversal, actor.userId()));
-    detectAfterRestore(account, original.getBookingDate());
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    List<Transaction> undoRows = new ArrayList<>();
+    LocalDate earliest = original.getBookingDate();
+    for (Transaction row : restored) {
+      if (row.getRestoredAt() != null) {
+        throw new ResponseStatusException(
+            HttpStatus.CONFLICT, "A linked transaction is already restored.");
+      }
+      Transaction reversal =
+          transactionRepository
+              .findByReplacesTransactionId(row.getId())
+              .orElseThrow(
+                  () ->
+                      new IllegalStateException(
+                          "Voided transaction " + row.getId() + " has no reversing entry."));
+      row.setRestoredAt(now);
+      row.setRestoredBy(actor.userId());
+      transactionRepository.saveAndFlush(row);
+      undoRows.add(transactionRepository.saveAndFlush(reversalOf(reversal, actor.userId())));
+      if (row.getBookingDate().isBefore(earliest)) {
+        earliest = row.getBookingDate();
+      }
+    }
+    detectAfterRestore(account, earliest);
     transactionRepository.flush();
     return new TransactionRemovalResponse(
         TransactionRemovalValues.VOID,
         VersionPreconditionService.persistedVersion(
             original.getVersion(), TransactionService.VERSIONED_RESOURCE),
-        transactionService.toResponses(List.of(original)),
-        transactionService.toResponses(List.of(undo)),
+        transactionService.toResponses(restored),
+        transactionService.toResponses(undoRows),
         List.of());
   }
 
