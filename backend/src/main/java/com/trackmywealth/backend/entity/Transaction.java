@@ -190,14 +190,6 @@ public class Transaction {
   @Column(name = "void_reason")
   private String voidReason;
 
-  // US-07-07/FR-LIF-006: lifecycle metadata only. Restoring a void never clears voidedAt; the
-  // financial undo is another append-only ledger row that reverses the original reversal.
-  @Column(name = "restored_at")
-  private OffsetDateTime restoredAt;
-
-  @Column(name = "restored_by", columnDefinition = UUID_COLUMN)
-  private UUID restoredBy;
-
   @Column(name = "replaces_transaction_id", columnDefinition = UUID_COLUMN)
   private UUID replacesTransactionId;
 
@@ -205,6 +197,11 @@ public class Transaction {
   // distinct from replacesTransactionId, which identifies a reversing entry of a void.
   @Column(name = "corrects_transaction_id", columnDefinition = UUID_COLUMN)
   private UUID correctsTransactionId;
+
+  // US-07-07/FR-LIF-006: on a row that re-instates a voided original, that original. The original
+  // stays voided and its reversal stays; this row is an ordinary, effective copy of it (V50).
+  @Column(name = "restores_transaction_id", columnDefinition = UUID_COLUMN)
+  private UUID restoresTransactionId;
 
   // US-07-02/FR-LIF-002a T1: a soft-deleted manual row. The entity's @SQLRestriction hides it from
   // every JPA query; only TransactionRepository's native queries for restoring see it (V39).
@@ -470,22 +467,6 @@ public class Transaction {
     this.voidReason = voidReason;
   }
 
-  public OffsetDateTime getRestoredAt() {
-    return restoredAt;
-  }
-
-  public void setRestoredAt(OffsetDateTime restoredAt) {
-    this.restoredAt = restoredAt;
-  }
-
-  public UUID getRestoredBy() {
-    return restoredBy;
-  }
-
-  public void setRestoredBy(UUID restoredBy) {
-    this.restoredBy = restoredBy;
-  }
-
   public UUID getReplacesTransactionId() {
     return replacesTransactionId;
   }
@@ -495,6 +476,14 @@ public class Transaction {
   }
 
   /** A reversing row of a void: it goes with its original and is never removed on its own. */
+  public UUID getRestoresTransactionId() {
+    return restoresTransactionId;
+  }
+
+  public void setRestoresTransactionId(UUID restoresTransactionId) {
+    this.restoresTransactionId = restoresTransactionId;
+  }
+
   public boolean isReversal() {
     return replacesTransactionId != null;
   }

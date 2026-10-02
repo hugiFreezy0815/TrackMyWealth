@@ -229,9 +229,16 @@ stays a normal update. **Dependencies:** US-07-02. **Priority:** MUST. **Size:**
 ## US-07-07 — Restore a voided transaction within 30 days
 
 Split from US-07-02 on 2026-09-29; the full story is issue #179. FR-LIF-006: a void can be undone
-within 30 days, without breaking the append-only ledger. The approach (voiding the reversal, or a
-`restored_at` marker) needs a decision when the story is scheduled. **Dependencies:** US-07-02.
+within 30 days, without breaking the append-only ledger. **Dependencies:** US-07-02.
 **Priority:** MUST. **Size:** M.
+
+**Decision (2026-10-02, PR #218 review):** neither option from the original note. A restore
+leaves the void untouched and inserts an ordinary copy of the original (`restores_transaction_id`,
+V50). A `restored_at` marker would have needed a "voided but restored" special case in every query
+and could not express a second void. A restored transaction must be a fully normal row again:
+categorizable, matchable, correctable, and removable and restorable again. The restore list
+(`GET …/transactions/deleted`) also offers voids still in the window. See `database-schema.md`,
+"Restoring a void".
 
 ---
 
