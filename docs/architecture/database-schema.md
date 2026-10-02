@@ -54,6 +54,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V48` | Adds optimistic-concurrency revisions to remaining mutable API resources (#207) |
 | `V49` | Adds immutable `corrects_transaction_id` lineage for transaction corrections (#178) |
 | `V50` | Adds immutable `restores_transaction_id` lineage for restoring a void (#179) |
+| `V51` | Adds `settlement_match.transfer_fx_rate`, the rate a confirmed cross-currency transfer implies (#181) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -400,6 +401,18 @@ DM-05). Decisions are on issue #147.
   row. `V42` indexes `transaction (workspace_id, booking_date)` for that scan. The API also
   returns each match's legs as `debit*`/`credit*` fields, which fit both kinds, and
   `GET /settlement-matches?kind=` lists one kind only.
+- **Cross-currency legs (US-10-06, #181).** Legs in different currencies pair when they agree
+  within `app.fx.transfer-match-tolerance` (default 2%) once converted. The tolerance only
+  recognises the pair; nothing is charged or recorded as a margin. The rate is the most specific
+  one available: a leg's own imported rate where it converts between the two currencies (the
+  debit's first), else the stored daily rate on the debit's booking date - the latest on or
+  before it, direct in either direction (compared the other way round, never divided) before a
+  chain via USD. No rate at all means no pair. Such a pair is always proposed, never applied by
+  the system. Confirming it stores the rate its amounts imply, credit / debit at ten places, in
+  `settlement_match.transfer_fx_rate` (`V51`): on the match, because a leg's
+  `fx_rate_to_account_currency` converts into its own account and is frozen by the append-only
+  trigger. The realised FX difference is not reported. Fetching missing rates from a provider is
+  a separate story.
 - **One-sided legs.** An unlinked TRANSFER leg is pending review. `POST
   …/transactions/{id}/untracked-transfer` confirms it as money moved to or from an untracked own
   account (`is_internal_transfer` with no counterparty); a counterpart recorded later still pairs
@@ -418,8 +431,7 @@ DM-05). Decisions are on issue #147.
     or an account the caller cannot read), so an income leg held back from income is never
     dropped.
 
-  Voided pairs and soft-deleted rows are in none of them. Cross-currency matching is US-10-06
-  (#181); savings rate is US-10-05.
+  Voided pairs and soft-deleted rows are in none of them. Savings rate is US-10-05.
 
 ### Reference-data packages (US-01-04)
 

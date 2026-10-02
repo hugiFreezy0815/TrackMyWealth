@@ -71,6 +71,15 @@ holds itself to for its own exemption list.
         </Or>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
+
+    <!-- Same reasoning again, for US-10-06 (#181): TransferDetectionService range-checks
+         app.fx.transfer-match-tolerance (0..1). An out-of-range tolerance must fail application
+         startup rather than yield a matcher that proposes every cross-currency pair (> 1) or
+         none (< 0). The class has no finalizer, so the attack is not reachable. -->
+    <Match>
+        <Class name="com.trackmywealth.backend.service.TransferDetectionService"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
     <!-- EPIC-29 (#149): CorrelationIdFilter echoes a caller's X-Correlation-Id on the response so
          a request can be traced end to end. It echoes only a value that matched
          [A-Za-z0-9._-]{8,64} in full - no CR/LF, no separators, nothing a header-injection or

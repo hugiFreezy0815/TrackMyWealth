@@ -37,10 +37,14 @@ import org.springframework.transaction.annotation.Transactional;
  * A <em>debit</em> is a negative {@code TRANSFER}/{@code WITHDRAWAL}/{@code EXPENSE}, a
  * <em>credit</em> a positive {@code TRANSFER}/{@code DEPOSIT}/{@code INCOME}, on two different
  * accounts of the workspace and booked at most {@value #WINDOW_DAYS} days apart. Same-currency
- * amounts must be exactly opposite. US-10-06/#181 also accepts cross-currency amounts whose credit
- * is within the configured FX tolerance of the debit converted at the debit booking date. A missing
- * rate means no match; cross-currency pairs are always proposed for a member to confirm. Card
- * accounts take no part: a card is settled through {@link SettlementDetectionService}.
+ * amounts must be exactly opposite. US-10-06/#181 also accepts cross-currency amounts that agree
+ * within {@code app.fx.transfer-match-tolerance} once converted into one currency - only to
+ * recognise the pair, nothing is charged or stored as a margin. The rate is the most specific one
+ * available: a leg's own imported rate where it converts between the two currencies (the debit's
+ * first), else the stored daily rate on the debit's booking date - the latest on or before it,
+ * direct in either direction before a chain via USD. No rate at all means no match; cross-currency
+ * pairs are always proposed for a member to confirm. Card accounts take no part: a card is settled
+ * through {@link SettlementDetectionService}.
  *
  * <ul>
  *   <li><b>Applied automatically</b> - only an unambiguous <em>same-currency</em> pair (each leg
@@ -108,8 +112,10 @@ public class TransferDetectionService {
     this.fxRateService = fxRateService;
     this.clock = clock;
     this.fxDefaultSource = fxDefaultSource;
-    if (crossCurrencyTolerance.signum() < 0 || crossCurrencyTolerance.compareTo(BigDecimal.ONE) > 0) {
-      throw new IllegalArgumentException("app.fx.transfer-match-tolerance must be between 0 and 1.");
+    if (crossCurrencyTolerance.signum() < 0
+        || crossCurrencyTolerance.compareTo(BigDecimal.ONE) > 0) {
+      throw new IllegalArgumentException(
+          "app.fx.transfer-match-tolerance must be between 0 and 1.");
     }
     this.crossCurrencyTolerance = crossCurrencyTolerance;
   }
@@ -211,41 +217,71 @@ public class TransferDetectionService {
     if (debit.getCurrency().equals(credit.getCurrency())) {
       return debit.getAmount().negate().compareTo(credit.getAmount()) == 0;
     }
+    BigDecimal sent = debit.getAmount().negate();
+    BigDecimal received = credit.getAmount();
 
-    String key =
-        debit.getCurrency() + "|" + credit.getCurrency() + "|" + debit.getBookingDate();
-    Optional<CurrencyConversionResult> conversion =
+    // The rate the bank applied, when a leg was imported with one between the two currencies.
+    BigDecimal debitRate = ownRate(debit, credit.getCurrency());
+    if (debitRate != null) {
+      return amountsWithinTolerance(sent, received, debitRate, crossCurrencyTolerance);
+    }
+    BigDecimal creditRate = ownRate(credit, debit.getCurrency());
+    if (creditRate != null) {
+      return amountsWithinTolerance(received, sent, creditRate, crossCurrencyTolerance);
+    }
+
+    Optional<CurrencyConversionResult> stored =
         fxRates.computeIfAbsent(
-            key,
+            debit.getCurrency() + "|" + credit.getCurrency() + "|" + debit.getBookingDate(),
             ignored ->
-                fxRateService.tryGetConversionRate(
-                    debit.getCurrency(),
-                    credit.getCurrency(),
-                    debit.getBookingDate(),
-                    fxDefaultSource));
-    return conversion.isPresent()
-        && amountsWithinTolerance(
-            debit.getAmount().negate(),
-            credit.getAmount(),
-            conversion.get().rate(),
-            crossCurrencyTolerance);
+                storedRate(debit.getCurrency(), credit.getCurrency(), debit.getBookingDate()));
+    if (stored.isEmpty()) {
+      return false;
+    }
+    // A reverse rate converts the credit's currency into the debit's.
+    return stored.get().baseCurrency().equals(debit.getCurrency())
+        ? amountsWithinTolerance(sent, received, stored.get().rate(), crossCurrencyTolerance)
+        : amountsWithinTolerance(received, sent, stored.get().rate(), crossCurrencyTolerance);
+  }
+
+  // A leg's own fx_rate_to_account_currency converts its currency into its account's; it bridges
+  // the two legs only when that account is in the other leg's currency.
+  private static BigDecimal ownRate(Transaction leg, String otherCurrency) {
+    return leg.getFxRateToAccountCurrency() != null
+            && otherCurrency.equals(leg.getAccount().getNativeCurrency())
+        ? leg.getFxRateToAccountCurrency()
+        : null;
+  }
+
+  // The stored rate from -> to on the date, the latest on or before it (FR-CUR-012). The FX
+  // service never inverts a rate, and sources such as the ECB publish one direction only, so the
+  // reverse pair is tried too and compared the other way round, never divided: direct in either
+  // direction before a chain via USD.
+  private Optional<CurrencyConversionResult> storedRate(String from, String to, LocalDate date) {
+    Optional<CurrencyConversionResult> forward =
+        fxRateService.tryGetConversionRate(from, to, date, fxDefaultSource);
+    if (forward.isPresent() && forward.get().direct()) {
+      return forward;
+    }
+    Optional<CurrencyConversionResult> reverse =
+        fxRateService.tryGetConversionRate(to, from, date, fxDefaultSource);
+    if (reverse.isPresent() && reverse.get().direct()) {
+      return reverse;
+    }
+    return forward.isPresent() ? forward : reverse;
   }
 
   /**
-   * US-10-06: relative FX difference without division or intermediate rounding. Since transfer legs
+   * US-10-06: relative difference without division or intermediate rounding. Since transfer legs
    * are non-zero and FX rates are positive, {@code |actual - expected| <= expected * tolerance} is
-   * exactly the configured {@code |actual - expected| / expected <= tolerance} rule.
+   * exactly the configured {@code |actual - expected| / expected <= tolerance} rule, with {@code
+   * expected = base * rate}.
    */
   static boolean amountsWithinTolerance(
-      BigDecimal debitMagnitude,
-      BigDecimal actualCredit,
-      BigDecimal rate,
-      BigDecimal tolerance) {
-    BigDecimal expectedCredit = debitMagnitude.multiply(rate);
-    return actualCredit.subtract(expectedCredit).abs().compareTo(expectedCredit.multiply(tolerance))
-        <= 0;
+      BigDecimal base, BigDecimal actual, BigDecimal rate, BigDecimal tolerance) {
+    BigDecimal expected = base.multiply(rate);
+    return actual.subtract(expected).abs().compareTo(expected.multiply(tolerance)) <= 0;
   }
-
 
   private static SettlementMatch existing(
       List<SettlementMatch> known, Transaction debit, Transaction credit) {

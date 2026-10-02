@@ -211,6 +211,10 @@ class TransferControllerTest {
 
     assertThat(counterpartyOf(debit)).isEqualTo(euro.id());
     assertThat(counterpartyOf(credit)).isEqualTo(current.id());
+    // V51: the confirmed transfer carries the rate its two amounts imply (EUR per CHF).
+    assertThat(matches(token, "CONFIRMED"))
+        .singleElement()
+        .satisfies(match -> assertThat(match.transferFxRate()).isEqualByComparingTo("1.04"));
     CashFlowResponse flow = cashFlow(token);
     assertThat(flow.income()).isEmpty();
     assertThat(flow.spending()).isEmpty();
@@ -277,6 +281,85 @@ class TransferControllerTest {
     assertThat(matches(token, "REJECTED"))
         .singleElement()
         .satisfies(match -> assertThat(match.id()).isEqualTo(proposal.id()));
+  }
+
+  // Rate sources such as the ECB publish one direction only (EUR -> CHF here): the reverse rate
+  // still recognises a CHF -> EUR transfer, compared the other way round.
+  @Test
+  void crossCurrencyLegsMatchWithOnlyTheReverseRateStored() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertFxRate("EUR", "CHF", sent, "0.9615000000");
+    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    insertImported(euro.id(), TRANSFER, "1040.00", "EUR", sent.plusDays(2));
+
+    transferDetectionService.detectAround(workspaceOf(current.id()), sent);
+
+    assertThat(matches(token, "PROPOSED")).hasSize(1);
+  }
+
+  // The latest rate on or before the debit's date counts, however old (FR-CUR-012).
+  @Test
+  void crossCurrencyLegsMatchOnTheLatestEarlierRate() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertFxRate("CHF", "EUR", sent.minusDays(90), "1.0400000000");
+    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    insertImported(euro.id(), TRANSFER, "1040.00", "EUR", sent.plusDays(2));
+
+    transferDetectionService.detectAround(workspaceOf(current.id()), sent);
+
+    assertThat(matches(token, "PROPOSED")).hasSize(1);
+  }
+
+  // A leg imported with its own rate (EUR 1,040 booked on a CHF account at 0.9615) is converted
+  // at that rate, the one the bank applied - not at the daily rate, which here would be far off.
+  @Test
+  void aLegsOwnImportedRateWinsOverTheDailyRate() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse savings = createAccount(token, "SAVINGS", "CHF");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertFxRate("CHF", "EUR", sent, "1.2000000000");
+    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    UUID credit = UUID.randomUUID();
+    execute(
+        "INSERT INTO transaction (id, workspace_id, account_id, transaction_type, booking_date,"
+            + " amount, currency, fx_rate_to_account_currency, fx_rate_date, fx_rate_estimated,"
+            + " source) SELECT ?, workspace_id, id, 'TRANSFER', ?, 1040.00, 'EUR', 0.9615, ?,"
+            + " FALSE, 'CSV' FROM account WHERE id = ?",
+        credit,
+        sent.plusDays(2),
+        sent.plusDays(2),
+        savings.id());
+
+    transferDetectionService.detectAround(workspaceOf(current.id()), sent);
+
+    assertThat(matches(token, "PROPOSED"))
+        .singleElement()
+        .satisfies(match -> assertThat(match.creditTransactionId()).isEqualTo(credit));
+  }
+
+  // Within the tolerance two credits can fit one debit: both are proposed, the member picks one.
+  @Test
+  void twoCreditsWithinToleranceAreBothProposed() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse euro = createAccount(token, "SAVINGS", "EUR");
+    LocalDate sent = today().withDayOfMonth(10);
+    insertFxRate("CHF", "EUR", sent, "1.0400000000");
+    insertImported(current.id(), TRANSFER, "-1000.00", "CHF", sent);
+    insertImported(euro.id(), TRANSFER, "1040.00", "EUR", sent.plusDays(1));
+    insertImported(euro.id(), TRANSFER, "1045.00", "EUR", sent.plusDays(2));
+
+    transferDetectionService.detectAround(workspaceOf(current.id()), sent);
+
+    assertThat(matches(token, "PROPOSED")).hasSize(2);
+    assertThat(matches(token, "CONFIRMED")).isEmpty();
   }
 
   @Test
@@ -967,7 +1050,8 @@ class TransferControllerTest {
     return id;
   }
 
-  private void insertFxRate(String base, String quote, LocalDate date, String rate) throws Exception {
+  private void insertFxRate(String base, String quote, LocalDate date, String rate)
+      throws Exception {
     execute(
         "INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source)"
             + " VALUES (?, ?, ?, ?, 'MANUAL')",
