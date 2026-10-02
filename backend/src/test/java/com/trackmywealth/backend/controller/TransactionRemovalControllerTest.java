@@ -566,8 +566,7 @@ class TransactionRemovalControllerTest {
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     remove(token, card.id(), imported, "Duplicate import");
-    execute(
-        "UPDATE transaction SET voided_at = now() - interval '31 days' WHERE id = ?", imported);
+    execute("UPDATE transaction SET voided_at = now() - interval '31 days' WHERE id = ?", imported);
 
     client(token)
         .post()
@@ -590,7 +589,9 @@ class TransactionRemovalControllerTest {
     UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
 
     TransactionRemovalResponse voided = remove(token, card.id(), purchase, "Duplicate import");
-    assertThat(voided.affected()).extracting(TransactionResponse::id).containsExactly(purchase, fee);
+    assertThat(voided.affected())
+        .extracting(TransactionResponse::id)
+        .containsExactly(purchase, fee);
     assertThat(voided.reversals()).hasSize(2);
     assertThat(balance(token, card.id())).isEqualByComparingTo("0");
 
