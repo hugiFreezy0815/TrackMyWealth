@@ -606,6 +606,41 @@ class TransactionRemovalControllerTest {
   }
 
   @Test
+  void restoringAVoidedPaymentReRunsSettlementMatching() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
+    setSettlementSource(token, card.id(), checking.id());
+    UUID payment = insertImported(checking.id(), "WITHDRAWAL", "-300.00", today());
+    record(token, card.id(), cashRow("SETTLEMENT", "300.00"));
+    assertThat(
+            queryDecimal(
+                "SELECT count(*) FROM settlement_match WHERE card_account_id = ?", card.id()))
+        .isEqualByComparingTo("1");
+
+    remove(token, checking.id(), payment, "Duplicate import");
+    assertThat(
+            queryDecimal(
+                "SELECT count(*) FROM settlement_match WHERE card_account_id = ?", card.id()))
+        .isEqualByComparingTo("0");
+
+    restore(token, checking.id(), payment);
+
+    assertThat(
+            queryDecimal(
+                "SELECT count(*) FROM settlement_match WHERE card_account_id = ?", card.id()))
+        .isEqualByComparingTo("1");
+    assertThat(list(token, checking.id()))
+        .filteredOn(row -> row.id().equals(payment))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.restoredAt()).isNotNull();
+              assertThat(row.internalTransfer()).isTrue();
+            });
+  }
+
+  @Test
   void aVoidedTradeIsReversedWithItsQuantityNegated() throws Exception {
     String token = bootstrapAdministrator();
     AccountSummaryResponse depot = createAccount(token, "SECURITIES", "CHF");
