@@ -246,8 +246,9 @@ themselves.
 
 See **`docs/architecture/development-standards.md`** for the full picture — what's enforced
 automatically vs. convention-only, per language, and how to run each check locally before pushing.
-A red check does not yet block merging on GitHub: required status checks are not configured for
-this repository (#187), so check the PR's results before you merge.
+A red check does not block merging on GitHub: branch protection and rulesets, which could
+require these checks, are not available on this private repository's current GitHub plan (#187),
+so check the PR's results before you merge.
 
 ## Where to start as a developer
 
@@ -304,11 +305,30 @@ today (closed stories on GitHub; details in `docs/architecture/database-schema.m
   correlation ids, ETag/If-Match on every read-modify-write endpoint, a published OpenAPI document,
   validation messages in English and German.
 
-**Not built yet** (story texts in `docs/user-stories/`): the CSV import framework (the rest of EPIC
-07 - the only planned import path), budgeting (EPIC 10), market prices, portfolios, performance and
-allocation (EPIC 13-17), consolidated reporting (EPIC 19), pensions (EPIC 26), calculation
-verification (EPIC 27) and the Quartz-based background jobs (EPIC 30; today only a Spring-scheduled
-retention of the authorization-denial log runs in the background).
+**Not built yet.** The complete list of remaining work is the story texts in `docs/user-stories/`
+(`EPIC-*.md`, plus `BACKLOG-remaining-epics.md` for epics not yet broken into stories) and the open
+GitHub issues. In short:
+
+- **Not started:** the CSV import framework (the rest of EPIC 07 - the only planned import path),
+  budgeting (EPIC 10 beyond transfers), market prices, portfolios, performance and allocation
+  (EPIC 13-17), consolidated reporting (EPIC 19), pensions (EPIC 26), calculation verification
+  (EPIC 27), financial goals (EPIC 20), backup/restore (EPIC 23) and the Quartz-based background
+  jobs (EPIC 30; today only a Spring-scheduled retention of the authorization-denial log runs in the
+  background).
+- **Started, with stories still open:**
+  - EPIC 11: net worth over time, real estate net of financing, the liquidity view (US-11-02..04).
+  - EPIC 12: identifier resolution, funds as weighted asset classes, protected overrides
+    (US-12-02..04).
+  - EPIC 18: investment performance in the institution summary (US-18-01).
+  - EPIC 25: reconciliation and opening balances (US-25-02..04). Until opening balances exist, a
+    cash, savings or depot account's balance is unknown (`valueKnown = false`). Only a credit card
+    (from its ledger), a custom asset (from its valuations) and a loan or mortgage (its original
+    principal) have a value.
+  - The cross-cutting backlog epics 21, 22, 29, 30, 31 and 32 are partly covered by what is listed
+    above (e.g. validation messages, MFA and rate limiting, the API conventions, the Docker
+    deployment, the transaction lifecycle, the admin reference-data API); their remaining stories
+    are in `BACKLOG-remaining-epics.md`.
+  - Open issues: cross-currency transfer matching (#181), daily ECB FX rate import (#223).
 
 **Mobile and web:** `mobile/` is still the generated Expo Router shell with theming and a tested
 backend API client (including the If-Match helpers); its first product screens - sign-in (#183)

@@ -135,10 +135,10 @@ under the same database role for local-development simplicity. Before a multi-wo
 deployment goes live, split this into a migration-owner role (used only by Flyway, at deploy
 time) and a `NOSUPERUSER`, non-owner runtime role (used only by the running application, granted
 `SELECT/INSERT/UPDATE/DELETE` but not `CREATEDB`/`ALTER`) — the commented-out template at the
-bottom of `V20__tenancy_row_level_security.sql` is the starting point. `FR-TEN-010` requires an
-automated cross-tenant test suite that attempts unauthorized access against every endpoint and
-entity type in CI; write it against that runtime role, not the migration role, or it will pass
-for the wrong reason (superusers bypass RLS unconditionally).
+bottom of `V20__tenancy_row_level_security.sql` is the starting point. The automated cross-tenant
+suite `FR-TEN-010` requires (`CrossTenantIsolationTest`, US-28-04) already runs as such a role -
+`NOSUPERUSER NOBYPASSRLS` - because a superuser bypasses RLS unconditionally and the suite would
+pass for the wrong reason; keep any new isolation test on that role, not the migration role.
 
 ### Object-level denial audit lifecycle (US-28-02, #205)
 
