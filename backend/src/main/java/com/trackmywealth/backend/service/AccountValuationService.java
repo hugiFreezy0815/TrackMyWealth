@@ -165,7 +165,7 @@ public class AccountValuationService {
       // places once it is a card balance summed via fx_rate_to_account_currency (NUMERIC(20,10)) -
       // the same NFR-CALC-007 policy the cross-currency path below already applies via applyRate.
       BigDecimal value = resolved.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-      return known(account, ownCurrency, targetCurrency, resolved, value, null, null, false);
+      return known(account, ownCurrency, targetCurrency, resolved, value, null);
     }
 
     // FR-CUR-011/US-06-03: a current holding's value converts at the valuation date (today), not
@@ -177,15 +177,7 @@ public class AccountValuationService {
     }
 
     BigDecimal convertedValue = fxRateService.applyRate(resolved.amount(), conversion.get());
-    return known(
-        account,
-        ownCurrency,
-        targetCurrency,
-        resolved,
-        convertedValue,
-        conversion.get().rate(),
-        asOf,
-        conversion.get().carriedForward());
+    return known(account, ownCurrency, targetCurrency, resolved, convertedValue, conversion.get());
   }
 
   /**
@@ -266,6 +258,7 @@ public class AccountValuationService {
         null,
         false,
         false,
+        false,
         null);
   }
 
@@ -275,9 +268,9 @@ public class AccountValuationService {
       String targetCurrency,
       NativeAccountValue source,
       BigDecimal value,
-      BigDecimal conversionRate,
-      LocalDate conversionRateDate,
-      boolean conversionRateCarriedForward) {
+      CurrencyConversionResult conversion) {
+    // FR-CUR-011: the conversion date is the date the rate was requested for (the valuation date),
+    // not the date of the stored rate it resolved to - carriedForward/stale say how far apart.
     return new AccountValuation(
         account.getId(),
         account.getName(),
@@ -285,9 +278,10 @@ public class AccountValuationService {
         ownCurrency,
         targetCurrency,
         value,
-        conversionRate,
-        conversionRateDate,
-        conversionRateCarriedForward,
+        conversion == null ? null : conversion.rate(),
+        conversion == null ? null : conversion.requestedDate(),
+        conversion != null && conversion.carriedForward(),
+        conversion != null && conversion.stale(),
         true,
         source.basis());
   }

@@ -1054,7 +1054,7 @@ class TransferControllerTest {
       throws Exception {
     execute(
         "INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source)"
-            + " VALUES (?, ?, ?, ?, 'MANUAL')",
+            + " VALUES (?, ?, ?, ?, 'ECB')",
         base,
         quote,
         date,

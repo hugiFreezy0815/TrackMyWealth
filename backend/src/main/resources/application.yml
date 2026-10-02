@@ -81,6 +81,9 @@ spring:
 
   quartz:
     job-store-type: jdbc
+    # Jobs are defined in code (e.g. FxRateImportJobConfig); a changed schedule must replace the
+    # one stored in the JDBC job store on the next start, not be ignored.
+    overwrite-existing-jobs: true
     jdbc:
       initialize-schema: never # Quartz tables are created by Flyway, see V90__quartz_schema.sql
     properties:
@@ -88,6 +91,10 @@ spring:
         quartz:
           jobStore:
             isClustered: true
+            # Quartz's default StdJDBCDelegate reads job data as a BLOB; V90's PostgreSQL schema
+            # stores it as BYTEA, which only this delegate reads back. Latent until #223 stored the
+            # first job.
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.PostgreSQLDelegate
 
 app:
   # Application-level configuration consumed by DatabaseBootstrapInitializer
@@ -125,11 +132,28 @@ app:
   # Any java.time.ZoneId; Europe/Zurich has the same offsets as Germany's zone.
   business-zone: ${BUSINESS_ZONE:Europe/Zurich}
   fx:
-    # US-04-03: the fx_rate.source every currency-conversion caller queries against when no
-    # automated fetch job exists yet (EPIC 30) to make that choice moot - matches
-    # custom_asset_valuation.source's own "MANUAL" default for the same reason (self-hosted, no
-    # real data provider wired up yet). Revisit once EPIC 30 picks a real provider name.
-    default-source: ${FX_DEFAULT_SOURCE:MANUAL}
+    # US-04-03/#223: the fx_rate.source every currency conversion reads. ECB is what the FX import
+    # below stores; set MANUAL (with the import disabled) to run only on rates entered by hand.
+    default-source: ${FX_DEFAULT_SOURCE:ECB}
+    # #223/NFR-CON-003: a conversion whose stored rate is older than this before the requested
+    # date is marked stale - longer than any weekend plus holiday, so normally only a provider
+    # outage gets there. A java.time.Period.
+    stale-after: ${FX_STALE_AFTER:P5D}
+    import:
+      # US-06-04 (#223): load the ECB's daily euro reference rates. Off: no scheduled job is
+      # registered and a missing rate is never fetched (the request sends no user data).
+      enabled: ${FX_IMPORT_ENABLED:true}
+      ecb-base-url: ${FX_IMPORT_ECB_BASE_URL:https://data-api.ecb.europa.eu/service/data/EXR}
+      # Quartz cron (seconds first). The ECB publishes around 16:00 CET on TARGET business days.
+      daily-cron: ${FX_IMPORT_DAILY_CRON:0 30 16 * * ?}
+      daily-cron-zone: ${FX_IMPORT_DAILY_CRON_ZONE:Europe/Berlin}
+      # How soon history is loaded after a transaction older than every stored rate is booked.
+      history-check-interval: ${FX_IMPORT_HISTORY_CHECK_INTERVAL:1h}
+      connect-timeout: ${FX_IMPORT_CONNECT_TIMEOUT:5s}
+      # A backfill of several years arrives as one response.
+      read-timeout: ${FX_IMPORT_READ_TIMEOUT:60s}
+      # A fetch-on-missing that found nothing is not repeated for the same date for this long.
+      on-demand-retry-after: ${FX_IMPORT_ON_DEMAND_RETRY_AFTER:1h}
     # US-10-06: maximum relative difference between the received credit and the debit converted
     # at its booking-date FX rate for separately imported cross-currency transfer legs. Such a
     # match is only proposed, never auto-confirmed.

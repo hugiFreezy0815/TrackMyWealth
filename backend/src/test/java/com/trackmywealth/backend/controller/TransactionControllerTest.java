@@ -2722,7 +2722,7 @@ class TransactionControllerTest {
     fxRate.setQuoteCurrency(quote);
     fxRate.setRateDate(date);
     fxRate.setRate(new BigDecimal(rate));
-    fxRate.setSource("MANUAL"); // matches app.fx.default-source's test-time default
+    fxRate.setSource("ECB"); // app.fx.default-source
     fxRateRepository.save(fxRate);
   }
 

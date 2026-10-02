@@ -34,7 +34,11 @@ cd backend
 - Package layout: `controller` (REST), `service` (business logic), `repository` (Spring Data),
   `entity` (JPA), `dto` (REST request/response shapes), `config`, plus `security` (authentication
   filter, token contract, rate limiting), `web` (HTTP-boundary helpers: errors, If-Match/ETag,
-  correlation ids), `error` (error types services throw) and `validation` (custom constraints).
+  correlation ids), `error` (error types services throw), `validation` (custom constraints),
+  `client` (calls to external providers such as `EcbFxRateProvider`; returns its own records,
+  never entities) and `job` (Quartz jobs: thin wrappers that run a service under a correlation id
+  of their own, see `CorrelatedJob`). A repository uses `JdbcTemplate` where JPA does not fit, e.g.
+  `FxRateBatchRepository`'s bulk insert.
   `ArchitectureTest` encodes the allowed dependency direction — Controller → Service → Repository →
   Entity, Repository never called directly from a Controller, Entities never returned from a
   Controller. A rule for a new package is written before its first class lands (see that class's

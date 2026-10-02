@@ -189,6 +189,7 @@ public class InstitutionService {
         valuation.conversionRate(),
         valuation.conversionRateDate(),
         valuation.conversionRateCarriedForward(),
+        valuation.conversionRateStale(),
         valuation.valueKnown());
   }
 

@@ -235,13 +235,8 @@ public class TransferDetectionService {
             debit.getCurrency() + "|" + credit.getCurrency() + "|" + debit.getBookingDate(),
             ignored ->
                 storedRate(debit.getCurrency(), credit.getCurrency(), debit.getBookingDate()));
-    if (stored.isEmpty()) {
-      return false;
-    }
-    // A reverse rate converts the credit's currency into the debit's.
-    return stored.get().baseCurrency().equals(debit.getCurrency())
-        ? amountsWithinTolerance(sent, received, stored.get().rate(), crossCurrencyTolerance)
-        : amountsWithinTolerance(received, sent, stored.get().rate(), crossCurrencyTolerance);
+    return stored.isPresent()
+        && amountsWithinTolerance(sent, received, stored.get().rate(), crossCurrencyTolerance);
   }
 
   // A leg's own fx_rate_to_account_currency converts its currency into its account's; it bridges
@@ -253,22 +248,11 @@ public class TransferDetectionService {
         : null;
   }
 
-  // The stored rate from -> to on the date, the latest on or before it (FR-CUR-012). The FX
-  // service never inverts a rate, and sources such as the ECB publish one direction only, so the
-  // reverse pair is tried too and compared the other way round, never divided: direct in either
-  // direction before a chain via USD.
+  // The rate from -> to on the date, the latest on or before it (FR-CUR-012). FxRateService
+  // answers a pair either way round and through the euro (#223), so the ECB's EUR-based rates
+  // match a CHF -> USD transfer as well as a EUR -> CHF one.
   private Optional<CurrencyConversionResult> storedRate(String from, String to, LocalDate date) {
-    Optional<CurrencyConversionResult> forward =
-        fxRateService.tryGetConversionRate(from, to, date, fxDefaultSource);
-    if (forward.isPresent() && forward.get().direct()) {
-      return forward;
-    }
-    Optional<CurrencyConversionResult> reverse =
-        fxRateService.tryGetConversionRate(to, from, date, fxDefaultSource);
-    if (reverse.isPresent() && reverse.get().direct()) {
-      return reverse;
-    }
-    return forward.isPresent() ? forward : reverse;
+    return fxRateService.tryGetConversionRate(from, to, date, fxDefaultSource);
   }
 
   /**
