@@ -43,11 +43,12 @@ import org.springframework.transaction.annotation.Transactional;
  * accounts take no part: a card is settled through {@link SettlementDetectionService}.
  *
  * <ul>
- *   <li><b>Applied automatically</b> - only an unambiguous pair (each leg has exactly one
- *       candidate) whose legs are both typed {@code TRANSFER}: {@code CONFIRMED}, decided by the
- *       system.
- *   <li><b>Proposed</b> - every other pair, including an unambiguous {@code WITHDRAWAL}/{@code
- *       DEPOSIT} one: a salary can equal a transfer by coincidence, so a member decides.
+ *   <li><b>Applied automatically</b> - only an unambiguous <em>same-currency</em> pair (each leg
+ *       has exactly one candidate) whose legs are both typed {@code TRANSFER}: {@code CONFIRMED},
+ *       decided by the system.
+ *   <li><b>Proposed</b> - every other pair, including every cross-currency pair and an unambiguous
+ *       {@code WITHDRAWAL}/{@code DEPOSIT} one: FX tolerance and salary/transfer coincidences both
+ *       need a member's decision.
  * </ul>
  *
  * <p>Matches reuse {@code settlement_match} (kind {@code TRANSFER}, V41): the debit is the
