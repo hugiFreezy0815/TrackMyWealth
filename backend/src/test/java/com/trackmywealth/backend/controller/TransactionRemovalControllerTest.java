@@ -1573,6 +1573,34 @@ class TransactionRemovalControllerTest {
     assertThat(described.transaction().merchantDescription()).isEqualTo("FX fee");
   }
 
+  // #216 with US-07-07: a restored fee copy is linked to the purchase copy, so it too is corrected
+  // through its purchase, never on its own.
+  @Test
+  void aRestoredFeeCopyIsCorrectedThroughItsPurchaseToo() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID purchase = insertImported(card.id(), PURCHASE, "-100.00", today());
+    UUID fee = insertImportedFee(card.id(), purchase, "-2.00");
+    remove(token, card.id(), purchase, "Duplicate import");
+    TransactionRemovalResponse restored = restore(token, card.id(), purchase);
+    TransactionResponse purchaseCopy = restored.restored().get(0);
+    TransactionResponse feeCopy = restored.restored().get(1);
+    assertThat(feeCopy.restoresTransactionId()).isEqualTo(fee);
+
+    correctRaw(
+            token,
+            card.id(),
+            feeCopy.id(),
+            desiredState(feeCopy, "-3.00", null, null, "Fee was higher"),
+            CurrentVersion.ifMatch(dataSource, "transaction", feeCopy.id()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.detail")
+        .value(detail -> assertThat(detail.toString()).contains(purchaseCopy.id().toString()));
+    assertThat(balance(token, card.id())).isEqualByComparingTo("102.00");
+  }
+
   // #216: removing the pair and recording its replacement is one unit - a replacement that fails
   // validation leaves both legs exactly as they were.
   @Test
