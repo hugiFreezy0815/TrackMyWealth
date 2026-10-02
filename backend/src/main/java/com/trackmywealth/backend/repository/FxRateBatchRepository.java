@@ -51,7 +51,7 @@ public class FxRateBatchRepository {
                  round(b.rate::NUMERIC(40, 30) / a.rate, 10) AS rate
           FROM day_rates a
           JOIN day_rates b ON b.rate_date = a.rate_date AND b.currency <> a.currency
-          WHERE a.currency <> 'EUR'%s
+          WHERE a.currency <> 'EUR' /* new-currency filter */
       )
       INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source, derived)
       SELECT base_currency, quote_currency, rate_date, rate, ?, TRUE
@@ -60,14 +60,16 @@ public class FxRateBatchRepository {
       ON CONFLICT (base_currency, quote_currency, rate_date, source) DO NOTHING
       """;
 
-  private static final String DERIVE_CROSS_RATES = DERIVE_CROSS_RATES_TEMPLATE.formatted("");
+  private static final String NEW_CURRENCY_FILTER = "/* new-currency filter */";
+
+  private static final String DERIVE_CROSS_RATES = DERIVE_CROSS_RATES_TEMPLATE;
 
   // For a currency newly in use only its own pairs are missing - those between the others were
   // derived when they came into use - so over the whole history only pairs naming one of them.
   private static final String DERIVE_CROSS_RATES_OF_NEW_CURRENCIES =
-      DERIVE_CROSS_RATES_TEMPLATE.formatted(
+      DERIVE_CROSS_RATES_TEMPLATE.replace(
+          NEW_CURRENCY_FILTER,
           """
-
             AND (a.currency IN (SELECT currency FROM fx_rate_currency_in_use
                                 WHERE NOT cross_rates_derived)
               OR b.currency IN (SELECT currency FROM fx_rate_currency_in_use
