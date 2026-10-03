@@ -256,8 +256,9 @@ discoverable by another workspace. Rules that follow from the table being global
 
 - **Currency and sign.** A snapshot is always in the account's own currency - `native_currency`,
   or for a credit card its `billing_currency`, which its ledger is summed in (not client input;
-  `V33` guards it, `V58` corrected the guard for cards) - and its balance uses the same convention as the ledger-derived balance
-  (a liability's balance is the positive amount owed), so US-25-02 can compare the two directly.
+  `V33` guards it, `V58` corrected the guard for cards) - and its balance uses the same convention
+  as the ledger-derived balance (a liability's balance is the positive amount owed), so US-25-02
+  can compare the two directly.
   `reported_cost_basis` is a total in that same currency.
 - **Holdings** reference existing security-master ids only (create first via `POST
   /api/v1/securities`), at most once per snapshot (`V33`'s `uq_snapshot_holding_security`). A

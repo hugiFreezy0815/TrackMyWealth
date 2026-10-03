@@ -404,6 +404,25 @@ class OpeningBalanceControllerTest {
     assertThat(netWorth(token).totalAssets()).isEqualByComparingTo("86500.00");
   }
 
+  @Test
+  void anAccountWithoutALedgerIsKnownBeforeItsOpeningBalanceFromAnEarlierSnapshot() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse vested =
+        createAccount(
+            token, AccountRequests.account("Vested Benefits", "VESTED_BENEFITS", "CHF").build());
+    LocalDate earlier = openingDate.minusDays(30);
+    recordSnapshot(token, vested.id(), earlier, "82000.00");
+    recordOk(token, vested.id(), request(openingDate, "84000.00", "CHF"));
+
+    // Without a ledger the opening balance is just one snapshot among others, not a cut-off: an
+    // earlier reported figure is still the account's value before it (calculation-methodology.md).
+    AccountValuation before = balance(token, vested.id(), openingDate.minusDays(1));
+    assertThat(before.valueKnown()).isTrue();
+    assertThat(before.value()).isEqualByComparingTo("82000.00");
+    assertThat(before.valueSourceDate()).isEqualTo(earlier);
+    assertThat(balance(token, vested.id(), earlier.minusDays(1)).valueKnown()).isFalse();
+  }
+
   // --- AC: If-Match and currency -------------------------------------------------------------
 
   @Test

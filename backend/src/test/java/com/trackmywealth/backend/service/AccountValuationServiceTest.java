@@ -24,6 +24,7 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -182,6 +183,38 @@ class AccountValuationServiceTest {
     verify(snapshotRepository, times(1)).findByAccountIdAndOpeningBalanceTrue(account.getId());
     verify(accountDataQualityService).warningsFor(account, OPENING_DATE);
     verify(accountDataQualityService, never()).warningsFor(any(UUID.class));
+  }
+
+  @Test
+  void aBatchReadsOpeningBalancesAndWarningsOnceNotPerAccount() {
+    Account withOpening = account;
+    Account withoutOpening = account("ASSET");
+    Account loan = account("LIABILITY");
+    loan.setHasAmortisation(true);
+    AccountSnapshot opening = new AccountSnapshot();
+    opening.setAccount(withOpening);
+    opening.setSnapshotDate(OPENING_DATE);
+    opening.setBalance(new BigDecimal("10000.00"));
+    opening.setOpeningBalance(true);
+    // Only the accounts that can take one are looked up - not the loan.
+    when(snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(
+            List.of(withOpening.getId(), withoutOpening.getId())))
+        .thenReturn(List.of(opening));
+    String warning = DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE;
+    List<Account> accounts = List.of(withOpening, withoutOpening, loan);
+    when(accountDataQualityService.warningsForAll(
+            accounts, Map.of(withOpening.getId(), OPENING_DATE)))
+        .thenReturn(Map.of(withOpening.getId(), List.of(warning)));
+    withLedgerAfterOpening(TODAY, "-500.00");
+
+    List<AccountValuation> valuations = service.valueAll(accounts, "CHF", TODAY);
+
+    assertThat(valuations.get(0).value()).isEqualByComparingTo("9500.00");
+    assertThat(valuations.get(0).warnings()).containsExactly(warning);
+    assertThat(valuations.get(1).valueKnown()).isFalse();
+    assertThat(valuations.get(1).warnings()).isEmpty();
+    verify(snapshotRepository, never()).findByAccountIdAndOpeningBalanceTrue(any());
+    verify(accountDataQualityService, never()).warningsFor(any(Account.class), any());
   }
 
   @Test

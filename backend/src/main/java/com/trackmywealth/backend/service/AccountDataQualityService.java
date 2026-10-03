@@ -63,6 +63,33 @@ public class AccountDataQualityService {
   }
 
   /**
+   * {@link #warningsFor(Account, LocalDate)} for a whole batch of accounts (a net worth, an
+   * institution summary) in one query instead of one per account. {@code openingBalanceDates} holds
+   * the date of each account that has an opening balance; an account missing from the result has no
+   * warnings.
+   */
+  @Transactional(readOnly = true)
+  public Map<UUID, List<String>> warningsForAll(
+      Collection<Account> accounts, Map<UUID, LocalDate> openingBalanceDates) {
+    List<UUID> candidates =
+        accounts.stream()
+            .filter(Account::isHasTransactions)
+            .map(Account::getId)
+            .filter(openingBalanceDates::containsKey)
+            .toList();
+    if (candidates.isEmpty()) {
+      return Map.of();
+    }
+    return transactionRepository.findAccountIdsWithLiveRowsBeforeOpeningBalance(candidates).stream()
+        .distinct()
+        .collect(
+            Collectors.toMap(
+                accountId -> accountId,
+                accountId ->
+                    List.of(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE)));
+  }
+
+  /**
    * The opening balance date of each of {@code accountIds} that has one - one query for a whole
    * page of transactions, for {@link #transactionWarnings}.
    */

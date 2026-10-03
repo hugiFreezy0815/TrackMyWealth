@@ -154,10 +154,10 @@ public class InstitutionService {
     // PR-011/FR-CON-007: an account's warning is shown at the container's headline too.
     Set<String> warnings = new TreeSet<>();
 
-    for (Account account : accounts) {
-      AccountContribution contribution =
-          toContribution(
-              accountValuationService.valueIn(account, institution.getContainerCurrency(), asOf));
+    // valueAll, not valueIn per account: rates, opening balances and warnings once per batch.
+    for (AccountValuation valuation :
+        accountValuationService.valueAll(accounts, institution.getContainerCurrency(), asOf)) {
+      AccountContribution contribution = toContribution(valuation);
       contributions.add(contribution);
       warnings.addAll(contribution.warnings());
       if (!contribution.valueKnown()) {

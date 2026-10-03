@@ -167,9 +167,10 @@ exact one:
 
 `valueBasis` is `null` when `valueKnown` is `false`. `AccountValuation.valueSourceDate` is the date
 of the observation a `LATEST_SNAPSHOT` or `MANUAL_VALUATION` figure rests on, so a client can show
-how old it is; it is `null` for a figure derived from the ledger or the loan terms. `NetWorthResponse.approximate` is `true` when
-any included account has an approximate basis. It is independent of `complete`: an approximate
-account is still *known* (counted in the totals), but the figure must not be presented as exact.
+how old it is; it is `null` for a figure derived from the ledger or the loan terms.
+`NetWorthResponse.approximate` is `true` when any included account has an approximate basis. It
+is independent of `complete`: an approximate account is still *known* (counted in the totals), but
+the figure must not be presented as exact.
 
 **Recording is idempotent on request.** `POST .../transactions` accepts an optional `externalId`
 (a client-generated key, stored in `transaction.external_id` with source `MANUAL`, unique per
@@ -216,7 +217,9 @@ value(D) = opening balance + Σ amount of live ledger rows with  opening date < 
   read with `asOf` earlier than the opening date (`GET .../balance?asOf=`).
 - **A past balance needs `READ`.** Today's balance is visible at `BALANCE_ONLY`; a read with
   `asOf` before today needs `READ` on the account, because balances on consecutive days differ by
-  that day's transactions, which a `BALANCE_ONLY` grant does not show (#241 review).
+  that day's transactions, which a `BALANCE_ONLY` grant does not show (#241 review). "Today" is
+  the server's business date (`app.business-zone`), so a client asks for the current balance by
+  omitting `asOf`, never by sending its own local date.
 - **Rows before the opening date are left out.** They predate the starting point. Recording an
   opening balance after existing live rows is refused (409 `OPENING_BALANCE_AFTER_FIRST_TRANSACTION`,
   with their count and earliest booking date) unless the member confirms
@@ -249,7 +252,7 @@ Which accounts use it is decided by capability flags (DM-17), never by type:
 | `has_amortisation` (loan, mortgage) or `manual_valuation` (custom asset) | refused, 422 `OPENING_BALANCE_NOT_APPLICABLE`: they have their own value source |
 | `holds_positions` (depot, mandate, crypto, a pension holding funds) | stored, but the value stays unknown - the cash is only part of it until holdings are valued (EPIC 15) |
 | `has_statement_cycle` (credit card) | replaces the card's ledger-only source (`LEDGER`/`LEDGER_EMPTY`) |
-| `has_transactions = false` (vested benefits) | no ledger to add: the account is valued from its latest snapshot (`LATEST_SNAPSHOT`), the opening balance being the first one. A newer snapshot supersedes it rather than the opening balance standing forever (#241 review) |
+| `has_transactions = false` (vested benefits) | no ledger to add: the account is valued from its latest snapshot on or before the as-of date (`LATEST_SNAPSHOT`), the opening balance being one of them. A newer snapshot supersedes it rather than the opening balance standing forever, and an older regular snapshot still values the account before the opening date: without a ledger the opening balance is no cut-off (#241 review) |
 | everything else (cash, savings, pension) | the source above; without ledger rows after the opening date the value is the opening balance itself |
 
 A transaction recorded later with a booking date before the opening balance is left out of the

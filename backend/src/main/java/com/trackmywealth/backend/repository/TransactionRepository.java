@@ -287,6 +287,19 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   boolean existsLiveBookedBeforeOpeningBalance(@Param(ACCOUNT_ID) UUID accountId);
 
   /**
+   * {@link #existsLiveBookedBeforeOpeningBalance} for a batch (#241 review): which of {@code
+   * accountIds} have a live row booked before their opening balance. One query for a whole net
+   * worth or institution summary.
+   */
+  @Query(
+      "select distinct t.account.id from Transaction t, AccountSnapshot s"
+          + " where s.account.id = t.account.id and s.openingBalance = true"
+          + " and t.account.id in :accountIds and t.bookingDate < s.snapshotDate"
+          + NOT_VOIDED_OR_REVERSAL)
+  List<UUID> findAccountIdsWithLiveRowsBeforeOpeningBalance(
+      @Param("accountIds") Collection<UUID> accountIds);
+
+  /**
    * US-10-01: the workspace's rows booked in [{@code from}, {@code to}] that could be one leg of an
    * own-account transfer still to be matched - a debit of {@code debitTypes} or a credit of {@code
    * creditTypes}, not voided or reversing, not on a card (cards settle through US-09-02's

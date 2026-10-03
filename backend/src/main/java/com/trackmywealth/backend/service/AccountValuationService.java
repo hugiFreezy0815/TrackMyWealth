@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -104,7 +105,8 @@ public class AccountValuationService {
    * current balance is gated at {@code BALANCE_ONLY} (US-03-03), the weakest level that may see a
    * figure at all. A past date needs {@code READ}: two consecutive days' balances differ by that
    * day's transactions, which a {@code BALANCE_ONLY} grant must not reveal (#241 review). A date in
-   * the future is a 422: a balance is recorded history, not a forecast.
+   * the future is a 422: a balance is recorded history, not a forecast. Past, today and future are
+   * judged against {@link BusinessDateService#today}, never the client's date.
    */
   @Transactional(readOnly = true)
   public AccountValuation getBalance(
@@ -135,19 +137,49 @@ public class AccountValuationService {
    */
   @Transactional(readOnly = true)
   public AccountValuation valueIn(Account account, String targetCurrency, LocalDate asOf) {
-    return valueIn(account, targetCurrency, asOf, rateLookup(targetCurrency, asOf));
+    // Read once: both the value and the warnings depend on it.
+    Optional<AccountSnapshot> openingBalance =
+        takesOpeningBalance(account)
+            ? accountSnapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId())
+            : Optional.empty();
+    List<String> warnings =
+        accountDataQualityService.warningsFor(
+            account, openingBalance.map(AccountSnapshot::getSnapshotDate).orElse(null));
+    return valueIn(
+        account, targetCurrency, asOf, rateLookup(targetCurrency, asOf), openingBalance, warnings);
   }
 
   /**
    * {@link #valueIn} for several accounts in one target currency, resolving each distinct native
-   * currency's FX rate once rather than once per account. Same no-access-check contract as {@link
-   * #valueIn}: pass only accounts the caller has already been cleared to see.
+   * currency's FX rate once rather than once per account, and the accounts' opening balances and
+   * their warnings in one query each for the whole batch (#241 review), not two per account. Same
+   * no-access-check contract as {@link #valueIn}: pass only accounts the caller has already been
+   * cleared to see.
    */
   @Transactional(readOnly = true)
   public List<AccountValuation> valueAll(
       Collection<Account> accounts, String targetCurrency, LocalDate asOf) {
     Function<String, Optional<CurrencyConversionResult>> lookup = rateLookup(targetCurrency, asOf);
     Map<String, Optional<CurrencyConversionResult>> resolved = new HashMap<>();
+    List<UUID> eligible =
+        accounts.stream()
+            .filter(AccountValuationService::takesOpeningBalance)
+            .map(Account::getId)
+            .toList();
+    Map<UUID, AccountSnapshot> openingBalances =
+        eligible.isEmpty()
+            ? Map.of()
+            : accountSnapshotRepository.findByAccountIdInAndOpeningBalanceTrue(eligible).stream()
+                .collect(
+                    Collectors.toMap(
+                        snapshot -> snapshot.getAccount().getId(), snapshot -> snapshot));
+    Map<UUID, List<String>> warnings =
+        accountDataQualityService.warningsForAll(
+            accounts,
+            openingBalances.entrySet().stream()
+                .collect(
+                    Collectors.toMap(
+                        Map.Entry::getKey, entry -> entry.getValue().getSnapshotDate())));
     return accounts.stream()
         .map(
             account ->
@@ -155,8 +187,16 @@ public class AccountValuationService {
                     account,
                     targetCurrency,
                     asOf,
-                    nativeCurrency -> resolved.computeIfAbsent(nativeCurrency, lookup)))
+                    nativeCurrency -> resolved.computeIfAbsent(nativeCurrency, lookup),
+                    Optional.ofNullable(openingBalances.get(account.getId())),
+                    warnings.getOrDefault(account.getId(), List.of())))
         .toList();
+  }
+
+  // An account with a value source of its own takes no opening balance (OpeningBalanceService),
+  // so it is not looked up at all.
+  private static boolean takesOpeningBalance(Account account) {
+    return !account.isManualValuation() && !account.isHasAmortisation();
   }
 
   private Function<String, Optional<CurrencyConversionResult>> rateLookup(
@@ -175,20 +215,13 @@ public class AccountValuationService {
       Account account,
       String targetCurrency,
       LocalDate asOf,
-      Function<String, Optional<CurrencyConversionResult>> rateForNativeCurrency) {
+      Function<String, Optional<CurrencyConversionResult>> rateForNativeCurrency,
+      Optional<AccountSnapshot> openingBalance,
+      List<String> warnings) {
     // US-09-04: for a CREDIT_CARD this is billing_currency, not account.nativeCurrency - see
     // AccountCurrencyService. Every other account type's own currency is simply its
     // nativeCurrency.
     String ownCurrency = accountCurrencyService.ownCurrency(account);
-    // Read once: both the value and the warnings depend on it. An account with a value source of
-    // its own takes no opening balance (OpeningBalanceService), so it is not looked up at all.
-    Optional<AccountSnapshot> openingBalance =
-        account.isManualValuation() || account.isHasAmortisation()
-            ? Optional.empty()
-            : accountSnapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId());
-    List<String> warnings =
-        accountDataQualityService.warningsFor(
-            account, openingBalance.map(AccountSnapshot::getSnapshotDate).orElse(null));
     Optional<NativeAccountValue> nativeValue =
         resolveNativeAccountValue(account, openingBalance, asOf);
     if (nativeValue.isEmpty()) {

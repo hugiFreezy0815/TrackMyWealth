@@ -22,6 +22,10 @@ import org.springframework.web.bind.annotation.RestController;
  * on that day - before an account's opening balance, it is unknown, not zero. A past date needs
  * {@code READ}, not just {@code BALANCE_ONLY}: balances on consecutive days reveal the transactions
  * between them.
+ *
+ * <p>"Today" is the server's business date ({@code app.business-zone}), not the client's. A client
+ * wanting the current balance omits {@code asOf} rather than sending its own local date: ahead of
+ * the business zone that date is a 422 (future), behind it a past date that needs {@code READ}.
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/balance")
