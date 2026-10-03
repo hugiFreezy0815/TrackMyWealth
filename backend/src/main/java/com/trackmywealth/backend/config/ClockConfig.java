@@ -5,9 +5,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * The application's time source for logic that must be testable against a controlled clock - today
- * MfaService's TOTP time steps, where replay protection can only be exercised deterministically by
- * advancing time in a test rather than sleeping through real 30-second steps.
+ * The application's time source for logic that must be testable against a controlled clock:
+ * MfaService's TOTP time steps and the FX-import deadline that closes the autumn DST fall-back gap.
+ * Both need deterministic boundary tests rather than sleeps or dependence on the host clock.
  */
 @Configuration
 public class ClockConfig {

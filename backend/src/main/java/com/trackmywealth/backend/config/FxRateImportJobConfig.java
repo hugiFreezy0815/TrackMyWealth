@@ -1,7 +1,9 @@
 package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.job.FxRateImportJob;
+import com.trackmywealth.backend.service.FxImportScheduleService;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.TimeZone;
 import org.quartz.CronScheduleBuilder;
@@ -11,6 +13,7 @@ import org.quartz.JobKey;
 import org.quartz.SimpleScheduleBuilder;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
+import org.quartz.TriggerKey;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,9 +24,10 @@ import org.springframework.context.annotation.Configuration;
  * bean; {@code spring.quartz.overwrite-existing-jobs} makes a changed schedule replace the stored
  * one on the next start. Not registered at all with {@code app.fx.import.enabled=false}.
  *
- * <p>One job with three triggers, so its runs never overlap ({@link FxRateImportJob}). A missed
- * scheduled firing (the application was down) fires once as soon as the scheduler is back; the
- * import itself resumes from the last stored day, so it never loses one.
+ * <p>One job has three regular triggers plus an optional one-shot deadline trigger after a runtime
+ * interval change that crosses the autumn DST fall-back. Its runs never overlap ({@link
+ * FxRateImportJob}). A missed scheduled firing (the application was down) fires once as soon as the
+ * scheduler is back; the import itself resumes from the last stored day, so it never loses one.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "app.fx.import", name = "enabled", havingValue = "true")
@@ -31,6 +35,10 @@ public class FxRateImportJobConfig {
 
   public static final String JOB_GROUP = "fx-rate-import";
   public static final JobKey JOB_KEY = JobKey.jobKey("import", JOB_GROUP);
+  public static final TriggerKey SCHEDULED_IMPORT_TRIGGER_KEY =
+      TriggerKey.triggerKey("scheduled-import", JOB_GROUP);
+  public static final TriggerKey SCHEDULED_IMPORT_DEADLINE_TRIGGER_KEY =
+      TriggerKey.triggerKey("scheduled-import-deadline", JOB_GROUP);
 
   @Bean
   JobDetail fxRateImportJobDetail() {
@@ -41,18 +49,42 @@ public class FxRateImportJobConfig {
         .build();
   }
 
-  // Every two hours by default (product owner, 2026-10-02).
+  // Every two hours by default (product owner, 2026-10-02); an administrator's interval wins over
+  // the environment's cron (US-06-07, #227), so a restart keeps it.
   @Bean
   Trigger fxRateScheduledImportTrigger(
-      JobDetail fxRateImportJobDetail, FxRateImportProperties properties) {
+      FxImportScheduleService scheduleService, FxRateImportProperties properties) {
+    return scheduledImportTrigger(scheduleService.current().cron(), properties.importCronZone());
+  }
+
+  /**
+   * The scheduled-import trigger for {@code cron}: built here at start and by {@code
+   * AdminFxImportService} when an administrator changes the interval, so both are the same trigger.
+   */
+  public static Trigger scheduledImportTrigger(String cron, ZoneId zone) {
     return TriggerBuilder.newTrigger()
-        .forJob(fxRateImportJobDetail)
-        .withIdentity("scheduled-import", JOB_GROUP)
+        .forJob(JOB_KEY)
+        .withIdentity(SCHEDULED_IMPORT_TRIGGER_KEY)
         .usingJobData(FxRateImportJob.MODE, FxRateImportJob.IMPORT)
         .withSchedule(
-            CronScheduleBuilder.cronSchedule(properties.importCron())
-                .inTimeZone(TimeZone.getTimeZone(properties.importCronZone()))
+            CronScheduleBuilder.cronSchedule(cron)
+                .inTimeZone(TimeZone.getTimeZone(zone))
                 .withMisfireHandlingInstructionFireAndProceed())
+        .build();
+  }
+
+  /**
+   * One extra import at {@code deadline}, used only when a DST fall-back would otherwise make the
+   * next clock-aligned cron firing later than the administrator's selected elapsed-time interval.
+   */
+  public static Trigger scheduledImportDeadlineTrigger(Instant deadline) {
+    return TriggerBuilder.newTrigger()
+        .forJob(JOB_KEY)
+        .withIdentity(SCHEDULED_IMPORT_DEADLINE_TRIGGER_KEY)
+        .usingJobData(FxRateImportJob.MODE, FxRateImportJob.IMPORT)
+        .startAt(Date.from(deadline))
+        .withSchedule(
+            SimpleScheduleBuilder.simpleSchedule().withMisfireHandlingInstructionFireNow())
         .build();
   }
 

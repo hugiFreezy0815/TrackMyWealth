@@ -492,6 +492,26 @@ class ApiConventionsIntegrationTest {
     // read surface, and the net-worth wire name is currency rather than the retired
     // reportingCurrency.
     JsonNode schemas = spec.path("components").path("schemas");
+
+    // US-06-07: generated clients see the exact admin FX value sets, not unconstrained
+    // Integer/String fields that accept values the runtime rejects.
+    List<Integer> fxIntervals = new ArrayList<>();
+    schemas
+        .path("UpdateFxImportIntervalRequest")
+        .path("properties")
+        .path("intervalHours")
+        .path("enum")
+        .forEach(value -> fxIntervals.add(value.asInt()));
+    assertThat(fxIntervals).containsExactly(1, 2, 6, 12, 24);
+    List<String> fxSources = new ArrayList<>();
+    schemas
+        .path("FxImportSettingsResponse")
+        .path("properties")
+        .path("intervalSource")
+        .path("enum")
+        .forEach(value -> fxSources.add(value.asString()));
+    assertThat(fxSources).containsExactly("ADMINISTRATOR", "ENVIRONMENT");
+
     assertThat(schemas.path("WorkspaceResponse").path("properties").has("currency")).isTrue();
     assertThat(schemas.path("NetWorthResponse").path("properties").has("currency")).isTrue();
     assertThat(schemas.path("NetWorthResponse").path("properties").has("reportingCurrency"))
