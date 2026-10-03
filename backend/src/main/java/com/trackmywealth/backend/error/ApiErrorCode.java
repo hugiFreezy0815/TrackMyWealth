@@ -63,6 +63,14 @@ public final class ApiErrorCode {
   public static final String OPENING_BALANCE_AFTER_FIRST_TRANSACTION =
       "OPENING_BALANCE_AFTER_FIRST_TRANSACTION";
 
+  /**
+   * 404: the account exists and the caller may see it, but it has no opening balance yet - record
+   * one with {@code POST}. Only ever returned after the account access check, so it reveals nothing
+   * an account the caller may not see would; an account the caller cannot see is a plain {@link
+   * #NOT_FOUND} (US-25-04, #241 review).
+   */
+  public static final String OPENING_BALANCE_NOT_RECORDED = "OPENING_BALANCE_NOT_RECORDED";
+
   /** 423: the user account is temporarily locked (FR-AUT lockout). */
   public static final String LOCKED = "LOCKED";
 

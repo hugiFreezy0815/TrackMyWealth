@@ -24,6 +24,7 @@ import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
+import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -623,8 +624,22 @@ class OpeningBalanceControllerTest {
     delete(token, cash.id(), null).expectStatus().isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
     delete(token, cash.id(), ifMatch(opening.version())).expectStatus().isNoContent();
 
-    client(token).get().uri(openingBalanceUri(cash.id())).exchange().expectStatus().isNotFound();
-    delete(token, cash.id(), ifMatch(opening.version())).expectStatus().isNotFound();
+    // Its own code, so a client knows to offer "record one" rather than "no such account".
+    client(token)
+        .get()
+        .uri(openingBalanceUri(cash.id()))
+        .exchange()
+        .expectStatus()
+        .isNotFound()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo(ApiErrorCode.OPENING_BALANCE_NOT_RECORDED);
+    delete(token, cash.id(), ifMatch(opening.version()))
+        .expectStatus()
+        .isNotFound()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo(ApiErrorCode.OPENING_BALANCE_NOT_RECORDED);
     assertThat(balance(token, cash.id()).valueKnown()).isFalse();
   }
 
@@ -655,12 +670,17 @@ class OpeningBalanceControllerTest {
     UUID memberId = createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
+    // No grant at all: the plain NOT_FOUND an unknown id gets - never OPENING_BALANCE_NOT_RECORDED,
+    // which would confirm the account exists.
     client(memberToken)
         .get()
         .uri(openingBalanceUri(cash.id()))
         .exchange()
         .expectStatus()
-        .isNotFound(); // no grant at all
+        .isNotFound()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo(ApiErrorCode.NOT_FOUND);
     grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.READ);
     record(memberToken, cash.id(), request(openingDate, "1.00", "CHF"))
         .expectStatus()

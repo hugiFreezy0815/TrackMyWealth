@@ -244,10 +244,14 @@ public class OpeningBalanceService {
   }
 
   // Reached only after the caller was cleared for the account: "it has none" is no authorization
-  // decision and reveals nothing the caller may not see (ArchitectureTest reviews it).
-  private static ResponseStatusException notRecorded() {
-    return new ResponseStatusException(
-        HttpStatus.NOT_FOUND, "This account has no opening balance.");
+  // decision and reveals nothing the caller may not see (ArchitectureTest reviews it). Its own
+  // code,
+  // so a client can tell "record one" from "no such account" (#241 review).
+  private static ApiException notRecorded() {
+    return new ApiException(
+        HttpStatus.NOT_FOUND,
+        ApiErrorCode.OPENING_BALANCE_NOT_RECORDED,
+        "This account has no opening balance.");
   }
 
   private OpeningBalanceResponse toResponse(AccountSnapshot snapshot) {
