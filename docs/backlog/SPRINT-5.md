@@ -44,11 +44,18 @@ Stretch issues get the `sprint-5` label and Iteration 5 only when pulled in.
 
 ## Decisions taken (2026-10-02, product owner)
 
-- **Sample CSV files:** the product owner adds example exports under
-  `docs/import-samples/<institution>/` at the latest when development of #229/#230 starts.
-  Anonymise them before copying into `backend/src/test/resources/import/`. The framework is built
-  and tested against one Swiss and one German synthetic fixture (golden cases V-18..V-21). Shipped
-  per-institution templates are separate stories, filed once the samples exist.
+- **Sample CSV files are real bank data and stay local** (amended 2026-10-03). The product
+  owner keeps exports under `docs/import-samples/<institution>/` on their machine only. The
+  folder is in `.gitignore`. Never commit, paste, log or quote their contents, including in issues,
+  PRs, test names or commit messages, and file names too (some contain an IBAN). Use them only to
+  learn each format: delimiter, encoding, header, preamble and trailer rows, number and date
+  formats. Build committed fixtures in `backend/src/test/resources/import/` as **synthetic files**
+  with the same structure and invented values (fake IBANs such as `DE00 0000 …`, invented names and
+  amounts). Do not copy real rows and then edit them. An optional local-only test may parse the
+  real samples when the folder exists (skipped otherwise, so CI never needs them) and report only
+  counts per status. The framework is tested against one Swiss and one German synthetic fixture
+  (golden cases V-18..V-21). Shipped per-institution templates (samples exist for DKB, Sparkasse
+  Freiburg incl. its CAMT.052 CSV variant, and VIAC) are separate stories.
 - **Original file is stored in the database** (`import_file`, `bytea`, 5 MB / 20,000 rows),
   not only its rows, so a batch can be re-parsed with a corrected template.
 - **Duplicate rule without a bank reference:** exact match on account, booking date, amount,
@@ -92,5 +99,5 @@ These were due "before sprint 5" in `SPRINT-3.md` and now block sprint 6's inves
 ## Sprint 6 preview
 
 Positions and cost basis (US-15-01/02) if OPEN-008 is decided, opening holdings (#233),
-holdings reconciliation, the first shipped institution templates from the delivered samples,
+holdings reconciliation, the first shipped institution templates (DKB, Sparkasse Freiburg, VIAC; synthetic fixtures only),
 mobile import and accounts screens on top of #183.
