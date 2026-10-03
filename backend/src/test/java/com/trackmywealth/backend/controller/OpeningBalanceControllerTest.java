@@ -36,6 +36,12 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -407,6 +413,43 @@ class OpeningBalanceControllerTest {
         .expectBody()
         .jsonPath("$.existingOpeningBalanceId")
         .isEqualTo(first.id().toString());
+  }
+
+  // #241 review: two first opening balances at the same moment. Whichever check the loser hits -
+  // the service's lookup or V58's unique index at the flush - it gets a 409, never a 500, and only
+  // one row exists. Repeated on fresh accounts so the index path is exercised in practice too.
+  @Test
+  void twoConcurrentFirstOpeningBalancesYieldOneCreatedAndOneConflict() throws Exception {
+    String token = bootstrapAdministrator();
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      for (int round = 0; round < 5; round++) {
+        UUID accountId = createAccount(token, "Race " + round, "CASH").id();
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<Integer> attempt =
+            () -> {
+              start.await();
+              return record(token, accountId, request(openingDate, "1000.00", "CHF"))
+                  .returnResult(String.class)
+                  .getStatus()
+                  .value();
+            };
+        Future<Integer> first = pool.submit(attempt);
+        Future<Integer> second = pool.submit(attempt);
+        start.countDown();
+
+        assertThat(List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS)))
+            .containsExactlyInAnyOrder(HttpStatus.CREATED.value(), HttpStatus.CONFLICT.value());
+        assertThat(
+                count(
+                    "SELECT count(*) FROM account_snapshot"
+                        + " WHERE account_id = ? AND is_opening_balance",
+                    accountId))
+            .isEqualTo(1);
+      }
+    } finally {
+      pool.shutdownNow();
+    }
   }
 
   @Test
