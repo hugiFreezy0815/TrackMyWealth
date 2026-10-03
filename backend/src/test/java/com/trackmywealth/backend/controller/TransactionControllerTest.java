@@ -199,7 +199,7 @@ class TransactionControllerTest {
 
     NetWorthResponse netWorth = netWorth(token);
 
-    assertThat(netWorth.reportingCurrency()).isEqualTo("CHF");
+    assertThat(netWorth.currency()).isEqualTo("CHF");
     assertThat(netWorth.totalAssets()).isEqualByComparingTo("1000.00");
     assertThat(netWorth.totalLiabilities()).isEqualByComparingTo("85.00");
     // 1000 - 85, not 1000 + 85.
@@ -1044,7 +1044,7 @@ class TransactionControllerTest {
 
     // ...and net worth converts it into the caller's reporting currency, subtracting it.
     NetWorthResponse netWorth = netWorth(token);
-    assertThat(netWorth.reportingCurrency()).isEqualTo("CHF");
+    assertThat(netWorth.currency()).isEqualTo("CHF");
     assertThat(netWorth.totalLiabilities()).isEqualByComparingTo("95.00");
     assertThat(netWorth.netWorth()).isEqualByComparingTo("-95.00");
     assertThat(netWorth.complete()).isTrue();

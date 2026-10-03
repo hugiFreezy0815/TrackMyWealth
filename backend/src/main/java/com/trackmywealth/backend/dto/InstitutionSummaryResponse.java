@@ -8,6 +8,10 @@ import java.util.UUID;
 /**
  * Response for {@code GET /api/v1/institutions/{institutionId}/summary} (US-04-03).
  *
+ * @param containerCurrency the institution's own container currency, whatever the summary is shown
+ *     in
+ * @param currency the currency every figure below is in: {@code containerCurrency} by default, or
+ *     the caller's ad hoc {@code currency} (US-06-05)
  * @param netValue {@code totalAssets - totalLiabilities} - may be negative (FR-INS-SUM-001), never
  *     suppressed or clamped to zero
  * @param complete {@code false} when at least one {@link #accounts} entry has {@code valueKnown =
@@ -21,6 +25,7 @@ import java.util.UUID;
 public record InstitutionSummaryResponse(
     UUID institutionId,
     String containerCurrency,
+    String currency,
     BigDecimal totalAssets,
     BigDecimal totalLiabilities,
     BigDecimal netValue,
@@ -35,11 +40,11 @@ public record InstitutionSummaryResponse(
   }
 
   /**
-   * @param valueInContainerCurrency {@code null} when {@code valueKnown} is {@code false}
-   * @param conversionRate the rate applied to convert {@code nativeCurrency} to the institution's
-   *     {@code containerCurrency} (FR-INS-SUM-004) - {@code null} when no conversion was needed
-   *     ({@code nativeCurrency} already equals the container currency) or when {@code valueKnown}
-   *     is {@code false}
+   * @param value the account's value in the summary's {@code currency} - {@code null} when {@code
+   *     valueKnown} is {@code false}
+   * @param conversionRate the rate applied to convert {@code nativeCurrency} to the summary's
+   *     {@code currency} (FR-INS-SUM-004) - {@code null} when no conversion was needed ({@code
+   *     nativeCurrency} already equals it) or when {@code valueKnown} is {@code false}
    * @param conversionRateDate the date the conversion was requested for (today - FR-CUR-011's
    *     valuation-date convention, see {@code docs/architecture/calculation-methodology.md}), not
    *     necessarily the date the underlying stored rate is itself dated to - see {@code
@@ -63,7 +68,7 @@ public record InstitutionSummaryResponse(
       String name,
       String nature,
       String nativeCurrency,
-      BigDecimal valueInContainerCurrency,
+      BigDecimal value,
       BigDecimal conversionRate,
       LocalDate conversionRateDate,
       boolean conversionRateCarriedForward,
