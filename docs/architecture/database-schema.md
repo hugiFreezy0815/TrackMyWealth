@@ -288,6 +288,20 @@ An account's dated opening balance (FR-REC-007) is its one `account_snapshot` wi
 - **No new capability flag.** Whether its account's value stays unknown (a holding account) is
   read from the existing `holds_positions`, which defaults to true for `SECURITIES`,
   `MANAGED_MANDATE` and `CRYPTO` and may be set for e.g. a pension that holds funds.
+- **Replaced in place and hard-deleted - an exception to FR-LIF-001.** The deletion matrix says a
+  snapshot is never hard-deleted but superseded and retained. That rule protects what an
+  institution reported. An opening balance is the member's own starting point, not an observation,
+  so `PUT` overwrites it and `DELETE` removes the row, and no history of earlier values is kept
+  (`updated_at`/`updated_by` show only the last change). Product-owner decision on the #241
+  review, 2026-10-03; a change history comes with the financial audit log (FR-AUD-001, EPIC 31).
+  Regular snapshots keep the FR-LIF-001 rule.
+- **Card snapshots before V58.** V58 stops with `account_snapshot_card_currency`, naming them, if a
+  credit card has a snapshot in its native currency while its billing currency differs (recorded
+  under V33's rule). It cannot be converted without a rate and is not relabelled silently: delete
+  it, or re-record it in the billing currency, then restart. `CardSnapshotCurrencyMigrationTest`.
+- **Not recorded yet.** A read, replace or delete without one is a 404
+  `OPENING_BALANCE_NOT_RECORDED`, only ever after the account access check; an account the caller
+  cannot see stays a plain `NOT_FOUND`.
 
 ### Category taxonomy: shared defaults, workspace customisation (US-08-04)
 

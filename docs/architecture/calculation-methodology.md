@@ -161,10 +161,13 @@ exact one:
 | `LEDGER` | negated sum of the card's ledger rows | yes |
 | `LEDGER_FROM_OPENING_BALANCE` | opening balance plus the ledger after the opening date (US-25-04) | yes |
 | `MANUAL_VALUATION` | latest manual valuation on or before the as-of date (`CUSTOM_ASSET`) | yes, as recorded |
+| `LATEST_SNAPSHOT` | newest snapshot balance on or before the as-of date, the opening balance included - an account without a ledger (`has_transactions = false`, vested benefits) | yes, as reported on that date |
 | `LEDGER_EMPTY` | card with no rows yet - assumed 0 | **no** - approximation |
 | `ORIGINAL_PRINCIPAL` | a loan's/mortgage's *original* principal, not its outstanding balance (no amortisation tracking until EPIC 10) | **no** - approximation |
 
-`valueBasis` is `null` when `valueKnown` is `false`. `NetWorthResponse.approximate` is `true` when
+`valueBasis` is `null` when `valueKnown` is `false`. `AccountValuation.valueSourceDate` is the date
+of the observation a `LATEST_SNAPSHOT` or `MANUAL_VALUATION` figure rests on, so a client can show
+how old it is; it is `null` for a figure derived from the ledger or the loan terms. `NetWorthResponse.approximate` is `true` when
 any included account has an approximate basis. It is independent of `complete`: an approximate
 account is still *known* (counted in the totals), but the figure must not be presented as exact.
 
@@ -241,7 +244,13 @@ Which accounts use it is decided by capability flags (DM-17), never by type:
 | `has_amortisation` (loan, mortgage) or `manual_valuation` (custom asset) | refused, 422 `OPENING_BALANCE_NOT_APPLICABLE`: they have their own value source |
 | `holds_positions` (depot, mandate, crypto, a pension holding funds) | stored, but the value stays unknown - the cash is only part of it until holdings are valued (EPIC 15) |
 | `has_statement_cycle` (credit card) | replaces the card's ledger-only source (`LEDGER`/`LEDGER_EMPTY`) |
-| everything else (cash, savings, pension, vested benefits) | the source above; without ledger rows the value is the opening balance itself |
+| `has_transactions = false` (vested benefits) | no ledger to add: the account is valued from its latest snapshot (`LATEST_SNAPSHOT`), the opening balance being the first one. A newer snapshot supersedes it rather than the opening balance standing forever (#241 review) |
+| everything else (cash, savings, pension) | the source above; without ledger rows after the opening date the value is the opening balance itself |
+
+A transaction recorded later with a booking date before the opening balance is left out of the
+value like any earlier row. It carries `BOOKED_BEFORE_OPENING_BALANCE` in its own `warnings`
+(`TransactionResponse`), so the member sees at once that it does not count, and the account carries
+`TRANSACTIONS_BEFORE_OPENING_BALANCE`.
 
 ## Card settlement matching and spending (US-09-02, FR-CC-004/005/007, FR-CF-001/004/005)
 
