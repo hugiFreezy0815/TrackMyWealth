@@ -64,6 +64,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V58` | Opening balances: `uq_account_snapshot_opening_balance` (at most one per account), `chk_account_snapshot_opening_balance_manual`, and the snapshot currency guard now expects a credit card's `billing_currency` (#232) |
 | `V59` | `workspace.currency`: the workspace's display currency for workspace-level totals, backfilled from the oldest login member's reporting currency (#224). V58 is left to #232 (opening balance) |
 | `V60` | Cash reconciliation: at most one account-level `reconciliation_result` per snapshot; security-level rows remain available for later holdings reconciliation (#234) |
+| `V61` | `fx_import_setting`: one global row holding the FX import interval an administrator set at runtime; it wins over `FX_IMPORT_CRON` at every start (#227) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -136,7 +137,7 @@ exception to the "never edit an applied migration" rule - see `development-stand
 Tables that hang off a workspace-scoped table but do not carry `workspace_id` directly
 (`account_credit_card`, `tax_lot`, `price`, `snapshot_holding`, ...) are protected **transitively**
 through a join to `account`/`security`/`account_snapshot`. `security`, `listing`, `price`,
-`fx_rate`, `fx_rate_history_requirement`, `fx_rate_currency_in_use`, `issuer`, `institution_catalogue` and the reference-data
+`fx_rate`, `fx_rate_history_requirement`, `fx_rate_currency_in_use`, `fx_import_setting`, `issuer`, `institution_catalogue` and the reference-data
 tables in `V18` carry **no** `workspace_id` at all and are **not** RLS-protected — this is deliberate: they are shared,
 global reference data (DM-25, NFR-LIC-006/007), not tenant data.
 
@@ -634,6 +635,25 @@ Container-level figures default independently to
 own native (or credit-card billing) currency. Read endpoints may request another ISO 4217
 `currency` for presentation; this never rewrites the underlying account, transaction or
 valuation data.
+
+### FX import interval (US-06-07)
+
+`fx_import_setting` (`V61`) is global, not tenant data: one row, enforced by a `singleton BOOLEAN`
+column that is always `TRUE` and unique. `V61` inserts that row, so the setting has a `version`
+for `If-Match` (ADR 0004) before anyone changes it. `import_interval_hours` is `NULL` until a
+`SYSTEM_ADMINISTRATOR` sets it through `PUT /api/v1/admin/fx-import` to 1, 2, 6, 12 or 24
+(`CHECK`); until then the deployment's `FX_IMPORT_CRON` applies.
+
+A stored interval wins over `FX_IMPORT_CRON` at every start: the scheduled-import trigger bean
+builds its cron from the row, and `spring.quartz.overwrite-existing-jobs` replaces the stored
+trigger with it. Otherwise the next redeployment would silently undo the administrator's choice.
+An interval runs clock-aligned in `FX_IMPORT_CRON_ZONE` (`0 0 0/6 * * ?` for 6 hours, midnight
+for 24). Across the autumn DST fall-back, elapsed time to the next local clock boundary can be one
+hour longer; after a runtime change the service adds a one-shot deadline import only in that case,
+so the response's next run is still no later than the selected interval. A change updates the row,
+writes `admin_audit_log` (`FX_IMPORT_INTERVAL_CHANGED`, from and to) and reschedules the stored
+Quartz trigger in one transaction. The JDBC job store joins Spring's transaction on the
+shared data source, so all three take effect together or not at all, on every node.
 
 ## 5. Time-series data and partitioning
 

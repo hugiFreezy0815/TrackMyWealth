@@ -27,6 +27,7 @@ final class CurrentVersion {
           "account_snapshot",
           "app_user",
           "categorization_rule",
+          "fx_import_setting",
           "settlement_match",
           "sharing_grant",
           "transaction",

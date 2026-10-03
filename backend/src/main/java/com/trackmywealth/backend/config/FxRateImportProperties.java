@@ -16,7 +16,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     it
  * @param importCron when the import runs (Quartz cron, seconds first) - every two hours by default
  *     (product owner, 2026-10-02). The ECB publishes once, around 16:00 CET on TARGET business
- *     days; a run with nothing new costs one small provider call.
+ *     days; a run with nothing new costs one small provider call. Only the default: an interval an
+ *     administrator set (US-06-07, {@code FxImportScheduleService}) wins over it at every start.
  * @param importCronZone the zone {@code importCron} is read in
  * @param historyCheckInterval how often the backfill checks whether an older transaction now needs
  *     older rates; without such a need the check makes no provider call
