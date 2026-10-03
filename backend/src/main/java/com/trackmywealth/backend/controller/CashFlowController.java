@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** US-09-02: thin, partial monthly spending - superseded by EPIC 10's cash flow. */
+/** US-10-01 and US-06-05: monthly cash flow, optionally converted at transaction-date FX. */
 @RestController
 @RequestMapping("/api/v1/cash-flow")
 public class CashFlowController {
@@ -24,7 +24,9 @@ public class CashFlowController {
   /** {@code month} is {@code yyyy-MM}. */
   @GetMapping
   public CashFlowResponse getCashFlow(
-      @RequestParam YearMonth month, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return cashFlowService.getCashFlow(month, actor);
+      @RequestParam YearMonth month,
+      @RequestParam(required = false) String currency,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return cashFlowService.getCashFlow(month, actor, currency);
   }
 }

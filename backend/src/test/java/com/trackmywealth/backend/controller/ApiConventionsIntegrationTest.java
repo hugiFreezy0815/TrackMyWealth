@@ -488,6 +488,29 @@ class ApiConventionsIntegrationTest {
     JsonNode updateCategory = spec.path("paths").path("/api/v1/categories/{id}").path("put");
     assertThat(updateCategory.path("parameters").findValuesAsString("name")).contains("If-Match");
 
+    // US-06-05: display-currency selection is part of the generated contract on every agreed
+    // read surface, and the net-worth wire name is currency rather than the retired
+    // reportingCurrency.
+    JsonNode schemas = spec.path("components").path("schemas");
+    assertThat(schemas.path("WorkspaceResponse").path("properties").has("currency")).isTrue();
+    assertThat(schemas.path("NetWorthResponse").path("properties").has("currency")).isTrue();
+    assertThat(schemas.path("NetWorthResponse").path("properties").has("reportingCurrency"))
+        .isFalse();
+    for (String path :
+        List.of(
+            "/api/v1/net-worth",
+            "/api/v1/institutions/{institutionId}/summary",
+            "/api/v1/accounts/{accountId}/balance",
+            "/api/v1/cash-flow")) {
+      assertThat(
+              spec.path("paths")
+                  .path(path)
+                  .path("get")
+                  .path("parameters")
+                  .findValuesAsString("name"))
+          .contains("currency");
+    }
+
     // #207: the expanded rollout is in the generated contract too, not only the original
     // account/category endpoints from #206.
     assertThat(transaction.path("properties").path("version").path("type").asString())

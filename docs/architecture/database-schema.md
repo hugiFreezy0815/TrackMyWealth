@@ -62,6 +62,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V56` | `transfer_detection_fx_pending.rechecks`: the FX job stops re-running a date no rate can ever cover (#223 review) |
 | `V57` | `transaction`'s currency-in-use trigger reads `NEW.currency` directly instead of serialising the row (#223 review) |
 | `V58` | Opening balances: `uq_account_snapshot_opening_balance` (at most one per account), `chk_account_snapshot_opening_balance_manual`, and the snapshot currency guard now expects a credit card's `billing_currency` (#232) |
+| `V59` | `workspace.currency`: the workspace's display currency for workspace-level totals, backfilled from the oldest login member's reporting currency (#224). V58 is left to #232 (opening balance) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -591,6 +592,22 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   - A void older than 30 days, already restored, or made by a correction (`corrects_transaction_id`)
     is not restorable (409). `GET …/transactions/deleted` lists every restorable row of both tiers.
 - **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02.
+
+### Workspace display currency (US-06-05)
+
+`workspace.currency CHAR(3) NOT NULL DEFAULT 'CHF'` is the default currency for workspace-level consolidated
+figures such as net worth. Existing workspaces are backfilled from the oldest login-capable
+member's `app_user.reporting_currency`, falling back to CHF when no login exists. The column
+keeps its `DEFAULT 'CHF'` on purpose: setup always sets the currency (the administrator's), so
+the default only serves direct SQL inserts such as test fixtures. The per-user
+`reporting_currency` remains a personal client preference and is not used by the server as the
+workspace-total default.
+
+Container-level figures default independently to
+`financial_institution.container_currency`, while an account balance defaults to the account's
+own native (or credit-card billing) currency. Read endpoints may request another ISO 4217
+`currency` for presentation; this never rewrites the underlying account, transaction or
+valuation data.
 
 ## 5. Time-series data and partitioning
 

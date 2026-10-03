@@ -5,12 +5,12 @@ import com.trackmywealth.backend.dto.FxRateLookupResult;
 import com.trackmywealth.backend.dto.ResolvedFxRate;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
+import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.Period;
-import java.util.Currency;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -346,14 +346,7 @@ public class FxRateService {
   // plain service method, not a request DTO field @ValidCurrencyCode can annotate.
   private static void requireValidCurrencyCode(String currencyCode, String fieldName) {
     requireNonNull(currencyCode, fieldName);
-    try {
-      Currency.getInstance(currencyCode);
-    } catch (IllegalArgumentException e) {
-      throw new ResponseStatusException(
-          HttpStatus.BAD_REQUEST,
-          fieldName + " '" + currencyCode + "' is not a valid ISO 4217 currency code.",
-          e);
-    }
+    CurrencyCodes.requireValid(currencyCode, fieldName);
   }
 
   private static void requireNonNull(Object value, String fieldName) {

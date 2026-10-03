@@ -15,6 +15,7 @@ import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.CustomAssetValuationRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -100,17 +101,22 @@ public class AccountValuationService {
   }
 
   /**
-   * US-09-01/FR-CC-001/003: the account's balance in its own currency as of {@code asOf} (today
-   * when {@code null}) - for a credit card, the outstanding amount owed, a {@code LIABILITY}. The
-   * current balance is gated at {@code BALANCE_ONLY} (US-03-03), the weakest level that may see a
-   * figure at all. A past date needs {@code READ}: two consecutive days' balances differ by that
-   * day's transactions, which a {@code BALANCE_ONLY} grant must not reveal (#241 review). A date in
-   * the future is a 422: a balance is recorded history, not a forecast. Past, today and future are
-   * judged against {@link BusinessDateService#today}, never the client's date.
+   * US-09-01/FR-CC-001/003: the account's balance as of {@code asOf} (today when {@code null}) -
+   * for a credit card, the outstanding amount owed, a {@code LIABILITY}. The current balance is
+   * gated at {@code BALANCE_ONLY} (US-03-03), the weakest level that may see a figure at all. A
+   * past date needs {@code READ}: two consecutive days' balances differ by that day's transactions,
+   * which a {@code BALANCE_ONLY} grant must not reveal (#241 review). A date in the future is a
+   * 422: a balance is recorded history, not a forecast. Past, today and future are judged against
+   * {@link BusinessDateService#today}, never the client's date.
+   *
+   * <p>US-06-05: in the account's own currency, or in {@code requestedCurrency} when given,
+   * converted at the valuation date's rate. Both {@code asOf} and the currency are validated only
+   * after the access check, so an invalid value cannot tell a caller whether an account it may not
+   * see exists.
    */
   @Transactional(readOnly = true)
   public AccountValuation getBalance(
-      UUID accountId, LocalDate asOf, AuthenticatedUserPrincipal actor) {
+      UUID accountId, LocalDate asOf, AuthenticatedUserPrincipal actor, String requestedCurrency) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     LocalDate today = businessDateService.today();
     boolean historical = asOf != null && asOf.isBefore(today);
@@ -120,8 +126,10 @@ public class AccountValuationService {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "asOf cannot be in the future.");
     }
-    return valueIn(
-        account, accountCurrencyService.ownCurrency(account), asOf == null ? today : asOf);
+    String targetCurrency =
+        CurrencyCodes.requestedOrDefault(
+            requestedCurrency, accountCurrencyService.ownCurrency(account));
+    return valueIn(account, targetCurrency, asOf == null ? today : asOf);
   }
 
   /**

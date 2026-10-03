@@ -8,7 +8,9 @@ import jakarta.persistence.Version;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.hibernate.annotations.Generated;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.generator.EventType;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Maps {@code workspace} (V2). The id is deliberately NOT {@code @GeneratedValue}: the bootstrap
@@ -36,6 +38,12 @@ public class Workspace {
 
   @Column(nullable = false)
   private String status = "ACTIVE";
+
+  // US-06-05: default currency for workspace-level totals. Accounts and institutions retain
+  // their own currencies, and individual reads may request an ad-hoc display currency.
+  @JdbcTypeCode(SqlTypes.CHAR)
+  @Column(nullable = false, length = 3)
+  private String currency;
 
   @Generated(event = EventType.INSERT)
   @Column(name = "created_at", insertable = false, updatable = false)
@@ -72,6 +80,14 @@ public class Workspace {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public String getCurrency() {
+    return currency;
+  }
+
+  public void setCurrency(String currency) {
+    this.currency = currency;
   }
 
   public OffsetDateTime getCreatedAt() {

@@ -26,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>"Today" is the server's business date ({@code app.business-zone}), not the client's. A client
  * wanting the current balance omits {@code asOf} rather than sending its own local date: ahead of
  * the business zone that date is a 422 (future), behind it a past date that needs {@code READ}.
+ *
+ * <p>US-06-05: {@code currency} shows it in another currency, at the valuation date's rate.
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/balance")
@@ -41,7 +43,8 @@ public class AccountBalanceController {
   public AccountValuation getBalance(
       @PathVariable UUID accountId,
       @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf,
+      @RequestParam(required = false) String currency,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return accountValuationService.getBalance(accountId, asOf, actor);
+    return accountValuationService.getBalance(accountId, asOf, actor, currency);
   }
 }

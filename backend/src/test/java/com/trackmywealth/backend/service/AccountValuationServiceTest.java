@@ -280,11 +280,11 @@ class AccountValuationServiceTest {
     LocalDate asOf = OPENING_DATE.plusDays(30);
     withLedgerAfterOpening(asOf, "-250.00");
 
-    assertThat(service.getBalance(account.getId(), null, ACTOR).value())
+    assertThat(service.getBalance(account.getId(), null, ACTOR, null).value())
         .isEqualByComparingTo("9000.00");
-    assertThat(service.getBalance(account.getId(), asOf, ACTOR).value())
+    assertThat(service.getBalance(account.getId(), asOf, ACTOR, null).value())
         .isEqualByComparingTo("9750.00");
-    assertThat(service.getBalance(account.getId(), TODAY, ACTOR).value())
+    assertThat(service.getBalance(account.getId(), TODAY, ACTOR, null).value())
         .isEqualByComparingTo("9000.00");
     // Today's balance needs BALANCE_ONLY; a past one READ (#241 review).
     verify(accessControlService, times(2))
@@ -296,7 +296,7 @@ class AccountValuationServiceTest {
   void aBalanceForAFutureDateIsRejected() {
     when(accountLookupService.findAccountOrThrow(account.getId(), ACTOR)).thenReturn(account);
 
-    assertThatThrownBy(() -> service.getBalance(account.getId(), TODAY.plusDays(1), ACTOR))
+    assertThatThrownBy(() -> service.getBalance(account.getId(), TODAY.plusDays(1), ACTOR, null))
         .isInstanceOfSatisfying(
             ResponseStatusException.class,
             e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT));

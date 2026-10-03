@@ -188,7 +188,7 @@ class OpeningBalanceControllerTest {
         .satisfies(
             contribution -> {
               assertThat(contribution.valueKnown()).isTrue();
-              assertThat(contribution.valueInContainerCurrency()).isEqualByComparingTo("8765.45");
+              assertThat(contribution.value()).isEqualByComparingTo("8765.45");
             });
   }
 

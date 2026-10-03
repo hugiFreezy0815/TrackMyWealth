@@ -369,7 +369,7 @@ class InstitutionControllerTest {
 
     assertThat(summary.totalAssets()).isEqualByComparingTo("900.0000");
     InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
-    assertThat(contribution.valueInContainerCurrency()).isEqualByComparingTo("900.0000");
+    assertThat(contribution.value()).isEqualByComparingTo("900.0000");
     assertThat(contribution.conversionRate()).isEqualByComparingTo("0.9000000000");
     assertThat(contribution.conversionRateDate()).isEqualTo(today());
     assertThat(contribution.conversionRateCarriedForward()).isFalse();
@@ -403,7 +403,7 @@ class InstitutionControllerTest {
     InstitutionSummaryResponse summary = getSummary(token, institution.id());
 
     InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
-    assertThat(contribution.valueInContainerCurrency()).isEqualByComparingTo("900.0000");
+    assertThat(contribution.value()).isEqualByComparingTo("900.0000");
     assertThat(contribution.conversionRateCarriedForward()).isTrue();
   }
 
@@ -440,7 +440,7 @@ class InstitutionControllerTest {
             contribution -> {
               assertThat(contribution.name()).isEqualTo("Everyday Checking");
               assertThat(contribution.valueKnown()).isFalse();
-              assertThat(contribution.valueInContainerCurrency()).isNull();
+              assertThat(contribution.value()).isNull();
             });
   }
 
@@ -505,7 +505,7 @@ class InstitutionControllerTest {
     assertThat(summary.totalAssets()).isEqualByComparingTo("0");
     InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
     assertThat(contribution.valueKnown()).isFalse();
-    assertThat(contribution.valueInContainerCurrency()).isNull();
+    assertThat(contribution.value()).isNull();
   }
 
   @Test
