@@ -13,10 +13,11 @@ stays in sprint 4). EPIC 01-09, most of 28/29 and US-06-04 (ECB FX import) are o
 migration is V57. The import tables (V15) and `account_snapshot.is_opening_balance` (V11) exist
 but no code uses them. Every cash, savings and depot account is still `valueKnown = false`.
 
-## Committed (6 stories)
+## Committed (6 stories + 1 analysis spike)
 
 | Issue | Story | Pri | Size | Blocked by |
 |---|---|---|---|---|
+| #238 | SPIKE: which sample documents create the container details, which import transactions/positions (2-day time box) | MUST | S | - |
 | #229 | US-07-03 CSV import templates: model, versioning, fingerprint, parser engine | MUST | M | - |
 | #230 | US-07-04 Upload, preview with duplicate detection, commit | MUST | L | #229 (parser interface) |
 | #231 | US-07-05 Roll back an import batch (delete while unmodified, void once modified) | MUST | M | #230 |
@@ -26,7 +27,7 @@ but no code uses them. Every cash, savings and depot account is still `valueKnow
 
 Suggested order and parallel tracks:
 
-- **Import track:** day 1, agree the parser interface between #229 and #230. #230 then builds
+- **Import track:** days 1-2, the spike #238 analyses the local samples (structure only) and confirms or amends #229/#230's template scope. In parallel, agree the parser interface between #229 and #230. #230 then builds
   upload/preview against a stub parser while #229 finishes. Commit/dedup-under-lock is #230's
   second PR. #231 follows in week 2.
 - **Valuation track:** #232 and #224 from day 1, independent of each other and of the import.
@@ -55,7 +56,7 @@ Stretch issues get the `sprint-5` label and Iteration 5 only when pulled in.
   real samples when the folder exists (skipped otherwise, so CI never needs them) and report only
   counts per status. The framework is tested against one Swiss and one German synthetic fixture
   (golden cases V-18..V-21). Shipped per-institution templates (samples exist for DKB, Sparkasse
-  Freiburg incl. its CAMT.052 CSV variant, and VIAC) are separate stories.
+  Freiburg incl. its CAMT.052 CSV variant, PostFinance; TrueWealth and Yuh still without samples) are separate stories, filed by the spike #238.
 - **Original file is stored in the database** (`import_file`, `bytea`, 5 MB / 20,000 rows),
   not only its rows, so a batch can be re-parsed with a corrected template.
 - **Duplicate rule without a bank reference:** exact match on account, booking date, amount,
@@ -99,5 +100,5 @@ These were due "before sprint 5" in `SPRINT-3.md` and now block sprint 6's inves
 ## Sprint 6 preview
 
 Positions and cost basis (US-15-01/02) if OPEN-008 is decided, opening holdings (#233),
-holdings reconciliation, the first shipped institution templates (DKB, Sparkasse Freiburg, VIAC; synthetic fixtures only),
+holdings reconciliation, the first shipped institution templates (from the spike #238; synthetic fixtures only),
 mobile import and accounts screens on top of #183.
