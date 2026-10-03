@@ -140,9 +140,9 @@ Three rules are load-bearing and each has a test in `TransactionControllerTest`:
   voided (FR-LIF-003), and an account whose rows are all voided reads a measured zero (`LEDGER`).
 - **An empty ledger is a known zero, flagged as assumed.** A card with no rows owes exactly 0 and
   does not make an aggregate incomplete - but its `valueBasis` is `LEDGER_EMPTY`, not `LEDGER`, so
-  a client can tell an assumed zero from a measured one. Known limitation: there is no
-  opening-balance mechanism yet (EPIC 25 snapshots), so a card that already carried debt when
-  tracking began reads 0 until that debt is recorded.
+  a client can tell an assumed zero from a measured one. A card that already carried debt when
+  tracking began reads 0 until that debt is recorded as its opening balance (see *Opening
+  balances* below).
 - **Future-dated rows wait.** A row booked after the as-of date does not count until that date,
   matching the valuation-date convention above.
 
@@ -159,6 +159,7 @@ exact one:
 | `valueBasis` | Source | Exact? |
 |---|---|---|
 | `LEDGER` | negated sum of the card's ledger rows | yes |
+| `LEDGER_FROM_OPENING_BALANCE` | opening balance plus the ledger after the opening date (US-25-04) | yes |
 | `MANUAL_VALUATION` | latest manual valuation on or before the as-of date (`CUSTOM_ASSET`) | yes, as recorded |
 | `LEDGER_EMPTY` | card with no rows yet - assumed 0 | **no** - approximation |
 | `ORIGINAL_PRINCIPAL` | a loan's/mortgage's *original* principal, not its outstanding balance (no amortisation tracking until EPIC 10) | **no** - approximation |
@@ -192,6 +193,55 @@ account's foreign currency is converted at the business date's rate, resolved on
 pair per request). Each account's sign comes from its `nature` (the DB-generated column), never from application-side
 `account_type` logic. Accounts with no resolvable value (types with no value source yet) are listed but excluded from the totals and
 flagged (`complete = false`) rather than counted as zero.
+
+## Opening balances (US-25-04, FR-REC-007)
+
+An account whose transaction history starts later than the account itself has no known value
+from its ledger alone. A member records a dated **opening balance** for it
+(`POST/PUT/DELETE /api/v1/accounts/{id}/opening-balance`), stored as the account's one
+`account_snapshot` with `is_opening_balance` (V58). It is the *"ledger from opening balance"* value
+source of `AccountValuationService` (`valueBasis = LEDGER_FROM_OPENING_BALANCE`):
+
+```
+value(D) = opening balance + Σ amount of live ledger rows with  opening date < booking_date ≤ D
+```
+
+- **The opening date's own rows are contained in the balance.** The balance is the account's
+  balance at the *end* of the opening date, as a statement prints it, so a row booked on that date
+  is not added again. Only rows booked later are.
+- **Before the opening date the value is unknown, not zero** (PR-011): `valueKnown = false` for any
+  read with `asOf` earlier than the opening date (`GET .../balance?asOf=`).
+- **Rows before the opening date are left out.** They predate the starting point. Recording an
+  opening balance after existing live rows is refused (409 `OPENING_BALANCE_AFTER_FIRST_TRANSACTION`,
+  with their count and earliest booking date) unless the member confirms
+  `acknowledgeEarlierTransactions`. While such rows exist, the account, its valuation and the
+  net-worth and institution-summary headlines carry `TRANSACTIONS_BEFORE_OPENING_BALANCE`
+  (FR-CON-007) - never a silent double count.
+- **Removed rows don't count**, as everywhere: a soft-deleted row is gone, and a void pair nets to
+  zero on every date (see above), wherever its two rows fall relative to the opening date.
+- **Sign.** The balance follows the snapshot convention: a liability's is the positive amount
+  owed. The ledger is cash-direction signed, so for `nature = LIABILITY` the ledger sum is
+  subtracted (a card purchase of −100.00 on top of 500.00 owed makes 600.00 owed). Read from
+  `nature`, never from `account_type`.
+- **Currency.** The account's own currency - a credit card's `billing_currency`, which its ledger
+  is summed in. Any other currency is refused (422); a conversion is not an opening balance.
+
+| Worked example (CHF cash account) | |
+|---|---|
+| Opening balance 2024-10-01 | 10,000.00 |
+| Row on 2024-10-01 | −50.00 (contained, not added) |
+| Rows after 2024-10-01 | −1,000.00, −300.00, +65.45 = −1,234.55 |
+| Value today | **8,765.45** (`LEDGER_FROM_OPENING_BALANCE`) |
+| Value as of 2024-09-30 | unknown |
+
+Which accounts use it is decided by capability flags (DM-17), never by type:
+
+| Account | With an opening balance |
+|---|---|
+| `has_amortisation` (loan, mortgage) or `manual_valuation` (custom asset) | refused, 422 `OPENING_BALANCE_NOT_APPLICABLE`: they have their own value source |
+| `holds_positions` (depot, mandate, crypto, a pension holding funds) | stored, but the value stays unknown - the cash is only part of it until holdings are valued (EPIC 15) |
+| `has_statement_cycle` (credit card) | replaces the card's ledger-only source (`LEDGER`/`LEDGER_EMPTY`) |
+| everything else (cash, savings, pension, vested benefits) | the source above; without ledger rows the value is the opening balance itself |
 
 ## Card settlement matching and spending (US-09-02, FR-CC-004/005/007, FR-CF-001/004/005)
 

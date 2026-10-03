@@ -20,6 +20,8 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -149,12 +151,15 @@ public class InstitutionService {
     BigDecimal totalLiabilities = BigDecimal.ZERO;
     boolean complete = true;
     List<AccountContribution> contributions = new ArrayList<>();
+    // PR-011/FR-CON-007: an account's warning is shown at the container's headline too.
+    Set<String> warnings = new TreeSet<>();
 
     for (Account account : accounts) {
       AccountContribution contribution =
           toContribution(
               accountValuationService.valueIn(account, institution.getContainerCurrency(), asOf));
       contributions.add(contribution);
+      warnings.addAll(contribution.warnings());
       if (!contribution.valueKnown()) {
         complete = false;
       } else if (ASSET.equals(contribution.nature())) {
@@ -174,6 +179,7 @@ public class InstitutionService {
         totalLiabilities,
         netValue,
         complete,
+        List.copyOf(warnings),
         contributions);
   }
 
@@ -190,7 +196,8 @@ public class InstitutionService {
         valuation.conversionRateDate(),
         valuation.conversionRateCarriedForward(),
         valuation.conversionRateStale(),
-        valuation.valueKnown());
+        valuation.valueKnown(),
+        valuation.warnings());
   }
 
   private void applyCatalogueEntry(

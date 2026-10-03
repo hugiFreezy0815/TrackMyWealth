@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -45,6 +46,9 @@ import java.util.UUID;
  *     LEDGER_EMPTY} (an assumed zero) and {@code ORIGINAL_PRINCIPAL} (not the current outstanding
  *     balance) are approximations a client should surface as such, see {@link
  *     ValueBasisValues#isApproximate}
+ * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), empty
+ *     when there are none - independent of {@code valueKnown}, a client shows them on the account
+ *     (PR-011, FR-CON-007)
  */
 public record AccountValuation(
     UUID accountId,
@@ -58,4 +62,11 @@ public record AccountValuation(
     boolean conversionRateCarriedForward,
     boolean conversionRateStale,
     boolean valueKnown,
-    String valueBasis) {}
+    String valueBasis,
+    List<String> warnings) {
+
+  public AccountValuation {
+    // Defensive/immutable copy (SpotBugs EI_EXPOSE_REP), same as NetWorthResponse.
+    warnings = List.copyOf(warnings);
+  }
+}

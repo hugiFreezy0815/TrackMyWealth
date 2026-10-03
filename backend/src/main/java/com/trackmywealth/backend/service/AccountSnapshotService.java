@@ -58,7 +58,12 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>Writes need {@code EDIT}, reads {@code READ} on the account (US-03-03): a snapshot lists
  * positions, which is more than a {@code BALANCE_ONLY} grant shows. {@code is_opening_balance} is
- * always {@code false} here; opening balances are US-25-04.
+ * always {@code false} for a snapshot recorded here. The account's opening balance (US-25-04) is a
+ * snapshot too and is listed here, but only {@code OpeningBalanceService} writes it: replacing it
+ * here is a 409, so its own rules (the earlier-transactions guard) cannot be bypassed.
+ *
+ * <p>The currency is the account's own ({@link AccountCurrencyService}) - for a credit card its
+ * billing currency, which its ledger is summed in (V58).
  */
 @Service
 public class AccountSnapshotService {
@@ -76,6 +81,7 @@ public class AccountSnapshotService {
   private final SnapshotHoldingRepository holdingRepository;
   private final SecurityRepository securityRepository;
   private final VersionPreconditionService versionPreconditionService;
+  private final AccountCurrencyService accountCurrencyService;
   private final Clock clock;
 
   public AccountSnapshotService(
@@ -86,6 +92,7 @@ public class AccountSnapshotService {
       SnapshotHoldingRepository holdingRepository,
       SecurityRepository securityRepository,
       VersionPreconditionService versionPreconditionService,
+      AccountCurrencyService accountCurrencyService,
       Clock clock) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -94,6 +101,7 @@ public class AccountSnapshotService {
     this.holdingRepository = holdingRepository;
     this.securityRepository = securityRepository;
     this.versionPreconditionService = versionPreconditionService;
+    this.accountCurrencyService = accountCurrencyService;
     this.clock = clock;
   }
 
@@ -110,7 +118,11 @@ public class AccountSnapshotService {
         .ifPresent(
             existing -> {
               throw new ExistingResourceConflictException(
-                  "A manual snapshot for this account and date already exists. Update it instead.",
+                  existing.isOpeningBalance()
+                      ? "The account's opening balance is dated this day. Choose another date, or"
+                          + " update the opening balance instead."
+                      : "A manual snapshot for this account and date already exists. Update it"
+                          + " instead.",
                   "existingSnapshotId",
                   existing.getId());
             });
@@ -120,8 +132,8 @@ public class AccountSnapshotService {
     snapshot.setAccount(account);
     snapshot.setSnapshotDate(request.snapshotDate());
     snapshot.setBalance(atScale(request.balance(), MONEY_SCALE));
-    // Not client-supplied: always the account's own currency (V33 guards it as well).
-    snapshot.setCurrency(account.getNativeCurrency());
+    // Not client-supplied: always the account's own currency (V58 guards it as well).
+    snapshot.setCurrency(accountCurrencyService.ownCurrency(account));
     snapshot.setSource(MANUAL);
     snapshot.setCreatedBy(actor.userId());
     // flush, not a plain save: a concurrent duplicate's UNIQUE violation surfaces here, as a 409
@@ -153,6 +165,12 @@ public class AccountSnapshotService {
           HttpStatus.CONFLICT,
           "Only a manually entered snapshot can be updated; a provider-reported one is kept as"
               + " reported.");
+    }
+    if (snapshot.isOpeningBalance()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "This snapshot is the account's opening balance. Update it through"
+              + " /api/v1/accounts/{accountId}/opening-balance.");
     }
     Map<UUID, Security> securities =
         validate(account, snapshot.getSnapshotDate(), request.balance(), request.holdings());

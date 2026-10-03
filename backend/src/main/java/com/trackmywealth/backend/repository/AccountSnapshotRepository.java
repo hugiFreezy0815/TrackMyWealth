@@ -22,6 +22,9 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
   Optional<AccountSnapshot> findByAccountIdAndSnapshotDateAndSource(
       UUID accountId, LocalDate snapshotDate, String source);
 
+  // US-25-04: V58's partial unique index allows at most one.
+  Optional<AccountSnapshot> findByAccountIdAndOpeningBalanceTrue(UUID accountId);
+
   // Replacing a snapshot deletes and re-inserts its holdings; the row lock keeps two concurrent
   // replacements from interleaving into a mix of both holding sets.
   @Lock(LockModeType.PESSIMISTIC_WRITE)

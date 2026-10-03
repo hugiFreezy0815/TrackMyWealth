@@ -6,12 +6,12 @@ import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.NativeAccountValue;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
-import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.AccountLoan;
 import com.trackmywealth.backend.entity.AccountMortgage;
-import com.trackmywealth.backend.repository.AccountCreditCardRepository;
+import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.repository.AccountLoanRepository;
 import com.trackmywealth.backend.repository.AccountMortgageRepository;
+import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.CustomAssetValuationRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -26,8 +26,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * DM-17's uniform valuation interface: "what is this account worth, in this currency, as of this
@@ -41,22 +43,32 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code manualValuation} is true for exactly {@code CUSTOM_ASSET} (US-05-05), {@code
  * hasAmortisation} for exactly {@code MORTGAGE}/{@code LOAN} (US-05-01), and {@code
  * hasStatementCycle} for exactly {@code CREDIT_CARD} (US-05-01, US-09-01) - so at most one applies.
- * Every other account type has no value source yet and resolves as unknown, not zero.
+ *
+ * <p>US-25-04: an account with an opening balance - any account except the first two kinds, which
+ * reject one ({@code OpeningBalanceService}) - is valued as that balance plus its ledger after the
+ * opening date, and is unknown before that date. A card's own ledger value is superseded by it. An
+ * account that {@code holdsPositions} keeps an unknown value even with one: its cash is only part
+ * of it until holdings are valued (EPIC 15). Every other account without an opening balance has no
+ * value source yet and resolves as unknown, not zero.
  */
 @Service
 public class AccountValuationService {
 
   // NFR-CALC-007: same money-rounding policy as FxRateService's own MONEY_SCALE - applied to the
-  // same-currency path too (see #ownCurrency's Javadoc for why that path can now need rounding).
+  // same-currency path too (see AccountCurrencyService#ownCurrency for why that path can now need
+  // rounding).
   private static final int MONEY_SCALE = 4;
+  private static final String LIABILITY = "LIABILITY";
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final AccountMortgageRepository accountMortgageRepository;
   private final AccountLoanRepository accountLoanRepository;
   private final CustomAssetValuationRepository customAssetValuationRepository;
-  private final AccountCreditCardRepository accountCreditCardRepository;
+  private final AccountSnapshotRepository accountSnapshotRepository;
   private final TransactionRepository transactionRepository;
+  private final AccountCurrencyService accountCurrencyService;
+  private final AccountDataQualityService accountDataQualityService;
   private final FxRateService fxRateService;
   private final BusinessDateService businessDateService;
   private final String fxDefaultSource;
@@ -67,8 +79,10 @@ public class AccountValuationService {
       AccountMortgageRepository accountMortgageRepository,
       AccountLoanRepository accountLoanRepository,
       CustomAssetValuationRepository customAssetValuationRepository,
-      AccountCreditCardRepository accountCreditCardRepository,
+      AccountSnapshotRepository accountSnapshotRepository,
       TransactionRepository transactionRepository,
+      AccountCurrencyService accountCurrencyService,
+      AccountDataQualityService accountDataQualityService,
       FxRateService fxRateService,
       BusinessDateService businessDateService,
       @Value("${app.fx.default-source}") String fxDefaultSource) {
@@ -77,23 +91,33 @@ public class AccountValuationService {
     this.accountMortgageRepository = accountMortgageRepository;
     this.accountLoanRepository = accountLoanRepository;
     this.customAssetValuationRepository = customAssetValuationRepository;
-    this.accountCreditCardRepository = accountCreditCardRepository;
+    this.accountSnapshotRepository = accountSnapshotRepository;
     this.transactionRepository = transactionRepository;
+    this.accountCurrencyService = accountCurrencyService;
+    this.accountDataQualityService = accountDataQualityService;
     this.fxRateService = fxRateService;
     this.businessDateService = businessDateService;
     this.fxDefaultSource = fxDefaultSource;
   }
 
   /**
-   * US-09-01/FR-CC-001/003: the account's current balance in its own currency - for a credit card,
-   * the outstanding amount owed, a {@code LIABILITY}. Gated at {@code BALANCE_ONLY} (US-03-03), the
-   * weakest level that may see a figure at all.
+   * US-09-01/FR-CC-001/003: the account's balance in its own currency as of {@code asOf} (today
+   * when {@code null}) - for a credit card, the outstanding amount owed, a {@code LIABILITY}. Gated
+   * at {@code BALANCE_ONLY} (US-03-03), the weakest level that may see a figure at all. A date in
+   * the future is a 422: a balance is recorded history, not a forecast.
    */
   @Transactional(readOnly = true)
-  public AccountValuation getBalance(UUID accountId, AuthenticatedUserPrincipal actor) {
+  public AccountValuation getBalance(
+      UUID accountId, LocalDate asOf, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.BALANCE_ONLY);
-    return valueIn(account, ownCurrency(account), businessDateService.today());
+    LocalDate today = businessDateService.today();
+    if (asOf != null && asOf.isAfter(today)) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT, "asOf cannot be in the future.");
+    }
+    return valueIn(
+        account, accountCurrencyService.ownCurrency(account), asOf == null ? today : asOf);
   }
 
   /**
@@ -151,12 +175,13 @@ public class AccountValuationService {
       LocalDate asOf,
       Function<String, Optional<CurrencyConversionResult>> rateForNativeCurrency) {
     // US-09-04: for a CREDIT_CARD this is billing_currency, not account.nativeCurrency - see
-    // #ownCurrency. Every other account type's own currency is simply its nativeCurrency, so this
-    // is a no-op change for them.
-    String ownCurrency = ownCurrency(account);
+    // AccountCurrencyService. Every other account type's own currency is simply its
+    // nativeCurrency.
+    String ownCurrency = accountCurrencyService.ownCurrency(account);
+    List<String> warnings = accountDataQualityService.warningsFor(account.getId());
     Optional<NativeAccountValue> nativeValue = resolveNativeAccountValue(account, asOf);
     if (nativeValue.isEmpty()) {
-      return unknown(account, ownCurrency, targetCurrency);
+      return unknown(account, ownCurrency, targetCurrency, warnings);
     }
     NativeAccountValue resolved = nativeValue.get();
 
@@ -165,7 +190,7 @@ public class AccountValuationService {
       // places once it is a card balance summed via fx_rate_to_account_currency (NUMERIC(20,10)) -
       // the same NFR-CALC-007 policy the cross-currency path below already applies via applyRate.
       BigDecimal value = resolved.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-      return known(account, ownCurrency, targetCurrency, resolved, value, null);
+      return known(account, ownCurrency, targetCurrency, resolved, value, null, warnings);
     }
 
     // FR-CUR-011/US-06-03: a current holding's value converts at the valuation date (today), not
@@ -173,39 +198,18 @@ public class AccountValuationService {
     // docs/architecture/calculation-methodology.md.
     Optional<CurrencyConversionResult> conversion = rateForNativeCurrency.apply(ownCurrency);
     if (conversion.isEmpty()) {
-      return unknown(account, ownCurrency, targetCurrency);
+      return unknown(account, ownCurrency, targetCurrency, warnings);
     }
 
     BigDecimal convertedValue = fxRateService.applyRate(resolved.amount(), conversion.get());
-    return known(account, ownCurrency, targetCurrency, resolved, convertedValue, conversion.get());
+    return known(
+        account, ownCurrency, targetCurrency, resolved, convertedValue, conversion.get(), warnings);
   }
 
-  /**
-   * The currency {@code account}'s own value is actually denominated in - {@code
-   * account.nativeCurrency} for everything except a {@code CREDIT_CARD}, where it is the card's
-   * {@code billing_currency} instead (US-09-04/FR-CC-010): {@code CreateAccountRequest} lets the
-   * two legitimately differ, and {@code TransactionRepository}'s balance queries sum a
-   * foreign-currency purchase's {@code amount} converted to {@code billing_currency} (via {@code
-   * fxRateToAccountCurrency}) - never to {@code nativeCurrency}. Treating {@code nativeCurrency} as
-   * the ledger's own currency whenever the two diverge would silently mislabel (and, for the
-   * same-currency fast path above, under-convert) the resulting balance.
-   */
-  private String ownCurrency(Account account) {
-    if (!account.isHasStatementCycle()) {
-      return account.getNativeCurrency();
-    }
-    return accountCreditCardRepository
-        .findById(account.getId())
-        .map(AccountCreditCard::getBillingCurrency)
-        // Defensive only: trg_extension_type_guard (V5) means a CREDIT_CARD account always has
-        // this row in practice.
-        .orElseGet(account::getNativeCurrency);
-  }
-
-  // Only CUSTOM_ASSET (via CustomAssetValuation), MORTGAGE/LOAN (via original_principal - a real
-  // stored number, but the loan's original amount, not its current outstanding balance; no
-  // amortization tracking exists yet, EPIC 10) and CREDIT_CARD (via its ledger) have a value
-  // source today.
+  // CUSTOM_ASSET (via CustomAssetValuation), MORTGAGE/LOAN (via original_principal - a real stored
+  // number, but the loan's original amount, not its current outstanding balance; no amortization
+  // tracking exists yet, EPIC 10), any account with an opening balance (US-25-04) and CREDIT_CARD
+  // (via its ledger) have a value source today.
   private Optional<NativeAccountValue> resolveNativeAccountValue(Account account, LocalDate asOf) {
     if (account.isManualValuation()) {
       return customAssetValuationRepository
@@ -224,13 +228,17 @@ public class AccountValuationService {
                       .map(AccountLoan::getOriginalPrincipal))
           .map(principal -> new NativeAccountValue(principal, ValueBasisValues.ORIGINAL_PRINCIPAL));
     }
+    Optional<AccountSnapshot> openingBalance =
+        accountSnapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId());
+    if (openingBalance.isPresent()) {
+      return fromOpeningBalance(account, openingBalance.get(), asOf);
+    }
     if (account.isHasStatementCycle()) {
       // FR-CC-001/003, DM-11: the card's ledger is cash-direction signed (a purchase is negative),
       // so what is owed is the negated sum. A card with no ledger rows owes exactly 0 (a product
       // decision for US-09-01): always a known value, never unknown - but flagged LEDGER_EMPTY so
-      // a client can tell an assumed zero from a measured one. Caveat: with no opening-balance
-      // mechanism yet (EPIC 25 snapshots), a card that already carried debt when tracking began
-      // reads 0 until that debt is recorded.
+      // a client can tell an assumed zero from a measured one. A card that already carried debt
+      // when tracking began reads 0 until that debt is recorded as its opening balance (above).
       // A void pair counts as zero, see TransactionRepository#sumAmountByAccountIdAsOf. US-09-04: a
       // foreign-currency card row's `amount` is in its own original currency, not the account's -
       // that query already converts each row via fxRateToAccountCurrency before summing, so this
@@ -245,8 +253,36 @@ public class AccountValuationService {
     return Optional.empty();
   }
 
+  /**
+   * US-25-04/FR-REC-007, the "ledger from opening balance" source: the balance plus the ledger
+   * booked after the opening date, up to and including {@code asOf}. Rows on the opening date are
+   * already contained in the balance; rows before it predate the starting point and are left out
+   * (with {@code TRANSACTIONS_BEFORE_OPENING_BALANCE}, see {@link AccountDataQualityService}).
+   * Before the opening date nothing is known, so the value is unknown, not zero (PR-011).
+   *
+   * <p>The balance follows the snapshot convention - a liability's is the positive amount owed -
+   * while the ledger is cash-direction signed, so a liability subtracts its ledger sum: a card
+   * purchase (negative) increases what is owed. Read from {@code nature}, never from the type.
+   */
+  private Optional<NativeAccountValue> fromOpeningBalance(
+      Account account, AccountSnapshot openingBalance, LocalDate asOf) {
+    if (account.isHoldsPositions() || asOf.isBefore(openingBalance.getSnapshotDate())) {
+      return Optional.empty();
+    }
+    BigDecimal ledger =
+        transactionRepository
+            .sumAmountByAccountIdBookedAfter(
+                account.getId(), openingBalance.getSnapshotDate(), asOf)
+            .orElse(BigDecimal.ZERO);
+    BigDecimal value =
+        LIABILITY.equals(account.getNature())
+            ? openingBalance.getBalance().subtract(ledger)
+            : openingBalance.getBalance().add(ledger);
+    return Optional.of(new NativeAccountValue(value, ValueBasisValues.LEDGER_FROM_OPENING_BALANCE));
+  }
+
   private static AccountValuation unknown(
-      Account account, String ownCurrency, String targetCurrency) {
+      Account account, String ownCurrency, String targetCurrency, List<String> warnings) {
     return new AccountValuation(
         account.getId(),
         account.getName(),
@@ -259,7 +295,8 @@ public class AccountValuationService {
         false,
         false,
         false,
-        null);
+        null,
+        warnings);
   }
 
   private static AccountValuation known(
@@ -268,7 +305,8 @@ public class AccountValuationService {
       String targetCurrency,
       NativeAccountValue source,
       BigDecimal value,
-      CurrencyConversionResult conversion) {
+      CurrencyConversionResult conversion,
+      List<String> warnings) {
     // FR-CUR-011: the conversion date is the date the rate was requested for (the valuation date),
     // not the date of the stored rate it resolved to - carriedForward/stale say how far apart.
     return new AccountValuation(
@@ -283,6 +321,7 @@ public class AccountValuationService {
         conversion != null && conversion.carriedForward(),
         conversion != null && conversion.stale(),
         true,
-        source.basis());
+        source.basis(),
+        warnings);
   }
 }

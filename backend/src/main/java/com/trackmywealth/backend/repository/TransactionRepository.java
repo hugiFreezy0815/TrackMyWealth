@@ -233,6 +233,49 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param(ACCOUNT_ID) UUID accountId, @Param("asOf") LocalDate asOf);
 
   /**
+   * US-25-04: {@link #sumAmountByAccountIdAsOf} for the rows booked after {@code after} only - the
+   * part of the ledger an opening balance dated {@code after} does not already contain. Same
+   * conversion to the account's own currency and the same void-pair handling; empty when no row
+   * falls into the window.
+   */
+  @Query(
+      "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
+          + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
+          + " from Transaction t where t.account.id = :accountId"
+          + " and t.bookingDate > :after and t.bookingDate <= :asOf")
+  Optional<BigDecimal> sumAmountByAccountIdBookedAfter(
+      @Param(ACCOUNT_ID) UUID accountId,
+      @Param("after") LocalDate after,
+      @Param("asOf") LocalDate asOf);
+
+  /**
+   * US-25-04: the earliest booking date of the account's live rows - neither voided nor a reversal
+   * (soft-deleted rows are gone from every JPA query anyway). Empty for an account without one.
+   */
+  @Query(
+      "select min(t.bookingDate) from Transaction t where t.account.id = :accountId"
+          + NOT_VOIDED_OR_REVERSAL)
+  Optional<LocalDate> findEarliestLiveBookingDate(@Param(ACCOUNT_ID) UUID accountId);
+
+  /** US-25-04: how many of the account's live rows are booked before {@code before}. */
+  @Query(
+      "select count(t) from Transaction t where t.account.id = :accountId"
+          + " and t.bookingDate < :before"
+          + NOT_VOIDED_OR_REVERSAL)
+  long countLiveBookedBefore(@Param(ACCOUNT_ID) UUID accountId, @Param("before") LocalDate before);
+
+  /**
+   * US-25-04: whether the account has a live row booked before its opening balance - {@code false}
+   * for an account without one. Drives {@code TRANSACTIONS_BEFORE_OPENING_BALANCE}.
+   */
+  @Query(
+      "select count(t) > 0 from Transaction t where t.account.id = :accountId"
+          + NOT_VOIDED_OR_REVERSAL
+          + " and t.bookingDate < (select s.snapshotDate from AccountSnapshot s"
+          + " where s.account.id = :accountId and s.openingBalance = true)")
+  boolean existsLiveBookedBeforeOpeningBalance(@Param(ACCOUNT_ID) UUID accountId);
+
+  /**
    * US-10-01: the workspace's rows booked in [{@code from}, {@code to}] that could be one leg of an
    * own-account transfer still to be matched - a debit of {@code debitTypes} or a credit of {@code
    * creditTypes}, not voided or reversing, not on a card (cards settle through US-09-02's

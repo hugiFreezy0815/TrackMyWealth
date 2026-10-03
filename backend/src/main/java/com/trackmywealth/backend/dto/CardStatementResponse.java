@@ -14,7 +14,8 @@ import java.util.UUID;
  * @param dueDate {@code periodEnd} plus the card's {@code due_date_offset_days}
  * @param closingBalance the amount owed as of {@code periodEnd}, in {@code currency} - the same
  *     non-negative-by-convention magnitude as {@link AccountValuation#value()} (zero or negative
- *     only when the card is not in debt / is in credit)
+ *     only when the card is not in debt / is in credit). {@code null} when unknown: the period
+ *     closed before the card's opening balance (US-25-04), and {@code paid} is then {@code false}
  * @param paid {@code true} when nothing was owed, or a confirmed settlement for exactly {@code
  *     closingBalance} was booked between {@code periodEnd} and {@code dueDate} - see {@code
  *     CardStatementService} for why this is a documented reading, not one the story's acceptance

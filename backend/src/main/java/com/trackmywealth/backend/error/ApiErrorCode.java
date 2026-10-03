@@ -49,6 +49,20 @@ public final class ApiErrorCode {
   /** 422: well-formed, but breaks a business rule; {@code detail} names the rule. */
   public static final String UNPROCESSABLE = "UNPROCESSABLE";
 
+  /**
+   * 422: this account takes no opening balance - a loan, a mortgage or a manually valued asset has
+   * a value source of its own (US-25-04).
+   */
+  public static final String OPENING_BALANCE_NOT_APPLICABLE = "OPENING_BALANCE_NOT_APPLICABLE";
+
+  /**
+   * 409: live transactions are booked before the requested opening date; {@code transactionCount}
+   * and {@code earliestBookingDate} say which. Move the date back, or repeat the request with
+   * {@code acknowledgeEarlierTransactions = true} to leave them out of the balance (US-25-04).
+   */
+  public static final String OPENING_BALANCE_AFTER_FIRST_TRANSACTION =
+      "OPENING_BALANCE_AFTER_FIRST_TRANSACTION";
+
   /** 423: the user account is temporarily locked (FR-AUT lockout). */
   public static final String LOCKED = "LOCKED";
 

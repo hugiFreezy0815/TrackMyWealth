@@ -319,8 +319,9 @@ today (closed stories on GitHub; details in `docs/architecture/database-schema.m
 - **Credit cards and transfers** (EPIC 09, US-10-01): card purchases as a liability, settlement
   matching, statement cycles, foreign-currency fees; internal transfers kept out of income and
   spending; a cash-flow summary.
-- **Securities, snapshots, net worth** (US-12-01, US-25-01): lazy security master, manual account
-  snapshots, and net-worth and account-balance reads.
+- **Securities, snapshots, net worth** (US-12-01, US-25-01, US-25-04): lazy security master,
+  manual account snapshots, dated opening balances, and net-worth and account-balance reads
+  (also as of a past date).
 - **API conventions** (EPIC 29, #153): RFC 9457 errors with stable codes, decimals as strings,
   correlation ids, ETag/If-Match on every read-modify-write endpoint, a published OpenAPI document,
   validation messages in English and German.
@@ -340,10 +341,11 @@ GitHub issues. In short:
   - EPIC 12: identifier resolution, funds as weighted asset classes, protected overrides
     (US-12-02..04).
   - EPIC 18: investment performance in the institution summary (US-18-01).
-  - EPIC 25: reconciliation and opening balances (US-25-02..04). Until opening balances exist, a
-    cash, savings or depot account's balance is unknown (`valueKnown = false`). Only a credit card
-    (from its ledger), a custom asset (from its valuations) and a loan or mortgage (its original
-    principal) have a value.
+  - EPIC 25: reconciliation and opening holdings (US-25-02, US-25-05). A cash, savings, pension or
+    credit-card account has a value from its opening balance plus its ledger after it (US-25-04);
+    without one it is unknown (`valueKnown = false`), except a credit card (from its ledger alone).
+    A custom asset is valued from its valuations and a loan or mortgage at its original principal.
+    A depot's value stays unknown until holdings are valued (EPIC 15).
   - The cross-cutting backlog epics 21, 22, 29, 30, 31 and 32 are partly covered by what is listed
     above (e.g. validation messages, MFA and rate limiting, the API conventions, the Docker
     deployment, the transaction lifecycle, the admin reference-data API); their remaining stories

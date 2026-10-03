@@ -61,6 +61,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V55` | Row-level security for `savings_rate_methodology`, which `V20` had missed (#223 review) |
 | `V56` | `transfer_detection_fx_pending.rechecks`: the FX job stops re-running a date no rate can ever cover (#223 review) |
 | `V57` | `transaction`'s currency-in-use trigger reads `NEW.currency` directly instead of serialising the row (#223 review) |
+| `V58` | Opening balances: `uq_account_snapshot_opening_balance` (at most one per account), `chk_account_snapshot_opening_balance_manual`, and the snapshot currency guard now expects a credit card's `billing_currency` (#232) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -253,8 +254,9 @@ discoverable by another workspace. Rules that follow from the table being global
 `holds_positions` its per-security quantities, as a `MANUAL` `account_snapshot` with
 `snapshot_holding` rows (FR-REC-006). It never touches the ledger (RULE-025).
 
-- **Currency and sign.** A snapshot is always in the account's `native_currency` (not client
-  input; `V33` guards it), and its balance uses the same convention as the ledger-derived balance
+- **Currency and sign.** A snapshot is always in the account's own currency - `native_currency`,
+  or for a credit card its `billing_currency`, which its ledger is summed in (not client input;
+  `V33` guards it, `V58` corrected the guard for cards) - and its balance uses the same convention as the ledger-derived balance
   (a liability's balance is the positive amount owed), so US-25-02 can compare the two directly.
   `reported_cost_basis` is a total in that same currency.
 - **Holdings** reference existing security-master ids only (create first via `POST
@@ -266,6 +268,26 @@ discoverable by another workspace. Rules that follow from the table being global
   other source are never edited through the API.
 - **Isolation.** `account_snapshot` is RLS-protected; `snapshot_holding` is not and is only read
   by the id of a snapshot already loaded under that policy.
+
+### Opening balances (US-25-04)
+
+An account's dated opening balance (FR-REC-007) is its one `account_snapshot` with
+`is_opening_balance = TRUE`, written only through `/api/v1/accounts/{id}/opening-balance`; see
+`calculation-methodology.md` for how it values the account.
+
+- **One per account.** `V58`'s partial unique index `uq_account_snapshot_opening_balance` on
+  `(account_id) WHERE is_opening_balance`; regular snapshots are unaffected. A second `POST` is a
+  409 carrying `existingOpeningBalanceId`; a race between two first ones is a 409 `RETRY`.
+- **Shape.** `chk_account_snapshot_opening_balance_manual`: `source = 'MANUAL'` and a non-null
+  `balance`. No `snapshot_holding` rows (opening holdings with cost basis are US-25-05). It shares
+  the `(account_id, snapshot_date, source)` key with regular manual snapshots, so one on the same
+  date is a 409 naming the other, in both directions.
+- **Listed, not edited, as a snapshot.** `GET .../snapshots` includes it (`openingBalance =
+  true`); `PUT .../snapshots/{id}` on it is a 409, so the earlier-transactions guard cannot be
+  bypassed. `PUT`/`DELETE .../opening-balance` replace or remove it under `If-Match`.
+- **No new capability flag.** Whether its account's value stays unknown (a holding account) is
+  read from the existing `holds_positions`, which defaults to true for `SECURITIES`,
+  `MANAGED_MANDATE` and `CRYPTO` and may be set for e.g. a pension that holds funds.
 
 ### Category taxonomy: shared defaults, workspace customisation (US-08-04)
 

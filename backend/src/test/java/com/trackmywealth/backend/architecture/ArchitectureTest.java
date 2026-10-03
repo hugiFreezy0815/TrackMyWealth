@@ -221,6 +221,8 @@ class ArchitectureTest {
           "SecurityService#get",
           "SecurityService#lookup",
           "InstitutionService#applyCatalogueEntry",
+          // An account the caller was already cleared for simply has no opening balance.
+          "OpeningBalanceService#notRecorded",
           // Missing FX data, not an authorization decision.
           "FxRateService#getRate",
           "FxRateService#noConversionRateAvailable",

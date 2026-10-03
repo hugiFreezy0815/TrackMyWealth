@@ -94,6 +94,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
           "A snapshot for this account and date already exists. Retry the request to get its id,"
               + " then update it instead.");
     }
+    // US-25-04: two concurrent first opening balances for one account (V58's partial index); the
+    // loser's retry gets OpeningBalanceService's 409 naming the winner.
+    if (rootMessage.contains("uq_account_snapshot_opening_balance")) {
+      return conflict(
+          ApiErrorCode.RETRY,
+          "An opening balance for this account was recorded at the same moment. Retry the request"
+              + " to get its id, then replace it instead.");
+    }
     if (rootMessage.contains("uq_transaction_external_id")) {
       return conflict(
           ApiErrorCode.RETRY,
