@@ -261,8 +261,11 @@ themselves.
 See **`docs/architecture/development-standards.md`** for the full picture — what's enforced
 automatically vs. convention-only, per language, and how to run each check locally before pushing.
 A red check does not block merging on GitHub: branch protection and rulesets, which could
-require these checks, are not available on this private repository's current GitHub plan (#187),
-so check the PR's results before you merge.
+require these checks, are not available on this free private repository (#187). So merge with
+`scripts/merge_pr.py <pr-number>` (`--dry-run` to only check): it squash-merges only a PR that is up
+to date with `main` and whose checks all passed on its current head. When Backend CI, Semgrep or
+secret scanning goes red on `main`, the "Main health" workflow opens a `[CI] main is red` issue and
+closes it once `main` is green again.
 
 ## Where to start as a developer
 

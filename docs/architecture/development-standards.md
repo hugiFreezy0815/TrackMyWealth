@@ -237,6 +237,13 @@ npm test                 # what CI runs
 
 ## Cross-cutting
 
+- **Merging (#187)**: this free private repository cannot make GitHub enforce required checks, so
+  merge only with `scripts/merge_pr.py <pr-number>` (convention). It squash-merges only a PR that
+  is up to date with `main`, conflict-free, and whose checks all passed on its current head - the
+  always-run Semgrep and secret scanning plus Backend CI, Mobile Web CI or Scripts CI where the PR
+  changes their part of the repository - pinned to that head commit, never with `--admin`. When
+  Backend CI, Semgrep or secret scanning is red on `main`, the "Main health" workflow keeps a
+  `[CI] main is red: <workflow>` issue open until it is green again; fix `main` first.
 - **Secret scanning**: gitleaks runs on every push/PR (`.github/workflows/gitleaks.yml`). A
   finding blocks the PR — never silence it by editing history or excluding the path; rotate the
   credential and remove it from the diff instead.
