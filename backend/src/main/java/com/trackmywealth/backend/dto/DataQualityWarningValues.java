@@ -14,6 +14,10 @@ public final class DataQualityWarningValues {
    * the starting point, so its value leaves them out: either the opening date is too late or those
    * rows were entered on top of a balance that already contains them. The member confirmed this
    * when recording the opening balance, or added such rows afterwards.
+   *
+   * <p>Shown at {@code BALANCE_ONLY} too: it qualifies the figure that grant sees (PR-011), so it
+   * travels with it. It says only that such rows exist - never how many, when or how much, which
+   * stay behind {@code READ} (#241 review).
    */
   public static final String TRANSACTIONS_BEFORE_OPENING_BALANCE =
       "TRANSACTIONS_BEFORE_OPENING_BALANCE";

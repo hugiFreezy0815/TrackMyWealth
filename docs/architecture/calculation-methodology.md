@@ -222,7 +222,9 @@ value(D) = opening balance + Σ amount of live ledger rows with  opening date < 
   with their count and earliest booking date) unless the member confirms
   `acknowledgeEarlierTransactions`. While such rows exist, the account, its valuation and the
   net-worth and institution-summary headlines carry `TRANSACTIONS_BEFORE_OPENING_BALANCE`
-  (FR-CON-007) - never a silent double count.
+  (FR-CON-007) - never a silent double count. A `BALANCE_ONLY` grant sees the warning with the
+  figure it qualifies, but not the rows' count or dates (those come with the 409, which needs
+  `EDIT`). The acknowledgement is not stored: every replace is checked again.
 - **Removed rows don't count**, as everywhere: a soft-deleted row is gone, and a void pair nets to
   zero on every date (see above), wherever its two rows fall relative to the opening date.
 - **Sign.** The balance follows the snapshot convention: a liability's is the positive amount

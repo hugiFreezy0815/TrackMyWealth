@@ -70,8 +70,7 @@ public class AccountSnapshotService {
 
   private static final String MANUAL = "MANUAL";
   // The column scales (V11): a write answers with the same 150.0000 a later read returns, not the
-  // 150.00 the caller happened to send.
-  private static final int MONEY_SCALE = 4;
+  // 150.00 the caller happened to send. Money uses FxRateService.MONEY_SCALE.
   private static final int QUANTITY_SCALE = 10;
 
   private final AccountLookupService accountLookupService;
@@ -131,7 +130,7 @@ public class AccountSnapshotService {
     snapshot.setWorkspace(account.getWorkspace());
     snapshot.setAccount(account);
     snapshot.setSnapshotDate(request.snapshotDate());
-    snapshot.setBalance(atScale(request.balance(), MONEY_SCALE));
+    snapshot.setBalance(atScale(request.balance(), FxRateService.MONEY_SCALE));
     // Not client-supplied: always the account's own currency (V58 guards it as well).
     snapshot.setCurrency(accountCurrencyService.ownCurrency(account));
     snapshot.setSource(MANUAL);
@@ -175,7 +174,7 @@ public class AccountSnapshotService {
     Map<UUID, Security> securities =
         validate(account, snapshot.getSnapshotDate(), request.balance(), request.holdings());
 
-    snapshot.setBalance(atScale(request.balance(), MONEY_SCALE));
+    snapshot.setBalance(atScale(request.balance(), FxRateService.MONEY_SCALE));
     // TIMESTAMPTZ keeps microseconds; a Linux clock has nanoseconds. Truncate so this response
     // shows the same instant a later read returns.
     snapshot.setUpdatedAt(OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MICROS));
@@ -286,7 +285,8 @@ public class AccountSnapshotService {
                   holding.setSnapshotId(snapshotId);
                   holding.setSecurityId(request.securityId());
                   holding.setQuantity(atScale(request.quantity(), QUANTITY_SCALE));
-                  holding.setReportedCostBasis(atScale(request.reportedCostBasis(), MONEY_SCALE));
+                  holding.setReportedCostBasis(
+                      atScale(request.reportedCostBasis(), FxRateService.MONEY_SCALE));
                   holding.setCostBasisEstimated(
                       Boolean.TRUE.equals(request.costBasisIsEstimated()));
                   return holding;

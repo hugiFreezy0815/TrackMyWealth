@@ -254,6 +254,48 @@ class OpeningBalanceControllerTest {
   }
 
   @Test
+  void replacingPastExistingTransactionsNeedsTheAcknowledgementOnEveryReplace() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
+    insertTransaction(cash.id(), "EXPENSE", "-40.00", openingDate.minusDays(5), MANUAL);
+    OpeningBalanceResponse recorded =
+        recordOk(token, cash.id(), request(openingDate.minusDays(10), "1000.00", "CHF"));
+
+    // Moving the date past the row is the same guard as recording it there.
+    replace(token, cash.id(), request(openingDate, "1000.00", "CHF"), ifMatch(recorded.version()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("OPENING_BALANCE_AFTER_FIRST_TRANSACTION")
+        .jsonPath("$.transactionCount")
+        .isEqualTo(1);
+    assertThat(get(token, cash.id()).date()).isEqualTo(openingDate.minusDays(10));
+
+    OpeningBalanceResponse moved =
+        replaceOk(
+            token,
+            cash.id(),
+            new OpeningBalanceRequest(openingDate, new BigDecimal("1000.00"), "CHF", true),
+            recorded);
+    assertThat(moved.warnings())
+        .containsExactly(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
+
+    // The acknowledgement is not stored: correcting only the amount must confirm it again.
+    replace(token, cash.id(), request(openingDate, "1100.00", "CHF"), ifMatch(moved.version()))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(
+            replaceOk(
+                    token,
+                    cash.id(),
+                    new OpeningBalanceRequest(openingDate, new BigDecimal("1100.00"), "CHF", true),
+                    moved)
+                .balance())
+        .isEqualByComparingTo("1100.00");
+  }
+
+  @Test
   void acknowledgedEarlierTransactionsAreLeftOutAndWarnedAboutOnTheAccountAndTheHeadline() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");

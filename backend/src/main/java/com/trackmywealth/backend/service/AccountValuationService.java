@@ -56,10 +56,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AccountValuationService {
 
-  // NFR-CALC-007: same money-rounding policy as FxRateService's own MONEY_SCALE - applied to the
-  // same-currency path too (see AccountCurrencyService#ownCurrency for why that path can now need
-  // rounding).
-  private static final int MONEY_SCALE = 4;
   private static final String LIABILITY = "LIABILITY";
 
   private final AccountLookupService accountLookupService;
@@ -204,7 +200,8 @@ public class AccountValuationService {
       // Rounded, not returned raw: resolved.amount() can carry more than money's usual 4 decimal
       // places once it is a card balance summed via fx_rate_to_account_currency (NUMERIC(20,10)) -
       // the same NFR-CALC-007 policy the cross-currency path below already applies via applyRate.
-      BigDecimal value = resolved.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+      BigDecimal value =
+          resolved.amount().setScale(FxRateService.MONEY_SCALE, RoundingMode.HALF_UP);
       return known(account, ownCurrency, targetCurrency, resolved, value, null, warnings);
     }
 

@@ -189,6 +189,32 @@ class OpeningBalanceServiceTest {
   }
 
   @Test
+  void replacingChecksEarlierTransactionsAgainUnlessAcknowledged() {
+    AccountSnapshot existing = openingBalance(3);
+    when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId()))
+        .thenReturn(Optional.of(existing));
+    when(transactionRepository.findEarliestLiveBookingDate(account.getId()))
+        .thenReturn(Optional.of(OPENING_DATE.minusDays(1)));
+    when(transactionRepository.countLiveBookedBefore(account.getId(), OPENING_DATE)).thenReturn(1L);
+
+    assertThatThrownBy(() -> service.replace(account.getId(), request("2.00"), 3, ACTOR))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e ->
+                assertThat(e.getCode())
+                    .isEqualTo(ApiErrorCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION));
+    verify(snapshotRepository, never()).saveAndFlush(any());
+    assertThat(existing.getBalance()).isEqualByComparingTo("1.00");
+
+    service.replace(
+        account.getId(),
+        new OpeningBalanceRequest(OPENING_DATE, new BigDecimal("2.00"), "CHF", true),
+        3,
+        ACTOR);
+    verify(snapshotRepository).saveAndFlush(existing);
+  }
+
+  @Test
   void rowsOnTheOpeningDateItselfAreNotEarlier() {
     when(transactionRepository.findEarliestLiveBookingDate(account.getId()))
         .thenReturn(Optional.of(OPENING_DATE));

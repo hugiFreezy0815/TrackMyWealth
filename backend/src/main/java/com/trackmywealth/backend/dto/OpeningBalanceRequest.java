@@ -21,7 +21,9 @@ import java.time.LocalDate;
  * @param acknowledgeEarlierTransactions {@code true} to record the opening balance although live
  *     transactions are booked before {@code date}; those rows are then left out of the balance and
  *     the account carries {@link DataQualityWarningValues#TRANSACTIONS_BEFORE_OPENING_BALANCE}.
- *     Absent or {@code false}, such rows make the request a 409 that names them.
+ *     Absent or {@code false}, such rows make the request a 409 that names them. It is not stored:
+ *     every {@code PUT} is checked again, so while such rows exist each replace - even one that
+ *     only corrects the balance - must send it again.
  */
 public record OpeningBalanceRequest(
     @NotNull LocalDate date,

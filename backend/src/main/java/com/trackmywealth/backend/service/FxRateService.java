@@ -61,7 +61,9 @@ public class FxRateService {
   // NUMERIC(20,10), so every rate this class returns can be stored and shown like a stored one.
   // convert() rounds the final money amount to NUMERIC(20,4), the money-storage convention.
   private static final int RATE_SCALE = 10;
-  private static final int MONEY_SCALE = 4;
+  // The one money scale (NUMERIC(20,4)); package-visible so every service that stores or rounds
+  // money uses this constant instead of its own copy.
+  static final int MONEY_SCALE = 4;
   private static final RoundingMode MONEY_ROUNDING = RoundingMode.HALF_UP;
 
   private final FxRateRepository fxRateRepository;

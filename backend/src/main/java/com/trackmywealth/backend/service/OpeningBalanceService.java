@@ -57,8 +57,6 @@ public class OpeningBalanceService {
 
   private static final String MANUAL = "MANUAL";
   private static final String RESOURCE_NAME = "opening balance";
-  // The column scale (V11), so a write answers with the same figure a later read returns.
-  private static final int MONEY_SCALE = 4;
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
@@ -232,8 +230,9 @@ public class OpeningBalanceService {
   private static void apply(
       AccountSnapshot snapshot, OpeningBalanceRequest request, String currency) {
     snapshot.setSnapshotDate(request.date());
-    // The request's @Digits already caps the fraction at the column scale, so this never rounds.
-    snapshot.setBalance(request.balance().setScale(MONEY_SCALE));
+    // The column scale (V11), so a write answers with the same figure a later read returns. The
+    // request's @Digits already caps the fraction at it, so this never rounds.
+    snapshot.setBalance(request.balance().setScale(FxRateService.MONEY_SCALE));
     snapshot.setCurrency(currency);
   }
 
@@ -245,8 +244,7 @@ public class OpeningBalanceService {
 
   // Reached only after the caller was cleared for the account: "it has none" is no authorization
   // decision and reveals nothing the caller may not see (ArchitectureTest reviews it). Its own
-  // code,
-  // so a client can tell "record one" from "no such account" (#241 review).
+  // code, so a client can tell "record one" from "no such account" (#241 review).
   private static ApiException notRecorded() {
     return new ApiException(
         HttpStatus.NOT_FOUND,
