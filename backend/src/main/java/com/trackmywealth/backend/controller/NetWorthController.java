@@ -6,9 +6,10 @@ import com.trackmywealth.backend.service.NetWorthService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** US-09-01: thin, partial net worth - superseded by US-11-01's consolidated figure. */
+/** US-09-01 and US-06-05: workspace net worth with an optional ad-hoc display currency. */
 @RestController
 @RequestMapping("/api/v1/net-worth")
 public class NetWorthController {
@@ -20,7 +21,9 @@ public class NetWorthController {
   }
 
   @GetMapping
-  public NetWorthResponse getNetWorth(@AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return netWorthService.getNetWorth(actor);
+  public NetWorthResponse getNetWorth(
+      @RequestParam(required = false) String currency,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return netWorthService.getNetWorth(actor, currency);
   }
 }

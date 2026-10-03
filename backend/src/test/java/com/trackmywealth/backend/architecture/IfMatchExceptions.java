@@ -21,6 +21,7 @@ public final class IfMatchExceptions {
           Map.entry("CategoryController#create", "create"),
           Map.entry("CustomAssetValuationController#recordValuation", "create (append-only)"),
           Map.entry("InstitutionController#createInstitution", "create"),
+          Map.entry("OpeningBalanceController#recordOpeningBalance", "create"),
           Map.entry("SharingGrantController#grant", "create"),
           Map.entry("TransactionController#recordTransaction", "create (append-only ledger)"),
           Map.entry("SecurityController#findOrCreate", "idempotent find-or-create of shared data"),

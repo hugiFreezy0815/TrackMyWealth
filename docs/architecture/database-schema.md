@@ -61,6 +61,8 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V55` | Row-level security for `savings_rate_methodology`, which `V20` had missed (#223 review) |
 | `V56` | `transfer_detection_fx_pending.rechecks`: the FX job stops re-running a date no rate can ever cover (#223 review) |
 | `V57` | `transaction`'s currency-in-use trigger reads `NEW.currency` directly instead of serialising the row (#223 review) |
+| `V58` | Opening balances: `uq_account_snapshot_opening_balance` (at most one per account), `chk_account_snapshot_opening_balance_manual`, and the snapshot currency guard now expects a credit card's `billing_currency` (#232) |
+| `V59` | `workspace.currency`: the workspace's display currency for workspace-level totals, backfilled from the oldest login member's reporting currency (#224). V58 is left to #232 (opening balance) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -253,9 +255,11 @@ discoverable by another workspace. Rules that follow from the table being global
 `holds_positions` its per-security quantities, as a `MANUAL` `account_snapshot` with
 `snapshot_holding` rows (FR-REC-006). It never touches the ledger (RULE-025).
 
-- **Currency and sign.** A snapshot is always in the account's `native_currency` (not client
-  input; `V33` guards it), and its balance uses the same convention as the ledger-derived balance
-  (a liability's balance is the positive amount owed), so US-25-02 can compare the two directly.
+- **Currency and sign.** A snapshot is always in the account's own currency - `native_currency`,
+  or for a credit card its `billing_currency`, which its ledger is summed in (not client input;
+  `V33` guards it, `V58` corrected the guard for cards) - and its balance uses the same convention
+  as the ledger-derived balance (a liability's balance is the positive amount owed), so US-25-02
+  can compare the two directly.
   `reported_cost_basis` is a total in that same currency.
 - **Holdings** reference existing security-master ids only (create first via `POST
   /api/v1/securities`), at most once per snapshot (`V33`'s `uq_snapshot_holding_security`). A
@@ -266,6 +270,40 @@ discoverable by another workspace. Rules that follow from the table being global
   other source are never edited through the API.
 - **Isolation.** `account_snapshot` is RLS-protected; `snapshot_holding` is not and is only read
   by the id of a snapshot already loaded under that policy.
+
+### Opening balances (US-25-04)
+
+An account's dated opening balance (FR-REC-007) is its one `account_snapshot` with
+`is_opening_balance = TRUE`, written only through `/api/v1/accounts/{id}/opening-balance`; see
+`calculation-methodology.md` for how it values the account.
+
+- **One per account.** `V58`'s partial unique index `uq_account_snapshot_opening_balance` on
+  `(account_id) WHERE is_opening_balance`; regular snapshots are unaffected. A second `POST` is a
+  409 carrying `existingOpeningBalanceId`; a race between two first ones is a 409 `RETRY`.
+- **Shape.** `chk_account_snapshot_opening_balance_manual`: `source = 'MANUAL'` and a non-null
+  `balance`. No `snapshot_holding` rows (opening holdings with cost basis are US-25-05). It shares
+  the `(account_id, snapshot_date, source)` key with regular manual snapshots, so one on the same
+  date is a 409 naming the other, in both directions.
+- **Listed, not edited, as a snapshot.** `GET .../snapshots` includes it (`openingBalance =
+  true`); `PUT .../snapshots/{id}` on it is a 409, so the earlier-transactions guard cannot be
+  bypassed. `PUT`/`DELETE .../opening-balance` replace or remove it under `If-Match`.
+- **No new capability flag.** Whether its account's value stays unknown (a holding account) is
+  read from the existing `holds_positions`, which defaults to true for `SECURITIES`,
+  `MANAGED_MANDATE` and `CRYPTO` and may be set for e.g. a pension that holds funds.
+- **Replaced in place and hard-deleted - an exception to FR-LIF-001.** The deletion matrix says a
+  snapshot is never hard-deleted but superseded and retained. That rule protects what an
+  institution reported. An opening balance is the member's own starting point, not an observation,
+  so `PUT` overwrites it and `DELETE` removes the row, and no history of earlier values is kept
+  (`updated_at`/`updated_by` show only the last change). Product-owner decision on the #241
+  review, 2026-10-03; a change history comes with the financial audit log (FR-AUD-001, EPIC 31).
+  Regular snapshots keep the FR-LIF-001 rule.
+- **Card snapshots before V58.** V58 stops with `account_snapshot_card_currency`, naming them, if a
+  credit card has a snapshot in its native currency while its billing currency differs (recorded
+  under V33's rule). It cannot be converted without a rate and is not relabelled silently: delete
+  it, or re-record it in the billing currency, then restart. `CardSnapshotCurrencyMigrationTest`.
+- **Not recorded yet.** A read, replace or delete without one is a 404
+  `OPENING_BALANCE_NOT_RECORDED`, only ever after the account access check; an account the caller
+  cannot see stays a plain `NOT_FOUND`.
 
 ### Category taxonomy: shared defaults, workspace customisation (US-08-04)
 
@@ -554,6 +592,22 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   - A void older than 30 days, already restored, or made by a correction (`corrects_transaction_id`)
     is not restorable (409). `GET …/transactions/deleted` lists every restorable row of both tiers.
 - **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02.
+
+### Workspace display currency (US-06-05)
+
+`workspace.currency CHAR(3) NOT NULL DEFAULT 'CHF'` is the default currency for workspace-level consolidated
+figures such as net worth. Existing workspaces are backfilled from the oldest login-capable
+member's `app_user.reporting_currency`, falling back to CHF when no login exists. The column
+keeps its `DEFAULT 'CHF'` on purpose: setup always sets the currency (the administrator's), so
+the default only serves direct SQL inserts such as test fixtures. The per-user
+`reporting_currency` remains a personal client preference and is not used by the server as the
+workspace-total default.
+
+Container-level figures default independently to
+`financial_institution.container_currency`, while an account balance defaults to the account's
+own native (or credit-card billing) currency. Read endpoints may request another ISO 4217
+`currency` for presentation; this never rewrites the underlying account, transaction or
+valuation data.
 
 ## 5. Time-series data and partitioning
 

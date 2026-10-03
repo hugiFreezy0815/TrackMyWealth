@@ -74,7 +74,7 @@ class DecimalWireFormatTest {
   void everyMoneyResponseFamilyCarriesExplicitCurrencyContext() {
     assertRecordHasComponent(TransactionResponse.class, "currency");
     assertRecordHasComponent(AccountValuation.class, "currency");
-    assertRecordHasComponent(NetWorthResponse.class, "reportingCurrency");
+    assertRecordHasComponent(NetWorthResponse.class, "currency");
     assertRecordHasComponent(InstitutionSummaryResponse.class, "containerCurrency");
     assertRecordHasComponent(CashFlowResponse.CurrencyAmount.class, "currency");
     assertRecordHasComponent(CardStatementResponse.class, "currency");

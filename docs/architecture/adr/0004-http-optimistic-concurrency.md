@@ -55,7 +55,9 @@ existing resource that a concurrent write could silently overwrite:
 
 - **Creates** (`POST` on a collection): accounts, snapshots, users, categories, categorization
   rules, institutions, sharing grants, transactions, custom-asset valuations. Transactions and
-  valuations are append-only besides.
+  valuations are append-only besides. An account's opening balance is created the same way
+  (`POST .../opening-balance`, a singleton: a second one is a 409); replacing or deleting it needs
+  `If-Match`.
 - **Idempotent operations:** `POST /securities` (find-or-create of shared reference data) and
   `POST .../settlement-matches/run` (re-runs matching; no client-held state).
 - **Credential exchanges and bootstrap:** login, token refresh, MFA verification, and the one-time

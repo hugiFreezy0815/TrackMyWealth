@@ -120,6 +120,20 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  void aRacingFirstOpeningBalanceIsTranslatedToARetryableConflict() {
+    ProblemDetail problem =
+        handler.handleDataIntegrityViolation(
+            violationWithRootMessage(
+                "ERROR: duplicate key value violates unique constraint"
+                    + " \"uq_account_snapshot_opening_balance\""));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getDetail()).contains("opening balance").contains("Retry");
+    assertThat(problem.getProperties()).containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.RETRY);
+    assertThat(problem.getDetail()).doesNotContain("uq_account_snapshot_opening_balance");
+  }
+
+  @Test
   void aRacingDuplicateSnapshotIsTranslatedToAConflictTellingTheCallerToRetry() {
     ProblemDetail problem =
         handler.handleDataIntegrityViolation(

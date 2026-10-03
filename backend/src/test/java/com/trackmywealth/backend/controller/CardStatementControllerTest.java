@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetStatementConfigRequest;
@@ -103,6 +104,7 @@ class CardStatementControllerTest {
               "custom_asset_valuation",
               "account_custom_asset",
               "account_credit_card",
+              "account_snapshot",
               "account",
               "admin_audit_log",
               "user_session",
@@ -249,6 +251,29 @@ class CardStatementControllerTest {
 
     assertThat(current.periodEnd()).isEqualTo(LocalDate.of(2026, 9, 5));
     assertThat(current.closingBalance()).isEqualByComparingTo("50.00");
+  }
+
+  // US-25-04: the closing balance starts from the card's opening balance; a period that closed
+  // before it has no known balance, and nothing can be shown as paid.
+  @Test
+  void theClosingBalanceStartsFromTheOpeningBalanceAndIsUnknownBeforeIt() {
+    String token = bootstrapAdministrator();
+    UUID card = createCard(token);
+    setConfig(token, card, 5, 10, HttpStatus.OK);
+    // Set first: an opening balance may not be dated after "today".
+    setToday(clock, LocalDate.of(2026, 9, 22)); // the current period closed on Sept 5
+    recordOpeningBalance(token, card, LocalDate.of(2026, 9, 1), "300.00");
+    purchase(token, card, "-50.00", LocalDate.of(2026, 9, 3));
+    UUID laterCard = createAccount(token, "Visa Silver", "CREDIT_CARD", "CHF").id();
+    setConfig(token, laterCard, 5, 10, HttpStatus.OK);
+    recordOpeningBalance(token, laterCard, LocalDate.of(2026, 9, 10), "300.00");
+
+    assertThat(statement(token, card, HttpStatus.OK).closingBalance())
+        .isEqualByComparingTo("350.00");
+    CardStatementResponse beforeOpening = statement(token, laterCard, HttpStatus.OK);
+    assertThat(beforeOpening.periodEnd()).isEqualTo(LocalDate.of(2026, 9, 5));
+    assertThat(beforeOpening.closingBalance()).isNull();
+    assertThat(beforeOpening.paid()).isFalse();
   }
 
   @Test
@@ -404,6 +429,17 @@ class CardStatementControllerTest {
         .expectStatus()
         .isOk();
     return new Accounts(card, current);
+  }
+
+  private void recordOpeningBalance(String token, UUID card, LocalDate date, String balance) {
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + card + "/opening-balance")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new OpeningBalanceRequest(date, new BigDecimal(balance), "CHF", null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
   }
 
   private UUID createCard(String token) {

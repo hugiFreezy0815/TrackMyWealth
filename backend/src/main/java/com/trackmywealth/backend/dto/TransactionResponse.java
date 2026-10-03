@@ -3,6 +3,7 @@ package com.trackmywealth.backend.dto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -40,6 +41,11 @@ import java.util.UUID;
  * correction replacement points to the prior ledger row through {@code correctsTransactionId};
  * correction chains therefore remain explicit without overloading reversal semantics. {@code
  * deletedAt} is set only in the restore list of soft-deleted rows.
+ *
+ * <p>US-25-04 ({@code warnings}): the row's data-quality warnings ({@link
+ * DataQualityWarningValues}), empty when there are none - {@code BOOKED_BEFORE_OPENING_BALANCE}
+ * when it is booked before its account's opening balance and therefore left out of the account's
+ * value.
  */
 public record TransactionResponse(
     UUID id,
@@ -77,4 +83,11 @@ public record TransactionResponse(
     UUID restoresTransactionId,
     OffsetDateTime deletedAt,
     UUID counterpartyAccountId,
-    int version) {}
+    int version,
+    List<String> warnings) {
+
+  public TransactionResponse {
+    // Defensive/immutable copy (SpotBugs EI_EXPOSE_REP), same as AccountValuation.
+    warnings = List.copyOf(warnings);
+  }
+}

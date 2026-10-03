@@ -253,6 +253,18 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceBId, "account_snapshot", snapshotAId)).isFalse();
   }
 
+  // US-25-04: an opening balance is an account_snapshot row like any other, under the same policy -
+  // what keeps another workspace from reading or valuing from it.
+  @Test
+  void openingBalanceRowIsInvisibleAcrossWorkspaces() throws Exception {
+    UUID openingBalanceAId = insertOpeningBalance(workspaceAId, accountAId);
+
+    assertThat(rowVisibleUnderContext(workspaceAId, "account_snapshot", openingBalanceAId))
+        .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "account_snapshot", openingBalanceAId))
+        .isFalse();
+  }
+
   // US-08-04: a workspace's own categories and its customisation of a shared default are tenant
   // data; the shared default itself is visible to every workspace.
   @Test
@@ -538,6 +550,28 @@ class CrossTenantIsolationTest {
       statement.setObject(2, workspaceId);
       statement.setObject(3, accountId);
       statement.executeUpdate();
+    }
+    return snapshotId;
+  }
+
+  // Dated the day before the fixture's own snapshot, which is also MANUAL: one row per account,
+  // date and source.
+  private UUID insertOpeningBalance(UUID workspaceId, UUID accountId) throws Exception {
+    UUID snapshotId = UUID.randomUUID();
+    try (Connection connection = testRoleConnection()) {
+      connection.setAutoCommit(false);
+      setWorkspaceContext(connection, workspaceId);
+      try (PreparedStatement statement =
+          connection.prepareStatement(
+              "INSERT INTO account_snapshot (id, workspace_id, account_id, snapshot_date, balance,"
+                  + " currency, is_opening_balance) VALUES (?, ?, ?, CURRENT_DATE - 1, 1.00,"
+                  + " 'CHF', TRUE)")) {
+        statement.setObject(1, snapshotId);
+        statement.setObject(2, workspaceId);
+        statement.setObject(3, accountId);
+        statement.executeUpdate();
+      }
+      connection.commit();
     }
     return snapshotId;
   }

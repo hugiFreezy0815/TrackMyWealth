@@ -92,6 +92,7 @@ public class SetupService {
     Workspace workspace = new Workspace();
     workspace.setId(workspaceId);
     workspace.setName(request.workspaceName());
+    workspace.setCurrency(request.currencyCode());
     // Must flush now, not defer to end-of-transaction: V19's AFTER INSERT trigger creates the
     // Personal Assets container as a side effect invisible to Hibernate's change tracking, and
     // the very next line reads it back through a query Hibernate has no reason to auto-flush for

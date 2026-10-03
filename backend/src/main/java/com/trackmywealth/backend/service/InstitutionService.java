@@ -15,11 +15,14 @@ import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -123,8 +126,10 @@ public class InstitutionService {
 
   /**
    * US-04-03/FR-INS-SUM-001..004: total assets, liabilities and net value across every
-   * currently-active account under the institution, in the container currency. C7: an institution
-   * with zero accounts returns a valid, all-zero, {@code complete} summary, not an error.
+   * currently-active account under the institution, in the container currency - or, US-06-05, in
+   * {@code requestedCurrency} when one is given (validated after the access check, like {@code
+   * AccountValuationService#getBalance}). C7: an institution with zero accounts returns a valid,
+   * all-zero, {@code complete} summary, not an error.
    *
    * <p>Each account's value comes from {@link AccountValuationService} - see its own Javadoc for
    * which account types have a value source today. An account with none contributes {@code
@@ -134,7 +139,7 @@ public class InstitutionService {
    */
   @Transactional(readOnly = true)
   public InstitutionSummaryResponse getSummary(
-      UUID institutionId, AuthenticatedUserPrincipal actor) {
+      UUID institutionId, AuthenticatedUserPrincipal actor, String requestedCurrency) {
     FinancialInstitution institution =
         institutionLookupService.findInstitutionOrThrow(institutionId, actor);
     accessControlService.requireInstitutionAccess(
@@ -144,23 +149,28 @@ public class InstitutionService {
         accountRepository.findByFinancialInstitutionIdAndStatusOrderByCreatedAtAsc(
             institutionId, ACTIVE);
     LocalDate asOf = businessDateService.today();
+    String displayCurrency =
+        CurrencyCodes.requestedOrDefault(requestedCurrency, institution.getContainerCurrency());
+    List<AccountValuation> valuations =
+        accountValuationService.valueAll(accounts, displayCurrency, asOf);
 
     BigDecimal totalAssets = BigDecimal.ZERO;
     BigDecimal totalLiabilities = BigDecimal.ZERO;
     boolean complete = true;
     List<AccountContribution> contributions = new ArrayList<>();
+    // PR-011/FR-CON-007: an account's warning is shown at the container's headline too.
+    Set<String> warnings = new TreeSet<>();
 
-    for (Account account : accounts) {
-      AccountContribution contribution =
-          toContribution(
-              accountValuationService.valueIn(account, institution.getContainerCurrency(), asOf));
+    for (AccountValuation valuation : valuations) {
+      AccountContribution contribution = toContribution(valuation);
       contributions.add(contribution);
+      warnings.addAll(contribution.warnings());
       if (!contribution.valueKnown()) {
         complete = false;
       } else if (ASSET.equals(contribution.nature())) {
-        totalAssets = totalAssets.add(contribution.valueInContainerCurrency());
+        totalAssets = totalAssets.add(contribution.value());
       } else {
-        totalLiabilities = totalLiabilities.add(contribution.valueInContainerCurrency());
+        totalLiabilities = totalLiabilities.add(contribution.value());
       }
     }
 
@@ -170,10 +180,12 @@ public class InstitutionService {
     return new InstitutionSummaryResponse(
         institutionId,
         institution.getContainerCurrency(),
+        displayCurrency,
         totalAssets,
         totalLiabilities,
         netValue,
         complete,
+        List.copyOf(warnings),
         contributions);
   }
 
@@ -190,7 +202,8 @@ public class InstitutionService {
         valuation.conversionRateDate(),
         valuation.conversionRateCarriedForward(),
         valuation.conversionRateStale(),
-        valuation.valueKnown());
+        valuation.valueKnown(),
+        valuation.warnings());
   }
 
   private void applyCatalogueEntry(

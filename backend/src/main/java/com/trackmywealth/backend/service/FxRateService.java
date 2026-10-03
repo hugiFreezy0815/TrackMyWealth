@@ -5,12 +5,12 @@ import com.trackmywealth.backend.dto.FxRateLookupResult;
 import com.trackmywealth.backend.dto.ResolvedFxRate;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
+import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.Period;
-import java.util.Currency;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -61,7 +61,9 @@ public class FxRateService {
   // NUMERIC(20,10), so every rate this class returns can be stored and shown like a stored one.
   // convert() rounds the final money amount to NUMERIC(20,4), the money-storage convention.
   private static final int RATE_SCALE = 10;
-  private static final int MONEY_SCALE = 4;
+  // The one money scale (NUMERIC(20,4)); package-visible so every service that stores or rounds
+  // money uses this constant instead of its own copy.
+  static final int MONEY_SCALE = 4;
   private static final RoundingMode MONEY_ROUNDING = RoundingMode.HALF_UP;
 
   private final FxRateRepository fxRateRepository;
@@ -344,14 +346,7 @@ public class FxRateService {
   // plain service method, not a request DTO field @ValidCurrencyCode can annotate.
   private static void requireValidCurrencyCode(String currencyCode, String fieldName) {
     requireNonNull(currencyCode, fieldName);
-    try {
-      Currency.getInstance(currencyCode);
-    } catch (IllegalArgumentException e) {
-      throw new ResponseStatusException(
-          HttpStatus.BAD_REQUEST,
-          fieldName + " '" + currencyCode + "' is not a valid ISO 4217 currency code.",
-          e);
-    }
+    CurrencyCodes.requireValid(currencyCode, fieldName);
   }
 
   private static void requireNonNull(Object value, String fieldName) {

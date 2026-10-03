@@ -12,11 +12,12 @@ import java.util.List;
  * Request body for {@code POST /api/v1/accounts/{accountId}/snapshots} (US-25-01): the balance, and
  * for a position-holding account the positions, as printed on a statement.
  *
- * <p>No {@code currency} and no {@code source}: the currency is the account's own {@code
- * native_currency} (V33 enforces it) and an API-entered snapshot is always {@code MANUAL}. {@code
- * balance} uses the same convention as {@code GET /accounts/{id}/balance} (a liability's balance is
- * the positive amount owed) and may be omitted only when {@code holdings} are given. See {@code
- * AccountSnapshotService} for the remaining rules.
+ * <p>No {@code currency} and no {@code source}: the currency is the account's own ({@code
+ * native_currency}, or a credit card's {@code billing_currency}; V58 enforces it) and an
+ * API-entered snapshot is always {@code MANUAL}. {@code balance} uses the same convention as {@code
+ * GET /accounts/{id}/balance} (a liability's balance is the positive amount owed) and may be
+ * omitted only when {@code holdings} are given. See {@code AccountSnapshotService} for the
+ * remaining rules.
  */
 public record RecordAccountSnapshotRequest(
     @NotNull LocalDate snapshotDate,

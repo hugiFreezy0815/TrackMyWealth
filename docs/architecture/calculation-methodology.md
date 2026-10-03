@@ -140,9 +140,9 @@ Three rules are load-bearing and each has a test in `TransactionControllerTest`:
   voided (FR-LIF-003), and an account whose rows are all voided reads a measured zero (`LEDGER`).
 - **An empty ledger is a known zero, flagged as assumed.** A card with no rows owes exactly 0 and
   does not make an aggregate incomplete - but its `valueBasis` is `LEDGER_EMPTY`, not `LEDGER`, so
-  a client can tell an assumed zero from a measured one. Known limitation: there is no
-  opening-balance mechanism yet (EPIC 25 snapshots), so a card that already carried debt when
-  tracking began reads 0 until that debt is recorded.
+  a client can tell an assumed zero from a measured one. A card that already carried debt when
+  tracking began reads 0 until that debt is recorded as its opening balance (see *Opening
+  balances* below).
 - **Future-dated rows wait.** A row booked after the as-of date does not count until that date,
   matching the valuation-date convention above.
 
@@ -159,13 +159,18 @@ exact one:
 | `valueBasis` | Source | Exact? |
 |---|---|---|
 | `LEDGER` | negated sum of the card's ledger rows | yes |
+| `LEDGER_FROM_OPENING_BALANCE` | opening balance plus the ledger after the opening date (US-25-04) | yes |
 | `MANUAL_VALUATION` | latest manual valuation on or before the as-of date (`CUSTOM_ASSET`) | yes, as recorded |
+| `LATEST_SNAPSHOT` | newest snapshot balance on or before the as-of date, the opening balance included - an account without a ledger (`has_transactions = false`, vested benefits) | yes, as reported on that date |
 | `LEDGER_EMPTY` | card with no rows yet - assumed 0 | **no** - approximation |
 | `ORIGINAL_PRINCIPAL` | a loan's/mortgage's *original* principal, not its outstanding balance (no amortisation tracking until EPIC 10) | **no** - approximation |
 
-`valueBasis` is `null` when `valueKnown` is `false`. `NetWorthResponse.approximate` is `true` when
-any included account has an approximate basis. It is independent of `complete`: an approximate
-account is still *known* (counted in the totals), but the figure must not be presented as exact.
+`valueBasis` is `null` when `valueKnown` is `false`. `AccountValuation.valueSourceDate` is the date
+of the observation a `LATEST_SNAPSHOT` or `MANUAL_VALUATION` figure rests on, so a client can show
+how old it is; it is `null` for a figure derived from the ledger or the loan terms.
+`NetWorthResponse.approximate` is `true` when any included account has an approximate basis. It
+is independent of `complete`: an approximate account is still *known* (counted in the totals), but
+the figure must not be presented as exact.
 
 **Recording is idempotent on request.** `POST .../transactions` accepts an optional `externalId`
 (a client-generated key, stored in `transaction.external_id` with source `MANUAL`, unique per
@@ -187,11 +192,77 @@ foreign-currency rows (amount in the original currency); at that point the balan
 account-currency figure instead, or it would silently mix currencies.
 
 **Net worth (partial, until US-11-01)** is `Σ value(ASSET) − Σ value(LIABILITY)` over every active
-account the caller may see at `BALANCE_ONLY` or above, in the caller's `reporting_currency` (each
-account's foreign currency is converted at the business date's rate, resolved once per currency
-pair per request). Each account's sign comes from its `nature` (the DB-generated column), never from application-side
+account the caller may see at `BALANCE_ONLY` or above. US-06-05 makes the workspace's
+`workspace.currency` the default display currency for this workspace-level figure; a read may
+override it with `currency=...`. Each account's foreign currency is converted at the valuation
+date's rate, resolved once per native currency per request. The member's
+`app_user.reporting_currency` remains only a client-side personal preference for choosing an
+ad-hoc display currency; the server no longer uses it as the workspace-total default. Each
+account's sign comes from its `nature` (the DB-generated column), never from application-side
 `account_type` logic. Accounts with no resolvable value (types with no value source yet) are listed but excluded from the totals and
 flagged (`complete = false`) rather than counted as zero.
+
+## Opening balances (US-25-04, FR-REC-007)
+
+An account whose transaction history starts later than the account itself has no known value
+from its ledger alone. A member records a dated **opening balance** for it
+(`POST/PUT/DELETE /api/v1/accounts/{id}/opening-balance`), stored as the account's one
+`account_snapshot` with `is_opening_balance` (V58). It is the *"ledger from opening balance"* value
+source of `AccountValuationService` (`valueBasis = LEDGER_FROM_OPENING_BALANCE`):
+
+```
+value(D) = opening balance + Σ amount of live ledger rows with  opening date < booking_date ≤ D
+```
+
+- **The opening date's own rows are contained in the balance.** The balance is the account's
+  balance at the *end* of the opening date, as a statement prints it, so a row booked on that date
+  is not added again. Only rows booked later are.
+- **Before the opening date the value is unknown, not zero** (PR-011): `valueKnown = false` for any
+  read with `asOf` earlier than the opening date (`GET .../balance?asOf=`).
+- **A past balance needs `READ`.** Today's balance is visible at `BALANCE_ONLY`; a read with
+  `asOf` before today needs `READ` on the account, because balances on consecutive days differ by
+  that day's transactions, which a `BALANCE_ONLY` grant does not show (#241 review). "Today" is
+  the server's business date (`app.business-zone`), so a client asks for the current balance by
+  omitting `asOf`, never by sending its own local date.
+- **Rows before the opening date are left out.** They predate the starting point. Recording an
+  opening balance after existing live rows is refused (409 `OPENING_BALANCE_AFTER_FIRST_TRANSACTION`,
+  with their count and earliest booking date) unless the member confirms
+  `acknowledgeEarlierTransactions`. While such rows exist, the account, its valuation and the
+  net-worth and institution-summary headlines carry `TRANSACTIONS_BEFORE_OPENING_BALANCE`
+  (FR-CON-007) - never a silent double count. A `BALANCE_ONLY` grant sees the warning with the
+  figure it qualifies, but not the rows' count or dates (those come with the 409, which needs
+  `EDIT`). The acknowledgement is not stored: every replace is checked again.
+- **Removed rows don't count**, as everywhere: a soft-deleted row is gone, and a void pair nets to
+  zero on every date (see above), wherever its two rows fall relative to the opening date.
+- **Sign.** The balance follows the snapshot convention: a liability's is the positive amount
+  owed. The ledger is cash-direction signed, so for `nature = LIABILITY` the ledger sum is
+  subtracted (a card purchase of −100.00 on top of 500.00 owed makes 600.00 owed). Read from
+  `nature`, never from `account_type`.
+- **Currency.** The account's own currency - a credit card's `billing_currency`, which its ledger
+  is summed in. Any other currency is refused (422); a conversion is not an opening balance.
+
+| Worked example (CHF cash account) | |
+|---|---|
+| Opening balance 2024-10-01 | 10,000.00 |
+| Row on 2024-10-01 | −50.00 (contained, not added) |
+| Rows after 2024-10-01 | −1,000.00, −300.00, +65.45 = −1,234.55 |
+| Value today | **8,765.45** (`LEDGER_FROM_OPENING_BALANCE`) |
+| Value as of 2024-09-30 | unknown |
+
+Which accounts use it is decided by capability flags (DM-17), never by type:
+
+| Account | With an opening balance |
+|---|---|
+| `has_amortisation` (loan, mortgage) or `manual_valuation` (custom asset) | refused, 422 `OPENING_BALANCE_NOT_APPLICABLE`: they have their own value source |
+| `holds_positions` (depot, mandate, crypto, a pension holding funds) | stored, but the value stays unknown - the cash is only part of it until holdings are valued (EPIC 15) |
+| `has_statement_cycle` (credit card) | replaces the card's ledger-only source (`LEDGER`/`LEDGER_EMPTY`) |
+| `has_transactions = false` (vested benefits) | no ledger to add: the account is valued from its latest snapshot on or before the as-of date (`LATEST_SNAPSHOT`), the opening balance being one of them. A newer snapshot supersedes it rather than the opening balance standing forever, and an older regular snapshot still values the account before the opening date: without a ledger the opening balance is no cut-off (#241 review) |
+| everything else (cash, savings, pension) | the source above; without ledger rows after the opening date the value is the opening balance itself |
+
+A transaction recorded later with a booking date before the opening balance is left out of the
+value like any earlier row. It carries `BOOKED_BEFORE_OPENING_BALANCE` in its own `warnings`
+(`TransactionResponse`), so the member sees at once that it does not count, and the account carries
+`TRANSACTIONS_BEFORE_OPENING_BALANCE`.
 
 ## Card settlement matching and spending (US-09-02, FR-CC-004/005/007, FR-CF-001/004/005)
 
@@ -260,9 +331,18 @@ one card and its source account to guard that.
   against its original. A voided payment is therefore never "awaiting a decision" - a proposal on a
   row voided since is moot, and a voided payment stays in the sum where its reversing row cancels it
   (excluding the original while counting the reversal would understate spending by the payment).
-  Confirming a proposal on a voided payment or credit is a 409. Only accounts the caller may `READ` contribute (transaction-level detail is
-  not shown at `BALANCE_ONLY`). Currencies are not converted: a realised-flow FX conversion belongs
-  to EPIC 10.
+  Confirming a proposal on a voided payment or credit is a 409. Only accounts the caller may
+  `READ` contribute (transaction-level detail is not shown at `BALANCE_ONLY`). Without a
+  `currency` query parameter, the response remains grouped in the transactions' original
+  currencies. With `currency=...`, each contributing amount is converted using its own booking
+  date (the realised-flow rule above) before aggregation. For performance, rows are first grouped
+  in PostgreSQL by booking date and source currency, and one FX lookup is reused per
+  date/currency pair for the request; stored transaction amount and currency are never rewritten.
+  A converted figure combines up to a month of daily rates, so it carries no single rate or rate
+  date, only `conversionRateCarriedForward`/`conversionRateStale` when any day's rate has that mark
+  (decision on #224). When any contributing day has no rate, the figure is unknown
+  (`valueKnown = false`, `amount = null`, never zero) and `complete` is `false`, as an unknown
+  account value makes net worth incomplete (PR-011); the other figures are still returned.
 
 **Worked example (golden case V-13).** Purchases of CHF 700 (10 Aug) and CHF 500 (28 Aug) on the
 card; on 3 Sep CHF 1,200 leaves the current account and a CHF 1,200 credit is booked on the card.

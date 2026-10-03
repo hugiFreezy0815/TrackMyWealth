@@ -27,7 +27,8 @@ import org.hibernate.type.SqlTypes;
  * <p>{@code balance} follows the same convention as the account's ledger-derived balance ({@code
  * GET /accounts/{id}/balance}): a liability's balance is the positive amount owed. It is {@code
  * null} for a depot snapshot that reports positions only. {@code currency} is always the account's
- * {@code native_currency} (V33's guard trigger).
+ * own currency - {@code native_currency}, or a credit card's {@code billing_currency} (V58's guard
+ * trigger). {@code openingBalance} marks the account's one opening balance (US-25-04, V58).
  *
  * <p>V48 adds an optimistic-lock revision for FR-CNC-001/002. The existing row lock still keeps
  * replacement of the holdings set atomic; the client-facing revision additionally protects the

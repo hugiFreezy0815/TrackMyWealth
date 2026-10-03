@@ -169,7 +169,11 @@ public class CardStatementService {
     AccountValuation valuation =
         accountValuationService.valueIn(card, card.getNativeCurrency(), periodEnd);
     BigDecimal closingBalance = valuation.value();
-    boolean paid = isPaid(cardAccountId, closingBalance, periodEnd, dueDate, statementDay);
+    // US-25-04: a period that closed before the card's opening balance has no known balance, so
+    // nothing can be shown as paid.
+    boolean paid =
+        valuation.valueKnown()
+            && isPaid(cardAccountId, closingBalance, periodEnd, dueDate, statementDay);
 
     return new CardStatementResponse(
         cardAccountId,
