@@ -114,6 +114,7 @@ public class AccountService {
   private final AccountPensionRepository accountPensionRepository;
   private final AccountVestedBenefitsRepository accountVestedBenefitsRepository;
   private final AccountCustomAssetRepository accountCustomAssetRepository;
+  private final AccountDataQualityService accountDataQualityService;
 
   public AccountService(
       WorkspaceAccessService workspaceAccessService,
@@ -131,7 +132,8 @@ public class AccountService {
       AccountLoanRepository accountLoanRepository,
       AccountPensionRepository accountPensionRepository,
       AccountVestedBenefitsRepository accountVestedBenefitsRepository,
-      AccountCustomAssetRepository accountCustomAssetRepository) {
+      AccountCustomAssetRepository accountCustomAssetRepository,
+      AccountDataQualityService accountDataQualityService) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.accountLookupService = accountLookupService;
@@ -148,6 +150,7 @@ public class AccountService {
     this.accountPensionRepository = accountPensionRepository;
     this.accountVestedBenefitsRepository = accountVestedBenefitsRepository;
     this.accountCustomAssetRepository = accountCustomAssetRepository;
+    this.accountDataQualityService = accountDataQualityService;
   }
 
   @Transactional
@@ -577,6 +580,8 @@ public class AccountService {
         account.isCountsAsSaving(),
         account.getStatus(),
         account.getArchivedAt(),
-        VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE));
+        VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE),
+        // PR-011/FR-CON-007: the warning is shown on the account, not only on its figures.
+        accountDataQualityService.warningsFor(account.getId()));
   }
 }

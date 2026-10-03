@@ -18,6 +18,8 @@ import java.util.UUID;
  *     false} - {@code totalAssets}/{@code totalLiabilities}/{@code netValue} only ever sum the
  *     accounts that do, so an incomplete summary is visible on inspection (PR-011) rather than
  *     silently understated
+ * @param warnings every data-quality warning one of {@link #accounts} carries, each once and sorted
+ *     - shown at the container's headline, not only on the account (PR-011, FR-CON-007)
  * @param accounts every currently-active account under the institution, drillable (FR-INS-SUM-002)
  *     - present even when {@code valueKnown} is {@code false}, so a caller can see which accounts
  *     are excluded from the totals, not just that the totals might be incomplete
@@ -30,12 +32,14 @@ public record InstitutionSummaryResponse(
     BigDecimal totalLiabilities,
     BigDecimal netValue,
     boolean complete,
+    List<String> warnings,
     List<AccountContribution> accounts) {
 
   public InstitutionSummaryResponse {
     // Defensive/immutable copy - InstitutionService builds this from its own freshly-created
     // ArrayList, but a record must never expose a caller-mutable reference to its own field
     // regardless of who happens to hold the only other reference today (SpotBugs EI_EXPOSE_REP).
+    warnings = List.copyOf(warnings);
     accounts = List.copyOf(accounts);
   }
 
@@ -62,6 +66,8 @@ public record InstitutionSummaryResponse(
    *     codebase (every type except {@code CUSTOM_ASSET}, {@code MORTGAGE} and {@code LOAN}, or a
    *     {@code CUSTOM_ASSET} account with no valuation recorded at all) - excluded from the
    *     institution's totals, not counted as zero
+   * @param warnings the account's data-quality warnings ({@code DataQualityWarningValues}), empty
+   *     when there are none
    */
   public record AccountContribution(
       UUID accountId,
@@ -73,5 +79,12 @@ public record InstitutionSummaryResponse(
       LocalDate conversionRateDate,
       boolean conversionRateCarriedForward,
       boolean conversionRateStale,
-      boolean valueKnown) {}
+      boolean valueKnown,
+      List<String> warnings) {
+
+    public AccountContribution {
+      // Defensive/immutable copy (SpotBugs EI_EXPOSE_REP).
+      warnings = List.copyOf(warnings);
+    }
+  }
 }

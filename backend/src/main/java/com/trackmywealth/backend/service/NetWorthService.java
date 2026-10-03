@@ -13,6 +13,8 @@ import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -89,8 +91,11 @@ public class NetWorthService {
     BigDecimal totalLiabilities = BigDecimal.ZERO;
     boolean complete = true;
     boolean approximate = false;
+    // PR-011/FR-CON-007: an account's warning is shown at the headline too, known value or not.
+    Set<String> warnings = new TreeSet<>();
 
     for (AccountValuation valuation : valuations) {
+      warnings.addAll(valuation.warnings());
       if (!valuation.valueKnown()) {
         complete = false;
         continue;
@@ -115,6 +120,7 @@ public class NetWorthService {
         totalAssets.subtract(totalLiabilities),
         complete,
         approximate,
+        List.copyOf(warnings),
         valuations);
   }
 }
