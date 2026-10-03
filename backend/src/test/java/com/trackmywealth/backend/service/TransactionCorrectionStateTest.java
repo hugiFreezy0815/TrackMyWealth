@@ -58,7 +58,8 @@ class TransactionCorrectionStateTest {
           JsonMapper.builder().build(),
           "ECB",
           new VersionPreconditionService(),
-          mock(AccountDataQualityService.class));
+          mock(AccountDataQualityService.class),
+          mock(ReconciliationService.class));
 
   private Transaction row;
 

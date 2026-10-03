@@ -29,4 +29,7 @@ public final class DataQualityWarningValues {
    * not only from the account-level {@link #TRANSACTIONS_BEFORE_OPENING_BALANCE} (#241 review).
    */
   public static final String BOOKED_BEFORE_OPENING_BALANCE = "BOOKED_BEFORE_OPENING_BALANCE";
+
+  /** An account's newest observed balance disagrees with its derived ledger value (US-25-02). */
+  public static final String OPEN_RECONCILIATION_DIFFERENCE = "OPEN_RECONCILIATION_DIFFERENCE";
 }

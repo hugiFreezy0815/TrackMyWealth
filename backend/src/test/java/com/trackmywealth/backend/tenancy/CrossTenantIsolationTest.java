@@ -79,6 +79,7 @@ class CrossTenantIsolationTest {
           "transaction",
           "settlement_match",
           "account_snapshot",
+          "reconciliation_result",
           "category",
           "workspace_category_override",
           "categorization_rule");
@@ -251,6 +252,15 @@ class CrossTenantIsolationTest {
   void accountSnapshotRowIsInvisibleAcrossWorkspaces() throws Exception {
     assertThat(rowVisibleUnderContext(workspaceAId, "account_snapshot", snapshotBId)).isFalse();
     assertThat(rowVisibleUnderContext(workspaceBId, "account_snapshot", snapshotAId)).isFalse();
+  }
+
+  // US-25-02: reconciliation_result is financial data in its own right and carries workspace RLS.
+  @Test
+  void reconciliationResultRowIsInvisibleAcrossWorkspaces() throws Exception {
+    UUID resultAId = insertReconciliationResult(workspaceAId, accountAId, snapshotAId);
+
+    assertThat(rowVisibleUnderContext(workspaceAId, "reconciliation_result", resultAId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "reconciliation_result", resultAId)).isFalse();
   }
 
   // US-25-04: an opening balance is an account_snapshot row like any other, under the same policy -
@@ -556,6 +566,28 @@ class CrossTenantIsolationTest {
 
   // Dated the day before the fixture's own snapshot, which is also MANUAL: one row per account,
   // date and source.
+  private UUID insertReconciliationResult(UUID workspaceId, UUID accountId, UUID snapshotId)
+      throws Exception {
+    UUID resultId = UUID.randomUUID();
+    try (Connection connection = testRoleConnection()) {
+      connection.setAutoCommit(false);
+      setWorkspaceContext(connection, workspaceId);
+      try (PreparedStatement statement =
+          connection.prepareStatement(
+              "INSERT INTO reconciliation_result"
+                  + " (id, workspace_id, account_id, snapshot_id, difference_amount)"
+                  + " VALUES (?, ?, ?, ?, 1.00)")) {
+        statement.setObject(1, resultId);
+        statement.setObject(2, workspaceId);
+        statement.setObject(3, accountId);
+        statement.setObject(4, snapshotId);
+        statement.executeUpdate();
+      }
+      connection.commit();
+    }
+    return resultId;
+  }
+
   private UUID insertOpeningBalance(UUID workspaceId, UUID accountId) throws Exception {
     UUID snapshotId = UUID.randomUUID();
     try (Connection connection = testRoleConnection()) {

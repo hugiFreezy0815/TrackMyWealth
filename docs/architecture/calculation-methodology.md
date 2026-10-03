@@ -264,6 +264,62 @@ value like any earlier row. It carries `BOOKED_BEFORE_OPENING_BALANCE` in its ow
 (`TransactionResponse`), so the member sees at once that it does not count, and the account carries
 `TRANSACTIONS_BEFORE_OPENING_BALANCE`.
 
+## Cash reconciliation (US-25-02, FR-REC-002/003/005)
+
+Reconciliation compares the newest observed account snapshot with the independently derived ledger
+state on that snapshot date. It is synchronous with source writes, not a nightly estimate: recording
+or replacing a snapshot, changing the opening balance, or changing a ledger row dated on or before
+the newest snapshot re-evaluates the comparison in the same transaction.
+
+For this cash-only slice:
+
+```
+derived(D)    = opening balance + signed live ledger after opening through D
+difference(D) = snapshot balance - derived(D)
+```
+
+The opening-date and liability-sign conventions are exactly those in *Opening balances* above.
+Holding accounts are excluded until EPIC 15 can derive positions. A transaction-backed account with
+no opening balance at or before the snapshot is `NOT_RECONCILABLE / NO_OPENING_BALANCE`, never
+assumed to have started at zero.
+
+State is reproducible from source data:
+
+- non-zero difference: one `OPEN` account-level `reconciliation_result` for the snapshot;
+- exact agreement: no result row is needed, or an existing `OPEN` row becomes `RESOLVED`. The
+  resolved row keeps the difference and cause it had, so the history shows what was resolved;
+- a newer snapshot makes older `OPEN` results `SUPERSEDED`;
+- account reads expose `NEVER`, `RECONCILED`, `OPEN_DIFFERENCE`, or `NOT_RECONCILABLE`.
+  A `BALANCE_ONLY` grant sees the state and reason but not the comparison date or amount; those
+  details, and the reconciliation history endpoint, require `READ`.
+
+An open difference adds `OPEN_RECONCILIATION_DIFFERENCE` to the account's data-quality warnings,
+which means the existing valuation aggregation also surfaces it at institution and net-worth
+headlines (FR-CON-007 / PR-011).
+
+### Probable-cause classification
+
+Classification is deliberately best-effort and never changes the figures. It reasons about ledger
+rows, so it first turns the balance difference into the **missing ledger amount** - the signed row
+whose booking would close the gap: the difference itself on an asset, its negation on a liability
+(where `derived = opening - ledger`, so a card statement owing 15.00 more than derived is a missing
+-15.00 row). Within the period since the previous snapshot (or the opening balance for the first
+one), evidence is evaluated in this order:
+
+1. `DUPLICATE_ENTRY`: a live row whose account-currency amount equals the opposite of the missing
+   amount (the row counted once too often) has another live row with the same booking date,
+   original amount/currency, and normalized description.
+2. `FX_ROUNDING`: the absolute missing amount is at most 0.05 and the period contains a converted
+   ledger row.
+3. `UNRECORDED_FEE`: the missing amount is a debit of at most 50.00 with at most two decimals
+   (1.12, 33.20, 40.00, ...), in the account's own currency whatever that currency is - the
+   currency both the snapshot and the derived ledger are expressed in.
+4. Otherwise `UNKNOWN`.
+
+`MISSING_TRANSACTION` needs the import-preview evidence from US-07-04 and is intentionally added
+by whichever import story merges that data surface; this ticket does not infer a missing bank row
+without evidence.
+
 ## Card settlement matching and spending (US-09-02, FR-CC-004/005/007, FR-CF-001/004/005)
 
 The single most important correctness rule for cards: a purchase counts as spending **once**, when

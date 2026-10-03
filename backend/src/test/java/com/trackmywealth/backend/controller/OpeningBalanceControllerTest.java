@@ -102,6 +102,7 @@ class OpeningBalanceControllerTest {
         Statement statement = connection.createStatement()) {
       for (String sql :
           List.of(
+              "DELETE FROM reconciliation_result",
               "DELETE FROM settlement_match",
               // reversals first: they reference their originals
               "DELETE FROM transaction WHERE replaces_transaction_id IS NOT NULL",

@@ -66,6 +66,7 @@ public class OpeningBalanceService {
   private final AccountCurrencyService accountCurrencyService;
   private final AccountDataQualityService accountDataQualityService;
   private final VersionPreconditionService versionPreconditionService;
+  private final ReconciliationService reconciliationService;
   private final Clock clock;
 
   public OpeningBalanceService(
@@ -77,6 +78,7 @@ public class OpeningBalanceService {
       AccountCurrencyService accountCurrencyService,
       AccountDataQualityService accountDataQualityService,
       VersionPreconditionService versionPreconditionService,
+      ReconciliationService reconciliationService,
       Clock clock) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -86,6 +88,7 @@ public class OpeningBalanceService {
     this.accountCurrencyService = accountCurrencyService;
     this.accountDataQualityService = accountDataQualityService;
     this.versionPreconditionService = versionPreconditionService;
+    this.reconciliationService = reconciliationService;
     this.clock = clock;
   }
 
@@ -121,7 +124,9 @@ public class OpeningBalanceService {
     apply(snapshot, request, currency);
     // flush, not a plain save: a concurrent second opening balance's unique violation (V58)
     // surfaces here, as a 409 from GlobalExceptionHandler, rather than at commit.
-    return toResponse(snapshotRepository.saveAndFlush(snapshot));
+    AccountSnapshot saved = snapshotRepository.saveAndFlush(snapshot);
+    reconciliationService.reconcileLatest(account);
+    return toResponse(saved);
   }
 
   @Transactional
@@ -142,7 +147,9 @@ public class OpeningBalanceService {
     // shows the same instant a later read returns.
     snapshot.setUpdatedAt(OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MICROS));
     snapshot.setUpdatedBy(actor.userId());
-    return toResponse(snapshotRepository.saveAndFlush(snapshot));
+    AccountSnapshot saved = snapshotRepository.saveAndFlush(snapshot);
+    reconciliationService.reconcileLatest(account);
+    return toResponse(saved);
   }
 
   /**
@@ -159,6 +166,7 @@ public class OpeningBalanceService {
         expectedVersion, snapshot.getVersion(), RESOURCE_NAME);
     snapshotRepository.delete(snapshot);
     snapshotRepository.flush();
+    reconciliationService.reconcileLatest(account);
   }
 
   // Returns the currency to store: the account's own, which the request must match.

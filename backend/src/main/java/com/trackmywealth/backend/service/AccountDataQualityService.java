@@ -1,13 +1,17 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
+import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -28,23 +32,31 @@ public class AccountDataQualityService {
 
   private final TransactionRepository transactionRepository;
   private final AccountSnapshotRepository accountSnapshotRepository;
+  private final ReconciliationResultRepository reconciliationResultRepository;
 
   public AccountDataQualityService(
       TransactionRepository transactionRepository,
-      AccountSnapshotRepository accountSnapshotRepository) {
+      AccountSnapshotRepository accountSnapshotRepository,
+      ReconciliationResultRepository reconciliationResultRepository) {
     this.transactionRepository = transactionRepository;
     this.accountSnapshotRepository = accountSnapshotRepository;
+    this.reconciliationResultRepository = reconciliationResultRepository;
   }
 
   /** The account's warnings, empty when it has none. */
   @Transactional(readOnly = true)
   public List<String> warningsFor(UUID accountId) {
+    List<String> warnings = new ArrayList<>();
     // US-25-04: rows before the opening balance were acknowledged (or added later) and are left
     // out of the value - never silently, so the account says so for as long as they exist.
     if (transactionRepository.existsLiveBookedBeforeOpeningBalance(accountId)) {
-      return List.of(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
+      warnings.add(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
     }
-    return List.of();
+    if (reconciliationResultRepository.existsByAccountIdAndStatusAndAffectedSecurityIdIsNull(
+        accountId, ReconciliationResultValues.OPEN)) {
+      warnings.add(DataQualityWarningValues.OPEN_RECONCILIATION_DIFFERENCE);
+    }
+    return List.copyOf(warnings);
   }
 
   /**
@@ -54,12 +66,17 @@ public class AccountDataQualityService {
    */
   @Transactional(readOnly = true)
   public List<String> warningsFor(Account account, LocalDate openingBalanceDate) {
-    if (openingBalanceDate == null
-        || !account.isHasTransactions()
-        || !transactionRepository.existsLiveBookedBefore(account.getId(), openingBalanceDate)) {
-      return List.of();
+    List<String> warnings = new ArrayList<>();
+    if (openingBalanceDate != null
+        && account.isHasTransactions()
+        && transactionRepository.existsLiveBookedBefore(account.getId(), openingBalanceDate)) {
+      warnings.add(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
     }
-    return List.of(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
+    if (reconciliationResultRepository.existsByAccountIdAndStatusAndAffectedSecurityIdIsNull(
+        account.getId(), ReconciliationResultValues.OPEN)) {
+      warnings.add(DataQualityWarningValues.OPEN_RECONCILIATION_DIFFERENCE);
+    }
+    return List.copyOf(warnings);
   }
 
   /**
@@ -71,22 +88,37 @@ public class AccountDataQualityService {
   @Transactional(readOnly = true)
   public Map<UUID, List<String>> warningsForAll(
       Collection<Account> accounts, Map<UUID, LocalDate> openingBalanceDates) {
-    List<UUID> candidates =
+    Map<UUID, List<String>> warnings = new HashMap<>();
+    List<UUID> openingCandidates =
         accounts.stream()
             .filter(Account::isHasTransactions)
             .map(Account::getId)
             .filter(openingBalanceDates::containsKey)
             .toList();
-    if (candidates.isEmpty()) {
-      return Map.of();
+    if (!openingCandidates.isEmpty()) {
+      for (UUID accountId :
+          transactionRepository.findAccountIdsWithLiveRowsBeforeOpeningBalance(openingCandidates)) {
+        warnings
+            .computeIfAbsent(accountId, ignored -> new ArrayList<>())
+            .add(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
+      }
     }
-    return transactionRepository.findAccountIdsWithLiveRowsBeforeOpeningBalance(candidates).stream()
-        .distinct()
+
+    List<UUID> accountIds = accounts.stream().map(Account::getId).distinct().toList();
+    if (!accountIds.isEmpty()) {
+      for (UUID accountId :
+          reconciliationResultRepository.findAccountIdsWithCashResultInStatus(
+              accountIds, ReconciliationResultValues.OPEN)) {
+        warnings
+            .computeIfAbsent(accountId, ignored -> new ArrayList<>())
+            .add(DataQualityWarningValues.OPEN_RECONCILIATION_DIFFERENCE);
+      }
+    }
+
+    return warnings.entrySet().stream()
         .collect(
-            Collectors.toMap(
-                accountId -> accountId,
-                accountId ->
-                    List.of(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE)));
+            Collectors.toUnmodifiableMap(
+                Map.Entry::getKey, entry -> List.copyOf(entry.getValue())));
   }
 
   /**

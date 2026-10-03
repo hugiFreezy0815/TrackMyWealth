@@ -23,6 +23,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
   String ACCOUNT_ID = "accountId";
   String ACCOUNT_IDS = "accountIds";
+  String AS_OF = "asOf";
+  String AFTER = "after";
   String FROM = "from";
   String TYPES = "types";
   String BOOKED_BETWEEN = " and t.bookingDate between :from and :to";
@@ -231,7 +233,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
           + " from Transaction t where t.account.id = :accountId and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdAsOf(
-      @Param(ACCOUNT_ID) UUID accountId, @Param("asOf") LocalDate asOf);
+      @Param(ACCOUNT_ID) UUID accountId, @Param(AS_OF) LocalDate asOf);
 
   /**
    * US-25-04: {@link #sumAmountByAccountIdAsOf} for the rows booked after {@code after} only - the
@@ -246,8 +248,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + " and t.bookingDate > :after and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdBookedAfter(
       @Param(ACCOUNT_ID) UUID accountId,
-      @Param("after") LocalDate after,
-      @Param("asOf") LocalDate asOf);
+      @Param(AFTER) LocalDate after,
+      @Param(AS_OF) LocalDate asOf);
 
   /**
    * US-25-04: the earliest booking date of the account's live rows - neither voided nor a reversal
@@ -515,4 +517,47 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " WHERE corrects_transaction_id IN (:transactionIds))",
       nativeQuery = true)
   boolean existsCorrectionOfAny(@Param("transactionIds") Collection<UUID> transactionIds);
+
+  /**
+   * US-25-02: whether the reconciliation period contains a live row converted into the account's
+   * own currency. A small residual difference in such a period is classified as FX_ROUNDING.
+   */
+  @Query(
+      value =
+          "SELECT EXISTS (SELECT 1 FROM transaction t"
+              + " WHERE t.account_id = :accountId AND t.booking_date > :after"
+              + " AND t.booking_date <= :asOf AND t.deleted_at IS NULL"
+              + " AND t.voided_at IS NULL AND t.replaces_transaction_id IS NULL"
+              + " AND t.fx_rate_to_account_currency IS NOT NULL)",
+      nativeQuery = true)
+  boolean existsLiveConvertedBookedAfter(
+      @Param(ACCOUNT_ID) UUID accountId,
+      @Param(AFTER) LocalDate after,
+      @Param(AS_OF) LocalDate asOf);
+
+  /**
+   * US-25-02: a duplicate-entry signature in the reconciliation period. One live row must have an
+   * account-currency amount equal to {@code amount}, and another live row must match its booking
+   * date, original amount/currency and normalized description exactly.
+   */
+  @Query(
+      value =
+          "SELECT EXISTS (SELECT 1 FROM transaction t1 JOIN transaction t2"
+              + " ON t2.account_id = t1.account_id AND t2.id <> t1.id"
+              + " AND t2.booking_date = t1.booking_date AND t2.amount = t1.amount"
+              + " AND t2.currency = t1.currency"
+              + " AND COALESCE(lower(regexp_replace(trim(t2.merchant_description), '\\s+', ' ', 'g')), '')"
+              + " = COALESCE(lower(regexp_replace(trim(t1.merchant_description), '\\s+', ' ', 'g')), '')"
+              + " WHERE t1.account_id = :accountId AND t1.booking_date > :after"
+              + " AND t1.booking_date <= :asOf"
+              + " AND t1.amount * COALESCE(t1.fx_rate_to_account_currency, 1) = :amount"
+              + " AND t1.deleted_at IS NULL AND t2.deleted_at IS NULL"
+              + " AND t1.voided_at IS NULL AND t2.voided_at IS NULL"
+              + " AND t1.replaces_transaction_id IS NULL AND t2.replaces_transaction_id IS NULL)",
+      nativeQuery = true)
+  boolean existsDuplicateEntrySignature(
+      @Param(ACCOUNT_ID) UUID accountId,
+      @Param(AFTER) LocalDate after,
+      @Param(AS_OF) LocalDate asOf,
+      @Param("amount") BigDecimal amount);
 }
