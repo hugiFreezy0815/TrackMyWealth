@@ -22,10 +22,12 @@ import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -485,6 +487,39 @@ class OpeningBalanceControllerTest {
     assertThat(balance(token, cash.id()).value()).isEqualByComparingTo("900.00");
   }
 
+  // #241 review: a row recorded later but booked before the opening balance is left out of the
+  // value. The member learns it from the row itself, at once - not only from the account.
+  @Test
+  void aTransactionBookedBeforeTheOpeningBalanceSaysSoOnTheRow() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createAccount(token, "PostFinance", "CASH");
+    recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
+
+    TransactionResponse before = recordTransaction(token, cash.id(), openingDate.minusDays(5));
+    TransactionResponse onTheDay = recordTransaction(token, cash.id(), openingDate);
+    TransactionResponse after = recordTransaction(token, cash.id(), openingDate.plusDays(1));
+
+    assertThat(before.warnings())
+        .containsExactly(DataQualityWarningValues.BOOKED_BEFORE_OPENING_BALANCE);
+    assertThat(onTheDay.warnings()).isEmpty(); // contained in the balance by convention
+    assertThat(after.warnings()).isEmpty();
+    // The list says the same, and only the later row counts.
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + cash.id() + "/transactions")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.content[?(@.id == '" + before.id() + "')].warnings[0]")
+        .isEqualTo(DataQualityWarningValues.BOOKED_BEFORE_OPENING_BALANCE)
+        .jsonPath("$.content[?(@.id == '" + after.id() + "')].warnings.length()")
+        .isEqualTo(0);
+    assertThat(balance(token, cash.id()).value()).isEqualByComparingTo("990.00");
+    assertThat(account(token, cash.id()).warnings())
+        .containsExactly(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
+  }
+
   @Test
   void removedTransactionsBeforeTheOpeningDateTriggerNeitherTheGuardNorTheWarning() {
     String token = bootstrapAdministrator();
@@ -885,6 +920,32 @@ class OpeningBalanceControllerTest {
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
         .expectBody(AccountSnapshotResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private TransactionResponse recordTransaction(String token, UUID accountId, LocalDate date) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/transactions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            TransactionRequests.cash(
+                "EXPENSE",
+                date,
+                new BigDecimal("-10.00"),
+                "CHF",
+                "Coffee",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED)
+        .expectBody(TransactionResponse.class)
         .returnResult()
         .getResponseBody();
   }

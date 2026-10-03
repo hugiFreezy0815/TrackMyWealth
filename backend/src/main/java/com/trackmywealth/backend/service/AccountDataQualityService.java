@@ -2,10 +2,16 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.AccountSnapshot;
+import com.trackmywealth.backend.entity.Transaction;
+import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,9 +27,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class AccountDataQualityService {
 
   private final TransactionRepository transactionRepository;
+  private final AccountSnapshotRepository accountSnapshotRepository;
 
-  public AccountDataQualityService(TransactionRepository transactionRepository) {
+  public AccountDataQualityService(
+      TransactionRepository transactionRepository,
+      AccountSnapshotRepository accountSnapshotRepository) {
     this.transactionRepository = transactionRepository;
+    this.accountSnapshotRepository = accountSnapshotRepository;
   }
 
   /** The account's warnings, empty when it has none. */
@@ -50,5 +60,40 @@ public class AccountDataQualityService {
       return List.of();
     }
     return List.of(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
+  }
+
+  /**
+   * The opening balance date of each of {@code accountIds} that has one - one query for a whole
+   * page of transactions, for {@link #transactionWarnings}.
+   */
+  @Transactional(readOnly = true)
+  public Map<UUID, LocalDate> openingBalanceDates(Collection<UUID> accountIds) {
+    if (accountIds.isEmpty()) {
+      return Map.of();
+    }
+    return accountSnapshotRepository.findByAccountIdInAndOpeningBalanceTrue(accountIds).stream()
+        .collect(
+            Collectors.toMap(
+                snapshot -> snapshot.getAccount().getId(), AccountSnapshot::getSnapshotDate));
+  }
+
+  /**
+   * One transaction's warnings: {@code BOOKED_BEFORE_OPENING_BALANCE} for a live row booked before
+   * its account's opening balance ({@code openingBalanceDates}, from {@link #openingBalanceDates}).
+   * A removed row (voided, a reversal, soft-deleted) counts nowhere anyway and carries none. A row
+   * on the opening date is taken as contained in the balance by convention
+   * (calculation-methodology.md) and is not flagged.
+   */
+  public static List<String> transactionWarnings(
+      Transaction transaction, Map<UUID, LocalDate> openingBalanceDates) {
+    LocalDate openingDate = openingBalanceDates.get(transaction.getAccount().getId());
+    boolean live =
+        transaction.getVoidedAt() == null
+            && !transaction.isReversal()
+            && transaction.getDeletedAt() == null;
+    if (openingDate == null || !live || !transaction.getBookingDate().isBefore(openingDate)) {
+      return List.of();
+    }
+    return List.of(DataQualityWarningValues.BOOKED_BEFORE_OPENING_BALANCE);
   }
 }

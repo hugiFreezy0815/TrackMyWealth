@@ -19,6 +19,8 @@ import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.util.Collection;
 import java.util.Currency;
 import java.util.List;
 import java.util.Map;
@@ -166,6 +168,7 @@ public class TransactionService {
   private final ObjectMapper objectMapper;
   private final String fxDefaultSource;
   private final VersionPreconditionService versionPreconditionService;
+  private final AccountDataQualityService accountDataQualityService;
 
   public TransactionService(
       AccountLookupService accountLookupService,
@@ -181,7 +184,8 @@ public class TransactionService {
       TransferRecordingService transferRecordingService,
       ObjectMapper objectMapper,
       @Value("${app.fx.default-source}") String fxDefaultSource,
-      VersionPreconditionService versionPreconditionService) {
+      VersionPreconditionService versionPreconditionService,
+      AccountDataQualityService accountDataQualityService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -196,6 +200,7 @@ public class TransactionService {
     this.objectMapper = objectMapper;
     this.fxDefaultSource = fxDefaultSource;
     this.versionPreconditionService = versionPreconditionService;
+    this.accountDataQualityService = accountDataQualityService;
   }
 
   /**
@@ -397,7 +402,10 @@ public class TransactionService {
                     accountId, categorizationService.uncategorizedCategoryId(), bounded)
             : transactionRepository.findByAccountId(accountId, bounded);
     Map<UUID, String> assignments = latestAssignments(page.getContent());
-    return page.map(transaction -> toResponse(transaction, assignments.get(transaction.getId())));
+    Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(page.getContent());
+    return page.map(
+        transaction ->
+            toResponse(transaction, assignments.get(transaction.getId()), openingBalanceDates));
   }
 
   // How each row got its category, for a whole page in one query.
@@ -1036,6 +1044,13 @@ public class TransactionService {
   }
 
   private TransactionResponse toResponse(Transaction transaction, String categoryAssignedBy) {
+    return toResponse(transaction, categoryAssignedBy, openingBalanceDates(List.of(transaction)));
+  }
+
+  private TransactionResponse toResponse(
+      Transaction transaction,
+      String categoryAssignedBy,
+      Map<UUID, LocalDate> openingBalanceDates) {
     return new TransactionResponse(
         transaction.getId(),
         transaction.getAccount().getId(),
@@ -1072,7 +1087,18 @@ public class TransactionService {
         transaction.getRestoresTransactionId(),
         transaction.getDeletedAt(),
         transaction.getCounterpartyAccountId(),
-        VersionPreconditionService.persistedVersion(transaction.getVersion(), VERSIONED_RESOURCE));
+        VersionPreconditionService.persistedVersion(transaction.getVersion(), VERSIONED_RESOURCE),
+        AccountDataQualityService.transactionWarnings(transaction, openingBalanceDates));
+  }
+
+  // #241 review: one query for the opening balances of every account in the batch, so a page of
+  // rows needs no lookup per row.
+  private Map<UUID, LocalDate> openingBalanceDates(Collection<Transaction> transactions) {
+    return accountDataQualityService.openingBalanceDates(
+        transactions.stream()
+            .map(transaction -> transaction.getAccount().getId())
+            .distinct()
+            .toList());
   }
 
   /**
@@ -1094,8 +1120,11 @@ public class TransactionService {
   /** Responses for many rows at once, with how each got its category (one log query). */
   public List<TransactionResponse> toResponses(List<Transaction> transactions) {
     Map<UUID, String> assignments = latestAssignments(transactions);
+    Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(transactions);
     return transactions.stream()
-        .map(transaction -> toResponse(transaction, assignments.get(transaction.getId())))
+        .map(
+            transaction ->
+                toResponse(transaction, assignments.get(transaction.getId()), openingBalanceDates))
         .toList();
   }
 

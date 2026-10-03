@@ -17,4 +17,12 @@ public final class DataQualityWarningValues {
    */
   public static final String TRANSACTIONS_BEFORE_OPENING_BALANCE =
       "TRANSACTIONS_BEFORE_OPENING_BALANCE";
+
+  /**
+   * On a single transaction: it is booked before its account's opening balance, so the account's
+   * value leaves it out (US-25-04). Shown on the row itself - in particular in the response to
+   * recording, correcting or restoring it - so the member learns at once that it does not count,
+   * not only from the account-level {@link #TRANSACTIONS_BEFORE_OPENING_BALANCE} (#241 review).
+   */
+  public static final String BOOKED_BEFORE_OPENING_BALANCE = "BOOKED_BEFORE_OPENING_BALANCE";
 }
