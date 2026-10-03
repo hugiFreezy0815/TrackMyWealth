@@ -1,1 +1,5 @@
 .env
+
+# Real bank exports, kept locally for import-template development only (sprint 5).
+# They contain personal financial data and must never be committed.
+/docs/import-samples/
