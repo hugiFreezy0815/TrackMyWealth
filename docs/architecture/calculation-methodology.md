@@ -187,9 +187,13 @@ foreign-currency rows (amount in the original currency); at that point the balan
 account-currency figure instead, or it would silently mix currencies.
 
 **Net worth (partial, until US-11-01)** is `Σ value(ASSET) − Σ value(LIABILITY)` over every active
-account the caller may see at `BALANCE_ONLY` or above, in the caller's `reporting_currency` (each
-account's foreign currency is converted at the business date's rate, resolved once per currency
-pair per request). Each account's sign comes from its `nature` (the DB-generated column), never from application-side
+account the caller may see at `BALANCE_ONLY` or above. US-06-05 makes the workspace's
+`workspace.currency` the default display currency for this workspace-level figure; a read may
+override it with `currency=...`. Each account's foreign currency is converted at the valuation
+date's rate, resolved once per native currency per request. The member's
+`app_user.reporting_currency` remains only a client-side personal preference for choosing an
+ad-hoc display currency; the server no longer uses it as the workspace-total default. Each
+account's sign comes from its `nature` (the DB-generated column), never from application-side
 `account_type` logic. Accounts with no resolvable value (types with no value source yet) are listed but excluded from the totals and
 flagged (`complete = false`) rather than counted as zero.
 
@@ -260,9 +264,18 @@ one card and its source account to guard that.
   against its original. A voided payment is therefore never "awaiting a decision" - a proposal on a
   row voided since is moot, and a voided payment stays in the sum where its reversing row cancels it
   (excluding the original while counting the reversal would understate spending by the payment).
-  Confirming a proposal on a voided payment or credit is a 409. Only accounts the caller may `READ` contribute (transaction-level detail is
-  not shown at `BALANCE_ONLY`). Currencies are not converted: a realised-flow FX conversion belongs
-  to EPIC 10.
+  Confirming a proposal on a voided payment or credit is a 409. Only accounts the caller may
+  `READ` contribute (transaction-level detail is not shown at `BALANCE_ONLY`). Without a
+  `currency` query parameter, the response remains grouped in the transactions' original
+  currencies. With `currency=...`, each contributing amount is converted using its own booking
+  date (the realised-flow rule above) before aggregation. For performance, rows are first grouped
+  in PostgreSQL by booking date and source currency, and one FX lookup is reused per
+  date/currency pair for the request; stored transaction amount and currency are never rewritten.
+  A converted figure combines up to a month of daily rates, so it carries no single rate or rate
+  date, only `conversionRateCarriedForward`/`conversionRateStale` when any day's rate has that mark
+  (decision on #224). When any contributing day has no rate, the figure is unknown
+  (`valueKnown = false`, `amount = null`, never zero) and `complete` is `false`, as an unknown
+  account value makes net worth incomplete (PR-011); the other figures are still returned.
 
 **Worked example (golden case V-13).** Purchases of CHF 700 (10 Aug) and CHF 500 (28 Aug) on the
 card; on 3 Sep CHF 1,200 leaves the current account and a CHF 1,200 credit is booked on the card.

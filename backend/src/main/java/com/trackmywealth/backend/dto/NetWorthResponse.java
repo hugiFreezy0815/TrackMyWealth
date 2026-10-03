@@ -9,8 +9,8 @@ import java.util.List;
  * it covers only the accounts that have a value source today (see {@code AccountValuationService}),
  * which is why {@link #complete} exists. US-11-01 supersedes it with the full consolidated figure.
  *
- * @param reportingCurrency the requesting user's own {@code reporting_currency} (FR-USR-007) -
- *     every figure below is expressed in it
+ * @param currency the effective display currency for this read: the workspace currency by default,
+ *     or the caller's ad-hoc {@code currency} override
  * @param netWorth {@code totalAssets - totalLiabilities} - may be negative, never suppressed or
  *     clamped to zero. Liabilities are subtracted, never added (FR-CC-003, DM-12)
  * @param complete {@code false} when at least one {@link #accounts} entry has {@code valueKnown =
@@ -26,7 +26,7 @@ import java.util.List;
  *     totals
  */
 public record NetWorthResponse(
-    String reportingCurrency,
+    String currency,
     LocalDate asOf,
     BigDecimal totalAssets,
     BigDecimal totalLiabilities,

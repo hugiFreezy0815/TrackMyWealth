@@ -52,7 +52,9 @@ public class InstitutionController {
 
   @GetMapping("/{institutionId}/summary")
   public InstitutionSummaryResponse getSummary(
-      @PathVariable UUID institutionId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return institutionService.getSummary(institutionId, actor);
+      @PathVariable UUID institutionId,
+      @RequestParam(required = false) String currency,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return institutionService.getSummary(institutionId, actor, currency);
   }
 }

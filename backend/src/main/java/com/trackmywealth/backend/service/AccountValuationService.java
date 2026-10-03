@@ -15,6 +15,7 @@ import com.trackmywealth.backend.repository.AccountMortgageRepository;
 import com.trackmywealth.backend.repository.CustomAssetValuationRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -87,13 +88,18 @@ public class AccountValuationService {
   /**
    * US-09-01/FR-CC-001/003: the account's current balance in its own currency - for a credit card,
    * the outstanding amount owed, a {@code LIABILITY}. Gated at {@code BALANCE_ONLY} (US-03-03), the
-   * weakest level that may see a figure at all.
+   * weakest level that may see a figure at all. US-06-05: {@code requestedCurrency}, when given,
+   * converts it at today's rate instead; it is validated only after the access check, so an invalid
+   * code cannot tell a caller whether an account it may not see exists.
    */
   @Transactional(readOnly = true)
-  public AccountValuation getBalance(UUID accountId, AuthenticatedUserPrincipal actor) {
+  public AccountValuation getBalance(
+      UUID accountId, AuthenticatedUserPrincipal actor, String requestedCurrency) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.BALANCE_ONLY);
-    return valueIn(account, ownCurrency(account), businessDateService.today());
+    String targetCurrency =
+        CurrencyCodes.requestedOrDefault(requestedCurrency, ownCurrency(account));
+    return valueIn(account, targetCurrency, businessDateService.today());
   }
 
   /**
