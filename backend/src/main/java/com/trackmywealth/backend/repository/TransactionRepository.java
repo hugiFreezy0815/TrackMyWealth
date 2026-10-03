@@ -265,6 +265,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   long countLiveBookedBefore(@Param(ACCOUNT_ID) UUID accountId, @Param("before") LocalDate before);
 
   /**
+   * US-25-04: whether the account has a live row booked before {@code before} - the opening date,
+   * when the caller already holds the opening balance (one query less per account in a valuation).
+   */
+  @Query(
+      "select count(t) > 0 from Transaction t where t.account.id = :accountId"
+          + " and t.bookingDate < :before"
+          + NOT_VOIDED_OR_REVERSAL)
+  boolean existsLiveBookedBefore(
+      @Param(ACCOUNT_ID) UUID accountId, @Param("before") LocalDate before);
+
+  /**
    * US-25-04: whether the account has a live row booked before its opening balance - {@code false}
    * for an account without one. Drives {@code TRANSACTIONS_BEFORE_OPENING_BALANCE}.
    */

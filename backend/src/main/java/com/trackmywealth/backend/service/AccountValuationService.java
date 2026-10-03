@@ -48,8 +48,10 @@ import org.springframework.web.server.ResponseStatusException;
  * reject one ({@code OpeningBalanceService}) - is valued as that balance plus its ledger after the
  * opening date, and is unknown before that date. A card's own ledger value is superseded by it. An
  * account that {@code holdsPositions} keeps an unknown value even with one: its cash is only part
- * of it until holdings are valued (EPIC 15). Every other account without an opening balance has no
- * value source yet and resolves as unknown, not zero.
+ * of it until holdings are valued (EPIC 15). An account without a ledger ({@code hasTransactions =
+ * false}) is valued from its latest snapshot instead, the opening balance being one of them. Every
+ * other account without an opening balance has no value source yet and resolves as unknown, not
+ * zero.
  */
 @Service
 public class AccountValuationService {
@@ -178,8 +180,17 @@ public class AccountValuationService {
     // AccountCurrencyService. Every other account type's own currency is simply its
     // nativeCurrency.
     String ownCurrency = accountCurrencyService.ownCurrency(account);
-    List<String> warnings = accountDataQualityService.warningsFor(account.getId());
-    Optional<NativeAccountValue> nativeValue = resolveNativeAccountValue(account, asOf);
+    // Read once: both the value and the warnings depend on it. An account with a value source of
+    // its own takes no opening balance (OpeningBalanceService), so it is not looked up at all.
+    Optional<AccountSnapshot> openingBalance =
+        account.isManualValuation() || account.isHasAmortisation()
+            ? Optional.empty()
+            : accountSnapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId());
+    List<String> warnings =
+        accountDataQualityService.warningsFor(
+            account, openingBalance.map(AccountSnapshot::getSnapshotDate).orElse(null));
+    Optional<NativeAccountValue> nativeValue =
+        resolveNativeAccountValue(account, openingBalance, asOf);
     if (nativeValue.isEmpty()) {
       return unknown(account, ownCurrency, targetCurrency, warnings);
     }
@@ -208,14 +219,19 @@ public class AccountValuationService {
 
   // CUSTOM_ASSET (via CustomAssetValuation), MORTGAGE/LOAN (via original_principal - a real stored
   // number, but the loan's original amount, not its current outstanding balance; no amortization
-  // tracking exists yet, EPIC 10), any account with an opening balance (US-25-04) and CREDIT_CARD
-  // (via its ledger) have a value source today.
-  private Optional<NativeAccountValue> resolveNativeAccountValue(Account account, LocalDate asOf) {
+  // tracking exists yet, EPIC 10), an account without a ledger (via its latest snapshot), any
+  // account with an opening balance (US-25-04) and CREDIT_CARD (via its ledger) have a value source
+  // today.
+  private Optional<NativeAccountValue> resolveNativeAccountValue(
+      Account account, Optional<AccountSnapshot> openingBalance, LocalDate asOf) {
     if (account.isManualValuation()) {
       return customAssetValuationRepository
           .findFirstByAccountIdAndValuationDateLessThanEqualOrderByValuationDateDesc(
               account.getId(), asOf)
-          .map(v -> new NativeAccountValue(v.getValue(), ValueBasisValues.MANUAL_VALUATION));
+          .map(
+              v ->
+                  new NativeAccountValue(
+                      v.getValue(), ValueBasisValues.MANUAL_VALUATION, v.getValuationDate()));
     }
     if (account.isHasAmortisation()) {
       return accountMortgageRepository
@@ -228,8 +244,9 @@ public class AccountValuationService {
                       .map(AccountLoan::getOriginalPrincipal))
           .map(principal -> new NativeAccountValue(principal, ValueBasisValues.ORIGINAL_PRINCIPAL));
     }
-    Optional<AccountSnapshot> openingBalance =
-        accountSnapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId());
+    if (!account.isHasTransactions()) {
+      return latestSnapshot(account, asOf);
+    }
     if (openingBalance.isPresent()) {
       return fromOpeningBalance(account, openingBalance.get(), asOf);
     }
@@ -251,6 +268,28 @@ public class AccountValuationService {
                   () -> new NativeAccountValue(BigDecimal.ZERO, ValueBasisValues.LEDGER_EMPTY)));
     }
     return Optional.empty();
+  }
+
+  /**
+   * #232 review: an account without a ledger ({@code VESTED_BENEFITS}) changes value only through
+   * what its provider reports, so its value is its newest snapshot balance on or before {@code
+   * asOf} - the opening balance included, being a snapshot too - with that snapshot's date, so a
+   * client can show how old it is. Nothing recorded by then: unknown, not zero. An account that
+   * {@code holdsPositions} stays unknown, as with an opening balance (EPIC 15).
+   */
+  private Optional<NativeAccountValue> latestSnapshot(Account account, LocalDate asOf) {
+    if (account.isHoldsPositions()) {
+      return Optional.empty();
+    }
+    return accountSnapshotRepository
+        .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+            account.getId(), asOf)
+        .map(
+            snapshot ->
+                new NativeAccountValue(
+                    snapshot.getBalance(),
+                    ValueBasisValues.LATEST_SNAPSHOT,
+                    snapshot.getSnapshotDate()));
   }
 
   /**
@@ -296,6 +335,7 @@ public class AccountValuationService {
         false,
         false,
         null,
+        null,
         warnings);
   }
 
@@ -322,6 +362,7 @@ public class AccountValuationService {
         conversion != null && conversion.stale(),
         true,
         source.basis(),
+        source.sourceDate(),
         warnings);
   }
 }

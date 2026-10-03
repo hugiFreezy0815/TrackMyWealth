@@ -323,7 +323,34 @@ class OpeningBalanceControllerTest {
 
     recordOk(token, vested.id(), request(openingDate, "84000.00", "CHF"));
 
-    assertThat(balance(token, vested.id()).value()).isEqualByComparingTo("84000.00");
+    AccountValuation valuation = balance(token, vested.id());
+    assertThat(valuation.value()).isEqualByComparingTo("84000.00");
+    assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LATEST_SNAPSHOT);
+    assertThat(valuation.valueSourceDate()).isEqualTo(openingDate);
+  }
+
+  // #232 review: without a ledger, the snapshots are the account's only record of its value - a
+  // newer one supersedes the opening balance, and its date says how old the figure is.
+  @Test
+  void anAccountWithoutALedgerIsWorthItsLatestSnapshotNotItsOpeningBalanceForever() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse vested =
+        createAccount(
+            token, AccountRequests.account("Vested Benefits", "VESTED_BENEFITS", "CHF").build());
+    recordOk(token, vested.id(), request(openingDate, "84000.00", "CHF"));
+    LocalDate later = openingDate.plusDays(30);
+    recordSnapshot(token, vested.id(), later, "86500.00");
+
+    AccountValuation now = balance(token, vested.id());
+    assertThat(now.value()).isEqualByComparingTo("86500.00");
+    assertThat(now.valueSourceDate()).isEqualTo(later);
+    // As of a day between the two, the opening balance is still the latest figure.
+    AccountValuation between = balance(token, vested.id(), later.minusDays(1));
+    assertThat(between.value()).isEqualByComparingTo("84000.00");
+    assertThat(between.valueSourceDate()).isEqualTo(openingDate);
+    // Before anything was recorded, nothing is known.
+    assertThat(balance(token, vested.id(), openingDate.minusDays(1)).valueKnown()).isFalse();
+    assertThat(netWorth(token).totalAssets()).isEqualByComparingTo("86500.00");
   }
 
   // --- AC: If-Match and currency -------------------------------------------------------------

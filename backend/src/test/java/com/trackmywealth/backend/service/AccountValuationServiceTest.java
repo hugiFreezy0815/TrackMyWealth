@@ -77,7 +77,7 @@ class AccountValuationServiceTest {
   void setUp() {
     account = account("ASSET");
     when(accountCurrencyService.ownCurrency(any())).thenReturn("CHF");
-    when(accountDataQualityService.warningsFor(any())).thenReturn(List.of());
+    when(accountDataQualityService.warningsFor(any(Account.class), any())).thenReturn(List.of());
     when(businessDateService.today()).thenReturn(TODAY);
     when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(any()))
         .thenReturn(Optional.empty());
@@ -162,12 +162,81 @@ class AccountValuationServiceTest {
   @Test
   void theAccountsWarningsTravelWithItsValuationKnownOrNot() {
     List<String> warnings = List.of(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
-    when(accountDataQualityService.warningsFor(account.getId())).thenReturn(warnings);
-
-    assertThat(service.valueIn(account, "CHF", TODAY).warnings()).isEqualTo(warnings);
+    when(accountDataQualityService.warningsFor(account, OPENING_DATE)).thenReturn(warnings);
     withOpeningBalance("1.00");
     withLedgerAfterOpening(TODAY, null);
+
+    // Known on the date, unknown before it - the warnings are the same either way.
     assertThat(service.valueIn(account, "CHF", TODAY).warnings()).isEqualTo(warnings);
+    assertThat(service.valueIn(account, "CHF", OPENING_DATE.minusDays(1)).warnings())
+        .isEqualTo(warnings);
+  }
+
+  @Test
+  void theOpeningBalanceIsReadOnceAndAWarningNeedsNoSecondLookup() {
+    withOpeningBalance("1.00");
+    withLedgerAfterOpening(TODAY, null);
+
+    service.valueIn(account, "CHF", TODAY);
+
+    verify(snapshotRepository, times(1)).findByAccountIdAndOpeningBalanceTrue(account.getId());
+    verify(accountDataQualityService).warningsFor(account, OPENING_DATE);
+    verify(accountDataQualityService, never()).warningsFor(any(UUID.class));
+  }
+
+  @Test
+  void aLoanOrCustomAssetIsNeverLookedUpForAnOpeningBalance() {
+    account.setHasAmortisation(true);
+
+    service.valueIn(account, "CHF", TODAY);
+
+    verify(snapshotRepository, never()).findByAccountIdAndOpeningBalanceTrue(any());
+    verify(accountDataQualityService).warningsFor(account, null);
+  }
+
+  @Test
+  void anAccountWithoutALedgerIsWorthItsLatestSnapshotWithThatSnapshotsDate() {
+    account.setHasTransactions(false);
+    LocalDate snapshotDate = TODAY.minusMonths(3);
+    AccountSnapshot latest = snapshot(snapshotDate, "91000.00");
+    when(snapshotRepository
+            .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+                account.getId(), TODAY))
+        .thenReturn(Optional.of(latest));
+    withOpeningBalance("84000.00");
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.valueKnown()).isTrue();
+    assertThat(valuation.value()).isEqualByComparingTo("91000.00");
+    assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LATEST_SNAPSHOT);
+    assertThat(valuation.valueSourceDate()).isEqualTo(snapshotDate);
+    verify(transactionRepository, never()).sumAmountByAccountIdBookedAfter(any(), any(), any());
+  }
+
+  @Test
+  void anAccountWithoutALedgerAndWithoutASnapshotByThenIsUnknown() {
+    account.setHasTransactions(false);
+    when(snapshotRepository
+            .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+                any(), any()))
+        .thenReturn(Optional.empty());
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.valueKnown()).isFalse();
+    assertThat(valuation.valueSourceDate()).isNull();
+  }
+
+  @Test
+  void anAccountWithoutALedgerThatHoldsPositionsStaysUnknown() {
+    account.setHasTransactions(false);
+    account.setHoldsPositions(true);
+
+    assertThat(service.valueIn(account, "CHF", TODAY).valueKnown()).isFalse();
+    verify(snapshotRepository, never())
+        .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+            any(), any());
   }
 
   @Test
@@ -204,6 +273,14 @@ class AccountValuationServiceTest {
     snapshot.setOpeningBalance(true);
     when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId()))
         .thenReturn(Optional.of(snapshot));
+  }
+
+  private AccountSnapshot snapshot(LocalDate date, String balance) {
+    AccountSnapshot snapshot = new AccountSnapshot();
+    snapshot.setAccount(account);
+    snapshot.setSnapshotDate(date);
+    snapshot.setBalance(new BigDecimal(balance));
+    return snapshot;
   }
 
   private void withLedgerAfterOpening(LocalDate asOf, String sum) {

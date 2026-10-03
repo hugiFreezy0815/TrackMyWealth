@@ -46,6 +46,10 @@ import java.util.UUID;
  *     LEDGER_EMPTY} (an assumed zero) and {@code ORIGINAL_PRINCIPAL} (not the current outstanding
  *     balance) are approximations a client should surface as such, see {@link
  *     ValueBasisValues#isApproximate}
+ * @param valueSourceDate the date of the observation {@code value} rests on - the snapshot's date
+ *     for {@code LATEST_SNAPSHOT}, the valuation's date for {@code MANUAL_VALUATION} - so a client
+ *     can show how old it is; {@code null} for a value derived from the ledger or the loan terms,
+ *     and when {@code valueKnown} is {@code false}
  * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), empty
  *     when there are none - independent of {@code valueKnown}, a client shows them on the account
  *     (PR-011, FR-CON-007)
@@ -63,6 +67,7 @@ public record AccountValuation(
     boolean conversionRateStale,
     boolean valueKnown,
     String valueBasis,
+    LocalDate valueSourceDate,
     List<String> warnings) {
 
   public AccountValuation {

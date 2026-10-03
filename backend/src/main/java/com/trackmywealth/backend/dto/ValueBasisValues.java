@@ -28,6 +28,14 @@ public final class ValueBasisValues {
    */
   public static final String LEDGER_FROM_OPENING_BALANCE = "LEDGER_FROM_OPENING_BALANCE";
 
+  /**
+   * The latest snapshot balance on or before the as-of date - the opening balance included - for an
+   * account without a ledger ({@code hasTransactions = false}, e.g. {@code VESTED_BENEFITS}), whose
+   * snapshots are the only record of its value (#232 review). {@code AccountValuation
+   * .valueSourceDate} says how old it is.
+   */
+  public static final String LATEST_SNAPSHOT = "LATEST_SNAPSHOT";
+
   /** The latest manually recorded valuation on or before the as-of date ({@code CUSTOM_ASSET}). */
   public static final String MANUAL_VALUATION = "MANUAL_VALUATION";
 
