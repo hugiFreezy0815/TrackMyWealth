@@ -251,8 +251,12 @@ class AccountValuationServiceTest {
         .isEqualByComparingTo("9000.00");
     assertThat(service.getBalance(account.getId(), asOf, ACTOR).value())
         .isEqualByComparingTo("9750.00");
+    assertThat(service.getBalance(account.getId(), TODAY, ACTOR).value())
+        .isEqualByComparingTo("9000.00");
+    // Today's balance needs BALANCE_ONLY; a past one READ (#241 review).
     verify(accessControlService, times(2))
         .requireAccountAccess(ACTOR, account, AccessLevelValues.BALANCE_ONLY);
+    verify(accessControlService).requireAccountAccess(ACTOR, account, AccessLevelValues.READ);
   }
 
   @Test

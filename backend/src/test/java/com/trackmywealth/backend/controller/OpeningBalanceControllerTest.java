@@ -733,6 +733,14 @@ class OpeningBalanceControllerTest {
 
     grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.BALANCE_ONLY);
     assertThat(balance(memberToken, cash.id()).value()).isEqualByComparingTo("1000.00");
+    assertThat(balance(memberToken, cash.id(), today()).value()).isEqualByComparingTo("1000.00");
+    // A past balance needs READ: consecutive days' balances would reveal the day's transactions.
+    client(memberToken)
+        .get()
+        .uri("/api/v1/accounts/" + cash.id() + "/balance?asOf=" + openingDate)
+        .exchange()
+        .expectStatus()
+        .isNotFound();
     client(memberToken)
         .get()
         .uri(openingBalanceUri(cash.id()))
@@ -760,6 +768,8 @@ class OpeningBalanceControllerTest {
         .jsonPath("$.code")
         .isEqualTo(ApiErrorCode.NOT_FOUND);
     grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.READ);
+    // READ may read a past balance (unknown here: no opening balance yet), BALANCE_ONLY may not.
+    assertThat(balance(memberToken, cash.id(), openingDate).valueKnown()).isFalse();
     record(memberToken, cash.id(), request(openingDate, "1.00", "CHF"))
         .expectStatus()
         .isNotFound(); // no hint the account exists, as for snapshots

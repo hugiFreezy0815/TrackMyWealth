@@ -214,6 +214,9 @@ value(D) = opening balance + Σ amount of live ledger rows with  opening date < 
   is not added again. Only rows booked later are.
 - **Before the opening date the value is unknown, not zero** (PR-011): `valueKnown = false` for any
   read with `asOf` earlier than the opening date (`GET .../balance?asOf=`).
+- **A past balance needs `READ`.** Today's balance is visible at `BALANCE_ONLY`; a read with
+  `asOf` before today needs `READ` on the account, because balances on consecutive days differ by
+  that day's transactions, which a `BALANCE_ONLY` grant does not show (#241 review).
 - **Rows before the opening date are left out.** They predate the starting point. Recording an
   opening balance after existing live rows is refused (409 `OPENING_BALANCE_AFTER_FIRST_TRANSACTION`,
   with their count and earliest booking date) unless the member confirms

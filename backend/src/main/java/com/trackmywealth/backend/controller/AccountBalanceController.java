@@ -19,7 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
  * every account type with a value source will have, not something only the ledger endpoints own.
  *
  * <p>US-25-04: an optional {@code asOf} (ISO date, not in the future) reads the balance as it stood
- * on that day - before an account's opening balance, it is unknown, not zero.
+ * on that day - before an account's opening balance, it is unknown, not zero. A past date needs
+ * {@code READ}, not just {@code BALANCE_ONLY}: balances on consecutive days reveal the transactions
+ * between them.
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/balance")

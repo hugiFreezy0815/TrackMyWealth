@@ -104,16 +104,20 @@ public class AccountValuationService {
 
   /**
    * US-09-01/FR-CC-001/003: the account's balance in its own currency as of {@code asOf} (today
-   * when {@code null}) - for a credit card, the outstanding amount owed, a {@code LIABILITY}. Gated
-   * at {@code BALANCE_ONLY} (US-03-03), the weakest level that may see a figure at all. A date in
+   * when {@code null}) - for a credit card, the outstanding amount owed, a {@code LIABILITY}. The
+   * current balance is gated at {@code BALANCE_ONLY} (US-03-03), the weakest level that may see a
+   * figure at all. A past date needs {@code READ}: two consecutive days' balances differ by that
+   * day's transactions, which a {@code BALANCE_ONLY} grant must not reveal (#241 review). A date in
    * the future is a 422: a balance is recorded history, not a forecast.
    */
   @Transactional(readOnly = true)
   public AccountValuation getBalance(
       UUID accountId, LocalDate asOf, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.BALANCE_ONLY);
     LocalDate today = businessDateService.today();
+    boolean historical = asOf != null && asOf.isBefore(today);
+    accessControlService.requireAccountAccess(
+        actor, account, historical ? AccessLevelValues.READ : AccessLevelValues.BALANCE_ONLY);
     if (asOf != null && asOf.isAfter(today)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "asOf cannot be in the future.");
