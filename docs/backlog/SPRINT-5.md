@@ -8,15 +8,15 @@ The issues hold the full story text, design and Definition of Done; this file is
 balance from a dated opening balance. Workspace totals use one agreed workspace currency, and the
 mobile app can sign in.
 
-**Starting point (2026-10-02):** sprint 4 is done except #187 (merge gate, in progress in PR #228,
-stays in sprint 4). EPIC 01-09, most of 28/29 and US-06-04 (ECB FX import) are on `main`. Latest
+**Starting point (2026-10-03):** sprint 4 is done (#187, the merge gate, closed 2026-10-03). EPIC 01-09, most of 28/29 and US-06-04 (ECB FX import) are on `main`. Latest
 migration is V57. The import tables (V15) and `account_snapshot.is_opening_balance` (V11) exist
 but no code uses them. Every cash, savings and depot account is still `valueKnown = false`.
 
-## Committed (6 stories + 1 analysis spike)
+## Committed (6 stories + 1 analysis spike + 1 build fix)
 
 | Issue | Story | Pri | Size | Blocked by |
 |---|---|---|---|---|
+| #237 | BUILD: pin CI runners to `ubuntu-24.04`; **day 1, merged by 2026-10-16** (`ubuntu-latest` moves to Ubuntu 26 on 2026-10-19) | SHOULD | S | - |
 | #238 | SPIKE: which sample documents create the container details, which import transactions/positions (2-day time box) | MUST | S | - |
 | #229 | US-07-03 CSV import templates: model, versioning, fingerprint, parser engine | MUST | M | - |
 | #230 | US-07-04 Upload, preview with duplicate detection, commit | MUST | L | #229 (parser interface) |
@@ -27,6 +27,7 @@ but no code uses them. Every cash, savings and depot account is still `valueKnow
 
 Suggested order and parallel tracks:
 
+- **Build:** #237 on day 1, before anything else merges against the moving runner image.
 - **Import track:** days 1-2, the spike #238 analyses the local samples (structure only) and confirms or amends #229/#230's template scope. In parallel, agree the parser interface between #229 and #230. #230 then builds
   upload/preview against a stub parser while #229 finishes. Commit/dedup-under-lock is #230's
   second PR. #231 follows in week 2.
