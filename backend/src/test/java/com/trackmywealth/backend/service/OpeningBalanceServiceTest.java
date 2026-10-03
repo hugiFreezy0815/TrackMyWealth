@@ -67,6 +67,7 @@ class OpeningBalanceServiceTest {
           accountCurrencyService,
           accountDataQualityService,
           new VersionPreconditionService(),
+          mock(ReconciliationService.class),
           Clock.fixed(Instant.parse("2026-10-03T10:00:00Z"), ZoneOffset.UTC));
 
   private Account account;

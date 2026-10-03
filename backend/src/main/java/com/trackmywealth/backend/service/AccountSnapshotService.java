@@ -81,6 +81,7 @@ public class AccountSnapshotService {
   private final SecurityRepository securityRepository;
   private final VersionPreconditionService versionPreconditionService;
   private final AccountCurrencyService accountCurrencyService;
+  private final ReconciliationService reconciliationService;
   private final Clock clock;
 
   public AccountSnapshotService(
@@ -92,6 +93,7 @@ public class AccountSnapshotService {
       SecurityRepository securityRepository,
       VersionPreconditionService versionPreconditionService,
       AccountCurrencyService accountCurrencyService,
+      ReconciliationService reconciliationService,
       Clock clock) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
@@ -101,6 +103,7 @@ public class AccountSnapshotService {
     this.securityRepository = securityRepository;
     this.versionPreconditionService = versionPreconditionService;
     this.accountCurrencyService = accountCurrencyService;
+    this.reconciliationService = reconciliationService;
     this.clock = clock;
   }
 
@@ -140,6 +143,7 @@ public class AccountSnapshotService {
     snapshot = snapshotRepository.saveAndFlush(snapshot);
 
     List<SnapshotHolding> holdings = saveHoldings(snapshot.getId(), request.holdings());
+    reconciliationService.reconcileLatest(account);
     return toResponse(snapshot, holdings, securities);
   }
 
@@ -183,6 +187,7 @@ public class AccountSnapshotService {
 
     holdingRepository.deleteBySnapshotId(snapshotId);
     List<SnapshotHolding> holdings = saveHoldings(snapshotId, request.holdings());
+    reconciliationService.reconcileLatest(account);
     return toResponse(snapshot, holdings, securities);
   }
 

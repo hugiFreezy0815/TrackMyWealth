@@ -115,6 +115,7 @@ public class AccountService {
   private final AccountVestedBenefitsRepository accountVestedBenefitsRepository;
   private final AccountCustomAssetRepository accountCustomAssetRepository;
   private final AccountDataQualityService accountDataQualityService;
+  private final ReconciliationService reconciliationService;
 
   public AccountService(
       WorkspaceAccessService workspaceAccessService,
@@ -133,7 +134,8 @@ public class AccountService {
       AccountPensionRepository accountPensionRepository,
       AccountVestedBenefitsRepository accountVestedBenefitsRepository,
       AccountCustomAssetRepository accountCustomAssetRepository,
-      AccountDataQualityService accountDataQualityService) {
+      AccountDataQualityService accountDataQualityService,
+      ReconciliationService reconciliationService) {
     this.workspaceAccessService = workspaceAccessService;
     this.accessControlService = accessControlService;
     this.accountLookupService = accountLookupService;
@@ -151,6 +153,7 @@ public class AccountService {
     this.accountVestedBenefitsRepository = accountVestedBenefitsRepository;
     this.accountCustomAssetRepository = accountCustomAssetRepository;
     this.accountDataQualityService = accountDataQualityService;
+    this.reconciliationService = reconciliationService;
   }
 
   @Transactional
@@ -182,7 +185,7 @@ public class AccountService {
     createExtensionRowIfNeeded(account, request);
     assignInitialOwnershipToCreator(account, actor);
 
-    return toSummary(account);
+    return toSummary(account, actor);
   }
 
   // US-03-03: see this class's own Javadoc for why this exists - share 1.0, effective today,
@@ -210,7 +213,7 @@ public class AccountService {
   public AccountSummaryResponse getAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.BALANCE_ONLY);
-    return toSummary(account);
+    return toSummary(account, actor);
   }
 
   // US-05-02: full-replacement update over the account's ordinary mutable attributes (see
@@ -247,7 +250,7 @@ public class AccountService {
     // inside this method, rather than deferred to end-of-transaction commit.
     account = accountRepository.saveAndFlush(account);
 
-    return toSummary(account);
+    return toSummary(account, actor);
   }
 
   // US-05-03/FR-STA-001: ACTIVE -> ARCHIVED is the only transition out of ACTIVE this method
@@ -275,7 +278,7 @@ public class AccountService {
     account.setArchivedAt(now());
     account = accountRepository.saveAndFlush(account);
 
-    return toSummary(account);
+    return toSummary(account, actor);
   }
 
   // US-05-03/FR-LIF-006: the 30-day restore window is enforced here, not just left to the UI to
@@ -306,7 +309,7 @@ public class AccountService {
     account.setArchivedAt(null);
     account = accountRepository.saveAndFlush(account);
 
-    return toSummary(account);
+    return toSummary(account, actor);
   }
 
   // US-04-04/FR-INS-009/C2: moves the account to a different container - the FK update is the
@@ -363,7 +366,7 @@ public class AccountService {
     account.setFinancialInstitution(destination);
     account = accountRepository.saveAndFlush(account);
 
-    return toSummary(account);
+    return toSummary(account, actor);
   }
 
   private OffsetDateTime now() {
@@ -562,7 +565,7 @@ public class AccountService {
     }
   }
 
-  private AccountSummaryResponse toSummary(Account account) {
+  private AccountSummaryResponse toSummary(Account account, AuthenticatedUserPrincipal actor) {
     return new AccountSummaryResponse(
         account.getId(),
         account.getFinancialInstitution().getId(),
@@ -582,6 +585,7 @@ public class AccountService {
         account.getArchivedAt(),
         VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE),
         // PR-011/FR-CON-007: the warning is shown on the account, not only on its figures.
-        accountDataQualityService.warningsFor(account.getId()));
+        accountDataQualityService.warningsFor(account.getId()),
+        reconciliationService.status(account, actor));
   }
 }

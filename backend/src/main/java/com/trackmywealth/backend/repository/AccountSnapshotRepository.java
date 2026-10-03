@@ -36,6 +36,17 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
       findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
           UUID accountId, LocalDate asOf);
 
+  // US-25-02: the newest observed balance, excluding the synthetic opening-balance starting point.
+  Optional<AccountSnapshot>
+      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+          UUID accountId);
+
+  // US-25-02: the observed balance immediately before a snapshot, used to bound best-effort cause
+  // classification to the period that can have introduced the difference.
+  Optional<AccountSnapshot>
+      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndSnapshotDateLessThanOrderBySnapshotDateDescCreatedAtDesc(
+          UUID accountId, LocalDate snapshotDate);
+
   // Replacing a snapshot deletes and re-inserts its holdings; the row lock keeps two concurrent
   // replacements from interleaving into a mix of both holding sets.
   @Lock(LockModeType.PESSIMISTIC_WRITE)

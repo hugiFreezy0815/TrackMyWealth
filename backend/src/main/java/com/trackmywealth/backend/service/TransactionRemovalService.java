@@ -78,6 +78,7 @@ public class TransactionRemovalService {
   private final BusinessDateService businessDateService;
   private final Clock clock;
   private final VersionPreconditionService versionPreconditionService;
+  private final ReconciliationService reconciliationService;
 
   public TransactionRemovalService(
       AccountLookupService accountLookupService,
@@ -90,7 +91,8 @@ public class TransactionRemovalService {
       CategorizationService categorizationService,
       BusinessDateService businessDateService,
       Clock clock,
-      VersionPreconditionService versionPreconditionService) {
+      VersionPreconditionService versionPreconditionService,
+      ReconciliationService reconciliationService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -102,6 +104,7 @@ public class TransactionRemovalService {
     this.businessDateService = businessDateService;
     this.clock = clock;
     this.versionPreconditionService = versionPreconditionService;
+    this.reconciliationService = reconciliationService;
   }
 
   /**
@@ -166,6 +169,7 @@ public class TransactionRemovalService {
     // Match dissolution may have changed the rows again; flush so every returned version - and
     // the ETag - is the one stored, not one Hibernate would only write at commit.
     transactionRepository.flush();
+    reconcileAfterLedgerChanges(affected);
     return new TransactionRemovalResponse(
         removal,
         VersionPreconditionService.persistedVersion(
@@ -476,6 +480,7 @@ public class TransactionRemovalService {
     for (Account account : accounts.values()) {
       settlementDetectionService.detectAfterWrite(account, earliest);
       transferDetectionService.detectAfterWrite(account, earliest);
+      reconciliationService.reconcileAfterLedgerChange(account, earliest);
     }
   }
 
@@ -528,6 +533,23 @@ public class TransactionRemovalService {
           HttpStatus.CONFLICT,
           "This transaction was corrected and cannot be restored; its replacement is the current"
               + " entry.");
+    }
+  }
+
+  // A removal may affect several accounts (a two-sided transfer). Reconcile each once, from the
+  // earliest booking date changed on that account, so every snapshot at or after it is refreshed.
+  private void reconcileAfterLedgerChanges(List<Transaction> rows) {
+    Map<UUID, Account> accounts = new LinkedHashMap<>();
+    Map<UUID, LocalDate> earliestByAccount = new LinkedHashMap<>();
+    for (Transaction row : rows) {
+      UUID accountId = row.getAccount().getId();
+      accounts.putIfAbsent(accountId, row.getAccount());
+      earliestByAccount.merge(
+          accountId, row.getBookingDate(), (left, right) -> left.isBefore(right) ? left : right);
+    }
+    for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
+      reconciliationService.reconcileAfterLedgerChange(
+          entry.getValue(), earliestByAccount.get(entry.getKey()));
     }
   }
 

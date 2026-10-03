@@ -9,6 +9,7 @@ import java.util.UUID;
  *
  * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), empty
  *     when there are none (PR-011, FR-CON-007)
+ * @param reconciliation the account's current cash reconciliation signal (US-25-02)
  */
 public record AccountSummaryResponse(
     UUID id,
@@ -28,7 +29,8 @@ public record AccountSummaryResponse(
     String status,
     OffsetDateTime archivedAt,
     int version,
-    List<String> warnings) {
+    List<String> warnings,
+    ReconciliationStatusResponse reconciliation) {
 
   public AccountSummaryResponse {
     // Defensive/immutable copy (SpotBugs EI_EXPOSE_REP).

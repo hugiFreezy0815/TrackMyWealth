@@ -169,6 +169,7 @@ public class TransactionService {
   private final String fxDefaultSource;
   private final VersionPreconditionService versionPreconditionService;
   private final AccountDataQualityService accountDataQualityService;
+  private final ReconciliationService reconciliationService;
 
   public TransactionService(
       AccountLookupService accountLookupService,
@@ -185,7 +186,8 @@ public class TransactionService {
       ObjectMapper objectMapper,
       @Value("${app.fx.default-source}") String fxDefaultSource,
       VersionPreconditionService versionPreconditionService,
-      AccountDataQualityService accountDataQualityService) {
+      AccountDataQualityService accountDataQualityService,
+      ReconciliationService reconciliationService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -201,6 +203,7 @@ public class TransactionService {
     this.fxDefaultSource = fxDefaultSource;
     this.versionPreconditionService = versionPreconditionService;
     this.accountDataQualityService = accountDataQualityService;
+    this.reconciliationService = reconciliationService;
   }
 
   /**
@@ -378,6 +381,10 @@ public class TransactionService {
     // just completed a settlement pair or an own-account transfer.
     settlementDetectionService.detectAfterWrite(account, request.bookingDate());
     transferDetectionService.detectAfterWrite(account, request.bookingDate());
+    reconciliationService.reconcileAfterLedgerChange(account, request.bookingDate());
+    if (counterparty != null) {
+      reconciliationService.reconcileAfterLedgerChange(counterparty, request.bookingDate());
+    }
     return toResponse(saved, assignedBy.orElse(null));
   }
 

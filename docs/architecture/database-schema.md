@@ -63,6 +63,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V57` | `transaction`'s currency-in-use trigger reads `NEW.currency` directly instead of serialising the row (#223 review) |
 | `V58` | Opening balances: `uq_account_snapshot_opening_balance` (at most one per account), `chk_account_snapshot_opening_balance_manual`, and the snapshot currency guard now expects a credit card's `billing_currency` (#232) |
 | `V59` | `workspace.currency`: the workspace's display currency for workspace-level totals, backfilled from the oldest login member's reporting currency (#224). V58 is left to #232 (opening balance) |
+| `V60` | Cash reconciliation: at most one account-level `reconciliation_result` per snapshot; security-level rows remain available for later holdings reconciliation (#234) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -304,6 +305,31 @@ An account's dated opening balance (FR-REC-007) is its one `account_snapshot` wi
 - **Not recorded yet.** A read, replace or delete without one is a 404
   `OPENING_BALANCE_NOT_RECORDED`, only ever after the account access check; an account the caller
   cannot see stays a plain `NOT_FOUND`.
+
+
+### Cash reconciliation (US-25-02)
+
+The newest non-opening `account_snapshot` with a balance is the observed provider/member figure
+against which the cash ledger is reconciled. The engine writes an account-level
+`reconciliation_result` (`affected_security_id IS NULL`) only when the two figures differ; V60's
+partial unique index `uq_reconciliation_result_snapshot_cash` guarantees one such result per
+snapshot without constraining the later per-security reconciliation rows.
+
+- **Derived side.** The same US-25-04 convention is used: opening balance plus live ledger rows with
+  `opening_date < booking_date <= snapshot_date`; liabilities invert the cash-direction ledger
+  sign. Without an opening balance at or before the snapshot, there is no comparison and the API
+  reports `NOT_RECONCILABLE / NO_OPENING_BALANCE`.
+- **State.** A non-zero difference is `OPEN`; exact agreement creates no row, or changes that
+  snapshot's existing `OPEN` row to `RESOLVED`, keeping its `difference_amount` and
+  `probable_cause` as history. Reconciling locks the snapshot row first, so two concurrent ledger
+  writes on one account update one result instead of colliding on the unique index. A newer snapshot changes older open results to
+  `SUPERSEDED`. Future `ACCEPTED`/`DISMISSED` member decisions (US-25-03) are not silently
+  overwritten by automatic reconciliation.
+- **Cash scope.** This story reconciles transaction-backed accounts that do not hold positions.
+  Holdings accounts and ledger-less accounts remain `NOT_RECONCILABLE / CASH_SCOPE_NOT_APPLICABLE`
+  until the investment reconciliation slice lands.
+- **Isolation.** `reconciliation_result` already carries `workspace_id` and is under V20's
+  ENABLE + FORCE RLS policy. Cross-tenant coverage explicitly exercises the table.
 
 ### Category taxonomy: shared defaults, workspace customisation (US-08-04)
 
