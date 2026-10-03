@@ -18,7 +18,30 @@
 --    snapshot - its opening balance first of all - is compared against, and added to, that
 --    ledger, so it must be in the billing currency. account_credit_card.billing_currency is only
 --    written when the card is created, so a stored snapshot cannot drift out of step with it.
+--
+-- 4. Before 3 takes effect: a card snapshot recorded under V33's rule while the card's two
+--    currencies differ is in its native currency - a figure V58's rule would compare against the
+--    billing-currency ledger under the wrong label, and that a replace would then refuse. There
+--    is no rate to convert it with, and guessing which currency the member meant would be a
+--    silent correction (PR-011), so the migration stops and names those snapshots instead. Fix:
+--    delete them (or re-record them in the billing currency) before upgrading. No row exists in
+--    practice: a card's two currencies rarely differ, and snapshots exist since V33 only.
 -- =============================================================================================
+
+DO $$
+DECLARE
+    mismatched TEXT;
+BEGIN
+    SELECT string_agg(snapshot.id::TEXT, ', ' ORDER BY snapshot.id) INTO mismatched
+    FROM account_snapshot AS snapshot
+    INNER JOIN account_credit_card AS card ON snapshot.account_id = card.account_id
+    WHERE snapshot.currency IS DISTINCT FROM card.billing_currency;
+    IF mismatched IS NOT NULL THEN
+        RAISE EXCEPTION 'account_snapshot_card_currency: credit-card snapshots % are in the card''s native currency, not its billing currency (V58, US-09-04). Delete them, or re-record them in the billing currency, then restart.',
+            mismatched USING ERRCODE = '23514';
+    END IF;
+END;
+$$;
 
 CREATE UNIQUE INDEX uq_account_snapshot_opening_balance
 ON account_snapshot (account_id)
