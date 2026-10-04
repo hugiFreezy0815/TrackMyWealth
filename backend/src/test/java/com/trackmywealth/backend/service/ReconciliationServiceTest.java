@@ -41,6 +41,8 @@ class ReconciliationServiceTest {
 
   private static final LocalDate OPENING_DATE = LocalDate.of(2026, 1, 1);
   private static final LocalDate SNAPSHOT_DATE = LocalDate.of(2026, 9, 30);
+  private static final OffsetDateTime OPENING_STATED_AT =
+      OffsetDateTime.parse("2026-02-01T09:00:00Z");
   private static final AuthenticatedUserPrincipal ACTOR =
       new AuthenticatedUserPrincipal(
           UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID(), "EN");
@@ -84,7 +86,7 @@ class ReconciliationServiceTest {
             account.getId(), "OPEN"))
         .thenReturn(List.of());
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, SNAPSHOT_DATE))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("2300.00")));
     when(accessControlService.accountAccessLevel(ACTOR, account))
         .thenReturn(AccessLevelValues.FULL);
@@ -113,7 +115,7 @@ class ReconciliationServiceTest {
     when(resultRepository.findBySnapshotIdAndAffectedSecurityIdIsNull(snapshot.getId()))
         .thenReturn(Optional.of(existing));
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, SNAPSHOT_DATE))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("2345.67")));
 
     service.reconcileLatest(account, ACTOR.userId());
@@ -179,7 +181,7 @@ class ReconciliationServiceTest {
     ReflectionTestUtils.setField(account, "nature", "LIABILITY");
     snapshot.setBalance(new BigDecimal("12300.00"));
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, SNAPSHOT_DATE))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("-2320.00")));
     when(transactionRepository.existsDuplicateEntrySignature(
             eq(account.getId()), eq(OPENING_DATE), eq(SNAPSHOT_DATE), amountOf("-20.00")))
@@ -200,7 +202,7 @@ class ReconciliationServiceTest {
     ReflectionTestUtils.setField(account, "nature", "LIABILITY");
     snapshot.setBalance(new BigDecimal("12315.00"));
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, SNAPSHOT_DATE))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("-2300.00")));
 
     service.reconcileLatest(account, ACTOR.userId());
@@ -286,10 +288,13 @@ class ReconciliationServiceTest {
 
   @Test
   void anAcceptedDifferenceStandsWhileItsAdjustmentClosesTheGap() {
-    ReconciliationResult accepted = decided("ACCEPTED", "45.67", UUID.randomUUID());
+    UUID adjustmentId = UUID.randomUUID();
+    ReconciliationResult accepted = decided("ACCEPTED", "45.67", adjustmentId);
+    when(transactionRepository.findById(adjustmentId))
+        .thenReturn(Optional.of(adjustment(SNAPSHOT_DATE, OPENING_STATED_AT.plusDays(1))));
     // Opening 10000.00 + ledger 2345.67 (2300.00 + the 45.67 adjustment) = snapshot 12345.67.
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, SNAPSHOT_DATE))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("2345.67")));
 
     service.reconcileLatest(account, ACTOR.userId());
@@ -297,6 +302,33 @@ class ReconciliationServiceTest {
     assertThat(accepted.getStatus()).isEqualTo("ACCEPTED");
     verify(transactionRepository, never()).findByIdForUpdate(any());
     verify(resultRepository, never()).saveAndFlush(any());
+  }
+
+  @Test
+  void anOpeningBalanceStatedAgainOnItsDateOvertakesTheAdjustmentThere() {
+    // A provider snapshot on the opening date was accepted; the member then enters the opening
+    // balance again on that date. The new figure contains the correction, so the adjustment no
+    // longer counts (sumAmountByAccountIdBookedAfter) and the account agrees without it: the
+    // acceptance is overtaken like by a booked missing row, and the entry is withdrawn.
+    snapshot.setSnapshotDate(OPENING_DATE);
+    snapshot.setBalance(new BigDecimal("10045.67"));
+    opening.setBalance(new BigDecimal("10045.67"));
+    opening.setUpdatedAt(OPENING_STATED_AT.plusDays(2));
+    UUID adjustmentId = UUID.randomUUID();
+    ReconciliationResult accepted = decided("ACCEPTED", "45.67", adjustmentId);
+    Transaction adjustment = adjustment(OPENING_DATE, OPENING_STATED_AT.plusDays(1));
+    when(transactionRepository.findById(adjustmentId)).thenReturn(Optional.of(adjustment));
+    when(transactionRepository.findByIdForUpdate(adjustmentId)).thenReturn(Optional.of(adjustment));
+    when(transactionRepository.sumAmountByAccountIdBookedAfter(
+            account.getId(), OPENING_DATE, OPENING_STATED_AT.plusDays(2), OPENING_DATE))
+        .thenReturn(Optional.empty());
+
+    service.reconcileLatest(account, ACTOR.userId());
+
+    assertThat(adjustment.getDeletedAt()).isNotNull();
+    assertThat(adjustment.getDeletedBy()).isEqualTo(ACTOR.userId());
+    assertThat(accepted.getStatus()).isEqualTo("RESOLVED");
+    assertThat(accepted.getResolutionTransactionId()).isNull();
   }
 
   @Test
@@ -308,7 +340,7 @@ class ReconciliationServiceTest {
     // With the adjustment and the late 45.67 income the ledger is 45.67 too high; without the
     // withdrawn adjustment it agrees.
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, SNAPSHOT_DATE))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("2391.34")))
         .thenReturn(Optional.of(new BigDecimal("2345.67")));
 
@@ -350,7 +382,7 @@ class ReconciliationServiceTest {
         .thenReturn(Optional.of(new Transaction()));
     // An unrelated 5.00 expense after the accept: without the adjustment, 50.67 is missing.
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, SNAPSHOT_DATE))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("2340.67")))
         .thenReturn(Optional.of(new BigDecimal("2295.00")));
 
@@ -378,7 +410,7 @@ class ReconciliationServiceTest {
   void aDismissedDifferenceReopensWhenTheAmountChanges() {
     ReconciliationResult dismissed = decided("DISMISSED", "45.67", null);
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, SNAPSHOT_DATE))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("2305.67")));
 
     service.reconcileLatest(account, ACTOR.userId());
@@ -393,7 +425,7 @@ class ReconciliationServiceTest {
   void aDismissedDifferenceResolvesOnAgreement() {
     ReconciliationResult dismissed = decided("DISMISSED", "45.67", null);
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, SNAPSHOT_DATE))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("2345.67")));
 
     service.reconcileLatest(account, ACTOR.userId());
@@ -435,6 +467,14 @@ class ReconciliationServiceTest {
     return value;
   }
 
+  // A reconciliation adjustment booked on {@code bookingDate}, created at {@code createdAt}.
+  private static Transaction adjustment(LocalDate bookingDate, OffsetDateTime createdAt) {
+    Transaction value = new Transaction();
+    value.setBookingDate(bookingDate);
+    ReflectionTestUtils.setField(value, "createdAt", createdAt);
+    return value;
+  }
+
   private static BigDecimal amountOf(String expected) {
     return argThat(actual -> actual != null && actual.compareTo(new BigDecimal(expected)) == 0);
   }
@@ -458,6 +498,9 @@ class ReconciliationServiceTest {
     value.setBalance(new BigDecimal(balance));
     value.setCurrency("CHF");
     value.setOpeningBalance(openingBalance);
+    if (openingBalance) {
+      ReflectionTestUtils.setField(value, "createdAt", OPENING_STATED_AT);
+    }
     return value;
   }
 

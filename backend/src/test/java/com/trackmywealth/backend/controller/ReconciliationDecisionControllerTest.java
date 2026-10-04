@@ -622,27 +622,7 @@ class ReconciliationDecisionControllerTest {
     // A provider observation may legally share the opening-balance date because its source differs
     // from the MANUAL opening row. The reconciliation adjustment is deliberately dated to that
     // observation and must therefore be counted even though ordinary opening-date rows are not.
-    UUID snapshotId = UUID.randomUUID();
-    UUID resultId = UUID.randomUUID();
-    execute(
-        "INSERT INTO account_snapshot"
-            + " (id, workspace_id, account_id, snapshot_date, balance, currency, source,"
-            + " is_opening_balance, created_by)"
-            + " SELECT ?, a.workspace_id, a.id, ?, 10045.67, 'CHF', 'AGGREGATOR', false, u.id"
-            + " FROM account a CROSS JOIN app_user u"
-            + " WHERE a.id = ? AND u.email = 'admin@example.com'",
-        snapshotId,
-        OPENING_DATE,
-        cash.id());
-    execute(
-        "INSERT INTO reconciliation_result"
-            + " (id, workspace_id, account_id, snapshot_id, difference_amount, probable_cause,"
-            + " status)"
-            + " SELECT ?, a.workspace_id, a.id, ?, 45.67, 'UNKNOWN', 'OPEN'"
-            + " FROM account a WHERE a.id = ?",
-        resultId,
-        snapshotId,
-        cash.id());
+    UUID resultId = providerSnapshotWithOpenDifference(OPENING_DATE, "10045.67", "45.67");
 
     ReconciliationResultResponse open = result(resultId);
     ReconciliationResultResponse accepted = accept(open);
@@ -660,6 +640,55 @@ class ReconciliationDecisionControllerTest {
     assertThat(onlyResult().status()).isEqualTo("ACCEPTED");
     assertThat(account().reconciliation().status())
         .isEqualTo(ReconciliationStatusValues.RECONCILED);
+  }
+
+  @Test
+  void anOpeningBalanceStatedAgainOnTheAdjustmentsDateOvertakesTheAcceptance() {
+    UUID resultId = providerSnapshotWithOpenDifference(OPENING_DATE, "10045.67", "45.67");
+    UUID adjustment = adjustmentOf(accept(result(resultId)));
+
+    // The member enters the opening balance again on that date, now with the provider's figure.
+    // It contains the correction, so the adjustment must not count on top of it: the account
+    // agrees without it, and the acceptance is overtaken like by a booked missing row.
+    moveOpeningBalance(OPENING_DATE, "10045.67");
+
+    ReconciliationResultResponse resolved = result(resultId);
+    assertThat(resolved.status()).isEqualTo("RESOLVED");
+    assertThat(resolved.resolutionTransactionId()).isNull();
+    assertThat(
+            count(
+                "SELECT count(*) FROM transaction WHERE id = ? AND deleted_at IS NULL", adjustment))
+        .isZero();
+    assertThat(account().reconciliation().status())
+        .isEqualTo(ReconciliationStatusValues.RECONCILED);
+  }
+
+  @Test
+  void anOpeningBalanceMovedOntoAFinalizedAdjustmentsDateDoesNotCountItTwice() {
+    // An accepted provider statement, then a newer one that finalizes it.
+    UUID resultId = providerSnapshotWithOpenDifference(SNAPSHOT_DATE, "12345.67", "45.67");
+    UUID adjustment = adjustmentOf(accept(result(resultId)));
+    recordSnapshot(SNAPSHOT_DATE.plusDays(2), "12345.67");
+    assertThat(account().reconciliation().status())
+        .isEqualTo(ReconciliationStatusValues.RECONCILED);
+
+    // The member restarts the account from that statement's figure on its date. The new opening
+    // balance contains the adjustment; counting it again would put the account 45.67 off.
+    moveOpeningBalance(SNAPSHOT_DATE, "12345.67");
+
+    AccountSummaryResponse account = account();
+    assertThat(account.reconciliation().status()).isEqualTo(ReconciliationStatusValues.RECONCILED);
+    assertThat(account.warnings())
+        .doesNotContain(DataQualityWarningValues.OPEN_RECONCILIATION_DIFFERENCE);
+    assertThat(
+            count(
+                "SELECT count(*) FROM reconciliation_result WHERE account_id = ? AND status = 'OPEN'",
+                cash.id()))
+        .isZero();
+    // The finalized decision and its entry stay as history.
+    assertThat(result(resultId).status()).isEqualTo("ACCEPTED");
+    assertThat(adjustmentRow(adjustment).reconciliationAdjustment())
+        .isEqualTo(ReconciliationAdjustmentValues.FINALIZED);
   }
 
   @Test
@@ -1180,6 +1209,36 @@ class ReconciliationDecisionControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);
+  }
+
+  // A provider (AGGREGATOR) snapshot, which may share a date with the MANUAL opening balance, and
+  // its open result; the API records manual snapshots only. Returns the result's id.
+  private UUID providerSnapshotWithOpenDifference(
+      LocalDate date, String balance, String difference) {
+    UUID snapshotId = UUID.randomUUID();
+    UUID resultId = UUID.randomUUID();
+    execute(
+        "INSERT INTO account_snapshot"
+            + " (id, workspace_id, account_id, snapshot_date, balance, currency, source,"
+            + " is_opening_balance, created_by)"
+            + " SELECT ?, a.workspace_id, a.id, ?, ?, 'CHF', 'AGGREGATOR', false, u.id"
+            + " FROM account a CROSS JOIN app_user u"
+            + " WHERE a.id = ? AND u.email = 'admin@example.com'",
+        snapshotId,
+        date,
+        new BigDecimal(balance),
+        cash.id());
+    execute(
+        "INSERT INTO reconciliation_result"
+            + " (id, workspace_id, account_id, snapshot_id, difference_amount, probable_cause,"
+            + " status)"
+            + " SELECT ?, a.workspace_id, a.id, ?, ?, 'UNKNOWN', 'OPEN'"
+            + " FROM account a WHERE a.id = ?",
+        resultId,
+        snapshotId,
+        new BigDecimal(difference),
+        cash.id());
+    return resultId;
   }
 
   private void moveOpeningBalance(LocalDate date, String balance) {

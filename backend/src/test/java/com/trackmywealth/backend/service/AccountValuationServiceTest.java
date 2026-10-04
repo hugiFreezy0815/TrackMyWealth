@@ -23,6 +23,7 @@ import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,6 +44,8 @@ class AccountValuationServiceTest {
 
   private static final LocalDate TODAY = LocalDate.of(2026, 10, 3);
   private static final LocalDate OPENING_DATE = LocalDate.of(2024, 10, 1);
+  private static final OffsetDateTime OPENING_STATED_AT =
+      OffsetDateTime.parse("2026-02-01T09:00:00Z");
   private static final AuthenticatedUserPrincipal ACTOR =
       new AuthenticatedUserPrincipal(
           UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID(), "EN");
@@ -118,7 +121,7 @@ class AccountValuationServiceTest {
   void withNoRowsAfterTheOpeningDateTheValueIsTheOpeningBalance() {
     withOpeningBalance("84000.00");
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, TODAY))
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, TODAY))
         .thenReturn(Optional.empty());
 
     assertThat(service.valueIn(account, "CHF", TODAY).value()).isEqualByComparingTo("84000.00");
@@ -157,7 +160,8 @@ class AccountValuationServiceTest {
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
 
     assertThat(valuation.valueKnown()).isFalse();
-    verify(transactionRepository, never()).sumAmountByAccountIdBookedAfter(any(), any(), any());
+    verify(transactionRepository, never())
+        .sumAmountByAccountIdBookedAfter(any(), any(), any(), any());
   }
 
   @Test
@@ -196,6 +200,7 @@ class AccountValuationServiceTest {
     opening.setSnapshotDate(OPENING_DATE);
     opening.setBalance(new BigDecimal("10000.00"));
     opening.setOpeningBalance(true);
+    ReflectionTestUtils.setField(opening, "createdAt", OPENING_STATED_AT);
     // Only the accounts that can take one are looked up - not the loan.
     when(snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(
             List.of(withOpening.getId(), withoutOpening.getId())))
@@ -244,7 +249,8 @@ class AccountValuationServiceTest {
     assertThat(valuation.value()).isEqualByComparingTo("91000.00");
     assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LATEST_SNAPSHOT);
     assertThat(valuation.valueSourceDate()).isEqualTo(snapshotDate);
-    verify(transactionRepository, never()).sumAmountByAccountIdBookedAfter(any(), any(), any());
+    verify(transactionRepository, never())
+        .sumAmountByAccountIdBookedAfter(any(), any(), any(), any());
   }
 
   @Test
@@ -308,6 +314,7 @@ class AccountValuationServiceTest {
     snapshot.setSnapshotDate(OPENING_DATE);
     snapshot.setBalance(new BigDecimal(balance));
     snapshot.setOpeningBalance(true);
+    ReflectionTestUtils.setField(snapshot, "createdAt", OPENING_STATED_AT);
     when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId()))
         .thenReturn(Optional.of(snapshot));
   }
@@ -321,7 +328,8 @@ class AccountValuationServiceTest {
   }
 
   private void withLedgerAfterOpening(LocalDate asOf, String sum) {
-    when(transactionRepository.sumAmountByAccountIdBookedAfter(account.getId(), OPENING_DATE, asOf))
+    when(transactionRepository.sumAmountByAccountIdBookedAfter(
+            account.getId(), OPENING_DATE, OPENING_STATED_AT, asOf))
         .thenReturn(Optional.ofNullable(sum).map(BigDecimal::new));
   }
 

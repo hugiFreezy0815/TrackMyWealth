@@ -216,7 +216,8 @@ value(D) = opening balance + Σ amount of live ledger rows with  opening date < 
 
 - **The opening date's own rows are contained in the balance.** The balance is the account's
   balance at the *end* of the opening date, as a statement prints it, so a row booked on that date
-  is not added again. Only rows booked later are.
+  is not added again. Only rows booked later are - and a reconciliation adjustment on that date
+  booked after the opening balance was last stated (see *Reconciliation* below).
 - **Before the opening date the value is unknown, not zero** (PR-011): `valueKnown = false` for any
   read with `asOf` earlier than the opening date (`GET .../balance?asOf=`).
 - **A past balance needs `READ`.** Today's balance is visible at `BALANCE_ONLY`; a read with
@@ -310,9 +311,14 @@ headlines (FR-CON-007 / PR-011). A dismissed one does not: it is documented.
 A reconciliation adjustment counts in every balance (it is why an accepted account agrees), but in
 no cash-flow figure: it corrects a balance, it is neither income nor spending, and `CashFlowService`
 sums named types only. A row is one through `transaction.reconciliation_result_id` (V63), not
-through its `VALUATION_ADJUSTMENT` type alone. One dated on the opening-balance date still counts,
-because it was booked after the opening balance was taken. It never counts as a duplicate entry in
-the probable-cause classification below.
+through its `VALUATION_ADJUSTMENT` type alone. One dated on the opening-balance date counts if it
+was booked after the opening balance was last stated (`updated_at`, else `created_at`): it then
+corrects a provider figure observed against that balance, which does not contain it. An opening
+balance stated later - moved onto that date, or entered again - is the member's newer figure and
+already contains the correction, so the row no longer counts there; counting it would count it
+twice. If that leaves the newest snapshot's accepted result agreeing without its row, the engine
+treats the acceptance as overtaken: it withdraws the row and the result ends `RESOLVED`. It never
+counts as a duplicate entry in the probable-cause classification below.
 
 ### Probable-cause classification
 

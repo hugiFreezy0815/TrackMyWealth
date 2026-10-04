@@ -243,21 +243,31 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * US-25-04: {@link #sumAmountByAccountIdAsOf} for the rows booked after {@code after} only - the
    * part of the ledger an opening balance dated {@code after} does not already contain. A
    * reconciliation adjustment (US-25-03, owned by a result) on the opening date is the one
-   * exception: it is created later to correct an observed provider figure and therefore was not
-   * part of the opening balance even though it deliberately carries that snapshot date. Same
-   * conversion to the account's own currency and the same void-pair handling; empty when no row
-   * falls into the window.
+   * exception, as long as it was booked after the opening balance was last stated ({@code
+   * openingStatedAt}, {@link com.trackmywealth.backend.entity.AccountSnapshot#getStatedAt}): it
+   * then corrects a provider figure observed against that opening balance, which therefore does not
+   * contain it, even though it carries that date. An opening balance stated later - moved onto that
+   * date, or entered again - is the member's newer figure and already contains it; counting it then
+   * would count it twice. Same conversion to the account's own currency and the same void-pair
+   * handling; empty when no row falls into the window.
+   *
+   * <p>{@code openingStatedAt} comes from the application clock on a replace and from the
+   * database's on a creation, while {@code t.createdAt} is the database's. A skew between the two
+   * cannot reorder them: after an opening balance changes, the engine has already re-evaluated, so
+   * an accept needs the result's new version and a reload first - seconds, not milliseconds.
    */
   @Query(
       "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
           + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
           + " from Transaction t where t.account.id = :accountId"
           + " and (t.bookingDate > :after"
-          + " or (t.bookingDate = :after and t.reconciliationResultId is not null))"
+          + " or (t.bookingDate = :after and t.reconciliationResultId is not null"
+          + " and t.createdAt > :openingStatedAt))"
           + " and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdBookedAfter(
       @Param(ACCOUNT_ID) UUID accountId,
       @Param(AFTER) LocalDate after,
+      @Param("openingStatedAt") OffsetDateTime openingStatedAt,
       @Param(AS_OF) LocalDate asOf);
 
   /**

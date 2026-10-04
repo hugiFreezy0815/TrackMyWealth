@@ -224,12 +224,14 @@ public class ReconciliationService {
 
     // A member's decision covers one exact amount (US-25-03). While it still holds, it stands.
     if (ACCEPTED.equals(status)) {
-      if (difference.signum() == 0) {
+      if (difference.signum() == 0 && adjustmentCounts(existing.get(), opening.get())) {
         return;
       }
-      // The account stopped agreeing, so the acceptance no longer fits. Withdraw its adjusting
-      // entry first: the difference to show is the real one, not one skewed by a stale correction.
-      // A member who has since booked the missing row thereby ends up reconciled.
+      // The account stopped agreeing, or it agrees without the adjusting entry (an opening balance
+      // stated again on the entry's date already contains it), so the acceptance no longer fits.
+      // Withdraw its adjusting entry first: the difference to show is the real one, not one skewed
+      // by a stale correction. A member who has since booked the missing row thereby ends up
+      // reconciled.
       withdrawAdjustment(existing.get(), changedBy);
       difference = difference(account, opening.get(), snapshot);
     } else if (DISMISSED.equals(status)
@@ -297,6 +299,23 @@ public class ReconciliationService {
             });
   }
 
+  // Whether an accepted result's adjusting entry is part of the ledger after this opening balance:
+  // booked after its date, or on it but after the balance was stated - the rule of
+  // TransactionRepository#sumAmountByAccountIdBookedAfter.
+  private boolean adjustmentCounts(ReconciliationResult result, AccountSnapshot opening) {
+    UUID adjustmentId = result.getResolutionTransactionId();
+    if (adjustmentId == null) {
+      return false;
+    }
+    return transactionRepository
+        .findById(adjustmentId)
+        .filter(
+            adjustment ->
+                adjustment.getBookingDate().isAfter(opening.getSnapshotDate())
+                    || adjustment.getCreatedAt().isAfter(opening.getStatedAt()))
+        .isPresent();
+  }
+
   private void retireAllOpen(UUID accountId) {
     for (ReconciliationResult result :
         resultRepository.findByAccountIdAndStatusAndAffectedSecurityIdIsNull(accountId, OPEN)) {
@@ -362,7 +381,10 @@ public class ReconciliationService {
     BigDecimal ledger =
         transactionRepository
             .sumAmountByAccountIdBookedAfter(
-                account.getId(), opening.getSnapshotDate(), snapshot.getSnapshotDate())
+                account.getId(),
+                opening.getSnapshotDate(),
+                opening.getStatedAt(),
+                snapshot.getSnapshotDate())
             .orElse(BigDecimal.ZERO);
     BigDecimal derived =
         LIABILITY.equals(account.getNature())

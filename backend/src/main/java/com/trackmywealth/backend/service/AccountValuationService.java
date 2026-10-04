@@ -338,8 +338,8 @@ public class AccountValuationService {
    * US-25-04/FR-REC-007, the "ledger from opening balance" source: the balance plus the ledger
    * booked after the opening date, up to and including {@code asOf}. Ordinary rows on the opening
    * date are already contained in the balance; the deliberate exception is a reconciliation {@code
-   * VALUATION_ADJUSTMENT} created later for a provider observation on that same date. Rows before
-   * it predate the starting point and are left out (with {@code
+   * VALUATION_ADJUSTMENT} booked after the opening balance was stated, for a provider observation
+   * on that same date. Rows before it predate the starting point and are left out (with {@code
    * TRANSACTIONS_BEFORE_OPENING_BALANCE}, see {@link AccountDataQualityService}). Before the
    * opening date nothing is known, so the value is unknown, not zero (PR-011).
    *
@@ -355,7 +355,10 @@ public class AccountValuationService {
     BigDecimal ledger =
         transactionRepository
             .sumAmountByAccountIdBookedAfter(
-                account.getId(), openingBalance.getSnapshotDate(), asOf)
+                account.getId(),
+                openingBalance.getSnapshotDate(),
+                openingBalance.getStatedAt(),
+                asOf)
             .orElse(BigDecimal.ZERO);
     BigDecimal value =
         LIABILITY.equals(account.getNature())
