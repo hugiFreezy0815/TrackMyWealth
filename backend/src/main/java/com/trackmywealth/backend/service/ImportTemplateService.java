@@ -285,20 +285,22 @@ public class ImportTemplateService {
   }
 
   // Authorization before the version (ADR 0004): hidden, then read-only, then stale, then retired.
+  // Read-only is decided from a plain read before the row lock: V65's RLS lets a workspace lock
+  // (SELECT ... FOR UPDATE) only its own rows, so a shipped one would look missing, not read-only.
   private ImportTemplate requireChangeable(
       UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
-    ImportTemplate template =
-        templateRepository
-            .findVisibleToForUpdate(id, actor.workspaceId())
-            .orElseThrow(() -> accessControlService.denyAsNotFound(actor, ENTITY_TYPE, id));
-    if (template.isShared()) {
+    if (requireVisible(id, actor).isShared()) {
       throw new ApiException(
           HttpStatus.FORBIDDEN,
           ApiErrorCode.IMPORT_TEMPLATE_READ_ONLY,
           "Shipped import templates are shared by every workspace and cannot be changed. Create a"
               + " template of your own instead.");
     }
+    ImportTemplate template =
+        templateRepository
+            .findOwnForUpdate(id, actor.workspaceId())
+            .orElseThrow(() -> accessControlService.denyAsNotFound(actor, ENTITY_TYPE, id));
     versionPreconditionService.requireCurrent(
         expectedVersion, template.getVersion(), VERSIONED_RESOURCE);
     if (!template.isCurrent()) {

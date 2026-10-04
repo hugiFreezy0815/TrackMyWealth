@@ -34,15 +34,14 @@ public interface ImportTemplateRepository extends JpaRepository<ImportTemplate, 
       @Param("id") UUID id, @Param("workspaceId") UUID workspaceId);
 
   /**
-   * {@link #findVisibleTo}, locking the row: every change of a template starts here, so two
-   * concurrent changes of one template run one after the other and the second sees the first's
-   * result (e.g. a delete cannot miss a version a concurrent edit just wrote).
+   * One of the workspace's own versions, locking the row: every change of a template starts here,
+   * so two concurrent changes of one template run one after the other and the second sees the
+   * first's result (e.g. a delete cannot miss a version a concurrent edit just wrote). A shipped
+   * row is never found: it cannot be changed, and V65's RLS does not let a workspace lock it.
    */
   @Lock(LockModeType.PESSIMISTIC_WRITE)
-  @Query(
-      "SELECT t FROM ImportTemplate t WHERE t.id = :id"
-          + " AND (t.workspaceId IS NULL OR t.workspaceId = :workspaceId)")
-  Optional<ImportTemplate> findVisibleToForUpdate(
+  @Query("SELECT t FROM ImportTemplate t WHERE t.id = :id AND t.workspaceId = :workspaceId")
+  Optional<ImportTemplate> findOwnForUpdate(
       @Param("id") UUID id, @Param("workspaceId") UUID workspaceId);
 
   /** The current version of a template family, if any. */
