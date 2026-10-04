@@ -61,7 +61,7 @@ class EcbFxRateProviderTest {
             new ProvidedFxRate("EUR", "CHF", FROM, new BigDecimal("0.9312")),
             new ProvidedFxRate("EUR", "USD", FROM, new BigDecimal("1.1301")),
             new ProvidedFxRate("EUR", "CHF", TO, new BigDecimal("0.9298")));
-    assertThat(provider.source()).isEqualTo("ECB");
+    assertThat(provider.definition()).isEqualTo(new FxRateProviderDefinition("ecb", "ECB", "EUR"));
     server.verify();
   }
 

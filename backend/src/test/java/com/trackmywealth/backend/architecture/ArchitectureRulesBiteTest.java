@@ -2,16 +2,19 @@ package com.trackmywealth.backend.architecture;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import archfixture.config.ClientCoupledConfig;
 import archfixture.controller.StrayEntityController;
 import archfixture.dto.StrayEntityResponse;
 import archfixture.model.StrayEntity;
 import archfixture.service.CategoryService;
+import archfixture.service.ProviderCoupledService;
 import archfixture.service.WebCoupledService;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.trackmywealth.backend.architecture.leak.controller.LeakyController;
 import com.trackmywealth.backend.architecture.leak.dto.LeakyResponse;
 import com.trackmywealth.backend.architecture.leak.entity.LeakedEntity;
+import com.trackmywealth.backend.client.EcbFxRateProvider;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -76,6 +79,30 @@ class ArchitectureRulesBiteTest {
             () -> ArchitectureTest.services_do_not_depend_on_the_web_layer.check(coupled))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("WebCoupledService");
+  }
+
+  // #226: a service tied to one FX provider fails the build.
+  @Test
+  void aServiceDependingOnAConcreteFxRateProviderFailsTheBuild() {
+    JavaClasses coupled =
+        new ClassFileImporter()
+            .importClasses(ProviderCoupledService.class, EcbFxRateProvider.class);
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.services_do_not_depend_on_a_concrete_fx_rate_provider.check(
+                    coupled))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("ProviderCoupledService");
+  }
+
+  // #226: settings code depending on a client would close a config <-> client cycle.
+  @Test
+  void configDependingOnAClientFailsTheBuild() {
+    JavaClasses coupled =
+        new ClassFileImporter().importClasses(ClientCoupledConfig.class, EcbFxRateProvider.class);
+    assertThatThrownBy(() -> ArchitectureTest.config_does_not_depend_on_clients.check(coupled))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("ClientCoupledConfig");
   }
 
   // #192: a raw 404 in a service method nobody reviewed fails the build, even in a class that has

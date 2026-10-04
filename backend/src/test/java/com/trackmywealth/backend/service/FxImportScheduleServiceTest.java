@@ -10,7 +10,6 @@ import com.trackmywealth.backend.dto.FxImportIntervalSource;
 import com.trackmywealth.backend.dto.FxImportSchedule;
 import com.trackmywealth.backend.entity.FxImportSetting;
 import com.trackmywealth.backend.repository.FxImportSettingRepository;
-import java.net.URI;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -109,15 +108,7 @@ class FxImportScheduleServiceTest {
     return new FxImportScheduleService(
         repository,
         new FxRateImportProperties(
-            true,
-            URI.create("https://example.test"),
-            environmentCron,
-            BERLIN,
-            hour,
-            hour,
-            hour,
-            hour,
-            hour));
+            true, "ecb", environmentCron, BERLIN, hour, hour, hour, hour, hour));
   }
 
   static FxImportSetting setting(Integer intervalHours, int version) {

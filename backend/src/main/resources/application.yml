@@ -133,17 +133,31 @@ app:
   business-zone: ${BUSINESS_ZONE:Europe/Zurich}
   fx:
     # US-04-03/#223: the fx_rate.source every currency conversion reads. ECB is what the FX import
-    # below stores; set MANUAL (with the import disabled) to run only on rates entered by hand.
+    # below stores. When the import provider changes, this must name that provider's source or
+    # MANUAL (case-sensitive); any other mismatch fails startup instead of silently reading an old
+    # provider. A pair missing from MANUAL is chained through the selected provider's hub first,
+    # then through every other registered provider's hub.
     default-source: ${FX_DEFAULT_SOURCE:ECB}
     # #223/NFR-CON-003: a conversion whose stored rate is older than this before the requested
     # date is marked stale - longer than any weekend plus holiday, so normally only a provider
     # outage gets there. A java.time.Period.
     stale-after: ${FX_STALE_AFTER:P5D}
     import:
-      # US-06-04 (#223): load the ECB's daily euro reference rates. Off: no scheduled job is
+      # US-06-04 (#223): load the configured provider's daily rates. Off: no scheduled job is
       # registered and a missing rate is never fetched (the request sends no user data).
       enabled: ${FX_IMPORT_ENABLED:true}
-      ecb-base-url: ${FX_IMPORT_ECB_BASE_URL:https://data-api.ecb.europa.eu/service/data/EXR}
+      # #226: which rate provider the import uses; only that one is loaded, and a name no provider
+      # answers to fails the start. Valid: ecb. Its rates are stored under its own fx_rate.source
+      # and cross rates are derived through its hub currency (ECB: EUR). A new provider's history
+      # is loaded from scratch, as the import resumes per source. The default must stay
+      # EcbFxRateProvider.PROVIDER_NAME (EcbFxRateProviderPropertiesTest checks it).
+      provider: ${FX_IMPORT_PROVIDER:ecb}
+      # Each provider's own settings.
+      providers:
+        ecb:
+          # Before #226 this was app.fx.import.ecb-base-url; a deployment still setting that key
+          # (rather than FX_IMPORT_ECB_BASE_URL) keeps working through the fallback below.
+          base-url: ${FX_IMPORT_ECB_BASE_URL:${app.fx.import.ecb-base-url:https://data-api.ecb.europa.eu/service/data/EXR}}
       # Quartz cron (seconds first): every two hours. The ECB publishes once, around 16:00 CET on
       # TARGET business days; a run with nothing new costs one small provider call. Only the
       # default: once an administrator sets an interval (PUT /api/v1/admin/fx-import, US-06-07),

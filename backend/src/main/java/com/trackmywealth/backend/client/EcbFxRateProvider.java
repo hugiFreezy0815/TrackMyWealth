@@ -1,7 +1,9 @@
 package com.trackmywealth.backend.client;
 
+import com.trackmywealth.backend.config.EcbFxRateProviderProperties;
 import com.trackmywealth.backend.config.FxRateImportProperties;
 import java.math.BigDecimal;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -14,6 +16,7 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -31,11 +34,29 @@ import org.springframework.web.client.RestClientException;
  * as {@code EUR/<CURRENCY>}. Every other pair is derived from these by {@code FxRateService}.
  *
  * <p>The request carries only the series key and the date range - no user or workspace data.
+ *
+ * <p>#226: the default provider - loaded when {@code app.fx.import.provider} is {@value
+ * #PROVIDER_NAME} or unset; its settings are under {@code app.fx.import.providers.ecb}.
  */
 @Component
+@ConditionalOnProperty(
+    prefix = "app.fx.import",
+    name = "provider",
+    havingValue = EcbFxRateProvider.PROVIDER_NAME,
+    matchIfMissing = true)
 public class EcbFxRateProvider implements FxRateProvider {
 
+  /** The {@code app.fx.import.provider} value that selects this provider. */
+  public static final String PROVIDER_NAME = "ecb";
+
   public static final String ECB_SOURCE = "ECB";
+
+  /**
+   * The ECB's registered metadata (#226), the one place its name, source and hub are stated -
+   * {@code EcbFxRateProviderDefinitionConfig} registers it whether or not this client is selected.
+   */
+  public static final FxRateProviderDefinition ECB_DEFINITION =
+      new FxRateProviderDefinition(PROVIDER_NAME, ECB_SOURCE, "EUR");
 
   private static final Logger LOG = LoggerFactory.getLogger(EcbFxRateProvider.class);
 
@@ -53,14 +74,18 @@ public class EcbFxRateProvider implements FxRateProvider {
   private final Function<Duration, RestClient> onDemandRestClients;
 
   @Autowired
-  public EcbFxRateProvider(FxRateImportProperties properties) {
-    this(properties, HttpClient.newBuilder().connectTimeout(properties.connectTimeout()).build());
+  public EcbFxRateProvider(
+      FxRateImportProperties properties, EcbFxRateProviderProperties ecbProperties) {
+    this(
+        ecbProperties.baseUrl(),
+        properties.readTimeout(),
+        HttpClient.newBuilder().connectTimeout(properties.connectTimeout()).build());
   }
 
-  private EcbFxRateProvider(FxRateImportProperties properties, HttpClient httpClient) {
+  private EcbFxRateProvider(URI baseUrl, Duration readTimeout, HttpClient httpClient) {
     this(
-        buildRestClient(properties, httpClient, properties.readTimeout()),
-        timeout -> buildRestClient(properties, httpClient, timeout));
+        buildRestClient(baseUrl, httpClient, readTimeout),
+        timeout -> buildRestClient(baseUrl, httpClient, timeout));
   }
 
   EcbFxRateProvider(RestClient restClient) {
@@ -74,8 +99,8 @@ public class EcbFxRateProvider implements FxRateProvider {
   }
 
   @Override
-  public String source() {
-    return ECB_SOURCE;
+  public FxRateProviderDefinition definition() {
+    return ECB_DEFINITION;
   }
 
   @Override
@@ -210,12 +235,9 @@ public class EcbFxRateProvider implements FxRateProvider {
   }
 
   private static RestClient buildRestClient(
-      FxRateImportProperties properties, HttpClient httpClient, Duration readTimeout) {
+      URI baseUrl, HttpClient httpClient, Duration readTimeout) {
     JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
     factory.setReadTimeout(readTimeout);
-    return RestClient.builder()
-        .baseUrl(properties.ecbBaseUrl().toString())
-        .requestFactory(factory)
-        .build();
+    return RestClient.builder().baseUrl(baseUrl.toString()).requestFactory(factory).build();
   }
 }

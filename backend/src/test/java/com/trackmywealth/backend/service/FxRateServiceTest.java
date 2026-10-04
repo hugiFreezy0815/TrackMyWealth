@@ -86,7 +86,7 @@ class FxRateServiceTest {
   @Test
   void aNonPositiveStaleAfterIsRejectedAtStartup() {
     for (Period invalid : new Period[] {Period.ZERO, Period.ofDays(-5)}) {
-      assertThatThrownBy(() -> new FxRateService(fxRateRepository, null, invalid))
+      assertThatThrownBy(() -> new FxRateService(fxRateRepository, null, null, invalid))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("app.fx.stale-after must be a positive period.");
     }

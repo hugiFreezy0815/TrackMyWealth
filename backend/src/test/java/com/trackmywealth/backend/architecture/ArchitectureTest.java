@@ -18,6 +18,7 @@ import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.library.Architectures;
 import com.tngtech.archunit.library.Architectures.LayeredArchitecture;
 import com.tngtech.archunit.library.GeneralCodingRules;
+import com.trackmywealth.backend.client.FxRateProvider;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.security.SystemWorkspaceContext;
@@ -124,6 +125,37 @@ class ArchitectureTest {
           .because(
               "error types a service throws live in ..error.., so the web layer can change"
                   + " without touching business logic (#197)")
+          .allowEmptyShould(true);
+
+  // #226: exactly one FxRateProvider is loaded, the one app.fx.import.provider names. A service
+  // reaching a concrete provider would tie the import back to it and fail to wire once another is
+  // selected; services read a provider's name, source and hub from its FxRateProviderDefinition.
+  @ArchTest
+  static final ArchRule services_do_not_depend_on_a_concrete_fx_rate_provider =
+      noClasses()
+          .that()
+          .resideInAPackage("..service..")
+          .should()
+          .dependOnClassesThat(JavaClass.Predicates.implement(FxRateProvider.class))
+          .because(
+              "the FX provider is selected by configuration (#226) - depend on FxRateProvider and"
+                  + " FxRateProviderDefinition, never on one implementation")
+          .allowEmptyShould(true);
+
+  // #226: a client reads its settings from ..config.. (e.g. EcbFxRateProvider's properties), so the
+  // reverse direction would make the two packages a cycle. Client-owned beans and constants stay in
+  // ..client.., and a settings default that names a provider is a literal pinned by a test.
+  @ArchTest
+  static final ArchRule config_does_not_depend_on_clients =
+      noClasses()
+          .that()
+          .resideInAPackage("..config..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..client..")
+          .because(
+              "clients depend on their settings in ..config.., and the reverse would make the two"
+                  + " packages a cycle (#226)")
           .allowEmptyShould(true);
 
   @ArchTest

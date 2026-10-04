@@ -6,6 +6,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -15,8 +17,8 @@ import org.springframework.stereotype.Repository;
  * batch on {@code fx_rate}'s {@code UNIQUE(base_currency, quote_currency, rate_date, source)}.
  *
  * <p>Also derives the cross rates between the currencies in use (V54) from the published {@code
- * EUR/<currency>} rows, in the database: tens of thousands of rows for a long history, none of
- * which needs to pass through Java.
+ * <hub>/<currency>} rows - {@code EUR} for the ECB, the provider's hub currency (#226) - in the
+ * database: tens of thousands of rows for a long history, none of which needs to pass through Java.
  */
 @Repository
 public class FxRateBatchRepository {
@@ -28,33 +30,33 @@ public class FxRateBatchRepository {
           + " VALUES (?, ?, ?, ?, ?)"
           + " ON CONFLICT (base_currency, quote_currency, rate_date, source) DO NOTHING";
 
-  // Every ordered pair of distinct currencies in use (and EUR), except EUR/x, which is published:
-  // x/y = (EUR/y) / (EUR/x), the euro's own rate being 1. The dividend is widened so the quotient
-  // carries 30 decimal places before the single rounding to fx_rate's ten - the same value
+  // Every ordered pair of distinct currencies in use (and the hub), except hub/x, which is
+  // published: x/y = (hub/y) / (hub/x), the hub's own rate being 1. The dividend is widened so the
+  // quotient carries 30 decimal places before the single rounding to fx_rate's ten - the same value
   // FxRateService computes for an unstored pair. A quotient fx_rate cannot hold is left out.
   private static final String DERIVE_CROSS_RATES_TEMPLATE =
       """
       WITH published AS (
           SELECT f.rate_date, f.quote_currency AS currency, f.rate
           FROM fx_rate f
-          WHERE f.source = ? AND f.base_currency = 'EUR' AND NOT f.derived
-            AND f.rate_date BETWEEN ? AND ?
+          WHERE f.source = :source AND f.base_currency = :hub AND NOT f.derived
+            AND f.rate_date BETWEEN :from AND :to
             AND f.quote_currency IN (SELECT currency FROM fx_rate_currency_in_use)
       ),
       day_rates AS (
           SELECT rate_date, currency, rate FROM published
           UNION ALL
-          SELECT DISTINCT rate_date, 'EUR', 1 FROM published
+          SELECT DISTINCT rate_date, CAST(:hub AS CHAR(3)), 1 FROM published
       ),
       crosses AS (
           SELECT a.currency AS base_currency, b.currency AS quote_currency, a.rate_date,
                  round(b.rate::NUMERIC(40, 30) / a.rate, 10) AS rate
           FROM day_rates a
           JOIN day_rates b ON b.rate_date = a.rate_date AND b.currency <> a.currency
-          WHERE a.currency <> 'EUR' /* new-currency filter */
+          WHERE a.currency <> :hub /* new-currency filter */
       )
       INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, source, derived)
-      SELECT base_currency, quote_currency, rate_date, rate, ?, TRUE
+      SELECT base_currency, quote_currency, rate_date, rate, :source, TRUE
       FROM crosses
       WHERE rate > 0 AND rate < 1e10
       ON CONFLICT (base_currency, quote_currency, rate_date, source) DO NOTHING
@@ -76,9 +78,11 @@ public class FxRateBatchRepository {
                                 WHERE NOT cross_rates_derived))""");
 
   private final JdbcTemplate jdbcTemplate;
+  private final NamedParameterJdbcTemplate namedJdbcTemplate;
 
   public FxRateBatchRepository(JdbcTemplate jdbcTemplate) {
     this.jdbcTemplate = jdbcTemplate;
+    this.namedJdbcTemplate = new NamedParameterJdbcTemplate(jdbcTemplate);
   }
 
   /**
@@ -111,13 +115,14 @@ public class FxRateBatchRepository {
 
   /**
    * Stores the cross rates between the currencies in use for every day from {@code from} to {@code
-   * to} that has published rates of {@code source}, skipping any already stored.
+   * to} that has published {@code hubCurrency/<currency>} rates of {@code source}, skipping any
+   * already stored.
    *
    * @return how many rows were inserted
    */
-  public int deriveCrossRates(String source, LocalDate from, LocalDate to) {
-    return jdbcTemplate.update(
-        DERIVE_CROSS_RATES, source, Date.valueOf(from), Date.valueOf(to), source);
+  public int deriveCrossRates(String source, String hubCurrency, LocalDate from, LocalDate to) {
+    return namedJdbcTemplate.update(
+        DERIVE_CROSS_RATES, crossRateParameters(source, hubCurrency, from, to));
   }
 
   /**
@@ -126,15 +131,25 @@ public class FxRateBatchRepository {
    *
    * @return how many rows were inserted
    */
-  public int deriveCrossRatesOfNewCurrencies(String source, LocalDate from, LocalDate to) {
-    return jdbcTemplate.update(
-        DERIVE_CROSS_RATES_OF_NEW_CURRENCIES, source, Date.valueOf(from), Date.valueOf(to), source);
+  public int deriveCrossRatesOfNewCurrencies(
+      String source, String hubCurrency, LocalDate from, LocalDate to) {
+    return namedJdbcTemplate.update(
+        DERIVE_CROSS_RATES_OF_NEW_CURRENCIES, crossRateParameters(source, hubCurrency, from, to));
   }
 
   /** The ids of the currencies in use whose cross rates have not been derived yet. */
   public List<UUID> findCurrenciesNotYetDerived() {
     return jdbcTemplate.queryForList(
         "SELECT id FROM fx_rate_currency_in_use WHERE NOT cross_rates_derived", UUID.class);
+  }
+
+  private static MapSqlParameterSource crossRateParameters(
+      String source, String hubCurrency, LocalDate from, LocalDate to) {
+    return new MapSqlParameterSource()
+        .addValue("source", source)
+        .addValue("hub", hubCurrency)
+        .addValue("from", Date.valueOf(from))
+        .addValue("to", Date.valueOf(to));
   }
 
   /** Marks these currencies' cross rates as derived over the whole stored history. */
