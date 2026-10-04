@@ -381,6 +381,27 @@ class ImportTemplateControllerTest {
         .isEqualTo("IMPORT_FILE_TOO_LARGE");
   }
 
+  /** The unsaved dry run skips Bean Validation (it needs no name); the parser checks the counts. */
+  @Test
+  void anUnsavedDryRunRejectsRowCountsOutOfRange() throws Exception {
+    ImportTemplateRequest swiss = swissRequest(null);
+    Map<String, ImportTemplateRequest> requests =
+        Map.of(
+            "headerRowIndex", withRowCounts(swiss, -3, 0, 0),
+            "preambleRowCount", withRowCounts(swiss, 0, -1, 0),
+            "trailingSummaryRowCount", withRowCounts(swiss, 0, 0, -5));
+    for (Map.Entry<String, ImportTemplateRequest> entry : requests.entrySet()) {
+      multipart(BASE + "/test", fixture(SWISS), entry.getValue())
+          .expectStatus()
+          .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+          .expectBody()
+          .jsonPath("$.code")
+          .isEqualTo("IMPORT_TEMPLATE_INVALID")
+          .jsonPath("$.field")
+          .isEqualTo(entry.getKey());
+    }
+  }
+
   // --- template rules at save time ---------------------------------------------------------
 
   @Test
@@ -783,6 +804,29 @@ class ImportTemplateControllerTest {
         r.columnMapping(),
         r.typeMapping(),
         strategy,
+        r.headerColumns());
+  }
+
+  private static ImportTemplateRequest withRowCounts(
+      ImportTemplateRequest r, int headerRowIndex, int preamble, int trailing) {
+    return new ImportTemplateRequest(
+        r.name(),
+        r.institutionCatalogueId(),
+        r.templateClass(),
+        r.delimiter(),
+        r.encoding(),
+        r.decimalSeparator(),
+        r.thousandsSeparator(),
+        r.dateFormat(),
+        headerRowIndex,
+        preamble,
+        trailing,
+        r.amountRepresentation(),
+        r.currencyMode(),
+        r.fixedCurrency(),
+        r.columnMapping(),
+        r.typeMapping(),
+        r.accountIdentificationStrategy(),
         r.headerColumns());
   }
 

@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
+import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.error.ApiErrorCode;
@@ -70,6 +71,10 @@ public class CsvImportParserService {
   private static final char BYTE_ORDER_MARK = '\uFEFF';
   // A rejected cell is echoed back to its uploader; long enough to recognise, never unbounded.
   private static final int MAX_ECHOED_VALUE_LENGTH = 100;
+  // transaction.amount is NUMERIC(20,4). Checked on the digits before a BigDecimal is built, whose
+  // construction is quadratic in the length: a megabyte-long cell would hold a thread for minutes.
+  private static final int MAX_INTEGER_DIGITS = 16;
+  private static final int MAX_FRACTION_DIGITS = 4;
   private static final Pattern COLUMN_INDEX = Pattern.compile("\\d{1,4}");
   private static final Pattern DIGITS = Pattern.compile("\\d+");
   private static final Pattern MCC = Pattern.compile("\\d{4}");
@@ -91,7 +96,7 @@ public class CsvImportParserService {
   public ImportParseResult parse(
       byte[] content, ImportTemplateDefinition template, String accountCurrency) {
     validateTemplate(template, null);
-    List<CSVRecord> records = readRecords(content, template);
+    List<CSVRecord> records = readRecords(content, template, false);
     List<String> header = headerOf(records, template);
     List<CSVRecord> data = dataRecordsOf(records, template);
     requireDecodable(template.hasHeaderRow() ? header : data.get(0).toList());
@@ -133,7 +138,7 @@ public class CsvImportParserService {
    * @throws ApiException an {@code IMPORT_*} file-level code when the file cannot be read this way
    */
   public List<String> readHeader(byte[] content, ImportTemplateDefinition template) {
-    List<String> header = headerOf(readRecords(content, template), template);
+    List<String> header = headerOf(readRecords(content, template, true), template);
     requireDecodable(header);
     return header;
   }
@@ -197,6 +202,7 @@ public class CsvImportParserService {
     if (!ImportTemplateValues.CURRENCY_MODES.contains(template.currencyMode())) {
       throw invalid("currencyMode", "Unknown currency mode.");
     }
+    validateRowCounts(template);
     validateSeparators(template);
     if (!isValidDateFormat(template.dateFormat())) {
       throw invalid("dateFormat", "The date format is not a valid date pattern.");
@@ -207,6 +213,24 @@ public class CsvImportParserService {
   }
 
   // --- template rules ----------------------------------------------------------------------
+
+  // Bean Validation checks these on a saved template, but not on the unsaved dry run's (which
+  // needs no name); out of range they would index past the file's records.
+  private static void validateRowCounts(ImportTemplateDefinition template) {
+    int max = ImportTemplateRequest.MAX_SKIPPED_ROWS;
+    if (template.headerRowIndex() < ImportTemplateValues.NO_HEADER_ROW
+        || template.headerRowIndex() > max) {
+      throw invalid(
+          "headerRowIndex", "The header row index must be -1 (no header row) or 0 to " + max + ".");
+    }
+    if (template.preambleRowCount() < 0 || template.preambleRowCount() > max) {
+      throw invalid("preambleRowCount", "The preamble row count must be 0 to " + max + ".");
+    }
+    if (template.trailingSummaryRowCount() < 0 || template.trailingSummaryRowCount() > max) {
+      throw invalid(
+          "trailingSummaryRowCount", "The trailing summary row count must be 0 to " + max + ".");
+    }
+  }
 
   private static void validateSeparators(ImportTemplateDefinition template) {
     String delimiter = template.delimiter();
@@ -319,8 +343,10 @@ public class CsvImportParserService {
 
   // --- reading the file --------------------------------------------------------------------
 
-  // Every non-blank record after the preamble, header included.
-  private static List<CSVRecord> readRecords(byte[] content, ImportTemplateDefinition template) {
+  // Every non-blank record after the preamble, header included; with headerOnly, only up to the
+  // header row (detection reads the file once per template and needs nothing below the header).
+  private static List<CSVRecord> readRecords(
+      byte[] content, ImportTemplateDefinition template, boolean headerOnly) {
     String text = skipLines(decode(content, template.encoding()), template.preambleRowCount());
     CSVFormat format =
         CSVFormat.RFC4180
@@ -337,6 +363,9 @@ public class CsvImportParserService {
       for (CSVRecord record : parser) {
         if (!isBlank(record)) {
           records.add(record);
+          if (headerOnly && records.size() > template.headerRowIndex()) {
+            break;
+          }
           if (records.size() > maxRecords) {
             throw fileError(
                     ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS,
@@ -620,20 +649,20 @@ public class CsvImportParserService {
     if (hasCredit) {
       return credit.abs();
     }
-    if (debit == null && credit == null) {
-      throw rowError(
-          ImportRowErrorValues.VALUE_MISSING,
-          ARG_COLUMN,
-          mapping.debitAmount() + " / " + mapping.creditAmount());
-    }
-    return (credit == null ? debit : credit).abs();
+    // Neither side holds an amount, zeros included: no booking to import.
+    throw rowError(
+        ImportRowErrorValues.VALUE_MISSING,
+        ARG_COLUMN,
+        mapping.debitAmount() + " / " + mapping.creditAmount());
   }
 
   /**
    * {@code value} as a decimal with the template's separators: an optional sign (or, for {@code
    * NEGATIVE_IN_PARENTHESES}, parentheses), digits grouped by the thousands separator in groups of
    * three, and an optional fraction. The Swiss apostrophe is accepted in both its forms ({@code '}
-   * and {@code \u2019}), a space separator as any space, including the non-breaking ones.
+   * and {@code \u2019}), a space separator as any space, including the non-breaking ones. The value
+   * must fit {@code NUMERIC(20,4)}: zeros beyond four decimal places are dropped, anything else
+   * outside it is {@code IMPORT_ROW_AMOUNT_OUT_OF_RANGE}.
    */
   static BigDecimal parseAmount(
       String value, String column, ImportTemplateDefinition template, boolean parentheses) {
@@ -658,9 +687,21 @@ public class CsvImportParserService {
       throw rowError(
           ImportRowErrorValues.AMOUNT_UNPARSEABLE, ARG_COLUMN, column, ARG_VALUE, value.strip());
     }
+    String integerDigits = stripLeadingZeros(digits);
+    String fractionDigits = fraction == null ? "" : fraction;
+    if (fractionDigits.length() > MAX_FRACTION_DIGITS) {
+      // Zeros beyond the stored scale lose nothing ("1.500000" is 1.5000).
+      fractionDigits = stripTrailingZeros(fractionDigits, MAX_FRACTION_DIGITS);
+    }
+    if (integerDigits.length() > MAX_INTEGER_DIGITS
+        || fractionDigits.length() > MAX_FRACTION_DIGITS) {
+      throw rowError(
+          ImportRowErrorValues.AMOUNT_OUT_OF_RANGE, ARG_COLUMN, column, ARG_VALUE, value.strip());
+    }
     BigDecimal amount =
         new BigDecimal(
-            (digits.isEmpty() ? "0" : digits) + (fraction == null ? "" : "." + fraction));
+            (integerDigits.isEmpty() ? "0" : integerDigits)
+                + (fraction == null ? "" : "." + fractionDigits));
     return negative ? amount.negate() : amount;
   }
 
@@ -771,6 +812,23 @@ public class CsvImportParserService {
     Map<String, String> normalized = new HashMap<>();
     typeMapping.forEach((source, type) -> normalized.put(normalize(source), type));
     return normalized;
+  }
+
+  private static String stripLeadingZeros(String digits) {
+    int start = 0;
+    while (start < digits.length() && digits.charAt(start) == '0') {
+      start++;
+    }
+    return digits.substring(start);
+  }
+
+  // Drops trailing zeros, but keeps at least minLength digits (the scale the file wrote).
+  private static String stripTrailingZeros(String digits, int minLength) {
+    int end = digits.length();
+    while (end > minLength && digits.charAt(end - 1) == '0') {
+      end--;
+    }
+    return digits.substring(0, end);
   }
 
   private static String normalize(String text) {

@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
@@ -18,6 +19,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -342,6 +344,16 @@ class CsvImportParserServiceTest {
         .containsExactly("date", "amount");
   }
 
+  /** Detection reads the file once per template: nothing below the header is parsed. */
+  @Test
+  void readHeaderStopsAtTheHeaderRow() {
+    byte[] content = utf8("date;amount\n2026-03-01;\"unclosed\n");
+    ImportTemplateDefinition template = new Template().delimiter(";").build();
+
+    assertThat(parser.readHeader(content, template)).containsExactly("date", "amount");
+    assertFileError(content, template, ApiErrorCode.IMPORT_FILE_MALFORMED);
+  }
+
   @Test
   void missingColumnsListsAbsentAndAmbiguousColumns() {
     ImportColumnMapping columns = mapping("date", "amount").description("text").build();
@@ -415,6 +427,51 @@ class CsvImportParserServiceTest {
     assertThat(row.rawData()).containsEntry("amount", value);
   }
 
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "9'999'999'999'999'999.9999|9999999999999999.9999",
+        "-0'000'000'000'000'000'001.50|-1.50",
+        "1.500000|1.5000",
+        "0.12340|0.1234"
+      })
+  void amountsWithinNumeric20Scale4AreAccepted(String value, String expected) {
+    ImportTemplateDefinition template = new Template().thousands("'").build();
+
+    assertThat(CsvImportParserService.parseAmount(value, "amount", template, false))
+        .isEqualTo(new BigDecimal(expected));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"10'000'000'000'000'000.00", "12345678901234567", "1.23456", "0.00001"})
+  void amountsOutsideNumeric20Scale4AreOutOfRange(String value) {
+    String csv = "date;amount;text\n2026-03-01;" + value + ";x\n";
+
+    ParsedImportRow row =
+        parser
+            .parse(utf8(csv), new Template().delimiter(";").thousands("'").build(), null)
+            .rows()
+            .get(0);
+
+    assertThat(row.errorCode()).isEqualTo(ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
+    assertThat(row.errorArgs()).containsEntry("column", "amount").containsEntry("value", value);
+  }
+
+  /** A huge cell is refused by its length, never handed to BigDecimal (quadratic, minutes). */
+  @Test
+  void aMegabyteLongAmountIsRejectedQuickly() {
+    String csv = "date,amount,text\n2026-03-01," + "1".repeat(2_000_000) + ",x\n";
+
+    ParsedImportRow row =
+        assertTimeoutPreemptively(
+            Duration.ofSeconds(10),
+            () -> parser.parse(utf8(csv), new Template().build(), null).rows().get(0));
+
+    assertThat(row.errorCode()).isEqualTo(ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
+    assertThat(row.errorArgs().get("value")).hasSize(100);
+  }
+
   @Test
   void negativeInParenthesesReadsBothForms() {
     String csv =
@@ -440,8 +497,7 @@ class CsvImportParserServiceTest {
             + "2026-03-02;-12,50;\n"
             + "2026-03-03;;7,00\n"
             + "2026-03-04;0,00;7,00\n"
-            + "2026-03-05;3,00;0,00\n"
-            + "2026-03-06;0,00;\n";
+            + "2026-03-05;3,00;0,00\n";
     ImportTemplateDefinition template = debitCreditTemplate();
 
     assertThat(canonical(parser.parse(utf8(csv), template, null)))
@@ -451,21 +507,27 @@ class CsvImportParserServiceTest {
             new BigDecimal("-12.50"),
             new BigDecimal("7.00"),
             new BigDecimal("7.00"),
-            new BigDecimal("-3.00"),
-            new BigDecimal("0.00"));
+            new BigDecimal("-3.00"));
   }
 
   @Test
   void separateDebitAndCreditRejectBothOrNeitherSide() {
-    String csv = "date;debit;credit\n2026-03-01;12,50;7,00\n2026-03-02;;\n";
+    String csv =
+        "date;debit;credit\n2026-03-01;12,50;7,00\n2026-03-02;;\n"
+            + "2026-03-03;0,00;\n2026-03-04;0,00;0,00\n";
 
     List<ParsedImportRow> rows = parser.parse(utf8(csv), debitCreditTemplate(), null).rows();
 
     assertThat(rows.get(0).errorCode()).isEqualTo(ImportRowErrorValues.AMOUNT_BOTH_SIDES);
     assertThat(rows.get(0).errorArgs())
         .containsExactly(Map.entry("debitColumn", "debit"), Map.entry("creditColumn", "credit"));
-    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.VALUE_MISSING);
-    assertThat(rows.get(1).errorArgs()).containsEntry("column", "debit / credit");
+    // A side holding zero counts as empty, so zeros alone are no amount either.
+    assertThat(rows.subList(1, 4))
+        .allSatisfy(
+            row -> {
+              assertThat(row.errorCode()).isEqualTo(ImportRowErrorValues.VALUE_MISSING);
+              assertThat(row.errorArgs()).containsEntry("column", "debit / credit");
+            });
   }
 
   /** DoD: formatted amounts parse back to exactly the same BigDecimal, scale included. */
@@ -475,7 +537,7 @@ class CsvImportParserServiceTest {
     String[][] separators = {{".", null}, {".", "'"}, {".", "\u2019"}, {",", "."}, {",", " "}};
     for (int i = 0; i < 2_000; i++) {
       BigDecimal amount =
-          new BigDecimal(new BigInteger(60, random), random.nextInt(5))
+          new BigDecimal(new BigInteger(53, random), random.nextInt(5))
               .multiply(random.nextBoolean() ? BigDecimal.ONE : BigDecimal.ONE.negate());
       String[] pair = separators[i % separators.length];
       ImportTemplateDefinition template =
@@ -669,6 +731,12 @@ class CsvImportParserServiceTest {
         new Template().currencyMode("PER_ROW").fixedCurrency(null).build(),
         "columnMapping.currency");
     assertTemplateInvalid(new Template().headerRowIndex(-1).build(), "columnMapping.bookingDate");
+    assertTemplateInvalid(new Template().headerRowIndex(-3).build(), "headerRowIndex");
+    assertTemplateInvalid(new Template().headerRowIndex(101).build(), "headerRowIndex");
+    assertTemplateInvalid(new Template().preamble(-1).build(), "preambleRowCount");
+    assertTemplateInvalid(new Template().preamble(101).build(), "preambleRowCount");
+    assertTemplateInvalid(new Template().trailing(-5).build(), "trailingSummaryRowCount");
+    assertTemplateInvalid(new Template().trailing(101).build(), "trailingSummaryRowCount");
     assertTemplateInvalid(new Template().typeMapping(Map.of("Kauf", "BUY")).build(), "typeMapping");
     assertTemplateInvalid(new Template().typeMapping(Map.of(" ", "FEE")).build(), "typeMapping");
     Map<String, String> clash = new HashMap<>();

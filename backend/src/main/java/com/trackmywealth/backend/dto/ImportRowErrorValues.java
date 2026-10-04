@@ -25,6 +25,12 @@ public final class ImportRowErrorValues {
   /** {@code column, value}: not a number with the template's decimal and thousands separators. */
   public static final String AMOUNT_UNPARSEABLE = "IMPORT_ROW_AMOUNT_UNPARSEABLE";
 
+  /**
+   * {@code column, value}: a number, but outside {@code NUMERIC(20,4)} - more than 16 digits before
+   * or 4 (non-zero) digits after the decimal separator.
+   */
+  public static final String AMOUNT_OUT_OF_RANGE = "IMPORT_ROW_AMOUNT_OUT_OF_RANGE";
+
   /** {@code debitColumn, creditColumn}: both the debit and the credit cell are filled. */
   public static final String AMOUNT_BOTH_SIDES = "IMPORT_ROW_AMOUNT_BOTH_SIDES";
 
