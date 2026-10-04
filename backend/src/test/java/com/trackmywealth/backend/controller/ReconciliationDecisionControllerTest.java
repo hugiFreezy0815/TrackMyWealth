@@ -851,6 +851,19 @@ class ReconciliationDecisionControllerTest {
                         + " WHERE id = ?",
                     adjustment))
         .hasMessageContaining("transaction_reconciliation_adjustment_shape");
+    // Only a result of the row's own account - and so of its own workspace - can own it.
+    AccountSummaryResponse other = createCashAccount();
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
+                        + " booking_date, amount, currency, source, reconciliation_result_id)"
+                        + " SELECT workspace_id, ?, transaction_type, booking_date, amount,"
+                        + " currency, source, reconciliation_result_id FROM transaction"
+                        + " WHERE id = ?",
+                    other.id(),
+                    adjustment))
+        .hasMessageContaining("transaction_reconciliation_result_same_account");
   }
 
   @Test
@@ -879,6 +892,8 @@ class ReconciliationDecisionControllerTest {
         .expectStatus()
         .isNotFound();
     assertThat(onlyResult().status()).isEqualTo("OPEN");
+    // US-28-02: the 404 is an audited denial, not a bare not-found.
+    assertThat(denialLogged("reader@example.com", "Account", cash.id())).isTrue();
   }
 
   @Test
@@ -896,6 +911,75 @@ class ReconciliationDecisionControllerTest {
         .exchange()
         .expectStatus()
         .isNotFound();
+    assertThat(denialLogged("admin@example.com", "Reconciliation result", open.id())).isTrue();
+  }
+
+  @Test
+  void anotherWorkspacesResultIsNotFound() {
+    // A complete comparison in a second workspace, as the engine would have written it.
+    UUID workspace = UUID.randomUUID();
+    UUID account = UUID.randomUUID();
+    UUID snapshot = UUID.randomUUID();
+    UUID foreign = UUID.randomUUID();
+    execute("INSERT INTO workspace (id, name) VALUES (?, 'Other')", workspace);
+    execute(
+        "INSERT INTO account (id, workspace_id, financial_institution_id, account_type, name,"
+            + " native_currency) SELECT ?, ?, id, 'CASH', 'Foreign', 'CHF'"
+            + " FROM financial_institution WHERE workspace_id = ? AND is_personal_assets_default",
+        account,
+        workspace,
+        workspace);
+    execute(
+        "INSERT INTO account_snapshot (id, workspace_id, account_id, snapshot_date, balance,"
+            + " currency) VALUES (?, ?, ?, ?, 1.00, 'CHF')",
+        snapshot,
+        workspace,
+        account,
+        SNAPSHOT_DATE);
+    execute(
+        "INSERT INTO reconciliation_result (id, workspace_id, account_id, snapshot_id,"
+            + " difference_amount) VALUES (?, ?, ?, ?, 1.00)",
+        foreign,
+        workspace,
+        account,
+        snapshot);
+    String version =
+        "\""
+            + stringValue("SELECT version::text FROM reconciliation_result WHERE id = ?", foreign)
+            + "\"";
+
+    // Neither through one's own account nor by naming the foreign one.
+    for (UUID accountId : List.of(cash.id(), account)) {
+      String uri = "/api/v1/accounts/" + accountId + "/reconciliations/" + foreign;
+      client().get().uri(uri).exchange().expectStatus().isNotFound();
+      for (String action : List.of("accept", "dismiss")) {
+        client()
+            .post()
+            .uri(uri + "/" + action)
+            .header("If-Match", version)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(new ReconciliationDecisionRequest(NOTE))
+            .exchange()
+            .expectStatus()
+            .isNotFound();
+      }
+      client()
+          .post()
+          .uri(uri + "/reopen")
+          .header("If-Match", version)
+          .exchange()
+          .expectStatus()
+          .isNotFound();
+    }
+    assertThat(
+            stringValue(
+                "SELECT status || ' ' || count(t.id) FROM reconciliation_result r"
+                    + " LEFT JOIN transaction t ON t.reconciliation_result_id = r.id"
+                    + " WHERE r.id = ? GROUP BY r.status",
+                foreign))
+        .isEqualTo("OPEN 0");
+    assertThat(denialLogged("admin@example.com", "Reconciliation result", foreign)).isTrue();
+    assertThat(denialLogged("admin@example.com", "Account", account)).isTrue();
   }
 
   private ReconciliationResultResponse accept(ReconciliationResultResponse open) {
@@ -1191,6 +1275,25 @@ class ReconciliationDecisionControllerTest {
       try (ResultSet result = statement.executeQuery()) {
         result.next();
         return result.getLong(1);
+      }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  // US-28-02: the denial reached AuthorizationDenialAuditService, not just a 404 to the caller.
+  private boolean denialLogged(String email, String entityType, UUID entityId) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT 1 FROM authorization_denial_log l JOIN app_user u"
+                    + " ON u.id = l.principal_user_id WHERE u.email = ?"
+                    + " AND l.requested_entity_type = ? AND l.requested_entity_id = ?")) {
+      statement.setString(1, email);
+      statement.setString(2, entityType);
+      statement.setObject(3, entityId);
+      try (ResultSet result = statement.executeQuery()) {
+        return result.next();
       }
     } catch (Exception e) {
       throw new IllegalStateException(e);

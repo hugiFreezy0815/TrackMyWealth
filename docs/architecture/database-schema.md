@@ -66,7 +66,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V60` | Cash reconciliation: at most one account-level `reconciliation_result` per snapshot; security-level rows remain available for later holdings reconciliation (#234) |
 | `V61` | `fx_import_setting`: one global row holding the FX import interval an administrator set at runtime; it wins over `FX_IMPORT_CRON` at every start (#227) |
 | `V62` | `reconciliation_result.version` + `reconciliation_result_bump_version`: member decisions on a result need `If-Match` (#235) |
-| `V63` | `transaction.reconciliation_result_id`: the result that booked a row as its adjusting entry, only on a manual `VALUATION_ADJUSTMENT`, frozen by the append-only trigger (#235) |
+| `V63` | `transaction.reconciliation_result_id`: the result that booked a row as its adjusting entry, only on a manual `VALUATION_ADJUSTMENT` and only a result of the row's own account (composite FK on `(account_id, id)`, so never another workspace's), frozen by the append-only trigger (#235) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16

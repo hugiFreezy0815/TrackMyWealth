@@ -3,8 +3,18 @@
 -- valuation and imports will write too (V36), and those rows must stay ordinary rows. The link is
 -- written on insert and never changes, so a withdrawn (soft-deleted) adjustment still names its
 -- owner, while reconciliation_result.resolution_transaction_id points only at the live one.
+--
+-- The owner must be a result of the row's own account, and therefore of its own workspace: a plain
+-- FK on the id alone would accept another tenant's result, since FK checks bypass RLS (see V34).
+-- The composite FK enforces that declaratively; it needs the (account_id, id) key it references.
+ALTER TABLE reconciliation_result
+ADD CONSTRAINT reconciliation_result_account_id_id_key UNIQUE (account_id, id);
+
 ALTER TABLE transaction
-ADD COLUMN reconciliation_result_id UUID REFERENCES reconciliation_result (id),
+ADD COLUMN reconciliation_result_id UUID,
+ADD CONSTRAINT transaction_reconciliation_result_same_account
+FOREIGN KEY (account_id, reconciliation_result_id)
+REFERENCES reconciliation_result (account_id, id),
 ADD CONSTRAINT transaction_reconciliation_adjustment_shape CHECK (
     reconciliation_result_id IS NULL
     OR (transaction_type = 'VALUATION_ADJUSTMENT' AND source = 'MANUAL')
