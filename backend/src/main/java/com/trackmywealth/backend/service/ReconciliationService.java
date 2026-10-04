@@ -1,7 +1,6 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
-import com.trackmywealth.backend.dto.ReconciliationAdjustmentValues;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.dto.ReconciliationStatusResponse;
@@ -9,9 +8,6 @@ import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ReconciliationResult;
-import com.trackmywealth.backend.entity.Transaction;
-import com.trackmywealth.backend.error.ApiErrorCode;
-import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
@@ -21,18 +17,12 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -251,89 +241,13 @@ public class ReconciliationService {
         result, latestSnapshot(result.getAccount().getId()).map(AccountSnapshot::getId));
   }
 
-  /**
-   * The {@link ReconciliationAdjustmentValues} state of every {@code VALUATION_ADJUSTMENT} among
-   * {@code transactions}, by transaction id; other rows have none. One query for the links, plus
-   * one per account that carries an adjustment.
-   */
-  public Map<UUID, String> adjustmentStates(Collection<Transaction> transactions) {
-    List<Transaction> adjustments =
-        transactions.stream()
-            .filter(row -> TransactionService.VALUATION_ADJUSTMENT.equals(row.getTransactionType()))
-            .toList();
-    if (adjustments.isEmpty()) {
-      return Map.of();
-    }
-    Map<UUID, ReconciliationResult> resultByAdjustment =
-        resultRepository
-            .findByResolutionTransactionIdIn(adjustments.stream().map(Transaction::getId).toList())
-            .stream()
-            .collect(
-                Collectors.toMap(
-                    ReconciliationResult::getResolutionTransactionId, Function.identity()));
-    Map<UUID, Optional<UUID>> latestByAccount = new HashMap<>();
-    Map<UUID, String> states = new HashMap<>();
-    for (Transaction adjustment : adjustments) {
-      ReconciliationResult result = resultByAdjustment.get(adjustment.getId());
-      String state;
-      if (adjustment.getDeletedAt() != null) {
-        state = ReconciliationAdjustmentValues.WITHDRAWN;
-      } else if (result == null) {
-        // Withdrawing clears the link and soft-deletes the row together, so a live row without a
-        // result cannot be taken back by anything: it is history.
-        state = ReconciliationAdjustmentValues.FINALIZED;
-      } else {
-        Optional<UUID> latest =
-            latestByAccount.computeIfAbsent(
-                adjustment.getAccount().getId(),
-                accountId -> latestSnapshot(accountId).map(AccountSnapshot::getId));
-        state =
-            isFinalized(result, latest)
-                ? ReconciliationAdjustmentValues.FINALIZED
-                : ReconciliationAdjustmentValues.REOPENABLE;
-      }
-      states.put(adjustment.getId(), state);
-    }
-    return states;
-  }
-
-  /**
-   * US-25-03: a reconciliation adjustment belongs to its result, so correcting, removing, restoring
-   * or categorizing it directly is a 409 {@code RECONCILIATION_ADJUSTMENT_LOCKED}. Taken back on
-   * its own, the result would claim a closed gap that is open again; and it is neither spending nor
-   * income, so it has no category. The detail, and the {@code reconciliationAdjustment} property,
-   * say what still works.
-   */
-  void requireNotAdjustment(Transaction transaction) {
-    if (!TransactionService.VALUATION_ADJUSTMENT.equals(transaction.getTransactionType())) {
-      return;
-    }
-    String state = adjustmentStates(List.of(transaction)).get(transaction.getId());
-    String detail =
-        switch (state) {
-          case ReconciliationAdjustmentValues.FINALIZED ->
-              "This adjusting entry belongs to a reconciliation that a newer snapshot has"
-                  + " finalized. Correct the difference in the latest reconciliation instead.";
-          case ReconciliationAdjustmentValues.WITHDRAWN ->
-              "This adjusting entry was withdrawn with its reconciliation decision and cannot"
-                  + " come back on its own.";
-          default ->
-              "This is the adjusting entry of an accepted reconciliation difference. Reopen the"
-                  + " reconciliation result to take it back.";
-        };
-    ApiException locked =
-        new ApiException(
-            HttpStatus.CONFLICT, ApiErrorCode.RECONCILIATION_ADJUSTMENT_LOCKED, detail);
-    locked.getBody().setProperty("reconciliationAdjustment", state);
-    throw locked;
-  }
-
   private static boolean comparesSnapshot(
       ReconciliationResult result, Optional<UUID> latestSnapshotId) {
     return latestSnapshotId.map(id -> id.equals(result.getSnapshot().getId())).orElse(false);
   }
 
-  private static boolean isFinalized(ReconciliationResult result, Optional<UUID> latestSnapshotId) {
+  /** {@link #isFinalized(ReconciliationResult)} against an already known newest snapshot. */
+  static boolean isFinalized(ReconciliationResult result, Optional<UUID> latestSnapshotId) {
     return List.of(ACCEPTED, DISMISSED).contains(result.getStatus())
         && !comparesSnapshot(result, latestSnapshotId);
   }
@@ -545,6 +459,11 @@ public class ReconciliationService {
 
   private static boolean cashScopeApplies(Account account) {
     return account.isHasTransactions() && !account.isHoldsPositions();
+  }
+
+  /** The id of the account's newest observed balance snapshot, if one exists. */
+  Optional<UUID> latestSnapshotId(UUID accountId) {
+    return latestSnapshot(accountId).map(AccountSnapshot::getId);
   }
 
   private Optional<AccountSnapshot> latestSnapshot(UUID accountId) {

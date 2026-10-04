@@ -41,6 +41,7 @@ public class TransactionCorrectionService {
   private final CategorizationService categorizationService;
   private final CategoryService categoryService;
   private final VersionPreconditionService versionPreconditionService;
+  private final ReconciliationAdjustmentService reconciliationAdjustmentService;
 
   public TransactionCorrectionService(
       AccountLookupService accountLookupService,
@@ -50,7 +51,8 @@ public class TransactionCorrectionService {
       TransactionService transactionService,
       CategorizationService categorizationService,
       CategoryService categoryService,
-      VersionPreconditionService versionPreconditionService) {
+      VersionPreconditionService versionPreconditionService,
+      ReconciliationAdjustmentService reconciliationAdjustmentService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -59,6 +61,7 @@ public class TransactionCorrectionService {
     this.categorizationService = categorizationService;
     this.categoryService = categoryService;
     this.versionPreconditionService = versionPreconditionService;
+    this.reconciliationAdjustmentService = reconciliationAdjustmentService;
   }
 
   @Transactional
@@ -71,7 +74,7 @@ public class TransactionCorrectionService {
     Transaction original =
         transactionRemovalService.lockActiveTransaction(accountId, transactionId, actor);
     Account sourceAccount = original.getAccount();
-    transactionService.requireNotReconciliationAdjustment(original);
+    reconciliationAdjustmentService.requireNotAdjustment(original);
 
     if (TransactionService.removalOf(original) == null) {
       throw new ResponseStatusException(

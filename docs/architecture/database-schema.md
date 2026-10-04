@@ -66,6 +66,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V60` | Cash reconciliation: at most one account-level `reconciliation_result` per snapshot; security-level rows remain available for later holdings reconciliation (#234) |
 | `V61` | `fx_import_setting`: one global row holding the FX import interval an administrator set at runtime; it wins over `FX_IMPORT_CRON` at every start (#227) |
 | `V62` | `reconciliation_result.version` + `reconciliation_result_bump_version`: member decisions on a result need `If-Match` (#235) |
+| `V63` | `transaction.reconciliation_result_id`: the result that booked a row as its adjusting entry, only on a manual `VALUATION_ADJUSTMENT`, frozen by the append-only trigger (#235) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -342,8 +343,11 @@ snapshot can be decided on; a superseded one, or one not in the state the action
 - **Accept** (`note` required) inserts a `transaction` of type `VALUATION_ADJUSTMENT`, `source =
   'MANUAL'`, dated to the snapshot, for the missing ledger amount (asset: the difference;
   liability: its negation), and links it as `resolution_transaction_id`; status `ACCEPTED`. The
-  type is not accepted by `POST /transactions`, is not categorized, and is in no cash-flow figure.
-  Correcting, removing, restoring or categorizing the row directly is a 409
+  row names its owner in `transaction.reconciliation_result_id` (V63), written on insert and frozen
+  by the append-only trigger, so a withdrawn row still names it. That link, not the type, makes a
+  row a reconciliation adjustment: a `VALUATION_ADJUSTMENT` that no result booked (a future
+  investment valuation or import) is an ordinary row. The type is not accepted by `POST
+  /transactions`, is not categorized, and is in no cash-flow figure. Correcting, removing, restoring or categorizing the row directly is a 409
   `RECONCILIATION_ADJUSTMENT_LOCKED` (its `removal` is `null`): only its result's reopen takes it
   back. The ledger shows where the row stands in `reconciliationAdjustment`: `REOPENABLE`,
   `FINALIZED` or `WITHDRAWN`; the 409 carries the same value.

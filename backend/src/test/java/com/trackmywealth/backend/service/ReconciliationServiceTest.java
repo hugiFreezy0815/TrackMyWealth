@@ -10,7 +10,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
-import com.trackmywealth.backend.dto.ReconciliationAdjustmentValues;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
@@ -28,7 +27,6 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -328,6 +326,25 @@ class ReconciliationServiceTest {
   }
 
   @Test
+  void leavingCashScopeRetiresAnAcceptanceAndWithdrawsItsEntry() {
+    UUID adjustmentId = UUID.randomUUID();
+    ReconciliationResult accepted = decided("ACCEPTED", "45.67", adjustmentId);
+    Transaction adjustment = new Transaction();
+    when(transactionRepository.findByIdForUpdate(adjustmentId)).thenReturn(Optional.of(adjustment));
+    // Now holding positions, its cash is only part of what the provider reports.
+    account.setHoldsPositions(true);
+
+    service.reconcileLatest(account, ACTOR.userId());
+
+    assertThat(accepted.getStatus()).isEqualTo("SUPERSEDED");
+    assertThat(accepted.getResolutionTransactionId()).isNull();
+    assertThat(accepted.getResolutionNote()).isEqualTo("member note");
+    assertThat(adjustment.getDeletedAt()).isNotNull();
+    assertThat(adjustment.getDeletedBy()).isEqualTo(ACTOR.userId());
+    verify(snapshotRepository).findForUpdate(snapshot.getId(), account.getId());
+  }
+
+  @Test
   void anAcceptOvertakenByAnotherChangeReopensWithTheRealDifference() {
     UUID adjustmentId = UUID.randomUUID();
     ReconciliationResult accepted = decided("ACCEPTED", "45.67", adjustmentId);
@@ -406,41 +423,6 @@ class ReconciliationServiceTest {
 
     assertThat(status.status()).isEqualTo(ReconciliationStatusValues.RECONCILED);
     assertThat(status.openDifference()).isNull();
-  }
-
-  @Test
-  void anAdjustmentsStateFollowsItsResultAndTheNewestSnapshot() {
-    Transaction ordinary = transaction("INCOME");
-    Transaction current = transaction("VALUATION_ADJUSTMENT");
-    Transaction older = transaction("VALUATION_ADJUSTMENT");
-    Transaction unlinked = transaction("VALUATION_ADJUSTMENT");
-    Transaction withdrawn = transaction("VALUATION_ADJUSTMENT");
-    withdrawn.setDeletedAt(OffsetDateTime.now(ZoneOffset.UTC));
-    ReconciliationResult onNewest = result("ACCEPTED", "45.67", snapshot);
-    onNewest.setResolutionTransactionId(current.getId());
-    ReconciliationResult onOlder =
-        result("ACCEPTED", "12.00", snapshot(SNAPSHOT_DATE.minusMonths(1), "12000.00", false));
-    onOlder.setResolutionTransactionId(older.getId());
-    when(resultRepository.findByResolutionTransactionIdIn(any()))
-        .thenReturn(List.of(onNewest, onOlder));
-
-    assertThat(service.adjustmentStates(List.of(ordinary, current, older, unlinked, withdrawn)))
-        .containsExactlyInAnyOrderEntriesOf(
-            Map.of(
-                current.getId(), ReconciliationAdjustmentValues.REOPENABLE,
-                older.getId(), ReconciliationAdjustmentValues.FINALIZED,
-                // Nothing links it any more, yet it counts: nothing can take it back.
-                unlinked.getId(), ReconciliationAdjustmentValues.FINALIZED,
-                withdrawn.getId(), ReconciliationAdjustmentValues.WITHDRAWN));
-    assertThat(service.adjustmentStates(List.of(ordinary))).isEmpty();
-  }
-
-  private Transaction transaction(String type) {
-    Transaction value = new Transaction();
-    ReflectionTestUtils.setField(value, "id", UUID.randomUUID());
-    value.setAccount(account);
-    value.setTransactionType(type);
-    return value;
   }
 
   // A member decision on the newest snapshot's result, as US-25-03 leaves it.

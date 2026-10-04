@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
@@ -20,6 +21,7 @@ import com.trackmywealth.backend.dto.ReconciliationDecisionRequest;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
+import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -36,6 +38,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -100,11 +103,13 @@ class ReconciliationDecisionControllerTest {
         Statement statement = connection.createStatement()) {
       for (String sql :
           List.of(
-              "DELETE FROM reconciliation_result",
+              // An accepted result and its adjusting entry point at each other (V63).
+              "UPDATE reconciliation_result SET resolution_transaction_id = NULL",
               "DELETE FROM settlement_match",
               "DELETE FROM transaction_categorization_log",
               "DELETE FROM transaction WHERE replaces_transaction_id IS NOT NULL",
               "DELETE FROM transaction",
+              "DELETE FROM reconciliation_result",
               "DELETE FROM snapshot_holding",
               "DELETE FROM account_snapshot",
               "DELETE FROM sharing_grant",
@@ -751,6 +756,101 @@ class ReconciliationDecisionControllerTest {
     assertThat(result(dismissed.id()).status()).isEqualTo("SUPERSEDED");
     assertThat(account().reconciliation().status())
         .isEqualTo(ReconciliationStatusValues.NOT_RECONCILABLE);
+  }
+
+  @Test
+  void twoConcurrentAcceptsBookOneAdjustment() throws Exception {
+    recordSnapshot(SNAPSHOT_DATE, "12345.67");
+    ReconciliationResultResponse open = onlyResult();
+    CountDownLatch start = new CountDownLatch(1);
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    List<Integer> statuses;
+    try {
+      Callable<Integer> accept =
+          () -> {
+            start.await();
+            return decide(open, "accept", new ReconciliationDecisionRequest(NOTE))
+                .returnResult(String.class)
+                .getStatus()
+                .value();
+          };
+      Future<Integer> first = pool.submit(accept);
+      Future<Integer> second = pool.submit(accept);
+      start.countDown();
+      statuses = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
+    } finally {
+      pool.shutdownNow();
+    }
+
+    // Both sent the same version: one wins, the other's precondition is stale.
+    assertThat(statuses).containsExactlyInAnyOrder(200, 412);
+    ReconciliationResultResponse accepted = onlyResult();
+    assertThat(accepted.status()).isEqualTo("ACCEPTED");
+    assertThat(
+            count(
+                "SELECT count(*) FROM transaction WHERE account_id = ?"
+                    + " AND reconciliation_result_id IS NOT NULL",
+                cash.id()))
+        .isEqualTo(1);
+    assertThat(account().reconciliation().status())
+        .isEqualTo(ReconciliationStatusValues.RECONCILED);
+  }
+
+  @Test
+  void correctingTheSnapshotAmountReopensAnAcceptanceWithTheRealDifference() {
+    AccountSnapshotResponse snapshot = recordSnapshot(SNAPSHOT_DATE, "12345.67");
+    ReconciliationResultResponse accepted = accept(onlyResult());
+
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + cash.id() + "/snapshots/" + snapshot.id())
+        .headers(CurrentVersion.ifMatch(dataSource, "account_snapshot", snapshot.id()))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new ReplaceAccountSnapshotRequest(new BigDecimal("12350.67"), List.of()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    // The acceptance covered 45.67; the provider's corrected figure leaves 50.67 unexplained.
+    ReconciliationResultResponse reopened = result(accepted.id());
+    assertThat(reopened.status()).isEqualTo("OPEN");
+    assertThat(reopened.differenceAmount()).isEqualByComparingTo("50.67");
+    assertThat(reopened.resolutionTransactionId()).isNull();
+    assertThat(reopened.resolutionNote()).isEqualTo(NOTE);
+    assertThat(ledger()).extracting(TransactionResponse::id).doesNotContain(adjustmentOf(accepted));
+    assertThat(account().reconciliation().status())
+        .isEqualTo(ReconciliationStatusValues.OPEN_DIFFERENCE);
+  }
+
+  @Test
+  void theAdjustingEntryNamesItsOwnerForGood() {
+    recordSnapshot(SNAPSHOT_DATE, "12345.67");
+    ReconciliationResultResponse accepted = accept(onlyResult());
+    UUID adjustment = adjustmentOf(accepted);
+    reopen(accepted);
+
+    // Withdrawn, it still names the result that booked it (V63).
+    assertThat(
+            stringValue(
+                "SELECT reconciliation_result_id::text FROM transaction WHERE id = ?", adjustment))
+        .isEqualTo(accepted.id().toString());
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "UPDATE transaction SET reconciliation_result_id = NULL WHERE id = ?",
+                    adjustment))
+        .hasMessageContaining("transaction_ledger_append_only");
+    // Only a manual VALUATION_ADJUSTMENT can belong to a reconciliation result.
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
+                        + " booking_date, amount, currency, source, reconciliation_result_id)"
+                        + " SELECT workspace_id, account_id, 'EXPENSE', booking_date, amount,"
+                        + " currency, 'MANUAL', reconciliation_result_id FROM transaction"
+                        + " WHERE id = ?",
+                    adjustment))
+        .hasMessageContaining("transaction_reconciliation_adjustment_shape");
   }
 
   @Test

@@ -102,6 +102,7 @@ class ReconciliationDecisionServiceTest {
     Transaction adjustment = captor.getValue();
     assertThat(adjustment.getAmount()).isEqualByComparingTo("-15.00");
     assertThat(adjustment.getTransactionType()).isEqualTo("VALUATION_ADJUSTMENT");
+    assertThat(adjustment.getReconciliationResultId()).isEqualTo(result.getId());
     assertThat(adjustment.getCurrency()).isEqualTo("CHF");
     assertThat(adjustment.getCreatedBy()).isEqualTo(ACTOR.userId());
     assertThat(result.getStatus()).isEqualTo("ACCEPTED");

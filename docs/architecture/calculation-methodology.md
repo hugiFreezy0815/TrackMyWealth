@@ -307,9 +307,12 @@ An open difference adds `OPEN_RECONCILIATION_DIFFERENCE` to the account's data-q
 which means the existing valuation aggregation also surfaces it at institution and net-worth
 headlines (FR-CON-007 / PR-011). A dismissed one does not: it is documented.
 
-A `VALUATION_ADJUSTMENT` row counts in every balance (it is why an accepted account agrees), but in
+A reconciliation adjustment counts in every balance (it is why an accepted account agrees), but in
 no cash-flow figure: it corrects a balance, it is neither income nor spending, and `CashFlowService`
-sums named types only.
+sums named types only. A row is one through `transaction.reconciliation_result_id` (V63), not
+through its `VALUATION_ADJUSTMENT` type alone. One dated on the opening-balance date still counts,
+because it was booked after the opening balance was taken. It never counts as a duplicate entry in
+the probable-cause classification below.
 
 ### Probable-cause classification
 

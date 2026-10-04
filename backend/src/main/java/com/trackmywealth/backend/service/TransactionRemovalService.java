@@ -81,6 +81,7 @@ public class TransactionRemovalService {
   private final Clock clock;
   private final VersionPreconditionService versionPreconditionService;
   private final ReconciliationService reconciliationService;
+  private final ReconciliationAdjustmentService reconciliationAdjustmentService;
 
   public TransactionRemovalService(
       AccountLookupService accountLookupService,
@@ -94,7 +95,8 @@ public class TransactionRemovalService {
       BusinessDateService businessDateService,
       Clock clock,
       VersionPreconditionService versionPreconditionService,
-      ReconciliationService reconciliationService) {
+      ReconciliationService reconciliationService,
+      ReconciliationAdjustmentService reconciliationAdjustmentService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -107,6 +109,7 @@ public class TransactionRemovalService {
     this.clock = clock;
     this.versionPreconditionService = versionPreconditionService;
     this.reconciliationService = reconciliationService;
+    this.reconciliationAdjustmentService = reconciliationAdjustmentService;
   }
 
   /**
@@ -123,7 +126,7 @@ public class TransactionRemovalService {
       AuthenticatedUserPrincipal actor) {
     Transaction original = lockActiveTransaction(accountId, transactionId, actor);
     Account account = original.getAccount();
-    transactionService.requireNotReconciliationAdjustment(original);
+    reconciliationAdjustmentService.requireNotAdjustment(original);
     String removal = TransactionService.removalOf(original);
     if (removal == null) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, notRemovable(original));
@@ -219,7 +222,7 @@ public class TransactionRemovalService {
             .filter(row -> row.getAccount().getId().equals(account.getId()))
             .orElseThrow(
                 () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
-    transactionService.requireNotReconciliationAdjustment(removed);
+    reconciliationAdjustmentService.requireNotAdjustment(removed);
     if (removed.getDeletedAt() != null) {
       return restoreSoftDeleted(account, removed, expectedVersion, actor);
     }

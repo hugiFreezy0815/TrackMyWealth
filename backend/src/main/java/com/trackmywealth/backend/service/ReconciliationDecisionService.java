@@ -114,6 +114,8 @@ public class ReconciliationDecisionService {
     adjustment.setMerchantDescription(ADJUSTMENT_DESCRIPTION);
     adjustment.setNotes(reason);
     adjustment.setSource(TransactionService.MANUAL);
+    // The owner link, not the type, makes it a reconciliation adjustment (V63).
+    adjustment.setReconciliationResultId(result.getId());
     adjustment.setCreatedBy(actor.userId());
     Transaction saved = transactionRepository.saveAndFlush(adjustment);
 

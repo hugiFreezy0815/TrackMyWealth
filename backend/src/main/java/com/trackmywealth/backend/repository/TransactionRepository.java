@@ -150,7 +150,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * US-07-02/07-07 (FR-LIF-006): the account's rows still restorable - soft-deleted or voided at or
    * after {@code since} - most recently removed first. A void already restored (a row restores it,
    * V50) or any row since corrected (a replacement corrects it, V49) can no longer be restored and
-   * is left out.
+   * is left out, as is a withdrawn reconciliation adjustment (US-25-03): only its result decides.
    */
   @Query(
       value =
@@ -159,7 +159,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " OR (t.voided_at IS NOT NULL AND t.voided_at >= :since"
               + " AND NOT EXISTS (SELECT 1 FROM transaction r"
               + " WHERE r.restores_transaction_id = t.id)))"
-              + " AND t.transaction_type <> 'VALUATION_ADJUSTMENT'"
+              + " AND t.reconciliation_result_id IS NULL"
               + " AND NOT EXISTS (SELECT 1 FROM transaction c"
               + " WHERE c.corrects_transaction_id = t.id)"
               + " ORDER BY COALESCE(t.deleted_at, t.voided_at) DESC, t.id DESC",
@@ -239,18 +239,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /**
    * US-25-04: {@link #sumAmountByAccountIdAsOf} for the rows booked after {@code after} only - the
    * part of the ledger an opening balance dated {@code after} does not already contain. A
-   * reconciliation {@code VALUATION_ADJUSTMENT} on the opening date is the one exception: it is
-   * created later to correct an observed provider figure and therefore was not part of the opening
-   * balance even though it deliberately carries that snapshot date. Same conversion to the
-   * account's own currency and the same void-pair handling; empty when no row falls into the
-   * window.
+   * reconciliation adjustment (US-25-03, owned by a result) on the opening date is the one
+   * exception: it is created later to correct an observed provider figure and therefore was not
+   * part of the opening balance even though it deliberately carries that snapshot date. Same
+   * conversion to the account's own currency and the same void-pair handling; empty when no row
+   * falls into the window.
    */
   @Query(
       "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
           + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
           + " from Transaction t where t.account.id = :accountId"
           + " and (t.bookingDate > :after"
-          + " or (t.bookingDate = :after and t.transactionType = 'VALUATION_ADJUSTMENT'))"
+          + " or (t.bookingDate = :after and t.reconciliationResultId is not null))"
           + " and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdBookedAfter(
       @Param(ACCOUNT_ID) UUID accountId,
@@ -544,7 +544,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /**
    * US-25-02: a duplicate-entry signature in the reconciliation period. One live row must have an
    * account-currency amount equal to {@code amount}, and another live row must match its booking
-   * date, original amount/currency and normalized description exactly.
+   * date, original amount/currency and normalized description exactly. A reconciliation adjustment
+   * (US-25-03) is neither: it is the member's documented correction, not an entry.
    */
   @Query(
       value =
@@ -559,7 +560,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " AND t1.amount * COALESCE(t1.fx_rate_to_account_currency, 1) = :amount"
               + " AND t1.deleted_at IS NULL AND t2.deleted_at IS NULL"
               + " AND t1.voided_at IS NULL AND t2.voided_at IS NULL"
-              + " AND t1.replaces_transaction_id IS NULL AND t2.replaces_transaction_id IS NULL)",
+              + " AND t1.replaces_transaction_id IS NULL AND t2.replaces_transaction_id IS NULL"
+              + " AND t1.reconciliation_result_id IS NULL"
+              + " AND t2.reconciliation_result_id IS NULL)",
       nativeQuery = true)
   boolean existsDuplicateEntrySignature(
       @Param(ACCOUNT_ID) UUID accountId,

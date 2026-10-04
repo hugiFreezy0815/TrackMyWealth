@@ -98,10 +98,9 @@ public class TransactionService {
   // every service that writes a transaction under If-Match.
   static final String VERSIONED_RESOURCE = "transaction";
 
-  // US-25-03: an accepted reconciliation difference's adjusting entry. Only
-  // ReconciliationDecisionService writes one (it is not in SUPPORTED_TYPES), and only a reopen of
-  // its result takes it back, until a newer snapshot finalizes it
-  // (requireNotReconciliationAdjustment).
+  // US-25-03: the type of an accepted reconciliation difference's adjusting entry. It is not in
+  // SUPPORTED_TYPES; the owner link (ReconciliationAdjustmentService), not the type, is what locks
+  // a row to its reconciliation result.
   static final String VALUATION_ADJUSTMENT = "VALUATION_ADJUSTMENT";
 
   private static final String CREDIT_CARD_PURCHASE = "CREDIT_CARD_PURCHASE";
@@ -176,6 +175,7 @@ public class TransactionService {
   private final VersionPreconditionService versionPreconditionService;
   private final AccountDataQualityService accountDataQualityService;
   private final ReconciliationService reconciliationService;
+  private final ReconciliationAdjustmentService reconciliationAdjustmentService;
 
   public TransactionService(
       AccountLookupService accountLookupService,
@@ -193,7 +193,8 @@ public class TransactionService {
       @Value("${app.fx.default-source}") String fxDefaultSource,
       VersionPreconditionService versionPreconditionService,
       AccountDataQualityService accountDataQualityService,
-      ReconciliationService reconciliationService) {
+      ReconciliationService reconciliationService,
+      ReconciliationAdjustmentService reconciliationAdjustmentService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -210,6 +211,7 @@ public class TransactionService {
     this.versionPreconditionService = versionPreconditionService;
     this.accountDataQualityService = accountDataQualityService;
     this.reconciliationService = reconciliationService;
+    this.reconciliationAdjustmentService = reconciliationAdjustmentService;
   }
 
   /**
@@ -418,7 +420,8 @@ public class TransactionService {
             : transactionRepository.findByAccountId(accountId, bounded);
     Map<UUID, String> assignments = latestAssignments(page.getContent());
     Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(page.getContent());
-    Map<UUID, String> adjustmentStates = reconciliationService.adjustmentStates(page.getContent());
+    Map<UUID, String> adjustmentStates =
+        reconciliationAdjustmentService.adjustmentStates(page.getContent());
     return page.map(
         transaction ->
             toResponse(
@@ -525,7 +528,7 @@ public class TransactionService {
           HttpStatus.CONFLICT, "A voided transaction's category cannot be changed.");
     }
     // A balance correction is neither income nor spending, so it never carries a category.
-    requireNotReconciliationAdjustment(transaction);
+    reconciliationAdjustmentService.requireNotAdjustment(transaction);
     return transaction;
   }
 
@@ -1071,7 +1074,7 @@ public class TransactionService {
         transaction,
         categoryAssignedBy,
         openingBalanceDates(List.of(transaction)),
-        reconciliationService.adjustmentStates(List.of(transaction)));
+        reconciliationAdjustmentService.adjustmentStates(List.of(transaction)));
   }
 
   private TransactionResponse toResponse(
@@ -1140,7 +1143,7 @@ public class TransactionService {
     if (transaction.getVoidedAt() != null
         || transaction.isReversal()
         || transaction.getDeletedAt() != null
-        || VALUATION_ADJUSTMENT.equals(transaction.getTransactionType())) {
+        || transaction.isReconciliationAdjustment()) {
       return null;
     }
     return MANUAL.equals(transaction.getSource())
@@ -1148,19 +1151,12 @@ public class TransactionService {
         : TransactionRemovalValues.VOID;
   }
 
-  /**
-   * US-25-03: a reconciliation adjustment is neither corrected, removed, restored nor categorized
-   * directly; {@link ReconciliationService#requireNotAdjustment} has the rule and its detail.
-   */
-  void requireNotReconciliationAdjustment(Transaction transaction) {
-    reconciliationService.requireNotAdjustment(transaction);
-  }
-
   /** Responses for many rows at once, with how each got its category (one log query). */
   public List<TransactionResponse> toResponses(List<Transaction> transactions) {
     Map<UUID, String> assignments = latestAssignments(transactions);
     Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(transactions);
-    Map<UUID, String> adjustmentStates = reconciliationService.adjustmentStates(transactions);
+    Map<UUID, String> adjustmentStates =
+        reconciliationAdjustmentService.adjustmentStates(transactions);
     return transactions.stream()
         .map(
             transaction ->
