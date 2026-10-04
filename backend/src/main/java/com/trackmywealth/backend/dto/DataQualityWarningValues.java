@@ -18,6 +18,11 @@ public final class DataQualityWarningValues {
    * <p>Shown at {@code BALANCE_ONLY} too: it qualifies the figure that grant sees (PR-011), so it
    * travels with it. It says only that such rows exist - never how many, when or how much, which
    * stay behind {@code READ} (#241 review).
+   *
+   * <p>A finalized reconciliation adjustment (US-25-03) left before a later-moved opening balance
+   * does not raise it: the new starting point contains that correction, and the row is locked to
+   * its result, so there is nothing to act on. The row still carries {@link
+   * #BOOKED_BEFORE_OPENING_BALANCE}.
    */
   public static final String TRANSACTIONS_BEFORE_OPENING_BALANCE =
       "TRANSACTIONS_BEFORE_OPENING_BALANCE";

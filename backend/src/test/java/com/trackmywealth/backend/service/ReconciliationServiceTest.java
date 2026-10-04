@@ -45,7 +45,6 @@ class ReconciliationServiceTest {
       new AuthenticatedUserPrincipal(
           UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID(), "EN");
 
-  private final AccountLookupService accountLookupService = mock(AccountLookupService.class);
   private final AccessControlService accessControlService = mock(AccessControlService.class);
   private final AccountSnapshotRepository snapshotRepository =
       mock(AccountSnapshotRepository.class);
@@ -54,7 +53,6 @@ class ReconciliationServiceTest {
       mock(ReconciliationResultRepository.class);
   private final ReconciliationService service =
       new ReconciliationService(
-          accountLookupService,
           accessControlService,
           snapshotRepository,
           transactionRepository,

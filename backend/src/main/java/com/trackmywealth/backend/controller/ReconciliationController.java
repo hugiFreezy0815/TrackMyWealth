@@ -4,7 +4,7 @@ import com.trackmywealth.backend.dto.ReconciliationDecisionRequest;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ReconciliationDecisionService;
-import com.trackmywealth.backend.service.ReconciliationService;
+import com.trackmywealth.backend.service.ReconciliationHistoryService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.VersionedResponse;
 import jakarta.validation.Valid;
@@ -32,13 +32,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/accounts/{accountId}/reconciliations")
 public class ReconciliationController {
 
-  private final ReconciliationService reconciliationService;
+  private final ReconciliationHistoryService historyService;
   private final ReconciliationDecisionService reconciliationDecisionService;
 
   public ReconciliationController(
-      ReconciliationService reconciliationService,
+      ReconciliationHistoryService historyService,
       ReconciliationDecisionService reconciliationDecisionService) {
-    this.reconciliationService = reconciliationService;
+    this.historyService = historyService;
     this.reconciliationDecisionService = reconciliationDecisionService;
   }
 
@@ -47,7 +47,7 @@ public class ReconciliationController {
       @PathVariable UUID accountId,
       Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return reconciliationService.list(accountId, pageable, actor);
+    return historyService.list(accountId, pageable, actor);
   }
 
   @GetMapping("/{resultId}")
@@ -55,7 +55,7 @@ public class ReconciliationController {
       @PathVariable UUID accountId,
       @PathVariable UUID resultId,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    ReconciliationResultResponse response = reconciliationService.get(accountId, resultId, actor);
+    ReconciliationResultResponse response = historyService.get(accountId, resultId, actor);
     return VersionedResponse.ok(response, response.version());
   }
 

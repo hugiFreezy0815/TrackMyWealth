@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
@@ -28,7 +30,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 class ReconciliationDecisionServiceTest {
 
@@ -40,18 +44,25 @@ class ReconciliationDecisionServiceTest {
   private final AccountLookupService accountLookupService = mock(AccountLookupService.class);
   private final AccessControlService accessControlService = mock(AccessControlService.class);
   private final ReconciliationService reconciliationService = mock(ReconciliationService.class);
+  private final ReconciliationHistoryService historyService =
+      mock(ReconciliationHistoryService.class);
   private final ReconciliationResultRepository resultRepository =
       mock(ReconciliationResultRepository.class);
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
+  private final SettlementDetectionService settlementDetectionService =
+      mock(SettlementDetectionService.class);
+  private final TransferDetectionService transferDetectionService =
+      mock(TransferDetectionService.class);
   private final ReconciliationDecisionService service =
       new ReconciliationDecisionService(
           accountLookupService,
           accessControlService,
           reconciliationService,
+          historyService,
           resultRepository,
           transactionRepository,
-          mock(SettlementDetectionService.class),
-          mock(TransferDetectionService.class),
+          settlementDetectionService,
+          transferDetectionService,
           new VersionPreconditionService());
 
   private Account account;
@@ -77,9 +88,8 @@ class ReconciliationDecisionServiceTest {
     result.setDifferenceAmount(new BigDecimal("15.0000"));
 
     when(accountLookupService.findAccountOrThrow(account.getId(), ACTOR)).thenReturn(account);
-    when(reconciliationService.findResultOrThrow(account, result.getId(), ACTOR))
-        .thenReturn(result);
-    when(reconciliationService.comparesLatestSnapshot(result)).thenReturn(true);
+    when(historyService.findResultOrThrow(account, result.getId(), ACTOR)).thenReturn(result);
+    when(historyService.comparesLatestSnapshot(result)).thenReturn(true);
     when(reconciliationService.now()).thenReturn(OffsetDateTime.now(ZoneOffset.UTC));
     when(transactionRepository.saveAndFlush(any(Transaction.class)))
         .thenAnswer(
@@ -105,6 +115,9 @@ class ReconciliationDecisionServiceTest {
     assertThat(adjustment.getReconciliationResultId()).isEqualTo(result.getId());
     assertThat(adjustment.getCurrency()).isEqualTo("CHF");
     assertThat(adjustment.getCreatedBy()).isEqualTo(ACTOR.userId());
+    // No stored English label: a client names the row in its own language; the note is the reason.
+    assertThat(adjustment.getMerchantDescription()).isNull();
+    assertThat(adjustment.getNotes()).isEqualTo("Annual card fee");
     assertThat(result.getStatus()).isEqualTo("ACCEPTED");
     assertThat(result.getResolutionTransactionId()).isEqualTo(adjustment.getId());
     assertThat(result.getResolvedBy()).isEqualTo(ACTOR.userId());
@@ -139,5 +152,19 @@ class ReconciliationDecisionServiceTest {
             conflict -> assertThat(conflict.getCode()).isEqualTo(ApiErrorCode.VERSION_CONFLICT));
     verify(accessControlService).requireAccountAccess(ACTOR, account, AccessLevelValues.EDIT);
     assertThat(result.getStatus()).isEqualTo("OPEN");
+  }
+
+  @Test
+  void aResultTheMemberMayNotUseIsDeniedBeforeAnyLock() {
+    UUID foreign = UUID.randomUUID();
+    doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND))
+        .when(historyService)
+        .requireResultExists(account, foreign, ACTOR);
+
+    assertThatThrownBy(() -> service.accept(account.getId(), foreign, "note", 3, ACTOR))
+        .isInstanceOf(ResponseStatusException.class);
+    // Neither the card locks nor the workspace-wide transfer-detection lock was ever taken.
+    verifyNoInteractions(settlementDetectionService, transferDetectionService);
+    verify(historyService, never()).findResultOrThrow(any(), any(), any());
   }
 }

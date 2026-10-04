@@ -44,7 +44,9 @@ import java.util.UUID;
  *
  * <p>US-25-03 ({@code reconciliationAdjustment}): on a {@code VALUATION_ADJUSTMENT} row, where it
  * stands in its reconciliation result's lifecycle ({@link ReconciliationAdjustmentValues}) - so a
- * client can say why the row is locked and what still works; {@code null} on every other row.
+ * client can say why the row is locked and what still works; {@code null} on every other row. Such
+ * a row has no {@code merchantDescription}: the client labels it in its own language, and {@code
+ * notes} carries the member's reason.
  *
  * <p>US-25-04 ({@code warnings}): the row's data-quality warnings ({@link
  * DataQualityWarningValues}), empty when there are none - {@code BOOKED_BEFORE_OPENING_BALANCE}

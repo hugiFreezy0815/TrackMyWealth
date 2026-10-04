@@ -36,6 +36,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   // balance, but must not count as spending or pair with a settlement.
   String NOT_VOIDED_OR_REVERSAL = " and t.voidedAt is null and t.replacesTransactionId is null";
 
+  // US-25-03: not the adjusting entry of a reconciliation result (V63's owner link).
+  String NOT_RECONCILIATION_ADJUSTMENT = " and t.reconciliationResultId is null";
+
   // The caller supplies the sort (TransactionService fixes it): a Pageable's own sort is client
   // input and must not decide which columns the query orders by.
   Page<Transaction> findByAccountId(UUID accountId, Pageable pageable);
@@ -276,21 +279,31 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /**
    * US-25-04: whether the account has a live row booked before {@code before} - the opening date,
    * when the caller already holds the opening balance (one query less per account in a valuation).
+   * A reconciliation adjustment (US-25-03) does not count: see {@link
+   * #existsLiveBookedBeforeOpeningBalance}.
    */
   @Query(
       "select count(t) > 0 from Transaction t where t.account.id = :accountId"
           + " and t.bookingDate < :before"
-          + NOT_VOIDED_OR_REVERSAL)
+          + NOT_VOIDED_OR_REVERSAL
+          + NOT_RECONCILIATION_ADJUSTMENT)
   boolean existsLiveBookedBefore(
       @Param(ACCOUNT_ID) UUID accountId, @Param("before") LocalDate before);
 
   /**
    * US-25-04: whether the account has a live row booked before its opening balance - {@code false}
    * for an account without one. Drives {@code TRANSACTIONS_BEFORE_OPENING_BALANCE}.
+   *
+   * <p>A reconciliation adjustment (US-25-03) does not count. One can only end up there when the
+   * opening balance moves past a finalized decision's snapshot: the new starting point already
+   * contains that correction, so leaving the row out is right, and the member could not act on the
+   * warning anyway - the row is locked to its result. The row itself still says it is left out
+   * ({@code BOOKED_BEFORE_OPENING_BALANCE}).
    */
   @Query(
       "select count(t) > 0 from Transaction t where t.account.id = :accountId"
           + NOT_VOIDED_OR_REVERSAL
+          + NOT_RECONCILIATION_ADJUSTMENT
           + " and t.bookingDate < (select s.snapshotDate from AccountSnapshot s"
           + " where s.account.id = :accountId and s.openingBalance = true)")
   boolean existsLiveBookedBeforeOpeningBalance(@Param(ACCOUNT_ID) UUID accountId);
@@ -304,7 +317,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       "select distinct t.account.id from Transaction t, AccountSnapshot s"
           + " where s.account.id = t.account.id and s.openingBalance = true"
           + " and t.account.id in :accountIds and t.bookingDate < s.snapshotDate"
-          + NOT_VOIDED_OR_REVERSAL)
+          + NOT_VOIDED_OR_REVERSAL
+          + NOT_RECONCILIATION_ADJUSTMENT)
   List<UUID> findAccountIdsWithLiveRowsBeforeOpeningBalance(
       @Param("accountIds") Collection<UUID> accountIds);
 

@@ -26,18 +26,19 @@ import org.springframework.stereotype.Service;
  * <p>The transaction services ask here whether a row may be corrected, removed, restored or
  * categorized ({@link #requireNotAdjustment}) and where an adjustment stands ({@link
  * #adjustmentStates}); the engine and the decisions that create and withdraw one stay in {@link
- * ReconciliationService} and {@link ReconciliationDecisionService}.
+ * ReconciliationService} and {@link ReconciliationDecisionService}, and whether its result is final
+ * comes from {@link ReconciliationHistoryService}.
  */
 @Service
 public class ReconciliationAdjustmentService {
 
-  private final ReconciliationService reconciliationService;
+  private final ReconciliationHistoryService historyService;
   private final ReconciliationResultRepository resultRepository;
 
   public ReconciliationAdjustmentService(
-      ReconciliationService reconciliationService,
+      ReconciliationHistoryService historyService,
       ReconciliationResultRepository resultRepository) {
-    this.reconciliationService = reconciliationService;
+    this.historyService = historyService;
     this.resultRepository = resultRepository;
   }
 
@@ -84,8 +85,8 @@ public class ReconciliationAdjustmentService {
     }
     Optional<UUID> latest =
         latestByAccount.computeIfAbsent(
-            adjustment.getAccount().getId(), reconciliationService::latestSnapshotId);
-    return ReconciliationService.isFinalized(owner, latest)
+            adjustment.getAccount().getId(), historyService::latestSnapshotId);
+    return ReconciliationHistoryService.isFinalized(owner, latest)
         ? ReconciliationAdjustmentValues.FINALIZED
         : ReconciliationAdjustmentValues.REOPENABLE;
   }

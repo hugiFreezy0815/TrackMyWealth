@@ -31,11 +31,12 @@ import org.springframework.test.util.ReflectionTestUtils;
  */
 class ReconciliationAdjustmentServiceTest {
 
-  private final ReconciliationService reconciliationService = mock(ReconciliationService.class);
+  private final ReconciliationHistoryService historyService =
+      mock(ReconciliationHistoryService.class);
   private final ReconciliationResultRepository resultRepository =
       mock(ReconciliationResultRepository.class);
   private final ReconciliationAdjustmentService service =
-      new ReconciliationAdjustmentService(reconciliationService, resultRepository);
+      new ReconciliationAdjustmentService(historyService, resultRepository);
 
   private Account account;
   private AccountSnapshot newest;
@@ -45,8 +46,7 @@ class ReconciliationAdjustmentServiceTest {
     account = new Account();
     ReflectionTestUtils.setField(account, "id", UUID.randomUUID());
     newest = snapshot();
-    when(reconciliationService.latestSnapshotId(account.getId()))
-        .thenReturn(Optional.of(newest.getId()));
+    when(historyService.latestSnapshotId(account.getId())).thenReturn(Optional.of(newest.getId()));
   }
 
   @Test

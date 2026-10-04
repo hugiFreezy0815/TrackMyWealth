@@ -1,7 +1,6 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
-import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.dto.ReconciliationStatusResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
@@ -20,9 +19,6 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,10 +40,10 @@ import org.springframework.transaction.annotation.Transactional;
  * the comparison basis goes away (no opening balance, no longer cash scope), a decision on the
  * newest snapshot is {@code SUPERSEDED} like an open result, an accepted one's entry withdrawn.
  *
- * <p>A newer snapshot finalizes the decisions on older ones ({@link #isFinalized}): it was compared
- * against a ledger that contains them, so they are history, like a closed period. They are not
- * reopened and their adjusting entries stay; a correction goes into the newest comparison as a new,
- * visible entry.
+ * <p>A newer snapshot finalizes the decisions on older ones ({@link
+ * ReconciliationHistoryService#isFinalized}): it was compared against a ledger that contains them,
+ * so they are history, like a closed period. They are not reopened and their adjusting entries
+ * stay; a correction goes into the newest comparison as a new, visible entry.
  *
  * <p>This slice deliberately excludes holdings: an account that holds positions, or one without a
  * transaction ledger, reports {@code CASH_SCOPE_NOT_APPLICABLE}. EPIC 15 adds security-level
@@ -61,13 +57,10 @@ public class ReconciliationService {
   private static final String SUPERSEDED = ReconciliationResultValues.SUPERSEDED;
   private static final String ACCEPTED = ReconciliationResultValues.ACCEPTED;
   private static final String DISMISSED = ReconciliationResultValues.DISMISSED;
-  static final String RESOURCE_NAME = "reconciliation result";
   private static final String LIABILITY = "LIABILITY";
-  private static final int MAX_PAGE_SIZE = 200;
   private static final BigDecimal FX_ROUNDING_LIMIT = new BigDecimal("0.05");
   private static final BigDecimal MAX_FEE = new BigDecimal("50.00");
 
-  private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final AccountSnapshotRepository snapshotRepository;
   private final TransactionRepository transactionRepository;
@@ -75,13 +68,11 @@ public class ReconciliationService {
   private final Clock clock;
 
   public ReconciliationService(
-      AccountLookupService accountLookupService,
       AccessControlService accessControlService,
       AccountSnapshotRepository snapshotRepository,
       TransactionRepository transactionRepository,
       ReconciliationResultRepository resultRepository,
       Clock clock) {
-    this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.snapshotRepository = snapshotRepository;
     this.transactionRepository = transactionRepository;
@@ -185,71 +176,6 @@ public class ReconciliationService {
         null,
         snapshot,
         difference.signum() == 0 ? null : difference);
-  }
-
-  /** Detailed history is transaction-sensitive and therefore requires READ, not BALANCE_ONLY. */
-  @Transactional(readOnly = true)
-  public Page<ReconciliationResultResponse> list(
-      UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
-    Pageable bounded =
-        PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE));
-    Optional<UUID> latest = latestSnapshot(accountId).map(AccountSnapshot::getId);
-    return resultRepository
-        .findByAccountIdAndAffectedSecurityIdIsNullOrderByCreatedAtDesc(accountId, bounded)
-        .map(result -> toResponse(result, latest));
-  }
-
-  /** One result of the account's history, for a client about to decide on it (US-25-03). */
-  @Transactional(readOnly = true)
-  public ReconciliationResultResponse get(
-      UUID accountId, UUID resultId, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
-    return toResponse(findResultOrThrow(account, resultId, actor));
-  }
-
-  /**
-   * The account's cash-scope result {@code resultId}. One of another account or workspace is the
-   * same audited 404 as a missing one (US-28-02/03).
-   */
-  ReconciliationResult findResultOrThrow(
-      Account account, UUID resultId, AuthenticatedUserPrincipal actor) {
-    return resultRepository
-        .findById(resultId)
-        .filter(result -> result.getAccount().getId().equals(account.getId()))
-        .filter(result -> result.getAffectedSecurityId() == null)
-        .orElseThrow(
-            () -> accessControlService.denyAsNotFound(actor, "Reconciliation result", resultId));
-  }
-
-  /** Whether {@code result} compares the account's newest observed snapshot. */
-  boolean comparesLatestSnapshot(ReconciliationResult result) {
-    return comparesSnapshot(
-        result, latestSnapshot(result.getAccount().getId()).map(AccountSnapshot::getId));
-  }
-
-  /**
-   * A member's decision a newer snapshot has overtaken is final. That snapshot was compared against
-   * a ledger containing the decision - an accepted one's adjusting entry included - so taking it
-   * back would rewrite a comparison that is already closed. Derived rather than stored, so it
-   * follows a snapshot whose date is edited later.
-   */
-  boolean isFinalized(ReconciliationResult result) {
-    return isFinalized(
-        result, latestSnapshot(result.getAccount().getId()).map(AccountSnapshot::getId));
-  }
-
-  private static boolean comparesSnapshot(
-      ReconciliationResult result, Optional<UUID> latestSnapshotId) {
-    return latestSnapshotId.map(id -> id.equals(result.getSnapshot().getId())).orElse(false);
-  }
-
-  /** {@link #isFinalized(ReconciliationResult)} against an already known newest snapshot. */
-  static boolean isFinalized(ReconciliationResult result, Optional<UUID> latestSnapshotId) {
-    return List.of(ACCEPTED, DISMISSED).contains(result.getStatus())
-        && !comparesSnapshot(result, latestSnapshotId);
   }
 
   /**
@@ -461,11 +387,6 @@ public class ReconciliationService {
     return account.isHasTransactions() && !account.isHoldsPositions();
   }
 
-  /** The id of the account's newest observed balance snapshot, if one exists. */
-  Optional<UUID> latestSnapshotId(UUID accountId) {
-    return latestSnapshot(accountId).map(AccountSnapshot::getId);
-  }
-
   private Optional<AccountSnapshot> latestSnapshot(UUID accountId) {
     return snapshotRepository
         .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
@@ -489,30 +410,6 @@ public class ReconciliationService {
         mayReadDetails ? snapshot.getSnapshotDate() : null,
         mayReadDetails ? difference : null,
         mayReadDetails && difference != null ? snapshot.getCurrency() : null);
-  }
-
-  ReconciliationResultResponse toResponse(ReconciliationResult result) {
-    return toResponse(
-        result, latestSnapshot(result.getAccount().getId()).map(AccountSnapshot::getId));
-  }
-
-  private ReconciliationResultResponse toResponse(
-      ReconciliationResult result, Optional<UUID> latestSnapshotId) {
-    return new ReconciliationResultResponse(
-        result.getId(),
-        result.getAccount().getId(),
-        result.getSnapshot().getId(),
-        result.getSnapshot().getSnapshotDate(),
-        result.getDifferenceAmount(),
-        result.getSnapshot().getCurrency(),
-        result.getProbableCause(),
-        result.getStatus(),
-        result.getResolvedAt(),
-        result.getCreatedAt(),
-        result.getResolutionNote(),
-        result.getResolutionTransactionId(),
-        VersionPreconditionService.persistedVersion(result.getVersion(), RESOURCE_NAME),
-        isFinalized(result, latestSnapshotId));
   }
 
   OffsetDateTime now() {

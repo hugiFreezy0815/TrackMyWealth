@@ -53,16 +53,18 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Every check that can answer {@code RECONCILIATION_STALE} or {@code RECONCILIATION_FINALIZED}
  * runs before the decision writes anything, so such a 409 commits ({@code noRollbackFor}) only the
  * engine's re-evaluation: the reload then shows the figure and version the 409 named, and a retry
- * can succeed.
+ * can succeed. That re-evaluation is an ordinary engine run with the requesting member as its
+ * actor: should it withdraw an adjusting entry the ledger has overtaken, {@code deleted_by} names
+ * that member even though their own request was answered with the 409 - the withdrawal is what the
+ * engine would have done on their next read anyway, and V39 requires an actor for it.
  */
 @Service
 public class ReconciliationDecisionService {
 
-  private static final String ADJUSTMENT_DESCRIPTION = "Reconciliation adjustment";
-
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final ReconciliationService reconciliationService;
+  private final ReconciliationHistoryService historyService;
   private final ReconciliationResultRepository resultRepository;
   private final TransactionRepository transactionRepository;
   private final SettlementDetectionService settlementDetectionService;
@@ -73,6 +75,7 @@ public class ReconciliationDecisionService {
       AccountLookupService accountLookupService,
       AccessControlService accessControlService,
       ReconciliationService reconciliationService,
+      ReconciliationHistoryService historyService,
       ReconciliationResultRepository resultRepository,
       TransactionRepository transactionRepository,
       SettlementDetectionService settlementDetectionService,
@@ -81,6 +84,7 @@ public class ReconciliationDecisionService {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.reconciliationService = reconciliationService;
+    this.historyService = historyService;
     this.resultRepository = resultRepository;
     this.transactionRepository = transactionRepository;
     this.settlementDetectionService = settlementDetectionService;
@@ -111,7 +115,8 @@ public class ReconciliationDecisionService {
     adjustment.setAmount(
         ReconciliationService.missingLedgerAmount(account, result.getDifferenceAmount()));
     adjustment.setCurrency(snapshot.getCurrency());
-    adjustment.setMerchantDescription(ADJUSTMENT_DESCRIPTION);
+    // No stored description: a client labels the row in its own language from its type and
+    // reconciliationAdjustment state. The member's reason is the row's note.
     adjustment.setNotes(reason);
     adjustment.setSource(TransactionService.MANUAL);
     // The owner link, not the type, makes it a reconciliation adjustment (V63).
@@ -124,7 +129,7 @@ public class ReconciliationDecisionService {
     resultRepository.saveAndFlush(result);
     // The card's balance moved, which can complete a settlement pair (as any ledger write can).
     detectAfterLedgerChange(account, snapshot);
-    return reconciliationService.toResponse(result);
+    return historyService.toResponse(result);
   }
 
   @Transactional(
@@ -139,7 +144,7 @@ public class ReconciliationDecisionService {
     ReconciliationResult result = openResult(account, resultId, expectedVersion, actor);
     decide(result, ReconciliationResultValues.DISMISSED, note.strip(), actor);
     resultRepository.saveAndFlush(result);
-    return reconciliationService.toResponse(result);
+    return historyService.toResponse(result);
   }
 
   /**
@@ -174,7 +179,7 @@ public class ReconciliationDecisionService {
     if (wasAccepted) {
       detectAfterLedgerChange(account, result.getSnapshot());
     }
-    return reconciliationService.toResponse(result);
+    return historyService.toResponse(result);
   }
 
   // Accept and dismiss decide on an open difference only, and only on the figure as it is now.
@@ -198,25 +203,27 @@ public class ReconciliationDecisionService {
 
   private ReconciliationResult decidableResult(
       Account account, UUID resultId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
-    // Authorization always precedes object/version disclosure. After that, use the same lock order
-    // as an ordinary ledger write: affected cards -> transfer-detection workspace -> snapshot.
-    // This prevents decision/write deadlocks while preserving the audited 404 privacy contract.
+    // Authorization always precedes object/version disclosure, and an id the member may not use is
+    // the audited 404 before any lock is taken. After that, use the same lock order as an ordinary
+    // ledger write: affected cards -> transfer-detection workspace -> snapshot, so a decision and
+    // a write cannot deadlock. The result, and so its version, is read only under those locks.
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    historyService.requireResultExists(account, resultId, actor);
     settlementDetectionService.lockAffectedCards(account);
     transferDetectionService.lockForWrite(account);
-    ReconciliationResult result = reconciliationService.findResultOrThrow(account, resultId, actor);
+    ReconciliationResult result = historyService.findResultOrThrow(account, resultId, actor);
     versionPreconditionService.requireCurrent(
-        expectedVersion, result.getVersion(), ReconciliationService.RESOURCE_NAME);
+        expectedVersion, result.getVersion(), ReconciliationHistoryService.RESOURCE_NAME);
     return result;
   }
 
   private void requireCurrentComparison(
       ReconciliationResult result, List<String> allowedStatuses, String wrongStatusDetail) {
-    if (reconciliationService.isFinalized(result)) {
+    if (historyService.isFinalized(result)) {
       // A newer snapshot was compared against a ledger containing this decision: it is history.
       throw new ReconciliationFinalizedException(result.getStatus());
     }
-    if (!reconciliationService.comparesLatestSnapshot(result)) {
+    if (!historyService.comparesLatestSnapshot(result)) {
       throw stale(result, "A newer snapshot has replaced this comparison.");
     }
     if (!allowedStatuses.contains(result.getStatus())) {

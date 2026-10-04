@@ -340,9 +340,18 @@ account and the result's `version` in `If-Match` (V62). Only the result of the a
 snapshot can be decided on; a superseded one, or one not in the state the action applies to, is a
 409 `RECONCILIATION_STALE` with the current `status` and `differenceAmount`.
 
+A decision first re-evaluates the comparison, and a `RECONCILIATION_STALE` or
+`RECONCILIATION_FINALIZED` 409 commits that re-evaluation (`noRollbackFor`), so the reload shows the
+figure the 409 named. It is an ordinary engine run with the requesting member as its actor: when it
+withdraws an adjusting row the ledger has overtaken, `deleted_by` names that member although their
+request was answered with the 409. The engine would have withdrawn the row on the next write anyway;
+V39 only requires an actor, and the member whose request revealed the change is the closest one.
+
 - **Accept** (`note` required) inserts a `transaction` of type `VALUATION_ADJUSTMENT`, `source =
   'MANUAL'`, dated to the snapshot, for the missing ledger amount (asset: the difference;
   liability: its negation), and links it as `resolution_transaction_id`; status `ACCEPTED`. The
+  member's note is the row's `notes`; it has no `merchant_description`, so no server-chosen
+  language is stored and a client labels it from its type and `reconciliationAdjustment`. The
   row names its owner in `transaction.reconciliation_result_id` (V63), written on insert and frozen
   by the append-only trigger, so a withdrawn row still names it. That link, not the type, makes a
   row a reconciliation adjustment: a `VALUATION_ADJUSTMENT` that no result booked (a future
@@ -375,7 +384,11 @@ snapshot can be decided on; a superseded one, or one not in the state the action
   correction goes into the newest comparison: if the missing row turns up later, the newest
   snapshot shows the overlap as an open difference, which the member accepts as a visible
   counter-adjustment. Finalization is derived, not stored, so it follows a snapshot whose date is
-  edited later.
+  edited later. If the opening balance is later moved past a finalized decision's snapshot, its
+  adjusting row falls before the new starting point and is left out like any earlier row; the row
+  carries `BOOKED_BEFORE_OPENING_BALANCE`, but the account does not raise
+  `TRANSACTIONS_BEFORE_OPENING_BALANCE` for it: the new opening balance already contains that
+  correction, and the locked row gives the member nothing to act on.
 
 ### Category taxonomy: shared defaults, workspace customisation (US-08-04)
 

@@ -15,6 +15,7 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.ReconciliationAdjustmentValues;
 import com.trackmywealth.backend.dto.ReconciliationDecisionRequest;
@@ -167,6 +168,8 @@ class ReconciliationDecisionControllerTest {
     assertThat(adjustment.bookingDate()).isEqualTo(SNAPSHOT_DATE);
     assertThat(adjustment.source()).isEqualTo("MANUAL");
     assertThat(adjustment.notes()).isEqualTo(NOTE);
+    // No stored English label: a client names the row in its own language.
+    assertThat(adjustment.merchantDescription()).isNull();
     assertThat(adjustment.categoryId()).isNull();
     // Only a reopen of its result takes it back.
     assertThat(adjustment.removal()).isNull();
@@ -421,6 +424,42 @@ class ReconciliationDecisionControllerTest {
     assertThat(adjustmentRow(adjustmentOf(corrected)).amount()).isEqualByComparingTo("-45.67");
     assertThat(account().reconciliation().status())
         .isEqualTo(ReconciliationStatusValues.RECONCILED);
+  }
+
+  @Test
+  void aFinalizedAdjustmentLeftBeforeAMovedOpeningBalanceRaisesNoAccountWarning() {
+    recordSnapshot(SNAPSHOT_DATE, "12345.67");
+    UUID adjustment = adjustmentOf(accept(onlyResult()));
+    recordSnapshot(SNAPSHOT_DATE.plusDays(2), "12345.67");
+    // The member starts the account afresh after the accepted snapshot, leaving everything before
+    // it out - and removes the one ordinary row before it, which they could act on.
+    moveOpeningBalance(SNAPSHOT_DATE.plusDays(1), "12345.67");
+    UUID income =
+        ledger().stream()
+            .filter(row -> "INCOME".equals(row.transactionType()))
+            .findFirst()
+            .orElseThrow()
+            .id();
+    client()
+        .delete()
+        .uri("/api/v1/accounts/" + cash.id() + "/transactions/" + income)
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", income))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    // The row still says it is left out, and that it is history locked to its result...
+    TransactionResponse row = adjustmentRow(adjustment);
+    assertThat(row.warnings()).contains(DataQualityWarningValues.BOOKED_BEFORE_OPENING_BALANCE);
+    assertThat(row.reconciliationAdjustment()).isEqualTo(ReconciliationAdjustmentValues.FINALIZED);
+    // ...but the account asks for nothing the member could not do: the new starting point already
+    // contains the correction. Single-account and batched (net worth) paths agree.
+    AccountSummaryResponse account = account();
+    assertThat(account.warnings())
+        .doesNotContain(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
+    assertThat(account.reconciliation().status()).isEqualTo(ReconciliationStatusValues.RECONCILED);
+    assertThat(netWorth().warnings())
+        .doesNotContain(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
   }
 
   @Test
@@ -1141,6 +1180,35 @@ class ReconciliationDecisionControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);
+  }
+
+  private void moveOpeningBalance(LocalDate date, String balance) {
+    UUID opening =
+        UUID.fromString(
+            stringValue(
+                "SELECT id::text FROM account_snapshot WHERE account_id = ? AND is_opening_balance",
+                cash.id()));
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + cash.id() + "/opening-balance")
+        .headers(CurrentVersion.ifMatch(dataSource, "account_snapshot", opening))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new OpeningBalanceRequest(date, new BigDecimal(balance), "CHF", true))
+        .exchange()
+        .expectStatus()
+        .isOk();
+  }
+
+  private NetWorthResponse netWorth() {
+    return client()
+        .get()
+        .uri("/api/v1/net-worth")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(NetWorthResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private void deleteOpeningBalance() {
