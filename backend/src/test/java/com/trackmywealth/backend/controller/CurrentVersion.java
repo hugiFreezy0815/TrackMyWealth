@@ -28,6 +28,7 @@ final class CurrentVersion {
           "app_user",
           "categorization_rule",
           "fx_import_setting",
+          "reconciliation_result",
           "settlement_match",
           "sharing_grant",
           "transaction",

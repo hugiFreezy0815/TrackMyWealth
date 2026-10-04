@@ -203,6 +203,11 @@ public class Transaction {
   @Column(name = "restores_transaction_id", columnDefinition = UUID_COLUMN)
   private UUID restoresTransactionId;
 
+  // US-25-03: the reconciliation result that booked this row as its adjusting entry (V63). Set on
+  // insert and never changed, so a withdrawn adjustment still names its owner.
+  @Column(name = "reconciliation_result_id", columnDefinition = UUID_COLUMN)
+  private UUID reconciliationResultId;
+
   // US-07-02/FR-LIF-002a T1: a soft-deleted manual row. The entity's @SQLRestriction hides it from
   // every JPA query; only TransactionRepository's native queries for restoring see it (V39).
   @Column(name = "deleted_at")
@@ -481,6 +486,19 @@ public class Transaction {
 
   public void setRestoresTransactionId(UUID restoresTransactionId) {
     this.restoresTransactionId = restoresTransactionId;
+  }
+
+  public UUID getReconciliationResultId() {
+    return reconciliationResultId;
+  }
+
+  public void setReconciliationResultId(UUID reconciliationResultId) {
+    this.reconciliationResultId = reconciliationResultId;
+  }
+
+  /** US-25-03: an accepted reconciliation difference's adjusting entry, owned by its result. */
+  public boolean isReconciliationAdjustment() {
+    return reconciliationResultId != null;
   }
 
   /** A reversing row of a void: it goes with its original and is never removed on its own. */

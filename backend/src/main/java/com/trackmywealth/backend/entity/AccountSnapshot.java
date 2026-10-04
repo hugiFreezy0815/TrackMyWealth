@@ -166,6 +166,16 @@ public class AccountSnapshot {
     this.updatedAt = updatedAt;
   }
 
+  /**
+   * When the figure was last stated: its replacement, else its creation. An opening balance stated
+   * after a reconciliation adjustment on its own date already contains it (US-25-03). For an
+   * opening balance both come from the database's clock, as the adjustment's {@code created_at}
+   * does, so the two compare without skew.
+   */
+  public OffsetDateTime getStatedAt() {
+    return updatedAt != null ? updatedAt : createdAt;
+  }
+
   public Integer getVersion() {
     return version;
   }

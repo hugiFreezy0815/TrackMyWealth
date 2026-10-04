@@ -36,6 +36,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   // balance, but must not count as spending or pair with a settlement.
   String NOT_VOIDED_OR_REVERSAL = " and t.voidedAt is null and t.replacesTransactionId is null";
 
+  // US-25-03: not the adjusting entry of a reconciliation result (V63's owner link).
+  String NOT_RECONCILIATION_ADJUSTMENT = " and t.reconciliationResultId is null";
+
   // The caller supplies the sort (TransactionService fixes it): a Pageable's own sort is client
   // input and must not decide which columns the query orders by.
   Page<Transaction> findByAccountId(UUID accountId, Pageable pageable);
@@ -150,7 +153,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * US-07-02/07-07 (FR-LIF-006): the account's rows still restorable - soft-deleted or voided at or
    * after {@code since} - most recently removed first. A void already restored (a row restores it,
    * V50) or any row since corrected (a replacement corrects it, V49) can no longer be restored and
-   * is left out.
+   * is left out, as is a withdrawn reconciliation adjustment (US-25-03): only its result decides.
    */
   @Query(
       value =
@@ -159,6 +162,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " OR (t.voided_at IS NOT NULL AND t.voided_at >= :since"
               + " AND NOT EXISTS (SELECT 1 FROM transaction r"
               + " WHERE r.restores_transaction_id = t.id)))"
+              + " AND t.reconciliation_result_id IS NULL"
               + " AND NOT EXISTS (SELECT 1 FROM transaction c"
               + " WHERE c.corrects_transaction_id = t.id)"
               + " ORDER BY COALESCE(t.deleted_at, t.voided_at) DESC, t.id DESC",
@@ -237,18 +241,32 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
   /**
    * US-25-04: {@link #sumAmountByAccountIdAsOf} for the rows booked after {@code after} only - the
-   * part of the ledger an opening balance dated {@code after} does not already contain. Same
-   * conversion to the account's own currency and the same void-pair handling; empty when no row
-   * falls into the window.
+   * part of the ledger an opening balance dated {@code after} does not already contain. A
+   * reconciliation adjustment (US-25-03, owned by a result) on the opening date is the one
+   * exception, as long as it was booked after the opening balance was last stated ({@code
+   * openingStatedAt}, {@link com.trackmywealth.backend.entity.AccountSnapshot#getStatedAt}): it
+   * then corrects a provider figure observed against that opening balance, which therefore does not
+   * contain it, even though it carries that date. An opening balance stated later - moved onto that
+   * date, or entered again - is the member's newer figure and already contains it; counting it then
+   * would count it twice. Same conversion to the account's own currency and the same void-pair
+   * handling; empty when no row falls into the window.
+   *
+   * <p>{@code openingStatedAt} and {@code t.createdAt} both come from the database's clock (an
+   * opening balance's replacement takes {@code DatabaseClockRepository#now}), so no skew between
+   * the application's clock and the database's can reorder them.
    */
   @Query(
       "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
           + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
           + " from Transaction t where t.account.id = :accountId"
-          + " and t.bookingDate > :after and t.bookingDate <= :asOf")
+          + " and (t.bookingDate > :after"
+          + " or (t.bookingDate = :after and t.reconciliationResultId is not null"
+          + " and t.createdAt > :openingStatedAt))"
+          + " and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdBookedAfter(
       @Param(ACCOUNT_ID) UUID accountId,
       @Param(AFTER) LocalDate after,
+      @Param("openingStatedAt") OffsetDateTime openingStatedAt,
       @Param(AS_OF) LocalDate asOf);
 
   /**
@@ -270,21 +288,31 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /**
    * US-25-04: whether the account has a live row booked before {@code before} - the opening date,
    * when the caller already holds the opening balance (one query less per account in a valuation).
+   * A reconciliation adjustment (US-25-03) does not count: see {@link
+   * #existsLiveBookedBeforeOpeningBalance}.
    */
   @Query(
       "select count(t) > 0 from Transaction t where t.account.id = :accountId"
           + " and t.bookingDate < :before"
-          + NOT_VOIDED_OR_REVERSAL)
+          + NOT_VOIDED_OR_REVERSAL
+          + NOT_RECONCILIATION_ADJUSTMENT)
   boolean existsLiveBookedBefore(
       @Param(ACCOUNT_ID) UUID accountId, @Param("before") LocalDate before);
 
   /**
    * US-25-04: whether the account has a live row booked before its opening balance - {@code false}
    * for an account without one. Drives {@code TRANSACTIONS_BEFORE_OPENING_BALANCE}.
+   *
+   * <p>A reconciliation adjustment (US-25-03) does not count. One can only end up there when the
+   * opening balance moves past a finalized decision's snapshot: the new starting point already
+   * contains that correction, so leaving the row out is right, and the member could not act on the
+   * warning anyway - the row is locked to its result. The row itself still says it is left out
+   * ({@code BOOKED_BEFORE_OPENING_BALANCE}).
    */
   @Query(
       "select count(t) > 0 from Transaction t where t.account.id = :accountId"
           + NOT_VOIDED_OR_REVERSAL
+          + NOT_RECONCILIATION_ADJUSTMENT
           + " and t.bookingDate < (select s.snapshotDate from AccountSnapshot s"
           + " where s.account.id = :accountId and s.openingBalance = true)")
   boolean existsLiveBookedBeforeOpeningBalance(@Param(ACCOUNT_ID) UUID accountId);
@@ -298,7 +326,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       "select distinct t.account.id from Transaction t, AccountSnapshot s"
           + " where s.account.id = t.account.id and s.openingBalance = true"
           + " and t.account.id in :accountIds and t.bookingDate < s.snapshotDate"
-          + NOT_VOIDED_OR_REVERSAL)
+          + NOT_VOIDED_OR_REVERSAL
+          + NOT_RECONCILIATION_ADJUSTMENT)
   List<UUID> findAccountIdsWithLiveRowsBeforeOpeningBalance(
       @Param("accountIds") Collection<UUID> accountIds);
 
@@ -538,7 +567,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /**
    * US-25-02: a duplicate-entry signature in the reconciliation period. One live row must have an
    * account-currency amount equal to {@code amount}, and another live row must match its booking
-   * date, original amount/currency and normalized description exactly.
+   * date, original amount/currency and normalized description exactly. A reconciliation adjustment
+   * (US-25-03) is neither: it is the member's documented correction, not an entry.
    */
   @Query(
       value =
@@ -553,7 +583,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " AND t1.amount * COALESCE(t1.fx_rate_to_account_currency, 1) = :amount"
               + " AND t1.deleted_at IS NULL AND t2.deleted_at IS NULL"
               + " AND t1.voided_at IS NULL AND t2.voided_at IS NULL"
-              + " AND t1.replaces_transaction_id IS NULL AND t2.replaces_transaction_id IS NULL)",
+              + " AND t1.replaces_transaction_id IS NULL AND t2.replaces_transaction_id IS NULL"
+              + " AND t1.reconciliation_result_id IS NULL"
+              + " AND t2.reconciliation_result_id IS NULL)",
       nativeQuery = true)
   boolean existsDuplicateEntrySignature(
       @Param(ACCOUNT_ID) UUID accountId,

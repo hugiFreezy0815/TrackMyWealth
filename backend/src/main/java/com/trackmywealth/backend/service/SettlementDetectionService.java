@@ -114,7 +114,20 @@ public class SettlementDetectionService {
   @Transactional
   public void detectAfterWrite(Account written, LocalDate bookedOn) {
     LocalDate since = bookedOn.minusDays(WINDOW_DAYS);
-    cardsAffectedBy(written).forEach(cardId -> detectForCard(cardId, since));
+    List<UUID> cards = lockAffectedCards(written);
+    cards.forEach(cardId -> detectForCard(cardId, since));
+  }
+
+  /**
+   * Takes every card lock a ledger write on {@code written} may need, in one stable UUID order.
+   * Reconciliation decisions call this before they lock a snapshot, so they use the same
+   * card-before-snapshot order as ordinary transaction writes and cannot deadlock by inversion.
+   */
+  @Transactional
+  public List<UUID> lockAffectedCards(Account written) {
+    List<UUID> cards = cardsAffectedBy(written).stream().sorted().toList();
+    cards.forEach(this::lockCard);
+    return cards;
   }
 
   /**

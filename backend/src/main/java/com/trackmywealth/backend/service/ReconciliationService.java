@@ -1,7 +1,6 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
-import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.dto.ReconciliationStatusResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
@@ -20,9 +19,6 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +32,19 @@ import org.springframework.transaction.annotation.Transactional;
  * balance means the account is explicitly not reconcilable, never silently assumed to start at
  * zero.
  *
+ * <p>A member's decision (US-25-03, {@link ReconciliationDecisionService}) covers one exact amount.
+ * An {@code ACCEPTED} result stays while its adjusting entry makes the account agree; once it no
+ * longer does, the engine withdraws that entry and reopens the result with the real difference. A
+ * {@code DISMISSED} result stays while the difference is the amount dismissed, is resolved on
+ * agreement and reopened on any other amount. Reopening keeps the decision's note as history. When
+ * the comparison basis goes away (no opening balance, no longer cash scope), a decision on the
+ * newest snapshot is {@code SUPERSEDED} like an open result, an accepted one's entry withdrawn.
+ *
+ * <p>A newer snapshot finalizes the decisions on older ones ({@link
+ * ReconciliationHistoryService#isFinalized}): it was compared against a ledger that contains them,
+ * so they are history, like a closed period. They are not reopened and their adjusting entries
+ * stay; a correction goes into the newest comparison as a new, visible entry.
+ *
  * <p>This slice deliberately excludes holdings: an account that holds positions, or one without a
  * transaction ledger, reports {@code CASH_SCOPE_NOT_APPLICABLE}. EPIC 15 adds security-level
  * reconciliation through the already-existing {@code affected_security_id} column.
@@ -46,12 +55,12 @@ public class ReconciliationService {
   private static final String OPEN = ReconciliationResultValues.OPEN;
   private static final String RESOLVED = ReconciliationResultValues.RESOLVED;
   private static final String SUPERSEDED = ReconciliationResultValues.SUPERSEDED;
+  private static final String ACCEPTED = ReconciliationResultValues.ACCEPTED;
+  private static final String DISMISSED = ReconciliationResultValues.DISMISSED;
   private static final String LIABILITY = "LIABILITY";
-  private static final int MAX_PAGE_SIZE = 200;
   private static final BigDecimal FX_ROUNDING_LIMIT = new BigDecimal("0.05");
   private static final BigDecimal MAX_FEE = new BigDecimal("50.00");
 
-  private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final AccountSnapshotRepository snapshotRepository;
   private final TransactionRepository transactionRepository;
@@ -59,13 +68,11 @@ public class ReconciliationService {
   private final Clock clock;
 
   public ReconciliationService(
-      AccountLookupService accountLookupService,
       AccessControlService accessControlService,
       AccountSnapshotRepository snapshotRepository,
       TransactionRepository transactionRepository,
       ReconciliationResultRepository resultRepository,
       Clock clock) {
-    this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.snapshotRepository = snapshotRepository;
     this.transactionRepository = transactionRepository;
@@ -76,18 +83,24 @@ public class ReconciliationService {
   /**
    * Re-evaluates the newest balance snapshot, if a ledger write on {@code changedDate} can affect
    * it. A later-dated ledger change cannot alter an earlier snapshot and therefore does no work.
+   *
+   * @param changedBy the member whose write this is; recorded as having withdrawn an accepted
+   *     difference's adjusting entry, should the write overtake that acceptance
    */
   @Transactional
-  public void reconcileAfterLedgerChange(Account account, LocalDate changedDate) {
+  public void reconcileAfterLedgerChange(Account account, LocalDate changedDate, UUID changedBy) {
     latestSnapshot(account.getId())
         .filter(snapshot -> !changedDate.isAfter(snapshot.getSnapshotDate()))
-        .ifPresent(snapshot -> reconcile(account, snapshot));
+        .ifPresent(snapshot -> reconcile(account, snapshot, changedBy));
   }
 
-  /** Re-evaluates the account's newest observed balance snapshot, if one exists. */
+  /**
+   * Re-evaluates the account's newest observed balance snapshot, if one exists. {@code changedBy}
+   * as for {@link #reconcileAfterLedgerChange}.
+   */
   @Transactional
-  public void reconcileLatest(Account account) {
-    latestSnapshot(account.getId()).ifPresent(snapshot -> reconcile(account, snapshot));
+  public void reconcileLatest(Account account, UUID changedBy) {
+    latestSnapshot(account.getId()).ifPresent(snapshot -> reconcile(account, snapshot, changedBy));
   }
 
   /**
@@ -134,7 +147,19 @@ public class ReconciliationService {
           snapshot,
           persisted.get().getDifferenceAmount());
     }
-    if (persisted.isPresent() && RESOLVED.equals(persisted.get().getStatus())) {
+    if (persisted.isPresent() && DISMISSED.equals(persisted.get().getStatus())) {
+      return statusResponse(
+          actor,
+          account,
+          ReconciliationStatusValues.DISMISSED_DIFFERENCE,
+          null,
+          snapshot,
+          persisted.get().getDifferenceAmount());
+    }
+    // An accepted difference agrees through its visible adjusting entry; the engine reopens the
+    // result as soon as it no longer does.
+    if (persisted.isPresent()
+        && List.of(RESOLVED, ACCEPTED).contains(persisted.get().getStatus())) {
       return statusResponse(
           actor, account, ReconciliationStatusValues.RECONCILED, null, snapshot, null);
     }
@@ -153,41 +178,73 @@ public class ReconciliationService {
         difference.signum() == 0 ? null : difference);
   }
 
-  /** Detailed history is transaction-sensitive and therefore requires READ, not BALANCE_ONLY. */
-  @Transactional(readOnly = true)
-  public Page<ReconciliationResultResponse> list(
-      UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
-    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
-    Pageable bounded =
-        PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE));
-    return resultRepository
-        .findByAccountIdAndAffectedSecurityIdIsNullOrderByCreatedAtDesc(accountId, bounded)
-        .map(this::toResponse);
+  /**
+   * Takes an accepted result's adjusting entry back out of the ledger: soft-deleted like any manual
+   * row (T1), so it stays in the database as history but no longer counts anywhere. {@code
+   * withdrawnBy} is the member reopening it, or the one whose write overtook the acceptance or took
+   * away its comparison basis.
+   */
+  void withdrawAdjustment(ReconciliationResult result, UUID withdrawnBy) {
+    UUID adjustmentId = result.getResolutionTransactionId();
+    if (adjustmentId != null) {
+      transactionRepository
+          .findByIdForUpdate(adjustmentId)
+          .ifPresent(
+              adjustment -> {
+                adjustment.setDeletedAt(now());
+                adjustment.setDeletedBy(withdrawnBy);
+                transactionRepository.saveAndFlush(adjustment);
+              });
+    }
+    result.setResolutionTransactionId(null);
   }
 
-  private void reconcile(Account account, AccountSnapshot snapshot) {
+  private void reconcile(Account account, AccountSnapshot snapshot, UUID changedBy) {
+    // Two concurrent ledger writes on one account both reconcile the same snapshot. The row lock
+    // makes the second wait and then see the first's result row, so it updates that row instead of
+    // inserting a second one into V60's unique index and failing the member's write with a 409.
+    // It is taken before any result or adjustment is touched, retiring included: the order a
+    // decision (US-25-03) uses too.
+    snapshotRepository.findForUpdate(snapshot.getId(), account.getId());
     if (!cashScopeApplies(account)) {
-      retireAllOpen(account.getId());
+      retireComparison(account.getId(), snapshot, changedBy);
       return;
     }
     Optional<AccountSnapshot> opening = applicableOpening(account, snapshot.getSnapshotDate());
     if (opening.isEmpty()) {
-      retireAllOpen(account.getId());
+      retireComparison(account.getId(), snapshot, changedBy);
       return;
     }
 
-    // Two concurrent ledger writes on one account both reconcile the same snapshot. The row lock
-    // makes the second wait and then see the first's result row, so it updates that row instead of
-    // inserting a second one into V60's unique index and failing the member's write with a 409.
-    snapshotRepository.findForUpdate(snapshot.getId(), account.getId());
     supersedeOlderOpen(account.getId(), snapshot);
     BigDecimal difference = difference(account, opening.get(), snapshot);
     Optional<ReconciliationResult> existing =
         resultRepository.findBySnapshotIdAndAffectedSecurityIdIsNull(snapshot.getId());
+    String status = existing.map(ReconciliationResult::getStatus).orElse(null);
+
+    // A member's decision covers one exact amount (US-25-03). While it still holds, it stands.
+    if (ACCEPTED.equals(status)) {
+      if (difference.signum() == 0 && adjustmentCounts(existing.get(), opening.get())) {
+        return;
+      }
+      // The account stopped agreeing, or it agrees without the adjusting entry (an opening balance
+      // stated again on the entry's date already contains it), so the acceptance no longer fits.
+      // Withdraw its adjusting entry first: the difference to show is the real one, not one skewed
+      // by a stale correction. A member who has since booked the missing row thereby ends up
+      // reconciled.
+      withdrawAdjustment(existing.get(), changedBy);
+      difference = difference(account, opening.get(), snapshot);
+    } else if (DISMISSED.equals(status)
+        && difference.compareTo(existing.get().getDifferenceAmount()) == 0) {
+      return;
+    }
 
     if (difference.signum() == 0) {
-      existing.filter(result -> OPEN.equals(result.getStatus())).ifPresent(this::resolve);
+      // SUPERSEDED (a lost comparison basis) and RESOLVED stay as they are; anything still open,
+      // or a decision the change has overtaken, is resolved.
+      existing
+          .filter(result -> List.of(OPEN, ACCEPTED, DISMISSED).contains(result.getStatus()))
+          .ifPresent(this::resolve);
       return;
     }
 
@@ -200,18 +257,12 @@ public class ReconciliationService {
               created.setSnapshot(snapshot);
               return created;
             });
-    // A future US-25-03 decision is authoritative. This engine may reopen only its own automatic
-    // states; ACCEPTED/DISMISSED are member decisions and are not silently overwritten.
-    if (!List.of(OPEN, RESOLVED, SUPERSEDED).contains(result.getStatus())) {
-      return;
-    }
+    // The note of an overtaken decision stays: the history still says why it had been decided.
     result.setDifferenceAmount(difference);
     result.setProbableCause(classify(account, opening.get(), snapshot, difference));
     result.setStatus(OPEN);
     result.setResolvedAt(null);
     result.setResolvedBy(null);
-    result.setResolutionNote(null);
-    result.setResolutionTransactionId(null);
     resultRepository.saveAndFlush(result);
   }
 
@@ -225,6 +276,44 @@ public class ReconciliationService {
       }
     }
     resultRepository.flush();
+  }
+
+  // The comparison basis is gone: no opening balance at or before the snapshot, or the account is
+  // no longer cash scope. Every open result retires, and so does a decision on the newest snapshot
+  // (US-25-03): it covered an amount that can no longer be computed, so an accepted one's adjusting
+  // entry leaves the ledger rather than keep moving a balance nothing compares any more. Once the
+  // basis is back, the difference shows as OPEN again for a new decision. A decision on an older
+  // snapshot is already part of the ledger the newer comparison was taken on and stays.
+  private void retireComparison(UUID accountId, AccountSnapshot latest, UUID changedBy) {
+    retireAllOpen(accountId);
+    resultRepository
+        .findBySnapshotIdAndAffectedSecurityIdIsNull(latest.getId())
+        .filter(result -> List.of(ACCEPTED, DISMISSED).contains(result.getStatus()))
+        .ifPresent(
+            result -> {
+              withdrawAdjustment(result, changedBy);
+              result.setStatus(SUPERSEDED);
+              result.setResolvedAt(now());
+              result.setResolvedBy(null);
+              resultRepository.saveAndFlush(result);
+            });
+  }
+
+  // Whether an accepted result's adjusting entry is part of the ledger after this opening balance:
+  // booked after its date, or on it but after the balance was stated - the rule of
+  // TransactionRepository#sumAmountByAccountIdBookedAfter.
+  private boolean adjustmentCounts(ReconciliationResult result, AccountSnapshot opening) {
+    UUID adjustmentId = result.getResolutionTransactionId();
+    if (adjustmentId == null) {
+      return false;
+    }
+    return transactionRepository
+        .findById(adjustmentId)
+        .filter(
+            adjustment ->
+                adjustment.getBookingDate().isAfter(opening.getSnapshotDate())
+                    || adjustment.getCreatedAt().isAfter(opening.getStatedAt()))
+        .isPresent();
   }
 
   private void retireAllOpen(UUID accountId) {
@@ -292,7 +381,10 @@ public class ReconciliationService {
     BigDecimal ledger =
         transactionRepository
             .sumAmountByAccountIdBookedAfter(
-                account.getId(), opening.getSnapshotDate(), snapshot.getSnapshotDate())
+                account.getId(),
+                opening.getSnapshotDate(),
+                opening.getStatedAt(),
+                snapshot.getSnapshotDate())
             .orElse(BigDecimal.ZERO);
     BigDecimal derived =
         LIABILITY.equals(account.getNature())
@@ -342,21 +434,7 @@ public class ReconciliationService {
         mayReadDetails && difference != null ? snapshot.getCurrency() : null);
   }
 
-  private ReconciliationResultResponse toResponse(ReconciliationResult result) {
-    return new ReconciliationResultResponse(
-        result.getId(),
-        result.getAccount().getId(),
-        result.getSnapshot().getId(),
-        result.getSnapshot().getSnapshotDate(),
-        result.getDifferenceAmount(),
-        result.getSnapshot().getCurrency(),
-        result.getProbableCause(),
-        result.getStatus(),
-        result.getResolvedAt(),
-        result.getCreatedAt());
-  }
-
-  private OffsetDateTime now() {
+  OffsetDateTime now() {
     return OffsetDateTime.now(clock);
   }
 }

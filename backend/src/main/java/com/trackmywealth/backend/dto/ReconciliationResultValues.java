@@ -13,10 +13,16 @@ public final class ReconciliationResultValues {
   /** A later source change made the snapshot and the derived ledger agree again. */
   public static final String RESOLVED = "RESOLVED";
 
-  /** A member accepted the difference (US-25-03); never set or overwritten by the engine. */
+  /**
+   * A member accepted the provider's figure (US-25-03): a visible {@code VALUATION_ADJUSTMENT}
+   * entry closes the gap. The engine reopens it only when the account stops agreeing.
+   */
   public static final String ACCEPTED = "ACCEPTED";
 
-  /** A member dismissed the difference (US-25-03); never set or overwritten by the engine. */
+  /**
+   * A member dismissed the difference with a reason (US-25-03). The decision covers that amount
+   * only: the engine resolves it on agreement and reopens it when the difference changes.
+   */
   public static final String DISMISSED = "DISMISSED";
 
   /** A newer snapshot, or a lost comparison basis, replaced this comparison. */

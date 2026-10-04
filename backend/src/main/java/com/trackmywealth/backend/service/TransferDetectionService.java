@@ -136,7 +136,20 @@ public class TransferDetectionService {
     if (written.isHasStatementCycle()) {
       return;
     }
-    detectAround(written.getWorkspace().getId(), bookedOn);
+    lockForWrite(written);
+    detectAroundLocked(written.getWorkspace().getId(), bookedOn);
+  }
+
+  /**
+   * Takes the workspace advisory lock that transfer detection needs for a write on {@code written}.
+   * Reconciliation decisions take it before the snapshot lock, matching ordinary transaction writes
+   * and preventing a workspace-lock/snapshot-lock inversion.
+   */
+  @Transactional
+  public void lockForWrite(Account written) {
+    if (!written.isHasStatementCycle()) {
+      workspaceRepository.lockAdvisory(LOCK_PREFIX + written.getWorkspace().getId());
+    }
   }
 
   /**
@@ -146,6 +159,10 @@ public class TransferDetectionService {
   @Transactional
   public void detectAround(UUID workspaceId, LocalDate date) {
     workspaceRepository.lockAdvisory(LOCK_PREFIX + workspaceId);
+    detectAroundLocked(workspaceId, date);
+  }
+
+  private void detectAroundLocked(UUID workspaceId, LocalDate date) {
     List<Transaction> candidates =
         transactionRepository.findTransferCandidates(
             workspaceId,

@@ -22,6 +22,9 @@ public interface ReconciliationResultRepository extends JpaRepository<Reconcilia
 
   boolean existsByAccountIdAndStatusAndAffectedSecurityIdIsNull(UUID accountId, String status);
 
+  /** Whether the account has the cash-scope result {@code id}, without loading it (US-25-03). */
+  boolean existsByIdAndAccountIdAndAffectedSecurityIdIsNull(UUID id, UUID accountId);
+
   Page<ReconciliationResult> findByAccountIdAndAffectedSecurityIdIsNullOrderByCreatedAtDesc(
       UUID accountId, Pageable pageable);
 

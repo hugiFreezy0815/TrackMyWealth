@@ -68,7 +68,8 @@ class TransactionServiceTest {
           "ECB",
           new VersionPreconditionService(),
           mock(AccountDataQualityService.class),
-          mock(ReconciliationService.class));
+          mock(ReconciliationService.class),
+          mock(ReconciliationAdjustmentService.class));
 
   private Account depot;
 

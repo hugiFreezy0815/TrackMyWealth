@@ -18,13 +18,12 @@ import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.DatabaseClockRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,6 +43,8 @@ class OpeningBalanceServiceTest {
 
   private static final LocalDate TODAY = LocalDate.of(2026, 10, 3);
   private static final LocalDate OPENING_DATE = LocalDate.of(2024, 10, 1);
+  private static final OffsetDateTime DATABASE_NOW =
+      OffsetDateTime.parse("2026-10-03T10:00:00.123456Z");
   private static final AuthenticatedUserPrincipal ACTOR =
       new AuthenticatedUserPrincipal(
           UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID(), "EN");
@@ -57,6 +58,7 @@ class OpeningBalanceServiceTest {
   private final AccountCurrencyService accountCurrencyService = mock(AccountCurrencyService.class);
   private final AccountDataQualityService accountDataQualityService =
       mock(AccountDataQualityService.class);
+  private final DatabaseClockRepository databaseClock = mock(DatabaseClockRepository.class);
   private final OpeningBalanceService service =
       new OpeningBalanceService(
           accountLookupService,
@@ -68,7 +70,7 @@ class OpeningBalanceServiceTest {
           accountDataQualityService,
           new VersionPreconditionService(),
           mock(ReconciliationService.class),
-          Clock.fixed(Instant.parse("2026-10-03T10:00:00Z"), ZoneOffset.UTC));
+          databaseClock);
 
   private Account account;
 
@@ -80,6 +82,7 @@ class OpeningBalanceServiceTest {
     when(accountCurrencyService.ownCurrency(account)).thenReturn("CHF");
     when(accountDataQualityService.warningsFor(any())).thenReturn(List.of());
     when(businessDateService.today()).thenReturn(TODAY);
+    when(databaseClock.now()).thenReturn(DATABASE_NOW);
     when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(any()))
         .thenReturn(Optional.empty());
     when(snapshotRepository.findByAccountIdAndSnapshotDateAndSource(any(), any(), any()))
@@ -247,7 +250,8 @@ class OpeningBalanceServiceTest {
     OpeningBalanceResponse replaced = service.replace(account.getId(), request("2.00"), 3, ACTOR);
     assertThat(replaced.id()).isEqualTo(existing.getId());
     assertThat(replaced.balance()).isEqualByComparingTo("2.00");
-    assertThat(replaced.updatedAt()).isNotNull();
+    // The database's clock, which also stamps the rows it is compared with (US-25-03).
+    assertThat(replaced.updatedAt()).isEqualTo(DATABASE_NOW);
     assertThat(existing.getUpdatedBy()).isEqualTo(ACTOR.userId());
   }
 
