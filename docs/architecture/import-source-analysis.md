@@ -266,7 +266,7 @@ what is available today (checked 2026-10-04, no files beyond the 20 above).
 1. **True Wealth:** only the contract bundle (TW-1), no statement or export. True Wealth accounts
    are created manually and valued by manual snapshots until an export is supplied.
 2. **Yuh:** PDF only (YUH-1..3), no CSV export. The PDF statement (YUH-1) is Yuh's only
-   transaction source, which raises the priority of the PDF import (story 5 in section 7).
+   transaction source, which is why the PDF import moved into sprint 5 (6.8).
 3. **DKB:** one export without pending bookings. The row filter (6.1) stays a proposal; its test
    uses a synthetic pending row until a real one is available.
 4. **Sparkasse:** the files show three own accounts, related by their transfers (counted, not
@@ -282,7 +282,7 @@ they must be matched as one transfer (FR-CF-005), not counted as income and expe
 
 ## 6. Gap analysis against the schema and sprint 5
 
-### 6.1 Sprint 5 (#229/#230) fits, with one gap
+### 6.1 Sprint 5 (#229/#230): CSV fits with one gap; PDF is added
 
 Every cash transaction CSV above can be described by the #229 template as it is:
 
@@ -299,8 +299,11 @@ booked with a different text). Proposal: an optional `rowFilter` (column + accep
 the template, as a small follow-up story, not a sprint 5 change. Until then the member exports
 booked transactions only.
 
-Sprint 5 can therefore **keep `CASH_TRANSACTIONS` + `USER_SELECTED` + CSV**. Every other finding
-below is a new story.
+**Product owner decision (2026-10-04): the import must also read PDF files.** Three samples are
+the only transaction source of their account (YUH-1, SPK-6, SPK-7; Yuh has no CSV export at all),
+so a CSV-only import leaves them unsupported. Sprint 5 therefore keeps `CASH_TRANSACTIONS` +
+`USER_SELECTED` and adds **text-layer PDF** next to CSV (6.8). Every other finding below is a new
+story.
 
 ### 6.2 Account identification
 
@@ -347,10 +350,10 @@ would produce incomplete containers.
 
 - **XLS/XLSX** (PF-4, PF-5): Apache POI reads both; the template model stays a column mapping
   with a sheet index. Only PostFinance E-Trading needs it, and only for holdings: low priority.
-- **PDF**: every sample has a text layer (PDFBox text extraction; no OCR needed). A PDF template
-  is a different model (label anchors, line patterns, sections per currency), not the CSV column
-  mapping. The best value per effort is the shared Swissquote layout (PF-7, YUH-2: holdings) and
-  YUH-1 (Yuh transactions, no CSV known).
+- **PDF**: cash transaction statements are in sprint 5 (6.8). Holdings PDFs (the shared Swissquote
+  layout of PF-7 and YUH-2) follow with the holdings import (6.6).
+- **OCR**: no sample is scanned (every page of every PDF has a text layer), so nothing justifies
+  OCR today. It stays out of scope until a scanned statement turns up.
 - **CAMT XML**: none supplied. If the Sparkasse offers camt.052/053 XML, a generic CAMT importer
   (one for all banks, no template) is preferable to its CSV rendering: stable schema, account
   IBAN and statement balances included, `AcctSvcrRef` as a unique booking id.
@@ -377,18 +380,77 @@ would produce incomplete containers.
 | YUH-1 trade rows vs a later securities import | The cash leg of a trade must be linked to, not duplicated by, the securities transaction (EPIC 15). |
 | DKB pending vs booked rows | Row filter (6.1). |
 
+### 6.8 PDF cash statements: what the template must express
+
+Measured on the three transaction PDFs (word positions counted locally, no value read out):
+
+| Need | YUH-1 | SPK-6 | SPK-7 |
+|---|---|---|---|
+| Booking line starts with | a date `dd.MM.yyyy` | a date glued to the booking text (`dd.MM.yyyy<text>`) | two dates glued together (booking and value date) |
+| Sign of the amount | **by column only**: amounts are unsigned; 27 lines sit under `BELASTUNG`, 6 under `GUTSCHRIFT` | signed in the text (debits carry `-`) | by column (`Belastungen` / `Gutschriften`); all sample lines are credits |
+| Amounts per line | two (amount and running balance `SALDO`) on most lines | one | one |
+| Continuation lines (no date) | many: counterparty, IBAN, reference | yes: name lines | few |
+| Sections | one per currency (`Kontoauszug in <CCY>`, four in the sample) | one | one |
+| Repeated page header and footer | yes | yes | yes |
+| Balance lines | `Saldo per <date>` at each section's start and end | `Kontostand am <date>` at start and end | `Saldovortrag`, `Ihr Bausparguthaben am <date>` |
+
+So a CSV column mapping cannot describe a PDF. A `PDF_TEXT` template needs, beyond the shared
+settings (date format, decimal and thousands separators, `type_mapping`, currency mode):
+
+1. **Text with positions**: lines rebuilt from the words' coordinates (PDFBox `TextPosition`),
+   not plain text, because the sign of an unsigned amount depends on its column.
+2. **Booking line**: a regular expression for the line start (date pattern, optionally a second
+   glued date for the value date) and where the description starts.
+3. **Amount columns**: either `SIGNED` (SPK-6), or debit and credit columns located by their
+   **header labels** (`BELASTUNG`/`GUTSCHRIFT`), not by absolute coordinates, since layouts move
+   between pages and versions. An optional **balance column** lets the parser cross-check each
+   sign with the running balance (previous balance + amount = this balance), which turns a column
+   misreading into a row error instead of a wrong sign.
+4. **Continuation lines**: lines without a date or amount are appended to the previous booking's
+   description (counterparty, reference).
+5. **Sections**: a marker such as `Kontoauszug in (?<currency>[A-Z]{3})` that starts a section and
+   sets the currency of its rows; text outside sections (summary pages) is ignored.
+6. **Page furniture**: lines that repeat on every page (header, footer, page numbers) are dropped.
+7. **Balance markers** (`Saldo per`, `Kontostand am`): read as balances, not bookings. They feed the
+   balance story (6.4) and, until then, the per-section cross-check.
+
+Header fingerprint (FR-IMP-022) for detection: the normalized labels of the booking table's header
+line (e.g. `DATUM INFORMATION REFERENZ BELASTUNG GUTSCHRIFT VALUTA-DATUM SALDO`) play the role of
+the CSV header row.
+
+Row errors and the `ParsedImportRow`/`CanonicalImportRow` contract stay the same; `rawData` holds
+the reconstructed line and its continuation lines. Fixtures are synthetic PDFs generated in the
+tests (PDFBox), reproducing the three layouts above with invented values; a real statement is never
+committed.
+
+Synthetic structure of a YUH-1-like statement section (invented values, columns aligned as on
+the page):
+
+```text
+Kontoauszug in CHF
+Saldo per 01.01.2031                                                              263.40 CHF
+DATUM       INFORMATION           REFERENZ     BELASTUNG  GUTSCHRIFT  VALUTA-DATUM   SALDO (CHF)
+01.01.2031  Anfangsbestand                                                             263.40
+03.01.2031  Zahlung von           0000000001               1'000.00   03.01.2031     1'263.40
+            Erika Beispiel
+            CH00 0000 0000 0000 0000 0
+05.01.2031  Spareinlage           0000000002     17.35                05.01.2031     1'246.05
+Saldo per 31.01.2031                                                            1'246.05 CHF
+```
+
 ## 7. Backlog consequences
 
-- **#229/#230:** scope stays (`CASH_TRANSACTIONS`, `USER_SELECTED`, CSV). Synthetic fixture
-  blueprints: 3.1, 3.2, 3.4, 3.5.
+- **#229/#230:** scope amended by the product owner: `CASH_TRANSACTIONS`, `USER_SELECTED`, and
+  the file formats **CSV and text-layer PDF** (6.8). OCR stays out (no scanned sample). Synthetic
+  fixture blueprints: 3.1, 3.2, 3.4, 3.5 (CSV) and 6.8 (PDF).
 - **New stories** (no sprint label; the product owner decides):
   1. Skip rows by a column value in an import template (DKB pending bookings).
   2. Identify the account from an import file (`PREAMBLE_LINE`, `COLUMN`, keyed identifier hash).
   3. Propose institution and account from an import file (member confirms).
   4. Import a statement's balance as an `account_snapshot` (`DOCUMENT`, with `import_batch_id`).
-  5. PDF statement import, text layer: Yuh account statement (YUH-1) first.
-  6. Holdings snapshot import (Swissquote PDF layout, PostFinance XLSX), depends on EPIC 15.
-  7. Securities transaction import (PostFinance E-Trading CSV), depends on EPIC 15.
-  8. Spike: CAMT XML import and eCH-0196 tax statement barcodes.
-  9. Shipped templates per institution: DKB, PostFinance, Sparkasse account and card (one story
-     each, after #230).
+  5. Holdings snapshot import (Swissquote PDF layout, PostFinance XLSX), depends on EPIC 15.
+  6. Securities transaction import (PostFinance E-Trading CSV), depends on EPIC 15.
+  7. Spike: CAMT XML import and eCH-0196 tax statement barcodes.
+  8. Shipped templates per institution: DKB, PostFinance, Sparkasse account and card, Yuh
+     statement, Sparkasse loan statement, LBS (one story each, after #230).
+  9. Import from scanned PDFs (OCR), only once a scanned statement is supplied.
