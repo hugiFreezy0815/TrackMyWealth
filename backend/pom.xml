@@ -160,6 +160,15 @@
             <version>1.7.1</version>
         </dependency>
 
+        <!-- US-07-03: CSV import parser engine. RFC 4180 quoting (a quoted delimiter or line
+             break inside a description) with a configurable delimiter; the template-driven
+             interpretation of the cells (amounts, dates, types) stays in CsvImportParserService. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.14.1</version>
+        </dependency>
+
         <!-- Background jobs (price refresh, daily valuation build, reconciliation runs -
              FR-JOB-001..007) -->
         <dependency>

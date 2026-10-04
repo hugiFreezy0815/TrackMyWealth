@@ -21,6 +21,13 @@ public class ApiException extends ResponseStatusException {
     getBody().setProperty(ApiErrorCode.PROPERTY, code);
   }
 
+  /** As above, keeping the exception that caused it for the log. */
+  public ApiException(HttpStatusCode status, String code, String reason, Throwable cause) {
+    super(status, reason, cause);
+    this.code = code;
+    getBody().setProperty(ApiErrorCode.PROPERTY, code);
+  }
+
   public String getCode() {
     return code;
   }

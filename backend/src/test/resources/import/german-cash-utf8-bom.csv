@@ -1,0 +1,11 @@
+﻿"Kontonummer:";"DE00 0000 0000 0000 0000 00";
+"Zeitraum:";"01.01.2026 - 31.01.2026";
+"Kontostand vom 01.01.2026:";"1.000,00 EUR";
+
+"Buchungstag";"Wertstellung";"Buchungstext";"Auftraggeber / Begünstigter";"Verwendungszweck";"Soll";"Haben";"Währung"
+"02.01.2026";"02.01.2026";"Lastschrift";"Stadtwerke Musterstadt";"Abschlag Strom Januar";"-85,00";"";"EUR"
+"03.01.2026";"03.01.2026";"Gutschrift";"Beispiel GmbH";"Gehalt Januar";"";"3.150,00";"EUR"
+"15.01.2026";"16.01.2026";"Lastschrift";"Versicherung Muster AG";"Beitrag 2026";"1.204,56";"";"EUR"
+"31.01.2026";"31.01.2026";"Entgelt";"";"Kontoführung";"-4,90";"";"EUR"
+"31.01.2026";"31.01.2026";"Zinsen";"";"";"";"0,12";"EUR"
+"31.01.2026";"";"Kontostand";"";"";"";"2.855,66";"EUR"

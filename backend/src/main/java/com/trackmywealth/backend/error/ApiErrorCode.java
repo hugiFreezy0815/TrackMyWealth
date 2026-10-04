@@ -92,6 +92,55 @@ public final class ApiErrorCode {
    */
   public static final String RECONCILIATION_ADJUSTMENT_LOCKED = "RECONCILIATION_ADJUSTMENT_LOCKED";
 
+  /**
+   * 422: the import template breaks a rule (an unknown encoding, a mapping by a column name the
+   * header lacks or repeats, an invalid date pattern, ...); {@code field} names the template field
+   * and {@code detail} the rule (US-07-03).
+   */
+  public static final String IMPORT_TEMPLATE_INVALID = "IMPORT_TEMPLATE_INVALID";
+
+  /**
+   * 422: a valid template this release cannot import yet - only cash transactions into an account
+   * the member selects at upload are supported (US-07-03, sprint 5).
+   */
+  public static final String IMPORT_TEMPLATE_UNSUPPORTED = "IMPORT_TEMPLATE_UNSUPPORTED";
+
+  /** 403: a shipped import template is shared by every workspace and never edited by one. */
+  public static final String IMPORT_TEMPLATE_READ_ONLY = "IMPORT_TEMPLATE_READ_ONLY";
+
+  /**
+   * 409: an import batch used a version of this template, so it cannot be deleted (FR-LIF-001);
+   * deactivate it instead.
+   */
+  public static final String IMPORT_TEMPLATE_IN_USE = "IMPORT_TEMPLATE_IN_USE";
+
+  /**
+   * 422: the file's header lacks columns the template maps; {@code missingColumns} lists them. No
+   * row is parsed, so a column is never silently shifted (FR-IMP-023).
+   */
+  public static final String IMPORT_TEMPLATE_MISMATCH = "IMPORT_TEMPLATE_MISMATCH";
+
+  /**
+   * 422: the header holds characters the template's encoding cannot decode, so the file is probably
+   * in another encoding.
+   */
+  public static final String IMPORT_ENCODING_SUSPECT = "IMPORT_ENCODING_SUSPECT";
+
+  /** 422: the file is empty, or holds nothing after the skipped preamble. */
+  public static final String IMPORT_FILE_EMPTY = "IMPORT_FILE_EMPTY";
+
+  /** 422: the file has a header but no data row. */
+  public static final String IMPORT_FILE_NO_DATA_ROWS = "IMPORT_FILE_NO_DATA_ROWS";
+
+  /** 422: the file is not valid CSV for the template's delimiter (e.g. an unclosed quote). */
+  public static final String IMPORT_FILE_MALFORMED = "IMPORT_FILE_MALFORMED";
+
+  /** 413: the uploaded file exceeds the 5 MB import limit. */
+  public static final String IMPORT_FILE_TOO_LARGE = "IMPORT_FILE_TOO_LARGE";
+
+  /** 422: the file has more data rows than one import may hold; {@code maxRows} says how many. */
+  public static final String IMPORT_FILE_TOO_MANY_ROWS = "IMPORT_FILE_TOO_MANY_ROWS";
+
   /** 423: the user account is temporarily locked (FR-AUT lockout). */
   public static final String LOCKED = "LOCKED";
 

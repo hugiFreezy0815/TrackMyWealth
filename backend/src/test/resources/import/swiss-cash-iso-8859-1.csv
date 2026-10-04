@@ -1,0 +1,6 @@
+Buchungsdatum;Valuta;Avisierungstext;Betrag;Währung;Saldo
+02.01.2026;02.01.2026;Gutschrift Lohn Beispiel AG;5'250.00;CHF;12'480.35
+05.01.2026;05.01.2026;Einkauf Bäckerei Musterhausen;-12.40;CHF;12'467.95
+10.01.2026;09.01.2026;"Miete Januar; Wohnung 3.OG";-1'850.00;CHF;10'617.95
+15.01.2026;15.01.2026;Bargeldbezug Automat;-200;CHF;10'417.95
+31.01.2026;31.01.2026;Zins;0.15;chf;10'418.10

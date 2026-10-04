@@ -1,0 +1,3 @@
+# Import fixtures are byte-exact: their encoding (ISO-8859-1, UTF-8 BOM) and line endings
+# are what the parser tests check, so git must never convert them.
+backend/src/test/resources/import/*.csv -text

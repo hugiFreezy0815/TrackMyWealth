@@ -82,7 +82,8 @@ class CrossTenantIsolationTest {
           "reconciliation_result",
           "category",
           "workspace_category_override",
-          "categorization_rule");
+          "categorization_rule",
+          "import_template");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -301,6 +302,35 @@ class CrossTenantIsolationTest {
             rowVisibleUnderContext(
                 workspaceBId, "workspace_category_override", categoryOverrideAId))
         .isFalse();
+  }
+
+  // US-07-03: a workspace's own import templates are tenant data; a shipped template (NULL
+  // workspace_id) is visible to every workspace and writable by none.
+  @Test
+  void importTemplateRowIsInvisibleAcrossWorkspaces() throws Exception {
+    UUID sharedTemplateId = insertImportTemplate(null);
+    UUID templateAId = insertImportTemplate(workspaceAId);
+    UUID templateBId = insertImportTemplate(workspaceBId);
+
+    assertThat(rowVisibleUnderContext(workspaceAId, "import_template", templateBId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceBId, "import_template", templateAId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceAId, "import_template", templateAId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceAId, "import_template", sharedTemplateId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "import_template", sharedTemplateId)).isTrue();
+
+    try (Connection connection = testRoleConnection()) {
+      connection.setAutoCommit(false);
+      setWorkspaceContext(connection, workspaceAId);
+      try (PreparedStatement statement =
+          connection.prepareStatement("UPDATE import_template SET name = 'mine' WHERE id = ?")) {
+        statement.setObject(1, sharedTemplateId);
+        assertThatThrownBy(statement::executeUpdate)
+            .isInstanceOf(SQLException.class)
+            .hasMessageContaining("row-level security");
+      } finally {
+        connection.rollback();
+      }
+    }
   }
 
   // The shared default is visible but never writable by a workspace: its customisation belongs in
@@ -586,6 +616,31 @@ class CrossTenantIsolationTest {
       connection.commit();
     }
     return resultId;
+  }
+
+  // A shipped template (null workspace) can only be written past RLS, as the reference data
+  // package would; a workspace's own goes through its context like any tenant write.
+  private UUID insertImportTemplate(UUID workspaceId) throws Exception {
+    UUID templateId = UUID.randomUUID();
+    try (Connection connection = workspaceId == null ? adminConnection() : testRoleConnection()) {
+      connection.setAutoCommit(false);
+      if (workspaceId != null) {
+        setWorkspaceContext(connection, workspaceId);
+      }
+      try (PreparedStatement statement =
+          connection.prepareStatement(
+              "INSERT INTO import_template (id, template_family_id, workspace_id, name,"
+                  + " template_version, column_mapping, is_system_provided) VALUES (?, ?, ?,"
+                  + " 'Template', '1', '{}', ?)")) {
+        statement.setObject(1, templateId);
+        statement.setObject(2, templateId);
+        statement.setObject(3, workspaceId);
+        statement.setBoolean(4, workspaceId == null);
+        statement.executeUpdate();
+      }
+      connection.commit();
+    }
+    return templateId;
   }
 
   private UUID insertOpeningBalance(UUID workspaceId, UUID accountId) throws Exception {

@@ -67,6 +67,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V61` | `fx_import_setting`: one global row holding the FX import interval an administrator set at runtime; it wins over `FX_IMPORT_CRON` at every start (#227) |
 | `V62` | `reconciliation_result.version` + `reconciliation_result_bump_version`: member decisions on a result need `If-Match` (#235) |
 | `V63` | `transaction.reconciliation_result_id`: the result that booked a row as its adjusting entry, only on a manual `VALUATION_ADJUSTMENT` and only a result of the row's own account (composite FK on `(account_id, id)`, so never another workspace's), frozen by the append-only trigger (#235) |
+| `V64` | Import template versioning: `template_family_id`, `is_current` (one current version per family, `uq_import_template_family_current`), `is_active`, `header_columns`, `version` + `import_template_bump_version`, and a check on the row-skipping counts (#229) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -712,6 +713,42 @@ so the response's next run is still no later than the selected interval. A chang
 writes `admin_audit_log` (`FX_IMPORT_INTERVAL_CHANGED`, from and to) and reschedules the stored
 Quartz trigger in one transaction. The JDBC job store joins Spring's transaction on the
 shared data source, so all three take effect together or not at all, on every node.
+
+### Import templates (US-07-03)
+
+`import_template` (`V15`, `V64`) describes one institution's CSV export as data, never code
+(FR-IMP-020). It shares `category`'s RLS policy (`V20`): a row with a `NULL` `workspace_id` is a
+shipped template every workspace reads and none writes; the others belong to one workspace. The
+application connects as a role that may bypass RLS in some deployments, so
+`ImportTemplateRepository` filters on the workspace as well.
+
+**Versioning (FR-IMP-023).** Every version of a template is its own row. The rows of one template
+share `template_family_id`, and exactly one of them has `is_current` (partial unique index
+`uq_import_template_family_current`). A change to any parse-relevant column (everything but
+`name` and `institution_catalogue_id`, plus `header_columns`) inserts a new row with
+`template_version` + 1 and `effective_from` = today, after setting `is_current = false` on the old
+one in the same transaction. The old row is never changed again (JPA maps those columns
+`updatable = false`), so an `import_batch` that points at it through `template_id` and
+`template_version_used` can always be re-parsed exactly as it was. A name or institution change
+updates the current row in place. `version` is the `If-Match` revision of ADR 0004; a write to a
+retired version is a 412 naming the current one.
+
+**Fingerprint (FR-IMP-022).** `header_columns` keeps the header cells of the sample the template
+was built from (a JSON array; `NULL` for a file without a header row, `header_row_index = -1`).
+`header_fingerprint` is derived from it on the server: SHA-256 (hex) of the cells, each trimmed
+and lower-cased, joined by the ASCII unit separator (U+001F). Detection reads an uploaded file with
+each active template's own encoding, delimiter and skipped rows, and ranks an exact fingerprint
+before a header that merely holds every mapped column.
+
+**Delete and deactivate (FR-LIF-001).** A template is hard-deleted with all its versions only
+while no `import_batch` references any of them; otherwise it is deactivated (`is_active =
+false`), which hides it from detection and from the default list.
+
+`column_mapping` maps canonical fields (`bookingDate`, `amount` or `debitAmount` + `creditAmount`,
+`currency`, `description`, ...) to a header cell's text or a 0-based column index;
+`type_mapping` maps source type texts to cash `transaction_type`s. Sprint 5 imports only
+`CASH_TRANSACTIONS` with `account_identification_strategy = USER_SELECTED`; the parser refuses
+the other values with `IMPORT_TEMPLATE_UNSUPPORTED`.
 
 ## 5. Time-series data and partitioning
 

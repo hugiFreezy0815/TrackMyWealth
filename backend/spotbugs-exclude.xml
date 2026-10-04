@@ -47,6 +47,20 @@ holds itself to for its own exemption list.
         <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
 
+    <!-- Same false positive as AssignAccountOwnershipRequest above (US-07-03): both compact
+         constructors copy headerColumns into an unmodifiable list before the field is set. The
+         copy sits behind a null check because null is meaningful (a PUT keeps the stored header
+         columns; a template for a file without a header row has none), and SpotBugs does not
+         follow the copy through that branch. -->
+    <Match>
+        <Or>
+            <Class name="com.trackmywealth.backend.dto.ImportTemplateRequest"/>
+            <Class name="com.trackmywealth.backend.dto.ImportTemplateResponse"/>
+        </Or>
+        <Method name="headerColumns"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
     <!-- JwtService's constructor derives its signing key from configuration and has nothing to
          clean up if that fails - a malformed/missing secret should fail application startup
          immediately (fail-fast), not construct a partially-usable service. No finalizer exists
