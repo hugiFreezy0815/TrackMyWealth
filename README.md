@@ -205,6 +205,17 @@ than `FX_STALE_AFTER` (default `P5D`) is shown as stale. To run without outbound
 `FX_IMPORT_ENABLED=false` and `FX_DEFAULT_SOURCE=MANUAL`, and enter rates yourself. The other
 `FX_IMPORT_*` settings are documented in `application.yml`.
 
+The provider is chosen with `FX_IMPORT_PROVIDER` (#226; default and today the only value: `ecb`,
+whose URL stays `FX_IMPORT_ECB_BASE_URL`; the former key `app.fx.import.ecb-base-url` is still read
+as a fallback). An unknown name stops the backend at start. Cross rates
+are derived, and a pair without a stored rate is converted, through that stored source's registered
+hub currency (the ECB's is EUR), so historical rates keep their original hub after a provider
+switch. A different provider stores under its own source: `FX_DEFAULT_SOURCE` must be that source
+or `MANUAL` (case-sensitive), otherwise startup fails. A pair missing from `MANUAL` is chained
+through the selected provider's hub first and then through every other registered provider's hub,
+so rates entered against EUR keep working after a switch. A newly selected provider's history is
+loaded again from scratch because import progress is tracked per source.
+
 The web build (`mobile/`, see above) is not part of this compose file - export it
 (`npx expo export -p web`) and serve `mobile/dist/` from any static file host, including one
 running on the same NAS if you want everything on one box.

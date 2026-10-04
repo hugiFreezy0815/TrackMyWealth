@@ -88,6 +88,21 @@ holds itself to for its own exemption list.
         <Class name="com.trackmywealth.backend.service.FxRateService"/>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
+
+    <!-- Same reasoning again, for #226: FxRateProviderCatalogService refuses an unknown
+         app.fx.import.provider, duplicate or MANUAL provider definitions, and an
+         app.fx.default-source that is neither MANUAL nor the selected provider's source;
+         FxRateImportService refuses a missing client or one wired to another provider's name.
+         Each must fail application startup rather than import or read the wrong source. Neither
+         class is final, so Spring can still proxy them; neither has a finalizer, so the attack is
+         not reachable. -->
+    <Match>
+        <Or>
+            <Class name="com.trackmywealth.backend.service.FxRateProviderCatalogService"/>
+            <Class name="com.trackmywealth.backend.service.FxRateImportService"/>
+        </Or>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
     <!-- EPIC-29 (#149): CorrelationIdFilter echoes a caller's X-Correlation-Id on the response so
          a request can be traced end to end. It echoes only a value that matched
          [A-Za-z0-9._-]{8,64} in full - no CR/LF, no separators, nothing a header-injection or

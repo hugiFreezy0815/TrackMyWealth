@@ -7,16 +7,26 @@ import java.util.List;
 /**
  * An external source of daily FX rates (US-06-04, #223). Implementations only read from the
  * provider; storing is {@code FxRateImportService}'s job.
+ *
+ * <p>#226: exactly one implementation is loaded, the one {@code app.fx.import.provider} ({@code
+ * FX_IMPORT_PROVIDER}) names. Each is conditional on its own name, reads its settings from {@code
+ * app.fx.import.providers.<name>}, and registers an unconditional {@link FxRateProviderDefinition}
+ * so provider discovery and historical source-to-hub resolution do not depend on the active client.
  */
 public interface FxRateProvider {
 
-  /** The {@code fx_rate.source} every rate from this provider is stored under. */
-  String source();
+  /**
+   * The same {@link FxRateProviderDefinition} the provider registers as a bean (#226) - its name,
+   * the {@code fx_rate.source} its rates are stored under, and its hub currency, stated once.
+   */
+  FxRateProviderDefinition definition();
 
   /**
    * Every rate the provider published for {@code from} to {@code to}, both inclusive. Empty when
    * nothing was published in that range (a weekend, a holiday, a date before the provider's series
-   * begins).
+   * begins). Every rate is quoted from the hub, {@code <hub>/<currency>} with a currency other than
+   * the hub (#226): the import refuses an answer with any other pair, since no cross rate could be
+   * derived from it, and like any provider failure that ends the run.
    *
    * @throws FxRateProviderException when the provider cannot be reached or its answer cannot be
    *     read

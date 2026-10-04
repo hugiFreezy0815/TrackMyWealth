@@ -11,6 +11,7 @@ import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.Period;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -20,24 +21,26 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * US-06-01: read contract for {@code fx_rate} - the FX equivalent of {@code price} (FR-PRC-013).
- * Rates are written by {@link FxRateImportService} (US-06-04, #223), which loads the ECB's daily
- * euro reference rates, or entered by hand; this class only reads them.
+ * Rates are written by {@link FxRateImportService} (US-06-04, #223), which loads the configured
+ * provider's daily rates (the ECB's euro reference rates by default), or entered by hand; this
+ * class only reads them.
  *
  * <p>US-06-02/FR-CUR-010 and #223: {@link #getConversionRate} answers any pair of currencies from
  * the stored rates of one source, in this order:
  *
  * <ol>
- *   <li>the stored {@code baseCurrency}/{@code quoteCurrency} pair - for the ECB also a cross rate
- *       the import derived and stored as master data (V54), reported as via {@value
- *       #INTERMEDIATE_CURRENCY};
+ *   <li>the stored {@code baseCurrency}/{@code quoteCurrency} pair - also a cross rate the import
+ *       derived and stored as master data (V54), reported as via the hub currency;
  *   <li>the stored reverse pair, inverted - the ECB publishes {@code EUR/CHF}, never {@code
  *       CHF/EUR}, and a currency's value in another is the same fact whichever way round it is
  *       quoted;
- *   <li>a chain through {@value #INTERMEDIATE_CURRENCY}, each leg found as in 1 or 2. The euro,
- *       because the default source (the ECB) quotes every currency against it: with nothing but its
- *       rates stored, every pair of published currencies resolves - {@code USD/CHF} as {@code
- *       USD/EUR} times {@code EUR/CHF}. A direct pair (1 or 2) always wins over the chain, so a
- *       hand-entered {@code USD/CHF} rate is used as entered.
+ *   <li>a chain through the hub registered for the requested {@code source} (#226). Historical
+ *       provider sources keep their own hub after the active provider changes (ECB stays EUR);
+ *       {@code MANUAL} tries the selected provider's hub first, then every other registered hub, so
+ *       a missing pair is computed whenever any of them chains (product owner, 2026-10-04). With
+ *       nothing but one provider's rates stored, every pair of published currencies resolves. A
+ *       direct pair (1 or 2) always wins over the chain, so a hand-entered {@code USD/CHF} rate is
+ *       used as entered.
  * </ol>
  *
  * <p>Reads never call the rate provider: missing rates are loaded in the background (#223). The one
@@ -50,10 +53,6 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class FxRateService {
-
-  // FR-CUR-010's fallback hub, see the class Javadoc. Not configurable: a fixed, documented choice
-  // is the point of "documented, explicit chain" in US-06-02's AC.
-  private static final String INTERMEDIATE_CURRENCY = "EUR";
 
   // NFR-CALC-007: a single documented rounding policy, applied once at presentation - never
   // accumulated through intermediate steps. A derived rate (an inverted pair, or a chain) is
@@ -68,14 +67,17 @@ public class FxRateService {
 
   private final FxRateRepository fxRateRepository;
   private final FxRateImportService fxRateImportService;
+  private final FxRateProviderCatalogService providerCatalog;
   private final Period staleAfter;
 
   public FxRateService(
       FxRateRepository fxRateRepository,
       FxRateImportService fxRateImportService,
+      FxRateProviderCatalogService providerCatalog,
       @Value("${app.fx.stale-after:P5D}") Period staleAfter) {
     this.fxRateRepository = fxRateRepository;
     this.fxRateImportService = fxRateImportService;
+    this.providerCatalog = providerCatalog;
     // A non-positive period would mark every carried-forward rate stale, a weekend's included.
     if (staleAfter.isNegative() || staleAfter.isZero()) {
       throw new IllegalArgumentException("app.fx.stale-after must be a positive period.");
@@ -135,21 +137,28 @@ public class FxRateService {
    *
    * @throws ResponseStatusException 400, same as {@link #getRate}
    * @throws ResponseStatusException 404 if neither a direct pair (either way round) nor a complete
-   *     chain through {@value #INTERMEDIATE_CURRENCY} exists (PR-011: refuse rather than silently
-   *     default to 1.0, in any chain) - a caller that would rather treat "no rate exists" as one
-   *     possible outcome among several (e.g. an unresolvable line in a larger aggregation, not a
-   *     failed request) should call {@link #tryGetConversionRate} instead of catching this:
-   *     catching a {@code @Transactional} method's exception does not undo Spring's rollback-only
-   *     marking of the enclosing transaction if the caller shares it (the two run in the same
-   *     physical transaction by default, {@code REQUIRED} propagation) - the caller's own commit
-   *     then fails with {@code UnexpectedRollbackException} regardless of the catch (confirmed
-   *     against InstitutionService.getSummary, which hit exactly this - see #78's follow-up fix).
+   *     chain through the hub currency exists (PR-011: refuse rather than silently default to 1.0,
+   *     in any chain) - a caller that would rather treat "no rate exists" as one possible outcome
+   *     among several (e.g. an unresolvable line in a larger aggregation, not a failed request)
+   *     should call {@link #tryGetConversionRate} instead of catching this: catching a
+   *     {@code @Transactional} method's exception does not undo Spring's rollback-only marking of
+   *     the enclosing transaction if the caller shares it (the two run in the same physical
+   *     transaction by default, {@code REQUIRED} propagation) - the caller's own commit then fails
+   *     with {@code UnexpectedRollbackException} regardless of the catch (confirmed against
+   *     InstitutionService.getSummary, which hit exactly this - see #78's follow-up fix).
    */
   @Transactional(readOnly = true)
   public CurrencyConversionResult getConversionRate(
       String baseCurrency, String quoteCurrency, LocalDate date, String source) {
     return tryGetConversionRate(baseCurrency, quoteCurrency, date, source)
-        .orElseThrow(() -> noConversionRateAvailable(baseCurrency, quoteCurrency, source, date));
+        .orElseThrow(
+            () ->
+                noConversionRateAvailable(
+                    baseCurrency,
+                    quoteCurrency,
+                    source,
+                    date,
+                    providerCatalog.hubCurrenciesForSource(source)));
   }
 
   /**
@@ -233,32 +242,54 @@ public class FxRateService {
 
   private Optional<CurrencyConversionResult> resolve(
       String baseCurrency, String quoteCurrency, LocalDate date, String source) {
-    // One side is already the intermediate - there is no third currency to chain through, and a
-    // derived X/EUR row is just the published EUR/X inverted.
-    boolean involvesIntermediate =
-        INTERMEDIATE_CURRENCY.equals(baseCurrency) || INTERMEDIATE_CURRENCY.equals(quoteCurrency);
+    // A stored direct pair is usable without provider metadata. Only a derived pair or a fallback
+    // chain needs a hub, and that hub belongs to the row's source - not necessarily to the provider
+    // selected for imports today. This keeps historical ECB rows on EUR after a provider switch.
     Optional<ResolvedFxRate> direct = leg(baseCurrency, quoteCurrency, date, source);
-    if (direct.isPresent()) {
-      boolean viaIntermediate = direct.get().derived() && !involvesIntermediate;
-      return Optional.of(
-          toResult(
-              direct.get(),
-              baseCurrency,
-              quoteCurrency,
-              date,
-              viaIntermediate ? INTERMEDIATE_CURRENCY : null));
-    }
-    if (involvesIntermediate) {
-      return Optional.empty();
+    if (direct.isPresent() && !direct.get().derived()) {
+      return Optional.of(toResult(direct.get(), baseCurrency, quoteCurrency, date, null));
     }
 
+    List<String> hubs = providerCatalog.hubCurrenciesForSource(source);
+    if (hubs.isEmpty()) {
+      // An unregistered source can still serve a direct stored pair, but there is no trustworthy
+      // provenance for a derived row or a chain.
+      return Optional.empty();
+    }
+    // Only the import stores derived rows, and only under a provider source, which has exactly one
+    // hub: the catalog refuses a provider declaring MANUAL, the one source with several. A derived
+    // row under MANUAL was put there by hand and names no hub it came through, so it is passed over
+    // and the pair computed through the hubs instead, as if it were missing.
+    if (direct.isPresent() && hubs.size() == 1) {
+      // A derived X/hub row is just the published hub/X inverted.
+      String hub = hubs.get(0);
+      boolean viaHub = !hub.equals(baseCurrency) && !hub.equals(quoteCurrency);
+      return Optional.of(
+          toResult(direct.get(), baseCurrency, quoteCurrency, date, viaHub ? hub : null));
+    }
+    for (String hub : hubs) {
+      // One side is already this hub - there is no third currency to chain through.
+      if (hub.equals(baseCurrency) || hub.equals(quoteCurrency)) {
+        continue;
+      }
+      Optional<CurrencyConversionResult> chained =
+          chain(baseCurrency, quoteCurrency, date, source, hub);
+      if (chained.isPresent()) {
+        return chained;
+      }
+    }
+    return Optional.empty();
+  }
+
+  private Optional<CurrencyConversionResult> chain(
+      String baseCurrency, String quoteCurrency, LocalDate date, String source, String hub) {
     // The second leg's lookup must not run at all when the first is already missing - this is
     // exactly the path a currency nobody publishes takes.
-    Optional<ResolvedFxRate> firstLeg = leg(baseCurrency, INTERMEDIATE_CURRENCY, date, source);
+    Optional<ResolvedFxRate> firstLeg = leg(baseCurrency, hub, date, source);
     if (firstLeg.isEmpty()) {
       return Optional.empty();
     }
-    Optional<ResolvedFxRate> secondLeg = leg(INTERMEDIATE_CURRENCY, quoteCurrency, date, source);
+    Optional<ResolvedFxRate> secondLeg = leg(hub, quoteCurrency, date, source);
     if (secondLeg.isEmpty()) {
       return Optional.empty();
     }
@@ -267,7 +298,7 @@ public class FxRateService {
             firstLeg.get().rate().multiply(secondLeg.get().rate(), MathContext.DECIMAL128),
             earlier(firstLeg.get().rateDate(), secondLeg.get().rateDate()),
             true);
-    return Optional.of(toResult(chain, baseCurrency, quoteCurrency, date, INTERMEDIATE_CURRENCY));
+    return Optional.of(toResult(chain, baseCurrency, quoteCurrency, date, hub));
   }
 
   // The stored from/to pair, or else the stored to/from pair inverted.
@@ -325,7 +356,7 @@ public class FxRateService {
   }
 
   private static ResponseStatusException noConversionRateAvailable(
-      String baseCurrency, String quoteCurrency, String source, LocalDate date) {
+      String baseCurrency, String quoteCurrency, String source, LocalDate date, List<String> hubs) {
     return new ResponseStatusException(
         HttpStatus.NOT_FOUND,
         "No FX rate available for "
@@ -336,9 +367,9 @@ public class FxRateService {
             + source
             + "' on or before "
             + date
-            + ", directly or via "
-            + INTERMEDIATE_CURRENCY
-            + ".");
+            + (hubs.isEmpty()
+                ? "; no hub is registered for that source."
+                : ", directly or via " + String.join(" or ", hubs) + "."));
   }
 
   // Mirrors CurrencyCodeValidator's own check (java.util.Currency.getInstance, which is

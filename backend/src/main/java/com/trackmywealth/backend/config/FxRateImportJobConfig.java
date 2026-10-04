@@ -44,7 +44,8 @@ public class FxRateImportJobConfig {
   JobDetail fxRateImportJobDetail() {
     return JobBuilder.newJob(FxRateImportJob.class)
         .withIdentity(JOB_KEY)
-        .withDescription("Imports the ECB FX rates, their history and cross rates (#223)")
+        .withDescription(
+            "Imports the configured provider's FX rates, their history and cross rates (#223)")
         .storeDurably()
         .build();
   }

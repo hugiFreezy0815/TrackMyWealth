@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.trackmywealth.backend.client.FxRateProvider;
+import com.trackmywealth.backend.client.FxRateProviderDefinition;
 import com.trackmywealth.backend.client.FxRateProviderException;
 import com.trackmywealth.backend.client.ProvidedFxRate;
 import com.trackmywealth.backend.config.FxRateImportProperties;
@@ -20,6 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -28,9 +30,10 @@ import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * US-06-04 (#223): fills {@code fx_rate} from the configured {@link FxRateProvider} (the ECB) so
- * that no conversion depends on rates entered by hand. FX rates are master data (product owner,
- * 2026-10-02): loaded in the background, and read, never fetched, by calculations. Entry points:
+ * US-06-04 (#223): fills {@code fx_rate} from the configured {@link FxRateProvider} (the ECB by
+ * default, {@code app.fx.import.provider}, #226) so that no conversion depends on rates entered by
+ * hand. FX rates are master data (product owner, 2026-10-02): loaded in the background, and read,
+ * never fetched, by calculations. Entry points:
  *
  * <ul>
  *   <li>{@link #importLatest} - the scheduled import, every two hours: every day since the last
@@ -80,6 +83,7 @@ public class FxRateImportService {
   static final Duration MIN_ON_DEMAND_CALL = Duration.ofSeconds(1);
 
   private final FxRateProvider provider;
+  private final FxRateProviderDefinition definition;
   private final FxRateRepository fxRateRepository;
   private final FxRateBatchRepository fxRateBatchRepository;
   private final FxRateHistoryRequirementRepository historyRequirementRepository;
@@ -97,14 +101,33 @@ public class FxRateImportService {
   private final AtomicReference<LocalDate> exhaustedHistoryStart = new AtomicReference<>();
 
   public FxRateImportService(
-      FxRateProvider provider,
+      ObjectProvider<FxRateProvider> providers,
       FxRateRepository fxRateRepository,
       FxRateBatchRepository fxRateBatchRepository,
       FxRateHistoryRequirementRepository historyRequirementRepository,
       BusinessDateService businessDateService,
       FxRateImportProperties properties,
+      FxRateProviderCatalogService providerCatalog,
       PlatformTransactionManager transactionManager) {
-    this.provider = provider;
+    // #226: provider metadata is unconditional, while the external client is conditional. The
+    // catalog therefore validates the configured name and gives a complete valid-values list even
+    // when no client bean was instantiated for a typo.
+    FxRateProvider available = providers.getIfAvailable();
+    if (available == null) {
+      throw new IllegalStateException(
+          "Selected FX provider '" + properties.provider() + "' has no FxRateProvider client bean");
+    }
+    this.provider = available;
+    // The client states its metadata only through its definition, so the one thing that can still
+    // go wrong is wiring: a client conditional on another provider's name.
+    this.definition = providerCatalog.selected();
+    if (!definition.equals(provider.definition())) {
+      throw new IllegalStateException(
+          "FX provider '"
+              + definition.name()
+              + "' is selected, but the loaded FxRateProvider client is "
+              + provider.definition());
+    }
     this.fxRateRepository = fxRateRepository;
     this.fxRateBatchRepository = fxRateBatchRepository;
     this.historyRequirementRepository = historyRequirementRepository;
@@ -121,12 +144,20 @@ public class FxRateImportService {
 
   /** The {@code fx_rate.source} this import stores under. */
   public String source() {
-    return provider.source();
+    return definition.source();
+  }
+
+  /**
+   * The configured provider's hub currency (#226): the published rates quote every currency against
+   * it, so cross rates are derived and a missing pair is chained through it.
+   */
+  public String hubCurrency() {
+    return definition.hubCurrency();
   }
 
   /** Whether fetch-on-missing applies to conversions against {@code source}. */
   public boolean fetchesOnDemandFor(String source) {
-    return properties.enabled() && provider.source().equals(source);
+    return properties.enabled() && definition.source().equals(source);
   }
 
   /**
@@ -140,7 +171,7 @@ public class FxRateImportService {
     LocalDate today = businessDateService.today();
     LocalDate from =
         fxRateRepository
-            .findLatestRateDate(provider.source())
+            .findLatestRateDate(definition.source())
             .map(latest -> latest.plusDays(1))
             .orElseGet(() -> historyStart(today));
     return importRange(from, today, "scheduled FX import", null);
@@ -159,7 +190,7 @@ public class FxRateImportService {
   public int backfillHistory() {
     Optional<LocalDate> required = historyRequirementRepository.findEarliestBookingDate();
     Optional<LocalDate> runStart =
-        fxRateRepository.findStartOfLatestRun(provider.source(), MAX_PUBLICATION_GAP_DAYS);
+        fxRateRepository.findStartOfLatestRun(definition.source(), MAX_PUBLICATION_GAP_DAYS);
     if (required.isEmpty() || runStart.isEmpty()) {
       // Nothing booked needs history, or nothing is stored yet - the daily import's first run
       // loads the full history itself.
@@ -205,7 +236,8 @@ public class FxRateImportService {
       return false;
     }
     try {
-      Optional<LocalDate> earliestStored = fxRateRepository.findEarliestRateDate(provider.source());
+      Optional<LocalDate> earliestStored =
+          fxRateRepository.findEarliestRateDate(definition.source());
       if (covers(earliestStored, date)) {
         return true; // stored by the request this one waited for
       }
@@ -248,7 +280,10 @@ public class FxRateImportService {
                 }
                 int derived =
                     fxRateBatchRepository.deriveCrossRatesOfNewCurrencies(
-                        provider.source(), ALL_HISTORY_FROM, ALL_HISTORY_TO);
+                        definition.source(),
+                        definition.hubCurrency(),
+                        ALL_HISTORY_FROM,
+                        ALL_HISTORY_TO);
                 fxRateBatchRepository.markCrossRatesDerived(pending);
                 return derived;
               });
@@ -262,7 +297,7 @@ public class FxRateImportService {
   }
 
   private boolean isCovered(LocalDate date) {
-    return covers(fxRateRepository.findEarliestRateDate(provider.source()), date);
+    return covers(fxRateRepository.findEarliestRateDate(definition.source()), date);
   }
 
   private static boolean covers(Optional<LocalDate> earliestStored, LocalDate date) {
@@ -325,20 +360,37 @@ public class FxRateImportService {
             status -> {
               int inserted = fxRateBatchRepository.insertIfAbsent(rates);
               if (inserted > 0) {
-                fxRateBatchRepository.deriveCrossRates(provider.source(), from, to);
+                fxRateBatchRepository.deriveCrossRates(
+                    definition.source(), definition.hubCurrency(), from, to);
               }
               return inserted;
             });
     return stored == null ? 0 : stored;
   }
 
+  // #226: cross rates are derived only from hub/x rows. A provider answering x/hub (or any other
+  // pair) would store its rates without a single cross rate, and hub/hub is no rate at all, so the
+  // answer is unreadable: like any provider failure, it ends the run before this chunk is stored,
+  // keeping the chunks already stored, and the next run asks again.
   private FxRate toEntity(ProvidedFxRate provided) {
+    if (!definition.hubCurrency().equals(provided.baseCurrency())
+        || definition.hubCurrency().equals(provided.quoteCurrency())) {
+      throw new FxRateProviderException(
+          "FX provider '"
+              + definition.name()
+              + "' returned "
+              + provided.baseCurrency()
+              + "/"
+              + provided.quoteCurrency()
+              + ", but quotes every other currency from its hub "
+              + definition.hubCurrency());
+    }
     FxRate rate = new FxRate();
     rate.setBaseCurrency(provided.baseCurrency());
     rate.setQuoteCurrency(provided.quoteCurrency());
     rate.setRateDate(provided.rateDate());
     rate.setRate(provided.rate());
-    rate.setSource(provider.source());
+    rate.setSource(definition.source());
     return rate;
   }
 

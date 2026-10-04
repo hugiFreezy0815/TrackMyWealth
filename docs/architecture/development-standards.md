@@ -36,14 +36,28 @@ cd backend
   filter, token contract, rate limiting), `web` (HTTP-boundary helpers: errors, If-Match/ETag,
   correlation ids), `error` (error types services throw), `validation` (custom constraints),
   `client` (calls to external providers such as `EcbFxRateProvider`; returns its own records,
-  never entities) and `job` (Quartz jobs: thin wrappers that run a service under a correlation id
-  of their own, see `CorrelatedJob`). A repository uses `JdbcTemplate` where JPA does not fit, e.g.
-  `FxRateBatchRepository`'s bulk insert. A job that must act inside one workspace runs through
-  `SystemWorkspaceContext`, which sets that workspace for row-level security and nothing else.
+  never entities; selectable providers below) and `job` (Quartz jobs: thin wrappers that run a
+  service under a correlation id of their own, see `CorrelatedJob`). A repository uses
+  `JdbcTemplate` where JPA does not fit, e.g. `FxRateBatchRepository`'s bulk insert. A job that
+  must act inside one workspace runs through `SystemWorkspaceContext`, which sets that workspace
+  for row-level security and nothing else.
   `ArchitectureTest` encodes the allowed dependency direction — Controller → Service → Repository →
   Entity, Repository never called directly from a Controller, Entities never returned from a
   Controller. A rule for a new package is written before its first class lands (see that class's
   Javadoc), so it enforces from the start.
+  - **Selectable `client` providers (#226).** A provider that has alternatives implements one
+    interface such as `FxRateProvider`, is `@ConditionalOnProperty` on its own name
+    (`app.fx.import.provider`) and reads its settings from its own block,
+    `app.fx.import.providers.<name>`.
+  - Its unconditional `FxRateProviderDefinition` registers configuration name, stored source and
+    hub currency, so startup can list every valid provider and historical sources keep their own
+    hub after a provider switch. A definition therefore stays registered for as long as `fx_rate`
+    holds its source, even once its client is retired.
+  - The client returns that same definition from `definition()` and quotes every rate from its
+    hub; no provider may use the source `MANUAL`.
+  - Provider-neutral services never import a concrete provider implementation, and `config`
+    never depends on `client` (the client reads its settings from there, so the definition bean
+    lives in `client`). Both are enforced by ArchUnit.
 - **DTOs only across the REST boundary, never JPA entities** (`controllers_do_not_expose_entities`
   in `ArchitectureTest`) — this is explicitly called out in `docs/user-stories/BACKLOG-remaining-epics.md`
   (EPIC 29) as a rule that "erodes easily if not enforced."

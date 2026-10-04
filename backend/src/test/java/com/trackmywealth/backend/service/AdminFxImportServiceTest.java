@@ -18,7 +18,6 @@ import com.trackmywealth.backend.dto.UpdateFxImportIntervalRequest;
 import com.trackmywealth.backend.repository.AdminAuditLogRepository;
 import com.trackmywealth.backend.repository.FxImportSettingRepository;
 import com.trackmywealth.backend.repository.FxRateRepository;
-import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -173,15 +172,7 @@ class AdminFxImportServiceTest {
     Duration hour = Duration.ofHours(1);
     FxRateImportProperties properties =
         new FxRateImportProperties(
-            enabled,
-            URI.create("https://example.test"),
-            "0 0 0/2 * * ?",
-            BERLIN,
-            hour,
-            hour,
-            hour,
-            hour,
-            hour);
+            enabled, "ecb", "0 0 0/2 * * ?", BERLIN, hour, hour, hour, hour, hour);
     return new AdminFxImportService(
         settingRepository,
         new FxImportScheduleService(settingRepository, properties),

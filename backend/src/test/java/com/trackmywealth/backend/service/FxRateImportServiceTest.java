@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.trackmywealth.backend.client.EcbFxRateProvider;
 import com.trackmywealth.backend.client.FxRateProvider;
+import com.trackmywealth.backend.client.FxRateProviderDefinition;
 import com.trackmywealth.backend.client.FxRateProviderException;
 import com.trackmywealth.backend.client.ProvidedFxRate;
 import com.trackmywealth.backend.config.FxRateImportJobConfig;
@@ -286,6 +288,30 @@ class FxRateImportServiceTest {
   }
 
   @Test
+  void aRateNotQuotedFromTheHubEndsTheRunBeforeItsChunkIsStored(CapturedOutput output) {
+    // #226: cross rates are derived only from hub/x rows, so an x/hub answer is unreadable.
+    provider.offHub = true;
+
+    assertThat(importService.importLatest()).isZero();
+
+    assertThat(fxRateRepository.count()).isZero();
+    assertThat(output.getAll())
+        .contains("returned USD/EUR, but quotes every other currency from its hub EUR");
+  }
+
+  @Test
+  void theHubQuotedAgainstItselfEndsTheRunBeforeItsChunkIsStored(CapturedOutput output) {
+    // #226: hub/hub is no rate - stored, it would only add a 1.0 row no cross rate needs.
+    provider.hubToItself = true;
+
+    assertThat(importService.importLatest()).isZero();
+
+    assertThat(fxRateRepository.count()).isZero();
+    assertThat(output.getAll())
+        .contains("returned EUR/EUR, but quotes every other currency from its hub EUR");
+  }
+
+  @Test
   void anotherSourceNeverTriggersAFetch() {
     assertThat(fxRateService.tryGetConversionRateFetchingMissing("USD", "CHF", TODAY, "MANUAL"))
         .isEmpty();
@@ -562,6 +588,8 @@ class FxRateImportServiceTest {
     final List<Duration> onDemandTimeouts = new CopyOnWriteArrayList<>();
     volatile boolean down;
     volatile boolean unstorable;
+    volatile boolean offHub;
+    volatile boolean hubToItself;
     volatile LocalDate seriesStart = ECB_SERIES_START;
     // When set, a fetch waits for it - a provider call still running.
     volatile CountDownLatch gate;
@@ -572,12 +600,14 @@ class FxRateImportServiceTest {
       gate = null;
       down = false;
       unstorable = false;
+      offHub = false;
+      hubToItself = false;
       seriesStart = ECB_SERIES_START;
     }
 
     @Override
-    public String source() {
-      return "ECB";
+    public FxRateProviderDefinition definition() {
+      return EcbFxRateProvider.ECB_DEFINITION;
     }
 
     @Override
@@ -590,6 +620,12 @@ class FxRateImportServiceTest {
       List<ProvidedFxRate> rates = new ArrayList<>();
       if (unstorable) {
         rates.add(new ProvidedFxRate("EUR", "CHFX", from, BigDecimal.ONE));
+      }
+      if (offHub) {
+        rates.add(new ProvidedFxRate("USD", "EUR", from, BigDecimal.ONE));
+      }
+      if (hubToItself) {
+        rates.add(new ProvidedFxRate("EUR", "EUR", from, BigDecimal.ONE));
       }
       from.datesUntil(to.plusDays(1))
           .filter(date -> isWeekday(date) && !date.isBefore(seriesStart))
