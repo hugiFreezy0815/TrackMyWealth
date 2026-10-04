@@ -9,12 +9,10 @@ import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.DatabaseClockRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
-import java.time.Clock;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -67,7 +65,7 @@ public class OpeningBalanceService {
   private final AccountDataQualityService accountDataQualityService;
   private final VersionPreconditionService versionPreconditionService;
   private final ReconciliationService reconciliationService;
-  private final Clock clock;
+  private final DatabaseClockRepository databaseClock;
 
   public OpeningBalanceService(
       AccountLookupService accountLookupService,
@@ -79,7 +77,7 @@ public class OpeningBalanceService {
       AccountDataQualityService accountDataQualityService,
       VersionPreconditionService versionPreconditionService,
       ReconciliationService reconciliationService,
-      Clock clock) {
+      DatabaseClockRepository databaseClock) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.businessDateService = businessDateService;
@@ -89,7 +87,7 @@ public class OpeningBalanceService {
     this.accountDataQualityService = accountDataQualityService;
     this.versionPreconditionService = versionPreconditionService;
     this.reconciliationService = reconciliationService;
-    this.clock = clock;
+    this.databaseClock = databaseClock;
   }
 
   @Transactional(readOnly = true)
@@ -143,9 +141,11 @@ public class OpeningBalanceService {
     String currency = validate(account, request, snapshot.getId());
 
     apply(snapshot, request, currency);
-    // TIMESTAMPTZ keeps microseconds; a Linux clock has nanoseconds. Truncate so this response
-    // shows the same instant a later read returns.
-    snapshot.setUpdatedAt(OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MICROS));
+    // The database's clock, not the application's: when the figure was stated decides whether a
+    // reconciliation adjustment on its date is already contained in it, compared against that
+    // row's created_at (AccountSnapshot#getStatedAt, US-25-03). One clock, so no skew between two
+    // machines can reorder them.
+    snapshot.setUpdatedAt(databaseClock.now());
     snapshot.setUpdatedBy(actor.userId());
     AccountSnapshot saved = snapshotRepository.saveAndFlush(snapshot);
     reconciliationService.reconcileLatest(account, actor.userId());

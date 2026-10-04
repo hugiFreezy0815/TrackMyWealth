@@ -251,10 +251,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * would count it twice. Same conversion to the account's own currency and the same void-pair
    * handling; empty when no row falls into the window.
    *
-   * <p>{@code openingStatedAt} comes from the application clock on a replace and from the
-   * database's on a creation, while {@code t.createdAt} is the database's. A skew between the two
-   * cannot reorder them: after an opening balance changes, the engine has already re-evaluated, so
-   * an accept needs the result's new version and a reload first - seconds, not milliseconds.
+   * <p>{@code openingStatedAt} and {@code t.createdAt} both come from the database's clock (an
+   * opening balance's replacement takes {@code DatabaseClockRepository#now}), so no skew between
+   * the application's clock and the database's can reorder them.
    */
   @Query(
       "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"

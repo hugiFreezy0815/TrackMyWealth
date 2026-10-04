@@ -29,12 +29,16 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.MutableClock;
+import com.trackmywealth.backend.testsupport.TestClockConfig;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
@@ -51,6 +55,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -65,9 +70,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * US-25-03 guided resolution, end to end against PostgreSQL: every fixture opens the same 45.67
  * difference (opening 10000.00, income 2300.00, snapshot 12345.67), which a member then accepts,
  * dismisses or reopens.
+ *
+ * <p>The application's clock is a {@link MutableClock} set to the real time before each test, so a
+ * test can put it out of step with the database's.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestClockConfig.class)
 class ReconciliationDecisionControllerTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
@@ -94,12 +103,14 @@ class ReconciliationDecisionControllerTest {
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
+  @Autowired MutableClock clock;
 
   private String token;
   private AccountSummaryResponse cash;
 
   @BeforeEach
   void cleanDatabaseAndOpenADifference() throws Exception {
+    clock.set(Instant.now());
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       for (String sql :
@@ -661,6 +672,30 @@ class ReconciliationDecisionControllerTest {
         .isZero();
     assertThat(account().reconciliation().status())
         .isEqualTo(ReconciliationStatusValues.RECONCILED);
+  }
+
+  @Test
+  void anOpeningBalanceStatedAgainIsOrderedByTheDatabasesClockNotTheApplications() {
+    // A finalized adjustment stays in the ledger, so only the stated-at rule keeps it from being
+    // counted on top of an opening balance that contains it.
+    UUID resultId = providerSnapshotWithOpenDifference(SNAPSHOT_DATE, "12345.67", "45.67");
+    UUID adjustment = adjustmentOf(accept(result(resultId)));
+    recordSnapshot(SNAPSHOT_DATE.plusDays(2), "12345.67");
+
+    // The application's clock lags the database's by an hour. Stamped from it, the opening balance
+    // stated on the adjustment's date would look older than the adjustment and count it twice.
+    clock.set(Instant.now().minus(Duration.ofHours(1)));
+    moveOpeningBalance(SNAPSHOT_DATE, "12345.67");
+
+    assertThat(account().reconciliation().status())
+        .isEqualTo(ReconciliationStatusValues.RECONCILED);
+    assertThat(
+            count(
+                "SELECT count(*) FROM reconciliation_result WHERE account_id = ? AND status = 'OPEN'",
+                cash.id()))
+        .isZero();
+    assertThat(adjustmentRow(adjustment).reconciliationAdjustment())
+        .isEqualTo(ReconciliationAdjustmentValues.FINALIZED);
   }
 
   @Test

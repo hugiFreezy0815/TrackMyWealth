@@ -312,7 +312,8 @@ A reconciliation adjustment counts in every balance (it is why an accepted accou
 no cash-flow figure: it corrects a balance, it is neither income nor spending, and `CashFlowService`
 sums named types only. A row is one through `transaction.reconciliation_result_id` (V63), not
 through its `VALUATION_ADJUSTMENT` type alone. One dated on the opening-balance date counts if it
-was booked after the opening balance was last stated (`updated_at`, else `created_at`): it then
+was booked after the opening balance was last stated (`updated_at`, else `created_at`; both from
+the database's clock, as the row's own `created_at` is, so no clock skew can reorder them): it then
 corrects a provider figure observed against that balance, which does not contain it. An opening
 balance stated later - moved onto that date, or entered again - is the member's newer figure and
 already contains the correction, so the row no longer counts there; counting it would count it
