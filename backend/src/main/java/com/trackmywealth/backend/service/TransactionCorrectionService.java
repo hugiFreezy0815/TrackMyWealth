@@ -71,6 +71,7 @@ public class TransactionCorrectionService {
     Transaction original =
         transactionRemovalService.lockActiveTransaction(accountId, transactionId, actor);
     Account sourceAccount = original.getAccount();
+    transactionService.requireNotReconciliationAdjustment(original);
 
     if (TransactionService.removalOf(original) == null) {
       throw new ResponseStatusException(

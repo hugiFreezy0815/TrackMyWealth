@@ -143,7 +143,7 @@ public class AccountSnapshotService {
     snapshot = snapshotRepository.saveAndFlush(snapshot);
 
     List<SnapshotHolding> holdings = saveHoldings(snapshot.getId(), request.holdings());
-    reconciliationService.reconcileLatest(account);
+    reconciliationService.reconcileLatest(account, actor.userId());
     return toResponse(snapshot, holdings, securities);
   }
 
@@ -187,7 +187,7 @@ public class AccountSnapshotService {
 
     holdingRepository.deleteBySnapshotId(snapshotId);
     List<SnapshotHolding> holdings = saveHoldings(snapshotId, request.holdings());
-    reconciliationService.reconcileLatest(account);
+    reconciliationService.reconcileLatest(account, actor.userId());
     return toResponse(snapshot, holdings, securities);
   }
 

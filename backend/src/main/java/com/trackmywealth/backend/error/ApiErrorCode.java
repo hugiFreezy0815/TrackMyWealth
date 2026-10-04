@@ -71,6 +71,27 @@ public final class ApiErrorCode {
    */
   public static final String OPENING_BALANCE_NOT_RECORDED = "OPENING_BALANCE_NOT_RECORDED";
 
+  /**
+   * 409: the reconciliation result no longer describes the account's newest comparison - a newer
+   * snapshot superseded it, or it is not in a state the decision applies to. {@code status} and
+   * {@code differenceAmount} give the current figure; reload and decide again (US-25-03).
+   */
+  public static final String RECONCILIATION_STALE = "RECONCILIATION_STALE";
+
+  /**
+   * 409: a newer snapshot has finalized this accepted or dismissed reconciliation result. It is
+   * history and can no longer be reopened; correct the difference in the latest reconciliation
+   * (US-25-03).
+   */
+  public static final String RECONCILIATION_FINALIZED = "RECONCILIATION_FINALIZED";
+
+  /**
+   * 409: the transaction is the adjusting entry of an accepted reconciliation difference. It cannot
+   * be corrected, removed, restored or categorized on its own; reopen the reconciliation result
+   * instead (US-25-03).
+   */
+  public static final String RECONCILIATION_ADJUSTMENT_LOCKED = "RECONCILIATION_ADJUSTMENT_LOCKED";
+
   /** 423: the user account is temporarily locked (FR-AUT lockout). */
   public static final String LOCKED = "LOCKED";
 

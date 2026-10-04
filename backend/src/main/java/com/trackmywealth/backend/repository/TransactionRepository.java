@@ -159,6 +159,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " OR (t.voided_at IS NOT NULL AND t.voided_at >= :since"
               + " AND NOT EXISTS (SELECT 1 FROM transaction r"
               + " WHERE r.restores_transaction_id = t.id)))"
+              + " AND t.transaction_type <> 'VALUATION_ADJUSTMENT'"
               + " AND NOT EXISTS (SELECT 1 FROM transaction c"
               + " WHERE c.corrects_transaction_id = t.id)"
               + " ORDER BY COALESCE(t.deleted_at, t.voided_at) DESC, t.id DESC",
@@ -237,15 +238,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
   /**
    * US-25-04: {@link #sumAmountByAccountIdAsOf} for the rows booked after {@code after} only - the
-   * part of the ledger an opening balance dated {@code after} does not already contain. Same
-   * conversion to the account's own currency and the same void-pair handling; empty when no row
-   * falls into the window.
+   * part of the ledger an opening balance dated {@code after} does not already contain. A
+   * reconciliation {@code VALUATION_ADJUSTMENT} on the opening date is the one exception: it is
+   * created later to correct an observed provider figure and therefore was not part of the opening
+   * balance even though it deliberately carries that snapshot date. Same conversion to the
+   * account's own currency and the same void-pair handling; empty when no row falls into the
+   * window.
    */
   @Query(
       "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
           + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
           + " from Transaction t where t.account.id = :accountId"
-          + " and t.bookingDate > :after and t.bookingDate <= :asOf")
+          + " and (t.bookingDate > :after"
+          + " or (t.bookingDate = :after and t.transactionType = 'VALUATION_ADJUSTMENT'))"
+          + " and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdBookedAfter(
       @Param(ACCOUNT_ID) UUID accountId,
       @Param(AFTER) LocalDate after,

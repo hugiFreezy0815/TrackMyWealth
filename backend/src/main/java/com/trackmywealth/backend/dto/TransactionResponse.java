@@ -42,6 +42,10 @@ import java.util.UUID;
  * correction chains therefore remain explicit without overloading reversal semantics. {@code
  * deletedAt} is set only in the restore list of soft-deleted rows.
  *
+ * <p>US-25-03 ({@code reconciliationAdjustment}): on a {@code VALUATION_ADJUSTMENT} row, where it
+ * stands in its reconciliation result's lifecycle ({@link ReconciliationAdjustmentValues}) - so a
+ * client can say why the row is locked and what still works; {@code null} on every other row.
+ *
  * <p>US-25-04 ({@code warnings}): the row's data-quality warnings ({@link
  * DataQualityWarningValues}), empty when there are none - {@code BOOKED_BEFORE_OPENING_BALANCE}
  * when it is booked before its account's opening balance and therefore left out of the account's
@@ -76,6 +80,7 @@ public record TransactionResponse(
     UUID categoryId,
     String categoryAssignedBy,
     String removal,
+    String reconciliationAdjustment,
     OffsetDateTime voidedAt,
     String voidReason,
     UUID replacesTransactionId,

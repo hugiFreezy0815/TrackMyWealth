@@ -22,6 +22,9 @@ public interface ReconciliationResultRepository extends JpaRepository<Reconcilia
 
   boolean existsByAccountIdAndStatusAndAffectedSecurityIdIsNull(UUID accountId, String status);
 
+  /** The results whose adjusting entries (US-25-03) are among {@code transactionIds}. */
+  List<ReconciliationResult> findByResolutionTransactionIdIn(Collection<UUID> transactionIds);
+
   Page<ReconciliationResult> findByAccountIdAndAffectedSecurityIdIsNullOrderByCreatedAtDesc(
       UUID accountId, Pageable pageable);
 

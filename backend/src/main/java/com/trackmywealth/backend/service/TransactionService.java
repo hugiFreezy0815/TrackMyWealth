@@ -98,6 +98,12 @@ public class TransactionService {
   // every service that writes a transaction under If-Match.
   static final String VERSIONED_RESOURCE = "transaction";
 
+  // US-25-03: an accepted reconciliation difference's adjusting entry. Only
+  // ReconciliationDecisionService writes one (it is not in SUPPORTED_TYPES), and only a reopen of
+  // its result takes it back, until a newer snapshot finalizes it
+  // (requireNotReconciliationAdjustment).
+  static final String VALUATION_ADJUSTMENT = "VALUATION_ADJUSTMENT";
+
   private static final String CREDIT_CARD_PURCHASE = "CREDIT_CARD_PURCHASE";
   private static final String SETTLEMENT = "SETTLEMENT";
   private static final String WITHDRAWAL = "WITHDRAWAL";
@@ -134,7 +140,7 @@ public class TransactionService {
   private static final int DEFAULT_MINOR_DIGITS = 2;
   private static final BigDecimal HALF = new BigDecimal("0.5");
   private static final String ACTIVE = "ACTIVE";
-  private static final String MANUAL = "MANUAL";
+  static final String MANUAL = "MANUAL";
   private static final String MCC_KEY = "mcc";
 
   // Matches fx_rate_to_account_currency's own NUMERIC(20,10) - the division that derives a rate
@@ -381,9 +387,11 @@ public class TransactionService {
     // just completed a settlement pair or an own-account transfer.
     settlementDetectionService.detectAfterWrite(account, request.bookingDate());
     transferDetectionService.detectAfterWrite(account, request.bookingDate());
-    reconciliationService.reconcileAfterLedgerChange(account, request.bookingDate());
+    reconciliationService.reconcileAfterLedgerChange(
+        account, request.bookingDate(), actor.userId());
     if (counterparty != null) {
-      reconciliationService.reconcileAfterLedgerChange(counterparty, request.bookingDate());
+      reconciliationService.reconcileAfterLedgerChange(
+          counterparty, request.bookingDate(), actor.userId());
     }
     return toResponse(saved, assignedBy.orElse(null));
   }
@@ -410,9 +418,14 @@ public class TransactionService {
             : transactionRepository.findByAccountId(accountId, bounded);
     Map<UUID, String> assignments = latestAssignments(page.getContent());
     Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(page.getContent());
+    Map<UUID, String> adjustmentStates = reconciliationService.adjustmentStates(page.getContent());
     return page.map(
         transaction ->
-            toResponse(transaction, assignments.get(transaction.getId()), openingBalanceDates));
+            toResponse(
+                transaction,
+                assignments.get(transaction.getId()),
+                openingBalanceDates,
+                adjustmentStates));
   }
 
   // How each row got its category, for a whole page in one query.
@@ -441,9 +454,10 @@ public class TransactionService {
 
   /**
    * US-08-02: a member's own category for one transaction, which no automatic run replaces
-   * (RULE-031, FR-CAT-014). Any type may be overridden; the category must be assignable for the
-   * workspace and cannot be UNCATEGORIZED ({@link #resetCategory} is the way back). Needs EDIT on
-   * the account. Idempotent: overriding with the category already overridden writes nothing.
+   * (RULE-031, FR-CAT-014). Any type but a reconciliation adjustment may be overridden; the
+   * category must be assignable for the workspace and cannot be UNCATEGORIZED ({@link
+   * #resetCategory} is the way back). Needs EDIT on the account. Idempotent: overriding with the
+   * category already overridden writes nothing.
    */
   @Transactional
   public TransactionResponse overrideCategory(
@@ -510,6 +524,8 @@ public class TransactionService {
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "A voided transaction's category cannot be changed.");
     }
+    // A balance correction is neither income nor spending, so it never carries a category.
+    requireNotReconciliationAdjustment(transaction);
     return transaction;
   }
 
@@ -1051,13 +1067,18 @@ public class TransactionService {
   }
 
   private TransactionResponse toResponse(Transaction transaction, String categoryAssignedBy) {
-    return toResponse(transaction, categoryAssignedBy, openingBalanceDates(List.of(transaction)));
+    return toResponse(
+        transaction,
+        categoryAssignedBy,
+        openingBalanceDates(List.of(transaction)),
+        reconciliationService.adjustmentStates(List.of(transaction)));
   }
 
   private TransactionResponse toResponse(
       Transaction transaction,
       String categoryAssignedBy,
-      Map<UUID, LocalDate> openingBalanceDates) {
+      Map<UUID, LocalDate> openingBalanceDates,
+      Map<UUID, String> adjustmentStates) {
     return new TransactionResponse(
         transaction.getId(),
         transaction.getAccount().getId(),
@@ -1087,6 +1108,7 @@ public class TransactionService {
         transaction.getCategoryId(),
         categoryAssignedBy,
         removalOf(transaction),
+        adjustmentStates.get(transaction.getId()),
         transaction.getVoidedAt(),
         transaction.getVoidReason(),
         transaction.getReplacesTransactionId(),
@@ -1111,12 +1133,14 @@ public class TransactionService {
   /**
    * US-07-02/FR-LIF-002b: how the row would be removed, decided by its provenance - a manual row is
    * soft-deleted (T1), anything imported is voided (T2); {@code null} once it cannot be removed any
-   * more. T3 (a reconciled row) arrives with reconciliation (US-25-02).
+   * more, or while only its reconciliation result may take it back (US-25-03). T3 (a reconciled
+   * row) arrives with the import rollback (US-07-05).
    */
   static String removalOf(Transaction transaction) {
     if (transaction.getVoidedAt() != null
         || transaction.isReversal()
-        || transaction.getDeletedAt() != null) {
+        || transaction.getDeletedAt() != null
+        || VALUATION_ADJUSTMENT.equals(transaction.getTransactionType())) {
       return null;
     }
     return MANUAL.equals(transaction.getSource())
@@ -1124,14 +1148,27 @@ public class TransactionService {
         : TransactionRemovalValues.VOID;
   }
 
+  /**
+   * US-25-03: a reconciliation adjustment is neither corrected, removed, restored nor categorized
+   * directly; {@link ReconciliationService#requireNotAdjustment} has the rule and its detail.
+   */
+  void requireNotReconciliationAdjustment(Transaction transaction) {
+    reconciliationService.requireNotAdjustment(transaction);
+  }
+
   /** Responses for many rows at once, with how each got its category (one log query). */
   public List<TransactionResponse> toResponses(List<Transaction> transactions) {
     Map<UUID, String> assignments = latestAssignments(transactions);
     Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(transactions);
+    Map<UUID, String> adjustmentStates = reconciliationService.adjustmentStates(transactions);
     return transactions.stream()
         .map(
             transaction ->
-                toResponse(transaction, assignments.get(transaction.getId()), openingBalanceDates))
+                toResponse(
+                    transaction,
+                    assignments.get(transaction.getId()),
+                    openingBalanceDates,
+                    adjustmentStates))
         .toList();
   }
 

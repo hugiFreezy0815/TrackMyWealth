@@ -289,13 +289,27 @@ State is reproducible from source data:
 - exact agreement: no result row is needed, or an existing `OPEN` row becomes `RESOLVED`. The
   resolved row keeps the difference and cause it had, so the history shows what was resolved;
 - a newer snapshot makes older `OPEN` results `SUPERSEDED`;
-- account reads expose `NEVER`, `RECONCILED`, `OPEN_DIFFERENCE`, or `NOT_RECONCILABLE`.
+- a member decision (US-25-03) covers one exact amount: `ACCEPTED` books a visible
+  `VALUATION_ADJUSTMENT` row for the missing ledger amount and stands while the account agrees;
+  `DISMISSED` stands while the difference is the amount dismissed. When a later change overtakes
+  the decision, the engine withdraws the adjusting row and re-evaluates (`RESOLVED` on agreement,
+  else `OPEN` with the real difference). When the comparison basis is lost (no opening balance,
+  no longer cash scope), a decision on the newest snapshot is `SUPERSEDED` and its adjusting row
+  withdrawn. A newer snapshot finalizes decisions on older ones like a closed period: they are no
+  longer reopened, their adjusting rows keep counting, and corrections go into the newest
+  comparison as new visible entries;
+- account reads expose `NEVER`, `RECONCILED` (also for an accepted difference),
+  `OPEN_DIFFERENCE`, `DISMISSED_DIFFERENCE`, or `NOT_RECONCILABLE`.
   A `BALANCE_ONLY` grant sees the state and reason but not the comparison date or amount; those
   details, and the reconciliation history endpoint, require `READ`.
 
 An open difference adds `OPEN_RECONCILIATION_DIFFERENCE` to the account's data-quality warnings,
 which means the existing valuation aggregation also surfaces it at institution and net-worth
-headlines (FR-CON-007 / PR-011).
+headlines (FR-CON-007 / PR-011). A dismissed one does not: it is documented.
+
+A `VALUATION_ADJUSTMENT` row counts in every balance (it is why an accepted account agrees), but in
+no cash-flow figure: it corrects a balance, it is neither income nor spending, and `CashFlowService`
+sums named types only.
 
 ### Probable-cause classification
 

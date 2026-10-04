@@ -8,6 +8,13 @@ public final class ReconciliationStatusValues {
   public static final String NEVER = "NEVER";
   public static final String RECONCILED = "RECONCILED";
   public static final String OPEN_DIFFERENCE = "OPEN_DIFFERENCE";
+
+  /**
+   * A member dismissed the newest difference with a reason (US-25-03): documented, so it is no open
+   * warning, but the account still disagrees with its provider by that amount.
+   */
+  public static final String DISMISSED_DIFFERENCE = "DISMISSED_DIFFERENCE";
+
   public static final String NOT_RECONCILABLE = "NOT_RECONCILABLE";
 
   /** No opening balance exists at or before the snapshot date, so no ledger baseline is known. */

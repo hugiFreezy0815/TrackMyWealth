@@ -57,8 +57,10 @@ import org.springframework.web.server.ResponseStatusException;
  * beside a soft-deleted one so that a restore cannot re-propose or auto-confirm the pair the member
  * rejected. Match queries leave a match out while one of its legs is deleted.
  *
- * <p>Needs EDIT on the account, the same as recording there. T3 - a reconciled row whose void
- * reopens its reconciliation - arrives with reconciliation itself (US-25-02).
+ * <p>Needs EDIT on the account, the same as recording there. An accepted reconciliation
+ * difference's adjusting entry is neither removed nor restored here: its result's reopen does that
+ * (US-25-03). T3 - a reconciled row whose void reopens its reconciliation - arrives with the import
+ * rollback (US-07-05).
  */
 @Service
 public class TransactionRemovalService {
@@ -121,6 +123,7 @@ public class TransactionRemovalService {
       AuthenticatedUserPrincipal actor) {
     Transaction original = lockActiveTransaction(accountId, transactionId, actor);
     Account account = original.getAccount();
+    transactionService.requireNotReconciliationAdjustment(original);
     String removal = TransactionService.removalOf(original);
     if (removal == null) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, notRemovable(original));
@@ -169,7 +172,7 @@ public class TransactionRemovalService {
     // Match dissolution may have changed the rows again; flush so every returned version - and
     // the ETag - is the one stored, not one Hibernate would only write at commit.
     transactionRepository.flush();
-    reconcileAfterLedgerChanges(affected);
+    reconcileAfterLedgerChanges(affected, actor.userId());
     return new TransactionRemovalResponse(
         removal,
         VersionPreconditionService.persistedVersion(
@@ -216,6 +219,7 @@ public class TransactionRemovalService {
             .filter(row -> row.getAccount().getId().equals(account.getId()))
             .orElseThrow(
                 () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
+    transactionService.requireNotReconciliationAdjustment(removed);
     if (removed.getDeletedAt() != null) {
       return restoreSoftDeleted(account, removed, expectedVersion, actor);
     }
@@ -259,7 +263,7 @@ public class TransactionRemovalService {
       row.setDeletedBy(null);
       transactionRepository.saveAndFlush(row);
     }
-    detectAfterRestore(restored, earliest);
+    detectAfterRestore(restored, earliest, actor.userId());
     transactionRepository.flush();
     return new TransactionRemovalResponse(
         TransactionRemovalValues.SOFT_DELETE,
@@ -317,7 +321,7 @@ public class TransactionRemovalService {
     carryRejectedMatches(copies);
     LocalDate earliest =
         group.stream().map(Transaction::getBookingDate).min(LocalDate::compareTo).orElseThrow();
-    detectAfterRestore(List.copyOf(copies.values()), earliest);
+    detectAfterRestore(List.copyOf(copies.values()), earliest, actor.userId());
     // Detection may flag the copies after their own flush; flush so returned versions are stored.
     transactionRepository.flush();
     return new TransactionRemovalResponse(
@@ -474,13 +478,13 @@ public class TransactionRemovalService {
   }
 
   // Every account a restored row is on, once each: a transfer's other leg sits on another one.
-  private void detectAfterRestore(List<Transaction> rows, LocalDate earliest) {
+  private void detectAfterRestore(List<Transaction> rows, LocalDate earliest, UUID changedBy) {
     Map<UUID, Account> accounts = new LinkedHashMap<>();
     rows.forEach(row -> accounts.putIfAbsent(row.getAccount().getId(), row.getAccount()));
     for (Account account : accounts.values()) {
       settlementDetectionService.detectAfterWrite(account, earliest);
       transferDetectionService.detectAfterWrite(account, earliest);
-      reconciliationService.reconcileAfterLedgerChange(account, earliest);
+      reconciliationService.reconcileAfterLedgerChange(account, earliest, changedBy);
     }
   }
 
@@ -538,7 +542,7 @@ public class TransactionRemovalService {
 
   // A removal may affect several accounts (a two-sided transfer). Reconcile each once, from the
   // earliest booking date changed on that account, so every snapshot at or after it is refreshed.
-  private void reconcileAfterLedgerChanges(List<Transaction> rows) {
+  private void reconcileAfterLedgerChanges(List<Transaction> rows, UUID changedBy) {
     Map<UUID, Account> accounts = new LinkedHashMap<>();
     Map<UUID, LocalDate> earliestByAccount = new LinkedHashMap<>();
     for (Transaction row : rows) {
@@ -549,7 +553,7 @@ public class TransactionRemovalService {
     }
     for (Map.Entry<UUID, Account> entry : accounts.entrySet()) {
       reconciliationService.reconcileAfterLedgerChange(
-          entry.getValue(), earliestByAccount.get(entry.getKey()));
+          entry.getValue(), earliestByAccount.get(entry.getKey()), changedBy);
     }
   }
 

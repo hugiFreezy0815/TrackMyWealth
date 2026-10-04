@@ -125,7 +125,7 @@ public class OpeningBalanceService {
     // flush, not a plain save: a concurrent second opening balance's unique violation (V58)
     // surfaces here, as a 409 from GlobalExceptionHandler, rather than at commit.
     AccountSnapshot saved = snapshotRepository.saveAndFlush(snapshot);
-    reconciliationService.reconcileLatest(account);
+    reconciliationService.reconcileLatest(account, actor.userId());
     return toResponse(saved);
   }
 
@@ -148,7 +148,7 @@ public class OpeningBalanceService {
     snapshot.setUpdatedAt(OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MICROS));
     snapshot.setUpdatedBy(actor.userId());
     AccountSnapshot saved = snapshotRepository.saveAndFlush(snapshot);
-    reconciliationService.reconcileLatest(account);
+    reconciliationService.reconcileLatest(account, actor.userId());
     return toResponse(saved);
   }
 
@@ -166,7 +166,7 @@ public class OpeningBalanceService {
         expectedVersion, snapshot.getVersion(), RESOURCE_NAME);
     snapshotRepository.delete(snapshot);
     snapshotRepository.flush();
-    reconciliationService.reconcileLatest(account);
+    reconciliationService.reconcileLatest(account, actor.userId());
   }
 
   // Returns the currency to store: the account's own, which the request must match.

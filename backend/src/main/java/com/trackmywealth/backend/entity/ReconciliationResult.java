@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -74,6 +75,11 @@ public class ReconciliationResult {
   @Generated(event = EventType.INSERT)
   @Column(name = "created_at", insertable = false, updatable = false)
   private OffsetDateTime createdAt;
+
+  @Version
+  @Generated(event = {EventType.INSERT, EventType.UPDATE})
+  @Column(name = "version", insertable = false, updatable = false)
+  private Integer version;
 
   public UUID getId() {
     return id;
@@ -177,5 +183,9 @@ public class ReconciliationResult {
 
   public OffsetDateTime getCreatedAt() {
     return createdAt;
+  }
+
+  public Integer getVersion() {
+    return version;
   }
 }
