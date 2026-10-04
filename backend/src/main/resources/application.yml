@@ -12,6 +12,11 @@ server:
   tomcat:
     remoteip:
       internal-proxies: ${TRUSTED_PROXIES:}
+    # US-07-03: Tomcat drops the connection when an unread request body exceeds this (default
+    # 2MB), so a client uploading a too-large import file would see a network error instead of
+    # the 413 IMPORT_FILE_TOO_LARGE. Read and discard up to 10MB; anything larger is still cut
+    # off.
+    max-swallow-size: 10MB
 
 spring:
   application:
@@ -21,6 +26,14 @@ spring:
   # always selects EN or DE; a missing/unsupported Accept-Language falls back to EN.
   messages:
     fallback-to-system-locale: false
+
+  # US-07-03/04: an import file may have at most 5 MB (sprint 5 decision, 2026-10-02); a larger
+  # upload is a 413 IMPORT_FILE_TOO_LARGE (GlobalExceptionHandler). The request limit leaves room
+  # for the multipart envelope and a template part.
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
 
   # --- Datasource -------------------------------------------------------
   # Points at the *target* application database. DatabaseBootstrapInitializer

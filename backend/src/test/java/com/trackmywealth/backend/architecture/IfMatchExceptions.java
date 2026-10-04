@@ -20,6 +20,7 @@ public final class IfMatchExceptions {
           Map.entry("CategorizationRuleController#create", "create"),
           Map.entry("CategoryController#create", "create"),
           Map.entry("CustomAssetValuationController#recordValuation", "create (append-only)"),
+          Map.entry("ImportTemplateController#create", "create"),
           Map.entry("InstitutionController#createInstitution", "create"),
           Map.entry("OpeningBalanceController#recordOpeningBalance", "create"),
           Map.entry("SharingGrantController#grant", "create"),
@@ -27,6 +28,10 @@ public final class IfMatchExceptions {
           Map.entry("SecurityController#findOrCreate", "idempotent find-or-create of shared data"),
           // Batch: re-runs matching for a card; idempotent, no client-held state.
           Map.entry("SettlementMatchController#run", "idempotent batch"),
+          // Dry runs: parse an uploaded file in memory and write nothing (US-07-03).
+          Map.entry("ImportTemplateController#detect", "dry run, writes nothing"),
+          Map.entry("ImportTemplateController#testSaved", "dry run, writes nothing"),
+          Map.entry("ImportTemplateController#testUnsaved", "dry run, writes nothing"),
           // Credential exchanges and one-time bootstrap, not edits of a versioned resource.
           Map.entry("AuthController#login", "credential exchange"),
           Map.entry("AuthController#refresh", "credential exchange"),

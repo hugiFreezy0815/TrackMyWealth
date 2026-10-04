@@ -24,6 +24,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 import org.springframework.web.util.DisconnectedClientHelper;
 
@@ -203,6 +204,24 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       LOG.debug("Client disconnected before the response was complete: {}", ex.toString());
     }
     return true;
+  }
+
+  /**
+   * 413 for an upload over {@code spring.servlet.multipart.max-file-size}: the only uploads are
+   * import files (US-07-03/04), so it carries their stable code rather than the class-level one.
+   */
+  @Override
+  protected ResponseEntity<Object> handleMaxUploadSizeExceededException(
+      MaxUploadSizeExceededException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    ProblemDetail problem =
+        ProblemDetails.of(
+            HttpStatus.CONTENT_TOO_LARGE,
+            ApiErrorCode.IMPORT_FILE_TOO_LARGE,
+            "The file is larger than the 5 MB an import file may have.");
+    return handleExceptionInternal(ex, problem, headers, HttpStatus.CONTENT_TOO_LARGE, request);
   }
 
   /** 400 with one entry per rejected field, so a client can mark each input. */

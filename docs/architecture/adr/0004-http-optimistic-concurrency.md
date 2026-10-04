@@ -54,12 +54,14 @@ These mutating endpoints take no `If-Match`, because there is no client-held ver
 existing resource that a concurrent write could silently overwrite:
 
 - **Creates** (`POST` on a collection): accounts, snapshots, users, categories, categorization
-  rules, institutions, sharing grants, transactions, custom-asset valuations. Transactions and
+  rules, import templates, institutions, sharing grants, transactions, custom-asset valuations. Transactions and
   valuations are append-only besides. An account's opening balance is created the same way
   (`POST .../opening-balance`, a singleton: a second one is a 409); replacing or deleting it needs
   `If-Match`.
 - **Idempotent operations:** `POST /securities` (find-or-create of shared reference data) and
   `POST .../settlement-matches/run` (re-runs matching; no client-held state).
+- **Import dry runs** (US-07-03): `POST /import-templates/detect`, `POST /import-templates/test`
+  and `POST /import-templates/{id}/test` parse an uploaded file in memory and write nothing.
 - **Credential exchanges and bootstrap:** login, token refresh, MFA verification, and the one-time
   administrator setup.
 - **The caller's own MFA enrollment** (enroll, confirm, disable): each step is authorized by a fresh
