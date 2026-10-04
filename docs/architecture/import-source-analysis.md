@@ -26,8 +26,8 @@ Analysed on 2026-10-04: 20 documents from 5 institutions.
 | PF-6 | PostFinance | E-Trading account overview | PDF, text | Balance and holdings statement |
 | PF-7 | PostFinance | E-Trading portfolio performance report | PDF, text | Holdings and performance statement |
 | PF-8 | PostFinance | Pillar 3a account, E-Finance browser print | PDF, text (printed web page) | Balance and holdings statement |
-| SPK-1 | Sparkasse Freiburg | Transaction list, account A (18-column CSV with `Kategorie`) | CSV, windows-1252, `;` | Transaction list |
-| SPK-2 | Sparkasse Freiburg | Transaction list, account B (same 18-column format) | CSV, windows-1252, `;` | Transaction list |
+| SPK-1 | Sparkasse Freiburg | Transaction list, current account (18-column CSV with `Kategorie`) | CSV, windows-1252, `;` | Transaction list |
+| SPK-2 | Sparkasse Freiburg | Transaction list, savings-type account (same 18-column format) | CSV, windows-1252, `;` | Transaction list |
 | SPK-3 | Sparkasse Freiburg | Transaction list, loan account, "CSV-CAMT V8" (17 columns) | CSV, windows-1252, `;` | Transaction list |
 | SPK-4 | Sparkasse Freiburg | Transaction list, loan account, "CSV-MT940" (11 columns) | CSV, windows-1252, `;` | Transaction list (same bookings as SPK-3) |
 | SPK-5 | Sparkasse Freiburg | Credit card transactions | CSV, windows-1252, `;` | Card statement |
@@ -88,7 +88,7 @@ All structure below is as observed; values in the examples are invented.
 - Dates `dd.MM.yy` (two-digit year). One signed amount column, decimal `,`, trailing zeros
   dropped (`-7,5`, `-89`). `Umsatztyp` is `Eingang`/`Ausgang` (redundant with the sign).
 - `Status` was `Gebucht` on every row of the sample. The column exists because the export can
-  also list pending bookings (expected value `Vorgemerkt`, not in the sample; see open point 3).
+  also list pending bookings (expected value `Vorgemerkt`, not in the sample; see section 5, answer 3).
   Those must not be imported, because they come back booked later (duplicate risk, see 6.1).
 - `Kundenreferenz` is a numeric reference on most rows and empty on some: usable as `externalId`
   where present, not unique enough to be the only duplicate key.
@@ -255,21 +255,30 @@ a PDF template is a set of label anchors and line patterns, not a column mapping
 | Sparkasse, loan | SPK-6 header (IBAN, loan terms) | SPK-3 (CSV-CAMT V8) | SPK-6: opening and closing balance once a year | - | SPK-4 (same bookings as SPK-3, older format) |
 | Sparkasse, credit card | `Umsatz getätigt von` of SPK-5, confirmed by the member | SPK-5 CSV | none | - | - |
 | LBS Süd | SPK-7 header | SPK-7 (PDF, once a year): manual entry recommended | SPK-7 opening and closing balance | - | - |
-| True Wealth | TW-1, manual creation (mandate + pillar 3a) | **no sample yet**: ask for a transaction or statement export | **no sample yet**: ask for a portfolio statement | **no sample yet** | TW-1 for anything but the container |
-| Yuh | YUH-1 summary (IBAN, customer number) | YUH-1 (PDF) until a CSV export is found: **ask whether the app exports CSV** | YUH-1 opening and closing balance per currency | YUH-2 (or YUH-3 at year end) | - |
+| True Wealth | TW-1, manual creation (mandate + pillar 3a) | none available: manual | manual snapshots | none available | TW-1 for anything but the container |
+| Yuh | YUH-1 summary (IBAN, customer number) | YUH-1 (PDF): no CSV export exists | YUH-1 opening and closing balance per currency | YUH-2 (or YUH-3 at year end) | - |
 
-## 5. Open points for the product owner
+## 5. Answers from the sample set
 
-1. True Wealth: is there a transaction list or a portfolio statement (PDF or CSV) in the client
-   area? TW-1 alone supports only manual account creation.
-2. Yuh: does the app offer a CSV export of transactions? YUH-1 is a usable PDF, but a CSV would
-   need no PDF template.
-3. DKB: a sample with a pending (`Vorgemerkt`) booking, to confirm the status value and test the
-   row filter (6.1).
-4. Sparkasse: which accounts SPK-1 and SPK-2 are (current, savings?) and whether a CAMT XML
-   (camt.052/053) download is offered; XML would be the more stable source (6.5).
-5. PostFinance: whether the E-Finance pillar 3a page offers a real export instead of the browser
-   print, and whether a DKB depot exists.
+The product owner answered the open questions with the sample folder itself: what it holds is
+what is available today (checked 2026-10-04, no files beyond the 20 above).
+
+1. **True Wealth:** only the contract bundle (TW-1), no statement or export. True Wealth accounts
+   are created manually and valued by manual snapshots until an export is supplied.
+2. **Yuh:** PDF only (YUH-1..3), no CSV export. The PDF statement (YUH-1) is Yuh's only
+   transaction source, which raises the priority of the PDF import (story 5 in section 7).
+3. **DKB:** one export without pending bookings. The row filter (6.1) stays a proposal; its test
+   uses a synthetic pending row until a real one is available.
+4. **Sparkasse:** the files show three own accounts, related by their transfers (counted, not
+   read): SPK-1 is the **current account** (most booking types; it pays to and receives from every
+   other Sparkasse account), SPK-2 a **savings-type account** fed by a standing order from SPK-1
+   with periodic closing entries, and SPK-3/SPK-4 the **loan**, whose instalments come from SPK-1.
+   No CAMT XML was supplied: the CSV-CAMT rendering (SPK-3 format) stays the source; a CAMT XML
+   importer stays a spike (story 8).
+5. **PostFinance pillar 3a:** only the browser print (PF-8): manual snapshots. **DKB depot:** none.
+
+The transfers between SPK-1 and SPK-2/the loan are internal transfers: imported from both sides,
+they must be matched as one transfer (FR-CF-005), not counted as income and expense.
 
 ## 6. Gap analysis against the schema and sprint 5
 
