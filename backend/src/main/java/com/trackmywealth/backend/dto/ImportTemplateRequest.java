@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -22,7 +23,9 @@ import java.util.UUID;
  * <p>{@code headerColumns} are the header cells of the sample file as the dry run returned them.
  * The server derives the header fingerprint from them (FR-IMP-022) and checks every mapping by name
  * against them. On {@code PUT}, {@code null} keeps the stored ones; a template for a file without a
- * header row has none.
+ * header row has none. A PDF template ({@code fileFormat} {@code PDF_TEXT} or {@code PDF_OCR})
+ * needs a {@code pdfLayout}, whose column names are its header columns: {@code headerColumns} is
+ * ignored.
  */
 public record ImportTemplateRequest(
     @NotBlank @Size(max = MAX_NAME_LENGTH) String name,
@@ -46,7 +49,9 @@ public record ImportTemplateRequest(
     @Size(max = MAX_TYPE_MAPPINGS) Map<String, String> typeMapping,
     @Pattern(regexp = "USER_SELECTED|COLUMN|PREAMBLE_LINE|FILENAME")
         String accountIdentificationStrategy,
-    @Size(max = MAX_HEADER_COLUMNS) List<String> headerColumns) {
+    @Size(max = MAX_HEADER_COLUMNS) List<String> headerColumns,
+    @Pattern(regexp = "CSV|PDF_TEXT|PDF_OCR") String fileFormat,
+    @Valid ImportPdfLayout pdfLayout) {
 
   public ImportTemplateRequest {
     // Copies that keep null entries: a client's null must reach validation as a 422, not an NPE.
@@ -82,7 +87,9 @@ public record ImportTemplateRequest(
         fixedCurrency,
         columnMapping,
         typeMapping,
-        orDefault(accountIdentificationStrategy, ImportTemplateValues.ACCOUNT_USER_SELECTED));
+        orDefault(accountIdentificationStrategy, ImportTemplateValues.ACCOUNT_USER_SELECTED),
+        orDefault(fileFormat, ImportTemplateValues.FORMAT_CSV),
+        pdfLayout);
   }
 
   private static String orDefault(String value, String defaultValue) {

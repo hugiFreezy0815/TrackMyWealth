@@ -29,6 +29,12 @@ WORKDIR /app
 # deployment setting its own JAVA_TOOL_OPTIONS would silently replace.
 ENV LANG=C.UTF-8
 
+# #267: OCR for scanned PDF statements runs in this container, with local English and German
+# models only - a statement is personal financial data and is never sent to an external service.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
+    && rm -rf /var/lib/apt/lists/*
+
 # Runs as a non-root user - unlike the Maven build stage, this is the image that actually faces
 # the network.
 RUN addgroup --system trackmywealth && adduser --system --ingroup trackmywealth trackmywealth

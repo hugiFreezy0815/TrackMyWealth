@@ -69,6 +69,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V63` | `transaction.reconciliation_result_id`: the result that booked a row as its adjusting entry, only on a manual `VALUATION_ADJUSTMENT` and only a result of the row's own account (composite FK on `(account_id, id)`, so never another workspace's), frozen by the append-only trigger (#235) |
 | `V64` | Import template versioning: `template_family_id`, `is_current` (one current version per family, `uq_import_template_family_current`), `is_active`, `header_columns`, `version` + `import_template_bump_version`, and a check on the row-skipping counts (#229) |
 | `V65` | `category` and `import_template`: V20's shared-or-own policy split per command - every workspace reads the shipped rows (`workspace_id IS NULL`), but `INSERT`/`UPDATE`/`DELETE` reach its own rows only. V20 let a workspace delete a shipped row and move a shipped template into its own workspace (#279) |
+| `V66` | `import_template.file_format` (`CSV`, `PDF_TEXT`, `PDF_OCR`) and `pdf_layout` (required exactly for PDF) (#267, #268) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -759,6 +760,26 @@ false`), which hides it from detection and from the default list.
 `type_mapping` maps source type texts to cash `transaction_type`s. Sprint 5 imports only
 `CASH_TRANSACTIONS` with `account_identification_strategy = USER_SELECTED`; the parser refuses
 the other values with `IMPORT_TEMPLATE_UNSUPPORTED`.
+
+**PDF statements (V66, #267).** `file_format` says how the file is read: `CSV`, `PDF_TEXT` (the
+PDF's text layer, PDFBox) or `PDF_OCR` (a scanned PDF, rendered and read by a local Tesseract
+process; nothing leaves the server). A PDF template carries `pdf_layout`: column names, a row
+pattern whose capture groups are the cells, a record-start pattern that marks booking lines, and
+a document marker the statement must contain. #268 extends the layout with further optional
+fields, never by changing these four. Both patterns are RE2 (linear-time matching, no
+backreferences), so a member's pattern cannot backtrack catastrophically. From the cut columns on,
+a PDF row goes through exactly the CSV rules; a booking line the row pattern misses is the row
+error `IMPORT_ROW_LINE_UNMATCHED`. The layout's column names act as the stored header columns.
+Detection differs from CSV: a PDF has no header row to read, so a `PDF_TEXT` template is a
+candidate when the statement holds its marker and at least one booking line, never an exact header
+match (#268 adds a fingerprint of the booking table's header labels). The PDF is read once per
+detection, however many PDF templates there are; an OCR template is never a candidate (OCR per
+candidate is too slow). Limits: 20 pages, no encrypted PDF, every stream decoded once into a
+counter before PDFBox reads it (64 MiB per stream, 256 MiB in all, images of at most 50 million
+pixels: PDFBox itself decodes a whole stream into memory, and a few hundred kilobytes can inflate
+to gigabytes), 2 million characters of text, OCR pages of at most 1500 points a side, two OCR
+documents at a time, 30 s per page and 120 s per document. Detection and dry runs parse after
+their read-only transaction has ended, so OCR never holds a pooled connection.
 
 ## 5. Time-series data and partitioning
 

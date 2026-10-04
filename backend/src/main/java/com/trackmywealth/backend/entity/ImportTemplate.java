@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.entity;
 
+import com.trackmywealth.backend.dto.ImportTemplateValues;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -28,6 +29,8 @@ import org.hibernate.type.SqlTypes;
 @Entity
 @Table(name = "import_template")
 public class ImportTemplate {
+
+  private static final String JSONB = "jsonb";
 
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
@@ -90,22 +93,30 @@ public class ImportTemplate {
   private String fixedCurrency;
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "column_mapping", columnDefinition = "jsonb", nullable = false, updatable = false)
+  @Column(name = "column_mapping", columnDefinition = JSONB, nullable = false, updatable = false)
   private String columnMapping;
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "type_mapping", columnDefinition = "jsonb", nullable = false, updatable = false)
+  @Column(name = "type_mapping", columnDefinition = JSONB, nullable = false, updatable = false)
   private String typeMapping;
 
   @Column(name = "account_identification_strategy", nullable = false, updatable = false)
   private String accountIdentificationStrategy;
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "header_columns", columnDefinition = "jsonb", updatable = false)
+  @Column(name = "header_columns", columnDefinition = JSONB, updatable = false)
   private String headerColumns;
 
   @Column(name = "header_fingerprint", updatable = false)
   private String headerFingerprint;
+
+  // V66 (#267): CSV, PDF_TEXT or PDF_OCR; a PDF template reads through pdf_layout.
+  @Column(name = "file_format", nullable = false, updatable = false)
+  private String fileFormat = ImportTemplateValues.FORMAT_CSV;
+
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "pdf_layout", columnDefinition = JSONB, updatable = false)
+  private String pdfLayout;
 
   @Column(name = "is_system_provided", nullable = false, updatable = false)
   private boolean systemProvided;
@@ -307,6 +318,22 @@ public class ImportTemplate {
 
   public void setHeaderColumns(String headerColumns) {
     this.headerColumns = headerColumns;
+  }
+
+  public String getFileFormat() {
+    return fileFormat;
+  }
+
+  public void setFileFormat(String fileFormat) {
+    this.fileFormat = fileFormat;
+  }
+
+  public String getPdfLayout() {
+    return pdfLayout;
+  }
+
+  public void setPdfLayout(String pdfLayout) {
+    this.pdfLayout = pdfLayout;
   }
 
   public String getHeaderFingerprint() {

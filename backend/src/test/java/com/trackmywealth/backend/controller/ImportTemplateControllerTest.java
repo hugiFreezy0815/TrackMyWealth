@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
+import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
@@ -17,6 +18,7 @@ import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
 import jakarta.persistence.EntityManager;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -33,6 +35,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 import javax.sql.DataSource;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,7 +69,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /**
  * US-07-03 against a real PostgreSQL: template CRUD, versioning, If-Match, the shipped read-only
  * rule, cross-workspace 404, detection and the dry run with both synthetic fixtures. The parser's
- * own rules are pinned without Spring in {@code CsvImportParserServiceTest}.
+ * own rules are pinned without Spring in {@code ImportFileParserServiceTest}.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -671,6 +678,205 @@ class ImportTemplateControllerTest {
             e -> assertThat(e.getStatusCode().value()).isEqualTo(404));
   }
 
+  // --- PDF templates (#267) -------------------------------------------------------------------
+
+  @Test
+  void aPdfTemplateIsSavedWithItsLayoutTestedAndDetected() throws Exception {
+    byte[] statement =
+        pdf(
+            PDF_MARKER,
+            "Datum Betrag Text",
+            "04.01.2031 -1.234,50 Invented expense",
+            "05.01.2031 987,65 Invented income");
+
+    ImportTemplateResponse created = create(pdfRequest("PDF_TEXT"));
+
+    assertThat(created.fileFormat()).isEqualTo("PDF_TEXT");
+    assertThat(created.pdfLayout().columns()).containsExactly("Datum", "Betrag", "Text");
+    assertThat(created.headerColumns()).containsExactly("Datum", "Betrag", "Text");
+    assertThat(created.headerFingerprint()).isNotBlank();
+    assertThat(
+            count(
+                "SELECT count(*) FROM import_template WHERE id = ? AND file_format = 'PDF_TEXT'"
+                    + " AND pdf_layout IS NOT NULL",
+                created.id()))
+        .isOne();
+
+    ImportTemplateTestResponse tested =
+        multipart(BASE + "/" + created.id() + "/test", statement, null)
+            .expectStatus()
+            .isOk()
+            .expectBody(ImportTemplateTestResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(tested.rowCount()).isEqualTo(2);
+    assertThat(tested.parsedRowCount()).isEqualTo(2);
+
+    // A PDF's columns are named by its layout, not read from the file: never an exact header.
+    assertThat(detect(statement))
+        .first()
+        .satisfies(
+            c -> {
+              assertThat(c.template().id()).isEqualTo(created.id());
+              assertThat(c.match())
+                  .isEqualTo(ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT);
+            });
+  }
+
+  @Test
+  void aPdfLayoutChangeIsANewVersionAndTheOldLayoutStays() {
+    ImportTemplateResponse v1 = create(pdfRequest("PDF_TEXT"));
+    ImportPdfLayout widened =
+        new ImportPdfLayout(
+            List.of("Datum", "Betrag", "Text"),
+            "(\\S+)\\s+(\\S+)\\s+(.*)",
+            PDF_MARKER,
+            "^\\d{2}\\.");
+
+    ImportTemplateResponse v2 =
+        update(v1.id(), v1.version(), withPdf(pdfRequest("PDF_TEXT"), "PDF_TEXT", widened));
+
+    assertThat(v2.id()).isNotEqualTo(v1.id());
+    assertThat(v2.templateVersion()).isEqualTo("2");
+    assertThat(v2.pdfLayout()).isEqualTo(widened);
+    assertThat(get(v1.id()).pdfLayout()).isEqualTo(pdfRequest("PDF_TEXT").pdfLayout());
+    assertThat(get(v1.id()).current()).isFalse();
+  }
+
+  @Test
+  void switchingACsvTemplateToPdfIsANewVersion() throws Exception {
+    ImportTemplateResponse v1 = create(swissRequest(headerOf(SWISS)));
+
+    ImportTemplateResponse v2 = update(v1.id(), v1.version(), pdfRequest("PDF_TEXT"));
+
+    assertThat(v2.templateVersion()).isEqualTo("2");
+    assertThat(v2.fileFormat()).isEqualTo("PDF_TEXT");
+    assertThat(v2.headerColumns()).containsExactly("Datum", "Betrag", "Text");
+    Map<String, Object> old = row(v1.id());
+    assertThat(old.get("file_format")).isEqualTo("CSV");
+    assertThat(old.get("pdf_layout")).isNull();
+  }
+
+  /**
+   * A PDF is tried only on PDF templates and a CSV file only on CSV ones; two PDF templates with
+   * one marker are both candidates, neither an exact match.
+   */
+  @Test
+  void detectionKeepsPdfAndCsvTemplatesApart() throws Exception {
+    ImportTemplateResponse csv = create(swissRequest(headerOf(SWISS)));
+    ImportTemplateResponse first = create(pdfRequest("PDF_TEXT"));
+    ImportTemplateResponse second = create(withName(pdfRequest("PDF_TEXT"), "Second PDF bank"));
+
+    List<ImportTemplateCandidateResponse> forPdf =
+        detect(pdf(PDF_MARKER, "04.01.2031 -1,00 Invented"));
+    assertThat(forPdf).extracting(c -> c.template().id()).containsExactly(first.id(), second.id());
+    assertThat(forPdf)
+        .extracting(ImportTemplateCandidateResponse::match)
+        .containsOnly(ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT);
+
+    assertThat(detect(fixture(SWISS))).extracting(c -> c.template().id()).containsExactly(csv.id());
+    assertThat(detect(pdf("Another bank entirely", "04.01.2031 -1,00 Invented"))).isEmpty();
+  }
+
+  /** OCR per candidate would make detection far too slow: an OCR template is picked explicitly. */
+  @Test
+  void anOcrTemplateIsNeverADetectionCandidate() throws Exception {
+    create(pdfRequest("PDF_OCR"));
+
+    assertThat(detect(pdf(PDF_MARKER, "04.01.2031 -1,00 Invented"))).isEmpty();
+  }
+
+  @Test
+  void aPdfTemplateWithoutLayoutIs422() {
+    ImportTemplateRequest withoutLayout = withPdf(pdfRequest("PDF_TEXT"), "PDF_TEXT", null);
+
+    postStatus(withoutLayout)
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("IMPORT_TEMPLATE_INVALID")
+        .jsonPath("$.field")
+        .isEqualTo("pdfLayout");
+  }
+
+  private static final String PDF_MARKER = "Invented Bank statement";
+
+  private static ImportTemplateRequest pdfRequest(String format) {
+    return new ImportTemplateRequest(
+        "Invented PDF bank",
+        null,
+        null,
+        null,
+        null,
+        ",",
+        ".",
+        "dd.MM.yyyy",
+        null,
+        null,
+        null,
+        null,
+        "FIXED",
+        "EUR",
+        new ImportColumnMapping(
+            "Datum", null, "Betrag", null, null, null, "Text", null, null, null, null, null, null),
+        Map.of(),
+        null,
+        null,
+        format,
+        new ImportPdfLayout(
+            List.of("Datum", "Betrag", "Text"),
+            "(\\S+)\\s+(\\S+)\\s+(.+)",
+            PDF_MARKER,
+            "^\\d{2}\\."));
+  }
+
+  private static ImportTemplateRequest withPdf(
+      ImportTemplateRequest r, String format, ImportPdfLayout layout) {
+    return new ImportTemplateRequest(
+        r.name(),
+        r.institutionCatalogueId(),
+        r.templateClass(),
+        r.delimiter(),
+        r.encoding(),
+        r.decimalSeparator(),
+        r.thousandsSeparator(),
+        r.dateFormat(),
+        r.headerRowIndex(),
+        r.preambleRowCount(),
+        r.trailingSummaryRowCount(),
+        r.amountRepresentation(),
+        r.currencyMode(),
+        r.fixedCurrency(),
+        r.columnMapping(),
+        r.typeMapping(),
+        r.accountIdentificationStrategy(),
+        r.headerColumns(),
+        format,
+        layout);
+  }
+
+  // A one-page PDF with these text lines (invented values only).
+  private static byte[] pdf(String... lines) throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      PDPage page = new PDPage();
+      document.addPage(page);
+      try (PDPageContentStream stream = new PDPageContentStream(document, page)) {
+        stream.beginText();
+        stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 11);
+        stream.setLeading(16);
+        stream.newLineAtOffset(50, 720);
+        for (String line : lines) {
+          stream.showText(line);
+          stream.newLine();
+        }
+        stream.endText();
+      }
+      document.save(output);
+      return output.toByteArray();
+    }
+  }
+
   // --- requests --------------------------------------------------------------------------------
 
   private static ImportTemplateRequest swissRequest(List<String> headerColumns) {
@@ -705,7 +911,9 @@ class ImportTemplateControllerTest {
             null),
         Map.of(),
         null,
-        headerColumns);
+        headerColumns,
+        null,
+        null);
   }
 
   private static ImportTemplateRequest germanRequest(List<String> headerColumns) {
@@ -748,7 +956,9 @@ class ImportTemplateControllerTest {
             "Zinsen",
             "INTEREST"),
         "USER_SELECTED",
-        headerColumns);
+        headerColumns,
+        null,
+        null);
   }
 
   private static ImportTemplateRequest simpleRequest(
@@ -771,7 +981,9 @@ class ImportTemplateControllerTest {
         mapping,
         null,
         null,
-        headerColumns);
+        headerColumns,
+        null,
+        null);
   }
 
   private static ImportTemplateRequest withDateFormat(ImportTemplateRequest r, String dateFormat) {
@@ -793,7 +1005,9 @@ class ImportTemplateControllerTest {
         r.columnMapping(),
         r.typeMapping(),
         r.accountIdentificationStrategy(),
-        r.headerColumns());
+        r.headerColumns(),
+        r.fileFormat(),
+        r.pdfLayout());
   }
 
   private static ImportTemplateRequest withName(ImportTemplateRequest r, String name) {
@@ -815,7 +1029,9 @@ class ImportTemplateControllerTest {
         r.columnMapping(),
         r.typeMapping(),
         r.accountIdentificationStrategy(),
-        r.headerColumns());
+        r.headerColumns(),
+        r.fileFormat(),
+        r.pdfLayout());
   }
 
   private static ImportTemplateRequest withInstitution(ImportTemplateRequest r, UUID institution) {
@@ -837,7 +1053,9 @@ class ImportTemplateControllerTest {
         r.columnMapping(),
         r.typeMapping(),
         r.accountIdentificationStrategy(),
-        r.headerColumns());
+        r.headerColumns(),
+        r.fileFormat(),
+        r.pdfLayout());
   }
 
   private static ImportTemplateRequest withClassAndStrategy(
@@ -860,7 +1078,9 @@ class ImportTemplateControllerTest {
         r.columnMapping(),
         r.typeMapping(),
         strategy,
-        r.headerColumns());
+        r.headerColumns(),
+        r.fileFormat(),
+        r.pdfLayout());
   }
 
   private static ImportTemplateRequest withRowCounts(
@@ -883,7 +1103,9 @@ class ImportTemplateControllerTest {
         r.columnMapping(),
         r.typeMapping(),
         r.accountIdentificationStrategy(),
-        r.headerColumns());
+        r.headerColumns(),
+        r.fileFormat(),
+        r.pdfLayout());
   }
 
   // --- HTTP helpers ------------------------------------------------------------------------------

@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportParseResult;
+import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
@@ -33,7 +34,9 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JavaType;
 import tools.jackson.databind.ObjectMapper;
 
@@ -74,7 +77,11 @@ public class ImportTemplateService {
 
   private final ImportTemplateRepository templateRepository;
   private final InstitutionCatalogueRepository institutionCatalogueRepository;
-  private final CsvImportParserService parser;
+  private final ImportFileParserService parser;
+  private final PdfImportReaderService pdfReader;
+  // Detection and dry runs read the templates in a short transaction of their own and parse the
+  // file after it: an OCR run can take minutes and must not hold a pooled connection meanwhile.
+  private final TransactionTemplate readOnlyTransaction;
   private final AccessControlService accessControlService;
   private final VersionPreconditionService versionPreconditionService;
   private final BusinessDateService businessDateService;
@@ -87,7 +94,9 @@ public class ImportTemplateService {
   public ImportTemplateService(
       ImportTemplateRepository templateRepository,
       InstitutionCatalogueRepository institutionCatalogueRepository,
-      CsvImportParserService parser,
+      ImportFileParserService parser,
+      PdfImportReaderService pdfReader,
+      PlatformTransactionManager transactionManager,
       AccessControlService accessControlService,
       VersionPreconditionService versionPreconditionService,
       BusinessDateService businessDateService,
@@ -96,6 +105,9 @@ public class ImportTemplateService {
     this.templateRepository = templateRepository;
     this.institutionCatalogueRepository = institutionCatalogueRepository;
     this.parser = parser;
+    this.pdfReader = pdfReader;
+    this.readOnlyTransaction = new TransactionTemplate(transactionManager);
+    this.readOnlyTransaction.setReadOnly(true);
     this.accessControlService = accessControlService;
     this.versionPreconditionService = versionPreconditionService;
     this.businessDateService = businessDateService;
@@ -234,15 +246,22 @@ public class ImportTemplateService {
   /**
    * FR-IMP-022: the active templates that can read {@code content}, best first - an exact header
    * fingerprint before a header that merely holds every mapped column, the workspace's own before
-   * shipped ones, then by name. A template whose settings cannot read the file is left out.
+   * shipped ones, then by name. A template whose settings cannot read the file is left out. A PDF
+   * is read once, however many PDF templates there are, and a PDF template is never an exact header
+   * match: its columns are named by its layout, not read from the file.
    */
-  @Transactional(readOnly = true)
   public List<ImportTemplateCandidateResponse> detect(
       byte[] content, AuthenticatedUserPrincipal actor) {
-    accessControlService.requireActingMember(actor);
+    List<ImportTemplate> templates =
+        readOnlyTransaction.execute(
+            status -> {
+              accessControlService.requireActingMember(actor);
+              return templateRepository.findCurrentVisibleTo(actor.workspaceId());
+            });
     List<ImportTemplateCandidateResponse> candidates = new ArrayList<>();
-    for (ImportTemplate template : templateRepository.findCurrentVisibleTo(actor.workspaceId())) {
-      String match = match(template, content);
+    String pdfText = readPdfTextForDetection(templates, content);
+    for (ImportTemplate template : templates) {
+      String match = match(template, content, pdfText);
       if (match != null) {
         candidates.add(new ImportTemplateCandidateResponse(toResponse(template), match));
       }
@@ -263,11 +282,15 @@ public class ImportTemplateService {
   }
 
   /** Dry run of a saved template version on {@code content}; nothing is stored. */
-  @Transactional(readOnly = true)
   public ImportTemplateTestResponse test(
       UUID id, byte[] content, AuthenticatedUserPrincipal actor) {
-    accessControlService.requireActingMember(actor);
-    return preview(parser.parse(content, definitionOf(requireVisible(id, actor)), null));
+    ImportTemplateDefinition definition =
+        readOnlyTransaction.execute(
+            status -> {
+              accessControlService.requireActingMember(actor);
+              return definitionOf(requireVisible(id, actor));
+            });
+    return preview(parser.parse(content, definition, null));
   }
 
   /** Dry run of a template that is not saved yet (the mapping screen's live preview). */
@@ -324,9 +347,14 @@ public class ImportTemplateService {
     return template;
   }
 
-  // The header columns the template keeps, after the parser's rules and the header rules.
+  // The header columns the template keeps, after the parser's rules and the header rules. A PDF
+  // template's are its layout's column names (#267), whatever the request sent.
   private List<String> validated(
       ImportTemplateDefinition definition, List<String> requestedHeaderColumns) {
+    if (definition.isPdf()) {
+      parser.validateTemplate(definition, null);
+      return definition.pdfLayout().columns();
+    }
     List<String> headerColumns =
         requestedHeaderColumns == null || requestedHeaderColumns.isEmpty()
             ? null
@@ -362,10 +390,45 @@ public class ImportTemplateService {
     return exception;
   }
 
-  private String match(ImportTemplate template, byte[] content) {
-    ImportTemplateDefinition definition = definitionOf(template);
-    if (!template.isActive() || !definition.hasHeaderRow()) {
+  // The text layer of a PDF upload, read once for every PDF_TEXT template to try; null when there
+  // is none to try, the file is no PDF, or it cannot be read as one.
+  private String readPdfTextForDetection(List<ImportTemplate> templates, byte[] content) {
+    boolean anyTextTemplate =
+        templates.stream()
+            .anyMatch(t -> ImportTemplateValues.FORMAT_PDF_TEXT.equals(t.getFileFormat()));
+    if (!anyTextTemplate || !PdfImportReaderService.isPdf(content)) {
       return null;
+    }
+    try {
+      return pdfReader.readText(content, false);
+    } catch (ApiException e) {
+      return null;
+    }
+  }
+
+  // Whether this release can apply the template at all (e.g. not a retired setting).
+  private boolean isApplicable(ImportTemplateDefinition definition) {
+    try {
+      parser.validateTemplate(definition, null);
+      return true;
+    } catch (ApiException e) {
+      return false;
+    }
+  }
+
+  private String match(ImportTemplate template, byte[] content, String pdfText) {
+    ImportTemplateDefinition definition = definitionOf(template);
+    // An OCR template is never a candidate: recognizing every page once per template is too slow
+    // for detection. The member picks it explicitly.
+    if (!template.isActive() || !definition.hasHeaderRow() || definition.isOcr()) {
+      return null;
+    }
+    if (definition.isPdf()) {
+      return pdfText != null
+              && isApplicable(definition)
+              && PdfImportReaderService.isLayoutOf(pdfText, definition.pdfLayout())
+          ? ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT
+          : null;
     }
     List<String> header;
     try {
@@ -375,7 +438,7 @@ public class ImportTemplateService {
       // This template cannot read the file (or this release cannot apply it): no candidate.
       return null;
     }
-    if (CsvImportParserService.fingerprint(header).equals(template.getHeaderFingerprint())) {
+    if (ImportFileParserService.fingerprint(header).equals(template.getHeaderFingerprint())) {
       return ImportTemplateCandidateResponse.EXACT_HEADER;
     }
     return parser.missingColumns(definition.columnMapping(), header).isEmpty()
@@ -412,7 +475,9 @@ public class ImportTemplateService {
         fixedCurrency,
         definition.columnMapping(),
         definition.typeMapping(),
-        definition.accountIdentificationStrategy());
+        definition.accountIdentificationStrategy(),
+        definition.fileFormat(),
+        definition.pdfLayout());
   }
 
   private ImportTemplateDefinition definitionOf(ImportTemplate template) {
@@ -431,7 +496,11 @@ public class ImportTemplateService {
         template.getFixedCurrency(),
         objectMapper.readValue(template.getColumnMapping(), ImportColumnMapping.class),
         objectMapper.readValue(template.getTypeMapping(), stringMap),
-        template.getAccountIdentificationStrategy());
+        template.getAccountIdentificationStrategy(),
+        template.getFileFormat(),
+        template.getPdfLayout() == null
+            ? null
+            : objectMapper.readValue(template.getPdfLayout(), ImportPdfLayout.class));
   }
 
   private void apply(
@@ -457,9 +526,13 @@ public class ImportTemplateService {
     template.setColumnMapping(objectMapper.writeValueAsString(definition.columnMapping()));
     template.setTypeMapping(objectMapper.writeValueAsString(definition.typeMapping()));
     template.setAccountIdentificationStrategy(definition.accountIdentificationStrategy());
+    template.setFileFormat(definition.fileFormat());
+    if (definition.pdfLayout() != null) {
+      template.setPdfLayout(objectMapper.writeValueAsString(definition.pdfLayout()));
+    }
     if (headerColumns != null) {
       template.setHeaderColumns(objectMapper.writeValueAsString(headerColumns));
-      template.setHeaderFingerprint(CsvImportParserService.fingerprint(headerColumns));
+      template.setHeaderFingerprint(ImportFileParserService.fingerprint(headerColumns));
     }
   }
 
@@ -499,6 +572,8 @@ public class ImportTemplateService {
         definition.accountIdentificationStrategy(),
         readHeaderColumns(template),
         template.getHeaderFingerprint(),
+        definition.fileFormat(),
+        definition.pdfLayout(),
         VersionPreconditionService.persistedVersion(template.getVersion(), VERSIONED_RESOURCE));
   }
 

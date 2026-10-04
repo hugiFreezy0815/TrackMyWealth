@@ -43,6 +43,12 @@ public final class ImportRowErrorValues {
    */
   public static final String TYPE_NOT_ALLOWED = "IMPORT_ROW_TYPE_NOT_ALLOWED";
 
+  /**
+   * {@code value}: a PDF booking line (one the template's record-start pattern finds) that its row
+   * pattern does not match, so it cannot be cut into the layout's columns (#267).
+   */
+  public static final String LINE_UNMATCHED = "IMPORT_ROW_LINE_UNMATCHED";
+
   /** {@code column, value}: not a four-digit ISO 18245 merchant category code. */
   public static final String MCC_INVALID = "IMPORT_ROW_MCC_INVALID";
 }

@@ -1,0 +1,519 @@
+package com.trackmywealth.backend.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportPdfBookingLine;
+import com.trackmywealth.backend.dto.ImportPdfLayout;
+import com.trackmywealth.backend.dto.ImportRowErrorValues;
+import com.trackmywealth.backend.dto.ImportTemplateDefinition;
+import com.trackmywealth.backend.dto.ParsedImportRow;
+import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ApiException;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.IntFunction;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.common.PDStream;
+import org.apache.pdfbox.pdmodel.encryption.AccessPermission;
+import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
+import org.junit.jupiter.api.Test;
+
+/**
+ * #267: PDF statements through the template's line layout, without Spring - text layer and OCR,
+ * every file-level rejection and the layout rules. The PDFs are generated here with invented
+ * values; OCR is a mock, so no Tesseract is needed.
+ */
+class PdfImportReaderServiceTest {
+
+  private static final String MARKER = "Invented Bank statement";
+
+  private final LocalOcrService ocr = mock(LocalOcrService.class);
+  private final PdfImportReaderService reader = new PdfImportReaderService(ocr);
+  private final ImportFileParserService parser = new ImportFileParserService(reader);
+
+  @Test
+  void textLayerBookingLinesParseThroughTheTemplateRules() throws IOException {
+    byte[] pdf =
+        pdf(
+            MARKER,
+            "Date Amount Text",
+            "04.01.2031 -1.234,50 Invented expense",
+            "05.01.2031 987,65 Invented income",
+            "Closing balance 9.999,99");
+
+    List<ParsedImportRow> rows = parser.parse(pdf, template("PDF_TEXT"), null).rows();
+
+    assertThat(rows).allMatch(ParsedImportRow::isParsed);
+    assertThat(rows)
+        .extracting(ParsedImportRow::canonical)
+        .extracting(CanonicalImportRow::bookingDate, CanonicalImportRow::amount)
+        .containsExactly(
+            tuple(LocalDate.of(2031, 1, 4), new BigDecimal("-1234.50")),
+            tuple(LocalDate.of(2031, 1, 5), new BigDecimal("987.65")));
+    assertThat(rows.get(0).canonical().description()).isEqualTo("Invented expense");
+    assertThat(rows.get(0).rawData()).containsEntry("Amount", "-1.234,50");
+    verifyNoInteractions(ocr);
+  }
+
+  /** A booking line the row pattern does not match is an error row, never silently dropped. */
+  @Test
+  void aBookingLineTheRowPatternMissesIsAnErrorRow() throws IOException {
+    byte[] pdf = pdf(MARKER, "04.01.2031 -12,50 Invented expense", "05.01.2031 unreadable");
+
+    List<ParsedImportRow> rows = parser.parse(pdf, template("PDF_TEXT"), null).rows();
+
+    assertThat(rows.get(0).isParsed()).isTrue();
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.LINE_UNMATCHED);
+    assertThat(rows.get(1).errorArgs()).containsEntry("value", "05.01.2031 unreadable");
+  }
+
+  @Test
+  void aScannedPdfIsReadOnlyThroughLocalOcrOnePageAtATimeInGrey() throws IOException {
+    List<BufferedImage> rendered = new ArrayList<>();
+    when(ocr.recognizePages(anyInt(), any()))
+        .thenAnswer(
+            invocation -> {
+              IntFunction<BufferedImage> render = invocation.getArgument(1);
+              rendered.add(render.apply(0));
+              return MARKER + "\n04.01.2031 2.000,00 Invented income\n";
+            });
+
+    List<ParsedImportRow> rows = parser.parse(pdf(), template("PDF_OCR"), null).rows();
+
+    assertThat(rows).singleElement().satisfies(r -> assertThat(r.isParsed()).isTrue());
+    assertThat(rows.get(0).canonical().amount()).isEqualTo(new BigDecimal("2000.00"));
+    verify(ocr).recognizePages(eq(1), any());
+    assertThat(rendered)
+        .singleElement()
+        .satisfies(image -> assertThat(image.getType()).isEqualTo(BufferedImage.TYPE_BYTE_GRAY));
+  }
+
+  @Test
+  void aFileOfAnotherKindOrLayoutIsAMismatch() throws IOException {
+    assertFileError(
+        pdf("Other statement", "04.01.2031 1,00 x"), ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+    assertFileError(
+        "date,amount\n2031-01-04,1\n".getBytes(StandardCharsets.UTF_8),
+        ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+  }
+
+  @Test
+  void anUnreadablePdfIsMalformed() {
+    assertFileError(
+        "%PDF-broken".getBytes(StandardCharsets.US_ASCII), ApiErrorCode.IMPORT_FILE_MALFORMED);
+  }
+
+  @Test
+  void aPdfWithoutTextLayerNeedsAnOcrTemplate() throws IOException {
+    assertFileError(pdf(), ApiErrorCode.IMPORT_PDF_NO_TEXT);
+  }
+
+  @Test
+  void aStatementWithoutBookingLinesHasNoDataRows() throws IOException {
+    assertFileError(
+        pdf(MARKER, "No bookings in this period"), ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS);
+  }
+
+  @Test
+  void morePagesThanTheLimitAreRejected() throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      for (int i = 0; i <= PdfImportReaderService.MAX_PAGES; i++) {
+        document.addPage(new PDPage());
+      }
+      document.save(output);
+
+      ApiException error =
+          assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_TOO_MANY_PAGES);
+      assertThat(error.getBody().getProperties())
+          .containsEntry("maxPages", PdfImportReaderService.MAX_PAGES);
+    }
+  }
+
+  @Test
+  void anOversizedPageIsNotRenderedForOcr() throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      document.addPage(new PDPage(new PDRectangle(2000, 2000)));
+      document.save(output);
+
+      assertThatThrownBy(() -> parser.parse(output.toByteArray(), template("PDF_OCR"), null))
+          .isInstanceOfSatisfying(
+              ApiException.class,
+              e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_MALFORMED));
+      verifyNoInteractions(ocr);
+    }
+  }
+
+  /** Detection's test: the marker and at least one booking line, on text read once. */
+  @Test
+  void aStatementIsOfALayoutWithItsMarkerAndABookingLine() throws IOException {
+    String text = reader.readText(pdf(MARKER, "04.01.2031 1,00 x"), false);
+
+    assertThat(PdfImportReaderService.isLayoutOf(text, layout())).isTrue();
+    assertThat(
+            PdfImportReaderService.isLayoutOf(
+                reader.readText(pdf(MARKER, "none"), false), layout()))
+        .isFalse();
+    assertThat(
+            PdfImportReaderService.isLayoutOf(
+                reader.readText(pdf("Other bank", "04.01.2031 1,00 x"), false), layout()))
+        .isFalse();
+  }
+
+  @Test
+  void anEncryptedPdfIsMalformed() throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      document.addPage(new PDPage());
+      StandardProtectionPolicy policy =
+          new StandardProtectionPolicy("invented-owner", "", new AccessPermission());
+      document.protect(policy);
+      document.save(output);
+
+      assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_MALFORMED);
+    }
+  }
+
+  /**
+   * B3 of the #267 review: PDFBox decodes a whole stream into memory before it reads it, so a small
+   * file that inflates past MAX_STREAM_BYTES is refused before PDFBox reads any of it.
+   */
+  @Test
+  void aStreamThatInflatesPastTheLimitIsMalformed() throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      PDPage page = new PDPage();
+      document.addPage(page);
+      PDStream contents = new PDStream(document);
+      byte[] spaces = new byte[1 << 20];
+      Arrays.fill(spaces, (byte) ' ');
+      try (OutputStream stream = contents.createOutputStream(COSName.FLATE_DECODE)) {
+        for (long written = 0; written <= PdfImportReaderService.MAX_STREAM_BYTES; ) {
+          stream.write(spaces);
+          written += spaces.length;
+        }
+      }
+      page.setContents(contents);
+      document.save(output);
+      assertThat(output.size()).as("a small file").isLessThan(1_000_000);
+
+      assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_MALFORMED);
+    }
+  }
+
+  @Test
+  void anImageOfMorePixelsThanAStatementNeedsIsMalformed() throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      document.addPage(new PDPage());
+      PDStream image = new PDStream(document, new ByteArrayInputStream(new byte[] {0}));
+      image.getCOSObject().setItem(COSName.TYPE, COSName.XOBJECT);
+      image.getCOSObject().setItem(COSName.SUBTYPE, COSName.IMAGE);
+      image.getCOSObject().setInt(COSName.WIDTH, 100_000);
+      image.getCOSObject().setInt(COSName.HEIGHT, 100_000);
+      document.getPage(0).getCOSObject().setItem(COSName.getPDFName("InventedImage"), image);
+      document.save(output);
+
+      assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_MALFORMED);
+    }
+  }
+
+  @Test
+  void moreTextThanTheLimitIsRejectedPageByPage() throws IOException {
+    String longLine = "x".repeat(PdfImportReaderService.MAX_TEXT / 4);
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      for (int i = 0; i < 5; i++) {
+        addPage(document, MARKER, longLine);
+      }
+      document.save(output);
+
+      ApiException error =
+          assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_MALFORMED);
+      assertThat(error.getBody().getDetail()).contains("more text");
+    }
+  }
+
+  /**
+   * Skipped lines count over the whole document; a header repeated on every page is not a booking
+   * line, so it needs no skipping.
+   */
+  @Test
+  void skippedLinesAndRepeatedPageHeadersSpanPages() throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      addPage(
+          document,
+          "01.01.2031 0,00 Invented opening line",
+          MARKER,
+          "Date Amount Text",
+          "04.01.2031 -1,00 First");
+      addPage(
+          document,
+          MARKER,
+          "Date Amount Text",
+          "05.01.2031 -2,00 Second",
+          "31.01.2031 -3,00 Invented closing line");
+      document.save(output);
+
+      ImportTemplateDefinition template =
+          new ImportFileParserServiceTest.Template()
+              .pdf("PDF_TEXT", layout())
+              .dateFormat("dd.MM.yyyy")
+              .decimal(",")
+              .thousands(".")
+              .preamble(1)
+              .trailing(1)
+              .mapping(
+                  ImportFileParserServiceTest.mapping("Date", "Amount").description("Text").build())
+              .build();
+
+      assertThat(parser.parse(output.toByteArray(), template, null).rows())
+          .extracting(r -> r.canonical().description())
+          .containsExactly("First", "Second");
+    }
+  }
+
+  /** The SPK-6 layout of the import source analysis: the booking date glued to the text. */
+  @Test
+  void aDateGluedToTheTextIsCutByTheRowPattern() throws IOException {
+    ImportPdfLayout glued =
+        new ImportPdfLayout(
+            List.of("Date", "Text", "Amount"),
+            "(\\d{2}\\.\\d{2}\\.\\d{4})(.+?)\\s+(-?[\\d.]+,\\d{2})",
+            MARKER,
+            "^\\d{2}\\.\\d{2}\\.\\d{4}");
+    byte[] pdf =
+        pdf(
+            MARKER,
+            "04.01.2031Invented card payment -1.234,50",
+            "05.01.2031Invented salary 987,65");
+
+    List<ParsedImportRow> rows = parser.parse(pdf, germanTemplate(glued).build(), null).rows();
+
+    assertThat(rows)
+        .extracting(ParsedImportRow::canonical)
+        .extracting(
+            CanonicalImportRow::bookingDate,
+            CanonicalImportRow::amount,
+            CanonicalImportRow::description)
+        .containsExactly(
+            tuple(LocalDate.of(2031, 1, 4), new BigDecimal("-1234.50"), "Invented card payment"),
+            tuple(LocalDate.of(2031, 1, 5), new BigDecimal("987.65"), "Invented salary"));
+  }
+
+  /** The SPK-7 layout: booking and value date glued together. */
+  @Test
+  void twoGluedDatesAreBookingAndValueDate() throws IOException {
+    ImportPdfLayout twoDates =
+        new ImportPdfLayout(
+            List.of("Date", "Value", "Text", "Amount"),
+            "(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}\\.\\d{2}\\.\\d{4})\\s+(.+?)\\s+(-?[\\d.]+,\\d{2})",
+            MARKER,
+            "^\\d{2}\\.\\d{2}\\.\\d{4}\\d{2}\\.");
+    byte[] pdf = pdf(MARKER, "04.01.203106.01.2031 Invented loan rate -500,00");
+
+    ParsedImportRow row =
+        parser
+            .parse(
+                pdf,
+                germanTemplate(twoDates)
+                    .mapping(
+                        ImportFileParserServiceTest.mapping("Date", "Amount")
+                            .valueDate("Value")
+                            .description("Text")
+                            .build())
+                    .build(),
+                null)
+            .rows()
+            .get(0);
+
+    assertThat(row.canonical().bookingDate()).isEqualTo(LocalDate.of(2031, 1, 4));
+    assertThat(row.canonical().valueDate()).isEqualTo(LocalDate.of(2031, 1, 6));
+    assertThat(row.canonical().amount()).isEqualTo(new BigDecimal("-500.00"));
+    assertThat(row.canonical().description()).isEqualTo("Invented loan rate");
+  }
+
+  /**
+   * D2 of the #267 review: with a one-column layout, an unmatched line has as many cells as a
+   * matched one, so the line itself - not its cell count - says whether it matched.
+   */
+  @Test
+  void aOneColumnLayoutStillKnowsAnUnmatchedLine() throws IOException {
+    ImportPdfLayout oneColumn =
+        new ImportPdfLayout(List.of("Line"), "(\\d{2}\\.\\d{2}\\. .+)", MARKER, "^\\d");
+    ImportTemplateDefinition template =
+        new ImportFileParserServiceTest.Template().pdf("PDF_TEXT", oneColumn).build();
+
+    List<ImportPdfBookingLine> lines =
+        reader.readBookingLines(pdf(MARKER, "04.01. Invented", "05.01.Invented"), template);
+
+    assertThat(lines).extracting(ImportPdfBookingLine::matched).containsExactly(true, false);
+    assertThat(lines.get(1).cells()).containsExactly("05.01.Invented");
+  }
+
+  @Test
+  void anUnmatchedLineIsQuotedOnlyUpToTheEchoLimit() throws IOException {
+    String longLine = "05.01.2031 " + "y".repeat(300);
+
+    ParsedImportRow row =
+        parser.parse(pdf(MARKER, longLine), template("PDF_TEXT"), null).rows().get(0);
+
+    assertThat(row.errorCode()).isEqualTo(ImportRowErrorValues.LINE_UNMATCHED);
+    assertThat(row.errorArgs().get("value"))
+        .hasSize(ImportFileParserService.MAX_ECHOED_VALUE_LENGTH);
+  }
+
+  @Test
+  void layoutRulesNameTheField() {
+    ImportPdfLayout good = layout();
+    assertInvalid(pdfTemplate("PDF_TEXT", null), "pdfLayout");
+    assertInvalid(
+        pdfTemplate("PDF_TEXT", new ImportPdfLayout(List.of(), good.rowPattern(), MARKER, "^\\d")),
+        "pdfLayout.columns");
+    assertInvalid(
+        pdfTemplate(
+            "PDF_TEXT",
+            new ImportPdfLayout(
+                List.of("Date", "date", "Text"), good.rowPattern(), MARKER, "^\\d")),
+        "pdfLayout.columns");
+    assertInvalid(
+        pdfTemplate(
+            "PDF_TEXT", new ImportPdfLayout(good.columns(), good.rowPattern(), " ", "^\\d")),
+        "pdfLayout.documentMarker");
+    assertInvalid(
+        pdfTemplate("PDF_TEXT", new ImportPdfLayout(good.columns(), good.rowPattern(), MARKER, "")),
+        "pdfLayout.recordStartPattern");
+    assertInvalid(
+        pdfTemplate("PDF_TEXT", new ImportPdfLayout(good.columns(), "(\\S+", MARKER, "^\\d")),
+        "pdfLayout.rowPattern");
+    assertInvalid(
+        pdfTemplate("PDF_TEXT", new ImportPdfLayout(good.columns(), "(\\S+) (.+)", MARKER, "^\\d")),
+        "pdfLayout.rowPattern");
+    // RE2 has no backreferences: a pattern that could backtrack exponentially is refused.
+    assertInvalid(
+        pdfTemplate("PDF_TEXT", new ImportPdfLayout(good.columns(), "(a)(b)(\\1)", MARKER, "^\\d")),
+        "pdfLayout.rowPattern");
+    assertInvalid(pdfTemplate("CSV", good), "pdfLayout");
+    assertInvalid(pdfTemplate("XLSX", null), "fileFormat");
+    assertInvalid(
+        new ImportFileParserServiceTest.Template()
+            .pdf("PDF_TEXT", good)
+            .mapping(ImportFileParserServiceTest.mapping("Date", "Betrag").build())
+            .build(),
+        "columnMapping.amount");
+  }
+
+  // --- helpers -------------------------------------------------------------------------------
+
+  private static ImportFileParserServiceTest.Template germanTemplate(ImportPdfLayout layout) {
+    return new ImportFileParserServiceTest.Template()
+        .pdf("PDF_TEXT", layout)
+        .dateFormat("dd.MM.yyyy")
+        .decimal(",")
+        .thousands(".")
+        .mapping(ImportFileParserServiceTest.mapping("Date", "Amount").description("Text").build());
+  }
+
+  private static ImportPdfLayout layout() {
+    return new ImportPdfLayout(
+        List.of("Date", "Amount", "Text"), "(\\S+)\\s+(\\S+)\\s+(.+)", MARKER, "^\\d{2}\\.");
+  }
+
+  private static ImportTemplateDefinition template(String format) {
+    return new ImportFileParserServiceTest.Template()
+        .pdf(format, layout())
+        .dateFormat("dd.MM.yyyy")
+        .decimal(",")
+        .thousands(".")
+        .mapping(ImportFileParserServiceTest.mapping("Date", "Amount").description("Text").build())
+        .build();
+  }
+
+  private static ImportTemplateDefinition pdfTemplate(String format, ImportPdfLayout layout) {
+    return new ImportFileParserServiceTest.Template()
+        .pdf(format, layout)
+        .mapping(ImportFileParserServiceTest.mapping("Date", "Amount").build())
+        .build();
+  }
+
+  private void assertInvalid(ImportTemplateDefinition template, String field) {
+    assertThatThrownBy(() -> parser.validateTemplate(template, null))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getBody().getProperties()).containsEntry("field", field);
+            });
+  }
+
+  private ApiException assertFileError(byte[] content, String code) {
+    ThrowingCallable parse = () -> parser.parse(content, template("PDF_TEXT"), null);
+    ApiException[] caught = new ApiException[1];
+    assertThatThrownBy(parse)
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.getCode()).isEqualTo(code);
+              assertThat(e.getStatusCode().value()).isEqualTo(422);
+              caught[0] = e;
+            });
+    return caught[0];
+  }
+
+  /** A one-page PDF with these text lines; no lines gives a page without a text layer. */
+  static byte[] pdf(String... lines) throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      addPage(document, lines);
+      document.save(output);
+      return output.toByteArray();
+    }
+  }
+
+  private static void addPage(PDDocument document, String... lines) throws IOException {
+    PDPage page = new PDPage();
+    document.addPage(page);
+    if (lines.length == 0) {
+      return;
+    }
+    try (PDPageContentStream stream = new PDPageContentStream(document, page)) {
+      stream.beginText();
+      stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 11);
+      stream.setLeading(16);
+      stream.newLineAtOffset(50, 720);
+      for (String line : lines) {
+        stream.showText(line);
+        stream.newLine();
+      }
+      stream.endText();
+    }
+  }
+}

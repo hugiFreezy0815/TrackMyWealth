@@ -141,6 +141,26 @@ public final class ApiErrorCode {
   /** 422: the file has more data rows than one import may hold; {@code maxRows} says how many. */
   public static final String IMPORT_FILE_TOO_MANY_ROWS = "IMPORT_FILE_TOO_MANY_ROWS";
 
+  /**
+   * 422: a PDF import file has more pages than one import may hold; {@code maxPages} says how many.
+   */
+  public static final String IMPORT_FILE_TOO_MANY_PAGES = "IMPORT_FILE_TOO_MANY_PAGES";
+
+  /**
+   * 422: a PDF has no text layer (a scanned document) but the template reads text ({@code
+   * PDF_TEXT}); an OCR template ({@code PDF_OCR}) reads it.
+   */
+  public static final String IMPORT_PDF_NO_TEXT = "IMPORT_PDF_NO_TEXT";
+
+  /** 422: local OCR could not read a scanned page (it failed or produced too much text). */
+  public static final String IMPORT_OCR_FAILED = "IMPORT_OCR_FAILED";
+
+  /**
+   * 503: local OCR is not installed, all of its slots are busy, or it did not finish within the
+   * server's time limit; retry later.
+   */
+  public static final String IMPORT_OCR_UNAVAILABLE = "IMPORT_OCR_UNAVAILABLE";
+
   /** 423: the user account is temporarily locked (FR-AUT lockout). */
   public static final String LOCKED = "LOCKED";
 
