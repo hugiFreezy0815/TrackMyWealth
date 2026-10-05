@@ -769,17 +769,48 @@ adds a confidence threshold below which a row is an error; while off, an OCR rea
 `IMPORT_OCR_UNAVAILABLE` and no `PDF_OCR` template can be saved (a 422 on `fileFormat`). A PDF
 template carries `pdf_layout`: column names (at most 100 characters each), a row
 pattern whose capture groups are the cells, a record-start pattern that marks booking lines, and
-a document marker the statement must contain. #268 extends the layout with further optional
-fields, never by changing these four. Both patterns are RE2 (linear-time matching, no
+a document marker the statement must contain. The text of each page is rebuilt line by line with
+every word's position on the page (PDFBox, sorted by position; the line text is exactly what
+PDFBox's text stripper writes, so a layout of these four fields reads as before). The optional
+fields add to those four without changing them (#268), all of them read in one pass over the
+lines:
+
+- `headerLabels` (text layer only, a 422 for `PDF_OCR`): the labels of the booking table's header
+  line. A line holding every label in order is a header line, never a booking, and sets the
+  columns for the lines below it: each label spans its words on the page, and a word of a booking
+  line is the cell of the label it overlaps most (the nearest when none), named by the label. So an
+  unsigned amount under `BELASTUNG` is a debit through the existing `SEPARATE_DEBIT_CREDIT` rule,
+  and a table that moves between pages is still read by its labels, never by coordinates.
+- `continuationColumn`: lines after a booking line that are no booking are appended whole to that
+  column's cell (a counterparty, an IBAN). When it is a header label, only lines that start in its
+  column: a remark at the margin ends the booking.
+- `sectionPattern` and `sectionColumn`: a matching line starts a section, and its first capture
+  group is the `sectionColumn` cell of the section's bookings (with currency mode `PER_ROW`, its
+  currency). Text before the first section, such as a summary page, is ignored.
+- `balanceLinePattern` and `balanceColumn`: a matching line states a balance (its first capture
+  group) and is never a booking. Each booking is checked against the balance before it (the one
+  stated since the last booking, or the last booking's): stated balance = balance before + amount,
+  compared exactly. A mismatch is the row error `IMPORT_ROW_BALANCE_MISMATCH`, which catches an
+  amount or sign read from the wrong column; the next booking starts from the balance the statement
+  prints, so one misread row does not fail the rows after it. A section starts with no balance.
+
+Lines repeated in the top or bottom three lines of every page, or every page but one, their digits
+aside, are page furniture and never continue a booking; a line a pattern marks as a booking,
+balance, section or header is never furniture, so no booking is ever dropped as one. A row's raw
+data also keeps the whole booking line with its continuation lines, under `#line`. Both patterns are
+RE2 (linear-time matching, no
 backreferences), so a member's pattern cannot backtrack catastrophically; RE2 is linear in its
 compiled program too, so a pattern whose program would exceed 2,000 instructions
 (`Re2Patterns`, e.g. nested counted repeats) is refused with a 422. From the cut columns on,
 a PDF row goes through exactly the CSV rules; a booking line the row pattern misses is the row
-error `IMPORT_ROW_LINE_UNMATCHED`. The layout's column names act as the stored header columns, but a PDF template stores no
-`header_fingerprint`: those names come from the template, not the file, so they identify nothing.
+error `IMPORT_ROW_LINE_UNMATCHED`. The layout's cell names (its columns, then its header labels,
+then its section column) act as the stored header columns. A PDF template stores a
+`header_fingerprint` only of its header labels, the one part of its names read from the file;
+without labels, it stores none.
 Detection differs from CSV: a PDF has no header row to read, so a `PDF_TEXT` template is a
-candidate when the statement holds its marker and at least one booking line, never an exact header
-match (#268 adds a fingerprint of the booking table's header labels). The PDF is read once per
+candidate when the statement holds its marker and at least one booking line, and an exact header
+match when it also holds the header line of the layout's labels (a layout without labels is never
+one). The PDF is read once per
 detection, however many PDF templates there are; an OCR template is never a candidate (OCR per
 candidate is too slow). A PDF without a text layer is therefore a 422 `IMPORT_PDF_NO_TEXT` from
 detection, not an empty list, so the member learns why no template fits. Limits: 20 pages, no encrypted PDF, no damaged PDF (it is parsed strictly,

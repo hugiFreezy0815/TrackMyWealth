@@ -257,8 +257,9 @@ public class ImportTemplateService {
    * FR-IMP-022: the active templates that can read {@code content}, best first - an exact header
    * fingerprint before a header that merely holds every mapped column, the workspace's own before
    * shipped ones, then by name. A template whose settings cannot read the file is left out. A PDF
-   * is read once, however many PDF templates there are, and a PDF template is never an exact header
-   * match: its columns are named by its layout, not read from the file.
+   * is read once, however many PDF templates there are. A PDF template is an exact header match
+   * only by its layout's header labels (#268): its other columns are named by the layout, not read
+   * from the file.
    *
    * @throws ApiException 422 {@code IMPORT_PDF_NO_TEXT} for a PDF without text layer (a scanned
    *     statement, which only an explicitly chosen OCR template reads), 503 {@code IMPORT_PDF_BUSY}
@@ -361,12 +362,12 @@ public class ImportTemplateService {
   }
 
   // The header columns the template keeps, after the parser's rules and the header rules. A PDF
-  // template's are its layout's column names (#268), whatever the request sent.
+  // template's are its layout's cell names (#268), whatever the request sent.
   private List<String> validated(
       ImportTemplateDefinition definition, List<String> requestedHeaderColumns) {
     if (definition.isPdf()) {
       parser.validateTemplate(definition, null);
-      return definition.pdfLayout().columns();
+      return definition.pdfLayout().cellNames();
     }
     List<String> headerColumns =
         requestedHeaderColumns == null || requestedHeaderColumns.isEmpty()
@@ -435,6 +436,20 @@ public class ImportTemplateService {
     }
   }
 
+  // #268: a PDF statement holding the layout's booking table header is an exact match, like a CSV
+  // file's header; one holding its marker and a booking line merely has the mapped columns.
+  private String pdfMatch(ImportTemplateDefinition definition, String pdfText) {
+    if (pdfText == null || !isApplicable(definition)) {
+      return null;
+    }
+    if (PdfImportReaderService.hasHeaderLine(pdfText, definition.pdfLayout())) {
+      return ImportTemplateCandidateResponse.EXACT_HEADER;
+    }
+    return PdfImportReaderService.isLayoutOf(pdfText, definition.pdfLayout())
+        ? ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT
+        : null;
+  }
+
   // Whether this release can apply the template at all (e.g. not a retired setting).
   private boolean isApplicable(ImportTemplateDefinition definition) {
     try {
@@ -453,11 +468,7 @@ public class ImportTemplateService {
       return null;
     }
     if (definition.isPdf()) {
-      return pdfText != null
-              && isApplicable(definition)
-              && PdfImportReaderService.isLayoutOf(pdfText, definition.pdfLayout())
-          ? ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT
-          : null;
+      return pdfMatch(definition, pdfText);
     }
     List<String> header;
     try {
@@ -561,9 +572,8 @@ public class ImportTemplateService {
     }
     if (headerColumns != null) {
       template.setHeaderColumns(objectMapper.writeValueAsString(headerColumns));
-      if (ImportFileParserService.hasFingerprint(definition)) {
-        template.setHeaderFingerprint(ImportFileParserService.fingerprint(headerColumns));
-      }
+      template.setHeaderFingerprint(
+          ImportFileParserService.headerFingerprint(definition, headerColumns));
     }
   }
 

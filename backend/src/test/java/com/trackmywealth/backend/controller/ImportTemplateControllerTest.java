@@ -2,10 +2,12 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
+import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
@@ -14,7 +16,9 @@ import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.ImportFileParserService;
 import com.trackmywealth.backend.service.ImportTemplateService;
+import com.trackmywealth.backend.service.SyntheticStatements;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
 import jakarta.persistence.EntityManager;
@@ -29,6 +33,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -713,7 +718,8 @@ class ImportTemplateControllerTest {
     assertThat(tested.rowCount()).isEqualTo(2);
     assertThat(tested.parsedRowCount()).isEqualTo(2);
 
-    // A PDF's columns are named by its layout, not read from the file: never an exact header.
+    // Its columns are named by its layout, not read from the file, and it has no header labels:
+    // never an exact header.
     assertThat(detect(statement))
         .first()
         .satisfies(
@@ -722,6 +728,50 @@ class ImportTemplateControllerTest {
               assertThat(c.match())
                   .isEqualTo(ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT);
             });
+  }
+
+  /**
+   * #268, acceptance criteria 1, 2 and 5: a template of the YUH-1 layout is saved with its header
+   * labels as its fingerprint, reads a statement of that layout (and finds a misread amount by the
+   * running balance), and is the top candidate for it by its booking table's header - ahead of a
+   * template that merely finds the same marker and booking lines, whatever their names.
+   */
+  @Test
+  void aStatementLayoutIsSavedTestedAndTheTopCandidateByItsHeader() throws Exception {
+    ImportTemplateResponse markerOnly =
+        create(
+            withName(
+                withPdf(
+                    pdfRequest("PDF_TEXT"),
+                    "PDF_TEXT",
+                    new ImportPdfLayout(
+                        List.of("Datum", "Betrag", "Text"),
+                        "(\\S+)\\s+(\\S+)\\s+(.+)",
+                        SyntheticStatements.YUH_MARKER,
+                        "^\\d{2}\\.")),
+                "A marker only"));
+    ImportTemplateResponse yuh = create(yuhRequest());
+
+    List<String> cells = new ArrayList<>(List.of("Zeile"));
+    cells.addAll(SyntheticStatements.YUH_LABELS);
+    cells.add("Waehrung");
+    assertThat(yuh.headerColumns()).isEqualTo(cells);
+    assertThat(yuh.headerFingerprint())
+        .isEqualTo(ImportFileParserService.fingerprint(SyntheticStatements.YUH_LABELS));
+    assertThat(yuh.pdfLayout()).isEqualTo(SyntheticStatements.yuhLayout());
+
+    ImportTemplateTestResponse tested = testSaved(yuh, SyntheticStatements.yuhStatement(false));
+    assertThat(tested.rowCount()).isEqualTo(4);
+    assertThat(tested.parsedRowCount()).isEqualTo(4);
+    ImportTemplateTestResponse misread = testSaved(yuh, SyntheticStatements.yuhStatement(true));
+    assertThat(misread.errorCounts())
+        .containsExactly(Map.entry(ImportRowErrorValues.BALANCE_MISMATCH, 1));
+
+    assertThat(detect(SyntheticStatements.yuhStatement(false)))
+        .extracting(c -> c.template().id(), ImportTemplateCandidateResponse::match)
+        .containsExactly(
+            tuple(yuh.id(), ImportTemplateCandidateResponse.EXACT_HEADER),
+            tuple(markerOnly.id(), ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT));
   }
 
   @Test
@@ -912,6 +962,40 @@ class ImportTemplateControllerTest {
             "(\\S+)\\s+(\\S+)\\s+(.+)",
             PDF_MARKER,
             "^\\d{2}\\."));
+  }
+
+  // The YUH-1 layout of SyntheticStatements: the sign by column, the currency by section.
+  private static ImportTemplateRequest yuhRequest() {
+    return new ImportTemplateRequest(
+        "Invented statement bank",
+        null,
+        null,
+        null,
+        null,
+        ".",
+        "'",
+        "dd.MM.yyyy",
+        null,
+        null,
+        null,
+        "SEPARATE_DEBIT_CREDIT",
+        "PER_ROW",
+        null,
+        SyntheticStatements.yuhMapping(),
+        Map.of(),
+        null,
+        null,
+        "PDF_TEXT",
+        SyntheticStatements.yuhLayout());
+  }
+
+  private ImportTemplateTestResponse testSaved(ImportTemplateResponse template, byte[] content) {
+    return multipart(BASE + "/" + template.id() + "/test", content, null)
+        .expectStatus()
+        .isOk()
+        .expectBody(ImportTemplateTestResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private static ImportTemplateRequest withPdf(
