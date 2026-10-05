@@ -803,12 +803,38 @@ class ImportTemplateControllerTest {
     assertThat(detect(pdf("Another bank entirely", "04.01.2031 -1,00 Invented"))).isEmpty();
   }
 
-  /** OCR per candidate would make detection far too slow: an OCR template is picked explicitly. */
+  /**
+   * OCR per candidate would make detection far too slow: an OCR template is picked explicitly. The
+   * template was saved while OCR was on (none can be saved while it is off).
+   */
   @Test
   void anOcrTemplateIsNeverADetectionCandidate() throws Exception {
-    create(pdfRequest("PDF_OCR"));
+    ImportTemplateResponse template = create(pdfRequest("PDF_TEXT"));
+    execute("UPDATE import_template SET file_format = 'PDF_OCR' WHERE id = ?", template.id());
 
     assertThat(detect(pdf(PDF_MARKER, "04.01.2031 -1,00 Invented"))).isEmpty();
+  }
+
+  /**
+   * Third PR #267 review: while OCR is switched off (until #276), a PDF_OCR template could never
+   * read a file, so none is saved - neither a new one nor a switch to OCR.
+   */
+  @Test
+  void anOcrTemplateIsNotSavedWhileOcrIsSwitchedOff() {
+    postStatus(pdfRequest("PDF_OCR"))
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("IMPORT_TEMPLATE_INVALID")
+        .jsonPath("$.field")
+        .isEqualTo("fileFormat");
+
+    ImportTemplateResponse text = create(pdfRequest("PDF_TEXT"));
+    putStatus(text.id(), "\"" + text.version() + "\"", pdfRequest("PDF_OCR"))
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.field")
+        .isEqualTo("fileFormat");
   }
 
   /**
@@ -820,6 +846,9 @@ class ImportTemplateControllerTest {
     multipart(BASE + "/test", pdf(), pdfRequest("PDF_OCR"))
         .expectStatus()
         .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+        // Switched off is no reason to retry: only a busy or too slow recognition says when to.
+        .expectHeader()
+        .doesNotExist(HttpHeaders.RETRY_AFTER)
         .expectBody()
         .jsonPath("$.code")
         .isEqualTo("IMPORT_OCR_UNAVAILABLE");

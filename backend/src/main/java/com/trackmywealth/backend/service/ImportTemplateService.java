@@ -80,6 +80,7 @@ public class ImportTemplateService {
   private final InstitutionCatalogueRepository institutionCatalogueRepository;
   private final ImportFileParserService parser;
   private final PdfImportReaderService pdfReader;
+  private final LocalOcrService ocr;
   // Detection and dry runs read the templates in a short transaction of their own and parse the
   // file after it: an OCR run can take minutes and must not hold a pooled connection meanwhile.
   private final TransactionTemplate readOnlyTransaction;
@@ -97,6 +98,7 @@ public class ImportTemplateService {
       InstitutionCatalogueRepository institutionCatalogueRepository,
       ImportFileParserService parser,
       PdfImportReaderService pdfReader,
+      LocalOcrService ocr,
       PlatformTransactionManager transactionManager,
       AccessControlService accessControlService,
       VersionPreconditionService versionPreconditionService,
@@ -107,6 +109,7 @@ public class ImportTemplateService {
     this.institutionCatalogueRepository = institutionCatalogueRepository;
     this.parser = parser;
     this.pdfReader = pdfReader;
+    this.ocr = ocr;
     this.readOnlyTransaction = new TransactionTemplate(transactionManager);
     this.readOnlyTransaction.setReadOnly(true);
     this.accessControlService = accessControlService;
@@ -169,6 +172,7 @@ public class ImportTemplateService {
     accessControlService.requireActingMember(actor);
     ImportTemplateDefinition definition = definitionOf(request);
     List<String> headerColumns = validated(definition, request.headerColumns());
+    requireOcrAvailable(definition, null);
     requireKnownInstitution(request.institutionCatalogueId());
 
     ImportTemplate template = new ImportTemplate();
@@ -199,6 +203,7 @@ public class ImportTemplateService {
         validated(
             definition,
             request.headerColumns() == null ? keptHeaderColumns : request.headerColumns());
+    requireOcrAvailable(definition, definitionOf(current));
     requireKnownInstitution(request.institutionCatalogueId());
 
     boolean parseRelevantChange =
@@ -380,6 +385,19 @@ public class ImportTemplateService {
     return headerColumns;
   }
 
+  // A PDF_OCR template is saved only where OCR runs: while it is switched off (until #276), every
+  // read of one would be a 503. A template that already reads by OCR keeps its other changes.
+  private void requireOcrAvailable(
+      ImportTemplateDefinition definition, ImportTemplateDefinition previous) {
+    boolean newlyOcr = definition.isOcr() && (previous == null || !previous.isOcr());
+    if (newlyOcr && !ocr.isEnabled()) {
+      throw invalid(
+          "fileFormat",
+          "Scanned statements (PDF_OCR) cannot be read on this server: text recognition is"
+              + " switched off.");
+    }
+  }
+
   private void requireKnownInstitution(UUID institutionCatalogueId) {
     if (institutionCatalogueId != null
         && !institutionCatalogueRepository.existsById(institutionCatalogueId)) {
@@ -406,7 +424,7 @@ public class ImportTemplateService {
       return null;
     }
     try {
-      return pdfReader.readText(content, false);
+      return pdfReader.readTextLayer(content);
     } catch (ImportFileRejectedException e) {
       return null;
     }

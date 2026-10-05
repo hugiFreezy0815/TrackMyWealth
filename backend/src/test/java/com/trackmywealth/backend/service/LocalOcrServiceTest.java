@@ -16,8 +16,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntFunction;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.HttpHeaders;
 
 /**
  * #276: the local OCR process contract, with a stand-in script instead of Tesseract - image on
@@ -30,6 +32,7 @@ class LocalOcrServiceTest {
 
   private final BufferedImage page = new BufferedImage(10, 10, BufferedImage.TYPE_BYTE_GRAY);
   private final IntFunction<BufferedImage> onePage = i -> page;
+  private static final String RETRY_AFTER = String.valueOf(LocalOcrService.RETRY_AFTER_SECONDS);
 
   @Test
   void aMissingExecutableIsUnavailableWithAStableCode() {
@@ -59,6 +62,7 @@ class LocalOcrServiceTest {
                 }));
     assertThat(rendered.get()).isZero();
     assertThat(started).doesNotExist();
+    assertThat(ocr.isEnabled()).isFalse();
   }
 
   @Test
@@ -126,7 +130,7 @@ class LocalOcrServiceTest {
     Path script = script("cat >/dev/null\nsleep 10\n");
     LocalOcrService ocr = new LocalOcrService(true, script.toString(), "eng", 300, 5_000);
 
-    assertUnavailable(() -> ocr.recognizePages(1, onePage));
+    assertUnavailable(() -> ocr.recognizePages(1, onePage), RETRY_AFTER);
   }
 
   @Test
@@ -142,7 +146,8 @@ class LocalOcrServiceTest {
                 i -> {
                   rendered.incrementAndGet();
                   return page;
-                }));
+                }),
+        RETRY_AFTER);
     assertThat(rendered.get()).as("stopped at the deadline, not after every page").isLessThan(4);
   }
 
@@ -167,7 +172,8 @@ class LocalOcrServiceTest {
                     Thread.currentThread().interrupt();
                   }
                   return page;
-                }));
+                }),
+        RETRY_AFTER);
     assertThat(started).doesNotExist();
   }
 
@@ -206,7 +212,8 @@ class LocalOcrServiceTest {
                   i -> {
                     rendered.incrementAndGet();
                     return page;
-                  }));
+                  }),
+          RETRY_AFTER);
       assertThat(rendered.get()).isZero();
     } finally {
       release.countDown();
@@ -215,14 +222,20 @@ class LocalOcrServiceTest {
     }
   }
 
-  private static void assertUnavailable(
-      org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+  // A 503 IMPORT_OCR_UNAVAILABLE that a retry cannot fix (switched off, not installed).
+  private static void assertUnavailable(ThrowingCallable call) {
+    assertUnavailable(call, null);
+  }
+
+  // A 503 IMPORT_OCR_UNAVAILABLE; with retryAfter, one a client retries after that many seconds.
+  private static void assertUnavailable(ThrowingCallable call, String retryAfter) {
     assertThatThrownBy(call)
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
               assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_OCR_UNAVAILABLE);
               assertThat(e.getStatusCode().value()).isEqualTo(503);
+              assertThat(e.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo(retryAfter);
             });
   }
 

@@ -13,6 +13,8 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ApiException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.net.URI;
@@ -39,6 +41,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -273,6 +276,23 @@ class ApiConventionsIntegrationTest {
         .doesNotContain("password_hash")
         .doesNotContain("super-secret")
         .doesNotContain("IllegalStateException");
+  }
+
+  /** PR #267 review: a busy server says when to retry, inside the same error envelope. */
+  @Test
+  void aRetryableErrorSaysWhenToRetry() {
+    String token = bootstrapAdministrator();
+
+    client(token)
+        .get()
+        .uri("/api/v1/test/busy")
+        .exchange()
+        .expectHeader()
+        .valueEquals(HttpHeaders.RETRY_AFTER, "7");
+    problem(
+        client(token).get().uri("/api/v1/test/busy").exchange(),
+        HttpStatus.SERVICE_UNAVAILABLE,
+        ApiErrorCode.IMPORT_PDF_BUSY);
   }
 
   @Test
@@ -539,6 +559,19 @@ class ApiConventionsIntegrationTest {
         .as("mutating operations whose OpenAPI lacks a required If-Match with 412/428")
         .isEmpty();
 
+    // PR #267 review: a 503 a client may retry documents its Retry-After header.
+    JsonNode detect = spec.path("paths").path("/api/v1/import-templates/detect").path("post");
+    assertThat(detect.path("responses").path("503").path("$ref").asString())
+        .isEqualTo("#/components/responses/ApiProblemRetryableResponse");
+    assertThat(detect.path("responses").has("200")).isTrue();
+    assertThat(
+            spec.path("components")
+                .path("responses")
+                .path("ApiProblemRetryableResponse")
+                .path("headers")
+                .has("Retry-After"))
+        .isTrue();
+
     JsonNode problem = spec.path("components").path("schemas").path("ApiProblem");
     assertThat(problem.path("properties").path("code").path("type").asString()).isEqualTo("string");
     assertThat(problem.path("properties").path("correlationId").path("type").asString())
@@ -712,6 +745,13 @@ class ApiConventionsIntegrationTest {
     void internalError() {
       throw new IllegalStateException(
           "SELECT password_hash FROM app_user WHERE password_hash = 'super-secret'");
+    }
+
+    @GetMapping("/api/v1/test/busy")
+    void busy() {
+      throw new ApiException(
+              HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.IMPORT_PDF_BUSY, "Busy; try again.")
+          .withRetryAfter(7);
     }
   }
 

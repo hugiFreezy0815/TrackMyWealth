@@ -297,6 +297,32 @@ class ArchitectureTest {
     return name.startsWith("lambda$") ? name.substring(7, name.lastIndexOf('$')) : name;
   }
 
+  // PR #267 review: pdf holds the PDFBox extensions that bound the reading of an untrusted PDF
+  // (BoundedPdfParser, PdfStreamBudget, ...). It knows nothing of the application - it throws
+  // PdfLimitException, which the reading service maps to an API error - and only services use it.
+  @ArchTest
+  static final ArchRule pdf_depends_on_nothing_of_the_application =
+      noClasses()
+          .that()
+          .resideInAPackage("..pdf..")
+          .should()
+          .dependOnClassesThat(
+              JavaClass.Predicates.resideInAPackage("com.trackmywealth.backend..")
+                  .and(DescribedPredicate.not(JavaClass.Predicates.resideInAPackage("..pdf.."))))
+          .because("the PDF limits are plain PDFBox extensions; a service maps their exceptions")
+          .allowEmptyShould(true);
+
+  @ArchTest
+  static final ArchRule only_services_read_pdfs =
+      classes()
+          .that()
+          .resideInAPackage("..pdf..")
+          .should()
+          .onlyBeAccessed()
+          .byAnyPackage("..pdf..", "..service..")
+          .because("an untrusted PDF is read only through PdfImportReaderService's limits")
+          .allowEmptyShould(true);
+
   @ArchTest
   static final ArchRule no_standard_streams =
       GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;

@@ -49,6 +49,8 @@ public class LocalOcrService {
   static final int PAGE_TIMEOUT_SECONDS = 30;
   static final int DOCUMENT_TIMEOUT_SECONDS = 120;
   static final int MAX_TEXT = 2_000_000;
+  // The Retry-After of a busy or too slow recognition: a document takes up to a minute or two.
+  static final long RETRY_AFTER_SECONDS = 60;
 
   private final Semaphore slots = new Semaphore(MAX_CONCURRENT);
   // Two pipe threads (stdin, stdout) per running recognition.
@@ -93,6 +95,14 @@ public class LocalOcrService {
     this.documentTimeoutMillis = documentTimeoutMillis;
   }
 
+  /**
+   * Whether this server recognizes scanned documents at all ({@code app.import.ocr.enabled}); while
+   * not, a {@code PDF_OCR} template cannot be saved (PR #267 review).
+   */
+  public boolean isEnabled() {
+    return enabled;
+  }
+
   @PreDestroy
   void shutdown() {
     pipes.shutdownNow();
@@ -111,7 +121,8 @@ public class LocalOcrService {
       throw unavailable("Text recognition is switched off on this server.", null);
     }
     if (!slots.tryAcquire()) {
-      throw unavailable("Text recognition is busy. Try again in a moment.", null);
+      throw unavailable("Text recognition is busy. Try again in a moment.", null)
+          .withRetryAfter(RETRY_AFTER_SECONDS);
     }
     try {
       long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(documentTimeoutMillis);
@@ -244,7 +255,8 @@ public class LocalOcrService {
   // The server's own time limit, not a fault of the file: retryable, like a busy server.
   private static ApiException tooSlow(Throwable cause) {
     return unavailable(
-        "Text recognition did not finish in time. Try again later, or with fewer pages.", cause);
+            "Text recognition did not finish in time. Try again later, or with fewer pages.", cause)
+        .withRetryAfter(RETRY_AFTER_SECONDS);
   }
 
   private static ImportFileRejectedException failed(Throwable cause) {

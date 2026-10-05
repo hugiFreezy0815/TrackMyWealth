@@ -766,7 +766,8 @@ PDF's text layer, PDFBox) or `PDF_OCR` (a scanned PDF, rendered and read by a lo
 process; nothing leaves the server). OCR is switched off unless `app.import.ocr.enabled`
 (`IMPORT_OCR_ENABLED`) is set: a misread digit is still a valid amount, so it stays off until #276
 adds a confidence threshold below which a row is an error; while off, an OCR read is a 503
-`IMPORT_OCR_UNAVAILABLE`. A PDF template carries `pdf_layout`: column names, a row
+`IMPORT_OCR_UNAVAILABLE` and no `PDF_OCR` template can be saved (a 422 on `fileFormat`). A PDF
+template carries `pdf_layout`: column names, a row
 pattern whose capture groups are the cells, a record-start pattern that marks booking lines, and
 a document marker the statement must contain. #268 extends the layout with further optional
 fields, never by changing these four. Both patterns are RE2 (linear-time matching, no
@@ -780,12 +781,18 @@ Detection differs from CSV: a PDF has no header row to read, so a `PDF_TEXT` tem
 candidate when the statement holds its marker and at least one booking line, never an exact header
 match (#268 adds a fingerprint of the booking table's header labels). The PDF is read once per
 detection, however many PDF templates there are; an OCR template is never a candidate (OCR per
-candidate is too slow). Limits: 20 pages, no encrypted PDF, every stream decoded once into a
-counter before PDFBox reads it (16 MiB per stream, 64 MiB in all, images of at most 50 million
-pixels: PDFBox itself decodes a whole stream into memory, and a few hundred kilobytes can inflate
-to gigabytes), 2 million characters of text, four PDF reads at a time (a further one waits 5 s,
-then is a 503 `IMPORT_PDF_BUSY`), OCR pages of at most 1500 points a side, two OCR documents at a
-time, 30 s per page and 120 s per document, rendering included. Detection and dry runs parse after
+candidate is too slow). Limits: 20 pages, no encrypted PDF, no damaged PDF (it is parsed strictly,
+never repaired), every stream decoded once into a counter the moment the parser meets it, before
+PDFBox or anything else decodes it (16 MiB per stream, 64 MiB in all, images of at most 50 million
+pixels: PDFBox decodes a whole stream into memory, already while loading the cross-reference and
+object streams, and a few hundred kilobytes can inflate to gigabytes), at most one million drawing
+operations per read (forms drawing each other over and over make a tiny file run for hours; a real
+statement page runs a few thousand) within 30 s for the text layer, 2 million characters of text,
+four PDF reads at a time (a further one waits 5 s, then is a 503 `IMPORT_PDF_BUSY` with
+`Retry-After`), OCR pages of at most 1500 points a side, two OCR documents at a time, 30 s per page
+and 120 s per document, rendering included (busy or too slow: a 503 with `Retry-After`). These
+concurrency limits hold per backend process: each instance reads its own four PDFs and two OCR
+documents at a time. Detection and dry runs parse after
 their read-only transaction has ended, so OCR never holds a pooled connection.
 
 ## 5. Time-series data and partitioning

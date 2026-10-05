@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.RetryableWhenBusy;
 import com.trackmywealth.backend.web.VersionedResponse;
 import jakarta.validation.Valid;
 import java.io.IOException;
@@ -32,9 +33,9 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
- * US-07-03: CSV import templates - define, version, detect and dry-run. Rules in {@link
- * ImportTemplateService}; files are parsed in memory and never stored here (the upload itself is
- * US-07-04).
+ * US-07-03, #268: CSV and PDF import templates - define, version, detect and dry-run. Rules in
+ * {@link ImportTemplateService}; files are parsed in memory and never stored here (the upload
+ * itself is US-07-04).
  */
 @RestController
 @RequestMapping("/api/v1/import-templates")
@@ -126,7 +127,11 @@ public class ImportTemplateController {
     return ResponseEntity.noContent().build();
   }
 
-  /** FR-IMP-022: the templates that can read the file, best first. Writes nothing. */
+  /**
+   * FR-IMP-022: the templates that can read the file, best first. Writes nothing. A 503 {@code
+   * IMPORT_PDF_BUSY} (with {@code Retry-After}) when the server is reading too many PDFs at once.
+   */
+  @RetryableWhenBusy
   @PostMapping(path = "/detect", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public List<ImportTemplateCandidateResponse> detect(
       @RequestPart("file") MultipartFile file,
@@ -134,7 +139,12 @@ public class ImportTemplateController {
     return importTemplateService.detect(bytesOf(file), actor);
   }
 
-  /** Dry run of a saved template version: the first rows parsed, plus counts. Writes nothing. */
+  /**
+   * Dry run of a saved template version: the first rows parsed, plus counts. Writes nothing. A 503
+   * {@code IMPORT_PDF_BUSY} or {@code IMPORT_OCR_UNAVAILABLE} when the server cannot read the PDF
+   * now; {@code Retry-After} when waiting helps.
+   */
+  @RetryableWhenBusy
   @PostMapping(path = BY_ID + "/test", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ImportTemplateTestResponse testSaved(
       @PathVariable UUID id,
@@ -145,8 +155,9 @@ public class ImportTemplateController {
 
   /**
    * Dry run of an unsaved template (the mapping screen's live preview); its {@code name} and {@code
-   * headerColumns} are not needed. Writes nothing.
+   * headerColumns} are not needed. Writes nothing. A 503 as for {@link #testSaved}.
    */
+  @RetryableWhenBusy
   @PostMapping(path = "/test", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ImportTemplateTestResponse testUnsaved(
       @RequestPart("file") MultipartFile file,

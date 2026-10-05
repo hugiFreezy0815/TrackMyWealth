@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.error;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -14,6 +15,8 @@ public class ApiException extends ResponseStatusException {
   private static final long serialVersionUID = 1L;
 
   private final String code;
+  // Seconds a client should wait before retrying; 0 sends no Retry-After header.
+  private long retryAfterSeconds;
 
   public ApiException(HttpStatusCode status, String code, String reason) {
     super(status, reason);
@@ -30,5 +33,25 @@ public class ApiException extends ResponseStatusException {
 
   public String getCode() {
     return code;
+  }
+
+  /**
+   * Adds a {@code Retry-After} header, for an error the client may retry unchanged once the server
+   * has capacity again (e.g. a 503 for a busy server).
+   */
+  public ApiException withRetryAfter(long seconds) {
+    this.retryAfterSeconds = seconds;
+    return this;
+  }
+
+  @Override
+  public HttpHeaders getHeaders() {
+    if (retryAfterSeconds <= 0) {
+      return super.getHeaders();
+    }
+    HttpHeaders headers = new HttpHeaders();
+    headers.addAll(super.getHeaders());
+    headers.set(HttpHeaders.RETRY_AFTER, Long.toString(retryAfterSeconds));
+    return headers;
   }
 }

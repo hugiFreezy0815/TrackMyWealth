@@ -96,9 +96,10 @@ public final class Re2Patterns {
    * An upper estimate of the instructions RE2 compiles {@code pattern} into: one per literal,
    * escape or character class (a quoted {@code \Q...\E} run one per character), a group the sum of
    * its content plus {@value #GROUP_COST} (even an empty one), an alternative and an operator such
-   * as {@code *} one more each, and a counted repeat the cost of what it repeats (at least one)
-   * times its largest count. Saturates just above {@link #MAX_PROGRAM_COST}, so it never overflows.
-   * The syntax is not checked here; compiling does that.
+   * as {@code *} one more each, and a counted repeat the cost of what it repeats (at least one) per
+   * required copy, plus one more per optional copy. {@code Re2PatternsTest} checks the estimate
+   * against the programs RE2/J actually compiles. Saturates just above {@link #MAX_PROGRAM_COST},
+   * so it never overflows. The syntax is not checked here; compiling does that.
    */
   static long programCost(String pattern) {
     Deque<Long> enclosing = new ArrayDeque<>();
@@ -133,8 +134,10 @@ public final class Re2Patterns {
         default -> {
           Optional<Repeat> repeat = countedRepeat(pattern, i);
           if (repeat.isPresent()) {
-            total = add(total, multiply(last, repeat.get().count() - 1));
-            last = multiply(last, repeat.get().count());
+            long repeated = repeat.get().cost(last);
+            // The item itself is already counted once.
+            total = add(total, repeated > last ? repeated - last : 0);
+            last = repeated;
             i = repeat.get().end();
           } else {
             int end = atomEnd(pattern, i);
@@ -151,11 +154,20 @@ public final class Re2Patterns {
     return Math.min(total, CAP);
   }
 
-  /** A counted repeat ending before {@code end}, making at most {@code count} copies. */
-  private record Repeat(int end, long count) {}
+  /**
+   * A counted repeat ending before {@code end}: {@code min} copies of its item, and {@code max -
+   * min} optional ones, each of which compiles one more instruction (the alternative that skips
+   * it). {@code {n,}} compiles n copies and a loop, i.e. one optional copy.
+   */
+  private record Repeat(int end, long min, long max) {
 
-  // {n}, {n,} or {n,m} at i ({n,} compiles n copies and a loop); empty when the brace, or the
-  // character, is a literal.
+    // The instructions of the repeat of an item of cost item (at least one, see multiply).
+    long cost(long item) {
+      return add(multiply(item, min), multiply(add(Math.max(1, item), 1), max - min));
+    }
+  }
+
+  // {n}, {n,} or {n,m} at i; empty when the brace, or the character, is a literal.
   private static Optional<Repeat> countedRepeat(String pattern, int i) {
     if (pattern.charAt(i) != REPEAT_START) {
       return Optional.empty();
@@ -167,11 +179,11 @@ public final class Re2Patterns {
     }
     long min = Long.parseLong(pattern.substring(j, j + digits));
     j += digits;
-    long count = min;
+    long max = min;
     if (j < pattern.length() && pattern.charAt(j) == REPEAT_SEPARATOR) {
       j++;
       int maxDigits = digitsAt(pattern, j);
-      count =
+      max =
           maxDigits == 0
               ? min + 1
               : Math.max(min, Long.parseLong(pattern.substring(j, j + maxDigits)));
@@ -180,7 +192,8 @@ public final class Re2Patterns {
     if (j >= pattern.length() || pattern.charAt(j) != REPEAT_END) {
       return Optional.empty();
     }
-    return Optional.of(new Repeat(j + 1, Math.max(1, count)));
+    // {0} still compiles one empty instruction.
+    return Optional.of(new Repeat(j + 1, max == 0 ? 1 : min, Math.max(1, max)));
   }
 
   private static int digitsAt(String pattern, int start) {
