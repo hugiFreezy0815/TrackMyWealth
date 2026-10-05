@@ -298,8 +298,10 @@ class ArchitectureTest {
   }
 
   // PR #267 review: pdf holds the PDFBox extensions that bound the reading of an untrusted PDF
-  // (BoundedPdfParser, PdfStreamBudget, ...). It knows nothing of the application - it throws
-  // PdfLimitException, which the reading service maps to an API error - and only services use it.
+  // (BoundedPdfParser, PdfStreamBudget, ...) and, since #268, the reading of a statement's page
+  // layout from its words' positions (PdfColumns, PageFurniture, PdfBooking). It knows nothing of
+  // the application - it throws PdfLimitException, which the reading service maps to an API error,
+  // and takes no template - and only services use it.
   @ArchTest
   static final ArchRule pdf_depends_on_nothing_of_the_application =
       noClasses()

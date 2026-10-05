@@ -134,7 +134,8 @@ public class PdfImportReaderService {
 
   // The bookings of lines from (inclusive) to (exclusive), line by line: a section's start, a
   // header line, a balance line, a booking line, page furniture, then a line continuing the
-  // booking before it. Each kind is never one of the later ones.
+  // booking before it. Each kind is never one of the later ones. A balance line below a booking of
+  // the same section is also kept with that booking, so the parser can check it (PR #281 review).
   private static List<PdfBooking> walk(
       List<PdfTextLine> lines, int from, int to, ImportPdfLayout layout) {
     Pattern recordStart = Re2Patterns.compile(layout.recordStartPattern());
@@ -143,6 +144,7 @@ public class PdfImportReaderService {
     int continuationLabel = labelIndex(layout, layout.continuationColumn());
     Set<Integer> furniture = PageFurniture.indexes(lines);
     List<PdfBooking> bookings = new ArrayList<>();
+    // The last booking, open while lines may still continue it; null before the first.
     PdfBooking current = null;
     PdfColumns columns = null;
     String sectionValue = null;
@@ -151,30 +153,37 @@ public class PdfImportReaderService {
     for (int i = Math.max(0, from); i < Math.min(to, lines.size()); i++) {
       PdfTextLine line = lines.get(i);
       String text = line.text().strip();
-      Matcher sectionMatch = section == null ? null : section.matcher(text);
-      Matcher balanceMatch = balance == null ? null : balance.matcher(text);
-      Optional<PdfColumns> header =
-          layout.hasHeaderLabels() ? PdfColumns.of(line, layout.headerLabels()) : Optional.empty();
       if (text.isEmpty()) {
         continue;
       }
+      Matcher sectionMatch = section == null ? null : section.matcher(text);
       if (sectionMatch != null && sectionMatch.find()) {
         sectionValue = firstGroup(sectionMatch).orElse("");
         sectionStart = true;
         statedBalance = Optional.empty();
-        current = end(current);
-      } else if (section != null && sectionValue == null) {
+        end(current);
+        continue;
+      }
+      if (section != null && sectionValue == null) {
         // Before the first section: a summary, no booking.
         continue;
-      } else if (header.isPresent()) {
+      }
+      Optional<PdfColumns> header =
+          layout.hasHeaderLabels() ? PdfColumns.of(line, layout.headerLabels()) : Optional.empty();
+      Matcher balanceMatch = balance == null ? null : balance.matcher(text);
+      if (header.isPresent()) {
         columns = header.get();
-        current = end(current);
+        end(current);
       } else if (balanceMatch != null && balanceMatch.find()) {
         Optional<String> stated = firstGroup(balanceMatch);
         if (stated.isPresent()) {
           statedBalance = stated;
+          // Below the section's last booking; at a section's start, the previous section's.
+          if (current != null && !sectionStart) {
+            current.addBalanceAfter(stated.get());
+          }
         }
-        current = end(current);
+        end(current);
       } else if (recordStart.matcher(text).find()) {
         end(current);
         current =
@@ -207,11 +216,10 @@ public class PdfImportReaderService {
     return columns.get().columnOf(line.words().get(0)) == continuationLabel;
   }
 
-  private static PdfBooking end(PdfBooking booking) {
+  private static void end(PdfBooking booking) {
     if (booking != null) {
       booking.end();
     }
-    return booking;
   }
 
   // The cells of a walked booking, in the order of ImportPdfLayout#cellNames(): the row pattern's
@@ -221,41 +229,37 @@ public class PdfImportReaderService {
   private static ImportPdfBookingLine bookingLine(
       PdfBooking booking, ImportPdfLayout layout, Pattern row) {
     String line = booking.line().text().strip();
-    List<String> continuation =
-        booking.continuation().stream().map(next -> next.text().strip()).toList();
     Matcher match = row.matcher(line);
-    if (!match.matches()) {
-      return new ImportPdfBookingLine(
-          line,
-          List.of(line),
-          false,
-          continuation,
-          booking.sectionStart(),
-          booking.statedBalance().orElse(null));
-    }
+    boolean matched = match.matches();
     List<String> cells = new ArrayList<>();
-    for (int group = 1; group <= match.groupCount(); group++) {
-      String cell = match.group(group);
-      cells.add(cell == null ? "" : cell);
+    if (matched) {
+      for (int group = 1; group <= match.groupCount(); group++) {
+        String cell = match.group(group);
+        cells.add(cell == null ? "" : cell);
+      }
+      if (layout.hasHeaderLabels()) {
+        cells.addAll(
+            booking
+                .columns()
+                .map(columns -> columns.cells(booking.line().words()))
+                .orElseGet(() -> Collections.nCopies(layout.headerLabels().size(), "")));
+      }
+      if (layout.sectionColumn() != null) {
+        cells.add(booking.section().orElse(""));
+      }
+      appendContinuation(cells, booking, layout);
+    } else {
+      cells.add(line);
     }
-    if (layout.hasHeaderLabels()) {
-      cells.addAll(
-          booking
-              .columns()
-              .map(columns -> columns.cells(booking.line().words()))
-              .orElseGet(() -> Collections.nCopies(layout.headerLabels().size(), "")));
-    }
-    if (layout.sectionColumn() != null) {
-      cells.add(booking.section().orElse(""));
-    }
-    appendContinuation(cells, booking, layout);
     return new ImportPdfBookingLine(
         line,
         cells,
-        true,
-        continuation,
+        matched,
+        booking.continuation().stream().map(next -> next.text().strip()).toList(),
         booking.sectionStart(),
-        booking.statedBalance().orElse(null));
+        booking.statedBalance().orElse(null),
+        booking.balancesAfter(),
+        booking.columns().isPresent());
   }
 
   // Each continuation line goes to the continuation column whole: its text may run on under the

@@ -17,6 +17,7 @@ import com.trackmywealth.backend.error.ApiException;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
@@ -28,6 +29,8 @@ import tools.jackson.databind.json.JsonMapper;
  * SyntheticStatements}); OCR is not involved.
  */
 class PdfStatementLayoutTest {
+
+  private static final String SPK_TITLE = "Invented Sparkasse Darlehenskonto";
 
   private final PdfImportReaderService reader =
       new PdfImportReaderService(mock(LocalOcrService.class));
@@ -114,19 +117,8 @@ class PdfStatementLayoutTest {
   /** Without a balance column nothing is checked: the misread sign goes unnoticed. */
   @Test
   void withoutABalanceColumnNoRowIsChecked() throws IOException {
-    ImportPdfLayout yuh = SyntheticStatements.yuhLayout();
     ImportPdfLayout unchecked =
-        new ImportPdfLayout(
-            yuh.columns(),
-            yuh.rowPattern(),
-            yuh.documentMarker(),
-            yuh.recordStartPattern(),
-            yuh.headerLabels(),
-            yuh.continuationColumn(),
-            yuh.sectionPattern(),
-            yuh.sectionColumn(),
-            yuh.balanceLinePattern(),
-            null);
+        PdfLayoutBuilder.from(SyntheticStatements.yuhLayout()).balanceColumn(null).build();
 
     List<ParsedImportRow> rows =
         parser.parse(SyntheticStatements.yuhStatement(true), yuhTemplate(unchecked), null).rows();
@@ -142,48 +134,146 @@ class PdfStatementLayoutTest {
    */
   @Test
   void aPageFooterAndHeaderAreNoContinuationLines() throws IOException {
-    String title = "Invented Sparkasse Darlehenskonto";
     byte[] statement =
         SyntheticStatements.statement(
             List.of(
                 List.of(
-                    List.of(at(40, title)),
+                    List.of(at(40, SPK_TITLE)),
                     List.of(at(40, "Kontostand am 01.01.2031"), endingAt(500, "-10.000,00")),
                     List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
                     List.of(at(60, "Erika Beispiel")),
                     List.of(at(40, "Seite 1 von 2"))),
                 List.of(
-                    List.of(at(40, title)),
+                    List.of(at(40, SPK_TITLE)),
                     List.of(at(40, "02.02.2031Zinsen Januar"), endingAt(500, "-31,25")),
                     List.of(at(40, "Kontostand am 28.02.2031"), endingAt(500, "-9.781,25")),
                     List.of(at(40, "Seite 2 von 2")))));
-    ImportPdfLayout layout =
-        new ImportPdfLayout(
-            List.of("Datum", "Text", "Betrag"),
-            "(\\d{2}\\.\\d{2}\\.\\d{4})(.+?)\\s+(-?[\\d.]+,\\d{2})",
-            title,
-            "^\\d{2}\\.\\d{2}\\.\\d{4}",
-            List.of(),
-            "Text",
-            null,
-            null,
-            "^Kontostand am",
-            null);
-    ImportTemplateDefinition template =
-        new ImportFileParserServiceTest.Template()
-            .pdf("PDF_TEXT", layout)
-            .mapping(
-                ImportFileParserServiceTest.mapping("Datum", "Betrag").description("Text").build())
-            .dateFormat("dd.MM.yyyy")
-            .decimal(",")
-            .thousands(".")
-            .build();
 
-    List<ParsedImportRow> rows = parser.parse(statement, template, null).rows();
+    List<ParsedImportRow> rows = parser.parse(statement, spkTemplate(), null).rows();
 
     assertThat(rows)
         .extracting(row -> row.canonical().description())
         .containsExactly("Rate Januar Erika Beispiel", "Zinsen Januar");
+  }
+
+  /**
+   * PR #281 review: a booking at the foot of a page continues on the next page, below that page's
+   * header - the footer and header between are page furniture, which neither continues nor ends it.
+   */
+  @Test
+  void aBookingContinuesAcrossAPageBreak() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(40, "Kontostand am 01.01.2031"), endingAt(500, "-10.000,00")),
+                    List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
+                    List.of(at(40, "Seite 1 von 2"))),
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(60, "Erika Beispiel")),
+                    List.of(at(40, "02.02.2031Zinsen Januar"), endingAt(500, "-31,25")),
+                    List.of(at(40, "Seite 2 von 2")))));
+
+    List<ParsedImportRow> rows = parser.parse(statement, spkTemplate(), null).rows();
+
+    assertThat(rows)
+        .extracting(row -> row.canonical().description())
+        .containsExactly("Rate Januar Erika Beispiel", "Zinsen Januar");
+  }
+
+  /**
+   * PR #281 review: a booking the balance line pattern takes for its own is lost without an error
+   * row of its own - but the section's closing balance then differs from the balance the bookings
+   * read lead to, and the booking above it is the error row that says so.
+   */
+  @Test
+  void aClosingBalanceTheBookingsDoNotLeadToIsAnErrorRow() throws IOException {
+    byte[] statement =
+        oneSection(
+            "100.00",
+            SyntheticStatements.booking(
+                0, "02.01.2031", "Lohn", "0000000001", null, "10.00", "110.00"),
+            SyntheticStatements.booking(
+                0, "03.01.2031", "Miete", "0000000002", "20.00", null, "90.00"),
+            SyntheticStatements.booking(
+                0, "04.01.2031", "Abschluss", "0000000003", null, "5.00", "95.00"),
+            List.of(at(40, "Saldo per 31.01.2031"), endingAt(560, "95.00 CHF")));
+    ImportPdfLayout layout =
+        PdfLayoutBuilder.from(SyntheticStatements.yuhLayout())
+            .balanceLinePattern("^Saldo per \\S+\\s+([-\\d'.]+)|Abschluss")
+            .build();
+
+    List<ParsedImportRow> rows = parser.parse(statement, yuhTemplate(layout), null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(true, false);
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.BALANCE_LINE_MISMATCH);
+    assertThat(rows.get(1).errorArgs())
+        .containsEntry("value", "95.00")
+        .containsEntry("expected", "90.00");
+  }
+
+  /**
+   * PR #281 review: a row that fails for another reason (here its date) has no amount to add, so
+   * the next row starts from the balance it states, and still parses.
+   */
+  @Test
+  void aRowFailingOtherwiseHandsOnTheBalanceItStates() throws IOException {
+    byte[] statement =
+        oneSection(
+            "100.00",
+            SyntheticStatements.booking(
+                0, "02.01.2031", "Lohn", "0000000001", null, "10.00", "110.00"),
+            SyntheticStatements.booking(
+                0, "31.02.2031", "Miete", "0000000002", "20.00", null, "90.00"),
+            SyntheticStatements.booking(
+                0, "04.01.2031", "Bonus", "0000000003", null, "5.00", "95.00"),
+            List.of(at(40, "Saldo per 31.01.2031"), endingAt(560, "95.00 CHF")));
+
+    List<ParsedImportRow> rows = parser.parse(statement, yuhTemplate(), null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(true, false, true);
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.DATE_UNPARSEABLE);
+  }
+
+  /** PR #281 review: a balance line whose value is no amount checks nothing. */
+  @Test
+  void aBalanceLineThatIsNoAmountChecksNothing() throws IOException {
+    byte[] statement =
+        oneSection(
+            "--",
+            SyntheticStatements.booking(
+                0, "02.01.2031", "Lohn", "0000000001", null, "10.00", "999.00"),
+            SyntheticStatements.booking(
+                0, "03.01.2031", "Miete", "0000000002", "9.00", null, "990.00"));
+
+    List<ParsedImportRow> rows = parser.parse(statement, yuhTemplate(), null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(true, true);
+  }
+
+  /**
+   * PR #281 review: a dry run reports a PDF's header fingerprint only when the statement holds the
+   * header line of its labels - they come from the template, so without it they say nothing.
+   */
+  @Test
+  void theFingerprintIsReportedOnlyForAStatementHoldingItsHeaderLine() throws IOException {
+    assertThat(
+            parser
+                .parse(SyntheticStatements.yuhStatement(false), yuhTemplate(), null)
+                .headerFingerprint())
+        .isEqualTo(ImportFileParserService.fingerprint(SyntheticStatements.YUH_LABELS));
+
+    byte[] headless =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, SyntheticStatements.YUH_MARKER)),
+                    List.of(at(40, "Kontoauszug in CHF")),
+                    SyntheticStatements.booking(
+                        0, "02.01.2031", "Lohn", "0000000001", null, "10.00", "110.00"))));
+    assertThat(parser.parse(headless, yuhTemplate(), null).headerFingerprint()).isNull();
   }
 
   /** Detection's tests on the text alone: the marker with the header line, or a booking line. */
@@ -196,7 +286,7 @@ class PdfStatementLayoutTest {
     assertThat(PdfImportReaderService.isLayoutOf(text, yuh)).isTrue();
     // Without labels a layout has no header line to find; another header is not this one.
     ImportPdfLayout unlabelled =
-        new ImportPdfLayout(yuh.columns(), yuh.rowPattern(), yuh.documentMarker(), "^\\d");
+        PdfLayoutBuilder.of(yuh.columns(), yuh.rowPattern(), yuh.documentMarker(), "^\\d").build();
     assertThat(PdfImportReaderService.hasHeaderLine(text, unlabelled)).isFalse();
     assertThat(PdfImportReaderService.hasHeaderLine(text, withLabels(yuh, List.of("BETRAG"))))
         .isFalse();
@@ -269,33 +359,58 @@ class PdfStatementLayoutTest {
         .build();
   }
 
+  // The SPK-6 layout: the date glued to the text, signed amounts, no header labels.
+  private static ImportTemplateDefinition spkTemplate() {
+    ImportPdfLayout layout =
+        PdfLayoutBuilder.of(
+                List.of("Datum", "Text", "Betrag"),
+                "(\\d{2}\\.\\d{2}\\.\\d{4})(.+?)\\s+(-?[\\d.]+,\\d{2})",
+                SPK_TITLE,
+                "^\\d{2}\\.\\d{2}\\.\\d{4}")
+            .continuationColumn("Text")
+            .balanceLinePattern("^Kontostand am")
+            .build();
+    return new ImportFileParserServiceTest.Template()
+        .pdf("PDF_TEXT", layout)
+        .mapping(ImportFileParserServiceTest.mapping("Datum", "Betrag").description("Text").build())
+        .dateFormat("dd.MM.yyyy")
+        .decimal(",")
+        .thousands(".")
+        .build();
+  }
+
+  // A one-page statement in the YUH-1 layout: a CHF section opening with the given balance, its
+  // header line, then the given lines.
+  @SafeVarargs
+  private static byte[] oneSection(String opening, List<SyntheticStatements.Cell>... lines)
+      throws IOException {
+    List<List<SyntheticStatements.Cell>> page = new ArrayList<>();
+    page.add(List.of(at(40, SyntheticStatements.YUH_MARKER)));
+    page.add(List.of(at(40, "Kontoauszug in CHF")));
+    page.add(List.of(at(40, "Saldo per 01.01.2031"), endingAt(560, opening + " CHF")));
+    page.add(SyntheticStatements.header(0));
+    page.addAll(List.of(lines));
+    return SyntheticStatements.statement(List.of(page));
+  }
+
   private static ImportPdfLayout withLabels(ImportPdfLayout layout, List<String> labels) {
-    return new ImportPdfLayout(
-        layout.columns(),
-        layout.rowPattern(),
-        layout.documentMarker(),
-        layout.recordStartPattern(),
-        labels,
-        null,
-        null,
-        null,
-        null,
-        null);
+    return PdfLayoutBuilder.from(layout)
+        .headerLabels(labels)
+        .continuationColumn(null)
+        .sectionPattern(null)
+        .sectionColumn(null)
+        .balanceLinePattern(null)
+        .balanceColumn(null)
+        .build();
   }
 
   private static ImportPdfLayout withOptional(
       ImportPdfLayout layout, String continuation, String section, String balance) {
-    return new ImportPdfLayout(
-        layout.columns(),
-        layout.rowPattern(),
-        layout.documentMarker(),
-        layout.recordStartPattern(),
-        layout.headerLabels(),
-        continuation,
-        section,
-        layout.sectionColumn(),
-        layout.balanceLinePattern(),
-        balance);
+    return PdfLayoutBuilder.from(layout)
+        .continuationColumn(continuation)
+        .sectionPattern(section)
+        .balanceColumn(balance)
+        .build();
   }
 
   private void assertInvalid(ImportTemplateDefinition template, String field) {

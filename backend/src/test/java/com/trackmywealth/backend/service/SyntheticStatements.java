@@ -155,7 +155,7 @@ public final class SyntheticStatements {
         null);
   }
 
-  private static List<Cell> header(float shift) {
+  static List<Cell> header(float shift) {
     List<Cell> cells = new ArrayList<>();
     for (int i = 0; i < YUH_LABELS.size(); i++) {
       cells.add(at(YUH_X[i] + shift, YUH_LABELS.get(i)));
@@ -165,7 +165,7 @@ public final class SyntheticStatements {
 
   // A booking line: date, text and reference from their labels on, the amounts and the balance
   // ending where their labels end, the value date from its label on.
-  private static List<Cell> booking(
+  static List<Cell> booking(
       float shift,
       String date,
       String text,

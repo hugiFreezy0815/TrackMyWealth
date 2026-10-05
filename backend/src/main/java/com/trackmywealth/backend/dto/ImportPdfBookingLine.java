@@ -16,6 +16,9 @@ import java.util.List;
  * @param sectionStart whether it is the first booking of a section: no balance before it carries on
  * @param statedBalance the balance a balance line stated since the booking before it, as written;
  *     {@code null} for none
+ * @param balancesAfter the balances that balance lines below it state, as written, before the next
+ *     booking of its section: each must be the balance it leads to
+ * @param headed whether it was read under a header line of the layout's header labels
  */
 public record ImportPdfBookingLine(
     String line,
@@ -23,16 +26,19 @@ public record ImportPdfBookingLine(
     boolean matched,
     List<String> continuation,
     boolean sectionStart,
-    String statedBalance) {
+    String statedBalance,
+    List<String> balancesAfter,
+    boolean headed) {
 
   public ImportPdfBookingLine {
     cells = Collections.unmodifiableList(new ArrayList<>(cells));
-    continuation = Collections.unmodifiableList(new ArrayList<>(continuation));
+    continuation = List.copyOf(continuation);
+    balancesAfter = List.copyOf(balancesAfter);
   }
 
   /** A matched line without anything around it: no continuation, section or stated balance. */
   public ImportPdfBookingLine(String line, List<String> cells, boolean matched) {
-    this(line, cells, matched, List.of(), false, null);
+    this(line, cells, matched, List.of(), false, null, List.of(), false);
   }
 
   /** A line the row pattern does not match. */

@@ -780,7 +780,10 @@ lines:
   columns for the lines below it: each label spans its words on the page, and a word of a booking
   line is the cell of the label it overlaps most (the nearest when none), named by the label. So an
   unsigned amount under `BELASTUNG` is a debit through the existing `SEPARATE_DEBIT_CREDIT` rule,
-  and a table that moves between pages is still read by its labels, never by coordinates.
+  and a table that moves between pages is still read by its labels, never by coordinates. A word
+  is placed by position alone: text that runs on past its column's label (a long description
+  under `REFERENZ`) lands in the next column's cell, so a template maps a column such as the
+  external id only where the bank keeps its text within the column.
 - `continuationColumn`: lines after a booking line that are no booking are appended whole to that
   column's cell (a counterparty, an IBAN). When it is a header label, only lines that start in its
   column: a remark at the margin ends the booking.
@@ -793,18 +796,26 @@ lines:
   compared exactly. A mismatch is the row error `IMPORT_ROW_BALANCE_MISMATCH`, which catches an
   amount or sign read from the wrong column; the next booking starts from the balance the statement
   prints, so one misread row does not fail the rows after it. A section starts with no balance.
+  A balance line below a booking (before the next booking of its section, e.g. the section's
+  closing balance) must state the balance the bookings lead to; otherwise that booking is the row
+  error `IMPORT_ROW_BALANCE_LINE_MISMATCH`, since a booking between them was not read as one - for
+  instance a line the balance line pattern took for its own. A booking whose balance column cell
+  is no amount is the row error `IMPORT_ROW_AMOUNT_UNPARSEABLE` for that column: the check it was
+  asked for cannot be made.
 
-Lines repeated in the top or bottom three lines of every page, or every page but one, their digits
-aside, are page furniture and never continue a booking; a line a pattern marks as a booking,
-balance, section or header is never furniture, so no booking is ever dropped as one. A row's raw
-data also keeps the whole booking line with its continuation lines, under `#line`. Both patterns are
-RE2 (linear-time matching, no
+Lines repeated in the top or bottom three lines of every page, or every page but one, their
+numbers of up to three digits (a page number) aside, are page furniture and never continue a
+booking. Longer numbers must repeat exactly, so two IBANs that end a booking at the foot of each
+page are no footer. A line a pattern marks as a booking, balance, section or header is never
+furniture, so no booking is ever dropped as one. A row's raw data also keeps the whole booking
+line with its continuation lines, under `#line`. Both patterns are RE2 (linear-time matching, no
 backreferences), so a member's pattern cannot backtrack catastrophically; RE2 is linear in its
 compiled program too, so a pattern whose program would exceed 2,000 instructions
 (`Re2Patterns`, e.g. nested counted repeats) is refused with a 422. From the cut columns on,
 a PDF row goes through exactly the CSV rules; a booking line the row pattern misses is the row
 error `IMPORT_ROW_LINE_UNMATCHED`. The layout's cell names (its columns, then its header labels,
-then its section column) act as the stored header columns. A PDF template stores a
+then its section column) act as the stored header columns. A dry run reports the header
+fingerprint of a PDF only when the statement holds the header line of its labels. A PDF template stores a
 `header_fingerprint` only of its header labels, the one part of its names read from the file;
 without labels, it stores none.
 Detection differs from CSV: a PDF has no header row to read, so a `PDF_TEXT` template is a

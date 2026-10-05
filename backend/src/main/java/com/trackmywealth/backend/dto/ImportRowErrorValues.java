@@ -55,6 +55,12 @@ public final class ImportRowErrorValues {
    */
   public static final String BALANCE_MISMATCH = "IMPORT_ROW_BALANCE_MISMATCH";
 
+  /**
+   * {@code value, expected}: a balance line below a PDF booking states another balance than the
+   * bookings up to it lead to, so a booking between them was not read as one (PR #281 review).
+   */
+  public static final String BALANCE_LINE_MISMATCH = "IMPORT_ROW_BALANCE_LINE_MISMATCH";
+
   /** {@code column, value}: not a four-digit ISO 18245 merchant category code. */
   public static final String MCC_INVALID = "IMPORT_ROW_MCC_INVALID";
 }

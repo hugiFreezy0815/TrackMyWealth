@@ -7,7 +7,8 @@ import java.util.Optional;
 /**
  * A booking line of a statement while it is read (#268), with what surrounds it: the table columns
  * in force (from the last header line), the section it is in, the balance a balance line stated
- * before it, and the lines below it that continue it, until a line that does not ends it.
+ * before it, the lines below it that continue it, until a line that does not ends it, and the
+ * balances that balance lines below it state before the next booking of its section.
  */
 public final class PdfBooking {
 
@@ -17,6 +18,7 @@ public final class PdfBooking {
   private final boolean startsSection;
   private final String balanceBefore;
   private final List<PdfTextLine> continuationLines = new ArrayList<>();
+  private final List<String> balancesBelow = new ArrayList<>();
   private boolean open = true;
 
   /**
@@ -43,6 +45,11 @@ public final class PdfBooking {
     if (open) {
       continuationLines.add(next);
     }
+  }
+
+  /** Records a balance that a balance line below this booking states, as written. */
+  public void addBalanceAfter(String balance) {
+    balancesBelow.add(balance);
   }
 
   /** Ends this booking: no later line continues it. */
@@ -76,5 +83,9 @@ public final class PdfBooking {
 
   public List<PdfTextLine> continuation() {
     return List.copyOf(continuationLines);
+  }
+
+  public List<String> balancesAfter() {
+    return List.copyOf(balancesBelow);
   }
 }

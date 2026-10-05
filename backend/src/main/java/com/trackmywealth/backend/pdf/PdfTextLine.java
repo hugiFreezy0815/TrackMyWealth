@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.pdf;
 
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -12,6 +11,6 @@ import java.util.List;
 public record PdfTextLine(int page, String text, List<PdfWord> words) {
 
   public PdfTextLine {
-    words = Collections.unmodifiableList(List.copyOf(words));
+    words = List.copyOf(words);
   }
 }

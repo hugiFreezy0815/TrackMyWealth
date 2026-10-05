@@ -175,6 +175,7 @@ public class ImportFileParserService {
                 "expected",
                 expected.toPlainString());
           }
+          checkBalancesBelow(booking, running, template);
         }
         rows.add(ParsedImportRow.parsed(i + 1, rawData, canonical));
       } catch (ImportRowRejectedException e) {
@@ -193,7 +194,42 @@ public class ImportFileParserService {
           rows.size(),
           rejected);
     }
-    return new ImportParseResult(header, headerFingerprint(template, header), rows);
+    return new ImportParseResult(header, fileFingerprint(template, header, bookingLines), rows);
+  }
+
+  // The fingerprint of the header the file holds: a CSV file's header row; for a PDF, its layout's
+  // header labels, but only when the statement holds their header line (PR #281 review) - the
+  // labels come from the template, so without that line they say nothing about the file.
+  private static String fileFingerprint(
+      ImportTemplateDefinition template,
+      List<String> header,
+      List<ImportPdfBookingLine> bookingLines) {
+    if (bookingLines != null && bookingLines.stream().noneMatch(ImportPdfBookingLine::headed)) {
+      return null;
+    }
+    return headerFingerprint(template, header);
+  }
+
+  // PR #281 review: every balance a balance line states below the booking, before the next one of
+  // its section (e.g. a section's closing balance), must be the balance the bookings lead to.
+  // Otherwise a booking was lost on the way - say, a line the balance line pattern took for its
+  // own - and this booking, the last one read before it, says where.
+  private static void checkBalancesBelow(
+      ImportPdfBookingLine booking, BigDecimal running, ImportTemplateDefinition template) {
+    if (running == null) {
+      return;
+    }
+    for (String below : booking.balancesAfter()) {
+      BigDecimal stated = quietAmount(below, template);
+      if (stated != null && stated.compareTo(running) != 0) {
+        throw rowError(
+            ImportRowErrorValues.BALANCE_LINE_MISMATCH,
+            ARG_VALUE,
+            stated.toPlainString(),
+            "expected",
+            running.toPlainString());
+      }
+    }
   }
 
   // The balance before booking: none at a section's start, else the one a balance line stated
@@ -203,10 +239,14 @@ public class ImportFileParserService {
     if (booking.statedBalance() == null) {
       return booking.sectionStart() ? null : running;
     }
+    return quietAmount(booking.statedBalance(), template);
+  }
+
+  // A balance line's balance; null when it is no amount, which then checks nothing.
+  private static BigDecimal quietAmount(String balance, ImportTemplateDefinition template) {
     try {
-      return parseAmount(booking.statedBalance(), "balanceLinePattern", template, false);
+      return parseAmount(balance, "balanceLinePattern", template, false);
     } catch (ImportRowRejectedException e) {
-      // A balance line whose value is no amount checks nothing.
       return null;
     }
   }

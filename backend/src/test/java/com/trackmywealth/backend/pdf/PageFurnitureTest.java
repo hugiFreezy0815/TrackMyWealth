@@ -46,6 +46,26 @@ class PageFurnitureTest {
     assertThat(PageFurniture.indexes(lines)).isEmpty();
   }
 
+  /**
+   * PR #281 review: two different IBANs ending a booking at the bottom of each page are no footer,
+   * though they differ only in digits - only short numbers, such as a page number, are set aside.
+   */
+  @Test
+  void linesDifferingInLongNumbersAreNoFurniture() {
+    List<PdfTextLine> lines = new ArrayList<>();
+    page(lines, 1, "Invented Bank", "a", "b", "c", "CH93 0076 2011 6238 5295 7", "Seite 1 von 2");
+    page(lines, 2, "Invented Bank", "d", "e", "f", "CH56 0483 5012 3456 7800 9", "Seite 2 von 2");
+
+    assertThat(PageFurniture.indexes(lines)).containsExactlyInAnyOrder(0, 5, 6, 11);
+  }
+
+  @Test
+  void theKeySetsAsideShortNumbersOnly() {
+    assertThat(PageFurniture.key("  Seite 12 von  140 ")).isEqualTo("Seite 0 von 0");
+    assertThat(PageFurniture.key("Auszug 03.01.2031")).isEqualTo("Auszug 0.0.2031");
+    assertThat(PageFurniture.key("CH93 0076 2011")).isEqualTo("CH0 0076 2011");
+  }
+
   private static void page(List<PdfTextLine> lines, int page, String... texts) {
     for (String text : texts) {
       lines.add(new PdfTextLine(page, text, List.of()));
