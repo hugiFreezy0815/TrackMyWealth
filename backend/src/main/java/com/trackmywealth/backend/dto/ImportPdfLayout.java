@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Size;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * How a PDF import template (file format {@code PDF_TEXT} or {@code PDF_OCR}) reads a statement's
@@ -37,12 +38,17 @@ import java.util.List;
  *       and no line after it continues one until the next booking line - e.g. the closing text
  *       after a statement's last booking.
  *   <li>{@code sectionPattern}: a line on which it finds a match starts a section; text before the
- *       first one (a summary page) is ignored. Its first capture group is the cell {@code
- *       sectionColumn} of every booking in the section (e.g. the section's currency).
+ *       first one (a summary page) is ignored, except a table header line. Its first capture group
+ *       is the cell {@code sectionColumn} of every booking in the section (e.g. the section's
+ *       currency). A marker of the same value at the top of a later page, before any booking on it,
+ *       repeats the section's title there and does not start it again.
  *   <li>{@code balanceLinePattern}: a line on which it finds a match states a balance and is never
  *       a booking; its first capture group, when it has one, is that balance. With {@code
  *       balanceColumn}, the column holding each booking's running balance, every booking is checked
  *       to lead from the balance before it to its own: a misread amount or sign is an error row.
+ *       Carry-forward lines that state the balance at a page break (e.g. "Uebertrag") belong in
+ *       this pattern: their amount changes from page to page, so they are no page furniture, and
+ *       would otherwise continue the page's last booking.
  * </ul>
  *
  * <p>Lines repeated at the same place at the top or bottom of every page (a page header or footer,
@@ -95,7 +101,8 @@ public record ImportPdfLayout(
     @Schema(
             description =
                 "Optional RE2 pattern; a line on which it finds a match states a balance (its first"
-                    + " capture group) and is never a booking.")
+                    + " capture group) and is never a booking. Include carry-forward lines at page"
+                    + " breaks, or they continue the page's last booking.")
         @Size(max = MAX_PATTERN_LENGTH)
         String balanceLinePattern,
     @Schema(
@@ -146,8 +153,29 @@ public record ImportPdfLayout(
   }
 
   /**
-   * Every cell a booking line has, in order: the row pattern's columns, then the header labels,
-   * then the section column. The column mapping names them as it names a CSV file's header cells.
+   * A layout of the four fields every PDF layout has, to which the builder's {@code with...}
+   * methods add the optional ones by name, never by their place among eleven.
+   */
+  public static Builder builder(
+      List<String> columns, String rowPattern, String documentMarker, String recordStartPattern) {
+    return new Builder(columns, rowPattern, documentMarker, recordStartPattern);
+  }
+
+  /** A builder holding this layout's fields, to change some of them. */
+  public Builder toBuilder() {
+    return builder(columns, rowPattern, documentMarker, recordStartPattern)
+        .withHeaderLabels(headerLabels)
+        .withContinuationColumn(continuationColumn)
+        .withSectionPattern(sectionPattern)
+        .withSectionColumn(sectionColumn)
+        .withBalanceLinePattern(balanceLinePattern)
+        .withBalanceColumn(balanceColumn)
+        .withContinuationEndPattern(continuationEndPattern);
+  }
+
+  /**
+   * Every cell a booking line has, in order:the row pattern's columns, then the header labels, then
+   * the section column. The column mapping names them as it names a CSV file's header cells.
    */
   public List<String> cellNames() {
     List<String> names = new ArrayList<>(columns);
@@ -161,5 +189,80 @@ public record ImportPdfLayout(
   /** Whether the cells under the header labels are read (positions on the page needed). */
   public boolean hasHeaderLabels() {
     return !headerLabels.isEmpty();
+  }
+
+  /** Builds an {@link ImportPdfLayout}; each optional field defaults to none. */
+  public static final class Builder {
+
+    // Copies that keep null entries, as the layout's own: validation reports them as a 422.
+    private final List<String> columnNames;
+    private final String row;
+    private final String marker;
+    private final String recordStart;
+    private List<String> labels = new ArrayList<>();
+    private String continuation;
+    private String section;
+    private String sectionCell;
+    private String balanceLine;
+    private String balanceCell;
+    private String continuationEnd;
+
+    private Builder(
+        List<String> columns, String rowPattern, String documentMarker, String recordStartPattern) {
+      this.columnNames = new ArrayList<>(Objects.requireNonNullElse(columns, List.of()));
+      this.row = rowPattern;
+      this.marker = documentMarker;
+      this.recordStart = recordStartPattern;
+    }
+
+    public Builder withHeaderLabels(List<String> value) {
+      labels = new ArrayList<>(Objects.requireNonNullElse(value, List.of()));
+      return this;
+    }
+
+    public Builder withContinuationColumn(String value) {
+      continuation = value;
+      return this;
+    }
+
+    public Builder withSectionPattern(String value) {
+      section = value;
+      return this;
+    }
+
+    public Builder withSectionColumn(String value) {
+      sectionCell = value;
+      return this;
+    }
+
+    public Builder withBalanceLinePattern(String value) {
+      balanceLine = value;
+      return this;
+    }
+
+    public Builder withBalanceColumn(String value) {
+      balanceCell = value;
+      return this;
+    }
+
+    public Builder withContinuationEndPattern(String value) {
+      continuationEnd = value;
+      return this;
+    }
+
+    public ImportPdfLayout build() {
+      return new ImportPdfLayout(
+          columnNames,
+          row,
+          marker,
+          recordStart,
+          labels,
+          continuation,
+          section,
+          sectionCell,
+          balanceLine,
+          balanceCell,
+          continuationEnd);
+    }
   }
 }

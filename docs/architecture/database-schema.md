@@ -799,7 +799,14 @@ lines:
   label would otherwise append to it.
 - `sectionPattern` and `sectionColumn`: a matching line starts a section, and its first capture
   group is the `sectionColumn` cell of the section's bookings (with currency mode `PER_ROW`, its
-  currency). Text before the first section, such as a summary page, is ignored. A section's start
+  currency). Text before the first section, such as a summary page, is ignored, except a table
+  header line, so one header above all sections sets their columns. A marker of the section's own
+  value at the top of a later page (no booking on that page before it) repeats the section's title
+  there and does not start it again: the running balance goes on, and a booking at the foot of the
+  page before keeps its continuation lines. A balance line between such a marker and the next
+  booking only states the balance that booking starts from, as at a section's start, since the
+  marker may also open a new section of the same value (a second account in that currency). A
+  marker below a booking on its page always starts a new section. A section's start
   that the record-start pattern finds too is also the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the
   line, and `sectionPattern`): it starts the section, but a booking a too-broad section pattern
   takes would otherwise vanish, since a section starts with no balance to check it against.
@@ -820,7 +827,11 @@ lines:
   also the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the line, and `balanceLinePattern`), never a
   silently skipped booking. Every PDF row counts against the file's row limit, a balance line's
   error row included; a PDF row's number is its place among the rows, not an index into the
-  statement's booking lines.
+  statement's booking lines. Carry-forward lines that state the balance at a page break (e.g.
+  `Uebertrag`) belong in this pattern: their amount changes from page to page, so they are no page
+  furniture, and a continuation column would otherwise append them to the page's last booking. As
+  balance lines they continue no booking, and with `balanceColumn` the one below a booking is
+  checked like a closing balance.
 
 Lines repeated in the top or bottom three lines of every page, or every page but one, are page
 furniture and never continue a booking. In a text layer the line must also sit at the same place

@@ -58,16 +58,93 @@ public record ImportPdfBookingLine(
   }
 
   /**
+   * A booking line with its cells, and nothing around it until the builder's {@code with...}
+   * methods add it: each optional component by its name, never by its place among ten.
+   */
+  public static Builder builder(String line, List<String> cells, boolean matched) {
+    return new Builder(line, cells, matched);
+  }
+
+  /**
    * A line that {@code otherPattern} finds as well as the record-start pattern (PR #281 review).
    */
   public static ImportPdfBookingLine ambiguous(String line, String otherPattern) {
-    return new ImportPdfBookingLine(
-        line, List.of(line), false, List.of(), false, null, List.of(), false, otherPattern, false);
+    return builder(line, List.of(line), false).withAlsoFoundBy(otherPattern).build();
   }
 
   /** A line the row pattern does not match. */
   public static ImportPdfBookingLine unmatched(String line) {
     return new ImportPdfBookingLine(line, List.of(line), false);
+  }
+
+  /** Builds an {@link ImportPdfBookingLine}; each optional component defaults to "none". */
+  public static final class Builder {
+
+    private final String bookingLine;
+    private final List<String> bookingCells;
+    private final boolean rowMatched;
+    private List<String> continuationLines = List.of();
+    private boolean firstOfSection;
+    private String balanceStated;
+    private List<BalanceLine> balanceLinesAfter = List.of();
+    private boolean underHeader;
+    private String otherPattern;
+    private boolean overflowing;
+
+    private Builder(String line, List<String> cells, boolean matched) {
+      this.bookingLine = line;
+      this.bookingCells = List.copyOf(cells);
+      this.rowMatched = matched;
+    }
+
+    public Builder withContinuation(List<String> lines) {
+      continuationLines = List.copyOf(lines);
+      return this;
+    }
+
+    public Builder withSectionStart(boolean value) {
+      firstOfSection = value;
+      return this;
+    }
+
+    public Builder withStatedBalance(String balance) {
+      balanceStated = balance;
+      return this;
+    }
+
+    public Builder withBalancesAfter(List<BalanceLine> lines) {
+      balanceLinesAfter = List.copyOf(lines);
+      return this;
+    }
+
+    public Builder withHeaded(boolean value) {
+      underHeader = value;
+      return this;
+    }
+
+    public Builder withAlsoFoundBy(String pattern) {
+      otherPattern = pattern;
+      return this;
+    }
+
+    public Builder withContinuationOverflow(boolean value) {
+      overflowing = value;
+      return this;
+    }
+
+    public ImportPdfBookingLine build() {
+      return new ImportPdfBookingLine(
+          bookingLine,
+          bookingCells,
+          rowMatched,
+          continuationLines,
+          firstOfSection,
+          balanceStated,
+          balanceLinesAfter,
+          underHeader,
+          otherPattern,
+          overflowing);
+    }
   }
 
   /** The line as read, with its continuation lines below it: what the row's raw data keeps. */

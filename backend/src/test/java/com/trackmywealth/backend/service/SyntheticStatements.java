@@ -145,18 +145,15 @@ public final class SyntheticStatements {
    * opening and closing balances and the running balance under SALDO checked.
    */
   public static ImportPdfLayout yuhLayout() {
-    return new ImportPdfLayout(
-        List.of("Zeile"),
-        "(.*)",
-        YUH_MARKER,
-        "^\\d{2}\\.\\d{2}\\.\\d{4}",
-        YUH_LABELS,
-        "INFORMATION",
-        "^Kontoauszug in ([A-Z]{3})$",
-        "Waehrung",
-        "(?:^Saldo per \\S+|Anfangsbestand)\\s+([-\\d'.]+)",
-        "SALDO",
-        null);
+    return ImportPdfLayout.builder(
+            List.of("Zeile"), "(.*)", YUH_MARKER, "^\\d{2}\\.\\d{2}\\.\\d{4}")
+        .withHeaderLabels(YUH_LABELS)
+        .withContinuationColumn("INFORMATION")
+        .withSectionPattern("^Kontoauszug in ([A-Z]{3})$")
+        .withSectionColumn("Waehrung")
+        .withBalanceLinePattern("(?:^Saldo per \\S+|Anfangsbestand)\\s+([-\\d'.]+)")
+        .withBalanceColumn("SALDO")
+        .build();
   }
 
   /** The YUH-1 mapping: the sign by column, the currency by section. */
