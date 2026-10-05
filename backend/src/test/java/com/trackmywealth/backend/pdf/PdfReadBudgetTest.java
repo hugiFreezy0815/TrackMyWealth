@@ -8,12 +8,15 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** The drawing budget of one PDF read; its use on real PDFs is in PdfImportReaderServiceTest. */
+/**
+ * The drawing and text budget of one PDF read; its use on real PDFs is in
+ * PdfImportReaderServiceTest.
+ */
 class PdfReadBudgetTest {
 
   @Test
   void theLastAllowedOperationRunsAndNoneAfterIt() {
-    PdfReadBudget budget = new PdfReadBudget(3, Duration.ofMinutes(1));
+    PdfReadBudget budget = new PdfReadBudget(3, 10, Duration.ofMinutes(1));
     List<Boolean> allowed = new ArrayList<>();
     for (int i = 0; i < 5; i++) {
       allowed.add(budget.allowOperation());
@@ -26,8 +29,23 @@ class PdfReadBudgetTest {
   }
 
   @Test
+  void theLastAllowedCharacterIsKeptAndNothingRunsAfterIt() {
+    PdfReadBudget budget = new PdfReadBudget(10, 2, Duration.ofMinutes(1));
+    List<Boolean> allowed = new ArrayList<>();
+    for (int i = 0; i < 4; i++) {
+      allowed.add(budget.allowCharacter());
+    }
+
+    assertThat(allowed).containsExactly(true, true, false, false);
+    assertThat(budget.allowOperation()).isFalse();
+    assertThatThrownBy(budget::requireWithinLimits)
+        .isInstanceOf(PdfLimitException.class)
+        .hasMessageContaining("more text than one statement may");
+  }
+
+  @Test
   void aReadPastItsTimeIsRefusedAndStopsDrawing() {
-    PdfReadBudget budget = new PdfReadBudget(1_000_000, Duration.ZERO);
+    PdfReadBudget budget = new PdfReadBudget(1_000_000, 10, Duration.ZERO);
     boolean allowed = true;
     // The clock is read every 1,024 operations.
     for (int i = 0; i < 1024 && allowed; i++) {
@@ -42,7 +60,7 @@ class PdfReadBudgetTest {
 
   @Test
   void theFirstRefusalIsTheOneReported() {
-    PdfReadBudget budget = new PdfReadBudget(1, Duration.ofMinutes(1));
+    PdfReadBudget budget = new PdfReadBudget(1, 10, Duration.ofMinutes(1));
     budget.refuse(new PdfLimitException("first"));
     budget.refuse(new PdfLimitException("second"));
 
@@ -52,7 +70,7 @@ class PdfReadBudgetTest {
 
   @Test
   void withinItsLimitsAReadPasses() throws PdfLimitException {
-    PdfReadBudget budget = new PdfReadBudget(10, Duration.ofMinutes(1));
+    PdfReadBudget budget = new PdfReadBudget(10, 10, Duration.ofMinutes(1));
     assertThat(budget.allowOperation()).isTrue();
 
     budget.requireWithinLimits();

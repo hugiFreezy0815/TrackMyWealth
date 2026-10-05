@@ -787,8 +787,9 @@ PDFBox or anything else decodes it (16 MiB per stream, 64 MiB in all, images of 
 pixels: PDFBox decodes a whole stream into memory, already while loading the cross-reference and
 object streams, and a few hundred kilobytes can inflate to gigabytes), at most one million drawing
 operations per read (forms drawing each other over and over make a tiny file run for hours; a real
-statement page runs a few thousand) within 30 s for the text layer, 2 million characters of text,
-four PDF reads at a time (a further one waits 5 s, then is a 503 `IMPORT_PDF_BUSY` with
+statement page runs a few thousand) within 30 s for the text layer, 200,000 characters per read
+(counted one by one as they are shown: a single text operator can show millions, and each is an
+object until its page is read; the longest sample holds about 20,000), four PDF reads at a time (a further one waits 5 s, then is a 503 `IMPORT_PDF_BUSY` with
 `Retry-After`), OCR pages of at most 1500 points a side, two OCR documents at a time, 30 s per page
 and 120 s per document, rendering included (busy or too slow: a 503 with `Retry-After`). These
 concurrency limits hold per backend process: each instance reads its own four PDFs and two OCR

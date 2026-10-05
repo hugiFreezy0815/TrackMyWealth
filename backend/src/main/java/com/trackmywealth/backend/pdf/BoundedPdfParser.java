@@ -47,6 +47,7 @@ public final class BoundedPdfParser extends PDFParser {
     BoundedPdfParser parser = new BoundedPdfParser(content, budget);
     PDDocument document = parser.parse(false);
     try {
+      parser.requireNoRefusal();
       if (!document.isEncrypted()) {
         parser.parseEveryObject(document);
       }
@@ -57,27 +58,22 @@ public final class BoundedPdfParser extends PDFParser {
     }
   }
 
-  // Parses each object now, through parseCOSStream, so nothing is left to parse lazily later.
-  // Directly, not through COSObject.getObject(), which logs and drops any exception.
+  // Parses each object now, through parseCOSStream, and keeps it in the document's object pool, so
+  // nothing is left to parse lazily later. Through the pool, not parseObjectDynamically, which
+  // returns the object without keeping it: every stream was then parsed, and counted, a second
+  // time once read, and a refusal then was logged and dropped, the stream read as missing (fourth
+  // PR #267 review). COSObject.getObject() also logs and drops an exception: an object PDFBox
+  // cannot parse is skipped, as its own lazy read would, and a refusal is kept in this parser.
   private void parseEveryObject(PDDocument document) throws IOException {
     for (COSObjectKey key : List.copyOf(document.getDocument().getXrefTable().keySet())) {
-      parseUnlessUnreadable(key);
-      if (refusal != null) {
-        throw refusal;
-      }
+      document.getDocument().getObjectFromPool(key).getObject();
+      requireNoRefusal();
     }
   }
 
-  // An object PDFBox cannot parse is skipped, as its own lazy read would; being unreadable, it is
-  // never decoded either. A stream over the budget refuses the file.
-  private boolean parseUnlessUnreadable(COSObjectKey key) throws PdfLimitException {
-    try {
-      parseObjectDynamically(key, false);
-      return true;
-    } catch (PdfLimitException e) {
-      throw e;
-    } catch (IOException e) {
-      return false;
+  private void requireNoRefusal() throws PdfLimitException {
+    if (refusal != null) {
+      throw refusal;
     }
   }
 

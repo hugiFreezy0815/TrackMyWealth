@@ -350,9 +350,7 @@ class PdfImportReaderServiceTest {
       }
       document.save(output);
 
-      ApiException error =
-          assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_MALFORMED);
-      assertThat(error.getBody().getDetail()).contains("more text");
+      assertTextLayerRefused(output.toByteArray(), "more text than one statement may");
     }
   }
 
@@ -656,6 +654,44 @@ class PdfImportReaderServiceTest {
     assertThat(reader.readTextLayer(nestedForms(2, 20))).contains(MARKER);
   }
 
+  /**
+   * Fourth PR #267 review: one text operator showing a two-million-character string is a single
+   * drawing operation, but the text stripper keeps an object per character until the page is done -
+   * a three-kilobyte file exhausted a 512 MB heap before the text limit after the page could run.
+   * Characters are counted as they are shown, so the read stops at the limit.
+   */
+  @Test
+  @Timeout(60)
+  void oneTextOperatorShowingMoreThanTheTextLimitIsRefused() throws IOException {
+    byte[] statement = textPages(List.of("(" + MARKER + ") Tj 0 -12 Td"), 2_000_000, 'x');
+    assertThat(statement.length).as("a small file").isLessThan(10_000);
+
+    assertTextLayerRefused(statement, "more text than one statement may");
+    assertOcrRefused(statement, "more text than one statement may");
+  }
+
+  /**
+   * Fourth PR #267 review: every stream is parsed, and counted, once. The parser used to drop what
+   * it parsed while loading, so each stream was parsed and counted again when its page was read;
+   * past the total limit the second time, PDFBox logged the refusal and read the page as empty, so
+   * a statement within the limits lost its later pages without an error.
+   */
+  @Test
+  @Timeout(60)
+  void aStatementWithinTheTotalStreamLimitIsReadOnEveryPage() throws IOException {
+    List<String> pages =
+        List.of(
+            "(" + MARKER + " page 1) Tj",
+            "(" + MARKER + " page 2) Tj",
+            "(" + MARKER + " page 3) Tj",
+            "(" + MARKER + " page 4) Tj");
+    // Four fifths of the total: within it once, past it counted twice.
+    byte[] statement = textPages(pages, PdfStreamBudget.MAX_DECODED_BYTES / 5, ' ');
+
+    assertThat(reader.readTextLayer(statement))
+        .contains(MARKER + " page 1", MARKER + " page 2", MARKER + " page 3", MARKER + " page 4");
+  }
+
   // --- helpers -------------------------------------------------------------------------------
 
   // An OCR read of content is a 422 IMPORT_FILE_MALFORMED for reason, from this class's own limits.
@@ -789,6 +825,38 @@ class PdfImportReaderServiceTest {
       try (PDPageContentStream stream =
           new PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true)) {
         stream.drawForm(form);
+      }
+      document.save(output);
+      return output.toByteArray();
+    }
+  }
+
+  // A page per text operation, in Helvetica 1 pt, each followed by a string of filler repeated
+  // fillerLength times (shown when it is a character, mere whitespace when it is a space);
+  // Flate-compressed, so a long filler is still a small file.
+  private static byte[] textPages(List<String> operations, long fillerLength, char filler)
+      throws IOException {
+    boolean shown = filler != ' ';
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+      byte[] chunk = new byte[1 << 20];
+      Arrays.fill(chunk, (byte) filler);
+      for (String operation : operations) {
+        PDPage page = new PDPage();
+        document.addPage(page);
+        PDResources resources = new PDResources();
+        String text = "BT /" + resources.add(font).getName() + " 1 Tf 50 720 Td " + operation;
+        page.setResources(resources);
+        PDStream content = new PDStream(document);
+        try (OutputStream stream = content.createOutputStream(COSName.FLATE_DECODE)) {
+          stream.write((text + (shown ? " (" : "\n")).getBytes(StandardCharsets.US_ASCII));
+          for (long written = 0; written < fillerLength; written += chunk.length) {
+            stream.write(chunk, 0, (int) Math.min(chunk.length, fillerLength - written));
+          }
+          stream.write(((shown ? ") Tj" : "") + " ET\n").getBytes(StandardCharsets.US_ASCII));
+        }
+        page.setContents(content);
       }
       document.save(output);
       return output.toByteArray();

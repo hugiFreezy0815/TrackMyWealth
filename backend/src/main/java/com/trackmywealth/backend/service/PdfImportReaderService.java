@@ -43,8 +43,8 @@ import org.springframework.stereotype.Service;
  * checks every stream against a {@link PdfStreamBudget} as it parses it, before anything decodes
  * it. Reading the pages runs at most {@value #MAX_OPERATIONS} drawing operations within {@value
  * #READ_SECONDS_TEXT_LAYER} s ({@link PdfReadBudget}; a real statement page runs a few thousand),
- * then {@value #MAX_TEXT} characters of text (read page by page, stopping at the limit), and for
- * OCR pages of at most {@value #MAX_OCR_PAGE_POINTS} points a side, rendered one at a time in grey,
+ * showing at most {@value #MAX_TEXT} characters (counted one by one as they are shown), and for OCR
+ * pages of at most {@value #MAX_OCR_PAGE_POINTS} points a side, rendered one at a time in grey,
  * each inline image checked before it is decoded.
  *
  * <p>Those limits bound one read; at most {@value #MAX_CONCURRENT_READS} run at a time, so they
@@ -57,7 +57,9 @@ import org.springframework.stereotype.Service;
 public class PdfImportReaderService {
 
   static final int MAX_PAGES = 20;
-  static final int MAX_TEXT = 2_000_000;
+  // The longest sample of the import source analysis holds about 20,000 characters, its densest
+  // page about 5,400: twenty such pages fit. Each character is an object until its page is read.
+  static final int MAX_TEXT = 200_000;
   static final int MAX_OCR_PAGE_POINTS = 1500;
   static final int MAX_CONCURRENT_READS = 4;
   static final int READ_WAIT_SECONDS = 5;
@@ -184,6 +186,7 @@ public class PdfImportReaderService {
       PdfReadBudget budget =
           new PdfReadBudget(
               MAX_OPERATIONS,
+              MAX_TEXT,
               Duration.ofSeconds(
                   ocr ? LocalOcrService.DOCUMENT_TIMEOUT_SECONDS : READ_SECONDS_TEXT_LAYER));
       return ocr ? recognize(document, budget) : layerText(document, budget);

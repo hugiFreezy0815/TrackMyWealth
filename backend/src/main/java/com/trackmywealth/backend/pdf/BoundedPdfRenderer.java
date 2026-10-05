@@ -9,19 +9,22 @@ import org.apache.pdfbox.contentstream.operator.OperatorProcessor;
 import org.apache.pdfbox.contentstream.operator.graphics.BeginInlineImage;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.rendering.PageDrawer;
 import org.apache.pdfbox.rendering.PageDrawerParameters;
+import org.apache.pdfbox.util.Matrix;
+import org.apache.pdfbox.util.Vector;
 
 /**
- * A PDF renderer for OCR (#276) that runs each drawing operation only while its {@link
- * PdfReadBudget} allows, and checks every inline image ({@code BI ... ID ... EI} inside a content
- * stream) with {@link PdfStreamBudget#checkInlineImage} before PDFBox decodes it. An inline image
- * is no object of the document, so {@link BoundedPdfParser} never sees it, and PDFBox decodes its
- * whole data into memory as soon as the page drawer reaches it: a few kilobytes of Flate data can
- * inflate to gigabytes. The check runs wherever the drawer meets one - on a page, in a form, a
- * pattern or an annotation's appearance. A refused image is not drawn, and refuses the document
- * through the budget, which its caller checks after each page.
+ * A PDF renderer for OCR (#276) that runs each drawing operation, and draws each glyph, only while
+ * its {@link PdfReadBudget} allows, and checks every inline image ({@code BI ... ID ... EI} inside
+ * a content stream) with {@link PdfStreamBudget#checkInlineImage} before PDFBox decodes it. An
+ * inline image is no object of the document, so {@link BoundedPdfParser} never sees it, and PDFBox
+ * decodes its whole data into memory as soon as the page drawer reaches it: a few kilobytes of
+ * Flate data can inflate to gigabytes. The check runs wherever the drawer meets one - on a page, in
+ * a form, a pattern or an annotation's appearance. A refused image is not drawn, and refuses the
+ * document through the budget, which its caller checks after each page.
  */
 public final class BoundedPdfRenderer extends PDFRenderer {
 
@@ -52,6 +55,15 @@ public final class BoundedPdfRenderer extends PDFRenderer {
     protected void processOperator(Operator operator, List<COSBase> operands) throws IOException {
       if (budget.allowOperation()) {
         super.processOperator(operator, operands);
+      }
+    }
+
+    // One text operator can show millions of glyphs, each drawn on its own.
+    @Override
+    protected void showGlyph(Matrix textRenderingMatrix, PDFont font, int code, Vector displacement)
+        throws IOException {
+      if (budget.allowCharacter()) {
+        super.showGlyph(textRenderingMatrix, font, code, displacement);
       }
     }
   }
