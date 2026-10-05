@@ -6,7 +6,7 @@ import java.util.Map;
 
 /**
  * One data row of an import file cannot be parsed (US-07-03). Never reaches a client: {@code
- * CsvImportParserService} catches it and reports the row as an {@code ERROR} row with this {@link
+ * ImportFileParserService} catches it and reports the row as an {@code ERROR} row with this {@link
  * #getCode() code} (an {@code ImportRowErrorValues} code) and its {@link #getArgs() arguments},
  * then carries on with the next row (FR-IMP-012). Without a stack trace, since a large file may
  * reject thousands of rows.

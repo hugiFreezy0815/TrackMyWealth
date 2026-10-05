@@ -9,11 +9,16 @@ import java.util.Map;
  * of an import template, saved or not. Changing any of these fields on a saved template creates a
  * new template version (FR-IMP-023); its name and institution are not part of it.
  *
- * <p>Rows are read in this order: {@code preambleRowCount} physical lines are skipped, then the
- * header row is the record at {@code headerRowIndex} counted from there ({@code -1}: no header row,
- * columns are mapped by index), the records after it are data rows, and the last {@code
- * trailingSummaryRowCount} of them (e.g. a closing balance) are dropped. Empty lines are ignored
- * everywhere after the preamble.
+ * <p>Rows of a CSV file are read in this order: {@code preambleRowCount} physical lines are
+ * skipped, then the header row is the record at {@code headerRowIndex} counted from there ({@code
+ * -1}: no header row, columns are mapped by index), the records after it are data rows, and the
+ * last {@code trailingSummaryRowCount} of them (e.g. a closing balance) are dropped. Empty lines
+ * are ignored everywhere after the preamble.
+ *
+ * <p>A PDF ({@code fileFormat} {@code PDF_TEXT} or {@code PDF_OCR}) is read through {@code
+ * pdfLayout} instead: its text lines take the place of records, the layout's column names the place
+ * of the header row, and {@code preambleRowCount}/{@code trailingSummaryRowCount} skip text lines.
+ * Delimiter, encoding and {@code headerRowIndex} do not apply.
  *
  * @param typeMapping source type text (matched trimmed and ignoring case) to a canonical {@code
  *     transaction_type}
@@ -33,7 +38,9 @@ public record ImportTemplateDefinition(
     String fixedCurrency,
     ImportColumnMapping columnMapping,
     Map<String, String> typeMapping,
-    String accountIdentificationStrategy) {
+    String accountIdentificationStrategy,
+    String fileFormat,
+    ImportPdfLayout pdfLayout) {
 
   public ImportTemplateDefinition {
     // Not Map.copyOf: a null value from the client must reach validation as a 422, not an NPE.
@@ -42,8 +49,22 @@ public record ImportTemplateDefinition(
             typeMapping == null ? new LinkedHashMap<>() : new LinkedHashMap<>(typeMapping));
   }
 
-  /** Whether the file has a header row, i.e. columns may be mapped by name. */
+  /**
+   * Whether columns are named, i.e. may be mapped by name: a CSV file with a header row, or any PDF
+   * (named by its layout).
+   */
   public boolean hasHeaderRow() {
-    return headerRowIndex != ImportTemplateValues.NO_HEADER_ROW;
+    return isPdf() || headerRowIndex != ImportTemplateValues.NO_HEADER_ROW;
+  }
+
+  /** Whether the file is a PDF, read through {@link #pdfLayout}. */
+  public boolean isPdf() {
+    return ImportTemplateValues.FORMAT_PDF_TEXT.equals(fileFormat)
+        || ImportTemplateValues.FORMAT_PDF_OCR.equals(fileFormat);
+  }
+
+  /** Whether the file is a scanned PDF, read through local OCR. */
+  public boolean isOcr() {
+    return ImportTemplateValues.FORMAT_PDF_OCR.equals(fileFormat);
   }
 }

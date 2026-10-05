@@ -45,6 +45,8 @@ public record ImportTemplateResponse(
     String accountIdentificationStrategy,
     List<String> headerColumns,
     String headerFingerprint,
+    String fileFormat,
+    ImportPdfLayout pdfLayout,
     int version) {
 
   public ImportTemplateResponse {

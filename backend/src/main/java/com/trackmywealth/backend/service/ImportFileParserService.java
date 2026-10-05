@@ -3,6 +3,8 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportParseResult;
+import com.trackmywealth.backend.dto.ImportPdfBookingLine;
+import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
@@ -13,6 +15,7 @@ import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
 import com.trackmywealth.backend.error.ImportRowRejectedException;
 import com.trackmywealth.backend.validation.CurrencyCodes;
+import com.trackmywealth.backend.validation.Re2Patterns;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
@@ -46,10 +49,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
- * US-07-03, FR-IMP-020..025: reads a CSV file through an import template - a declarative
+ * US-07-03, FR-IMP-020..025: reads an import file through an import template - a declarative
  * description of one institution's export, never institution-specific code. Stateless; it never
  * touches the database, so US-07-04 parses an upload and the template dry run previews one through
  * the same {@link #parse}.
+ *
+ * <p>A CSV file's records are read here. A PDF statement's (#268) come from {@link
+ * PdfImportReaderService}, which cuts its booking lines into the template layout's named columns.
+ * From there every row goes through the same mapping, amount, date, currency and type rules.
  *
  * <p>A problem with the whole file (wrong template, wrong encoding, empty, malformed CSV) rejects
  * it with an {@code IMPORT_*} {@link ApiException} before any row is parsed, so a missing column is
@@ -60,7 +67,7 @@ import org.springframework.stereotype.Service;
  * scale the file wrote them with. Uploaded content is never logged: only sizes and counts.
  */
 @Service
-public class CsvImportParserService {
+public class ImportFileParserService {
 
   /** The most data rows one import file may hold (sprint 5 decision, 2026-10-02). */
   public static final int MAX_DATA_ROWS = 20_000;
@@ -70,7 +77,7 @@ public class CsvImportParserService {
   private static final char REPLACEMENT_CHARACTER = '\uFFFD';
   private static final char BYTE_ORDER_MARK = '\uFEFF';
   // A rejected cell is echoed back to its uploader; long enough to recognise, never unbounded.
-  private static final int MAX_ECHOED_VALUE_LENGTH = 100;
+  static final int MAX_ECHOED_VALUE_LENGTH = 100;
   // transaction.amount is NUMERIC(20,4). Checked on the digits before a BigDecimal is built, whose
   // construction is quadratic in the length: a megabyte-long cell would hold a thread for minutes.
   private static final int MAX_INTEGER_DIGITS = 16;
@@ -83,7 +90,13 @@ public class CsvImportParserService {
   private static final Set<String> SPACES = Set.of(" ", "\u00A0", "\u202F");
   private static final String ARG_COLUMN = "column";
   private static final String ARG_VALUE = "value";
-  private static final Logger LOG = LoggerFactory.getLogger(CsvImportParserService.class);
+  private static final Logger LOG = LoggerFactory.getLogger(ImportFileParserService.class);
+
+  private final PdfImportReaderService pdfReader;
+
+  public ImportFileParserService(PdfImportReaderService pdfReader) {
+    this.pdfReader = pdfReader;
+  }
 
   /**
    * Parses every data row of {@code content}.
@@ -96,10 +109,23 @@ public class CsvImportParserService {
   public ImportParseResult parse(
       byte[] content, ImportTemplateDefinition template, String accountCurrency) {
     validateTemplate(template, null);
-    List<CSVRecord> records = readRecords(content, template, false);
-    List<String> header = headerOf(records, template);
-    List<CSVRecord> data = dataRecordsOf(records, template);
-    requireDecodable(template.hasHeaderRow() ? header : data.get(0).toList());
+    List<String> header;
+    List<List<String>> data;
+    // #268: a PDF's booking lines, cut into the layout's named columns; null for a CSV file.
+    List<ImportPdfBookingLine> bookingLines = null;
+    if (template.isPdf()) {
+      header = template.pdfLayout().columns();
+      bookingLines = pdfReader.readBookingLines(content, template);
+      if (bookingLines.size() > MAX_DATA_ROWS) {
+        throw tooManyRows();
+      }
+      data = bookingLines.stream().map(ImportPdfBookingLine::cells).toList();
+    } else {
+      List<List<String>> records = readRecords(content, template, false);
+      header = headerOf(records, template);
+      data = dataRecordsOf(records, template);
+      requireDecodable(template.hasHeaderRow() ? header : data.get(0));
+    }
     Map<String, Integer> columns = resolveColumns(template, header);
     List<String> keys = rawDataKeys(header);
     DateTimeFormatter dateFormatter = dateFormatter(template.dateFormat());
@@ -108,9 +134,13 @@ public class CsvImportParserService {
     List<ParsedImportRow> rows = new ArrayList<>(data.size());
     int rejected = 0;
     for (int i = 0; i < data.size(); i++) {
-      CSVRecord record = data.get(i);
+      List<String> record = data.get(i);
       Map<String, String> rawData = rawData(record, keys, template.hasHeaderRow());
       try {
+        if (bookingLines != null && !bookingLines.get(i).matched()) {
+          throw rowError(
+              ImportRowErrorValues.LINE_UNMATCHED, ARG_VALUE, bookingLines.get(i).line());
+        }
         CanonicalImportRow canonical =
             canonicalRow(record, template, columns, dateFormatter, typeMapping, accountCurrency);
         rows.add(ParsedImportRow.parsed(i + 1, rawData, canonical));
@@ -127,17 +157,21 @@ public class CsvImportParserService {
           rejected);
     }
     return new ImportParseResult(
-        header, template.hasHeaderRow() ? fingerprint(header) : null, rows);
+        header, hasFingerprint(template) ? fingerprint(header) : null, rows);
   }
 
   /**
    * The header cells of {@code content} read with {@code template}'s encoding, delimiter and
    * skipped rows - for template detection, which tries every candidate's reading of the file. Empty
-   * for a template without a header row.
+   * for a template without a header row. A PDF has no header row to read: detection tests a PDF
+   * template through {@link PdfImportReaderService#isLayoutOf}, and a PDF template here is a 422.
    *
    * @throws ApiException an {@code IMPORT_*} file-level code when the file cannot be read this way
    */
   public List<String> readHeader(byte[] content, ImportTemplateDefinition template) {
+    if (template.isPdf()) {
+      throw unsupported("A PDF template has no header row to read.");
+    }
     List<String> header = headerOf(readRecords(content, template, true), template);
     requireDecodable(header);
     return header;
@@ -158,12 +192,21 @@ public class CsvImportParserService {
   }
 
   /**
+   * Whether the template's header row identifies its files (FR-IMP-022): a CSV file's. A PDF
+   * template's columns are named by its own layout, not read from the file, so a fingerprint of
+   * them would identify nothing; #268 adds one from the statement's header labels.
+   */
+  public static boolean hasFingerprint(ImportTemplateDefinition template) {
+    return template.hasHeaderRow() && !template.isPdf();
+  }
+
+  /**
    * FR-IMP-022: SHA-256 (hex) of the header cells, each trimmed and lower-cased, joined by the
    * ASCII unit separator - the same file format yields the same fingerprint whatever its data rows.
    */
   public static String fingerprint(List<String> headerColumns) {
     List<String> normalized =
-        headerColumns.stream().map(CsvImportParserService::normalize).toList();
+        headerColumns.stream().map(ImportFileParserService::normalize).toList();
     try {
       byte[] hash =
           MessageDigest.getInstance("SHA-256")
@@ -192,6 +235,16 @@ public class CsvImportParserService {
         template.accountIdentificationStrategy())) {
       throw unsupported("The account is selected at upload; other strategies are not supported.");
     }
+    if (!ImportTemplateValues.FILE_FORMATS.contains(template.fileFormat())) {
+      throw invalid(
+          "fileFormat",
+          "The file format must be one of " + ImportTemplateValues.FILE_FORMATS + ".");
+    }
+    if (template.isPdf()) {
+      validatePdfLayout(template.pdfLayout());
+    } else if (template.pdfLayout() != null) {
+      throw invalid("pdfLayout", "Only a PDF template has a PDF layout.");
+    }
     if (!ImportTemplateValues.ENCODINGS.contains(template.encoding())) {
       throw invalid(
           "encoding", "The encoding must be one of " + ImportTemplateValues.ENCODINGS + ".");
@@ -208,11 +261,72 @@ public class CsvImportParserService {
       throw invalid("dateFormat", "The date format is not a valid date pattern.");
     }
     validateCurrency(template);
-    validateColumnMapping(template, headerColumns);
+    // A PDF's columns are its layout's: every mapping by name is checked against them.
+    validateColumnMapping(
+        template, template.isPdf() ? template.pdfLayout().columns() : headerColumns);
     validateTypeMapping(template.typeMapping());
   }
 
   // --- template rules ----------------------------------------------------------------------
+
+  // #268: the layout must name each capture group of a row pattern that RE2 can compile.
+  private static void validatePdfLayout(ImportPdfLayout layout) {
+    if (layout == null) {
+      throw invalid("pdfLayout", "A PDF template needs a PDF layout.");
+    }
+    List<String> columns = layout.columns();
+    if (columns.isEmpty() || columns.size() > ImportPdfLayout.MAX_COLUMNS) {
+      throw invalid("pdfLayout.columns", "Name 1 to " + ImportPdfLayout.MAX_COLUMNS + " columns.");
+    }
+    Set<String> seen = new HashSet<>();
+    for (String column : columns) {
+      if (column == null || column.isBlank() || !seen.add(normalize(column))) {
+        throw invalid("pdfLayout.columns", "Each column needs a name of its own.");
+      }
+      if (column.length() > ImportPdfLayout.MAX_COLUMN_NAME_LENGTH) {
+        throw invalid(
+            "pdfLayout.columns",
+            "A column name has at most " + ImportPdfLayout.MAX_COLUMN_NAME_LENGTH + " characters.");
+      }
+    }
+    String marker = layout.documentMarker();
+    if (marker == null || marker.isBlank() || marker.length() > ImportPdfLayout.MAX_MARKER_LENGTH) {
+      throw invalid(
+          "pdfLayout.documentMarker",
+          "The document marker is text every statement of this layout contains.");
+    }
+    patternGroups(layout.recordStartPattern(), "pdfLayout.recordStartPattern");
+    if (layout.recordStartPattern().isBlank()) {
+      throw invalid("pdfLayout.recordStartPattern", "The record start pattern must not be blank.");
+    }
+    if (patternGroups(layout.rowPattern(), "pdfLayout.rowPattern") != columns.size()) {
+      throw invalid(
+          "pdfLayout.rowPattern", "The row pattern needs exactly one capture group per column.");
+    }
+  }
+
+  // The capture groups of an RE2 pattern; a missing, too long, invalid or too large one is a 422.
+  private static int patternGroups(String pattern, String field) {
+    if (pattern == null || pattern.length() > ImportPdfLayout.MAX_PATTERN_LENGTH) {
+      throw invalid(
+          field,
+          "A pattern is required, with at most "
+              + ImportPdfLayout.MAX_PATTERN_LENGTH
+              + " characters.");
+    }
+    try {
+      return Re2Patterns.compile(pattern).groupCount();
+    } catch (IllegalArgumentException e) {
+      ApiException exception =
+          new ApiException(
+              HttpStatus.UNPROCESSABLE_CONTENT,
+              ApiErrorCode.IMPORT_TEMPLATE_INVALID,
+              e.getMessage(),
+              e);
+      exception.getBody().setProperty("field", field);
+      throw exception;
+    }
+  }
 
   // Bean Validation checks these on a saved template, but not on the unsaved dry run's (which
   // needs no name); out of range they would index past the file's records.
@@ -345,7 +459,7 @@ public class CsvImportParserService {
 
   // Every non-blank record after the preamble, header included; with headerOnly, only up to the
   // header row (detection reads the file once per template and needs nothing below the header).
-  private static List<CSVRecord> readRecords(
+  private static List<List<String>> readRecords(
       byte[] content, ImportTemplateDefinition template, boolean headerOnly) {
     String text = skipLines(decode(content, template.encoding()), template.preambleRowCount());
     CSVFormat format =
@@ -354,7 +468,7 @@ public class CsvImportParserService {
             .setDelimiter(template.delimiter().charAt(0))
             .setIgnoreEmptyLines(true)
             .get();
-    List<CSVRecord> records = new ArrayList<>();
+    List<List<String>> records = new ArrayList<>();
     int maxRecords =
         (template.hasHeaderRow() ? template.headerRowIndex() + 1 : 0)
             + MAX_DATA_ROWS
@@ -362,15 +476,12 @@ public class CsvImportParserService {
     try (CSVParser parser = CSVParser.parse(text, format)) {
       for (CSVRecord record : parser) {
         if (!isBlank(record)) {
-          records.add(record);
+          records.add(record.toList());
           if (headerOnly && records.size() > template.headerRowIndex()) {
             break;
           }
           if (records.size() > maxRecords) {
-            throw fileError(
-                    ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS,
-                    "An import file may hold at most " + MAX_DATA_ROWS + " data rows.")
-                .withProperty("maxRows", MAX_DATA_ROWS);
+            throw tooManyRows();
           }
         }
       }
@@ -421,18 +532,19 @@ public class CsvImportParserService {
     return text.substring(position);
   }
 
-  private static List<String> headerOf(List<CSVRecord> records, ImportTemplateDefinition template) {
+  private static List<String> headerOf(
+      List<List<String>> records, ImportTemplateDefinition template) {
     if (!template.hasHeaderRow()) {
       return List.of();
     }
     if (records.size() <= template.headerRowIndex()) {
       throw fileError(ApiErrorCode.IMPORT_FILE_EMPTY, "The file has no header row.");
     }
-    return records.get(template.headerRowIndex()).toList();
+    return records.get(template.headerRowIndex());
   }
 
-  private static List<CSVRecord> dataRecordsOf(
-      List<CSVRecord> records, ImportTemplateDefinition template) {
+  private static List<List<String>> dataRecordsOf(
+      List<List<String>> records, ImportTemplateDefinition template) {
     int first = template.hasHeaderRow() ? template.headerRowIndex() + 1 : 0;
     int end = records.size() - template.trailingSummaryRowCount();
     if (end <= first) {
@@ -516,7 +628,7 @@ public class CsvImportParserService {
 
   // Every cell of the row as written, keyed per ParsedImportRow#rawData.
   private static Map<String, String> rawData(
-      CSVRecord record, List<String> keys, boolean hasHeaderRow) {
+      List<String> record, List<String> keys, boolean hasHeaderRow) {
     Map<String, String> raw = new LinkedHashMap<>();
     for (int i = 0; i < record.size(); i++) {
       String key;
@@ -535,7 +647,7 @@ public class CsvImportParserService {
   // --- one row ---------------------------------------------------------------------------
 
   private static CanonicalImportRow canonicalRow(
-      CSVRecord record,
+      List<String> record,
       ImportTemplateDefinition template,
       Map<String, Integer> columns,
       DateTimeFormatter dateFormatter,
@@ -580,7 +692,7 @@ public class CsvImportParserService {
   }
 
   // The trimmed cell, or null when the column is unmapped, beyond this (short) row, or empty.
-  private static String optionalCell(CSVRecord record, Integer index) {
+  private static String optionalCell(List<String> record, Integer index) {
     if (index == null || index >= record.size()) {
       return null;
     }
@@ -588,7 +700,7 @@ public class CsvImportParserService {
     return value.isEmpty() ? null : value;
   }
 
-  private static String requiredCell(CSVRecord record, int index, String column) {
+  private static String requiredCell(List<String> record, int index, String column) {
     if (index >= record.size()) {
       throw rowError(ImportRowErrorValues.COLUMN_MISSING, ARG_COLUMN, column);
     }
@@ -612,7 +724,7 @@ public class CsvImportParserService {
   }
 
   private static BigDecimal amountOf(
-      CSVRecord record, ImportTemplateDefinition template, Map<String, Integer> columns) {
+      List<String> record, ImportTemplateDefinition template, Map<String, Integer> columns) {
     ImportColumnMapping mapping = template.columnMapping();
     String representation = template.amountRepresentation();
     if (!ImportTemplateValues.AMOUNT_SEPARATE_DEBIT_CREDIT.equals(representation)) {
@@ -748,7 +860,7 @@ public class CsvImportParserService {
   }
 
   private static String currencyOf(
-      CSVRecord record,
+      List<String> record,
       ImportTemplateDefinition template,
       Map<String, Integer> columns,
       String accountCurrency) {
@@ -864,6 +976,13 @@ public class CsvImportParserService {
               : value);
     }
     return args;
+  }
+
+  private static ImportFileRejectedException tooManyRows() {
+    return fileError(
+            ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS,
+            "An import file may hold at most " + MAX_DATA_ROWS + " data rows.")
+        .withProperty("maxRows", MAX_DATA_ROWS);
   }
 
   private static ImportFileRejectedException fileError(String code, String detail) {

@@ -162,11 +162,37 @@
 
         <!-- US-07-03: CSV import parser engine. RFC 4180 quoting (a quoted delimiter or line
              break inside a description) with a configurable delimiter; the template-driven
-             interpretation of the cells (amounts, dates, types) stays in CsvImportParserService. -->
+             interpretation of the cells (amounts, dates, types) stays in ImportFileParserService. -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-csv</artifactId>
             <version>1.14.1</version>
+        </dependency>
+
+        <!-- #268, #276: PDF statements are read locally - the text layer with
+             PDFBox, a scanned page through a local Tesseract process (PdfImportReaderService,
+             LocalOcrService). No document ever leaves the server. -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.6</version>
+        </dependency>
+
+        <!-- PdfImportReaderService counts a PDF stream's decoded size without keeping it
+             (ThresholdingOutputStream). Already on the classpath through commons-csv; declared
+             because it is used directly. -->
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.20.0</version>
+        </dependency>
+
+        <!-- The PDF row and record-start patterns are written by members. RE2/J matches in linear
+             time, so no pattern can backtrack catastrophically on a statement line (ReDoS). -->
+        <dependency>
+            <groupId>com.google.re2j</groupId>
+            <artifactId>re2j</artifactId>
+            <version>1.8</version>
         </dependency>
 
         <!-- Background jobs (price refresh, daily valuation build, reconciliation runs -

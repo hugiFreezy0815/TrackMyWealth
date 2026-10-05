@@ -132,7 +132,10 @@ public final class ApiErrorCode {
   /** 422: the file has a header but no data row. */
   public static final String IMPORT_FILE_NO_DATA_ROWS = "IMPORT_FILE_NO_DATA_ROWS";
 
-  /** 422: the file is not valid CSV for the template's delimiter (e.g. an unclosed quote). */
+  /**
+   * 422: the file is not valid CSV for the template's delimiter (e.g. an unclosed quote), or not a
+   * readable PDF (damaged, encrypted).
+   */
   public static final String IMPORT_FILE_MALFORMED = "IMPORT_FILE_MALFORMED";
 
   /** 413: the uploaded file exceeds the 5 MB import limit. */
@@ -140,6 +143,39 @@ public final class ApiErrorCode {
 
   /** 422: the file has more data rows than one import may hold; {@code maxRows} says how many. */
   public static final String IMPORT_FILE_TOO_MANY_ROWS = "IMPORT_FILE_TOO_MANY_ROWS";
+
+  /**
+   * 422: a PDF import file has more pages than one import may hold; {@code maxPages} says how many.
+   */
+  public static final String IMPORT_FILE_TOO_MANY_PAGES = "IMPORT_FILE_TOO_MANY_PAGES";
+
+  /**
+   * 422: a PDF import file is readable, but holds more than one statement may: more text, objects,
+   * decoded data, image pixels or drawing work, or a page too large for OCR. Unlike {@code
+   * IMPORT_FILE_MALFORMED}, exporting a shorter statement helps.
+   */
+  public static final String IMPORT_PDF_LIMIT_EXCEEDED = "IMPORT_PDF_LIMIT_EXCEEDED";
+
+  /**
+   * 422: a PDF has no text layer (a scanned document) but the template reads text ({@code
+   * PDF_TEXT}); an OCR template ({@code PDF_OCR}) reads it.
+   */
+  public static final String IMPORT_PDF_NO_TEXT = "IMPORT_PDF_NO_TEXT";
+
+  /**
+   * 503: the server is already reading as many PDF statements as it may at once (each takes tens of
+   * megabytes); retry later.
+   */
+  public static final String IMPORT_PDF_BUSY = "IMPORT_PDF_BUSY";
+
+  /** 422: local OCR could not read a scanned page (it failed or produced too much text). */
+  public static final String IMPORT_OCR_FAILED = "IMPORT_OCR_FAILED";
+
+  /**
+   * 503: local OCR is not installed, all of its slots are busy, or it did not finish within the
+   * server's time limit; retry later.
+   */
+  public static final String IMPORT_OCR_UNAVAILABLE = "IMPORT_OCR_UNAVAILABLE";
 
   /** 423: the user account is temporarily locked (FR-AUT lockout). */
   public static final String LOCKED = "LOCKED";

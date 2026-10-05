@@ -2,6 +2,7 @@ package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.web.CorrelationIdFilter;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.RetryableWhenBusy;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.headers.Header;
@@ -17,9 +18,11 @@ import io.swagger.v3.oas.models.responses.ApiResponses;
 import java.math.BigDecimal;
 import java.util.Map;
 import org.springdoc.core.customizers.OpenApiCustomizer;
+import org.springdoc.core.customizers.OperationCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 
 /**
@@ -35,6 +38,15 @@ public class ApiDocumentationConfig {
 
   private static final String API_PROBLEM_SCHEMA = "ApiProblem";
   private static final String API_PROBLEM_RESPONSE = "ApiProblemResponse";
+  private static final String RETRYABLE_PROBLEM_RESPONSE = "ApiProblemRetryableResponse";
+
+  /**
+   * A 503 a client may retry unchanged (e.g. {@code IMPORT_PDF_BUSY}): the problem envelope, with a
+   * {@code Retry-After} header when the server can tell how long to wait.
+   */
+  public static final String RETRYABLE_PROBLEM_RESPONSE_REF =
+      "#/components/responses/" + RETRYABLE_PROBLEM_RESPONSE;
+
   private static final String DECIMAL_FORMAT = "decimal";
   private static final String PROBLEM_RESPONSE_REF =
       "#/components/responses/" + API_PROBLEM_RESPONSE;
@@ -56,6 +68,17 @@ public class ApiDocumentationConfig {
       Components components = componentsOf(openApi);
       components.addSchemas(API_PROBLEM_SCHEMA, problemSchema());
       components.addResponses(API_PROBLEM_RESPONSE, problemResponse());
+      components.addResponses(
+          RETRYABLE_PROBLEM_RESPONSE,
+          problemResponse()
+              .description(
+                  "The server cannot do this now; retry the same request later, after the"
+                      + " Retry-After seconds when the header is sent.")
+              .addHeaderObject(
+                  HttpHeaders.RETRY_AFTER,
+                  new Header()
+                      .description("Seconds to wait before retrying.")
+                      .schema(new IntegerSchema().format("int64"))));
 
       if (openApi.getPaths() == null) {
         return;
@@ -78,6 +101,21 @@ public class ApiDocumentationConfig {
                                 .values()
                                 .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
                           }));
+    };
+  }
+
+  /**
+   * An endpoint marked {@link RetryableWhenBusy} documents its retryable 503 - added here rather
+   * than by an {@code @ApiResponse} on the method, which would drop the generated success response.
+   */
+  @Bean
+  OperationCustomizer retryableWhenBusyResponses() {
+    return (operation, handlerMethod) -> {
+      if (handlerMethod.hasMethodAnnotation(RetryableWhenBusy.class)) {
+        responsesOf(operation)
+            .putIfAbsent("503", new ApiResponse().$ref(RETRYABLE_PROBLEM_RESPONSE_REF));
+      }
+      return operation;
     };
   }
 

@@ -4,10 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.mockito.Mockito.mock;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportParseResult;
+import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ParsedImportRow;
@@ -36,9 +38,11 @@ import org.junit.jupiter.params.provider.ValueSource;
  * representation, date pattern and error code, plus the two synthetic golden fixtures (invented
  * values in the structure of a Swiss and a German bank export).
  */
-class CsvImportParserServiceTest {
+class ImportFileParserServiceTest {
 
-  private final CsvImportParserService parser = new CsvImportParserService();
+  private final LocalOcrService ocr = mock(LocalOcrService.class);
+  private final ImportFileParserService parser =
+      new ImportFileParserService(new PdfImportReaderService(ocr));
 
   // --- golden fixtures --------------------------------------------------------------------
 
@@ -254,7 +258,7 @@ class CsvImportParserServiceTest {
   @Test
   void moreThanTheRowLimitIsRejected() {
     StringBuilder csv = new StringBuilder("date,amount,text\n");
-    for (int i = 0; i <= CsvImportParserService.MAX_DATA_ROWS; i++) {
+    for (int i = 0; i <= ImportFileParserService.MAX_DATA_ROWS; i++) {
       csv.append("2026-03-01,1.00,x\n");
     }
 
@@ -262,18 +266,18 @@ class CsvImportParserServiceTest {
         assertFileError(
             utf8(csv.toString()), new Template().build(), ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS);
     assertThat(error.getBody().getProperties())
-        .containsEntry("maxRows", CsvImportParserService.MAX_DATA_ROWS);
+        .containsEntry("maxRows", ImportFileParserService.MAX_DATA_ROWS);
   }
 
   @Test
   void exactlyTheRowLimitIsAccepted() {
     StringBuilder csv = new StringBuilder("date,amount,text\n");
-    for (int i = 0; i < CsvImportParserService.MAX_DATA_ROWS; i++) {
+    for (int i = 0; i < ImportFileParserService.MAX_DATA_ROWS; i++) {
       csv.append("2026-03-01,1.00,x\n");
     }
 
     assertThat(parser.parse(utf8(csv.toString()), new Template().build(), null).rows())
-        .hasSize(CsvImportParserService.MAX_DATA_ROWS);
+        .hasSize(ImportFileParserService.MAX_DATA_ROWS);
   }
 
   // --- header and mapping ------------------------------------------------------------------
@@ -325,14 +329,14 @@ class CsvImportParserServiceTest {
 
   @Test
   void fingerprintIgnoresCaseAndSurroundingSpaceButNotOrder() {
-    String fingerprint = CsvImportParserService.fingerprint(List.of("Datum", "Betrag"));
+    String fingerprint = ImportFileParserService.fingerprint(List.of("Datum", "Betrag"));
 
     assertThat(fingerprint).hasSize(64).matches("[0-9a-f]+");
-    assertThat(CsvImportParserService.fingerprint(List.of(" DATUM ", "betrag")))
+    assertThat(ImportFileParserService.fingerprint(List.of(" DATUM ", "betrag")))
         .isEqualTo(fingerprint);
-    assertThat(CsvImportParserService.fingerprint(List.of("Betrag", "Datum")))
+    assertThat(ImportFileParserService.fingerprint(List.of("Betrag", "Datum")))
         .isNotEqualTo(fingerprint);
-    assertThat(CsvImportParserService.fingerprint(List.of("DatumBetrag")))
+    assertThat(ImportFileParserService.fingerprint(List.of("DatumBetrag")))
         .isNotEqualTo(fingerprint);
   }
 
@@ -389,7 +393,7 @@ class CsvImportParserServiceTest {
     ImportTemplateDefinition template =
         new Template().decimal(decimal).thousands(thousands).build();
 
-    assertThat(CsvImportParserService.parseAmount(value, "amount", template, false))
+    assertThat(ImportFileParserService.parseAmount(value, "amount", template, false))
         .isEqualTo(new BigDecimal(expected));
   }
 
@@ -439,7 +443,7 @@ class CsvImportParserServiceTest {
   void amountsWithinNumeric20Scale4AreAccepted(String value, String expected) {
     ImportTemplateDefinition template = new Template().thousands("'").build();
 
-    assertThat(CsvImportParserService.parseAmount(value, "amount", template, false))
+    assertThat(ImportFileParserService.parseAmount(value, "amount", template, false))
         .isEqualTo(new BigDecimal(expected));
   }
 
@@ -544,7 +548,7 @@ class CsvImportParserServiceTest {
           new Template().decimal(pair[0]).thousands(pair[1]).build();
 
       BigDecimal parsed =
-          CsvImportParserService.parseAmount(
+          ImportFileParserService.parseAmount(
               format(amount, pair[0], pair[1]), "amount", template, false);
 
       assertThat(parsed).as("%s with %s", amount, Arrays.toString(pair)).isEqualTo(amount);
@@ -882,12 +886,12 @@ class CsvImportParserServiceTest {
 
   static byte[] fixture(String name) throws IOException {
     try (InputStream stream =
-        CsvImportParserServiceTest.class.getResourceAsStream("/import/" + name)) {
+        ImportFileParserServiceTest.class.getResourceAsStream("/import/" + name)) {
       return stream.readAllBytes();
     }
   }
 
-  private static MappingBuilder mapping(String bookingDate, String amount) {
+  static MappingBuilder mapping(String bookingDate, String amount) {
     return new MappingBuilder().bookingDate(bookingDate).amount(amount);
   }
 
@@ -906,9 +910,11 @@ class CsvImportParserServiceTest {
     private String currencyMode = "FIXED";
     private String fixedCurrency = "CHF";
     private ImportColumnMapping mapping =
-        CsvImportParserServiceTest.mapping("date", "amount").description("text").build();
+        ImportFileParserServiceTest.mapping("date", "amount").description("text").build();
     private Map<String, String> typeMapping = Map.of();
     private String accountStrategy = "USER_SELECTED";
+    private String fileFormat = "CSV";
+    private ImportPdfLayout pdfLayout;
 
     Template templateClass(String value) {
       templateClass = value;
@@ -985,6 +991,12 @@ class CsvImportParserServiceTest {
       return this;
     }
 
+    Template pdf(String format, ImportPdfLayout layout) {
+      fileFormat = format;
+      pdfLayout = layout;
+      return this;
+    }
+
     ImportTemplateDefinition build() {
       return new ImportTemplateDefinition(
           templateClass,
@@ -1001,7 +1013,9 @@ class CsvImportParserServiceTest {
           fixedCurrency,
           mapping,
           typeMapping,
-          accountStrategy);
+          accountStrategy,
+          fileFormat,
+          pdfLayout);
     }
   }
 

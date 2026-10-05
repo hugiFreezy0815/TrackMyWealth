@@ -15,6 +15,18 @@ public final class ImportTemplateValues {
 
   public static final String CLASS_CASH_TRANSACTIONS = "CASH_TRANSACTIONS";
 
+  /** A delimited text file (the default). */
+  public static final String FORMAT_CSV = "CSV";
+
+  /** A PDF read through its text layer ({@link ImportPdfLayout}). */
+  public static final String FORMAT_PDF_TEXT = "PDF_TEXT";
+
+  /** A scanned PDF read through local OCR, then like {@link #FORMAT_PDF_TEXT}. */
+  public static final String FORMAT_PDF_OCR = "PDF_OCR";
+
+  public static final Set<String> FILE_FORMATS =
+      Set.of(FORMAT_CSV, FORMAT_PDF_TEXT, FORMAT_PDF_OCR);
+
   /** One signed amount column; a negative value is money leaving the account. */
   public static final String AMOUNT_SINGLE_SIGNED_COLUMN = "SINGLE_SIGNED_COLUMN";
 

@@ -29,6 +29,22 @@ WORKDIR /app
 # deployment setting its own JAVA_TOOL_OPTIONS would silently replace.
 ENV LANG=C.UTF-8
 
+# #276: OCR for scanned PDF statements runs in this container, with local English and German
+# models only - a statement is personal financial data and is never sent to an external service.
+# The versions are those of the base image's Ubuntu release (26.04); a base image on another
+# release fails here, so a new Tesseract is a deliberate change, never a silent one.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        tesseract-ocr=5.5.0-1build1 \
+        tesseract-ocr-eng=1:4.1.0-2build1 \
+        tesseract-ocr-deu=1:4.1.0-2build1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && tesseract --list-langs | grep -qx deu \
+    && tesseract --list-langs | grep -qx eng
+# Tesseract otherwise starts an OpenMP thread per core for every page; LocalOcrService already
+# runs two recognitions side by side, and more threads only contend for the same cores.
+ENV OMP_THREAD_LIMIT=1
+
 # Runs as a non-root user - unlike the Maven build stage, this is the image that actually faces
 # the network.
 RUN addgroup --system trackmywealth && adduser --system --ingroup trackmywealth trackmywealth
