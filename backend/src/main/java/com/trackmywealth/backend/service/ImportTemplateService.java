@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +45,7 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <ul>
  *   <li>Visibility: the shipped templates ({@code workspace_id IS NULL}) plus the workspace's own,
- *       as V20's RLS allows. Any active member may create and change the workspace's templates;
+ *       as V65's RLS allows. Any active member may create and change the workspace's templates;
  *       shipped ones are read-only ({@code 403 IMPORT_TEMPLATE_READ_ONLY}). An id the caller cannot
  *       see is the audited, non-enumerating 404 (US-28-02/03).
  *   <li>Versioning (FR-IMP-023): a change to any field of {@link ImportTemplateDefinition} or to
@@ -285,20 +286,27 @@ public class ImportTemplateService {
   }
 
   // Authorization before the version (ADR 0004): hidden, then read-only, then stale, then retired.
+  // The lock comes first, so the row checked below is the locked, current one. It reaches the
+  // workspace's own rows only (V65's RLS lets a workspace lock (SELECT ... FOR UPDATE) nothing
+  // else), so only when it misses does a plain read tell a shipped template from a hidden one.
   private ImportTemplate requireChangeable(
       UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
-    ImportTemplate template =
-        templateRepository
-            .findVisibleToForUpdate(id, actor.workspaceId())
-            .orElseThrow(() -> accessControlService.denyAsNotFound(actor, ENTITY_TYPE, id));
-    if (template.isShared()) {
-      throw new ApiException(
-          HttpStatus.FORBIDDEN,
-          ApiErrorCode.IMPORT_TEMPLATE_READ_ONLY,
-          "Shipped import templates are shared by every workspace and cannot be changed. Create a"
-              + " template of your own instead.");
+    Optional<ImportTemplate> own = templateRepository.findOwnForUpdate(id, actor.workspaceId());
+    if (own.isEmpty()) {
+      // requireVisible throws the audited 404 for a template the workspace cannot see.
+      if (requireVisible(id, actor).isShared()) {
+        throw new ApiException(
+            HttpStatus.FORBIDDEN,
+            ApiErrorCode.IMPORT_TEMPLATE_READ_ONLY,
+            "Shipped import templates are shared by every workspace and cannot be changed. Create a"
+                + " template of your own instead.");
+      }
+      // Visible and not shipped means own, which the lock would have found: only a template written
+      // concurrently with this id gets here, and it stays hidden.
+      throw accessControlService.denyAsNotFound(actor, ENTITY_TYPE, id);
     }
+    ImportTemplate template = own.get();
     versionPreconditionService.requireCurrent(
         expectedVersion, template.getVersion(), VERSIONED_RESOURCE);
     if (!template.isCurrent()) {

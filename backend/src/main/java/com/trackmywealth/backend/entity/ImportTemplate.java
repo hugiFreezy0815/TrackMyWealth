@@ -17,7 +17,7 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Maps {@code import_template} (V15, V64): one version of a CSV import template (US-07-03). A NULL
- * {@code workspaceId} is a shipped template, read-only to every workspace (V20's RLS). The versions
+ * {@code workspaceId} is a shipped template, read-only to every workspace (V65's RLS). The versions
  * of one template share {@code templateFamilyId}; exactly one is current. A version's
  * parse-relevant fields never change after it was written - a change writes a new version - so a
  * batch that used it stays reproducible (FR-IMP-023).

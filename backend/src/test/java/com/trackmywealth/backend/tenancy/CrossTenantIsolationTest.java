@@ -3,6 +3,7 @@ package com.trackmywealth.backend.tenancy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import java.sql.Connection;
@@ -122,17 +123,8 @@ class CrossTenantIsolationTest {
   // block exactly, so this test enforces RLS under the same privilege level the real application
   // is meant to run under once that role split lands (see ADR-0001's Consequences section).
   private static void createNonSuperuserRoleForRlsEnforcement() throws Exception {
-    try (Connection admin = adminConnection();
-        Statement statement = admin.createStatement()) {
-      statement.execute(
-          "CREATE ROLE "
-              + TEST_ROLE
-              + " LOGIN PASSWORD '"
-              + TEST_ROLE_PASSWORD
-              + "' NOSUPERUSER NOBYPASSRLS");
-      statement.execute(
-          "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO " + TEST_ROLE);
-      statement.execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO " + TEST_ROLE);
+    try (Connection admin = adminConnection()) {
+      RowLevelSecurityRole.createWithLogin(admin, TEST_ROLE, TEST_ROLE_PASSWORD);
     }
   }
 
@@ -318,37 +310,117 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceAId, "import_template", sharedTemplateId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "import_template", sharedTemplateId)).isTrue();
 
-    try (Connection connection = testRoleConnection()) {
-      connection.setAutoCommit(false);
-      setWorkspaceContext(connection, workspaceAId);
-      try (PreparedStatement statement =
-          connection.prepareStatement("UPDATE import_template SET name = 'mine' WHERE id = ?")) {
-        statement.setObject(1, sharedTemplateId);
-        assertThatThrownBy(statement::executeUpdate)
-            .isInstanceOf(SQLException.class)
-            .hasMessageContaining("row-level security");
-      } finally {
-        connection.rollback();
-      }
+    // V65: the shipped row is out of reach of a workspace's UPDATE and DELETE. V20's single policy
+    // let DELETE through, and an UPDATE that moved the row into the caller's workspace.
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceAId,
+                "UPDATE import_template SET name = 'mine' WHERE id = ?",
+                sharedTemplateId))
+        .isZero();
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceAId,
+                "UPDATE import_template SET workspace_id = ? WHERE id = ?",
+                workspaceAId,
+                sharedTemplateId))
+        .isZero();
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceAId, "DELETE FROM import_template WHERE id = ?", sharedTemplateId))
+        .isZero();
+    // A workspace can neither ship a template nor write one into another workspace.
+    for (UUID foreignWorkspace : new UUID[] {null, workspaceBId}) {
+      assertThatThrownBy(
+              () ->
+                  rowsChangedUnderContext(
+                      workspaceAId,
+                      "INSERT INTO import_template (id, template_family_id, workspace_id, name,"
+                          + " template_version, column_mapping, is_system_provided) VALUES"
+                          + " (gen_random_uuid(), gen_random_uuid(), ?, 'Template', '1', '{}',"
+                          + " false)",
+                      foreignWorkspace))
+          .isInstanceOf(SQLException.class)
+          .hasMessageContaining("row-level security");
     }
+    // Not vacuous: the workspace still changes and deletes its own template.
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceAId, "UPDATE import_template SET name = 'mine' WHERE id = ?", templateAId))
+        .isOne();
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceAId, "DELETE FROM import_template WHERE id = ?", templateAId))
+        .isOne();
   }
 
   // The shared default is visible but never writable by a workspace: its customisation belongs in
   // workspace_category_override, or one workspace would relabel the category for all of them.
+  // V65 (#279): the shipped row is out of reach of a workspace's UPDATE, not just refused by it.
   @Test
   void aWorkspaceCannotEditASharedDefaultCategory() throws Exception {
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceAId,
+                "UPDATE category SET is_active = false WHERE id = ?",
+                sharedCategoryId))
+        .isZero();
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceAId,
+                "UPDATE category SET workspace_id = ? WHERE id = ?",
+                workspaceAId,
+                sharedCategoryId))
+        .isZero();
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceAId, "UPDATE category SET name_en = 'Mine' WHERE id = ?", categoryAId))
+        .isOne();
+  }
+
+  // V65 (#279): V20's policy let a workspace DELETE an unused shipped default, and V35's cascade
+  // then removed every other workspace's override of it too.
+  @Test
+  void aWorkspaceCannotDeleteASharedDefaultCategory() throws Exception {
+    UUID unusedDefaultId = UUID.randomUUID();
+    try (Connection admin = adminConnection();
+        PreparedStatement insert =
+            admin.prepareStatement(
+                "INSERT INTO category (id, workspace_id, code, name_en, name_de,"
+                    + " is_system_default) VALUES (?, NULL, 'CROSS_TENANT_UNUSED', 'Unused',"
+                    + " 'Unbenutzt', TRUE)")) {
+      insert.setObject(1, unusedDefaultId);
+      insert.executeUpdate();
+    }
+    UUID overrideBId;
     try (Connection connection = testRoleConnection()) {
       connection.setAutoCommit(false);
-      setWorkspaceContext(connection, workspaceAId);
-      try (PreparedStatement statement =
-          connection.prepareStatement("UPDATE category SET is_active = false WHERE id = ?")) {
-        statement.setObject(1, sharedCategoryId);
-        assertThatThrownBy(statement::executeUpdate)
-            .isInstanceOf(SQLException.class)
-            .hasMessageContaining("row-level security");
-      } finally {
-        connection.rollback();
-      }
+      setWorkspaceContext(connection, workspaceBId);
+      overrideBId = insertCategoryOverride(connection, workspaceBId, unusedDefaultId);
+      connection.commit();
+    }
+
+    // Committed, unlike rowsChangedUnderContext, so the checks below would see a delete and its
+    // cascade. Both rows belong to this test, so a regression cannot reach another test's data.
+    assertThat(
+            rowsCommittedUnderContext(
+                workspaceAId, "DELETE FROM category WHERE id = ?", unusedDefaultId))
+        .isZero();
+    assertThat(rowVisibleUnderContext(workspaceBId, "category", unusedDefaultId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "workspace_category_override", overrideBId))
+        .isTrue();
+    for (UUID foreignWorkspace : new UUID[] {null, workspaceBId}) {
+      assertThatThrownBy(
+              () ->
+                  rowsChangedUnderContext(
+                      workspaceAId,
+                      "INSERT INTO category (id, workspace_id, code, name_en, name_de)"
+                          + " VALUES (gen_random_uuid(), ?, ?, 'Foreign', 'Fremd')",
+                      foreignWorkspace,
+                      // A code the namespace check accepts, so only RLS can refuse the row.
+                      foreignWorkspace == null ? "FOREIGN_DEFAULT" : "WS_FOREIGN"))
+          .isInstanceOf(SQLException.class)
+          .hasMessageContaining("row-level security");
     }
   }
 
@@ -426,6 +498,39 @@ class CrossTenantIsolationTest {
 
   private static Connection testRoleConnection() throws Exception {
     return DriverManager.getConnection(postgres.getJdbcUrl(), TEST_ROLE, TEST_ROLE_PASSWORD);
+  }
+
+  // Runs one statement as the RLS-bound role in workspace contextWorkspaceId and rolls it back.
+  private int rowsChangedUnderContext(UUID contextWorkspaceId, String sql, Object... parameters)
+      throws Exception {
+    return rowsChangedUnderContext(false, contextWorkspaceId, sql, parameters);
+  }
+
+  // As rowsChangedUnderContext, but commits, so a later check sees what the statement did.
+  private int rowsCommittedUnderContext(UUID contextWorkspaceId, String sql, Object... parameters)
+      throws Exception {
+    return rowsChangedUnderContext(true, contextWorkspaceId, sql, parameters);
+  }
+
+  private int rowsChangedUnderContext(
+      boolean commit, UUID contextWorkspaceId, String sql, Object... parameters) throws Exception {
+    try (Connection connection = testRoleConnection()) {
+      connection.setAutoCommit(false);
+      setWorkspaceContext(connection, contextWorkspaceId);
+      try (PreparedStatement statement = connection.prepareStatement(sql)) {
+        for (int i = 0; i < parameters.length; i++) {
+          statement.setObject(i + 1, parameters[i]);
+        }
+        int rows = statement.executeUpdate();
+        if (commit) {
+          connection.commit();
+        }
+        return rows;
+      } finally {
+        // A no-op after the commit; otherwise it undoes the statement.
+        connection.rollback();
+      }
+    }
   }
 
   private void setWorkspaceContext(Connection connection, UUID workspaceId) throws Exception {

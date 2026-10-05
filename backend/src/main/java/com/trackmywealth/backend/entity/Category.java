@@ -14,7 +14,7 @@ import org.hibernate.generator.EventType;
 
 /**
  * Maps {@code category} (V13, V34): the canonical reporting taxonomy (DM-22, FR-CAT-001..003). A
- * NULL {@code workspaceId} is a shipped default shared by every workspace; RLS (V20) makes such a
+ * NULL {@code workspaceId} is a shipped default shared by every workspace; RLS (V65) makes such a
  * row read-only to workspaces, so a workspace's relabelling or deactivation of it lives in {@link
  * WorkspaceCategoryOverride} instead. {@code code} is the stable identity reports key on
  * (FR-CAT-008) and never changes after creation, hence {@code updatable = false}.
