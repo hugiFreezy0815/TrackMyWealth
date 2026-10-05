@@ -17,6 +17,8 @@ import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategoryService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
+import jakarta.persistence.EntityManager;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -44,6 +46,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -60,6 +63,8 @@ class CategoryControllerTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
   private static final String BASE = "/api/v1/categories";
+  // Bound by RLS, unlike the application's own role in these tests (see RowLevelSecurityRole).
+  private static final String RLS_ROLE = "category_rls_role";
   private static final ParameterizedTypeReference<List<CategoryResponse>> CATEGORY_LIST =
       new ParameterizedTypeReference<>() {};
 
@@ -83,6 +88,10 @@ class CategoryControllerTest {
   @Autowired DataSource dataSource;
 
   @Autowired CategoryService categoryService;
+
+  @Autowired PlatformTransactionManager transactionManager;
+
+  @Autowired EntityManager entityManager;
 
   // Leaves the shipped defaults (workspace_id IS NULL, V19) in place: they are the subject here.
   @BeforeEach
@@ -486,6 +495,70 @@ class CategoryControllerTest {
             e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
   }
 
+  // #279: the tests above run as a role that bypasses RLS, so they cannot see V65, which keeps a
+  // workspace from writing a shipped default at all. A member's changes to a default must not
+  // depend on that write: relabelling and deactivating go to the workspace's override, and a
+  // delete stays the 409 that points at deactivation. An own category is still deleted, so the
+  // role can write and the 409 is not an artefact of a role that can do nothing.
+  @Test
+  void aSharedDefaultIsCustomisedNotWrittenUnderRowLevelSecurity() throws Exception {
+    String token = bootstrapAdministrator();
+    AuthenticatedUserPrincipal admin = adminPrincipal();
+    // A leaf nothing refers to, so only the shipped-row rule can refuse its delete.
+    UUID shipped =
+        jdbcUuid(
+            "SELECT id FROM category c WHERE is_system_default = ?"
+                + " AND code NOT IN ('UNCATEGORIZED', 'TRANSFER_INTERNAL')"
+                + " AND NOT EXISTS (SELECT 1 FROM category child"
+                + " WHERE child.parent_category_id = c.id)"
+                + " AND NOT EXISTS (SELECT 1 FROM category_source_mapping m"
+                + " WHERE m.category_id = c.id) ORDER BY code LIMIT 1",
+            true);
+    String shippedName = jdbcString("SELECT name_en FROM category WHERE id = ?", shipped);
+    int version = getCategory(token, shipped).version();
+    CategoryResponse hobby = created(token, new CreateCategoryRequest(null, "Hobby", "Hobby"));
+    try (Connection connection = dataSource.getConnection()) {
+      RowLevelSecurityRole.create(connection, RLS_ROLE);
+    }
+
+    CategoryResponse relabelled =
+        underRowLevelSecurity(
+            admin,
+            () ->
+                categoryService.update(
+                    shipped,
+                    new UpdateCategoryRequest(null, "Relabelled", "Umbenannt"),
+                    version,
+                    admin));
+    assertThat(relabelled.nameEn()).isEqualTo("Relabelled");
+    assertThat(relabelled.customised()).isTrue();
+    CategoryResponse deactivated =
+        underRowLevelSecurity(
+            admin, () -> categoryService.deactivate(shipped, relabelled.version(), admin));
+    assertThat(deactivated.active()).isFalse();
+    assertThatThrownBy(
+            () ->
+                underRowLevelSecurity(
+                    admin,
+                    () -> {
+                      categoryService.delete(shipped, deactivated.version(), admin);
+                      return null;
+                    }))
+        .isInstanceOfSatisfying(
+            ResponseStatusException.class,
+            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+    assertThat(jdbcString("SELECT name_en FROM category WHERE id = ?", shipped))
+        .isEqualTo(shippedName);
+
+    underRowLevelSecurity(
+        admin,
+        () -> {
+          categoryService.delete(hobby.id(), hobby.version(), admin);
+          return null;
+        });
+    assertThat(count("SELECT count(*) FROM category WHERE id = ?", hobby.id())).isZero();
+  }
+
   // --- V34 guards --------------------------------------------------------------------------
 
   @Test
@@ -779,6 +852,22 @@ class CategoryControllerTest {
     } finally {
       SecurityContextHolder.clearContext();
     }
+  }
+
+  private <T> T underRowLevelSecurity(AuthenticatedUserPrincipal principal, Supplier<T> call) {
+    return as(
+        principal,
+        () -> RowLevelSecurityRole.call(transactionManager, entityManager, RLS_ROLE, call));
+  }
+
+  private AuthenticatedUserPrincipal adminPrincipal() {
+    String email = "admin@example.com";
+    return new AuthenticatedUserPrincipal(
+        jdbcUuid("SELECT id FROM app_user WHERE email = ?", email),
+        jdbcString("SELECT role FROM app_user WHERE email = ?", email),
+        workspaceOf(email),
+        UUID.randomUUID(),
+        "EN");
   }
 
   private UUID defaultId(String code) {

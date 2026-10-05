@@ -15,6 +15,7 @@ import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
 import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.io.InputStream;
@@ -51,7 +52,6 @@ import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.test.web.servlet.client.StatusAssertions;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.server.ResponseStatusException;
@@ -72,8 +72,7 @@ class ImportTemplateControllerTest {
   private static final String BASE = "/api/v1/import-templates";
   private static final String SWISS = "swiss-cash-iso-8859-1.csv";
   private static final String GERMAN = "german-cash-utf8-bom.csv";
-  // NOSUPERUSER NOBYPASSRLS, unlike the application's own role in these tests (see
-  // CrossTenantIsolationTest).
+  // Bound by RLS, unlike the application's own role in these tests (see RowLevelSecurityRole).
   private static final String RLS_ROLE = "import_template_rls_role";
   private static final ParameterizedTypeReference<List<ImportTemplateResponse>> TEMPLATE_LIST =
       new ParameterizedTypeReference<>() {};
@@ -1075,28 +1074,15 @@ class ImportTemplateControllerTest {
   }
 
   private void createRowLevelSecurityRole() throws SQLException {
-    execute(
-        "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '"
-            + RLS_ROLE
-            + "') THEN CREATE ROLE "
-            + RLS_ROLE
-            + " NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$");
-    execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO " + RLS_ROLE);
-    execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO " + RLS_ROLE);
+    try (Connection connection = dataSource.getConnection()) {
+      RowLevelSecurityRole.create(connection, RLS_ROLE);
+    }
   }
 
-  // Runs call as principal in one transaction that switches to RLS_ROLE after the workspace
-  // context is set, so every statement the service issues is bound by RLS.
   private <T> T underRowLevelSecurity(AuthenticatedUserPrincipal principal, Supplier<T> call) {
     return as(
         principal,
-        () ->
-            new TransactionTemplate(transactionManager)
-                .execute(
-                    status -> {
-                      entityManager.createNativeQuery("SET LOCAL ROLE " + RLS_ROLE).executeUpdate();
-                      return call.get();
-                    }));
+        () -> RowLevelSecurityRole.call(transactionManager, entityManager, RLS_ROLE, call));
   }
 
   // A row written past the API: a shipped template (null workspace) or another workspace's own.

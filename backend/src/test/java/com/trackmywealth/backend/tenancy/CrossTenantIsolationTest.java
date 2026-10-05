@@ -3,6 +3,7 @@ package com.trackmywealth.backend.tenancy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import java.sql.Connection;
@@ -122,17 +123,8 @@ class CrossTenantIsolationTest {
   // block exactly, so this test enforces RLS under the same privilege level the real application
   // is meant to run under once that role split lands (see ADR-0001's Consequences section).
   private static void createNonSuperuserRoleForRlsEnforcement() throws Exception {
-    try (Connection admin = adminConnection();
-        Statement statement = admin.createStatement()) {
-      statement.execute(
-          "CREATE ROLE "
-              + TEST_ROLE
-              + " LOGIN PASSWORD '"
-              + TEST_ROLE_PASSWORD
-              + "' NOSUPERUSER NOBYPASSRLS");
-      statement.execute(
-          "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO " + TEST_ROLE);
-      statement.execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO " + TEST_ROLE);
+    try (Connection admin = adminConnection()) {
+      RowLevelSecurityRole.createWithLogin(admin, TEST_ROLE, TEST_ROLE_PASSWORD);
     }
   }
 

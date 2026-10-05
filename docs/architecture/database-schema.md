@@ -411,8 +411,8 @@ issue #144.
   `V20` still let a `DELETE` through), and editing the shared row would change it for everyone.
   Relabelling or deactivating a default is stored per workspace in `workspace_category_override`
   (`V34`; a NULL column inherits the shipped value, and an override that overrides nothing is
-  deleted). It is a user customisation a reference package must not overwrite (FR-REF-009). Defaults keep their shipped position; only workspace categories
-  can be moved.
+  deleted). It is a user customisation a reference package must not overwrite (FR-REF-009).
+  Defaults keep their shipped position; only workspace categories can be moved.
 - **Codes.** Reports key on `code`, never on a label (FR-CAT-008). Workspace codes are generated
   from the English label, immutable, and carry a `WS_` prefix that defaults never use
   (`category_code_namespace`), so a future default cannot collide with a workspace code. `V34`
