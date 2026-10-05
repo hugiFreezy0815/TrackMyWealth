@@ -3,6 +3,8 @@ package com.trackmywealth.backend.validation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -32,6 +34,62 @@ class Re2PatternsTest {
     assertThatThrownBy(() -> Re2Patterns.compile("(?:a{1000}){1000}"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("repeats more than a statement line needs");
+  }
+
+  /**
+   * B1 of the second PR #267 review: an empty group compiles to capture instructions too. Costed at
+   * nothing, {@code ((){1000}){1000}} passed, retained about 115 MB and overflowed the matching
+   * thread's stack.
+   */
+  @Test
+  void repeatsOfEmptyGroupsAndAlternativesAreRefusedToo() {
+    assertThat(Re2Patterns.programCost("((){1000}){1000}")).isEqualTo(OVER);
+    assertThat(Re2Patterns.programCost("((|){1000}){1000}")).isEqualTo(OVER);
+    assertThat(Re2Patterns.programCost("(()){999}")).isEqualTo(OVER);
+    assertThat(Re2Patterns.programCost("(?:\\b|){1000}")).isEqualTo(OVER);
+    assertThat(Re2Patterns.programCost("(){3}")).isEqualTo(12);
+    assertThat(Re2Patterns.programCost("(a|b)")).isEqualTo(7);
+    assertThatThrownBy(() -> Re2Patterns.compile("((){1000}){1000}"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("repeats more than a statement line needs");
+  }
+
+  /**
+   * The budget bounds the chain of empty instructions RE2/J follows recursively: the longest ones
+   * it accepts match on a 512 KB stack, half of a request thread's default.
+   */
+  @Test
+  void theLongestAcceptedChainsOfEmptyInstructionsMatchOnHalfTheDefaultStack()
+      throws InterruptedException {
+    List<String> longest =
+        List.of("(){499}", "(|){399}", "(?:(){40}){12}", "()".repeat(500), "^{1000}", "\\b{1000}");
+    List<Throwable> failures = new CopyOnWriteArrayList<>();
+    Thread matcher =
+        new Thread(
+            null,
+            () -> {
+              for (String pattern : longest) {
+                try {
+                  Re2Patterns.compile(pattern).matcher("x".repeat(100)).find();
+                } catch (RuntimeException | StackOverflowError e) {
+                  failures.add(e);
+                }
+              }
+            },
+            "re2-small-stack",
+            512 * 1024);
+    matcher.start();
+    matcher.join();
+
+    assertThat(longest).allSatisfy(p -> assertThat(Re2Patterns.programCost(p)).isLessThan(OVER));
+    assertThat(failures).isEmpty();
+  }
+
+  @Test
+  void aCompiledPatternIsReused() {
+    String pattern = "(\\d{2})\\.(\\d{2}) reused";
+
+    assertThat(Re2Patterns.compile(pattern)).isSameAs(Re2Patterns.compile(pattern));
   }
 
   @Test

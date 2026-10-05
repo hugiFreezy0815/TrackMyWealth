@@ -3,7 +3,10 @@ package com.trackmywealth.backend.validation;
 import com.google.re2j.Pattern;
 import com.google.re2j.PatternSyntaxException;
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -13,6 +16,16 @@ import java.util.Optional;
  * (?:a{1000}){1000}} compile to a million instructions, about 60 MB of heap. So the program is
  * estimated before the pattern is compiled, and one over {@value #MAX_PROGRAM_COST} is refused.
  * That is far above any real statement line's pattern: a 50-column row pattern costs a few hundred.
+ * A group costs its capture instructions even when it is empty, so {@code ((){1000}){1000}}, which
+ * matches nothing, is refused too: it compiled to millions of empty instructions, retaining about
+ * 115 MB and overflowing the stack of the thread that matched it. RE2/J follows a chain of empty
+ * instructions (captures, alternatives, {@code ^}, {@code \b}) recursively, and the budget also
+ * bounds that chain: at most five hundred empty groups (RE2/J itself refuses a count over a
+ * thousand), which match on half of a request thread's default 1 MB stack.
+ *
+ * <p>Every member pattern is compiled here, also on the import path: the check then holds for a
+ * template stored before it existed, and the last {@value #CACHE_SIZE} patterns are compiled once,
+ * not once per template and request (detection tries every PDF template on each upload).
  */
 public final class Re2Patterns {
 
@@ -30,16 +43,43 @@ public final class Re2Patterns {
   private static final String QUOTE_END = "\\E";
   private static final String NAMED_CLASS_START = "[:";
   private static final String NAMED_CLASS_END = ":]";
+  // A group compiles to a capture start and end, a chain RE2/J follows recursively (see the class
+  // comment). Counted twice, so an empty group's share of the budget matches its stack use.
+  private static final long GROUP_COST = 4;
+  // An accepted pattern retains at most a few hundred kilobytes, so the cache at most ~15 MB.
+  private static final int CACHE_SIZE = 64;
+  // Compiled RE2/J patterns are immutable and thread-safe; access order makes it least recently
+  // used.
+  private static final Map<String, Pattern> CACHE =
+      Collections.synchronizedMap(
+          new LinkedHashMap<>(CACHE_SIZE, 0.75f, true) {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Pattern> eldest) {
+              return size() > CACHE_SIZE;
+            }
+          });
 
   private Re2Patterns() {}
 
   /**
-   * {@code pattern} compiled.
+   * {@code pattern} compiled, or the copy compiled before.
    *
    * @throws IllegalArgumentException with a user-facing reason when it is not valid RE2 or its
    *     program would exceed {@link #MAX_PROGRAM_COST}
    */
   public static Pattern compile(String pattern) {
+    Pattern cached = CACHE.get(pattern);
+    if (cached != null) {
+      return cached;
+    }
+    Pattern compiled = compileChecked(pattern);
+    CACHE.put(pattern, compiled);
+    return compiled;
+  }
+
+  private static Pattern compileChecked(String pattern) {
     if (programCost(pattern) > MAX_PROGRAM_COST) {
       throw new IllegalArgumentException(
           "The pattern repeats more than a statement line needs; use fewer or smaller counted"
@@ -55,9 +95,10 @@ public final class Re2Patterns {
   /**
    * An upper estimate of the instructions RE2 compiles {@code pattern} into: one per literal,
    * escape or character class (a quoted {@code \Q...\E} run one per character), a group the sum of
-   * its content, an operator such as {@code *} one more, and a counted repeat the cost of what it
-   * repeats times its largest count. Saturates just above {@link #MAX_PROGRAM_COST}, so it never
-   * overflows. The syntax is not checked here; compiling does that.
+   * its content plus {@value #GROUP_COST} (even an empty one), an alternative and an operator such
+   * as {@code *} one more each, and a counted repeat the cost of what it repeats (at least one)
+   * times its largest count. Saturates just above {@link #MAX_PROGRAM_COST}, so it never overflows.
+   * The syntax is not checked here; compiling does that.
    */
   static long programCost(String pattern) {
     Deque<Long> enclosing = new ArrayDeque<>();
@@ -74,12 +115,13 @@ public final class Re2Patterns {
           i++;
         }
         case ')' -> {
-          long group = total;
+          long group = add(total, GROUP_COST);
           total = add(enclosing.isEmpty() ? 0 : enclosing.pop(), group);
           last = group;
           i++;
         }
         case '|' -> {
+          total = add(total, 1);
           last = 0;
           i++;
         }
@@ -159,11 +201,13 @@ public final class Re2Patterns {
     return Math.min(CAP, a + b);
   }
 
+  // a is at least one: even a repeat of nothing compiles one instruction per copy.
   private static long multiply(long a, long b) {
-    if (a == 0 || b <= 0) {
+    if (b <= 0) {
       return 0;
     }
-    return a > CAP / b ? CAP : Math.min(CAP, a * b);
+    long item = Math.max(1, a);
+    return item > CAP / b ? CAP : Math.min(CAP, item * b);
   }
 
   // The index after the atom at i: an escape (with its {...} argument, or a whole \Q...\E run),

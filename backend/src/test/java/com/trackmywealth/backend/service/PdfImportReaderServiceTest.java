@@ -6,6 +6,7 @@ import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -34,7 +35,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.IntFunction;
+import java.util.zip.DeflaterOutputStream;
+import javax.imageio.ImageIO;
+import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -247,6 +252,86 @@ class PdfImportReaderServiceTest {
 
       assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_MALFORMED);
     }
+  }
+
+  /**
+   * Second PR #267 review: an inline image is no stream of the document, and PDFBox decodes its
+   * whole data as soon as rendering reaches it. A few kilobytes of Flate data inflating past the
+   * stream limit are refused before that.
+   */
+  @Test
+  void anInlineImageThatInflatesPastTheLimitIsNotRenderedForOcr() throws IOException {
+    ByteArrayOutputStream inflated = new ByteArrayOutputStream();
+    try (OutputStream deflating = new DeflaterOutputStream(inflated)) {
+      byte[] zeros = new byte[1 << 20];
+      for (long written = 0; written <= PdfImportReaderService.MAX_STREAM_BYTES; ) {
+        deflating.write(zeros);
+        written += zeros.length;
+      }
+    }
+    ByteArrayOutputStream content = new ByteArrayOutputStream();
+    content.write(
+        "q 100 0 0 100 50 50 cm BI /W 10 /H 10 /BPC 8 /CS /G /F /Fl ID "
+            .getBytes(StandardCharsets.US_ASCII));
+    content.write(inflated.toByteArray());
+    content.write("\nEI Q\n".getBytes(StandardCharsets.US_ASCII));
+    assertThat(content.size()).as("a small file").isLessThan(100_000);
+
+    assertOcrRefused(pageWithContent(content.toByteArray()), "decodes to more than allowed");
+  }
+
+  /** A small inline image is still drawn: the check refuses only what is over a limit. */
+  @Test
+  void aSmallInlineImageIsRenderedForOcr() throws IOException {
+    byte[] content =
+        "q 100 0 0 100 50 50 cm BI /W 2 /H 2 /BPC 8 /CS /G /F /AHx ID 00FF00FF> EI Q\n"
+            .getBytes(StandardCharsets.US_ASCII);
+    when(ocr.recognizePages(anyInt(), any()))
+        .thenAnswer(
+            invocation -> {
+              IntFunction<BufferedImage> render = invocation.getArgument(1);
+              render.apply(0);
+              return MARKER;
+            });
+
+    assertThat(reader.readText(pageWithContent(content), true)).isEqualTo(MARKER);
+  }
+
+  /**
+   * PDFBox decodes JPEG data at the size in its own header, not at the size the image declares.
+   * Rendering refuses one whose header holds too many pixels; reading the text layer decodes no
+   * image and is unaffected. The abbreviated filter name is a JPEG too.
+   */
+  @Test
+  void aJpegLargerThanItDeclaresIsNotRenderedForOcr() throws IOException {
+    for (COSName filter : List.of(COSName.DCT_DECODE, COSName.DCT_DECODE_ABBREVIATION)) {
+      byte[] statement =
+          withImage(
+              jpegClaiming(20_000, 20_000),
+              filter,
+              image -> image.setItem(COSName.CS, COSName.DEVICEGRAY));
+
+      assertOcrRefused(statement, "more pixels than a statement needs");
+      assertThat(reader.readText(statement, false)).contains(MARKER);
+    }
+  }
+
+  /** PDFBox allocates CCITT data by its decode parameters' Columns and Rows. */
+  @Test
+  void ccittDataOfMorePixelsThanAStatementNeedsIsNotRenderedForOcr() throws IOException {
+    byte[] statement =
+        withImage(
+            new byte[] {0},
+            COSName.CCITTFAX_DECODE,
+            image -> {
+              COSDictionary decode = new COSDictionary();
+              decode.setInt(COSName.COLUMNS, 100_000);
+              decode.setInt(COSName.ROWS, 100_000);
+              image.setItem(COSName.DECODE_PARMS, decode);
+            });
+
+    assertOcrRefused(statement, "more pixels than a statement needs");
+    assertThat(reader.readText(statement, false)).contains(MARKER);
   }
 
   @Test
@@ -498,6 +583,79 @@ class PdfImportReaderServiceTest {
   }
 
   // --- helpers -------------------------------------------------------------------------------
+
+  // An OCR read of content is a 422 IMPORT_FILE_MALFORMED for reason, from this class's own limits.
+  private void assertOcrRefused(byte[] content, String reason) {
+    doAnswer(
+            invocation -> {
+              IntFunction<BufferedImage> render = invocation.getArgument(1);
+              render.apply(0);
+              return MARKER;
+            })
+        .when(ocr)
+        .recognizePages(anyInt(), any());
+    assertThatThrownBy(() -> reader.readText(content, true))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_MALFORMED);
+              assertThat(e.getStatusCode().value()).isEqualTo(422);
+            })
+        .rootCause()
+        .hasMessageContaining(reason);
+  }
+
+  // A one-page PDF whose page content is exactly content, unfiltered.
+  private static byte[] pageWithContent(byte[] content) throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      PDPage page = new PDPage();
+      document.addPage(page);
+      page.setContents(new PDStream(document, new ByteArrayInputStream(content)));
+      document.save(output);
+      return output.toByteArray();
+    }
+  }
+
+  // A statement page with the marker that also holds an image XObject of this raw data and filter.
+  private static byte[] withImage(byte[] data, COSName filter, Consumer<COSDictionary> settings)
+      throws IOException {
+    try (PDDocument document = new PDDocument();
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      addPage(document, MARKER);
+      PDStream image = new PDStream(document, new ByteArrayInputStream(data));
+      COSDictionary dictionary = image.getCOSObject();
+      dictionary.setItem(COSName.TYPE, COSName.XOBJECT);
+      dictionary.setItem(COSName.SUBTYPE, COSName.IMAGE);
+      dictionary.setInt(COSName.WIDTH, 8);
+      dictionary.setInt(COSName.HEIGHT, 8);
+      dictionary.setInt(COSName.BITS_PER_COMPONENT, 8);
+      dictionary.setItem(COSName.FILTER, filter);
+      settings.accept(dictionary);
+      document.getPage(0).getCOSObject().setItem(COSName.getPDFName("InventedImage"), image);
+      document.save(output);
+      return output.toByteArray();
+    }
+  }
+
+  // An 8 x 8 grey JPEG whose frame header claims width x height.
+  private static byte[] jpegClaiming(int width, int height) throws IOException {
+    ByteArrayOutputStream jpeg = new ByteArrayOutputStream();
+    assertThat(ImageIO.write(new BufferedImage(8, 8, BufferedImage.TYPE_BYTE_GRAY), "jpeg", jpeg))
+        .isTrue();
+    byte[] bytes = jpeg.toByteArray();
+    for (int i = 0; i + 8 < bytes.length; i++) {
+      if (bytes[i] == (byte) 0xFF && bytes[i + 1] == (byte) 0xC0) {
+        // SOF0: marker, length (2), precision (1), height (2), width (2).
+        bytes[i + 5] = (byte) (height >> 8);
+        bytes[i + 6] = (byte) height;
+        bytes[i + 7] = (byte) (width >> 8);
+        bytes[i + 8] = (byte) width;
+        return bytes;
+      }
+    }
+    throw new IllegalStateException("no SOF0 frame header");
+  }
 
   private static ImportFileParserServiceTest.Template germanTemplate(ImportPdfLayout layout) {
     return new ImportFileParserServiceTest.Template()

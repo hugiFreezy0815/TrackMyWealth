@@ -8,22 +8,32 @@ import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
+import com.trackmywealth.backend.validation.InlineImageCheckingRenderer;
+import com.trackmywealth.backend.validation.Re2Patterns;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import javax.imageio.IIOException;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.MemoryCacheImageInputStream;
+import org.apache.commons.io.function.IOSupplier;
 import org.apache.commons.io.output.NullOutputStream;
 import org.apache.commons.io.output.ThresholdingOutputStream;
 import org.apache.commons.io.output.UnsynchronizedByteArrayOutputStream;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
+import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.cos.COSObjectKey;
@@ -48,9 +58,12 @@ import org.springframework.stereotype.Service;
  * stream into memory before it reads it, and a few hundred kilobytes of Flate data can inflate to
  * gigabytes, so every stream is first decoded once into a counter that keeps nothing: at most
  * {@value #MAX_STREAM_BYTES} bytes per stream and {@value #MAX_DECODED_BYTES} in all, and an image
- * of at most {@value #MAX_IMAGE_PIXELS} pixels. Then {@value #MAX_TEXT} characters of text (read
- * page by page, stopping at the limit), and for OCR pages of at most {@value #MAX_OCR_PAGE_POINTS}
- * points a side, rendered one at a time in grey.
+ * of at most {@value #MAX_IMAGE_PIXELS} pixels - those it declares and, for JPEG and CCITT data,
+ * those its own data or decode parameters hold, which is what PDFBox allocates. An inline image
+ * (inside a content stream, so no stream of its own) is checked the same way when OCR rendering
+ * reaches it. Then {@value #MAX_TEXT} characters of text (read page by page, stopping at the
+ * limit), and for OCR pages of at most {@value #MAX_OCR_PAGE_POINTS} points a side, rendered one at
+ * a time in grey.
  *
  * <p>Those limits bound one read; at most {@value #MAX_CONCURRENT_READS} run at a time, so they
  * bound the heap all uploads together can take (a PDF loaded, one stream decoded, its text or one
@@ -72,8 +85,22 @@ public class PdfImportReaderService {
   // A statement's streams use one or two filters; the chain is decoded one stage per call.
   static final int MAX_FILTERS = 8;
   // Image codecs are decoded to pixels, bounded by MAX_IMAGE_PIXELS; the filters before one count.
+  // PDFBox accepts the abbreviated names (meant for inline images) on any stream. JPX and JBIG2
+  // need ImageIO plugins this application does not ship, so PDFBox cannot decode them at all.
+  private static final Set<COSName> JPEG_CODECS =
+      Set.of(COSName.DCT_DECODE, COSName.DCT_DECODE_ABBREVIATION);
+  private static final Set<COSName> CCITT_CODECS =
+      Set.of(COSName.CCITTFAX_DECODE, COSName.CCITTFAX_DECODE_ABBREVIATION);
   private static final Set<COSName> IMAGE_CODECS =
-      Set.of(COSName.DCT_DECODE, COSName.JPX_DECODE, COSName.JBIG2_DECODE, COSName.CCITTFAX_DECODE);
+      Set.of(
+          COSName.DCT_DECODE,
+          COSName.DCT_DECODE_ABBREVIATION,
+          COSName.JPX_DECODE,
+          COSName.JBIG2_DECODE,
+          COSName.CCITTFAX_DECODE,
+          COSName.CCITTFAX_DECODE_ABBREVIATION);
+  // PDFBox's default width of CCITT data without a /Columns decode parameter.
+  private static final int CCITT_DEFAULT_COLUMNS = 1728;
   private static final int OCR_DPI = 200;
   private static final byte[] PDF_MAGIC = "%PDF-".getBytes(StandardCharsets.US_ASCII);
 
@@ -107,8 +134,8 @@ public class PdfImportReaderService {
       throw mismatch("The PDF does not contain this template's document marker.");
     }
     List<String> lines = text.lines().toList();
-    Pattern recordStart = Pattern.compile(layout.recordStartPattern());
-    Pattern row = Pattern.compile(layout.rowPattern());
+    Pattern recordStart = Re2Patterns.compile(layout.recordStartPattern());
+    Pattern row = Re2Patterns.compile(layout.rowPattern());
     int end = lines.size() - template.trailingSummaryRowCount();
     List<ImportPdfBookingLine> bookings = new ArrayList<>();
     for (int i = template.preambleRowCount(); i < end; i++) {
@@ -165,7 +192,7 @@ public class PdfImportReaderService {
       if (document.isEncrypted()) {
         throw malformed("The PDF is encrypted; export the statement without a password.", null);
       }
-      requireBoundedStreams(document);
+      requireBoundedStreams(document, ocr);
       int pages = document.getNumberOfPages();
       if (pages > MAX_PAGES) {
         throw new ImportFileRejectedException(
@@ -190,7 +217,7 @@ public class PdfImportReaderService {
     if (!hasMarker(text, layout)) {
       return false;
     }
-    Pattern recordStart = Pattern.compile(layout.recordStartPattern());
+    Pattern recordStart = Re2Patterns.compile(layout.recordStartPattern());
     return text.lines().anyMatch(line -> recordStart.matcher(line.strip()).find());
   }
 
@@ -207,28 +234,64 @@ public class PdfImportReaderService {
     return true;
   }
 
-  // Every stream of the document, before PDFBox decodes any of them into memory to read it. The
-  // COSDocument and its streams belong to the PDDocument, which closes them.
-  private static void requireBoundedStreams(PDDocument document) throws IOException {
+  // Every stream of the document, before PDFBox decodes any of them into memory to read it; with
+  // rendered, also the pixels of the images rendering decodes. The COSDocument and its streams
+  // belong to the PDDocument, which closes them.
+  private static void requireBoundedStreams(PDDocument document, boolean rendered)
+      throws IOException {
     long total = 0;
     for (COSObjectKey key : List.copyOf(document.getDocument().getXrefTable().keySet())) {
       COSObject object = document.getDocument().getObjectFromPool(key);
       if (object != null && object.getObject() instanceof COSStream) {
         int limit = (int) Math.min(MAX_STREAM_BYTES, MAX_DECODED_BYTES - total);
-        total += boundedLength((COSStream) object.getObject(), limit);
+        total += boundedLength((COSStream) object.getObject(), rendered, limit);
       }
     }
   }
 
-  // The bytes the stream's filters produce, up to the first image codec, counted and discarded;
-  // an IOException as soon as they pass limit. An image is bounded by its declared pixels instead.
-  private static long boundedLength(COSStream stream, int limit) throws IOException {
-    if (COSName.IMAGE.equals(stream.getCOSName(COSName.SUBTYPE))
-        && (long) stream.getInt(COSName.WIDTH, 0) * stream.getInt(COSName.HEIGHT, 0)
-            > MAX_IMAGE_PIXELS) {
-      throw new IOException("An image of the PDF has more pixels than a statement needs.");
+  private static long boundedLength(COSStream stream, boolean rendered, int limit)
+      throws IOException {
+    return boundedLength(
+        stream,
+        stream.getFilters(),
+        COSName.IMAGE.equals(stream.getCOSName(COSName.SUBTYPE)),
+        rendered,
+        stream::createRawInputStream,
+        stream.getLength(),
+        limit);
+  }
+
+  // An inline image, when OCR rendering reaches it: bounded like an image stream of its own.
+  private static void requireBoundedInlineImage(COSDictionary parameters, byte[] data)
+      throws IOException {
+    boundedLength(
+        parameters,
+        parameters.getDictionaryObject(COSName.F, COSName.FILTER),
+        true,
+        true,
+        () -> new ByteArrayInputStream(data),
+        data.length,
+        MAX_STREAM_BYTES);
+  }
+
+  // The bytes the filters produce, up to the first image codec, counted and discarded; an
+  // IOException as soon as they pass limit. An image is bounded by its pixels instead: those it
+  // declares and, when it is rendered, those its CCITT decode parameters make PDFBox allocate and
+  // those its JPEG data holds (reading the text layer decodes no image).
+  private static long boundedLength(
+      COSDictionary dictionary,
+      COSBase filterEntry,
+      boolean image,
+      boolean rendered,
+      IOSupplier<InputStream> raw,
+      long rawLength,
+      int limit)
+      throws IOException {
+    long height = dictionary.getInt(COSName.HEIGHT, COSName.H, 0);
+    if (image) {
+      requirePixels((long) dictionary.getInt(COSName.WIDTH, COSName.W, 0) * height);
     }
-    List<COSName> filters = filterNames(stream.getFilters());
+    List<COSName> filters = filterNames(filterEntry);
     if (filters.size() > MAX_FILTERS) {
       throw new IOException("A stream of the PDF has more filters than a statement needs.");
     }
@@ -236,20 +299,37 @@ public class PdfImportReaderService {
     while (stages < filters.size() && !IMAGE_CODECS.contains(filters.get(stages))) {
       stages++;
     }
-    if (stages == 0) {
-      return stream.getLength();
+    // The image codec the counted stages lead to; only a rendered one is decoded at all.
+    COSName codec = rendered && stages < filters.size() ? filters.get(stages) : COSName.NONE;
+    if (CCITT_CODECS.contains(codec)) {
+      requireCcittPixels(dictionary, stages, height);
     }
-    try (InputStream raw = stream.createRawInputStream()) {
-      return decodedLength(stream, filters.subList(0, stages), 0, raw, limit);
+    boolean jpeg = JPEG_CODECS.contains(codec);
+    if (stages == 0 && !jpeg) {
+      return rawLength;
+    }
+    try (InputStream input = raw.get()) {
+      if (stages == 0) {
+        requireJpegPixels(input);
+        return rawLength;
+      }
+      return decodedLength(dictionary, filters.subList(0, stages), 0, input, limit, jpeg);
     }
   }
 
   // Decodes stage and every later one of filters from input. Only an intermediate stage keeps its
-  // output, which the next stage reads in place rather than from a copy; the last one only counts.
+  // output, which the next stage reads in place rather than from a copy; the last one only counts,
+  // unless JPEG data follows, whose header it then reads.
   private static long decodedLength(
-      COSStream stream, List<COSName> filters, int stage, InputStream input, int limit)
+      COSDictionary dictionary,
+      List<COSName> filters,
+      int stage,
+      InputStream input,
+      int limit,
+      boolean jpegFollows)
       throws IOException {
     boolean last = stage == filters.size() - 1;
+    boolean keep = !last || jpegFollows;
     try (UnsynchronizedByteArrayOutputStream kept =
             UnsynchronizedByteArrayOutputStream.builder().get();
         ThresholdingOutputStream counter =
@@ -258,14 +338,62 @@ public class PdfImportReaderService {
                 exceeded -> {
                   throw new IOException("A stream of the PDF decodes to more than allowed.");
                 },
-                exceeded -> last ? NullOutputStream.INSTANCE : kept)) {
-      FilterFactory.INSTANCE.getFilter(filters.get(stage)).decode(input, counter, stream, stage);
+                exceeded -> keep ? kept : NullOutputStream.INSTANCE)) {
+      FilterFactory.INSTANCE
+          .getFilter(filters.get(stage))
+          .decode(input, counter, dictionary, stage);
       if (last) {
+        if (jpegFollows) {
+          try (InputStream jpeg = kept.toInputStream()) {
+            requireJpegPixels(jpeg);
+          }
+        }
         return counter.getByteCount();
       }
       try (InputStream next = kept.toInputStream()) {
-        return decodedLength(stream, filters, stage + 1, next, limit);
+        return decodedLength(dictionary, filters, stage + 1, next, limit, jpegFollows);
       }
+    }
+  }
+
+  // PDFBox allocates Columns x max(Rows, Height) bits for CCITT data, whatever the image declares.
+  private static void requireCcittPixels(COSDictionary dictionary, int stage, long height)
+      throws IOException {
+    COSBase parameters = dictionary.getDictionaryObject(COSName.DECODE_PARMS, COSName.DP);
+    if (parameters instanceof COSArray array && stage < array.size()) {
+      parameters = array.getObject(stage);
+    }
+    COSDictionary decode = parameters instanceof COSDictionary given ? given : new COSDictionary();
+    long columns = decode.getInt(COSName.COLUMNS, CCITT_DEFAULT_COLUMNS);
+    long rows = Math.max(decode.getInt(COSName.ROWS, 0), height);
+    if (columns <= 0 || rows < 0) {
+      throw new IOException("An image of the PDF has an invalid size.");
+    }
+    requirePixels(columns * rows);
+  }
+
+  // The size in the JPEG header, read without decoding the image and only in memory. Data the
+  // JPEG reader cannot even parse a header of, PDFBox (which decodes with the same reader) cannot
+  // decode either, so it holds no image to bound.
+  private static void requireJpegPixels(InputStream data) throws IOException {
+    Iterator<ImageReader> readers = ImageIO.getImageReadersByFormatName("jpeg");
+    if (!readers.hasNext()) {
+      return;
+    }
+    ImageReader reader = readers.next();
+    try (MemoryCacheImageInputStream input = new MemoryCacheImageInputStream(data)) {
+      reader.setInput(input, true, true);
+      requirePixels((long) reader.getWidth(0) * reader.getHeight(0));
+    } catch (IIOException ignored) {
+      // No header to read: see above.
+    } finally {
+      reader.dispose();
+    }
+  }
+
+  private static void requirePixels(long pixels) throws IOException {
+    if (pixels > MAX_IMAGE_PIXELS) {
+      throw new IOException("An image of the PDF has more pixels than a statement needs.");
     }
   }
 
@@ -331,7 +459,9 @@ public class PdfImportReaderService {
         throw malformed("A page is too large to be read by OCR.", null);
       }
     }
-    PDFRenderer renderer = new PDFRenderer(document);
+    PDFRenderer renderer =
+        new InlineImageCheckingRenderer(
+            document, PdfImportReaderService::requireBoundedInlineImage);
     return ocr.recognizePages(document.getNumberOfPages(), page -> render(renderer, page));
   }
 

@@ -191,10 +191,14 @@ public class ImportTemplateService {
       AuthenticatedUserPrincipal actor) {
     ImportTemplate current = requireChangeable(id, expectedVersion, actor);
     ImportTemplateDefinition definition = definitionOf(request);
+    // A PDF version's header columns are its layout's names, never a CSV file's header: a switch
+    // to CSV must send the sample file's own, as a new template does.
+    List<String> keptHeaderColumns =
+        definitionOf(current).isPdf() ? null : readHeaderColumns(current);
     List<String> headerColumns =
         validated(
             definition,
-            request.headerColumns() == null ? readHeaderColumns(current) : request.headerColumns());
+            request.headerColumns() == null ? keptHeaderColumns : request.headerColumns());
     requireKnownInstitution(request.institutionCatalogueId());
 
     boolean parseRelevantChange =

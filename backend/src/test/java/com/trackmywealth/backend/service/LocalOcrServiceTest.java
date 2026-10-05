@@ -102,6 +102,24 @@ class LocalOcrServiceTest {
             e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_OCR_FAILED));
   }
 
+  /**
+   * A process that writes on and on is too much text, a 422 at once: reading stops at the limit and
+   * closes stdout, so the process fails on its next write instead of blocking on a full pipe until
+   * the page's time limit would make it a 503.
+   */
+  @Test
+  void aProcessThatNeverStopsWritingIsTooMuchTextNotTooSlow() throws IOException {
+    Path script = script("cat >/dev/null\nyes x\n");
+    LocalOcrService ocr = new LocalOcrService(true, script.toString(), "eng", 20_000, 30_000);
+    long start = System.nanoTime();
+
+    assertThatThrownBy(() -> ocr.recognizePages(1, onePage))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_OCR_FAILED));
+    assertThat(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start)).isLessThan(10);
+  }
+
   /** A page over the server's time limit is the server's limit, not the file's fault: a 503. */
   @Test
   void aPageThatTakesTooLongIsUnavailable() throws IOException {

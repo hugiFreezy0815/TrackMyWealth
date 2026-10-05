@@ -759,6 +759,30 @@ class ImportTemplateControllerTest {
   }
 
   /**
+   * Second PR #267 review: a PDF version's header columns are its layout's names. A switch back to
+   * CSV without the file's own header columns is a 422, not a CSV template fingerprinted on them.
+   */
+  @Test
+  void switchingAPdfTemplateToCsvNeedsTheFilesOwnHeaderColumns() throws Exception {
+    ImportTemplateResponse v1 = create(pdfRequest("PDF_TEXT"));
+
+    putStatus(v1.id(), "\"" + v1.version() + "\"", swissRequest(null))
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("IMPORT_TEMPLATE_INVALID")
+        .jsonPath("$.field")
+        .isEqualTo("headerColumns");
+
+    ImportTemplateResponse v2 = update(v1.id(), v1.version(), swissRequest(headerOf(SWISS)));
+    assertThat(v2.templateVersion()).isEqualTo("2");
+    assertThat(v2.fileFormat()).isEqualTo("CSV");
+    assertThat(v2.headerColumns()).isEqualTo(headerOf(SWISS));
+    assertThat(v2.headerFingerprint()).isNotNull();
+    assertThat(row(v2.id()).get("pdf_layout")).isNull();
+  }
+
+  /**
    * A PDF is tried only on PDF templates and a CSV file only on CSV ones; two PDF templates with
    * one marker are both candidates, neither an exact match.
    */
