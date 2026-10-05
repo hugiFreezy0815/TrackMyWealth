@@ -110,7 +110,7 @@ public class ImportTemplate {
   @Column(name = "header_fingerprint", updatable = false)
   private String headerFingerprint;
 
-  // V66 (#267): CSV, PDF_TEXT or PDF_OCR; a PDF template reads through pdf_layout.
+  // V66 (#268): CSV, PDF_TEXT or PDF_OCR; a PDF template reads through pdf_layout.
   @Column(name = "file_format", nullable = false, updatable = false)
   private String fileFormat = ImportTemplateValues.FORMAT_CSV;
 

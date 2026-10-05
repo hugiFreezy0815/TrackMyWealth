@@ -169,7 +169,7 @@
             <version>1.14.1</version>
         </dependency>
 
-        <!-- #267 (ported onto #229's parser): PDF statements are read locally - the text layer with
+        <!-- #268, #276: PDF statements are read locally - the text layer with
              PDFBox, a scanned page through a local Tesseract process (PdfImportReaderService,
              LocalOcrService). No document ever leaves the server. -->
         <dependency>

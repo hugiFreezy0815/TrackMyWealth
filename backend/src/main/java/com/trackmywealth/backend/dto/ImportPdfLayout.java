@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * How a PDF import template (file format {@code PDF_TEXT} or {@code PDF_OCR}) reads a statement's
- * text, line by line (#267, US-07-03). The text of every page is taken in reading order (or from
+ * text, line by line (#268, US-07-08). The text of every page is taken in reading order (or from
  * local OCR); a line on which {@code recordStartPattern} finds a match is one booking, and the
  * capture groups of {@code rowPattern}, matched against the whole line, are its cells, named by
  * {@code columns}. The column mapping then names those columns exactly as it names a CSV file's

@@ -16,6 +16,7 @@ import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.entity.ImportTemplate;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ImportFileRejectedException;
 import com.trackmywealth.backend.repository.ImportTemplateRepository;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -348,7 +349,7 @@ public class ImportTemplateService {
   }
 
   // The header columns the template keeps, after the parser's rules and the header rules. A PDF
-  // template's are its layout's column names (#267), whatever the request sent.
+  // template's are its layout's column names (#268), whatever the request sent.
   private List<String> validated(
       ImportTemplateDefinition definition, List<String> requestedHeaderColumns) {
     if (definition.isPdf()) {
@@ -391,7 +392,8 @@ public class ImportTemplateService {
   }
 
   // The text layer of a PDF upload, read once for every PDF_TEXT template to try; null when there
-  // is none to try, the file is no PDF, or it cannot be read as one.
+  // is none to try, the file is no PDF, or it cannot be read as one. A busy server is a 503, not
+  // a silent "no candidate".
   private String readPdfTextForDetection(List<ImportTemplate> templates, byte[] content) {
     boolean anyTextTemplate =
         templates.stream()
@@ -401,7 +403,7 @@ public class ImportTemplateService {
     }
     try {
       return pdfReader.readText(content, false);
-    } catch (ApiException e) {
+    } catch (ImportFileRejectedException e) {
       return null;
     }
   }
@@ -532,7 +534,9 @@ public class ImportTemplateService {
     }
     if (headerColumns != null) {
       template.setHeaderColumns(objectMapper.writeValueAsString(headerColumns));
-      template.setHeaderFingerprint(ImportFileParserService.fingerprint(headerColumns));
+      if (ImportFileParserService.hasFingerprint(definition)) {
+        template.setHeaderFingerprint(ImportFileParserService.fingerprint(headerColumns));
+      }
     }
   }
 

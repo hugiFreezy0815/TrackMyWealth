@@ -28,15 +28,19 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
- * #267: reads a scanned document through a local Tesseract process - each page goes in as PNG on
+ * #276: reads a scanned document through a local Tesseract process - each page goes in as PNG on
  * stdin and its text comes back on stdout, so no document file is ever written to disk, and nothing
  * leaves the server. Tesseract's diagnostics are discarded: they can quote the recognized text.
+ *
+ * <p>Off unless {@code app.import.ocr.enabled} is set (#276): OCR misreads digits into amounts that
+ * still parse, and until #276 adds a confidence threshold below which a row is an error, nothing
+ * would flag them. While off, every recognition is a 503 {@code IMPORT_OCR_UNAVAILABLE}.
  *
  * <p>Bounded: at most {@value #MAX_CONCURRENT} documents at a time (a further request is a 503, not
  * a queue). A document holds its slot from its first page to its last, and a page is rendered only
  * while the slot is held, so a busy server never renders a page it then cannot read. A page may
- * take {@value #PAGE_TIMEOUT_SECONDS} s, a document {@value #DOCUMENT_TIMEOUT_SECONDS} s, and the
- * output is at most {@value #MAX_TEXT} characters.
+ * take {@value #PAGE_TIMEOUT_SECONDS} s, a document {@value #DOCUMENT_TIMEOUT_SECONDS} s including
+ * its rendering, and the output is at most {@value #MAX_TEXT} characters.
  */
 @Service
 public class LocalOcrService {
@@ -56,6 +60,7 @@ public class LocalOcrService {
             thread.setDaemon(true);
             return thread;
           });
+  private final boolean enabled;
   private final String executable;
   private final String languages;
   private final long pageTimeoutMillis;
@@ -63,9 +68,11 @@ public class LocalOcrService {
 
   @Autowired
   public LocalOcrService(
+      @Value("${app.import.ocr.enabled:false}") boolean enabled,
       @Value("${app.import.ocr.executable:tesseract}") String executable,
       @Value("${app.import.ocr.languages:eng+deu}") String languages) {
     this(
+        enabled,
         executable,
         languages,
         TimeUnit.SECONDS.toMillis(PAGE_TIMEOUT_SECONDS),
@@ -74,7 +81,12 @@ public class LocalOcrService {
 
   // Tests shorten the time limits.
   LocalOcrService(
-      String executable, String languages, long pageTimeoutMillis, long documentTimeoutMillis) {
+      boolean enabled,
+      String executable,
+      String languages,
+      long pageTimeoutMillis,
+      long documentTimeoutMillis) {
+    this.enabled = enabled;
     this.executable = executable;
     this.languages = languages;
     this.pageTimeoutMillis = pageTimeoutMillis;
@@ -90,11 +102,14 @@ public class LocalOcrService {
    * The text Tesseract recognizes on pages {@code 0 .. pageCount - 1}, each produced by {@code
    * renderPage} only once this document holds a recognition slot.
    *
-   * @throws ApiException 503 {@code IMPORT_OCR_UNAVAILABLE} when OCR is not installed, busy or does
-   *     not finish in time, 422 {@code IMPORT_OCR_FAILED} when it fails on a page or returns too
-   *     much text
+   * @throws ApiException 503 {@code IMPORT_OCR_UNAVAILABLE} when OCR is switched off, not
+   *     installed, busy or does not finish in time, 422 {@code IMPORT_OCR_FAILED} when it fails on
+   *     a page or returns too much text
    */
   public String recognizePages(int pageCount, IntFunction<BufferedImage> renderPage) {
+    if (!enabled) {
+      throw unavailable("Text recognition is switched off on this server.", null);
+    }
     if (!slots.tryAcquire()) {
       throw unavailable("Text recognition is busy. Try again in a moment.", null);
     }
@@ -102,12 +117,12 @@ public class LocalOcrService {
       long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(documentTimeoutMillis);
       StringBuilder text = new StringBuilder();
       for (int page = 0; page < pageCount; page++) {
-        long remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
-        long timeout = Math.min(pageTimeoutMillis, remaining);
-        if (timeout <= 0) {
-          throw tooSlow(null);
-        }
-        text.append(run(renderPage.apply(page), timeout)).append('\n');
+        requireTimeLeft(deadline);
+        BufferedImage image = renderPage.apply(page);
+        // Rendering counts against the document's time too: a page slow to render must not hold
+        // the slot past the deadline and then still get a full page timeout.
+        long timeout = Math.min(pageTimeoutMillis, requireTimeLeft(deadline));
+        text.append(run(image, timeout)).append('\n');
         if (text.length() > MAX_TEXT) {
           throw failed(null);
         }
@@ -116,6 +131,15 @@ public class LocalOcrService {
     } finally {
       slots.release();
     }
+  }
+
+  // The milliseconds left before deadline; a 503 when none are.
+  private static long requireTimeLeft(long deadline) {
+    long remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+    if (remaining <= 0) {
+      throw tooSlow(null);
+    }
+    return remaining;
   }
 
   private String run(BufferedImage image, long timeoutMillis) {

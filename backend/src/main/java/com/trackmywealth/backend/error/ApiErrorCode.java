@@ -152,6 +152,12 @@ public final class ApiErrorCode {
    */
   public static final String IMPORT_PDF_NO_TEXT = "IMPORT_PDF_NO_TEXT";
 
+  /**
+   * 503: the server is already reading as many PDF statements as it may at once (each takes tens of
+   * megabytes); retry later.
+   */
+  public static final String IMPORT_PDF_BUSY = "IMPORT_PDF_BUSY";
+
   /** 422: local OCR could not read a scanned page (it failed or produced too much text). */
   public static final String IMPORT_OCR_FAILED = "IMPORT_OCR_FAILED";
 

@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * #267: the local OCR process contract, with a stand-in script instead of Tesseract - image on
+ * #276: the local OCR process contract, with a stand-in script instead of Tesseract - image on
  * stdin, text on stdout, the configured language models, the slot and time limits, and failures
  * that never echo the process's diagnostics.
  */
@@ -33,9 +33,32 @@ class LocalOcrServiceTest {
 
   @Test
   void aMissingExecutableIsUnavailableWithAStableCode() {
-    LocalOcrService ocr = new LocalOcrService(directory.resolve("absent").toString(), "eng");
+    LocalOcrService ocr = new LocalOcrService(true, directory.resolve("absent").toString(), "eng");
 
     assertUnavailable(() -> ocr.recognizePages(1, onePage));
+  }
+
+  /**
+   * Off by default until #276 adds a confidence threshold: nothing is rendered and no process is
+   * started, and the answer is the same retryable 503 as a server without Tesseract.
+   */
+  @Test
+  void switchedOffItRecognizesNothing() throws IOException {
+    Path started = directory.resolve("started");
+    Path script = script("touch '" + started + "'\ncat >/dev/null\nprintf 'x'\n");
+    LocalOcrService ocr = new LocalOcrService(false, script.toString(), "eng");
+    AtomicInteger rendered = new AtomicInteger();
+
+    assertUnavailable(
+        () ->
+            ocr.recognizePages(
+                1,
+                i -> {
+                  rendered.incrementAndGet();
+                  return page;
+                }));
+    assertThat(rendered.get()).isZero();
+    assertThat(started).doesNotExist();
   }
 
   @Test
@@ -46,7 +69,7 @@ class LocalOcrServiceTest {
                 + "cat >/dev/null\n"
                 + "printf 'Invented statement\\n'\n");
 
-    assertThat(new LocalOcrService(script.toString(), "eng+deu").recognizePages(2, onePage))
+    assertThat(new LocalOcrService(true, script.toString(), "eng+deu").recognizePages(2, onePage))
         .isEqualTo("Invented statement\n\nInvented statement\n\n");
   }
 
@@ -55,7 +78,7 @@ class LocalOcrServiceTest {
     Path script = script("cat >/dev/null\nprintf 'invented diagnostics' >&2\nexit 1\n");
 
     assertThatThrownBy(
-            () -> new LocalOcrService(script.toString(), "eng").recognizePages(1, onePage))
+            () -> new LocalOcrService(true, script.toString(), "eng").recognizePages(1, onePage))
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
@@ -73,7 +96,7 @@ class LocalOcrServiceTest {
                 + " /dev/zero | tr '\\0' 'x'\n");
 
     assertThatThrownBy(
-            () -> new LocalOcrService(script.toString(), "eng").recognizePages(1, onePage))
+            () -> new LocalOcrService(true, script.toString(), "eng").recognizePages(1, onePage))
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_OCR_FAILED));
@@ -83,7 +106,7 @@ class LocalOcrServiceTest {
   @Test
   void aPageThatTakesTooLongIsUnavailable() throws IOException {
     Path script = script("cat >/dev/null\nsleep 10\n");
-    LocalOcrService ocr = new LocalOcrService(script.toString(), "eng", 300, 5_000);
+    LocalOcrService ocr = new LocalOcrService(true, script.toString(), "eng", 300, 5_000);
 
     assertUnavailable(() -> ocr.recognizePages(1, onePage));
   }
@@ -91,7 +114,7 @@ class LocalOcrServiceTest {
   @Test
   void aDocumentThatTakesTooLongIsUnavailable() throws IOException {
     Path script = script("cat >/dev/null\nsleep 0.4\nprintf 'x'\n");
-    LocalOcrService ocr = new LocalOcrService(script.toString(), "eng", 5_000, 600);
+    LocalOcrService ocr = new LocalOcrService(true, script.toString(), "eng", 5_000, 600);
     AtomicInteger rendered = new AtomicInteger();
 
     assertUnavailable(
@@ -106,12 +129,37 @@ class LocalOcrServiceTest {
   }
 
   /**
-   * B1 of the #267 review: a document holds its slot from its first page on, and a request that
+   * F4 of the PR #267 review: rendering counts against the document's time. A page that renders
+   * past the deadline is a 503 before its recognition starts, not a further full page timeout.
+   */
+  @Test
+  void aPageThatRendersPastTheDeadlineIsNotRecognized() throws IOException {
+    Path started = directory.resolve("started");
+    Path script = script("touch '" + started + "'\ncat >/dev/null\nprintf 'x'\n");
+    LocalOcrService ocr = new LocalOcrService(true, script.toString(), "eng", 5_000, 200);
+
+    assertUnavailable(
+        () ->
+            ocr.recognizePages(
+                1,
+                i -> {
+                  try {
+                    Thread.sleep(400);
+                  } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                  }
+                  return page;
+                }));
+    assertThat(started).doesNotExist();
+  }
+
+  /**
+   * B1 of the PR #267 review: a document holds its slot from its first page on, and a request that
    * finds every slot taken is refused before it renders anything.
    */
   @Test
   void aBusyServerRendersNothingForAFurtherDocument() throws Exception {
-    LocalOcrService ocr = new LocalOcrService(directory.resolve("absent").toString(), "eng");
+    LocalOcrService ocr = new LocalOcrService(true, directory.resolve("absent").toString(), "eng");
     CountDownLatch rendering = new CountDownLatch(LocalOcrService.MAX_CONCURRENT);
     CountDownLatch release = new CountDownLatch(1);
     IntFunction<BufferedImage> blockingRender =

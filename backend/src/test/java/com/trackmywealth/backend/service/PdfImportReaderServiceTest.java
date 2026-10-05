@@ -30,6 +30,10 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -45,7 +49,7 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 
 /**
- * #267: PDF statements through the template's line layout, without Spring - text layer and OCR,
+ * #268: PDF statements through the template's line layout, without Spring - text layer and OCR,
  * every file-level rejection and the layout rules. The PDFs are generated here with invented
  * values; OCR is a mock, so no Tesseract is needed.
  */
@@ -202,8 +206,8 @@ class PdfImportReaderServiceTest {
   }
 
   /**
-   * B3 of the #267 review: PDFBox decodes a whole stream into memory before it reads it, so a small
-   * file that inflates past MAX_STREAM_BYTES is refused before PDFBox reads any of it.
+   * B3 of the PR #267 review: PDFBox decodes a whole stream into memory before it reads it, so a
+   * small file that inflates past MAX_STREAM_BYTES is refused before PDFBox reads any of it.
    */
   @Test
   void aStreamThatInflatesPastTheLimitIsMalformed() throws IOException {
@@ -362,7 +366,7 @@ class PdfImportReaderServiceTest {
   }
 
   /**
-   * D2 of the #267 review: with a one-column layout, an unmatched line has as many cells as a
+   * D2 of the PR #267 review: with a one-column layout, an unmatched line has as many cells as a
    * matched one, so the line itself - not its cell count - says whether it matched.
    */
   @Test
@@ -421,6 +425,13 @@ class PdfImportReaderServiceTest {
     assertInvalid(
         pdfTemplate("PDF_TEXT", new ImportPdfLayout(good.columns(), "(a)(b)(\\1)", MARKER, "^\\d")),
         "pdfLayout.rowPattern");
+    // F3 of the PR #267 review: linear time, but in a program this pattern makes a million
+    // instructions (about 60 MB) of.
+    assertInvalid(
+        pdfTemplate(
+            "PDF_TEXT",
+            new ImportPdfLayout(good.columns(), good.rowPattern(), MARKER, "(?:a{1000}){1000}")),
+        "pdfLayout.recordStartPattern");
     assertInvalid(pdfTemplate("CSV", good), "pdfLayout");
     assertInvalid(pdfTemplate("XLSX", null), "fileFormat");
     assertInvalid(
@@ -429,6 +440,61 @@ class PdfImportReaderServiceTest {
             .mapping(ImportFileParserServiceTest.mapping("Date", "Betrag").build())
             .build(),
         "columnMapping.amount");
+  }
+
+  /** A PDF template has no header row to read; asking for one is a 422, never a 500. */
+  @Test
+  void aPdfTemplateHasNoHeaderToRead() throws IOException {
+    byte[] statement = pdf(MARKER, "04.01.2031 -1,00 Invented");
+
+    assertThatThrownBy(() -> parser.readHeader(statement, template("PDF_TEXT")))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED);
+              assertThat(e.getStatusCode().value()).isEqualTo(422);
+            });
+  }
+
+  /**
+   * F2 of the PR #267 review: each read may take tens of megabytes, so only so many run at once. A
+   * further upload waits briefly for a turn, then is a 503 - and once a turn is free, it is read.
+   */
+  @Test
+  void aServerReadingTheMostStatementsItMayAnswersBusy() throws Exception {
+    PdfImportReaderService busyReader = new PdfImportReaderService(ocr, 100);
+    CountDownLatch reading = new CountDownLatch(PdfImportReaderService.MAX_CONCURRENT_READS);
+    CountDownLatch release = new CountDownLatch(1);
+    when(ocr.recognizePages(anyInt(), any()))
+        .thenAnswer(
+            invocation -> {
+              reading.countDown();
+              assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+              return MARKER + "\n";
+            });
+    byte[] scanned = pdf();
+    byte[] statement = pdf(MARKER, "04.01.2031 -1,00 Invented");
+    ExecutorService callers =
+        Executors.newFixedThreadPool(PdfImportReaderService.MAX_CONCURRENT_READS);
+    try {
+      for (int i = 0; i < PdfImportReaderService.MAX_CONCURRENT_READS; i++) {
+        callers.submit(() -> busyReader.readText(scanned, true));
+      }
+      assertThat(reading.await(10, TimeUnit.SECONDS)).isTrue();
+
+      assertThatThrownBy(() -> busyReader.readText(statement, false))
+          .isInstanceOfSatisfying(
+              ApiException.class,
+              e -> {
+                assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_PDF_BUSY);
+                assertThat(e.getStatusCode().value()).isEqualTo(503);
+              });
+    } finally {
+      release.countDown();
+      callers.shutdown();
+      assertThat(callers.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+    }
+    assertThat(busyReader.readText(statement, false)).contains(MARKER);
   }
 
   // --- helpers -------------------------------------------------------------------------------

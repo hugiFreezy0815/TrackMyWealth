@@ -678,7 +678,7 @@ class ImportTemplateControllerTest {
             e -> assertThat(e.getStatusCode().value()).isEqualTo(404));
   }
 
-  // --- PDF templates (#267) -------------------------------------------------------------------
+  // --- PDF templates (#268) -------------------------------------------------------------------
 
   @Test
   void aPdfTemplateIsSavedWithItsLayoutTestedAndDetected() throws Exception {
@@ -694,7 +694,8 @@ class ImportTemplateControllerTest {
     assertThat(created.fileFormat()).isEqualTo("PDF_TEXT");
     assertThat(created.pdfLayout().columns()).containsExactly("Datum", "Betrag", "Text");
     assertThat(created.headerColumns()).containsExactly("Datum", "Betrag", "Text");
-    assertThat(created.headerFingerprint()).isNotBlank();
+    // Its columns are named by its own layout, so a fingerprint of them would identify nothing.
+    assertThat(created.headerFingerprint()).isNull();
     assertThat(
             count(
                 "SELECT count(*) FROM import_template WHERE id = ? AND file_format = 'PDF_TEXT'"
@@ -784,6 +785,20 @@ class ImportTemplateControllerTest {
     create(pdfRequest("PDF_OCR"));
 
     assertThat(detect(pdf(PDF_MARKER, "04.01.2031 -1,00 Invented"))).isEmpty();
+  }
+
+  /**
+   * F1 of the PR #267 review: OCR is off by default until #276 adds a confidence threshold, so a
+   * scanned statement is a retryable 503, never rows built from unchecked recognized digits.
+   */
+  @Test
+  void anOcrDryRunIsUnavailableWhileOcrIsSwitchedOff() throws Exception {
+    multipart(BASE + "/test", pdf(), pdfRequest("PDF_OCR"))
+        .expectStatus()
+        .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("IMPORT_OCR_UNAVAILABLE");
   }
 
   @Test

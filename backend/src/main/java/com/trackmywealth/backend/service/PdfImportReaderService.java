@@ -9,8 +9,6 @@ import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -18,8 +16,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import org.apache.commons.io.output.NullOutputStream;
 import org.apache.commons.io.output.ThresholdingOutputStream;
+import org.apache.commons.io.output.UnsynchronizedByteArrayOutputStream;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
@@ -33,10 +34,12 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
- * #267: turns a PDF statement into booking lines through its template's {@link ImportPdfLayout}, so
+ * #268: turns a PDF statement into booking lines through its template's {@link ImportPdfLayout}, so
  * {@link ImportFileParserService} parses them exactly like the records of a CSV file. The text
  * comes from the PDF's text layer ({@code PDF_TEXT}) or, for a scanned PDF, from local OCR ({@code
  * PDF_OCR}). Everything happens in memory; the file and its text are never stored or logged.
@@ -48,6 +51,11 @@ import org.springframework.stereotype.Service;
  * of at most {@value #MAX_IMAGE_PIXELS} pixels. Then {@value #MAX_TEXT} characters of text (read
  * page by page, stopping at the limit), and for OCR pages of at most {@value #MAX_OCR_PAGE_POINTS}
  * points a side, rendered one at a time in grey.
+ *
+ * <p>Those limits bound one read; at most {@value #MAX_CONCURRENT_READS} run at a time, so they
+ * bound the heap all uploads together can take (a PDF loaded, one stream decoded, its text or one
+ * rendered page: tens of megabytes each). A further upload waits up to {@value #READ_WAIT_SECONDS}
+ * s for a turn, then is a 503 {@code IMPORT_PDF_BUSY}.
  */
 @Service
 public class PdfImportReaderService {
@@ -55,9 +63,14 @@ public class PdfImportReaderService {
   static final int MAX_PAGES = 20;
   static final int MAX_TEXT = 2_000_000;
   static final int MAX_OCR_PAGE_POINTS = 1500;
-  static final int MAX_STREAM_BYTES = 64 * 1024 * 1024;
-  static final long MAX_DECODED_BYTES = 256L * 1024 * 1024;
+  // A statement's largest stream (an embedded font, a page's content) is well under a megabyte.
+  static final int MAX_STREAM_BYTES = 16 * 1024 * 1024;
+  static final long MAX_DECODED_BYTES = 64L * 1024 * 1024;
   static final long MAX_IMAGE_PIXELS = 50_000_000L;
+  static final int MAX_CONCURRENT_READS = 4;
+  static final int READ_WAIT_SECONDS = 5;
+  // A statement's streams use one or two filters; the chain is decoded one stage per call.
+  static final int MAX_FILTERS = 8;
   // Image codecs are decoded to pixels, bounded by MAX_IMAGE_PIXELS; the filters before one count.
   private static final Set<COSName> IMAGE_CODECS =
       Set.of(COSName.DCT_DECODE, COSName.JPX_DECODE, COSName.JBIG2_DECODE, COSName.CCITTFAX_DECODE);
@@ -65,9 +78,18 @@ public class PdfImportReaderService {
   private static final byte[] PDF_MAGIC = "%PDF-".getBytes(StandardCharsets.US_ASCII);
 
   private final LocalOcrService ocr;
+  private final Semaphore reads = new Semaphore(MAX_CONCURRENT_READS);
+  private final long readWaitMillis;
 
+  @Autowired
   public PdfImportReaderService(LocalOcrService ocr) {
+    this(ocr, TimeUnit.SECONDS.toMillis(READ_WAIT_SECONDS));
+  }
+
+  // Tests shorten the wait for a turn.
+  PdfImportReaderService(LocalOcrService ocr, long readWaitMillis) {
     this.ocr = ocr;
+    this.readWaitMillis = readWaitMillis;
   }
 
   /**
@@ -107,12 +129,38 @@ public class PdfImportReaderService {
    * limits - read once per upload, e.g. for detection, which then tries every PDF template on it
    * through {@link #isLayoutOf}.
    *
-   * @throws ApiException an {@code IMPORT_*} file-level code when it is not a readable PDF
+   * @throws ApiException an {@code IMPORT_*} file-level code when it is not a readable PDF, 503
+   *     {@code IMPORT_PDF_BUSY} when no turn to read it comes free in time
    */
   public String readText(byte[] content, boolean ocr) {
     if (!isPdf(content)) {
       throw mismatch("The file is not a PDF, but this template reads PDF statements.");
     }
+    acquireRead();
+    try {
+      return readTextHoldingTurn(content, ocr);
+    } finally {
+      reads.release();
+    }
+  }
+
+  private void acquireRead() {
+    boolean acquired;
+    try {
+      acquired = reads.tryAcquire(readWaitMillis, TimeUnit.MILLISECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      acquired = false;
+    }
+    if (!acquired) {
+      throw new ApiException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          ApiErrorCode.IMPORT_PDF_BUSY,
+          "The server is reading other statements. Try again in a moment.");
+    }
+  }
+
+  private String readTextHoldingTurn(byte[] content, boolean ocr) {
     try (PDDocument document = Loader.loadPDF(content)) {
       if (document.isEncrypted()) {
         throw malformed("The PDF is encrypted; export the statement without a password.", null);
@@ -181,6 +229,9 @@ public class PdfImportReaderService {
       throw new IOException("An image of the PDF has more pixels than a statement needs.");
     }
     List<COSName> filters = filterNames(stream.getFilters());
+    if (filters.size() > MAX_FILTERS) {
+      throw new IOException("A stream of the PDF has more filters than a statement needs.");
+    }
     int stages = 0;
     while (stages < filters.size() && !IMAGE_CODECS.contains(filters.get(stages))) {
       stages++;
@@ -188,27 +239,34 @@ public class PdfImportReaderService {
     if (stages == 0) {
       return stream.getLength();
     }
-    long length = 0;
-    byte[] previous = new byte[0];
-    for (int stage = 0; stage < stages; stage++) {
-      // Only an intermediate stage of a filter chain keeps its output, for the next stage.
-      boolean last = stage == stages - 1;
-      ByteArrayOutputStream kept = new ByteArrayOutputStream();
-      try (InputStream input =
-              stage == 0 ? stream.createRawInputStream() : new ByteArrayInputStream(previous);
-          ThresholdingOutputStream counter =
-              new ThresholdingOutputStream(
-                  limit,
-                  exceeded -> {
-                    throw new IOException("A stream of the PDF decodes to more than allowed.");
-                  },
-                  exceeded -> last ? NullOutputStream.INSTANCE : kept)) {
-        FilterFactory.INSTANCE.getFilter(filters.get(stage)).decode(input, counter, stream, stage);
-        length = counter.getByteCount();
-      }
-      previous = kept.toByteArray();
+    try (InputStream raw = stream.createRawInputStream()) {
+      return decodedLength(stream, filters.subList(0, stages), 0, raw, limit);
     }
-    return length;
+  }
+
+  // Decodes stage and every later one of filters from input. Only an intermediate stage keeps its
+  // output, which the next stage reads in place rather than from a copy; the last one only counts.
+  private static long decodedLength(
+      COSStream stream, List<COSName> filters, int stage, InputStream input, int limit)
+      throws IOException {
+    boolean last = stage == filters.size() - 1;
+    try (UnsynchronizedByteArrayOutputStream kept =
+            UnsynchronizedByteArrayOutputStream.builder().get();
+        ThresholdingOutputStream counter =
+            new ThresholdingOutputStream(
+                limit,
+                exceeded -> {
+                  throw new IOException("A stream of the PDF decodes to more than allowed.");
+                },
+                exceeded -> last ? NullOutputStream.INSTANCE : kept)) {
+      FilterFactory.INSTANCE.getFilter(filters.get(stage)).decode(input, counter, stream, stage);
+      if (last) {
+        return counter.getByteCount();
+      }
+      try (InputStream next = kept.toInputStream()) {
+        return decodedLength(stream, filters, stage + 1, next, limit);
+      }
+    }
   }
 
   private static List<COSName> filterNames(COSBase filters) {

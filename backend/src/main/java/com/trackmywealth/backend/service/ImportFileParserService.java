@@ -15,6 +15,7 @@ import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
 import com.trackmywealth.backend.error.ImportRowRejectedException;
 import com.trackmywealth.backend.validation.CurrencyCodes;
+import com.trackmywealth.backend.validation.Re2Patterns;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
@@ -53,7 +54,7 @@ import org.springframework.stereotype.Service;
  * touches the database, so US-07-04 parses an upload and the template dry run previews one through
  * the same {@link #parse}.
  *
- * <p>A CSV file's records are read here. A PDF statement's (#267, #268) come from {@link
+ * <p>A CSV file's records are read here. A PDF statement's (#268) come from {@link
  * PdfImportReaderService}, which cuts its booking lines into the template layout's named columns.
  * From there every row goes through the same mapping, amount, date, currency and type rules.
  *
@@ -110,7 +111,7 @@ public class ImportFileParserService {
     validateTemplate(template, null);
     List<String> header;
     List<List<String>> data;
-    // #267: a PDF's booking lines, cut into the layout's named columns; null for a CSV file.
+    // #268: a PDF's booking lines, cut into the layout's named columns; null for a CSV file.
     List<ImportPdfBookingLine> bookingLines = null;
     if (template.isPdf()) {
       header = template.pdfLayout().columns();
@@ -156,20 +157,20 @@ public class ImportFileParserService {
           rejected);
     }
     return new ImportParseResult(
-        header, template.hasHeaderRow() ? fingerprint(header) : null, rows);
+        header, hasFingerprint(template) ? fingerprint(header) : null, rows);
   }
 
   /**
    * The header cells of {@code content} read with {@code template}'s encoding, delimiter and
    * skipped rows - for template detection, which tries every candidate's reading of the file. Empty
    * for a template without a header row. A PDF has no header row to read: detection tests a PDF
-   * template through {@link PdfImportReaderService#isLayoutOf}.
+   * template through {@link PdfImportReaderService#isLayoutOf}, and a PDF template here is a 422.
    *
    * @throws ApiException an {@code IMPORT_*} file-level code when the file cannot be read this way
    */
   public List<String> readHeader(byte[] content, ImportTemplateDefinition template) {
     if (template.isPdf()) {
-      throw new IllegalArgumentException("A PDF template has no header row to read.");
+      throw unsupported("A PDF template has no header row to read.");
     }
     List<String> header = headerOf(readRecords(content, template, true), template);
     requireDecodable(header);
@@ -188,6 +189,15 @@ public class ImportFileParserService {
       }
     }
     return missing;
+  }
+
+  /**
+   * Whether the template's header row identifies its files (FR-IMP-022): a CSV file's. A PDF
+   * template's columns are named by its own layout, not read from the file, so a fingerprint of
+   * them would identify nothing; #268 adds one from the statement's header labels.
+   */
+  public static boolean hasFingerprint(ImportTemplateDefinition template) {
+    return template.hasHeaderRow() && !template.isPdf();
   }
 
   /**
@@ -259,7 +269,7 @@ public class ImportFileParserService {
 
   // --- template rules ----------------------------------------------------------------------
 
-  // #267: the layout must name each capture group of a row pattern that RE2 can compile.
+  // #268: the layout must name each capture group of a row pattern that RE2 can compile.
   private static void validatePdfLayout(ImportPdfLayout layout) {
     if (layout == null) {
       throw invalid("pdfLayout", "A PDF template needs a PDF layout.");
@@ -290,7 +300,7 @@ public class ImportFileParserService {
     }
   }
 
-  // The capture groups of an RE2 pattern; a missing, too long or invalid one is a 422.
+  // The capture groups of an RE2 pattern; a missing, too long, invalid or too large one is a 422.
   private static int patternGroups(String pattern, String field) {
     if (pattern == null || pattern.length() > ImportPdfLayout.MAX_PATTERN_LENGTH) {
       throw invalid(
@@ -300,13 +310,13 @@ public class ImportFileParserService {
               + " characters.");
     }
     try {
-      return com.google.re2j.Pattern.compile(pattern).groupCount();
-    } catch (com.google.re2j.PatternSyntaxException e) {
+      return Re2Patterns.compile(pattern).groupCount();
+    } catch (IllegalArgumentException e) {
       ApiException exception =
           new ApiException(
               HttpStatus.UNPROCESSABLE_CONTENT,
               ApiErrorCode.IMPORT_TEMPLATE_INVALID,
-              "The pattern is not a valid RE2 regular expression.",
+              e.getMessage(),
               e);
       exception.getBody().setProperty("field", field);
       throw exception;

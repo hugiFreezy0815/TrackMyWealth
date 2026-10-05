@@ -115,9 +115,11 @@ app:
   # (NFR-DEP-002) - never a compile-time variant between self-hosted and
   # hosted topologies.
   import:
-    # #267: OCR of scanned PDF statements (template file format PDF_OCR) runs a local Tesseract
-    # process; the Docker image installs it with these language models.
+    # #276: OCR of scanned PDF statements (template file format PDF_OCR) runs a local Tesseract
+    # process; the Docker image installs it with these language models. Off until #276 adds a
+    # confidence threshold: a misread digit is still a valid amount, and nothing would flag it.
     ocr:
+      enabled: ${IMPORT_OCR_ENABLED:false}
       executable: ${IMPORT_OCR_EXECUTABLE:tesseract}
       languages: ${IMPORT_OCR_LANGUAGES:eng+deu}
   database:
@@ -307,6 +309,6 @@ logging:
     correlation: "[%X{correlationId:-}] "
   level:
     org.flywaydb: INFO
-    # #267: PDFBox diagnostics on a malformed PDF can quote the document's own objects, i.e. a
+    # #268: PDFBox diagnostics on a malformed PDF can quote the document's own objects, i.e. a
     # member's statement text. Uploaded content is never logged, so neither are they.
     org.apache.pdfbox: "OFF"

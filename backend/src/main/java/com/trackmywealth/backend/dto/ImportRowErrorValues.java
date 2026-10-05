@@ -45,7 +45,7 @@ public final class ImportRowErrorValues {
 
   /**
    * {@code value}: a PDF booking line (one the template's record-start pattern finds) that its row
-   * pattern does not match, so it cannot be cut into the layout's columns (#267).
+   * pattern does not match, so it cannot be cut into the layout's columns (#268).
    */
   public static final String LINE_UNMATCHED = "IMPORT_ROW_LINE_UNMATCHED";
 
