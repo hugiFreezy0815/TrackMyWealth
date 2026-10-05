@@ -132,7 +132,10 @@ public final class ApiErrorCode {
   /** 422: the file has a header but no data row. */
   public static final String IMPORT_FILE_NO_DATA_ROWS = "IMPORT_FILE_NO_DATA_ROWS";
 
-  /** 422: the file is not valid CSV for the template's delimiter (e.g. an unclosed quote). */
+  /**
+   * 422: the file is not valid CSV for the template's delimiter (e.g. an unclosed quote), or not a
+   * readable PDF (damaged, encrypted).
+   */
   public static final String IMPORT_FILE_MALFORMED = "IMPORT_FILE_MALFORMED";
 
   /** 413: the uploaded file exceeds the 5 MB import limit. */
@@ -145,6 +148,13 @@ public final class ApiErrorCode {
    * 422: a PDF import file has more pages than one import may hold; {@code maxPages} says how many.
    */
   public static final String IMPORT_FILE_TOO_MANY_PAGES = "IMPORT_FILE_TOO_MANY_PAGES";
+
+  /**
+   * 422: a PDF import file is readable, but holds more than one statement may: more text, objects,
+   * decoded data, image pixels or drawing work, or a page too large for OCR. Unlike {@code
+   * IMPORT_FILE_MALFORMED}, exporting a shorter statement helps.
+   */
+  public static final String IMPORT_PDF_LIMIT_EXCEEDED = "IMPORT_PDF_LIMIT_EXCEEDED";
 
   /**
    * 422: a PDF has no text layer (a scanned document) but the template reads text ({@code

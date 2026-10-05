@@ -18,6 +18,7 @@ import org.apache.commons.io.output.UnsynchronizedByteArrayOutputStream;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSInteger;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.filter.FilterFactory;
@@ -31,6 +32,13 @@ import org.apache.pdfbox.filter.FilterFactory;
  * JPEG and CCITT data those its own data or decode parameters hold, which is what PDFBox allocates.
  * One budget belongs to one read of one document; {@link BoundedPdfParser} checks each stream as it
  * parses it.
+ *
+ * <p>It also bounds how many objects the document declares, at most {@value #MAX_OBJECTS} in all
+ * (fifth PR #267 review). A few bytes per entry of a cross-reference stream, or of an object
+ * stream, declare one object, and PDFBox keeps several objects in memory for each: a 24 KB file
+ * whose cross-reference stream declared 2.7 million objects, within the stream limits, exhausted a
+ * 512 MB heap while loading. The objects of an object stream are counted as it is parsed, those of
+ * a cross-reference stream before PDFBox reads its first entry, across every section of the file.
  */
 public final class PdfStreamBudget {
 
@@ -40,6 +48,8 @@ public final class PdfStreamBudget {
   public static final long MAX_IMAGE_PIXELS = 50_000_000L;
   // A statement's streams use one or two filters; the chain is decoded one stage per call.
   public static final int MAX_FILTERS = 8;
+  // The import source analysis' samples declare at most about 300 objects each.
+  public static final long MAX_OBJECTS = 20_000;
   // Image codecs are decoded to pixels, bounded by MAX_IMAGE_PIXELS; the filters before one count.
   // PDFBox accepts the abbreviated names (meant for inline images) on any stream. JPX and JBIG2
   // need ImageIO plugins this application does not ship, so PDFBox cannot decode them at all.
@@ -60,6 +70,7 @@ public final class PdfStreamBudget {
 
   private final boolean rendered;
   private long decoded;
+  private long objects;
 
   /**
    * @param rendered whether the document's pages are rendered (OCR), so its images are decoded too;
@@ -75,6 +86,7 @@ public final class PdfStreamBudget {
    * @throws PdfLimitException when it, or the document so far, decodes to more than allowed
    */
   public void check(COSStream stream) throws IOException {
+    countObjects(declaredObjects(stream));
     int limit = (int) Math.min(MAX_STREAM_BYTES, MAX_DECODED_BYTES - decoded);
     decoded +=
         boundedLength(
@@ -85,6 +97,55 @@ public final class PdfStreamBudget {
             stream::createRawInputStream,
             stream.getLength(),
             limit);
+  }
+
+  /**
+   * Checks the size of a loaded document's cross-reference table. It holds the objects every
+   * cross-reference stream declared, already counted as they were parsed, and those of plain
+   * cross-reference tables, which no stream declares (each line of one is a 20-byte entry, so the
+   * upload limit bounds their memory, but not the work of parsing every object).
+   *
+   * @throws PdfLimitException when the table holds more objects than allowed
+   */
+  public static void checkObjectTable(int entries) throws PdfLimitException {
+    if (entries > MAX_OBJECTS) {
+      throw tooManyObjects();
+    }
+  }
+
+  private void countObjects(long count) throws PdfLimitException {
+    objects += count;
+    if (objects > MAX_OBJECTS) {
+      throw tooManyObjects();
+    }
+  }
+
+  private static PdfLimitException tooManyObjects() {
+    return new PdfLimitException("The PDF declares more objects than a statement needs.");
+  }
+
+  // The objects a cross-reference stream (its /Index ranges, by default 0 to /Size) or an object
+  // stream (/N) declares; none for any other stream. A negative or non-numeric count declares none,
+  // and PDFBox refuses the stream itself.
+  private static long declaredObjects(COSStream stream) {
+    COSName type = stream.getCOSName(COSName.TYPE);
+    if (COSName.OBJ_STM.equals(type)) {
+      return Math.max(0, stream.getInt(COSName.N, 0));
+    }
+    if (!COSName.XREF.equals(type)) {
+      return 0;
+    }
+    if (!(stream.getDictionaryObject(COSName.INDEX) instanceof COSArray index)) {
+      return Math.max(0, stream.getInt(COSName.SIZE, 0));
+    }
+    long declared = 0;
+    // Pairs of first object number and count.
+    for (int i = 1; i < index.size(); i += 2) {
+      if (index.getObject(i) instanceof COSInteger count) {
+        declared += Math.max(0, count.longValue());
+      }
+    }
+    return declared;
   }
 
   /**

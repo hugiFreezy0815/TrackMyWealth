@@ -40,7 +40,8 @@ public final class BoundedPdfParser extends PDFParser {
    * {@code content} loaded, with every object parsed and every stream within {@code budget}. An
    * encrypted document is returned with only its structure read: its caller refuses it.
    *
-   * @throws PdfLimitException when a stream decodes to more than the budget allows
+   * @throws PdfLimitException when a stream decodes to more than the budget allows, or the document
+   *     declares more objects than it allows
    * @throws IOException when it is not a PDF this strict parser reads
    */
   public static PDDocument load(byte[] content, PdfStreamBudget budget) throws IOException {
@@ -48,6 +49,7 @@ public final class BoundedPdfParser extends PDFParser {
     PDDocument document = parser.parse(false);
     try {
       parser.requireNoRefusal();
+      PdfStreamBudget.checkObjectTable(document.getDocument().getXrefTable().size());
       if (!document.isEncrypted()) {
         parser.parseEveryObject(document);
       }

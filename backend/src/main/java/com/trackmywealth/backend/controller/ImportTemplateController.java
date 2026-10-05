@@ -128,8 +128,10 @@ public class ImportTemplateController {
   }
 
   /**
-   * FR-IMP-022: the templates that can read the file, best first. Writes nothing. A 503 {@code
-   * IMPORT_PDF_BUSY} (with {@code Retry-After}) when the server is reading too many PDFs at once.
+   * FR-IMP-022: the templates that can read the file, best first. Writes nothing. A 422 {@code
+   * IMPORT_PDF_NO_TEXT} for a scanned PDF (only an OCR template, chosen explicitly, reads one), a
+   * 503 {@code IMPORT_PDF_BUSY} (with {@code Retry-After}) when the server is reading too many PDFs
+   * at once.
    */
   @RetryableWhenBusy
   @PostMapping(path = "/detect", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

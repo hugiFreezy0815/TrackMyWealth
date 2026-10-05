@@ -37,6 +37,8 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
@@ -150,6 +152,22 @@ class PdfImportReaderServiceTest {
     assertFileError(pdf(), ApiErrorCode.IMPORT_PDF_NO_TEXT);
   }
 
+  /** Fifth PR #267 review: the hint to use OCR is given only where OCR runs. */
+  @Test
+  void aPdfWithoutTextLayerPointsToOcrOnlyWhereItRuns() throws IOException {
+    byte[] scanned = pdf();
+    assertThatThrownBy(() -> reader.readTextLayer(scanned))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> assertThat(e.getReason()).contains("does not read scanned statements"));
+
+    when(ocr.isEnabled()).thenReturn(true);
+    assertThatThrownBy(() -> reader.readTextLayer(scanned))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> assertThat(e.getReason()).contains("Use a template that reads it by OCR"));
+  }
+
   @Test
   void aStatementWithoutBookingLinesHasNoDataRows() throws IOException {
     assertFileError(
@@ -182,7 +200,7 @@ class PdfImportReaderServiceTest {
       assertThatThrownBy(() -> parser.parse(output.toByteArray(), template("PDF_OCR"), null))
           .isInstanceOfSatisfying(
               ApiException.class,
-              e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_MALFORMED));
+              e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_PDF_LIMIT_EXCEEDED));
       verifyNoInteractions(ocr);
     }
   }
@@ -221,7 +239,7 @@ class PdfImportReaderServiceTest {
    * small file that inflates past MAX_STREAM_BYTES is refused before PDFBox reads any of it.
    */
   @Test
-  void aStreamThatInflatesPastTheLimitIsMalformed() throws IOException {
+  void aStreamThatInflatesPastTheLimitIsRefused() throws IOException {
     try (PDDocument document = new PDDocument();
         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       PDPage page = new PDPage();
@@ -239,12 +257,12 @@ class PdfImportReaderServiceTest {
       document.save(output);
       assertThat(output.size()).as("a small file").isLessThan(1_000_000);
 
-      assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_MALFORMED);
+      assertTextLayerRefused(output.toByteArray(), "decodes to more than allowed");
     }
   }
 
   @Test
-  void anImageOfMorePixelsThanAStatementNeedsIsMalformed() throws IOException {
+  void anImageOfMorePixelsThanAStatementNeedsIsRefused() throws IOException {
     try (PDDocument document = new PDDocument();
         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       document.addPage(new PDPage());
@@ -256,7 +274,7 @@ class PdfImportReaderServiceTest {
       document.getPage(0).getCOSObject().setItem(COSName.getPDFName("InventedImage"), image);
       document.save(output);
 
-      assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_MALFORMED);
+      assertTextLayerRefused(output.toByteArray(), "more pixels than a statement needs");
     }
   }
 
@@ -501,6 +519,11 @@ class PdfImportReaderServiceTest {
         pdfTemplate(
             "PDF_TEXT", new ImportPdfLayout(good.columns(), good.rowPattern(), " ", "^\\d")),
         "pdfLayout.documentMarker");
+    List<String> longName = new ArrayList<>(good.columns());
+    longName.set(0, "x".repeat(ImportPdfLayout.MAX_COLUMN_NAME_LENGTH + 1));
+    assertInvalid(
+        pdfTemplate("PDF_TEXT", new ImportPdfLayout(longName, good.rowPattern(), MARKER, "^\\d")),
+        "pdfLayout.columns");
     assertInvalid(
         pdfTemplate("PDF_TEXT", new ImportPdfLayout(good.columns(), good.rowPattern(), MARKER, "")),
         "pdfLayout.recordStartPattern");
@@ -550,27 +573,12 @@ class PdfImportReaderServiceTest {
    * further upload waits briefly for a turn, then is a 503 - and once a turn is free, it is read.
    */
   @Test
-  void aServerReadingTheMostStatementsItMayAnswersBusy() throws Exception {
-    PdfImportReaderService busyReader = new PdfImportReaderService(ocr, 100);
-    CountDownLatch reading = new CountDownLatch(PdfImportReaderService.MAX_CONCURRENT_READS);
-    CountDownLatch release = new CountDownLatch(1);
-    when(ocr.recognizePages(anyInt(), any()))
-        .thenAnswer(
-            invocation -> {
-              reading.countDown();
-              assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
-              return MARKER + "\n";
-            });
-    byte[] scanned = pdf();
+  void aServerReadingTheMostStatementsItMayAnswersBusy() throws IOException {
+    Semaphore turns = new Semaphore(PdfImportReaderService.MAX_CONCURRENT_READS);
+    PdfImportReaderService busyReader = new PdfImportReaderService(ocr, turns, 100);
     byte[] statement = pdf(MARKER, "04.01.2031 -1,00 Invented");
-    ExecutorService callers =
-        Executors.newFixedThreadPool(PdfImportReaderService.MAX_CONCURRENT_READS);
+    turns.acquireUninterruptibly(PdfImportReaderService.MAX_CONCURRENT_READS);
     try {
-      for (int i = 0; i < PdfImportReaderService.MAX_CONCURRENT_READS; i++) {
-        callers.submit(() -> busyReader.readScannedText(scanned));
-      }
-      assertThat(reading.await(10, TimeUnit.SECONDS)).isTrue();
-
       assertThatThrownBy(() -> busyReader.readTextLayer(statement))
           .isInstanceOfSatisfying(
               ApiException.class,
@@ -581,11 +589,50 @@ class PdfImportReaderServiceTest {
                     .isEqualTo(String.valueOf(PdfImportReaderService.BUSY_RETRY_AFTER_SECONDS));
               });
     } finally {
-      release.countDown();
-      callers.shutdown();
-      assertThat(callers.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+      turns.release(PdfImportReaderService.MAX_CONCURRENT_READS);
     }
+
     assertThat(busyReader.readTextLayer(statement)).contains(MARKER);
+    assertThatThrownBy(() -> busyReader.readTextLayer(pdf())).isInstanceOf(ApiException.class);
+    assertThat(turns.availablePermits())
+        .as("every read gives its turn back, also a refused one")
+        .isEqualTo(PdfImportReaderService.MAX_CONCURRENT_READS);
+  }
+
+  /**
+   * Fifth PR #267 review: a recognition takes up to two minutes and LocalOcrService bounds it with
+   * slots of its own. It used to hold a read turn all that time, so two scanned statements halved
+   * the reads of every other upload. The turn is now given back once the pages are checked - and
+   * only once.
+   */
+  @Test
+  void aRecognitionHoldsNoReadTurn() throws Exception {
+    Semaphore turns = new Semaphore(PdfImportReaderService.MAX_CONCURRENT_READS);
+    PdfImportReaderService ocrReader = new PdfImportReaderService(ocr, turns, 100);
+    CountDownLatch recognizing = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    when(ocr.recognizePages(anyInt(), any()))
+        .thenAnswer(
+            invocation -> {
+              recognizing.countDown();
+              assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+              return MARKER;
+            });
+    byte[] scanned = pdf();
+    ExecutorService caller = Executors.newSingleThreadExecutor();
+    try {
+      Future<String> recognized = caller.submit(() -> ocrReader.readScannedText(scanned));
+      assertThat(recognizing.await(10, TimeUnit.SECONDS)).isTrue();
+
+      assertThat(turns.availablePermits()).isEqualTo(PdfImportReaderService.MAX_CONCURRENT_READS);
+      release.countDown();
+      assertThat(recognized.get(10, TimeUnit.SECONDS)).isEqualTo(MARKER);
+    } finally {
+      release.countDown();
+      caller.shutdown();
+      assertThat(caller.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+    }
+    assertThat(turns.availablePermits()).isEqualTo(PdfImportReaderService.MAX_CONCURRENT_READS);
   }
 
   /**
@@ -594,7 +641,7 @@ class PdfImportReaderServiceTest {
    * parser now checks every stream as it parses it.
    */
   @Test
-  void aCrossReferenceStreamThatInflatesPastTheLimitIsMalformed() throws IOException {
+  void aCrossReferenceStreamThatInflatesPastTheLimitIsRefused() throws IOException {
     byte[] statement = handwrittenPdf(false, PdfStreamBudget.MAX_STREAM_BYTES + 1L);
     assertThat(statement.length).as("a small file").isLessThan(100_000);
 
@@ -603,7 +650,7 @@ class PdfImportReaderServiceTest {
 
   /** An object stream is decoded whole as soon as one of its objects is read. */
   @Test
-  void anObjectStreamThatInflatesPastTheLimitIsMalformed() throws IOException {
+  void anObjectStreamThatInflatesPastTheLimitIsRefused() throws IOException {
     byte[] statement = handwrittenPdf(true, PdfStreamBudget.MAX_STREAM_BYTES + 1L);
     assertThat(statement.length).as("a small file").isLessThan(100_000);
 
@@ -692,9 +739,64 @@ class PdfImportReaderServiceTest {
         .contains(MARKER + " page 1", MARKER + " page 2", MARKER + " page 3", MARKER + " page 4");
   }
 
+  /**
+   * Fifth PR #267 review: the stream limits bound how much a cross-reference stream decodes to, not
+   * how many objects it declares - six bytes each. A 24 KB file declaring 2.7 million objects, its
+   * stream within MAX_STREAM_BYTES, exhausted a 512 MB heap inside the parser. It is refused before
+   * PDFBox reads the first entry.
+   */
+  @Test
+  @Timeout(60)
+  void aCrossReferenceStreamDeclaringMillionsOfObjectsIsRefused() throws IOException {
+    int declared = 2_700_000;
+    assertThat(6L * declared).isLessThan(PdfStreamBudget.MAX_STREAM_BYTES);
+    byte[] statement = crossReferenceSections(declared);
+    assertThat(statement.length).as("a small file").isLessThan(100_000);
+
+    assertTextLayerRefused(statement, "declares more objects than a statement needs");
+    assertOcrRefused(statement, "declares more objects than a statement needs");
+  }
+
+  /** The objects of every cross-reference section of the file count together. */
+  @Test
+  void crossReferenceSectionsDeclaringTooManyObjectsTogetherAreRefused() throws IOException {
+    int half = (int) PdfStreamBudget.MAX_OBJECTS / 2 + 1;
+
+    assertTextLayerRefused(
+        crossReferenceSections(half, half), "declares more objects than a statement needs");
+    assertFileError(crossReferenceSections(100, 100), ApiErrorCode.IMPORT_PDF_NO_TEXT);
+  }
+
+  /** PDFBox parses every object of an object stream as soon as one of them is read. */
+  @Test
+  void anObjectStreamDeclaringTooManyObjectsIsRefused() throws IOException {
+    byte[] statement = handwrittenPdf(true, 0, PdfStreamBudget.MAX_OBJECTS + 1);
+
+    assertTextLayerRefused(statement, "declares more objects than a statement needs");
+  }
+
+  /** A plain cross-reference table declares its objects in 20-byte lines, and is bounded too. */
+  @Test
+  void aCrossReferenceTableOfTooManyObjectsIsRefused() throws IOException {
+    ByteArrayOutputStream file = new ByteArrayOutputStream();
+    ascii(file, "%PDF-1.4\n");
+    long[] offsets = pageObjects(file);
+    long table = file.size();
+    // Object 0 is the free head of the table, which PDFBox does not keep.
+    int size = (int) PdfStreamBudget.MAX_OBJECTS + 2;
+    ascii(file, "xref\n0 " + size + "\n0000000000 65535 f \n");
+    for (int i = 1; i < size; i++) {
+      ascii(file, String.format("%010d 00000 n \n", offsets[Math.min(i, 3)]));
+    }
+    ascii(file, "trailer\n<< /Size " + size + " /Root 1 0 R >>\nstartxref\n" + table);
+    ascii(file, "\n%%EOF\n");
+
+    assertTextLayerRefused(file.toByteArray(), "declares more objects than a statement needs");
+  }
+
   // --- helpers -------------------------------------------------------------------------------
 
-  // An OCR read of content is a 422 IMPORT_FILE_MALFORMED for reason, from this class's own limits.
+  // An OCR read of content is a 422 IMPORT_PDF_LIMIT_EXCEEDED for reason, from the read's limits.
   private void assertOcrRefused(byte[] content, String reason) {
     doAnswer(
             invocation -> {
@@ -708,21 +810,23 @@ class PdfImportReaderServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_MALFORMED);
+              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_PDF_LIMIT_EXCEEDED);
               assertThat(e.getStatusCode().value()).isEqualTo(422);
+              assertThat(e.getReason()).isEqualTo(e.getCause().getMessage());
             })
         .rootCause()
         .hasMessageContaining(reason);
   }
 
-  // A PDF read through the text layer is a 422 IMPORT_FILE_MALFORMED for reason, from the limits.
+  // A PDF read through the text layer is a 422 IMPORT_PDF_LIMIT_EXCEEDED for reason.
   private void assertTextLayerRefused(byte[] content, String reason) {
     assertThatThrownBy(() -> parser.parse(content, template("PDF_TEXT"), null))
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_MALFORMED);
+              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_PDF_LIMIT_EXCEEDED);
               assertThat(e.getStatusCode().value()).isEqualTo(422);
+              assertThat(e.getReason()).isEqualTo(e.getCause().getMessage());
             })
         .rootCause()
         .isInstanceOf(PdfLimitException.class)
@@ -735,6 +839,12 @@ class PdfImportReaderServiceTest {
    * stream) is followed by padding that inflates to padding bytes.
    */
   private static byte[] handwrittenPdf(boolean objectStream, long padding) throws IOException {
+    return handwrittenPdf(objectStream, padding, 1);
+  }
+
+  // As above, with the object stream declaring objectCount objects (/N); it holds one.
+  private static byte[] handwrittenPdf(boolean objectStream, long padding, long objectCount)
+      throws IOException {
     ByteArrayOutputStream file = new ByteArrayOutputStream();
     long[] offsets = new long[7];
     ascii(file, "%PDF-1.7\n");
@@ -750,7 +860,9 @@ class PdfImportReaderServiceTest {
       offsets[5] = file.size();
       ascii(
           file,
-          "5 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Filter /FlateDecode /Length "
+          "5 0 obj\n<< /Type /ObjStm /N "
+              + objectCount
+              + " /First 4 /Filter /FlateDecode /Length "
               + data.length
               + " >>\nstream\n");
       file.write(data);
@@ -781,6 +893,66 @@ class PdfImportReaderServiceTest {
     file.write(xref);
     ascii(file, "\nendstream\nendobj\nstartxref\n" + offsets[4] + "\n%%EOF\n");
     return file.toByteArray();
+  }
+
+  // A one-page PDF without text whose cross-reference sections are streams, linked by /Prev: the
+  // first one in the chain holds objects 0 to 3, and each declares its count of further objects,
+  // under object numbers of its own, all at object 3's offset.
+  private static byte[] crossReferenceSections(int... declared) throws IOException {
+    ByteArrayOutputStream file = new ByteArrayOutputStream();
+    ascii(file, "%PDF-1.7\n");
+    long[] offsets = pageObjects(file);
+    long previous = -1;
+    for (int section = 0; section < declared.length; section++) {
+      ByteArrayOutputStream entries = new ByteArrayOutputStream();
+      String index = "";
+      if (section == 0) {
+        for (int i = 0; i < 4; i++) {
+          // Type 0 (free) or 1 (at an offset); fields of 1, 4 and 1 bytes.
+          entries.write(i == 0 ? 0 : 1);
+          entries.write(ByteBuffer.allocate(4).putInt((int) offsets[i]).array());
+          entries.write(0);
+        }
+        index = "0 4 ";
+      }
+      byte[] entry = ByteBuffer.allocate(6).put((byte) 1).putInt((int) offsets[3]).array();
+      for (int i = 0; i < declared[section]; i++) {
+        entries.write(entry);
+      }
+      long first = 10_000_000L * (section + 1);
+      index += first + " " + declared[section];
+      byte[] data = deflated(entries.toString(StandardCharsets.ISO_8859_1), 0);
+      long offset = file.size();
+      ascii(
+          file,
+          (4 + section)
+              + " 0 obj\n<< /Type /XRef /Size "
+              + (first + declared[section])
+              + " /Index ["
+              + index
+              + "] /W [1 4 1] /Root 1 0 R"
+              + (previous < 0 ? "" : " /Prev " + previous)
+              + " /Filter /FlateDecode /Length "
+              + data.length
+              + " >>\nstream\n");
+      file.write(data);
+      ascii(file, "\nendstream\nendobj\n");
+      previous = offset;
+    }
+    ascii(file, "startxref\n" + previous + "\n%%EOF\n");
+    return file.toByteArray();
+  }
+
+  // Objects 1 to 3 of a one-page PDF without text (catalog, pages, page); their offsets by number.
+  private static long[] pageObjects(ByteArrayOutputStream file) {
+    long[] offsets = new long[4];
+    offsets[1] = file.size();
+    ascii(file, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+    offsets[2] = file.size();
+    ascii(file, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+    offsets[3] = file.size();
+    ascii(file, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>\nendobj\n");
+    return offsets;
   }
 
   // text, then padding zero bytes, Flate-compressed.

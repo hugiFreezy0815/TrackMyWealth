@@ -816,6 +816,22 @@ class ImportTemplateControllerTest {
   }
 
   /**
+   * Fifth PR #267 review: no text template reads a scanned PDF and an OCR template is no candidate,
+   * so detection says why instead of answering an empty list - with or without PDF templates.
+   */
+  @Test
+  void detectingAScannedPdfSaysItHasNoTextLayer() throws Exception {
+    create(swissRequest(headerOf(SWISS)));
+
+    multipart(BASE + "/detect", pdf(), null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("IMPORT_PDF_NO_TEXT");
+  }
+
+  /**
    * Third PR #267 review: while OCR is switched off (until #276), a PDF_OCR template could never
    * read a file, so none is saved - neither a new one nor a switch to OCR.
    */

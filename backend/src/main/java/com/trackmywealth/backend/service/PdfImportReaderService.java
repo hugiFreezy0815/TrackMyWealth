@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.ImageType;
@@ -52,6 +53,12 @@ import org.springframework.stereotype.Service;
  * rendered page: tens of megabytes each). A further upload waits up to {@value #READ_WAIT_SECONDS}
  * s for a turn, then is a 503 {@code IMPORT_PDF_BUSY}. The turns are counted per server process:
  * every instance of the backend reads its own {@value #MAX_CONCURRENT_READS} at a time.
+ *
+ * <p>An OCR read gives its turn back once its pages are checked: recognition takes up to minutes,
+ * and {@link LocalOcrService} bounds it with slots of its own. Its document stays loaded only while
+ * it holds one of those slots (a further one is refused at once), so at most {@value
+ * #MAX_CONCURRENT_READS} reads plus {@value LocalOcrService#MAX_CONCURRENT} recognitions hold a
+ * document at a time (fifth PR #267 review).
  */
 @Service
 public class PdfImportReaderService {
@@ -75,17 +82,18 @@ public class PdfImportReaderService {
   private static final byte[] PDF_MAGIC = "%PDF-".getBytes(StandardCharsets.US_ASCII);
 
   private final LocalOcrService ocr;
-  private final Semaphore reads = new Semaphore(MAX_CONCURRENT_READS);
+  private final Semaphore reads;
   private final long readWaitMillis;
 
   @Autowired
   public PdfImportReaderService(LocalOcrService ocr) {
-    this(ocr, TimeUnit.SECONDS.toMillis(READ_WAIT_SECONDS));
+    this(ocr, new Semaphore(MAX_CONCURRENT_READS), TimeUnit.SECONDS.toMillis(READ_WAIT_SECONDS));
   }
 
-  // Tests shorten the wait for a turn.
-  PdfImportReaderService(LocalOcrService ocr, long readWaitMillis) {
+  // Tests hold the turns themselves and shorten the wait for one.
+  PdfImportReaderService(LocalOcrService ocr, Semaphore reads, long readWaitMillis) {
     this.ocr = ocr;
+    this.reads = reads;
     this.readWaitMillis = readWaitMillis;
   }
 
@@ -146,9 +154,17 @@ public class PdfImportReaderService {
       throw mismatch("The file is not a PDF, but this template reads PDF statements.");
     }
     acquireRead();
+    AtomicBoolean turn = new AtomicBoolean(true);
     try {
-      return readTextHoldingTurn(content, ocr);
+      return readTextHoldingTurn(content, ocr, turn);
     } finally {
+      releaseRead(turn);
+    }
+  }
+
+  // Gives the turn back once, whether recognition already did or not.
+  private void releaseRead(AtomicBoolean turn) {
+    if (turn.getAndSet(false)) {
       reads.release();
     }
   }
@@ -170,7 +186,7 @@ public class PdfImportReaderService {
     }
   }
 
-  private String readTextHoldingTurn(byte[] content, boolean ocr) {
+  private String readTextHoldingTurn(byte[] content, boolean ocr, AtomicBoolean turn) {
     try (PDDocument document = BoundedPdfParser.load(content, new PdfStreamBudget(ocr))) {
       if (document.isEncrypted()) {
         throw malformed("The PDF is encrypted; export the statement without a password.", null);
@@ -189,12 +205,12 @@ public class PdfImportReaderService {
               MAX_TEXT,
               Duration.ofSeconds(
                   ocr ? LocalOcrService.DOCUMENT_TIMEOUT_SECONDS : READ_SECONDS_TEXT_LAYER));
-      return ocr ? recognize(document, budget) : layerText(document, budget);
+      return ocr ? recognize(document, budget, turn) : layerText(document, budget);
     } catch (PdfLimitException e) {
-      throw malformed("The PDF holds more than one statement may.", e);
+      throw overLimit(e);
     } catch (UncheckedIOException e) {
       throw e.getCause() instanceof PdfLimitException limit
-          ? malformed("The PDF holds more than one statement may.", limit)
+          ? overLimit(limit)
           : malformed("The file is not a readable PDF.", e);
     } catch (IOException e) {
       // Also an InvalidPasswordException (a PDF that needs a password to open).
@@ -246,7 +262,7 @@ public class PdfImportReaderService {
   }
 
   // Page by page, so a document with too much text, or too much to draw, stops at the limit.
-  private static String layerText(PDDocument document, PdfReadBudget budget) throws IOException {
+  private String layerText(PDDocument document, PdfReadBudget budget) throws IOException {
     PDFTextStripper stripper = new BoundedTextStripper(budget);
     stripper.setSortByPosition(true);
     StringBuilder text = new StringBuilder();
@@ -256,26 +272,31 @@ public class PdfImportReaderService {
       text.append(stripper.getText(document));
       budget.requireWithinLimits();
       if (text.length() > MAX_TEXT) {
-        throw malformed("The PDF holds more text than one statement may.", null);
+        throw overLimit(new PdfLimitException("The PDF holds more text than one statement may."));
       }
     }
     if (text.toString().isBlank()) {
       throw new ImportFileRejectedException(
           ApiErrorCode.IMPORT_PDF_NO_TEXT,
-          "The PDF has no text layer (a scanned document). Use a template that reads it by OCR.");
+          ocr.isEnabled()
+              ? "The PDF has no text layer (a scanned document). Use a template that reads it by"
+                  + " OCR."
+              : "The PDF has no text layer (a scanned document), and this server does not read"
+                  + " scanned statements.");
     }
     return text.toString();
   }
 
-  // Every page is checked before the first is rendered; LocalOcrService then renders one page at
-  // a time, and only once it holds a recognition slot.
-  private String recognize(PDDocument document, PdfReadBudget budget) {
+  // Every page is checked before the first is rendered, and the read's turn is given back;
+  // LocalOcrService then renders one page at a time, and only once it holds a recognition slot.
+  private String recognize(PDDocument document, PdfReadBudget budget, AtomicBoolean turn) {
     for (int i = 0; i < document.getNumberOfPages(); i++) {
       PDRectangle page = document.getPage(i).getCropBox();
       if (page.getWidth() > MAX_OCR_PAGE_POINTS || page.getHeight() > MAX_OCR_PAGE_POINTS) {
-        throw malformed("A page is too large to be read by OCR.", null);
+        throw overLimit(new PdfLimitException("A page is too large to be read by OCR."));
       }
     }
+    releaseRead(turn);
     PDFRenderer renderer = new BoundedPdfRenderer(document, budget);
     return ocr.recognizePages(document.getNumberOfPages(), page -> render(renderer, budget, page));
   }
@@ -293,6 +314,13 @@ public class PdfImportReaderService {
   private static ImportFileRejectedException mismatch(String detail) {
     return new ImportFileRejectedException(ApiErrorCode.IMPORT_TEMPLATE_MISMATCH, detail)
         .withProperty("missingColumns", List.of());
+  }
+
+  // Readable, but more than one statement may hold: a shorter export helps, unlike for a damaged
+  // file. The detail says which limit, never anything of the document.
+  private static ImportFileRejectedException overLimit(PdfLimitException limit) {
+    return new ImportFileRejectedException(
+        ApiErrorCode.IMPORT_PDF_LIMIT_EXCEEDED, limit.getMessage(), limit);
   }
 
   private static ImportFileRejectedException malformed(String detail, Throwable cause) {

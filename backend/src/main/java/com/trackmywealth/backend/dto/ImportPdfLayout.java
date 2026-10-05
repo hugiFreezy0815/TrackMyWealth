@@ -24,7 +24,11 @@ import java.util.List;
         "Line-based extraction of a PDF statement: one booking per line that recordStartPattern"
             + " finds, its cells the capture groups of rowPattern, named by columns.")
 public record ImportPdfLayout(
-    @Schema(description = "Names of rowPattern's capture groups, in order.")
+    @Schema(
+            description =
+                "Names of rowPattern's capture groups, in order; each at most "
+                    + MAX_COLUMN_NAME_LENGTH
+                    + " characters.")
         @Size(max = MAX_COLUMNS)
         List<String> columns,
     @Schema(description = "RE2 pattern matched against a whole booking line; one group per column.")
@@ -40,6 +44,8 @@ public record ImportPdfLayout(
   public static final int MAX_COLUMNS = 50;
   public static final int MAX_PATTERN_LENGTH = 1000;
   public static final int MAX_MARKER_LENGTH = 200;
+  // A column name is echoed in every row's raw data and error, like a CSV file's header cell.
+  public static final int MAX_COLUMN_NAME_LENGTH = 100;
 
   public ImportPdfLayout {
     // A copy that keeps null entries: a client's null column must reach validation as a 422.

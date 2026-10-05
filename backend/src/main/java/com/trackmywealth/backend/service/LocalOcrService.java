@@ -48,7 +48,9 @@ public class LocalOcrService {
   static final int MAX_CONCURRENT = 2;
   static final int PAGE_TIMEOUT_SECONDS = 30;
   static final int DOCUMENT_TIMEOUT_SECONDS = 120;
-  static final int MAX_TEXT = 2_000_000;
+  // The same as a text layer's (PdfImportReaderService.MAX_TEXT): a scanned statement holds no more
+  // text than one with a text layer.
+  static final int MAX_TEXT = 200_000;
   // The Retry-After of a busy or too slow recognition: a document takes up to a minute or two.
   static final long RETRY_AFTER_SECONDS = 60;
 

@@ -259,6 +259,9 @@ public class ImportTemplateService {
    * shipped ones, then by name. A template whose settings cannot read the file is left out. A PDF
    * is read once, however many PDF templates there are, and a PDF template is never an exact header
    * match: its columns are named by its layout, not read from the file.
+   *
+   * @throws ApiException 422 {@code IMPORT_PDF_NO_TEXT} for a PDF without text layer (a scanned
+   *     statement, which only an explicitly chosen OCR template reads), 503 {@code IMPORT_PDF_BUSY}
    */
   public List<ImportTemplateCandidateResponse> detect(
       byte[] content, AuthenticatedUserPrincipal actor) {
@@ -269,7 +272,7 @@ public class ImportTemplateService {
               return templateRepository.findCurrentVisibleTo(actor.workspaceId());
             });
     List<ImportTemplateCandidateResponse> candidates = new ArrayList<>();
-    String pdfText = readPdfTextForDetection(templates, content);
+    String pdfText = readPdfTextForDetection(content);
     for (ImportTemplate template : templates) {
       String match = match(template, content, pdfText);
       if (match != null) {
@@ -413,19 +416,21 @@ public class ImportTemplateService {
     return exception;
   }
 
-  // The text layer of a PDF upload, read once for every PDF_TEXT template to try; null when there
-  // is none to try, the file is no PDF, or it cannot be read as one. A busy server is a 503, not
-  // a silent "no candidate".
-  private String readPdfTextForDetection(List<ImportTemplate> templates, byte[] content) {
-    boolean anyTextTemplate =
-        templates.stream()
-            .anyMatch(t -> ImportTemplateValues.FORMAT_PDF_TEXT.equals(t.getFileFormat()));
-    if (!anyTextTemplate || !PdfImportReaderService.isPdf(content)) {
+  // The text layer of a PDF upload, read once for every PDF_TEXT template to try; null when the
+  // file is no PDF, or one no template can read (damaged, or over the limits), as a CSV file no
+  // template reads has no candidate. A busy server is a 503, and a PDF without text layer a 422
+  // IMPORT_PDF_NO_TEXT (fifth PR #267 review): no text template can read it, OCR templates are no
+  // candidates, and an empty list would not tell the member why.
+  private String readPdfTextForDetection(byte[] content) {
+    if (!PdfImportReaderService.isPdf(content)) {
       return null;
     }
     try {
       return pdfReader.readTextLayer(content);
     } catch (ImportFileRejectedException e) {
+      if (ApiErrorCode.IMPORT_PDF_NO_TEXT.equals(e.getCode())) {
+        throw e;
+      }
       return null;
     }
   }

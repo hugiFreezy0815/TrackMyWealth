@@ -283,6 +283,11 @@ public class ImportFileParserService {
       if (column == null || column.isBlank() || !seen.add(normalize(column))) {
         throw invalid("pdfLayout.columns", "Each column needs a name of its own.");
       }
+      if (column.length() > ImportPdfLayout.MAX_COLUMN_NAME_LENGTH) {
+        throw invalid(
+            "pdfLayout.columns",
+            "A column name has at most " + ImportPdfLayout.MAX_COLUMN_NAME_LENGTH + " characters.");
+      }
     }
     String marker = layout.documentMarker();
     if (marker == null || marker.isBlank() || marker.length() > ImportPdfLayout.MAX_MARKER_LENGTH) {
