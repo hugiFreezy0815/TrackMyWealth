@@ -150,8 +150,9 @@ next to workspace rows. Since `V65` their policy is one per command: `SELECT` se
 rows, `INSERT`, `UPDATE` and `DELETE` own rows only. A single `USING (shared OR own) WITH CHECK
 (own)` policy, as `V20` had, is not enough: `DELETE` is checked against `USING` alone, and an
 `UPDATE` that sets `workspace_id` to the caller's workspace passes both. Because `SELECT ... FOR
-UPDATE` must also pass the `UPDATE` policy, a service that locks such a row decides "read-only"
-from a plain read first (`ImportTemplateService.requireChangeable`).
+UPDATE` must also pass the `UPDATE` policy, a service that locks such a row locks the workspace's
+own rows only and, when that misses, tells a shipped row (read-only) from a hidden one by a plain
+read (`ImportTemplateService.requireChangeable`).
 
 `transfer_detection_fx_pending` (`V54`) is the one table with a `workspace_id` outside RLS: a
 background job reads it across workspaces to re-run transfer detection once FX rates cover a date
@@ -406,11 +407,11 @@ V39 only requires an actor, and the member whose request revealed the change is 
 (`workspace_id IS NULL`, `V19`) plus the workspace's own categories. Decisions are recorded on
 issue #144.
 
-- **Defaults are never edited by a workspace.** RLS keeps them out of a workspace's writes (`V65`; `V20` still let a `DELETE` through), and editing the
-  shared row would change it for everyone. Relabelling or deactivating a default is stored per
-  workspace in `workspace_category_override` (`V34`; a NULL column inherits the shipped value, and
-  an override that overrides nothing is deleted). It is a user customisation a reference package
-  must not overwrite (FR-REF-009). Defaults keep their shipped position; only workspace categories
+- **Defaults are never edited by a workspace.** RLS keeps them out of a workspace's writes (`V65`;
+  `V20` still let a `DELETE` through), and editing the shared row would change it for everyone.
+  Relabelling or deactivating a default is stored per workspace in `workspace_category_override`
+  (`V34`; a NULL column inherits the shipped value, and an override that overrides nothing is
+  deleted). It is a user customisation a reference package must not overwrite (FR-REF-009). Defaults keep their shipped position; only workspace categories
   can be moved.
 - **Codes.** Reports key on `code`, never on a label (FR-CAT-008). Workspace codes are generated
   from the English label, immutable, and carry a `WS_` prefix that defaults never use
@@ -728,9 +729,8 @@ shared data source, so all three take effect together or not at all, on every no
 `import_template` (`V15`, `V64`) describes one institution's CSV export as data, never code
 (FR-IMP-020). It has `category`'s per-command RLS policies (`V65`, see section 4): a row with a
 `NULL` `workspace_id` is a shipped template every workspace reads and none writes; the others
-belong to one workspace. The
-application connects as a role that may bypass RLS in some deployments, so
-`ImportTemplateRepository` filters on the workspace as well.
+belong to one workspace. The application connects as a role that may bypass RLS in some
+deployments, so `ImportTemplateRepository` filters on the workspace as well.
 
 **Versioning (FR-IMP-023).** Every version of a template is its own row. The rows of one template
 share `template_family_id`, and exactly one of them has `is_current` (partial unique index

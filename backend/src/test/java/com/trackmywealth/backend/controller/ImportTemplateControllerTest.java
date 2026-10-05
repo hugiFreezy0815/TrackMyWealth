@@ -15,6 +15,7 @@ import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -49,6 +50,8 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.test.web.servlet.client.StatusAssertions;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.server.ResponseStatusException;
@@ -69,6 +72,9 @@ class ImportTemplateControllerTest {
   private static final String BASE = "/api/v1/import-templates";
   private static final String SWISS = "swiss-cash-iso-8859-1.csv";
   private static final String GERMAN = "german-cash-utf8-bom.csv";
+  // NOSUPERUSER NOBYPASSRLS, unlike the application's own role in these tests (see
+  // CrossTenantIsolationTest).
+  private static final String RLS_ROLE = "import_template_rls_role";
   private static final ParameterizedTypeReference<List<ImportTemplateResponse>> TEMPLATE_LIST =
       new ParameterizedTypeReference<>() {};
   private static final ParameterizedTypeReference<List<ImportTemplateCandidateResponse>>
@@ -94,6 +100,10 @@ class ImportTemplateControllerTest {
   @Autowired DataSource dataSource;
 
   @Autowired ImportTemplateService importTemplateService;
+
+  @Autowired PlatformTransactionManager transactionManager;
+
+  @Autowired EntityManager entityManager;
 
   private String token;
 
@@ -475,6 +485,53 @@ class ImportTemplateControllerTest {
         .expectBody()
         .jsonPath("$.code")
         .isEqualTo("IMPORT_TEMPLATE_READ_ONLY");
+    assertThat(count("SELECT count(*) FROM import_template WHERE id = ?", shipped)).isOne();
+  }
+
+  // #279: the test above runs as a role that bypasses RLS, so it cannot see V65. Under an RLS-bound
+  // role a workspace cannot lock a shipped row; the answer must still be read-only (403), not the
+  // 404 of a lock that found nothing. Own templates stay changeable and foreign ones hidden, so the
+  // 403s are not an artefact of a role that can do nothing.
+  @Test
+  void aShippedTemplateIsReadOnlyUnderRowLevelSecurity() throws Exception {
+    UUID shipped = insertTemplate(null, "Shipped bank");
+    Integer shippedVersion = get(shipped).version();
+    ImportTemplateRequest request = swissRequest(headerOf(SWISS));
+    ImportTemplateResponse own = create(request);
+    UUID otherWorkspace = UUID.randomUUID();
+    execute("INSERT INTO workspace (id, name) VALUES (?, 'Workspace B')", otherWorkspace);
+    UUID foreign = insertTemplate(otherWorkspace, "Foreign");
+    AuthenticatedUserPrincipal admin = adminPrincipal();
+    createRowLevelSecurityRole();
+
+    List<Supplier<?>> shippedChanges =
+        List.of(
+            () -> importTemplateService.update(shipped, request, shippedVersion, admin),
+            () -> importTemplateService.setActive(shipped, false, shippedVersion, admin),
+            () -> {
+              importTemplateService.delete(shipped, shippedVersion, admin);
+              return null;
+            });
+    for (Supplier<?> change : shippedChanges) {
+      assertThatThrownBy(() -> underRowLevelSecurity(admin, change))
+          .isInstanceOfSatisfying(
+              ApiException.class,
+              e -> {
+                assertThat(e.getStatusCode().value()).isEqualTo(403);
+                assertThat(e.getCode()).isEqualTo("IMPORT_TEMPLATE_READ_ONLY");
+              });
+    }
+    assertThatThrownBy(
+            () ->
+                underRowLevelSecurity(
+                    admin, () -> importTemplateService.setActive(foreign, false, 0, admin)))
+        .isInstanceOfSatisfying(
+            ResponseStatusException.class,
+            e -> assertThat(e.getStatusCode().value()).isEqualTo(404));
+    ImportTemplateResponse deactivated =
+        underRowLevelSecurity(
+            admin, () -> importTemplateService.setActive(own.id(), false, own.version(), admin));
+    assertThat(deactivated.active()).isFalse();
     assertThat(count("SELECT count(*) FROM import_template WHERE id = ?", shipped)).isOne();
   }
 
@@ -1015,6 +1072,31 @@ class ImportTemplateControllerTest {
     } finally {
       SecurityContextHolder.clearContext();
     }
+  }
+
+  private void createRowLevelSecurityRole() throws SQLException {
+    execute(
+        "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '"
+            + RLS_ROLE
+            + "') THEN CREATE ROLE "
+            + RLS_ROLE
+            + " NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF; END $$");
+    execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO " + RLS_ROLE);
+    execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO " + RLS_ROLE);
+  }
+
+  // Runs call as principal in one transaction that switches to RLS_ROLE after the workspace
+  // context is set, so every statement the service issues is bound by RLS.
+  private <T> T underRowLevelSecurity(AuthenticatedUserPrincipal principal, Supplier<T> call) {
+    return as(
+        principal,
+        () ->
+            new TransactionTemplate(transactionManager)
+                .execute(
+                    status -> {
+                      entityManager.createNativeQuery("SET LOCAL ROLE " + RLS_ROLE).executeUpdate();
+                      return call.get();
+                    }));
   }
 
   // A row written past the API: a shipped template (null workspace) or another workspace's own.

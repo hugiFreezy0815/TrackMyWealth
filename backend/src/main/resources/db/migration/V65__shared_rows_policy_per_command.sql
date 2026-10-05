@@ -16,7 +16,8 @@
 -- (migrations, the reference-data package), as before.
 --
 -- SELECT ... FOR UPDATE must also pass the UPDATE policy, so a shipped row can no longer be locked
--- by a workspace: ImportTemplateService decides "read-only" from a plain read before it locks.
+-- by a workspace: ImportTemplateService locks own rows only and tells a shipped row (read-only)
+-- from a hidden one by a plain read when the lock misses.
 -- CategoryService locks the workspace row, not the category, and is unaffected.
 -- =============================================================================================
 

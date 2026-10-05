@@ -34,7 +34,7 @@ import org.springframework.web.server.ResponseStatusException;
  * US-08-04/FR-CAT-001..003/008: a workspace's reporting taxonomy is the shipped defaults plus its
  * own categories, up to three levels deep.
  *
- * <p>Shipped defaults are shared by every workspace and never edited by one (V20's RLS rejects the
+ * <p>Shipped defaults are shared by every workspace and never edited by one (V65's RLS rejects the
  * write anyway): a workspace relabels or deactivates a default through a {@link
  * WorkspaceCategoryOverride}, and a default keeps its shipped position in the tree. Workspace
  * categories are edited directly and may be moved anywhere, including under a default.

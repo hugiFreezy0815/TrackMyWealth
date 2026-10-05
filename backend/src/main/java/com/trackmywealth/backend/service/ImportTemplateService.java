@@ -44,7 +44,7 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <ul>
  *   <li>Visibility: the shipped templates ({@code workspace_id IS NULL}) plus the workspace's own,
- *       as V20's RLS allows. Any active member may create and change the workspace's templates;
+ *       as V65's RLS allows. Any active member may create and change the workspace's templates;
  *       shipped ones are read-only ({@code 403 IMPORT_TEMPLATE_READ_ONLY}). An id the caller cannot
  *       see is the audited, non-enumerating 404 (US-28-02/03).
  *   <li>Versioning (FR-IMP-023): a change to any field of {@link ImportTemplateDefinition} or to
@@ -284,23 +284,30 @@ public class ImportTemplateService {
         .orElseThrow(() -> accessControlService.denyAsNotFound(actor, ENTITY_TYPE, id));
   }
 
-  // Authorization before the version (ADR 0004): hidden, then read-only, then stale, then retired.
-  // Read-only is decided from a plain read before the row lock: V65's RLS lets a workspace lock
-  // (SELECT ... FOR UPDATE) only its own rows, so a shipped one would look missing, not read-only.
-  private ImportTemplate requireChangeable(
-      UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
-    accessControlService.requireActingMember(actor);
+  // Not one of the workspace's own templates: a shipped one is read-only (403), any other the
+  // audited 404 (requireVisible throws it for a template the workspace cannot see).
+  private RuntimeException notChangeable(UUID id, AuthenticatedUserPrincipal actor) {
     if (requireVisible(id, actor).isShared()) {
-      throw new ApiException(
+      return new ApiException(
           HttpStatus.FORBIDDEN,
           ApiErrorCode.IMPORT_TEMPLATE_READ_ONLY,
           "Shipped import templates are shared by every workspace and cannot be changed. Create a"
               + " template of your own instead.");
     }
+    return accessControlService.denyAsNotFound(actor, ENTITY_TYPE, id);
+  }
+
+  // Authorization before the version (ADR 0004): hidden, then read-only, then stale, then retired.
+  // The lock comes first, so the row checked below is the locked, current one. It reaches the
+  // workspace's own rows only (V65's RLS lets a workspace lock (SELECT ... FOR UPDATE) nothing
+  // else), so only when it misses does a plain read tell a shipped template from a hidden one.
+  private ImportTemplate requireChangeable(
+      UUID id, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
+    accessControlService.requireActingMember(actor);
     ImportTemplate template =
         templateRepository
             .findOwnForUpdate(id, actor.workspaceId())
-            .orElseThrow(() -> accessControlService.denyAsNotFound(actor, ENTITY_TYPE, id));
+            .orElseThrow(() -> notChangeable(id, actor));
     versionPreconditionService.requireCurrent(
         expectedVersion, template.getVersion(), VERSIONED_RESOURCE);
     if (!template.isCurrent()) {

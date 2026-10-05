@@ -17,7 +17,7 @@ public interface ImportTemplateRepository extends JpaRepository<ImportTemplate, 
 
   /**
    * The current version of every shipped template and of the workspace's own. Filtered explicitly
-   * as well as by RLS (V20), so the result never depends on the database role bypassing row-level
+   * as well as by RLS (V65), so the result never depends on the database role bypassing row-level
    * security.
    */
   @Query(
