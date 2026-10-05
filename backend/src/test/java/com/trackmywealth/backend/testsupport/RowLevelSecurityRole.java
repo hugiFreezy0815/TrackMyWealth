@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -17,6 +18,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 public final class RowLevelSecurityRole {
 
+  // Spliced into the SQL (DDL and SET ROLE take no bind parameters), so only plain values pass.
+  private static final Pattern PLAIN_ROLE = Pattern.compile("[a-z_][a-z0-9_]*");
+  private static final Pattern PLAIN_PASSWORD = Pattern.compile("[A-Za-z0-9_-]+");
+
   private RowLevelSecurityRole() {}
 
   /** A role a test switches to inside its own transaction ({@link #call}). Idempotent. */
@@ -27,6 +32,7 @@ public final class RowLevelSecurityRole {
   /** A role a test connects as directly. Idempotent. */
   public static void createWithLogin(Connection admin, String role, String password)
       throws SQLException {
+    require(password, PLAIN_PASSWORD, "password");
     create(admin, role, "LOGIN PASSWORD '" + password + "'");
   }
 
@@ -40,6 +46,7 @@ public final class RowLevelSecurityRole {
       EntityManager entityManager,
       String role,
       Supplier<T> call) {
+    require(role, PLAIN_ROLE, "role name");
     return new TransactionTemplate(transactionManager)
         .execute(
             status -> {
@@ -49,6 +56,7 @@ public final class RowLevelSecurityRole {
   }
 
   private static void create(Connection admin, String role, String login) throws SQLException {
+    require(role, PLAIN_ROLE, "role name");
     try (Statement statement = admin.createStatement()) {
       statement.execute(
           "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '"
@@ -61,6 +69,12 @@ public final class RowLevelSecurityRole {
       statement.execute(
           "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO " + role);
       statement.execute("GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO " + role);
+    }
+  }
+
+  private static void require(String value, Pattern plain, String what) {
+    if (!plain.matcher(value).matches()) {
+      throw new IllegalArgumentException("Not a plain " + what + ": " + value);
     }
   }
 }

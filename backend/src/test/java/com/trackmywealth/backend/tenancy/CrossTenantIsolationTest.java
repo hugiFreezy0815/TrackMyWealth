@@ -329,7 +329,6 @@ class CrossTenantIsolationTest {
             rowsChangedUnderContext(
                 workspaceAId, "DELETE FROM import_template WHERE id = ?", sharedTemplateId))
         .isZero();
-    assertThat(rowVisibleUnderContext(workspaceBId, "import_template", sharedTemplateId)).isTrue();
     // A workspace can neither ship a template nor write one into another workspace.
     for (UUID foreignWorkspace : new UUID[] {null, workspaceBId}) {
       assertThatThrownBy(
@@ -401,8 +400,10 @@ class CrossTenantIsolationTest {
       connection.commit();
     }
 
+    // Committed, unlike rowsChangedUnderContext, so the checks below would see a delete and its
+    // cascade. Both rows belong to this test, so a regression cannot reach another test's data.
     assertThat(
-            rowsChangedUnderContext(
+            rowsCommittedUnderContext(
                 workspaceAId, "DELETE FROM category WHERE id = ?", unusedDefaultId))
         .isZero();
     assertThat(rowVisibleUnderContext(workspaceBId, "category", unusedDefaultId)).isTrue();
@@ -502,6 +503,17 @@ class CrossTenantIsolationTest {
   // Runs one statement as the RLS-bound role in workspace contextWorkspaceId and rolls it back.
   private int rowsChangedUnderContext(UUID contextWorkspaceId, String sql, Object... parameters)
       throws Exception {
+    return rowsChangedUnderContext(false, contextWorkspaceId, sql, parameters);
+  }
+
+  // As rowsChangedUnderContext, but commits, so a later check sees what the statement did.
+  private int rowsCommittedUnderContext(UUID contextWorkspaceId, String sql, Object... parameters)
+      throws Exception {
+    return rowsChangedUnderContext(true, contextWorkspaceId, sql, parameters);
+  }
+
+  private int rowsChangedUnderContext(
+      boolean commit, UUID contextWorkspaceId, String sql, Object... parameters) throws Exception {
     try (Connection connection = testRoleConnection()) {
       connection.setAutoCommit(false);
       setWorkspaceContext(connection, contextWorkspaceId);
@@ -509,8 +521,13 @@ class CrossTenantIsolationTest {
         for (int i = 0; i < parameters.length; i++) {
           statement.setObject(i + 1, parameters[i]);
         }
-        return statement.executeUpdate();
+        int rows = statement.executeUpdate();
+        if (commit) {
+          connection.commit();
+        }
+        return rows;
       } finally {
+        // A no-op after the commit; otherwise it undoes the statement.
         connection.rollback();
       }
     }
