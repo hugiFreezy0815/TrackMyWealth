@@ -150,6 +150,8 @@ public class PdfImportReaderService {
     String sectionValue = null;
     boolean sectionStart = false;
     Optional<String> statedBalance = Optional.empty();
+    // The page of the last header line; 0 before one.
+    int headerPage = 0;
     for (int i = Math.max(0, from); i < Math.min(to, lines.size()); i++) {
       PdfTextLine line = lines.get(i);
       String text = line.text().strip();
@@ -173,18 +175,22 @@ public class PdfImportReaderService {
       Matcher balanceMatch = balance == null ? null : balance.matcher(text);
       if (header.isPresent()) {
         columns = header.get();
-        // A repeated table header on another page does not end a pending booking. Keep its
-        // original columns for extracting the booking, but use this page's columns below.
-        if (current != null && current.line().page() == line.page()) {
+        // The table header repeated at the top of the next page does not end a booking that
+        // continues there: its cells keep their own page's columns, its continuation lines are
+        // placed by this page's. Any other header line - on the booking's own page, or a second
+        // table on the next - ends it (PR #281 review).
+        if (current != null
+            && (current.line().page() == line.page() || headerPage == line.page())) {
           end(current);
         }
+        headerPage = line.page();
       } else if (balanceMatch != null && balanceMatch.find()) {
         Optional<String> stated = firstGroup(balanceMatch);
         if (stated.isPresent()) {
           statedBalance = stated;
           // Below the section's last booking; at a section's start, the previous section's.
           if (current != null && !sectionStart) {
-            current.addBalanceAfter(stated.get());
+            current.addBalanceAfter(line, stated.get());
           }
         }
         end(current);
@@ -265,7 +271,9 @@ public class PdfImportReaderService {
         booking.continuation().stream().map(next -> next.text().strip()).toList(),
         booking.sectionStart(),
         booking.statedBalance().orElse(null),
-        booking.balancesAfter(),
+        booking.balancesAfter().stream()
+            .map(below -> new ImportPdfBookingLine.BalanceLine(below.text(), below.balance()))
+            .toList(),
         booking.columns().isPresent());
   }
 
@@ -427,13 +435,14 @@ public class PdfImportReaderService {
   }
 
   /**
-   * Whether {@code text} is a statement of {@code layout} with its booking table's header line: the
-   * document marker and a line holding every header label in order. Detection's equivalent of a CSV
-   * file's exact header fingerprint; false for a layout without header labels.
+   * Whether {@code text} is a statement of {@code layout} with its booking table's header line: one
+   * {@link #isLayoutOf} accepts, and a line holding every header label in order. Detection's
+   * equivalent of a CSV file's exact header fingerprint; false for a layout without header labels.
+   * A statement holding the header line but no booking line is no match at all (PR #281 review).
    */
   public static boolean hasHeaderLine(String text, ImportPdfLayout layout) {
     return layout.hasHeaderLabels()
-        && hasMarker(text, layout)
+        && isLayoutOf(text, layout)
         && text.lines().anyMatch(line -> PdfColumns.isHeaderLine(line, layout.headerLabels()));
   }
 
@@ -488,7 +497,7 @@ public class PdfImportReaderService {
 
   // Every page is checked before the first is rendered, and the read's turn is given back;
   // LocalOcrService then renders one page at a time, and only once it holds a recognition slot.
-  // OCR gives text, no positions: every line is page 1's, without words.
+  // OCR gives text, no positions: every line is page 1's, without words or place on the page.
   private List<PdfTextLine> recognize(
       PDDocument document, PdfReadBudget budget, AtomicBoolean turn) {
     for (int i = 0; i < document.getNumberOfPages(); i++) {

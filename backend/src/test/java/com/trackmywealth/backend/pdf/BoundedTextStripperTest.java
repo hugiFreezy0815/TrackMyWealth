@@ -62,6 +62,27 @@ class BoundedTextStripperTest {
       assertThat(words.get(0).left()).isEqualTo(40, offset(0.5f));
       assertThat(words.get(0).right()).isLessThan(words.get(1).left());
       assertThat(words.get(2).right()).isEqualTo(500, offset(0.5f));
+      // Its baseline 780 points up a letter-size page (792 points high): 12 from the top edge.
+      assertThat(lines.get(0).fromTop()).isEqualTo(12, offset(0.5f));
+      assertThat(lines.get(0).fromBottom()).isEqualTo(780, offset(0.5f));
+    }
+  }
+
+  /**
+   * PR #281 review: on a page turned a quarter, the page is read across its width, so a line's
+   * distances from the top and bottom edges add up to the page's width.
+   */
+  @Test
+  void aTurnedPageMeasuresTheLineAcrossItsWidth() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(List.of(List.of(List.of(at(40, "Zahlung von")))));
+
+    try (PDDocument document = Loader.loadPDF(statement)) {
+      document.getPage(0).setRotation(90);
+      PdfTextLine line = stripper().readLines(document, 1).get(0);
+
+      assertThat(line.fromTop() + line.fromBottom())
+          .isEqualTo(document.getPage(0).getCropBox().getWidth(), offset(0.5f));
     }
   }
 

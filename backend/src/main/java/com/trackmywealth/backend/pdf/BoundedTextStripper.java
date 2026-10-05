@@ -18,9 +18,13 @@ import org.apache.pdfbox.text.TextPosition;
  *
  * <p>It reads a page into {@link PdfTextLine}s: each line's text exactly as {@link
  * PDFTextStripper#getText} writes it (words in reading order, sorted by position when asked), and
- * its words with their horizontal positions, which locate a statement's columns (#268).
+ * its words with their horizontal positions, which locate a statement's columns, and how far it
+ * sits from the page's edges, which tells a page header or footer from text that merely repeats
+ * (#268).
  */
 public final class BoundedTextStripper extends PDFTextStripper {
+
+  private static final int HALF_TURN = 180;
 
   private final PdfReadBudget budget;
   private final List<PdfTextLine> lines = new ArrayList<>();
@@ -30,6 +34,9 @@ public final class BoundedTextStripper extends PDFTextStripper {
   private final List<String> word = new ArrayList<>();
   private float wordLeft;
   private float wordRight;
+  // How far the line's first word sits from the page's top and bottom edges; NaN until it has one.
+  private float lineTop = Float.NaN;
+  private float lineBottom = Float.NaN;
   private int page;
 
   public BoundedTextStripper(PdfReadBudget budget) {
@@ -44,6 +51,8 @@ public final class BoundedTextStripper extends PDFTextStripper {
     lineText.clear();
     word.clear();
     lineWords.clear();
+    lineTop = Float.NaN;
+    lineBottom = Float.NaN;
     setStartPage(page);
     setEndPage(page);
     writeText(document, Writer.nullWriter());
@@ -62,6 +71,10 @@ public final class BoundedTextStripper extends PDFTextStripper {
       } else {
         if (word.isEmpty()) {
           wordLeft = position.getXDirAdj();
+        }
+        if (Float.isNaN(lineTop)) {
+          lineTop = position.getYDirAdj();
+          lineBottom = pageHeight(position) - lineTop;
         }
         word.add(unicode);
         wordRight = position.getXDirAdj() + position.getWidthDirAdj();
@@ -93,9 +106,18 @@ public final class BoundedTextStripper extends PDFTextStripper {
   }
 
   private void endLine() {
-    lines.add(new PdfTextLine(page, String.join("", lineText), lineWords));
+    lines.add(new PdfTextLine(page, String.join("", lineText), lineWords, lineTop, lineBottom));
     lineText.clear();
     lineWords.clear();
+    lineTop = Float.NaN;
+    lineBottom = Float.NaN;
+  }
+
+  // The page's height in the direction its text is read: its width when it is turned a quarter.
+  private static float pageHeight(TextPosition position) {
+    return position.getRotation() % HALF_TURN == 0
+        ? position.getPageHeight()
+        : position.getPageWidth();
   }
 
   @Override

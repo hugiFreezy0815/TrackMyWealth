@@ -16,8 +16,8 @@ import java.util.List;
  * @param sectionStart whether it is the first booking of a section: no balance before it carries on
  * @param statedBalance the balance a balance line stated since the booking before it, as written;
  *     {@code null} for none
- * @param balancesAfter the balances that balance lines below it state, as written, before the next
- *     booking of its section: each must be the balance it leads to
+ * @param balancesAfter the balance lines below it, before the next booking of its section: each
+ *     must state the balance it leads to
  * @param headed whether it was read under a header line of the layout's header labels
  */
 public record ImportPdfBookingLine(
@@ -27,8 +27,16 @@ public record ImportPdfBookingLine(
     List<String> continuation,
     boolean sectionStart,
     String statedBalance,
-    List<String> balancesAfter,
+    List<BalanceLine> balancesAfter,
     boolean headed) {
+
+  /**
+   * A balance line below a booking (e.g. a section's closing balance).
+   *
+   * @param line the line as read
+   * @param balance the balance it states, as written
+   */
+  public record BalanceLine(String line, String balance) {}
 
   public ImportPdfBookingLine {
     cells = Collections.unmodifiableList(new ArrayList<>(cells));

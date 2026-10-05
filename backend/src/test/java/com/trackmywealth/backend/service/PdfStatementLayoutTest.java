@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import static com.trackmywealth.backend.service.SyntheticStatements.at;
+import static com.trackmywealth.backend.service.SyntheticStatements.atFoot;
 import static com.trackmywealth.backend.service.SyntheticStatements.endingAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -9,6 +10,7 @@ import static org.mockito.Mockito.mock;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
+import com.trackmywealth.backend.dto.ImportPdfBookingLine;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
@@ -19,7 +21,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -31,6 +37,7 @@ import tools.jackson.databind.json.JsonMapper;
 class PdfStatementLayoutTest {
 
   private static final String SPK_TITLE = "Invented Sparkasse Darlehenskonto";
+  private static final String GENERIC_TITLE = "Invented statement";
 
   private final PdfImportReaderService reader =
       new PdfImportReaderService(mock(LocalOcrService.class));
@@ -142,12 +149,12 @@ class PdfStatementLayoutTest {
                     List.of(at(40, "Kontostand am 01.01.2031"), endingAt(500, "-10.000,00")),
                     List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
                     List.of(at(60, "Erika Beispiel")),
-                    List.of(at(40, "Seite 1 von 2"))),
+                    List.of(atFoot(40, "Seite 1 von 2"))),
                 List.of(
                     List.of(at(40, SPK_TITLE)),
                     List.of(at(40, "02.02.2031Zinsen Januar"), endingAt(500, "-31,25")),
                     List.of(at(40, "Kontostand am 28.02.2031"), endingAt(500, "-9.781,25")),
-                    List.of(at(40, "Seite 2 von 2")))));
+                    List.of(atFoot(40, "Seite 2 von 2")))));
 
     List<ParsedImportRow> rows = parser.parse(statement, spkTemplate(), null).rows();
 
@@ -169,12 +176,12 @@ class PdfStatementLayoutTest {
                     List.of(at(40, SPK_TITLE)),
                     List.of(at(40, "Kontostand am 01.01.2031"), endingAt(500, "-10.000,00")),
                     List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
-                    List.of(at(40, "Seite 1 von 2"))),
+                    List.of(atFoot(40, "Seite 1 von 2"))),
                 List.of(
                     List.of(at(40, SPK_TITLE)),
                     List.of(at(60, "Erika Beispiel")),
                     List.of(at(40, "02.02.2031Zinsen Januar"), endingAt(500, "-31,25")),
-                    List.of(at(40, "Seite 2 von 2")))));
+                    List.of(atFoot(40, "Seite 2 von 2")))));
 
     List<ParsedImportRow> rows = parser.parse(statement, spkTemplate(), null).rows();
 
@@ -184,9 +191,180 @@ class PdfStatementLayoutTest {
   }
 
   /**
+   * PR #281 review: a booking at the foot of a page continues below the table header the next page
+   * repeats. Its own cells keep its page's columns; its continuation lines are placed by the next
+   * page's, which sit elsewhere.
+   */
+  @Test
+  void aBookingContinuesBelowTheTableHeaderOfTheNextPage() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, GENERIC_TITLE)),
+                    genericHeader(0),
+                    List.of(at(40, "01.01.2031"), at(150, "Payment"), at(400, "10.00")),
+                    List.of(atFoot(40, "Page 1"))),
+                List.of(
+                    List.of(at(40, GENERIC_TITLE)),
+                    genericHeader(200),
+                    List.of(at(350, "Invented recipient")),
+                    List.of(at(240, "02.01.2031"), at(350, "Other"), at(600, "20.00")),
+                    List.of(atFoot(40, "Page 2")))));
+
+    List<ImportPdfBookingLine> bookings = reader.readBookingLines(statement, genericTemplate());
+
+    assertThat(bookings)
+        .extracting(ImportPdfBookingLine::cells)
+        .containsExactly(
+            List.of(
+                "01.01.2031 Payment 10.00", "01.01.2031", "Payment Invented recipient", "10.00"),
+            List.of("02.01.2031 Other 20.00", "02.01.2031", "Other", "20.00"));
+    List<ParsedImportRow> rows = parser.parse(statement, genericTemplate(), null).rows();
+    assertThat(rows).allSatisfy(row -> assertThat(row.isParsed()).isTrue());
+    assertThat(rows.get(0).rawData())
+        .containsEntry(
+            ImportFileParserService.RAW_LINE_KEY, "01.01.2031 Payment 10.00\nInvented recipient");
+  }
+
+  /**
+   * PR #281 review: only the table header at the top of the next page carries a booking over. A
+   * second table on that page ends it: what is under that table's header is no part of it.
+   */
+  @Test
+  void aSecondTableHeaderOnTheNextPageEndsTheBooking() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, GENERIC_TITLE)),
+                    genericHeader(0),
+                    List.of(at(40, "01.01.2031"), at(150, "Payment"), at(400, "10.00")),
+                    List.of(atFoot(40, "Page 1"))),
+                List.of(
+                    List.of(at(40, GENERIC_TITLE)),
+                    genericHeader(0),
+                    List.of(at(150, "Invented recipient")),
+                    genericHeader(0),
+                    List.of(at(150, "Note of the second table")),
+                    List.of(at(40, "02.01.2031"), at(150, "Other"), at(400, "20.00")),
+                    List.of(atFoot(40, "Page 2")))));
+
+    List<ImportPdfBookingLine> bookings = reader.readBookingLines(statement, genericTemplate());
+
+    assertThat(bookings.get(0).continuation()).containsExactly("Invented recipient");
+    assertThat(bookings.get(1).continuation()).isEmpty();
+  }
+
+  /**
+   * PR #281 review: a counterparty that ends a booking at the foot of every page repeats there as a
+   * footer would, but sits at another height on each page, and stays in its booking.
+   */
+  @Test
+  void aCounterpartyEndingABookingOnEveryPageStaysInIt() throws IOException {
+    List<SyntheticStatements.Cell> landlord = List.of(at(60, "Vermieter GmbH"));
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(40, "Kontostand am 01.01.2031"), endingAt(500, "-10.000,00")),
+                    List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
+                    List.of(at(40, "03.01.2031Miete Januar"), endingAt(500, "-850,00")),
+                    landlord,
+                    List.of(atFoot(40, "Seite 1 von 3"))),
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(40, "02.02.2031Rate Februar"), endingAt(500, "250,00")),
+                    List.of(at(40, "03.02.2031Zinsen"), endingAt(500, "-31,25")),
+                    List.of(at(40, "04.02.2031Gebuehr"), endingAt(500, "-5,00")),
+                    List.of(at(40, "05.02.2031Miete Februar"), endingAt(500, "-850,00")),
+                    landlord,
+                    List.of(atFoot(40, "Seite 2 von 3"))),
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(40, "03.03.2031Miete Maerz"), endingAt(500, "-850,00")),
+                    landlord,
+                    List.of(atFoot(40, "Seite 3 von 3")))));
+
+    List<ParsedImportRow> rows = parser.parse(statement, spkTemplate(), null).rows();
+
+    assertThat(rows)
+        .extracting(row -> row.canonical().description())
+        .containsExactly(
+            "Rate Januar",
+            "Miete Januar Vermieter GmbH",
+            "Rate Februar",
+            "Zinsen",
+            "Gebuehr",
+            "Miete Februar Vermieter GmbH",
+            "Miete Maerz Vermieter GmbH");
+  }
+
+  /**
+   * PR #281 review: a page number is set aside wherever a footer line holds it, in the forms banks
+   * print, so the footer is never appended to the page's last booking.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"Kontoauszug 1/2031 - Blatt %d von 2", "%d/2", "- %d -", "S. %d"})
+  void aFooterWithItsPageNumberIsNoContinuationLine(String footer) throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
+                    List.of(at(60, "Erika Beispiel")),
+                    List.of(atFoot(40, String.format(footer, 1)))),
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(40, "02.02.2031Rate Februar"), endingAt(500, "250,00")),
+                    List.of(atFoot(40, String.format(footer, 2))))));
+
+    List<ParsedImportRow> rows = parser.parse(statement, spkTemplate(), null).rows();
+
+    assertThat(rows)
+        .extracting(row -> row.canonical().description())
+        .containsExactly("Rate Januar Erika Beispiel", "Rate Februar");
+  }
+
+  /**
+   * PR #281 review: references ending a booking at the foot of each page differ only in their
+   * digits, short or long, and are no footer: only page numbers set their digits aside.
+   */
+  @ParameterizedTest
+  @CsvSource({"Reference 111111, Reference 222222", "Reference 111, Reference 222"})
+  void referencesAtTheFootOfEachPageAreNoFurniture(String first, String second) throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, GENERIC_TITLE)),
+                    List.of(at(40, "01.01.2031 Payment 10.00")),
+                    List.of(at(60, first)),
+                    List.of(atFoot(40, "Page 1"))),
+                List.of(
+                    List.of(at(40, GENERIC_TITLE)),
+                    List.of(at(40, "02.01.2031 Payment 20.00")),
+                    List.of(at(60, second)),
+                    List.of(atFoot(40, "Page 2")))));
+    ImportPdfLayout layout =
+        PdfLayoutBuilder.of(List.of("Line"), "(.*)", GENERIC_TITLE, "^\\d{2}\\.")
+            .continuationColumn("Line")
+            .build();
+    ImportTemplateDefinition template =
+        new ImportFileParserServiceTest.Template().pdf("PDF_TEXT", layout).build();
+
+    assertThat(reader.readBookingLines(statement, template))
+        .extracting(ImportPdfBookingLine::continuation)
+        .containsExactly(List.of(first), List.of(second));
+  }
+
+  /**
    * PR #281 review: a booking the balance line pattern takes for its own is lost without an error
    * row of its own - but the section's closing balance then differs from the balance the bookings
-   * read lead to, and the booking above it is the error row that says so.
+   * read lead to. The balance line is the error row that says so; the bookings above it were read
+   * correctly and stay parsed, so they still import.
    */
   @Test
   void aClosingBalanceTheBookingsDoNotLeadToIsAnErrorRow() throws IOException {
@@ -207,11 +385,16 @@ class PdfStatementLayoutTest {
 
     List<ParsedImportRow> rows = parser.parse(statement, yuhTemplate(layout), null).rows();
 
-    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(true, false);
-    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.BALANCE_LINE_MISMATCH);
-    assertThat(rows.get(1).errorArgs())
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(true, true, false);
+    ParsedImportRow balanceLine = rows.get(2);
+    assertThat(balanceLine.rowNumber()).isEqualTo(3);
+    assertThat(balanceLine.errorCode()).isEqualTo(ImportRowErrorValues.BALANCE_LINE_MISMATCH);
+    assertThat(balanceLine.errorArgs())
         .containsEntry("value", "95.00")
         .containsEntry("expected", "90.00");
+    assertThat(balanceLine.rawData())
+        .containsExactly(
+            Map.entry(ImportFileParserService.RAW_LINE_KEY, "Saldo per 31.01.2031 95.00 CHF"));
   }
 
   /**
@@ -293,6 +476,26 @@ class PdfStatementLayoutTest {
   }
 
   /**
+   * PR #281 review: a statement holding the marker and the header line but no booking line is no
+   * candidate at all, let alone an exact match.
+   */
+  @Test
+  void aHeaderLineWithoutABookingLineIsNoMatch() throws IOException {
+    String text =
+        reader.readTextLayer(
+            SyntheticStatements.statement(
+                List.of(
+                    List.of(
+                        List.of(at(40, SyntheticStatements.YUH_MARKER)),
+                        List.of(at(40, "Kontoauszug in CHF")),
+                        SyntheticStatements.header(0)))));
+    ImportPdfLayout yuh = SyntheticStatements.yuhLayout();
+
+    assertThat(PdfImportReaderService.isLayoutOf(text, yuh)).isFalse();
+    assertThat(PdfImportReaderService.hasHeaderLine(text, yuh)).isFalse();
+  }
+
+  /**
    * The layout contract of the #267 review: a layout saved with only the four fields of #267 reads
    * as one without any of the optional ones, unchanged.
    */
@@ -360,6 +563,29 @@ class PdfStatementLayoutTest {
   }
 
   // The SPK-6 layout: the date glued to the text, signed amounts, no header labels.
+  // A table of three labels, from x = 40 on, shifted by shift.
+  private static List<SyntheticStatements.Cell> genericHeader(float shift) {
+    return List.of(
+        at(40 + shift, "Date"), at(150 + shift, "Description"), at(400 + shift, "Amount"));
+  }
+
+  // Every line one cell, the words under each label, continuation lines under Description.
+  private static ImportTemplateDefinition genericTemplate() {
+    ImportPdfLayout layout =
+        PdfLayoutBuilder.of(List.of("Line"), "(.*)", GENERIC_TITLE, "^\\d{2}\\.")
+            .headerLabels(List.of("Date", "Description", "Amount"))
+            .continuationColumn("Description")
+            .build();
+    return new ImportFileParserServiceTest.Template()
+        .pdf("PDF_TEXT", layout)
+        .mapping(
+            ImportFileParserServiceTest.mapping("Date", "Amount")
+                .description("Description")
+                .build())
+        .dateFormat("dd.MM.yyyy")
+        .build();
+  }
+
   private static ImportTemplateDefinition spkTemplate() {
     ImportPdfLayout layout =
         PdfLayoutBuilder.of(

@@ -11,7 +11,8 @@ import java.util.Map;
  * language from the two, so no English text is ever stored with the row.
  *
  * @param rowNumber 1-based position among the file's data rows (header, preamble, empty lines and
- *     summary rows not counted)
+ *     summary rows not counted); in a PDF, a balance line whose balance does not add up is a row of
+ *     its own, after the booking above it
  * @param rawData every cell of the row by its header text, or by its 0-based index without a header
  *     row; a repeated header text is keyed {@code "<text>#<index>"} from its second occurrence on.
  *     Kept for errors too, so a corrected template can re-parse it.

@@ -38,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.apache.commons.csv.CSVFormat;
@@ -175,15 +176,24 @@ public class ImportFileParserService {
                 "expected",
                 expected.toPlainString());
           }
-          checkBalancesBelow(booking, running, template);
         }
-        rows.add(ParsedImportRow.parsed(i + 1, rawData, canonical));
+        rows.add(ParsedImportRow.parsed(rows.size() + 1, rawData, canonical));
       } catch (ImportRowRejectedException e) {
         rejected++;
-        rows.add(ParsedImportRow.error(i + 1, rawData, e.getCode(), e.getArgs()));
+        rows.add(ParsedImportRow.error(rows.size() + 1, rawData, e.getCode(), e.getArgs()));
         if (balanceColumn >= 0 && !ImportRowErrorValues.BALANCE_MISMATCH.equals(e.getCode())) {
           // Its amount is unknown: only the balance it states, if any, carries on.
           running = quietBalance(record, balanceColumn, header, template);
+        }
+      }
+      if (balanceColumn >= 0 && booking != null) {
+        for (ImportPdfBookingLine.BalanceLine below : booking.balancesAfter()) {
+          Optional<ParsedImportRow> mismatch =
+              balanceLineMismatch(below, running, rows.size() + 1, template);
+          if (mismatch.isPresent()) {
+            rejected++;
+            rows.add(mismatch.get());
+          }
         }
       }
     }
@@ -210,26 +220,26 @@ public class ImportFileParserService {
     return headerFingerprint(template, header);
   }
 
-  // PR #281 review: every balance a balance line states below the booking, before the next one of
-  // its section (e.g. a section's closing balance), must be the balance the bookings lead to.
-  // Otherwise a booking was lost on the way - say, a line the balance line pattern took for its
-  // own - and this booking, the last one read before it, says where.
-  private static void checkBalancesBelow(
-      ImportPdfBookingLine booking, BigDecimal running, ImportTemplateDefinition template) {
-    if (running == null) {
-      return;
+  // PR #281 review: a balance line below a booking, before the next one of its section (e.g. the
+  // section's closing balance), must state the balance the bookings lead to. Otherwise a booking
+  // between them was lost - say, a line the balance line pattern took for its own. The balance line
+  // is then an error row of its own, so the bookings around it, read correctly, still import.
+  // Empty when it adds up, or when nothing is known to check it against.
+  private static Optional<ParsedImportRow> balanceLineMismatch(
+      ImportPdfBookingLine.BalanceLine below,
+      BigDecimal running,
+      int rowNumber,
+      ImportTemplateDefinition template) {
+    BigDecimal stated = running == null ? null : quietAmount(below.balance(), template);
+    if (stated == null || stated.compareTo(running) == 0) {
+      return Optional.empty();
     }
-    for (String below : booking.balancesAfter()) {
-      BigDecimal stated = quietAmount(below, template);
-      if (stated != null && stated.compareTo(running) != 0) {
-        throw rowError(
+    return Optional.of(
+        ParsedImportRow.error(
+            rowNumber,
+            Map.of(RAW_LINE_KEY, below.line()),
             ImportRowErrorValues.BALANCE_LINE_MISMATCH,
-            ARG_VALUE,
-            stated.toPlainString(),
-            "expected",
-            running.toPlainString());
-      }
-    }
+            rowArgs(ARG_VALUE, stated.toPlainString(), "expected", running.toPlainString())));
   }
 
   // The balance before booking: none at a section's start, else the one a balance line stated
@@ -482,11 +492,10 @@ public class ImportFileParserService {
   }
 
   private static int requireNonBlankPattern(String pattern, String field) {
-    int groups = patternGroups(pattern, field);
-    if (pattern.isBlank()) {
+    if (pattern != null && pattern.isBlank()) {
       throw invalid(field, "The pattern must not be blank.");
     }
-    return groups;
+    return patternGroups(pattern, field);
   }
 
   // The capture groups of an RE2 pattern; a missing, too long, invalid or too large one is a 422.

@@ -31,14 +31,16 @@ public final class PdfColumns {
    * between them (e.g. a currency after a balance label).
    */
   public static Optional<PdfColumns> of(PdfTextLine line, List<String> labels) {
-    List<String> words = line.words().stream().map(PdfWord::text).toList();
-    int[] starts = labelStarts(words, labels);
+    List<String> words =
+        line.words().stream().map(word -> word.text().toLowerCase(Locale.ROOT)).toList();
+    List<List<String>> labelWords = labels.stream().map(PdfColumns::wordsOf).toList();
+    int[] starts = labelStarts(words, labelWords);
     if (starts.length == 0) {
       return Optional.empty();
     }
     List<Span> spans = new ArrayList<>(labels.size());
     for (int label = 0; label < labels.size(); label++) {
-      int last = starts[label] + wordsOf(labels.get(label)).size() - 1;
+      int last = starts[label] + labelWords.get(label).size() - 1;
       spans.add(new Span(line.words().get(starts[label]).left(), line.words().get(last).right()));
     }
     return Optional.of(new PdfColumns(spans));
@@ -49,7 +51,7 @@ public final class PdfColumns {
    * test, on text without positions.
    */
   public static boolean isHeaderLine(String text, List<String> labels) {
-    return labelStarts(wordsOf(text), labels).length > 0;
+    return labelStarts(wordsOf(text), labels.stream().map(PdfColumns::wordsOf).toList()).length > 0;
   }
 
   /** The column {@code word} belongs to, as an index into the labels. */
@@ -85,12 +87,12 @@ public final class PdfColumns {
   }
 
   // Where each label's first word is in words, or an empty array when not every label is there in
-  // order.
-  private static int[] labelStarts(List<String> words, List<String> labels) {
-    int[] starts = new int[labels.size()];
+  // order. Both are lower-cased already, so each word is compared as it is.
+  private static int[] labelStarts(List<String> words, List<List<String>> labelWords) {
+    int[] starts = new int[labelWords.size()];
     int from = 0;
-    for (int label = 0; label < labels.size(); label++) {
-      List<String> wanted = wordsOf(labels.get(label));
+    for (int label = 0; label < labelWords.size(); label++) {
+      List<String> wanted = labelWords.get(label);
       int start = indexOf(words, wanted, from);
       if (wanted.isEmpty() || start < 0) {
         return new int[0];
@@ -103,11 +105,7 @@ public final class PdfColumns {
 
   private static int indexOf(List<String> words, List<String> wanted, int from) {
     for (int start = from; start + wanted.size() <= words.size(); start++) {
-      boolean found = true;
-      for (int i = 0; i < wanted.size() && found; i++) {
-        found = words.get(start + i).toLowerCase(Locale.ROOT).equals(wanted.get(i));
-      }
-      if (found) {
+      if (words.subList(start, start + wanted.size()).equals(wanted)) {
         return start;
       }
     }

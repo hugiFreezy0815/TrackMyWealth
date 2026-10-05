@@ -39,8 +39,9 @@ import java.util.List;
  *       to lead from the balance before it to its own: a misread amount or sign is an error row.
  * </ul>
  *
- * <p>Lines repeated at the top or bottom of every page (only explicit pagination numbers aside) are
- * dropped unless they start a section, state a balance or are a header line.
+ * <p>Lines repeated at the same place at the top or bottom of every page (a page header or footer,
+ * page numbers aside) are dropped unless they start a section, state a balance or are a header
+ * line.
  */
 @Schema(
     description =

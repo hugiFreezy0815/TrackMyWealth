@@ -12,13 +12,16 @@ import java.util.Optional;
  */
 public final class PdfBooking {
 
+  /** A balance line below a booking: the line as written, and the balance it states. */
+  public record BalanceLine(String text, String balance) {}
+
   private final PdfTextLine bookingLine;
   private final PdfColumns tableColumns;
   private final String sectionValue;
   private final boolean startsSection;
   private final String balanceBefore;
   private final List<PdfTextLine> continuationLines = new ArrayList<>();
-  private final List<String> balancesBelow = new ArrayList<>();
+  private final List<BalanceLine> balancesBelow = new ArrayList<>();
   private boolean open = true;
 
   /**
@@ -47,9 +50,9 @@ public final class PdfBooking {
     }
   }
 
-  /** Records a balance that a balance line below this booking states, as written. */
-  public void addBalanceAfter(String balance) {
-    balancesBelow.add(balance);
+  /** Records a balance line below this booking, and the balance it states as written. */
+  public void addBalanceAfter(PdfTextLine line, String balance) {
+    balancesBelow.add(new BalanceLine(line.text().strip(), balance));
   }
 
   /** Ends this booking: no later line continues it. */
@@ -85,7 +88,7 @@ public final class PdfBooking {
     return List.copyOf(continuationLines);
   }
 
-  public List<String> balancesAfter() {
+  public List<BalanceLine> balancesAfter() {
     return List.copyOf(balancesBelow);
   }
 }

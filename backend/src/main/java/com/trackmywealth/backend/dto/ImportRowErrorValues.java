@@ -56,8 +56,9 @@ public final class ImportRowErrorValues {
   public static final String BALANCE_MISMATCH = "IMPORT_ROW_BALANCE_MISMATCH";
 
   /**
-   * {@code value, expected}: a balance line below a PDF booking states another balance than the
-   * bookings up to it lead to, so a booking between them was not read as one (PR #281 review).
+   * {@code value, expected}: a PDF balance line states another balance than the bookings above it
+   * lead to, so a booking between them was not read as one (PR #281 review). The row is the balance
+   * line itself, its raw data the line; the bookings around it keep their own status.
    */
   public static final String BALANCE_LINE_MISMATCH = "IMPORT_ROW_BALANCE_LINE_MISMATCH";
 

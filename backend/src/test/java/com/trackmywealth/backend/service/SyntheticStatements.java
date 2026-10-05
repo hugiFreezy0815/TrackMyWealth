@@ -26,6 +26,8 @@ public final class SyntheticStatements {
 
   private static final float FONT_SIZE = 8;
   private static final float TOP = 780;
+  // Where a page's footer starts, as a bank prints it: at the same place on every page.
+  private static final float FOOT = 60;
   private static final float LEADING = 12;
   // Where each YUH label starts on the first page.
   private static final float[] YUH_X = {40, 100, 220, 300, 360, 430, 500};
@@ -33,18 +35,31 @@ public final class SyntheticStatements {
 
   private SyntheticStatements() {}
 
-  /** A piece of text on a line: from x on, or ending at x when right-aligned. */
-  public record Cell(String text, float x, boolean rightAligned) {}
+  /**
+   * A piece of text on a line: from x on, or ending at x when right-aligned. A line whose first
+   * cell is {@code atFoot} is part of the page's footer.
+   */
+  public record Cell(String text, float x, boolean rightAligned, boolean atFoot) {}
 
   public static Cell at(float x, String text) {
-    return new Cell(text, x, false);
+    return new Cell(text, x, false, false);
   }
 
   public static Cell endingAt(float x, String text) {
-    return new Cell(text, x, true);
+    return new Cell(text, x, true, false);
   }
 
-  /** A PDF of these pages, each a list of lines, each a list of cells. */
+  /**
+   * A footer line's text from x on: printed at the foot of the page, wherever the text above ends.
+   */
+  public static Cell atFoot(float x, String text) {
+    return new Cell(text, x, false, true);
+  }
+
+  /**
+   * A PDF of these pages, each a list of lines, each a list of cells. Lines are laid out from the
+   * top of the page one below the other, footer lines from {@link #FOOT} down.
+   */
   public static byte[] statement(List<List<List<Cell>>> pages) throws IOException {
     try (PDDocument document = new PDDocument();
         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -53,16 +68,22 @@ public final class SyntheticStatements {
         document.addPage(page);
         try (PDPageContentStream stream = new PDPageContentStream(document, page)) {
           float y = TOP;
+          float footY = FOOT;
           for (List<Cell> line : lines) {
+            boolean foot = !line.isEmpty() && line.get(0).atFoot();
             for (Cell cell : line) {
               float x = cell.rightAligned() ? cell.x() - width(cell.text()) : cell.x();
               stream.beginText();
               stream.setFont(FONT, FONT_SIZE);
-              stream.newLineAtOffset(x, y);
+              stream.newLineAtOffset(x, foot ? footY : y);
               stream.showText(cell.text());
               stream.endText();
             }
-            y -= LEADING;
+            if (foot) {
+              footY -= LEADING;
+            } else {
+              y -= LEADING;
+            }
           }
         }
       }
@@ -97,8 +118,8 @@ public final class SyntheticStatements {
         debitAsCredit
             ? booking(0, "05.01.2031", "Spareinlage", "0000000002", null, "17.35", "1'246.05")
             : booking(0, "05.01.2031", "Spareinlage", "0000000002", "17.35", null, "1'246.05"));
-    first.add(List.of(at(40, "Seite 1 von 2")));
-    first.add(List.of(at(40, "Invented Bank AG, Beispielweg 1")));
+    first.add(List.of(atFoot(40, "Seite 1 von 2")));
+    first.add(List.of(atFoot(40, "Invented Bank AG, Beispielweg 1")));
 
     List<List<Cell>> second = new ArrayList<>();
     second.add(List.of(at(40, YUH_MARKER)));
@@ -113,8 +134,8 @@ public final class SyntheticStatements {
     // At the margin, under DATUM: a remark, not part of the booking above.
     second.add(List.of(at(40, "Valuta gemaess Bedingungen")));
     second.add(List.of(at(40, "Saldo per 31.01.2031"), endingAt(560, "60.00 EUR")));
-    second.add(List.of(at(40, "Seite 2 von 2")));
-    second.add(List.of(at(40, "Invented Bank AG, Beispielweg 1")));
+    second.add(List.of(atFoot(40, "Seite 2 von 2")));
+    second.add(List.of(atFoot(40, "Invented Bank AG, Beispielweg 1")));
     return statement(List.of(first, second));
   }
 
