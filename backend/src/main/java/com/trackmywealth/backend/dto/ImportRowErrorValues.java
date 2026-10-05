@@ -62,6 +62,21 @@ public final class ImportRowErrorValues {
    */
   public static final String BALANCE_LINE_MISMATCH = "IMPORT_ROW_BALANCE_LINE_MISMATCH";
 
+  /**
+   * {@code value, pattern}: a PDF line that the record-start pattern finds, but another pattern of
+   * the layout too (a section's start, or a balance line without a balance column to check it), so
+   * it was read as that pattern's line and not imported. One of the two patterns is too broad (PR
+   * #281 review).
+   */
+  public static final String LINE_AMBIGUOUS = "IMPORT_ROW_LINE_AMBIGUOUS";
+
+  /**
+   * {@code value, max}: more lines below a PDF booking would continue it than a booking may have
+   * ({@link ImportPdfLayout#MAX_CONTINUATION_LINES}) - likely the statement's own text, which the
+   * layout's continuation end pattern should end (PR #281 review).
+   */
+  public static final String CONTINUATION_TOO_LONG = "IMPORT_ROW_CONTINUATION_TOO_LONG";
+
   /** {@code column, value}: not a four-digit ISO 18245 merchant category code. */
   public static final String MCC_INVALID = "IMPORT_ROW_MCC_INVALID";
 }

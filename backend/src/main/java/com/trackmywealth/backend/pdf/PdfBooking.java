@@ -9,6 +9,9 @@ import java.util.Optional;
  * in force (from the last header line), the section it is in, the balance a balance line stated
  * before it, the lines below it that continue it, until a line that does not ends it, and the
  * balances that balance lines below it state before the next booking of its section.
+ *
+ * <p>It may also be a line that is no booking for sure (PR #281 review): one that another of the
+ * layout's patterns finds as well, which must be reported, never silently dropped or imported.
  */
 public final class PdfBooking {
 
@@ -22,7 +25,9 @@ public final class PdfBooking {
   private final String balanceBefore;
   private final List<PdfTextLine> continuationLines = new ArrayList<>();
   private final List<BalanceLine> balancesBelow = new ArrayList<>();
+  private final String foundByAlso;
   private boolean open = true;
+  private boolean overflowed;
 
   /**
    * @param columns the columns of the last header line; {@code null} before one
@@ -41,6 +46,26 @@ public final class PdfBooking {
     this.sectionValue = section;
     this.startsSection = sectionStart;
     this.balanceBefore = statedBalance;
+    this.foundByAlso = null;
+  }
+
+  private PdfBooking(PdfTextLine line, String otherPattern) {
+    this.bookingLine = line;
+    this.tableColumns = null;
+    this.sectionValue = null;
+    this.startsSection = false;
+    this.balanceBefore = null;
+    this.foundByAlso = otherPattern;
+    this.open = false;
+  }
+
+  /**
+   * A booking line that {@code otherPattern} (the name of another pattern of the layout) finds as
+   * well, and that was read as that pattern's line: it has nothing around it and is never
+   * continued.
+   */
+  public static PdfBooking ambiguous(PdfTextLine line, String otherPattern) {
+    return new PdfBooking(line, otherPattern);
   }
 
   /** Appends {@code next} as a line continuing this booking, while it is open. */
@@ -48,6 +73,15 @@ public final class PdfBooking {
     if (open) {
       continuationLines.add(next);
     }
+  }
+
+  /**
+   * Ends this booking because more lines would continue it than a booking may have: what follows is
+   * likely no part of it (e.g. a statement's closing text), so it is reported.
+   */
+  public void endOverflowing() {
+    overflowed = true;
+    open = false;
   }
 
   /** Records a balance line below this booking, and the balance it states as written. */
@@ -82,6 +116,20 @@ public final class PdfBooking {
 
   public Optional<String> statedBalance() {
     return Optional.ofNullable(balanceBefore);
+  }
+
+  /** Whether more lines would have continued it than a booking may have. */
+  public boolean overflowing() {
+    return overflowed;
+  }
+
+  /** The other pattern that finds this line too, when it is no booking for sure. */
+  public Optional<String> alsoFoundBy() {
+    return Optional.ofNullable(foundByAlso);
+  }
+
+  public int continuationCount() {
+    return continuationLines.size();
   }
 
   public List<PdfTextLine> continuation() {

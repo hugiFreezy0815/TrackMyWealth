@@ -789,10 +789,20 @@ lines:
   column: a remark at the margin ends the booking. A header line ends the booking too, except the
   table header the next page repeats at its top: a booking at the foot of a page continues below
   it, its own cells read by its page's columns and its continuation lines placed by the next
-  page's. A second table header on that page ends it.
+  page's. A second table header on that page ends it. Text layer only (a 422 for `PDF_OCR`): OCR
+  reads every page as one text, so it cannot tell a page footer from a continuation line. A
+  booking with more than 20 continuation lines is the row error `IMPORT_ROW_CONTINUATION_TOO_LONG`
+  rather than a row with the rest of the statement in its description.
+- `continuationEndPattern` (needs `continuationColumn`): a matching line that is no page furniture
+  ends the booking above it, and no line continues one until the next booking line - e.g. the
+  closing text after a statement's last booking, which a continuation column that is no header
+  label would otherwise append to it.
 - `sectionPattern` and `sectionColumn`: a matching line starts a section, and its first capture
   group is the `sectionColumn` cell of the section's bookings (with currency mode `PER_ROW`, its
-  currency). Text before the first section, such as a summary page, is ignored.
+  currency). Text before the first section, such as a summary page, is ignored. A section's start
+  that the record-start pattern finds too is also the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the
+  line, and `sectionPattern`): it starts the section, but a booking a too-broad section pattern
+  takes would otherwise vanish, since a section starts with no balance to check it against.
 - `balanceLinePattern` and `balanceColumn`: a matching line states a balance (its first capture
   group) and is never a booking. Each booking is checked against the balance before it (the one
   stated since the last booking, or the last booking's): stated balance = balance before + amount,
@@ -803,9 +813,14 @@ lines:
   closing balance) must state the balance the bookings lead to; otherwise the balance line is an
   error row of its own, `IMPORT_ROW_BALANCE_LINE_MISMATCH` with the line as its raw data, since a
   booking above it was not read as one - for instance a line the balance line pattern took for its
-  own. The bookings around it keep their own status, so the ones read correctly still import. A booking whose balance column cell
-  is no amount is the row error `IMPORT_ROW_AMOUNT_UNPARSEABLE` for that column: the check it was
-  asked for cannot be made.
+  own. The bookings around it keep their own status, so the ones read correctly still import. A
+  booking whose balance column cell is no amount is the row error `IMPORT_ROW_AMOUNT_UNPARSEABLE`
+  for that column: the check it was asked for cannot be made. Without `balanceColumn`, nothing
+  checks a balance line, so one the record-start pattern finds too (e.g. a dated opening entry) is
+  also the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the line, and `balanceLinePattern`), never a
+  silently skipped booking. Every PDF row counts against the file's row limit, a balance line's
+  error row included; a PDF row's number is its place among the rows, not an index into the
+  statement's booking lines.
 
 Lines repeated in the top or bottom three lines of every page, or every page but one, are page
 furniture and never continue a booking. In a text layer the line must also sit at the same place
@@ -816,9 +831,10 @@ booking at the foot of each page moves with the bookings above it and stays in i
 page numbers set their digits aside - `Seite 2 von 3`, `Page 2/3`, `Blatt 2`, `S. 2` anywhere in
 the line, or a line that is just `2/3` or `- 2 -`; dates, transaction references and account
 identifiers must repeat exactly, so distinct references at the foot of each page remain in their
-bookings. A line a pattern marks as a booking, balance, section or header is never furniture, so
+bookings. A word's text is the text the line holds for it, a ligature glyph resolved (`ﬁ` reads
+`fi`), so a header label is found on the page exactly as detection finds it in the text. A line a pattern marks as a booking, balance, section or header is never furniture, so
 no booking is ever dropped as one. A row's raw data also keeps the whole booking
-line with its continuation lines, under `#line`. Both patterns are RE2 (linear-time matching, no
+line with its continuation lines, under `#line`. All patterns are RE2 (linear-time matching, no
 backreferences), so a member's pattern cannot backtrack catastrophically; RE2 is linear in its
 compiled program too, so a pattern whose program would exceed 2,000 instructions
 (`Re2Patterns`, e.g. nested counted repeats) is refused with a 422. From the cut columns on,

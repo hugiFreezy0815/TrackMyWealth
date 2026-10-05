@@ -6,7 +6,9 @@ import static com.trackmywealth.backend.service.SyntheticStatements.endingAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
@@ -15,11 +17,13 @@ import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ParsedImportRow;
+import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -121,7 +125,12 @@ class PdfStatementLayoutTest {
         .containsEntry("expected", "1280.75");
   }
 
-  /** Without a balance column nothing is checked: the misread sign goes unnoticed. */
+  /**
+   * Without a balance column nothing is checked: the misread sign goes unnoticed. Nor can anything
+   * tell the dated opening entry, which the balance line pattern and the record-start pattern both
+   * find, from a booking the balance pattern took: it is reported, never silently skipped (PR #281
+   * review).
+   */
   @Test
   void withoutABalanceColumnNoRowIsChecked() throws IOException {
     ImportPdfLayout unchecked =
@@ -130,8 +139,11 @@ class PdfStatementLayoutTest {
     List<ParsedImportRow> rows =
         parser.parse(SyntheticStatements.yuhStatement(true), yuhTemplate(unchecked), null).rows();
 
-    assertThat(rows).allSatisfy(row -> assertThat(row.isParsed()).isTrue());
-    assertThat(rows.get(1).canonical().amount()).isEqualTo(new BigDecimal("17.35"));
+    assertThat(rows.get(0).errorCode()).isEqualTo(ImportRowErrorValues.LINE_AMBIGUOUS);
+    assertThat(rows.get(0).errorArgs().get("value")).contains("Anfangsbestand");
+    List<ParsedImportRow> bookings = rows.subList(1, rows.size());
+    assertThat(bookings).allSatisfy(row -> assertThat(row.isParsed()).isTrue());
+    assertThat(bookings.get(1).canonical().amount()).isEqualTo(new BigDecimal("17.35"));
   }
 
   /**
@@ -437,6 +449,164 @@ class PdfStatementLayoutTest {
   }
 
   /**
+   * PR #281 review: without a balance column to check it, a balance line pattern that also finds a
+   * booking line would drop that booking without a trace. The line is an error row of its own
+   * instead, and the bookings around it still parse.
+   */
+  @Test
+  void aBookingLineTheBalancePatternFindsTooIsAnErrorRow() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
+                    List.of(at(40, "03.01.2031Saldoausgleich"), endingAt(500, "99,00")),
+                    List.of(at(40, "04.01.2031Zinsen"), endingAt(500, "-1,00")))));
+    ImportTemplateDefinition template =
+        spkTemplate(
+            PdfLayoutBuilder.from(spkTemplate().pdfLayout()).balanceLinePattern("Saldo").build());
+
+    List<ParsedImportRow> rows = parser.parse(statement, template, null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(true, false, true);
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.LINE_AMBIGUOUS);
+    assertThat(rows.get(1).errorArgs())
+        .containsEntry("value", "03.01.2031Saldoausgleich 99,00")
+        .containsEntry("pattern", "balanceLinePattern");
+  }
+
+  /**
+   * PR #281 review: a section pattern that also finds a booking line is reported the same way - a
+   * section's start resets the running balance, so no balance check would catch it. The section
+   * still starts there, so the rows after it keep the meaning the layout gives them.
+   */
+  @Test
+  void aBookingLineTheSectionPatternFindsTooIsAnErrorRow() throws IOException {
+    byte[] statement =
+        oneSection(
+            "100.00",
+            SyntheticStatements.booking(
+                0, "02.01.2031", "Lohn", "0000000001", null, "10.00", "110.00"),
+            SyntheticStatements.booking(
+                0, "03.01.2031", "Kontoauszug in EUR", "0000000002", "20.00", null, "90.00"),
+            SyntheticStatements.booking(
+                0, "04.01.2031", "Bonus", "0000000003", null, "5.00", "95.00"));
+    ImportPdfLayout layout =
+        PdfLayoutBuilder.from(SyntheticStatements.yuhLayout())
+            .sectionPattern("Kontoauszug in ([A-Z]{3})")
+            .build();
+
+    List<ParsedImportRow> rows = parser.parse(statement, yuhTemplate(layout), null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(true, false, true);
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.LINE_AMBIGUOUS);
+    assertThat(rows.get(1).errorArgs()).containsEntry("pattern", "sectionPattern");
+    assertThat(rows.get(2).canonical().currency()).isEqualTo("EUR");
+  }
+
+  /**
+   * PR #281 review: without header labels any line below a booking continues it, so the closing
+   * text after a statement's last booking would end up in its description. The continuation end
+   * pattern ends it there.
+   */
+  @Test
+  void theContinuationEndPatternKeepsClosingTextOutOfTheLastBooking() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
+                    List.of(at(60, "Erika Beispiel")),
+                    List.of(at(40, "Bitte pruefen Sie diesen Auszug.")),
+                    List.of(at(60, "Einwendungen innerhalb von sechs Wochen.")))));
+    ImportTemplateDefinition template =
+        spkTemplate(
+            PdfLayoutBuilder.from(spkTemplate().pdfLayout())
+                .continuationEndPattern("^Bitte pruefen")
+                .build());
+
+    List<ParsedImportRow> rows = parser.parse(statement, template, null).rows();
+
+    assertThat(rows)
+        .extracting(row -> row.canonical().description())
+        .containsExactly("Rate Januar Erika Beispiel");
+  }
+
+  /**
+   * PR #281 review: a booking with more continuation lines than one may have is an error row, never
+   * one with the rest of the statement glued to its description; the bookings before it parse.
+   */
+  @Test
+  void aBookingWithTooManyContinuationLinesIsAnErrorRow() throws IOException {
+    List<List<SyntheticStatements.Cell>> page = new ArrayList<>();
+    page.add(List.of(at(40, SPK_TITLE)));
+    page.add(List.of(at(40, "01.01.2031Rate Dezember"), endingAt(500, "250,00")));
+    page.add(List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")));
+    for (int i = 0; i <= ImportPdfLayout.MAX_CONTINUATION_LINES; i++) {
+      page.add(List.of(at(40, "Invented condition " + i)));
+    }
+
+    List<ParsedImportRow> rows =
+        parser.parse(SyntheticStatements.statement(List.of(page)), spkTemplate(), null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(true, false);
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.CONTINUATION_TOO_LONG);
+    assertThat(rows.get(1).errorArgs())
+        .containsEntry("max", String.valueOf(ImportPdfLayout.MAX_CONTINUATION_LINES));
+  }
+
+  /** As many continuation lines as a booking may have still continue it. */
+  @Test
+  void aBookingWithTheMostContinuationLinesParses() throws IOException {
+    List<List<SyntheticStatements.Cell>> page = new ArrayList<>();
+    page.add(List.of(at(40, SPK_TITLE)));
+    page.add(List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")));
+    for (int i = 0; i < ImportPdfLayout.MAX_CONTINUATION_LINES; i++) {
+      page.add(List.of(at(40, "Line" + i)));
+    }
+
+    List<ParsedImportRow> rows =
+        parser.parse(SyntheticStatements.statement(List.of(page)), spkTemplate(), null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(true);
+    assertThat(rows.get(0).canonical().description()).endsWith(" Line19");
+  }
+
+  /**
+   * PR #281 review: the error rows of balance lines count against the file's row limit, so a
+   * statement cannot hold more rows than a file may by its balance lines.
+   */
+  @Test
+  void balanceLineErrorRowsCountAgainstTheRowLimit() throws IOException {
+    ImportPdfBookingLine read =
+        reader.readBookingLines(SyntheticStatements.yuhStatement(false), yuhTemplate()).get(0);
+    ImportPdfBookingLine withBalanceLines =
+        new ImportPdfBookingLine(
+            read.line(),
+            read.cells(),
+            true,
+            List.of(),
+            read.sectionStart(),
+            read.statedBalance(),
+            Collections.nCopies(
+                ImportFileParserService.MAX_DATA_ROWS,
+                new ImportPdfBookingLine.BalanceLine("Saldo per 31.01.2031 1.00", "1.00")),
+            true,
+            null,
+            false);
+    PdfImportReaderService stub = mock(PdfImportReaderService.class);
+    when(stub.readBookingLines(any(), any())).thenReturn(List.of(withBalanceLines));
+
+    assertThatThrownBy(
+            () -> new ImportFileParserService(stub).parse(new byte[0], yuhTemplate(), null))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS));
+  }
+
+  /**
    * PR #281 review: a dry run reports a PDF's header fingerprint only when the statement holds the
    * header line of its labels - they come from the template, so without it they say nothing.
    */
@@ -536,6 +706,23 @@ class PdfStatementLayoutTest {
         "pdfLayout.sectionColumn");
     assertInvalid(
         yuhTemplate(withOptional(yuh, "INFORMATION", "(", "SALDO")), "pdfLayout.sectionPattern");
+    // OCR reads no page, so a page footer cannot be told from a continuation line.
+    assertInvalid(
+        yuhTemplate(
+            PdfLayoutBuilder.from(yuh).headerLabels(List.of()).continuationColumn("Zeile").build(),
+            "PDF_OCR"),
+        "pdfLayout.continuationColumn");
+    // A continuation end pattern needs continuation lines to end, and a pattern.
+    assertInvalid(
+        yuhTemplate(
+            PdfLayoutBuilder.from(yuh)
+                .continuationColumn(null)
+                .continuationEndPattern("^x")
+                .build()),
+        "pdfLayout.continuationEndPattern");
+    assertInvalid(
+        yuhTemplate(PdfLayoutBuilder.from(yuh).continuationEndPattern(" ").build()),
+        "pdfLayout.continuationEndPattern");
   }
 
   // --- helpers -------------------------------------------------------------------------------
@@ -562,7 +749,6 @@ class PdfStatementLayoutTest {
         .build();
   }
 
-  // The SPK-6 layout: the date glued to the text, signed amounts, no header labels.
   // A table of three labels, from x = 40 on, shifted by shift.
   private static List<SyntheticStatements.Cell> genericHeader(float shift) {
     return List.of(
@@ -586,8 +772,9 @@ class PdfStatementLayoutTest {
         .build();
   }
 
+  // The SPK-6 layout: the date glued to the text, signed amounts, no header labels.
   private static ImportTemplateDefinition spkTemplate() {
-    ImportPdfLayout layout =
+    return spkTemplate(
         PdfLayoutBuilder.of(
                 List.of("Datum", "Text", "Betrag"),
                 "(\\d{2}\\.\\d{2}\\.\\d{4})(.+?)\\s+(-?[\\d.]+,\\d{2})",
@@ -595,7 +782,10 @@ class PdfStatementLayoutTest {
                 "^\\d{2}\\.\\d{2}\\.\\d{4}")
             .continuationColumn("Text")
             .balanceLinePattern("^Kontostand am")
-            .build();
+            .build());
+  }
+
+  private static ImportTemplateDefinition spkTemplate(ImportPdfLayout layout) {
     return new ImportFileParserServiceTest.Template()
         .pdf("PDF_TEXT", layout)
         .mapping(ImportFileParserServiceTest.mapping("Datum", "Betrag").description("Text").build())

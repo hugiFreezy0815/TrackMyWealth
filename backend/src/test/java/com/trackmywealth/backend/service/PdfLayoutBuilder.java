@@ -16,6 +16,7 @@ final class PdfLayoutBuilder {
   private String sectionColumn;
   private String balanceLinePattern;
   private String balanceColumn;
+  private String continuationEndPattern;
 
   private PdfLayoutBuilder() {}
 
@@ -31,6 +32,7 @@ final class PdfLayoutBuilder {
     builder.sectionColumn = layout.sectionColumn();
     builder.balanceLinePattern = layout.balanceLinePattern();
     builder.balanceColumn = layout.balanceColumn();
+    builder.continuationEndPattern = layout.continuationEndPattern();
     return builder;
   }
 
@@ -70,6 +72,11 @@ final class PdfLayoutBuilder {
     return this;
   }
 
+  PdfLayoutBuilder continuationEndPattern(String value) {
+    continuationEndPattern = value;
+    return this;
+  }
+
   ImportPdfLayout build() {
     return new ImportPdfLayout(
         columns,
@@ -81,6 +88,7 @@ final class PdfLayoutBuilder {
         sectionPattern,
         sectionColumn,
         balanceLinePattern,
-        balanceColumn);
+        balanceColumn,
+        continuationEndPattern);
   }
 }

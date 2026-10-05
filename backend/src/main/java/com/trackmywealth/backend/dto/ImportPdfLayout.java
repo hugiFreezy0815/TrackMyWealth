@@ -29,7 +29,13 @@ import java.util.List;
  *       also the template's header fingerprint for detection.
  *   <li>{@code continuationColumn}: lines after a booking line that are no booking are appended to
  *       this column's cell (a counterparty, a reference). Under {@code headerLabels}, only lines
- *       that start in that column, so a remark at the margin ends the booking.
+ *       that start in that column, so a remark at the margin ends the booking. Text layer only: OCR
+ *       knows no page, so it cannot tell a page footer from a continuation line. A booking with
+ *       more than {@value #MAX_CONTINUATION_LINES} continuation lines is an error row, never one
+ *       with the rest of the statement glued to its description.
+ *   <li>{@code continuationEndPattern}: a line on which it finds a match ends the booking above it,
+ *       and no line after it continues one until the next booking line - e.g. the closing text
+ *       after a statement's last booking.
  *   <li>{@code sectionPattern}: a line on which it finds a match starts a section; text before the
  *       first one (a summary page) is ignored. Its first capture group is the cell {@code
  *       sectionColumn} of every booking in the section (e.g. the section's currency).
@@ -97,13 +103,21 @@ public record ImportPdfLayout(
                 "Optional: the column holding each booking's running balance; every booking is"
                     + " then checked against the balance before it.")
         @Size(max = MAX_COLUMN_NAME_LENGTH)
-        String balanceColumn) {
+        String balanceColumn,
+    @Schema(
+            description =
+                "Optional RE2 pattern; a line on which it finds a match ends the booking above it,"
+                    + " and no line continues a booking until the next booking line.")
+        @Size(max = MAX_PATTERN_LENGTH)
+        String continuationEndPattern) {
 
   public static final int MAX_COLUMNS = 50;
   public static final int MAX_PATTERN_LENGTH = 1000;
   public static final int MAX_MARKER_LENGTH = 200;
   // A column name is echoed in every row's raw data and error, like a CSV file's header cell.
   public static final int MAX_COLUMN_NAME_LENGTH = 100;
+  // A counterparty, an IBAN, a reference and a few remark lines; more is the statement's own text.
+  public static final int MAX_CONTINUATION_LINES = 20;
 
   public ImportPdfLayout {
     // Copies that keep null entries: a client's null column must reach validation as a 422. No
@@ -123,6 +137,7 @@ public record ImportPdfLayout(
         documentMarker,
         recordStartPattern,
         List.of(),
+        null,
         null,
         null,
         null,

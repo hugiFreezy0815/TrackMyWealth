@@ -6,11 +6,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.offset;
 
 import com.trackmywealth.backend.service.SyntheticStatements;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.List;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +49,38 @@ class BoundedTextStripperTest {
                 List.of(List.of(at(300, "Seite 3 von 3")))));
 
     assertSameLinesAsGetText(statement);
+  }
+
+  /**
+   * PR #281 review: a word drawn with a ligature glyph reads as the line's text writes it, ligature
+   * resolved - so a header label is found in a line's words as detection finds it in its text.
+   */
+  @Test
+  void aWordWithALigatureReadsAsTheLineWritesIt() throws IOException {
+    try (PDDocument document = new PDDocument();
+        InputStream ttf =
+            PDDocument.class.getResourceAsStream(
+                "/org/apache/pdfbox/resources/ttf/LiberationSans-Regular.ttf")) {
+      PDPage page = new PDPage();
+      document.addPage(page);
+      PDType0Font font = PDType0Font.load(document, ttf);
+      try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+        content.beginText();
+        content.setFont(font, 10);
+        content.newLineAtOffset(40, 700);
+        content.showText("Pro\uFB01l Betrag");
+        content.endText();
+      }
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      document.save(out);
+
+      try (PDDocument read = Loader.loadPDF(out.toByteArray())) {
+        PdfTextLine line = stripper().readLines(read, 1).get(0);
+
+        assertThat(line.text()).isEqualTo("Profil Betrag");
+        assertThat(line.words()).extracting(PdfWord::text).containsExactly("Profil", "Betrag");
+      }
+    }
   }
 
   @Test

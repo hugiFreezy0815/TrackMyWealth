@@ -155,7 +155,8 @@ public final class SyntheticStatements {
         "^Kontoauszug in ([A-Z]{3})$",
         "Waehrung",
         "(?:^Saldo per \\S+|Anfangsbestand)\\s+([-\\d'.]+)",
-        "SALDO");
+        "SALDO",
+        null);
   }
 
   /** The YUH-1 mapping: the sign by column, the currency by section. */

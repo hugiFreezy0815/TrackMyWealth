@@ -19,6 +19,12 @@ import java.util.List;
  * @param balancesAfter the balance lines below it, before the next booking of its section: each
  *     must state the balance it leads to
  * @param headed whether it was read under a header line of the layout's header labels
+ * @param alsoFoundBy the name of the layout's other pattern that finds the line too, which read it
+ *     as its own line: no booking for sure, reported as {@link
+ *     ImportRowErrorValues#LINE_AMBIGUOUS}; {@code null} for a booking line
+ * @param continuationOverflow whether more lines would have continued it than {@link
+ *     ImportPdfLayout#MAX_CONTINUATION_LINES}, reported as {@link
+ *     ImportRowErrorValues#CONTINUATION_TOO_LONG}
  */
 public record ImportPdfBookingLine(
     String line,
@@ -28,7 +34,9 @@ public record ImportPdfBookingLine(
     boolean sectionStart,
     String statedBalance,
     List<BalanceLine> balancesAfter,
-    boolean headed) {
+    boolean headed,
+    String alsoFoundBy,
+    boolean continuationOverflow) {
 
   /**
    * A balance line below a booking (e.g. a section's closing balance).
@@ -46,7 +54,15 @@ public record ImportPdfBookingLine(
 
   /** A matched line without anything around it: no continuation, section or stated balance. */
   public ImportPdfBookingLine(String line, List<String> cells, boolean matched) {
-    this(line, cells, matched, List.of(), false, null, List.of(), false);
+    this(line, cells, matched, List.of(), false, null, List.of(), false, null, false);
+  }
+
+  /**
+   * A line that {@code otherPattern} finds as well as the record-start pattern (PR #281 review).
+   */
+  public static ImportPdfBookingLine ambiguous(String line, String otherPattern) {
+    return new ImportPdfBookingLine(
+        line, List.of(line), false, List.of(), false, null, List.of(), false, otherPattern, false);
   }
 
   /** A line the row pattern does not match. */

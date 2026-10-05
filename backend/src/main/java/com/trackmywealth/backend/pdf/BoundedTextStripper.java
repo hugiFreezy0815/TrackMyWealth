@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.apache.pdfbox.contentstream.operator.Operator;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -25,6 +26,7 @@ import org.apache.pdfbox.text.TextPosition;
 public final class BoundedTextStripper extends PDFTextStripper {
 
   private static final int HALF_TURN = 180;
+  private static final Pattern WHITE_SPACE = Pattern.compile("\\s+");
 
   private final PdfReadBudget budget;
   private final List<PdfTextLine> lines = new ArrayList<>();
@@ -64,6 +66,7 @@ public final class BoundedTextStripper extends PDFTextStripper {
   @Override
   protected void writeString(String text, List<TextPosition> positions) {
     lineText.add(text);
+    int firstWord = lineWords.size();
     for (TextPosition position : positions) {
       String unicode = position.getUnicode();
       if (unicode == null || unicode.isBlank()) {
@@ -81,6 +84,25 @@ public final class BoundedTextStripper extends PDFTextStripper {
       }
     }
     endWord();
+    nameAsWritten(text, firstWord);
+  }
+
+  // The words from firstWord on take the text PDFBox writes for them - a ligature resolved, as in
+  // the line's text - whenever it splits into as many words. A header label is then found in a
+  // line's words exactly as detection finds it in the line's text (PR #281 review).
+  private void nameAsWritten(String text, int firstWord) {
+    String stripped = text.strip();
+    if (stripped.isEmpty()) {
+      return;
+    }
+    String[] written = WHITE_SPACE.split(stripped);
+    if (written.length != lineWords.size() - firstWord) {
+      return;
+    }
+    for (int i = 0; i < written.length; i++) {
+      PdfWord read = lineWords.get(firstWord + i);
+      lineWords.set(firstWord + i, new PdfWord(written[i], read.left(), read.right()));
+    }
   }
 
   @Override

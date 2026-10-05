@@ -152,13 +152,34 @@ public class ImportFileParserService {
       List<String> record = data.get(i);
       Map<String, String> rawData = rawData(record, keys, template.hasHeaderRow());
       ImportPdfBookingLine booking = bookingLines == null ? null : bookingLines.get(i);
+      // A line read as another pattern's (PR #281 review) is no booking: it neither reads nor
+      // changes the running balance.
+      boolean ambiguous = booking != null && booking.alsoFoundBy() != null;
       if (booking != null) {
         rawData.putIfAbsent(RAW_LINE_KEY, booking.fullText());
-        running = balanceBefore(booking, running, template);
+        if (!ambiguous) {
+          running = balanceBefore(booking, running, template);
+        }
       }
       try {
+        if (ambiguous) {
+          throw rowError(
+              ImportRowErrorValues.LINE_AMBIGUOUS,
+              ARG_VALUE,
+              booking.line(),
+              "pattern",
+              booking.alsoFoundBy());
+        }
         if (booking != null && !booking.matched()) {
           throw rowError(ImportRowErrorValues.LINE_UNMATCHED, ARG_VALUE, booking.line());
+        }
+        if (booking != null && booking.continuationOverflow()) {
+          throw rowError(
+              ImportRowErrorValues.CONTINUATION_TOO_LONG,
+              ARG_VALUE,
+              booking.line(),
+              "max",
+              String.valueOf(ImportPdfLayout.MAX_CONTINUATION_LINES));
         }
         CanonicalImportRow canonical =
             canonicalRow(record, template, columns, dateFormatter, typeMapping, accountCurrency);
@@ -181,7 +202,9 @@ public class ImportFileParserService {
       } catch (ImportRowRejectedException e) {
         rejected++;
         rows.add(ParsedImportRow.error(rows.size() + 1, rawData, e.getCode(), e.getArgs()));
-        if (balanceColumn >= 0 && !ImportRowErrorValues.BALANCE_MISMATCH.equals(e.getCode())) {
+        if (balanceColumn >= 0
+            && !ambiguous
+            && !ImportRowErrorValues.BALANCE_MISMATCH.equals(e.getCode())) {
           // Its amount is unknown: only the balance it states, if any, carries on.
           running = quietBalance(record, balanceColumn, header, template);
         }
@@ -194,6 +217,10 @@ public class ImportFileParserService {
             rejected++;
             rows.add(mismatch.get());
           }
+        }
+        // A balance line's own error row counts against the file's limit like any other row.
+        if (rows.size() > MAX_DATA_ROWS) {
+          throw tooManyRows();
         }
       }
     }
@@ -436,6 +463,21 @@ public class ImportFileParserService {
       requireNonBlankPattern(layout.balanceLinePattern(), "pdfLayout.balanceLinePattern");
     }
     requireCell(layout, layout.continuationColumn(), "pdfLayout.continuationColumn");
+    if (layout.continuationColumn() != null && template.isOcr()) {
+      // OCR reads every page as one text: a page footer cannot be told from a continuation line.
+      throw invalid(
+          "pdfLayout.continuationColumn",
+          "Continuation lines need each line's page, which only a text layer (PDF_TEXT) gives.");
+    }
+    if (layout.continuationEndPattern() != null) {
+      requireNonBlankPattern(layout.continuationEndPattern(), "pdfLayout.continuationEndPattern");
+      if (layout.continuationColumn() == null) {
+        throw invalid(
+            "pdfLayout.continuationEndPattern",
+            "A continuation end pattern ends continuation lines, which need a continuation"
+                + " column.");
+      }
+    }
     requireCell(layout, layout.balanceColumn(), "pdfLayout.balanceColumn");
   }
 
