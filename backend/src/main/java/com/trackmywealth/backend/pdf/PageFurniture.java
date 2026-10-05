@@ -11,23 +11,18 @@ import java.util.regex.Pattern;
 /**
  * The lines a statement repeats at the top or bottom of its pages - a page header or footer, page
  * numbers included (#268). Such a line is no part of a booking: left in, a footer would be read as
- * the continuation of the page's last booking. A line counts when the same text, its short numbers
- * aside, is among the first or last {@value #ZONE} lines of every page, or of every page but one
- * (the first page of a statement often has a header of its own), and of at least two.
- *
- * <p>Only numbers of up to {@value #MAX_IGNORED_DIGITS} digits are set aside, such as a page number
- * or a day and month: longer ones must match exactly. Otherwise two IBANs (four-digit groups) that
- * happen to end a booking at the bottom of each page would read as one footer and be dropped from
- * their bookings (PR #281 review).
+ * the continuation of the page's last booking. A line counts when the same text is among the first
+ * or last {@value #ZONE} lines of every page, or every page but one, and at least two. Only
+ * explicit page-number lines (Page/Seite, optionally followed by of/von or a slash and a total)
+ * ignore their numbers. Dates, references and account identifiers must match exactly.
  */
 public final class PageFurniture {
 
   static final int ZONE = 3;
-  static final int MAX_IGNORED_DIGITS = 3;
   // Furniture repeats: one page alone has none.
   private static final int MIN_PAGES = 2;
-  private static final Pattern SHORT_NUMBER =
-      Pattern.compile("(?<!\\d)\\d{1," + MAX_IGNORED_DIGITS + "}(?!\\d)");
+  private static final Pattern PAGE_NUMBER =
+      Pattern.compile("(?i)^(page|seite) +\\d+(?: *(of|von|/) *\\d+)?$");
   private static final Pattern WHITE_SPACE = Pattern.compile("\\s+");
 
   private PageFurniture() {}
@@ -70,9 +65,11 @@ public final class PageFurniture {
     return index - bounds[0] < ZONE || bounds[1] - index < ZONE;
   }
 
-  // The text with every short number a 0 and its white space collapsed: a page number aside.
+  // Normalize only explicit pagination, never arbitrary digits in transaction details.
   static String key(String text) {
-    String numbersAside = SHORT_NUMBER.matcher(text.strip()).replaceAll("0");
-    return WHITE_SPACE.matcher(numbersAside).replaceAll(" ");
+    String normalized = WHITE_SPACE.matcher(text.strip()).replaceAll(" ");
+    return PAGE_NUMBER.matcher(normalized).matches()
+        ? normalized.replaceAll("\\d+", "0")
+        : normalized;
   }
 }

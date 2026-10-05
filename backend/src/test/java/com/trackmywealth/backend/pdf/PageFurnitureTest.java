@@ -10,16 +10,14 @@ import org.junit.jupiter.api.Test;
 class PageFurnitureTest {
 
   @Test
-  void aLineAtTheTopOrBottomOfEveryPageIsFurnitureItsNumbersAside() {
+  void repeatedHeadersAndExplicitPageNumbersAreFurniture() {
     List<PdfTextLine> lines = new ArrayList<>();
     page(lines, 1, "Invented Bank", "03.01.2031 Zahlung", "Erika Beispiel", "x", "Seite 1 von 3");
     page(lines, 2, "Invented Bank", "05.01.2031 Zahlung", "y", "z", "Seite 2 von 3");
     page(lines, 3, "Invented Bank", "07.01.2031 Zahlung", "w", "v", "Seite 3 von 3");
 
-    // The headers, the footers, and - its dates aside - "Zahlung" at the top of every page: the
-    // caller never drops a booking line, only the lines between bookings.
-    assertThat(PageFurniture.indexes(lines))
-        .containsExactlyInAnyOrder(0, 1, 4, 5, 6, 9, 10, 11, 14);
+    // Only headers and pagination repeat; booking dates retain their digits.
+    assertThat(PageFurniture.indexes(lines)).containsExactlyInAnyOrder(0, 4, 5, 9, 10, 14);
   }
 
   /** The first page often has a header of its own; every page but one is enough. */
@@ -48,7 +46,7 @@ class PageFurnitureTest {
 
   /**
    * PR #281 review: two different IBANs ending a booking at the bottom of each page are no footer,
-   * though they differ only in digits - only short numbers, such as a page number, are set aside.
+   * though they differ only in digits; only explicit pagination ignores numbers.
    */
   @Test
   void linesDifferingInLongNumbersAreNoFurniture() {
@@ -60,10 +58,13 @@ class PageFurnitureTest {
   }
 
   @Test
-  void theKeySetsAsideShortNumbersOnly() {
+  void theKeyNormalizesOnlyExplicitPagination() {
     assertThat(PageFurniture.key("  Seite 12 von  140 ")).isEqualTo("Seite 0 von 0");
-    assertThat(PageFurniture.key("Auszug 03.01.2031")).isEqualTo("Auszug 0.0.2031");
-    assertThat(PageFurniture.key("CH93 0076 2011")).isEqualTo("CH0 0076 2011");
+    assertThat(PageFurniture.key("Auszug 03.01.2031")).isEqualTo("Auszug 03.01.2031");
+    assertThat(PageFurniture.key("Page 2 of 12")).isEqualTo("Page 0 of 0");
+    assertThat(PageFurniture.key("Page 2 / 12")).isEqualTo("Page 0 / 0");
+    assertThat(PageFurniture.key("Reference 111")).isEqualTo("Reference 111");
+    assertThat(PageFurniture.key("CH93 0076 2011")).isEqualTo("CH93 0076 2011");
   }
 
   private static void page(List<PdfTextLine> lines, int page, String... texts) {

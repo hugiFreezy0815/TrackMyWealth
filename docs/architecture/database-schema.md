@@ -784,9 +784,10 @@ lines:
   is placed by position alone: text that runs on past its column's label (a long description
   under `REFERENZ`) lands in the next column's cell, so a template maps a column such as the
   external id only where the bank keeps its text within the column.
-- `continuationColumn`: lines after a booking line that are no booking are appended whole to that
-  column's cell (a counterparty, an IBAN). When it is a header label, only lines that start in its
-  column: a remark at the margin ends the booking.
+- `continuationColumn`: repeated table headers across pages preserve the pending booking and
+  continuation positions follow the new page's columns. Lines after a booking line that are no
+  booking are appended whole to that column's cell (a counterparty, an IBAN). When it is a header
+  label, only lines that start in its column: a remark at the margin ends the booking.
 - `sectionPattern` and `sectionColumn`: a matching line starts a section, and its first capture
   group is the `sectionColumn` cell of the section's bookings (with currency mode `PER_ROW`, its
   currency). Text before the first section, such as a summary page, is ignored.
@@ -803,11 +804,11 @@ lines:
   is no amount is the row error `IMPORT_ROW_AMOUNT_UNPARSEABLE` for that column: the check it was
   asked for cannot be made.
 
-Lines repeated in the top or bottom three lines of every page, or every page but one, their
-numbers of up to three digits (a page number) aside, are page furniture and never continue a
-booking. Longer numbers must repeat exactly, so two IBANs that end a booking at the foot of each
-page are no footer. A line a pattern marks as a booking, balance, section or header is never
-furniture, so no booking is ever dropped as one. A row's raw data also keeps the whole booking
+Lines repeated in the top or bottom three lines of every page, or every page but one, are page
+furniture and never continue a booking. Only explicit `Page`/`Seite` pagination ignores its
+numbers; dates, transaction references and account identifiers must repeat exactly. Distinct
+references at the foot of each page therefore remain in their bookings. A line a pattern marks
+as a booking, balance, section or header is never furniture, so no booking is ever dropped as one. A row's raw data also keeps the whole booking
 line with its continuation lines, under `#line`. Both patterns are RE2 (linear-time matching, no
 backreferences), so a member's pattern cannot backtrack catastrophically; RE2 is linear in its
 compiled program too, so a pattern whose program would exceed 2,000 instructions

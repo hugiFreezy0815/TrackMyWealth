@@ -173,7 +173,11 @@ public class PdfImportReaderService {
       Matcher balanceMatch = balance == null ? null : balance.matcher(text);
       if (header.isPresent()) {
         columns = header.get();
-        end(current);
+        // A repeated table header on another page does not end a pending booking. Keep its
+        // original columns for extracting the booking, but use this page's columns below.
+        if (current != null && current.line().page() == line.page()) {
+          end(current);
+        }
       } else if (balanceMatch != null && balanceMatch.find()) {
         Optional<String> stated = firstGroup(balanceMatch);
         if (stated.isPresent()) {
@@ -192,7 +196,7 @@ public class PdfImportReaderService {
         sectionStart = false;
         statedBalance = Optional.empty();
       } else if (!furniture.contains(i) && current != null) {
-        if (continues(line, current, layout, continuationLabel)) {
+        if (continues(line, current, columns, layout, continuationLabel)) {
           current.continueWith(line);
         } else {
           current.end();
@@ -205,15 +209,18 @@ public class PdfImportReaderService {
   // Whether line continues booking: the layout has a continuation column and, when that is a
   // header label and the line's positions are known, the line starts in that column.
   private static boolean continues(
-      PdfTextLine line, PdfBooking booking, ImportPdfLayout layout, int continuationLabel) {
+      PdfTextLine line,
+      PdfBooking booking,
+      PdfColumns columns,
+      ImportPdfLayout layout,
+      int continuationLabel) {
     if (layout.continuationColumn() == null || !booking.isOpen()) {
       return false;
     }
-    Optional<PdfColumns> columns = booking.columns();
-    if (continuationLabel < 0 || columns.isEmpty() || line.words().isEmpty()) {
+    if (continuationLabel < 0 || columns == null || line.words().isEmpty()) {
       return true;
     }
-    return columns.get().columnOf(line.words().get(0)) == continuationLabel;
+    return columns.columnOf(line.words().get(0)) == continuationLabel;
   }
 
   private static void end(PdfBooking booking) {
