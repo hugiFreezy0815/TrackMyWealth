@@ -25,6 +25,8 @@ import java.util.List;
  * @param continuationOverflow whether more lines would have continued it than {@link
  *     ImportPdfLayout#MAX_CONTINUATION_LINES}, reported as {@link
  *     ImportRowErrorValues#CONTINUATION_TOO_LONG}
+ * @param beforeFirstSection whether it comes before the layout's first section, where no booking is
+ *     read: no booking for sure, reported as {@link ImportRowErrorValues#LINE_BEFORE_SECTION}
  */
 public record ImportPdfBookingLine(
     String line,
@@ -36,7 +38,8 @@ public record ImportPdfBookingLine(
     List<BalanceLine> balancesAfter,
     boolean headed,
     String alsoFoundBy,
-    boolean continuationOverflow) {
+    boolean continuationOverflow,
+    boolean beforeFirstSection) {
 
   /**
    * A balance line below a booking (e.g. a section's closing balance).
@@ -54,12 +57,12 @@ public record ImportPdfBookingLine(
 
   /** A matched line without anything around it: no continuation, section or stated balance. */
   public ImportPdfBookingLine(String line, List<String> cells, boolean matched) {
-    this(line, cells, matched, List.of(), false, null, List.of(), false, null, false);
+    this(line, cells, matched, List.of(), false, null, List.of(), false, null, false, false);
   }
 
   /**
    * A booking line with its cells, and nothing around it until the builder's {@code with...}
-   * methods add it: each optional component by its name, never by its place among ten.
+   * methods add it: each optional component by its name, never by its place among eleven.
    */
   public static Builder builder(String line, List<String> cells, boolean matched) {
     return new Builder(line, cells, matched);
@@ -70,6 +73,11 @@ public record ImportPdfBookingLine(
    */
   public static ImportPdfBookingLine ambiguous(String line, String otherPattern) {
     return builder(line, List.of(line), false).withAlsoFoundBy(otherPattern).build();
+  }
+
+  /** A line the record-start pattern finds before the layout's first section (PR #281 review). */
+  public static ImportPdfBookingLine beforeFirstSection(String line) {
+    return builder(line, List.of(line), false).withBeforeFirstSection(true).build();
   }
 
   /** A line the row pattern does not match. */
@@ -90,6 +98,7 @@ public record ImportPdfBookingLine(
     private boolean underHeader;
     private String otherPattern;
     private boolean overflowing;
+    private boolean outsideSections;
 
     private Builder(String line, List<String> cells, boolean matched) {
       this.bookingLine = line;
@@ -132,6 +141,11 @@ public record ImportPdfBookingLine(
       return this;
     }
 
+    public Builder withBeforeFirstSection(boolean value) {
+      outsideSections = value;
+      return this;
+    }
+
     public ImportPdfBookingLine build() {
       return new ImportPdfBookingLine(
           bookingLine,
@@ -143,7 +157,8 @@ public record ImportPdfBookingLine(
           balanceLinesAfter,
           underHeader,
           otherPattern,
-          overflowing);
+          overflowing,
+          outsideSections);
     }
   }
 

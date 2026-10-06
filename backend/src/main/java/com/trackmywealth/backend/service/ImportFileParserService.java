@@ -95,7 +95,7 @@ public class ImportFileParserService {
 
   /**
    * #268: the raw data key of a PDF row's whole booking line, with its continuation lines below it
-   * - what the cells were cut from. A cell of the same name keeps its own value.
+   * - what the cells were cut from. No layout column or header label may take this name.
    */
   public static final String RAW_LINE_KEY = "#line";
 
@@ -152,17 +152,21 @@ public class ImportFileParserService {
       List<String> record = data.get(i);
       Map<String, String> rawData = rawData(record, keys, template.hasHeaderRow());
       ImportPdfBookingLine booking = bookingLines == null ? null : bookingLines.get(i);
-      // A line read as another pattern's (PR #281 review) is no booking: it neither reads nor
-      // changes the running balance.
-      boolean ambiguous = booking != null && booking.alsoFoundBy() != null;
+      // A line read as another pattern's, or one before the first section (PR #281 review), is no
+      // booking: it neither reads nor changes the running balance.
+      boolean noBooking =
+          booking != null && (booking.alsoFoundBy() != null || booking.beforeFirstSection());
       if (booking != null) {
         rawData.putIfAbsent(RAW_LINE_KEY, booking.fullText());
-        if (!ambiguous) {
+        if (!noBooking) {
           running = balanceBefore(booking, running, template);
         }
       }
       try {
-        if (ambiguous) {
+        if (booking != null && booking.beforeFirstSection()) {
+          throw rowError(ImportRowErrorValues.LINE_BEFORE_SECTION, ARG_VALUE, booking.line());
+        }
+        if (booking != null && booking.alsoFoundBy() != null) {
           throw rowError(
               ImportRowErrorValues.LINE_AMBIGUOUS,
               ARG_VALUE,
@@ -203,7 +207,7 @@ public class ImportFileParserService {
         rejected++;
         rows.add(ParsedImportRow.error(rows.size() + 1, rawData, e.getCode(), e.getArgs()));
         if (balanceColumn >= 0
-            && !ambiguous
+            && !noBooking
             && !ImportRowErrorValues.BALANCE_MISMATCH.equals(e.getCode())) {
           // Its amount is unknown: only the balance it states, if any, carries on.
           running = quietBalance(record, balanceColumn, header, template);
@@ -282,7 +286,7 @@ public class ImportFileParserService {
   // A balance line's balance; null when it is no amount, which then checks nothing.
   private static BigDecimal quietAmount(String balance, ImportTemplateDefinition template) {
     try {
-      return parseAmount(balance, "balanceLinePattern", template, false);
+      return parseAmount(balance, "balanceLinePattern", template, balanceInParentheses(template));
     } catch (ImportRowRejectedException e) {
       return null;
     }
@@ -292,7 +296,16 @@ public class ImportFileParserService {
   private static BigDecimal statedBalance(
       List<String> record, int column, List<String> header, ImportTemplateDefinition template) {
     String cell = optionalCell(record, column);
-    return cell == null ? null : parseAmount(cell, header.get(column), template, false);
+    return cell == null
+        ? null
+        : parseAmount(cell, header.get(column), template, balanceInParentheses(template));
+  }
+
+  // A balance is written like the template's amounts: a statement that puts a negative amount in
+  // parentheses puts a negative balance (a loan account's, all along) in them too (PR #281 review).
+  private static boolean balanceInParentheses(ImportTemplateDefinition template) {
+    return ImportTemplateValues.AMOUNT_NEGATIVE_IN_PARENTHESES.equals(
+        template.amountRepresentation());
   }
 
   private static BigDecimal quietBalance(
@@ -514,10 +527,14 @@ public class ImportFileParserService {
     }
   }
 
-  // A cell's name: not blank, not too long, and no other cell's (compared as the mapping does).
+  // A cell's name: not blank, not too long, no other cell's (compared as the mapping does), and not
+  // the raw data key of the whole line (PR #281 review).
   private static void requireCellName(String name, Set<String> seen, String field) {
     if (name == null || name.isBlank() || !seen.add(normalize(name))) {
       throw invalid(field, "Each column needs a name of its own.");
+    }
+    if (normalize(name).equals(normalize(RAW_LINE_KEY))) {
+      throw invalid(field, "The name " + RAW_LINE_KEY + " is kept for the whole booking line.");
     }
     if (name.length() > ImportPdfLayout.MAX_COLUMN_NAME_LENGTH) {
       throw invalid(

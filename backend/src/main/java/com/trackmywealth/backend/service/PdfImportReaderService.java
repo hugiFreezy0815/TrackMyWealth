@@ -148,6 +148,10 @@ public class PdfImportReaderService {
   // the layout checks a balance column: the balance the next booking or balance line of its section
   // states then catches a booking lost that way (PR #281 review).
   //
+  // A balance line pauses the booking above it rather than ending it: a carry-forward line at the
+  // top of the next page carries a booking split across the page over to there, so its
+  // continuation lines below still continue it (PR #281 review).
+  //
   // A header line is found before the first section too, so one table header above all sections
   // sets their columns. A section marker of the section's own value at the top of a later page
   // (no booking on that page before it) repeats the section's title there: the section goes on,
@@ -215,7 +219,15 @@ public class PdfImportReaderService {
         continue;
       }
       if (section != null && sectionValue == null) {
-        // Before the first section: a summary, no booking.
+        // Before the first section: a summary, no booking. A line the record-start pattern finds
+        // below a table header line, and that states no balance, is reported: it is a booking of a
+        // section whose title the section pattern missed, which would otherwise vanish without a
+        // trace. A dated line of the summary above any table header stays no row (PR #281 review).
+        if (columns != null
+            && recordStart.matcher(text).find()
+            && (balance == null || !balance.matcher(text).find())) {
+          bookings.add(PdfBooking.beforeFirstSection(line));
+        }
         continue;
       }
       Matcher balanceMatch = balance == null ? null : balance.matcher(text);
@@ -231,7 +243,9 @@ public class PdfImportReaderService {
             current.addBalanceAfter(line, stated.get());
           }
         }
-        end(current);
+        if (current != null) {
+          current.balanceLine(line);
+        }
       } else if (recordStart.matcher(text).find()) {
         end(current);
         current =
@@ -242,6 +256,7 @@ public class PdfImportReaderService {
         statedBalance = Optional.empty();
         bookingPage = line.page();
       } else if (!furniture.contains(i) && current != null) {
+        current.resumeFor(line);
         if (continuationEnd != null && continuationEnd.matcher(text).find()
             || !continues(line, current, columns, layout, continuationLabel)) {
           current.end();
@@ -287,6 +302,9 @@ public class PdfImportReaderService {
     String line = booking.line().text().strip();
     if (booking.alsoFoundBy().isPresent()) {
       return ImportPdfBookingLine.ambiguous(line, booking.alsoFoundBy().get());
+    }
+    if (booking.beforeFirstSection()) {
+      return ImportPdfBookingLine.beforeFirstSection(line);
     }
     Matcher match = row.matcher(line);
     boolean matched = match.matches();
@@ -481,14 +499,14 @@ public class PdfImportReaderService {
   }
 
   /**
-   * Whether {@code text} is a statement of {@code layout} with its booking table's header line: one
-   * {@link #isLayoutOf} accepts, and a line holding every header label in order. Detection's
-   * equivalent of a CSV file's exact header fingerprint; false for a layout without header labels.
-   * A statement holding the header line but no booking line is no match at all (PR #281 review).
+   * Whether {@code text} holds the header line of {@code layout}'s booking table: a line holding
+   * every header label in order; false for a layout without header labels. For a statement that
+   * {@link #isLayoutOf} accepts, detection's equivalent of a CSV file's exact header fingerprint. A
+   * statement holding the header line but no booking line is no match at all (PR #281 review), so
+   * detection asks {@link #isLayoutOf} first, and each statement's text is scanned once for each.
    */
   public static boolean hasHeaderLine(String text, ImportPdfLayout layout) {
     return layout.hasHeaderLabels()
-        && isLayoutOf(text, layout)
         && text.lines().anyMatch(line -> PdfColumns.isHeaderLine(line, layout.headerLabels()));
   }
 

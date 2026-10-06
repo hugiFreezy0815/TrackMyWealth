@@ -439,15 +439,14 @@ public class ImportTemplateService {
   // #268: a PDF statement holding the layout's booking table header is an exact match, like a CSV
   // file's header; one holding its marker and a booking line merely has the mapped columns.
   private String pdfMatch(ImportTemplateDefinition definition, String pdfText) {
-    if (pdfText == null || !isApplicable(definition)) {
+    if (pdfText == null
+        || !isApplicable(definition)
+        || !PdfImportReaderService.isLayoutOf(pdfText, definition.pdfLayout())) {
       return null;
     }
-    if (PdfImportReaderService.hasHeaderLine(pdfText, definition.pdfLayout())) {
-      return ImportTemplateCandidateResponse.EXACT_HEADER;
-    }
-    return PdfImportReaderService.isLayoutOf(pdfText, definition.pdfLayout())
-        ? ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT
-        : null;
+    return PdfImportReaderService.hasHeaderLine(pdfText, definition.pdfLayout())
+        ? ImportTemplateCandidateResponse.EXACT_HEADER
+        : ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT;
   }
 
   // Whether this release can apply the template at all (e.g. not a retired setting).

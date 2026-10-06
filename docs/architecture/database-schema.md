@@ -800,7 +800,12 @@ lines:
 - `sectionPattern` and `sectionColumn`: a matching line starts a section, and its first capture
   group is the `sectionColumn` cell of the section's bookings (with currency mode `PER_ROW`, its
   currency). Text before the first section, such as a summary page, is ignored, except a table
-  header line, so one header above all sections sets their columns. A marker of the section's own
+  header line, so one header above all sections sets their columns. A line below such a table
+  header that the record-start pattern finds and no balance line pattern does is the row error
+  `IMPORT_ROW_LINE_BEFORE_SECTION` (the line): a section pattern that misses the first section's
+  title would otherwise drop that section's bookings without a trace. A dated line of the summary
+  above any table header stays no row; without header labels nothing tells it from a booking, so
+  such a layout reports none. A marker of the section's own
   value at the top of a later page (no booking on that page before it) repeats the section's title
   there and does not start it again: the running balance goes on, and a booking at the foot of the
   page before keeps its continuation lines. A balance line between such a marker and the next
@@ -831,7 +836,11 @@ lines:
   `Uebertrag`) belong in this pattern: their amount changes from page to page, so they are no page
   furniture, and a continuation column would otherwise append them to the page's last booking. As
   balance lines they continue no booking, and with `balanceColumn` the one below a booking is
-  checked like a closing balance.
+  checked like a closing balance. A balance line pauses the booking above it: lines below it on
+  that page no longer continue it, but a balance line at the top of a later page, before any
+  booking there, carries it over, so a booking split across the page keeps the continuation lines
+  below the carry-forward line on the next page. The amount representation applies to balances
+  too: with `NEGATIVE_IN_PARENTHESES`, `(1,100.00)` is a negative balance.
 
 Lines repeated in the top or bottom three lines of every page, or every page but one, are page
 furniture and never continue a booking. In a text layer the line must also sit at the same place
@@ -843,9 +852,10 @@ page numbers set their digits aside - `Seite 2 von 3`, `Page 2/3`, `Blatt 2`, `S
 the line, or a line that is just `2/3` or `- 2 -`; dates, transaction references and account
 identifiers must repeat exactly, so distinct references at the foot of each page remain in their
 bookings. A word's text is the text the line holds for it, a ligature glyph resolved (`ﬁ` reads
-`fi`), so a header label is found on the page exactly as detection finds it in the text. A line a pattern marks as a booking, balance, section or header is never furniture, so
-no booking is ever dropped as one. A row's raw data also keeps the whole booking
-line with its continuation lines, under `#line`. All patterns are RE2 (linear-time matching, no
+`fi`), so a header label is found on the page exactly as detection finds it in the text. A line a
+pattern marks as a booking, balance, section or header is never furniture, so no booking is ever
+dropped as one. A row's raw data also keeps the whole booking line with its continuation lines,
+under `#line`, a name no layout column or header label may take. All patterns are RE2 (linear-time matching, no
 backreferences), so a member's pattern cannot backtrack catastrophically; RE2 is linear in its
 compiled program too, so a pattern whose program would exceed 2,000 instructions
 (`Re2Patterns`, e.g. nested counted repeats) is refused with a 422. From the cut columns on,

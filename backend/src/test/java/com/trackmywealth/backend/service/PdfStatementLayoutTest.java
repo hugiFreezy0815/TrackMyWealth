@@ -799,8 +799,155 @@ class PdfStatementLayoutTest {
                         SyntheticStatements.header(0)))));
     ImportPdfLayout yuh = SyntheticStatements.yuhLayout();
 
+    // Detection asks isLayoutOf first: the header line alone makes no candidate.
     assertThat(PdfImportReaderService.isLayoutOf(text, yuh)).isFalse();
-    assertThat(PdfImportReaderService.hasHeaderLine(text, yuh)).isFalse();
+    assertThat(PdfImportReaderService.hasHeaderLine(text, yuh)).isTrue();
+  }
+
+  /**
+   * PR #281 review: a statement that puts a negative amount in parentheses puts a negative balance
+   * (a loan account's, all along) in them too. Its bookings and its balance lines are checked, not
+   * error rows for a balance that is no amount.
+   */
+  @Test
+  void aNegativeBalanceInParenthesesIsChecked() throws IOException {
+    ImportPdfLayout layout =
+        ImportPdfLayout.builder(
+                List.of("Datum", "Text", "Betrag", "Saldo"),
+                "(\\d{2}\\.\\d{2}\\.\\d{4}) (.+?) (\\S+) (\\S+)",
+                GENERIC_TITLE,
+                "^\\d{2}\\.\\d{2}\\.\\d{4}")
+            .withBalanceLinePattern("^Closing balance (\\S+)")
+            .withBalanceColumn("Saldo")
+            .build();
+    ImportTemplateDefinition template =
+        new ImportFileParserServiceTest.Template()
+            .pdf("PDF_TEXT", layout)
+            .mapping(
+                ImportFileParserServiceTest.mapping("Datum", "Betrag").description("Text").build())
+            .dateFormat("dd.MM.yyyy")
+            .amountRepresentation("NEGATIVE_IN_PARENTHESES")
+            .build();
+
+    List<ParsedImportRow> rows =
+        parser.parse(loanStatement("(1050.00)", "(1050.00)"), template, null).rows();
+
+    assertThat(rows).allSatisfy(row -> assertThat(row.isParsed()).as(row.toString()).isTrue());
+    assertThat(rows)
+        .extracting(row -> row.canonical().amount())
+        .containsExactly(new BigDecimal("-100.00"), new BigDecimal("50.00"));
+
+    List<ParsedImportRow> misprinted =
+        parser.parse(loanStatement("(1060.00)", "(1040.00)"), template, null).rows();
+
+    assertThat(misprinted)
+        .extracting(ParsedImportRow::errorCode)
+        .containsExactly(
+            null,
+            ImportRowErrorValues.BALANCE_MISMATCH,
+            ImportRowErrorValues.BALANCE_LINE_MISMATCH);
+    assertThat(misprinted.get(1).errorArgs())
+        .containsEntry("value", "-1060.00")
+        .containsEntry("expected", "-1050.00");
+    assertThat(misprinted.get(2).errorArgs())
+        .containsEntry("value", "-1040.00")
+        .containsEntry("expected", "-1060.00");
+  }
+
+  // A loan statement with negative balances in parentheses: two bookings, the second stating
+  // balance, then a closing balance line stating closing.
+  private static byte[] loanStatement(String balance, String closing) throws IOException {
+    return SyntheticStatements.statement(
+        List.of(
+            List.of(
+                List.of(at(40, GENERIC_TITLE)),
+                List.of(at(40, "02.01.2031 Rent (100.00) (1100.00)")),
+                List.of(at(40, "03.01.2031 Salary 50.00 " + balance)),
+                List.of(at(40, "Closing balance " + closing)))));
+  }
+
+  /**
+   * PR #281 review: a statement prints the balance at the foot of a page and again at the top of
+   * the next, between a booking split across the page and its continuation lines there. The
+   * carry-forward line at the top carries the booking over; without one, a line on the next page
+   * after the balance line at the foot of the page before continues nothing.
+   */
+  @Test
+  void aCarryForwardAtThePageTopKeepsTheContinuationOfASplitBooking() throws IOException {
+    ImportTemplateDefinition template =
+        spkTemplate(
+            spkTemplate().pdfLayout().toBuilder()
+                .withBalanceLinePattern("^(?:Kontostand am|Uebertrag)")
+                .build());
+
+    List<ParsedImportRow> rows = parser.parse(splitAcrossPages("Uebertrag"), template, null).rows();
+
+    assertThat(rows)
+        .extracting(row -> row.canonical().description())
+        .containsExactly("Rate Januar Erika Beispiel", "Zinsen Januar");
+    assertThat(rows.get(0).rawData())
+        .containsEntry(
+            ImportFileParserService.RAW_LINE_KEY, "02.01.2031Rate Januar 250,00\nErika Beispiel");
+
+    List<ParsedImportRow> closed = parser.parse(splitAcrossPages(null), template, null).rows();
+
+    assertThat(closed)
+        .extracting(row -> row.canonical().description())
+        .containsExactly("Rate Januar", "Zinsen Januar");
+  }
+
+  // Two pages in the SPK-6 layout: a booking at the foot of the first, a carry-forward line below
+  // it, then the second page opening with the carry-forward line pageTop (none for null), the
+  // booking's continuation line, and a booking.
+  private static byte[] splitAcrossPages(String pageTop) throws IOException {
+    List<List<SyntheticStatements.Cell>> second = new ArrayList<>();
+    second.add(List.of(at(40, SPK_TITLE)));
+    if (pageTop != null) {
+      second.add(List.of(at(40, pageTop), endingAt(500, "-9.750,00")));
+    }
+    second.add(List.of(at(60, "Erika Beispiel")));
+    second.add(List.of(at(40, "02.02.2031Zinsen Januar"), endingAt(500, "-31,25")));
+    second.add(List.of(atFoot(40, "Seite 2 von 2")));
+    return SyntheticStatements.statement(
+        List.of(
+            List.of(
+                List.of(at(40, SPK_TITLE)),
+                List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
+                List.of(at(40, "Uebertrag"), endingAt(500, "-9.750,00")),
+                List.of(atFoot(40, "Seite 1 von 2"))),
+            second));
+  }
+
+  /**
+   * PR #281 review: a line the record-start pattern finds below a table header, before the first
+   * section, is an error row, so a section whose title the section pattern misses does not vanish
+   * without a trace. A dated line of the summary above the table header, or one that states a
+   * balance, is no row.
+   */
+  @Test
+  void aBookingLineBeforeTheFirstSectionIsAnErrorRow() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, SyntheticStatements.YUH_MARKER)),
+                    List.of(at(40, "01.01.2031 Kontoeroeffnung")),
+                    List.of(at(40, "Account statement in CHF")),
+                    SyntheticStatements.header(0),
+                    List.of(at(40, "01.01.2031 Anfangsbestand 100.00")),
+                    SyntheticStatements.booking(
+                        0, "02.01.2031", "Lohn", "0000000001", null, "10.00", "110.00"),
+                    List.of(at(40, "Kontoauszug in EUR")),
+                    List.of(at(40, "Saldo per 01.01.2031"), endingAt(560, "50.00 EUR")),
+                    SyntheticStatements.booking(
+                        0, "03.01.2031", "Zahlung", "0000000002", "20.00", null, "30.00"))));
+
+    List<ParsedImportRow> rows = parser.parse(statement, yuhTemplate(), null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(false, true);
+    assertThat(rows.get(0).errorCode()).isEqualTo(ImportRowErrorValues.LINE_BEFORE_SECTION);
+    assertThat(rows.get(0).errorArgs()).containsKey("value");
+    assertThat(rows.get(1).canonical().currency()).isEqualTo("EUR");
   }
 
   /**
@@ -826,6 +973,9 @@ class PdfStatementLayoutTest {
   @Test
   void theOptionalFieldsAreValidated() {
     ImportPdfLayout yuh = SyntheticStatements.yuhLayout();
+    // The raw data keeps the whole line under #line, so no cell may take that name.
+    assertInvalid(
+        yuhTemplate(withLabels(yuh, List.of("DATUM", "#Line"))), "pdfLayout.headerLabels");
     // Header labels need positions on the page, which OCR does not give.
     assertInvalid(yuhTemplate(yuh, "PDF_OCR"), "pdfLayout.headerLabels");
     // A label must not repeat a column's name.

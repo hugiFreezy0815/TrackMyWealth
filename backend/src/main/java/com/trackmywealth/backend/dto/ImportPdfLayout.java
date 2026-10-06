@@ -38,17 +38,21 @@ import java.util.Objects;
  *       and no line after it continues one until the next booking line - e.g. the closing text
  *       after a statement's last booking.
  *   <li>{@code sectionPattern}: a line on which it finds a match starts a section; text before the
- *       first one (a summary page) is ignored, except a table header line. Its first capture group
- *       is the cell {@code sectionColumn} of every booking in the section (e.g. the section's
- *       currency). A marker of the same value at the top of a later page, before any booking on it,
- *       repeats the section's title there and does not start it again.
+ *       first one (a summary page) is ignored, except a table header line; a line below such a
+ *       header that {@code recordStartPattern} finds is an error row, never a silently dropped
+ *       booking. Its first capture group is the cell {@code sectionColumn} of every booking in the
+ *       section (e.g. the section's currency). A marker of the same value at the top of a later
+ *       page, before any booking on it, repeats the section's title there and does not start it
+ *       again.
  *   <li>{@code balanceLinePattern}: a line on which it finds a match states a balance and is never
  *       a booking; its first capture group, when it has one, is that balance. With {@code
  *       balanceColumn}, the column holding each booking's running balance, every booking is checked
  *       to lead from the balance before it to its own: a misread amount or sign is an error row.
  *       Carry-forward lines that state the balance at a page break (e.g. "Uebertrag") belong in
  *       this pattern: their amount changes from page to page, so they are no page furniture, and
- *       would otherwise continue the page's last booking.
+ *       would otherwise continue the page's last booking. One at the top of a later page carries
+ *       the booking above it over, so a booking split across the page keeps its continuation lines
+ *       from there.
  * </ul>
  *
  * <p>Lines repeated at the same place at the top or bottom of every page (a page header or footer,
@@ -174,8 +178,8 @@ public record ImportPdfLayout(
   }
 
   /**
-   * Every cell a booking line has, in order:the row pattern's columns, then the header labels, then
-   * the section column. The column mapping names them as it names a CSV file's header cells.
+   * Every cell a booking line has, in order: the row pattern's columns, then the header labels,
+   * then the section column. The column mapping names them as it names a CSV file's header cells.
    */
   public List<String> cellNames() {
     List<String> names = new ArrayList<>(columns);

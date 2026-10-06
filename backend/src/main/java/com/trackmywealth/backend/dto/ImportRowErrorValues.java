@@ -71,6 +71,13 @@ public final class ImportRowErrorValues {
   public static final String LINE_AMBIGUOUS = "IMPORT_ROW_LINE_AMBIGUOUS";
 
   /**
+   * {@code value}: a PDF line that the record-start pattern finds before the first line the
+   * layout's section pattern finds, where no booking is read, so it was not imported. The section
+   * pattern may miss the first section's marker (PR #281 review).
+   */
+  public static final String LINE_BEFORE_SECTION = "IMPORT_ROW_LINE_BEFORE_SECTION";
+
+  /**
    * {@code value, max}: more lines below a PDF booking would continue it than a booking may have
    * ({@link ImportPdfLayout#MAX_CONTINUATION_LINES}) - likely the statement's own text, which the
    * layout's continuation end pattern should end (PR #281 review).
