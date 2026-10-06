@@ -42,7 +42,7 @@ class ImportFileParserServiceTest {
 
   private final LocalOcrService ocr = mock(LocalOcrService.class);
   private final ImportFileParserService parser =
-      new ImportFileParserService(new PdfImportReaderService(ocr));
+      new ImportFileParserService(new PdfImportReaderService(ocr), new PdfBalanceCheckService());
 
   // --- golden fixtures --------------------------------------------------------------------
 

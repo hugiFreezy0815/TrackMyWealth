@@ -64,9 +64,9 @@ public final class ImportRowErrorValues {
 
   /**
    * {@code value, pattern}: a PDF line that the record-start pattern finds, but another pattern of
-   * the layout too (a section's start, or a balance line without a balance column to check it), so
-   * it was read as that pattern's line and not imported. One of the two patterns is too broad (PR
-   * #281 review).
+   * the layout too (a section's start, a header line of the header labels, or a balance line
+   * without a balance column to check it), so it was read as that pattern's line and not imported.
+   * One of the two is too broad (#268).
    */
   public static final String LINE_AMBIGUOUS = "IMPORT_ROW_LINE_AMBIGUOUS";
 

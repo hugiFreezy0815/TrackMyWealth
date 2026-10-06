@@ -10,11 +10,25 @@ import java.util.Optional;
  * before it, the lines below it that continue it, until a line that does not ends it, and the
  * balances that balance lines below it state before the next booking of its section.
  *
- * <p>It may also be a line that is no booking for sure (PR #281 review): one that another of the
+ * <p>It may also be a line that is no booking for sure (its {@link Kind}): one that another of the
  * layout's patterns finds as well, or one before the first section, which must be reported, never
  * silently dropped or imported.
  */
 public final class PdfBooking {
+
+  /** What a line the record-start pattern finds was read as. */
+  public enum Kind {
+    /** A booking line. */
+    BOOKING,
+    /** A section's start that the record-start pattern finds too. */
+    ALSO_SECTION_START,
+    /** A balance line that the record-start pattern finds too. */
+    ALSO_BALANCE_LINE,
+    /** A header line of the layout's labels that the record-start pattern finds too. */
+    ALSO_HEADER_LINE,
+    /** A line before the first section, where no booking is read. */
+    BEFORE_FIRST_SECTION
+  }
 
   /** A balance line below a booking: the line as written, and the balance it states. */
   public record BalanceLine(String text, String balance) {}
@@ -26,8 +40,7 @@ public final class PdfBooking {
   private final String balanceBefore;
   private final List<PdfTextLine> continuationLines = new ArrayList<>();
   private final List<BalanceLine> balancesBelow = new ArrayList<>();
-  private final String foundByAlso;
-  private final boolean outsideSections;
+  private final Kind lineKind;
   private boolean open = true;
   // Paused by a balance line below it: a carry-forward line at the top of a later page may still
   // carry it over to there (PR #281 review).
@@ -53,36 +66,28 @@ public final class PdfBooking {
     this.sectionValue = section;
     this.startsSection = sectionStart;
     this.balanceBefore = statedBalance;
-    this.foundByAlso = null;
-    this.outsideSections = false;
+    this.lineKind = Kind.BOOKING;
   }
 
-  private PdfBooking(PdfTextLine line, String otherPattern, boolean beforeFirstSection) {
+  private PdfBooking(PdfTextLine line, Kind kind) {
     this.bookingLine = line;
     this.tableColumns = null;
     this.sectionValue = null;
     this.startsSection = false;
     this.balanceBefore = null;
-    this.foundByAlso = otherPattern;
-    this.outsideSections = beforeFirstSection;
+    this.lineKind = kind;
     this.open = false;
   }
 
   /**
-   * A booking line that {@code otherPattern} (the name of another pattern of the layout) finds as
-   * well, and that was read as that pattern's line: it has nothing around it and is never
-   * continued.
+   * A line that is no booking for sure, read as {@code kind} (anything but {@link Kind#BOOKING}):
+   * it has nothing around it and is never continued.
    */
-  public static PdfBooking ambiguous(PdfTextLine line, String otherPattern) {
-    return new PdfBooking(line, otherPattern, false);
-  }
-
-  /**
-   * A line the record-start pattern finds before the layout's first section, where no booking is
-   * read: it has nothing around it and is never continued.
-   */
-  public static PdfBooking beforeFirstSection(PdfTextLine line) {
-    return new PdfBooking(line, null, true);
+  public static PdfBooking noBooking(PdfTextLine line, Kind kind) {
+    if (kind == Kind.BOOKING) {
+      throw new IllegalArgumentException("A booking line has its columns, section and balance.");
+    }
+    return new PdfBooking(line, kind);
   }
 
   /** Appends {@code next} as a line continuing this booking, while it is open. */
@@ -174,14 +179,8 @@ public final class PdfBooking {
     return overflowed;
   }
 
-  /** The other pattern that finds this line too, when it is no booking for sure. */
-  public Optional<String> alsoFoundBy() {
-    return Optional.ofNullable(foundByAlso);
-  }
-
-  /** Whether it is a line before the first section, no booking for sure. */
-  public boolean beforeFirstSection() {
-    return outsideSections;
+  public Kind kind() {
+    return lineKind;
   }
 
   public int continuationCount() {

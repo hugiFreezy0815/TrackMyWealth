@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.google.re2j.Matcher;
 import com.google.re2j.Pattern;
 import com.trackmywealth.backend.dto.ImportPdfBookingLine;
+import com.trackmywealth.backend.dto.ImportPdfBookingLine.Status;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.error.ApiErrorCode;
@@ -13,6 +14,7 @@ import com.trackmywealth.backend.pdf.BoundedPdfRenderer;
 import com.trackmywealth.backend.pdf.BoundedTextStripper;
 import com.trackmywealth.backend.pdf.PageFurniture;
 import com.trackmywealth.backend.pdf.PdfBooking;
+import com.trackmywealth.backend.pdf.PdfBooking.Kind;
 import com.trackmywealth.backend.pdf.PdfColumns;
 import com.trackmywealth.backend.pdf.PdfLimitException;
 import com.trackmywealth.backend.pdf.PdfReadBudget;
@@ -27,6 +29,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
@@ -85,9 +88,15 @@ public class PdfImportReaderService {
   // The Retry-After of IMPORT_PDF_BUSY: about as long as the reads ahead take.
   static final long BUSY_RETRY_AFTER_SECONDS = 10;
   private static final int OCR_DPI = 200;
-  // The names of the layout's patterns, as a row error names the one that also found a line.
-  private static final String SECTION_PATTERN = "sectionPattern";
-  private static final String BALANCE_LINE_PATTERN = "balanceLinePattern";
+  // The status of each kind of line that is no booking for sure. A map, not a switch: a switch on
+  // an
+  // enum compiles to a class of its own, which no service may hold (ArchitectureTest).
+  private static final Map<Kind, Status> NO_BOOKING_STATUS =
+      Map.of(
+          Kind.ALSO_SECTION_START, Status.ALSO_SECTION_START,
+          Kind.ALSO_BALANCE_LINE, Status.ALSO_BALANCE_LINE,
+          Kind.ALSO_HEADER_LINE, Status.ALSO_HEADER_LINE,
+          Kind.BEFORE_FIRST_SECTION, Status.BEFORE_FIRST_SECTION);
   private static final byte[] PDF_MAGIC = "%PDF-".getBytes(StandardCharsets.US_ASCII);
 
   private final LocalOcrService ocr;
@@ -142,11 +151,12 @@ public class PdfImportReaderService {
   // below a booking of the same section is also kept with that booking, so the parser can check it
   // (PR #281 review).
   //
-  // A section's start or a balance line that the record-start pattern finds too is also kept, as
-  // a line that is no booking for sure, so the parser reports it: read as the other kind, a booking
-  // a too-broad pattern takes would otherwise vanish without a trace. A balance line is exempt when
-  // the layout checks a balance column: the balance the next booking or balance line of its section
-  // states then catches a booking lost that way (PR #281 review).
+  // A section's start, a header line or a balance line that the record-start pattern finds too is
+  // also kept, as a line that is no booking for sure, so the parser reports it: read as the other
+  // kind, a booking a too-broad pattern takes would otherwise vanish without a trace. A balance
+  // line
+  // is exempt when the layout checks a balance column: the balance the next booking or balance line
+  // of its section states then catches a booking lost that way (PR #281 review).
   //
   // A balance line pauses the booking above it rather than ending it: a carry-forward line at the
   // top of the next page carries a booking split across the page over to there, so its
@@ -189,7 +199,7 @@ public class PdfImportReaderService {
       Matcher sectionMatch = section == null ? null : section.matcher(text);
       if (sectionMatch != null && sectionMatch.find()) {
         if (recordStart.matcher(text).find()) {
-          bookings.add(PdfBooking.ambiguous(line, SECTION_PATTERN));
+          bookings.add(PdfBooking.noBooking(line, Kind.ALSO_SECTION_START));
         }
         String value = firstGroup(sectionMatch).orElse("");
         if (value.equals(sectionValue) && line.page() > sectionPage && line.page() > bookingPage) {
@@ -206,6 +216,9 @@ public class PdfImportReaderService {
       Optional<PdfColumns> header =
           layout.hasHeaderLabels() ? PdfColumns.of(line, layout.headerLabels()) : Optional.empty();
       if (header.isPresent()) {
+        if (recordStart.matcher(text).find()) {
+          bookings.add(PdfBooking.noBooking(line, Kind.ALSO_HEADER_LINE));
+        }
         columns = header.get();
         // The table header repeated at the top of the next page does not end a booking that
         // continues there: its cells keep their own page's columns, its continuation lines are
@@ -226,14 +239,14 @@ public class PdfImportReaderService {
         if (columns != null
             && recordStart.matcher(text).find()
             && (balance == null || !balance.matcher(text).find())) {
-          bookings.add(PdfBooking.beforeFirstSection(line));
+          bookings.add(PdfBooking.noBooking(line, Kind.BEFORE_FIRST_SECTION));
         }
         continue;
       }
       Matcher balanceMatch = balance == null ? null : balance.matcher(text);
       if (balanceMatch != null && balanceMatch.find()) {
         if (layout.balanceColumn() == null && recordStart.matcher(text).find()) {
-          bookings.add(PdfBooking.ambiguous(line, BALANCE_LINE_PATTERN));
+          bookings.add(PdfBooking.noBooking(line, Kind.ALSO_BALANCE_LINE));
         }
         Optional<String> stated = firstGroup(balanceMatch);
         if (stated.isPresent()) {
@@ -295,16 +308,13 @@ public class PdfImportReaderService {
 
   // The cells of a walked booking, in the order of ImportPdfLayout#cellNames(): the row pattern's
   // groups, the words under each header label, the section's value, with the continuation lines
-  // appended to the continuation column's cell. A line the row pattern misses keeps the whole
-  // line as its one cell.
+  // appended to the continuation column's cell. A line the row pattern misses, or that is no
+  // booking, keeps the whole line as its one cell.
   private static ImportPdfBookingLine bookingLine(
       PdfBooking booking, ImportPdfLayout layout, Pattern row) {
     String line = booking.line().text().strip();
-    if (booking.alsoFoundBy().isPresent()) {
-      return ImportPdfBookingLine.ambiguous(line, booking.alsoFoundBy().get());
-    }
-    if (booking.beforeFirstSection()) {
-      return ImportPdfBookingLine.beforeFirstSection(line);
+    if (booking.kind() != Kind.BOOKING) {
+      return ImportPdfBookingLine.unread(line, NO_BOOKING_STATUS.get(booking.kind()));
     }
     Matcher match = row.matcher(line);
     boolean matched = match.matches();
@@ -328,7 +338,7 @@ public class PdfImportReaderService {
     } else {
       cells.add(line);
     }
-    return ImportPdfBookingLine.builder(line, cells, matched)
+    return ImportPdfBookingLine.builder(line, cells, statusOf(matched, booking.overflowing()))
         .withContinuation(booking.continuation().stream().map(next -> next.text().strip()).toList())
         .withSectionStart(booking.sectionStart())
         .withStatedBalance(booking.statedBalance().orElse(null))
@@ -337,8 +347,15 @@ public class PdfImportReaderService {
                 .map(below -> new ImportPdfBookingLine.BalanceLine(below.text(), below.balance()))
                 .toList())
         .withHeaded(booking.columns().isPresent())
-        .withContinuationOverflow(booking.overflowing())
         .build();
+  }
+
+  // The status of a booking line: a row pattern that misses it outweighs too many continuations.
+  private static Status statusOf(boolean matched, boolean overflowing) {
+    if (!matched) {
+      return Status.UNMATCHED;
+    }
+    return overflowing ? Status.CONTINUATION_TOO_LONG : Status.MATCHED;
   }
 
   // Each continuation line goes to the continuation column whole: its text may run on under the

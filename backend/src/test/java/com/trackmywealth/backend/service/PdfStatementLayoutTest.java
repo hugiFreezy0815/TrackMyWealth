@@ -45,7 +45,8 @@ class PdfStatementLayoutTest {
 
   private final PdfImportReaderService reader =
       new PdfImportReaderService(mock(LocalOcrService.class));
-  private final ImportFileParserService parser = new ImportFileParserService(reader);
+  private final ImportFileParserService parser =
+      new ImportFileParserService(reader, new PdfBalanceCheckService());
 
   /**
    * Acceptance criterion 1: every booking parses with the sign of its column, the currency of its
@@ -509,6 +510,11 @@ class PdfStatementLayoutTest {
    * next page continues the section there. The booking at the foot of the first page keeps its
    * continuation line from the next, and the next page's first booking is checked against the
    * running balance - a misprinted one is a balance mismatch, not an unchecked section start.
+   *
+   * <p>The misprinted statement is also, word for word, a second CHF account opening at the top of
+   * the page without an opening balance line: nothing in the text tells the two apart, so such an
+   * account's first booking is a balance mismatch too - an error row, never a booking imported
+   * unchecked (#268, documented on {@code ImportPdfLayout}).
    */
   @Test
   void aSectionMarkerRepeatedOnTheNextPageContinuesTheSection() throws IOException {
@@ -724,7 +730,7 @@ class PdfStatementLayoutTest {
     ImportPdfBookingLine read =
         reader.readBookingLines(SyntheticStatements.yuhStatement(false), yuhTemplate()).get(0);
     ImportPdfBookingLine withBalanceLines =
-        ImportPdfBookingLine.builder(read.line(), read.cells(), true)
+        ImportPdfBookingLine.builder(read.line(), read.cells(), read.status())
             .withSectionStart(read.sectionStart())
             .withStatedBalance(read.statedBalance())
             .withBalancesAfter(
@@ -737,7 +743,9 @@ class PdfStatementLayoutTest {
     when(stub.readBookingLines(any(), any())).thenReturn(List.of(withBalanceLines));
 
     assertThatThrownBy(
-            () -> new ImportFileParserService(stub).parse(new byte[0], yuhTemplate(), null))
+            () ->
+                new ImportFileParserService(stub, new PdfBalanceCheckService())
+                    .parse(new byte[0], yuhTemplate(), null))
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS));
@@ -1008,6 +1016,73 @@ class PdfStatementLayoutTest {
     assertInvalid(
         yuhTemplate(yuh.toBuilder().withContinuationEndPattern(" ").build()),
         "pdfLayout.continuationEndPattern");
+  }
+
+  /**
+   * #268: a balance written in a form the amount rule does not read (here a trailing minus, as
+   * German statements often print a negative balance) states nothing. The booking beside it parses,
+   * as the balance column only checks it, and the running balance goes on from its amount, so the
+   * next balance that is an amount checks it too.
+   */
+  @Test
+  void aBalanceThatIsNoAmountLeavesItsBookingUnchecked() throws IOException {
+    List<ParsedImportRow> rows =
+        parser.parse(trailingMinusBalance("10.00"), yuhTemplate(), null).rows();
+
+    assertThat(rows).allSatisfy(row -> assertThat(row.isParsed()).as(row.toString()).isTrue());
+    assertThat(rows)
+        .extracting(row -> row.canonical().amount())
+        .containsExactly(new BigDecimal("-150.00"), new BigDecimal("60.00"));
+
+    List<ParsedImportRow> misprinted =
+        parser.parse(trailingMinusBalance("11.00"), yuhTemplate(), null).rows();
+
+    assertThat(misprinted).extracting(ParsedImportRow::isParsed).containsExactly(true, false);
+    assertThat(misprinted.get(1).errorCode()).isEqualTo(ImportRowErrorValues.BALANCE_MISMATCH);
+    assertThat(misprinted.get(1).errorArgs())
+        .containsEntry("value", "11.00")
+        .containsEntry("expected", "10.00");
+  }
+
+  // A CHF section opening at 100.00: a debit of 150.00 to "50.00-", then a credit of 60.00 to
+  // secondBalance.
+  private static byte[] trailingMinusBalance(String secondBalance) throws IOException {
+    return oneSection(
+        "100.00",
+        SyntheticStatements.booking(
+            0, "02.01.2031", "Miete", "0000000001", "150.00", null, "50.00-"),
+        SyntheticStatements.booking(
+            0, "03.01.2031", "Lohn", "0000000002", null, "60.00", secondBalance));
+  }
+
+  /**
+   * #268: a header line that the record-start pattern finds too is reported like the other
+   * ambiguous lines: read as a header line, a booking holding every label would otherwise vanish
+   * without a trace. It still sets the columns of the bookings below it.
+   */
+  @Test
+  void aHeaderLineTheRecordStartPatternFindsTooIsAnErrorRow() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, GENERIC_TITLE)),
+                    List.of(
+                        at(40, "31.12."),
+                        at(120, "Date"),
+                        at(250, "Description"),
+                        at(450, "Amount")),
+                    List.of(at(120, "01.01.2031"), at(250, "Payment"), at(450, "10.00")))));
+
+    List<ParsedImportRow> rows = parser.parse(statement, genericTemplate(), null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::isParsed).containsExactly(false, true);
+    assertThat(rows.get(0).errorCode()).isEqualTo(ImportRowErrorValues.LINE_AMBIGUOUS);
+    assertThat(rows.get(0).errorArgs())
+        .containsEntry("value", "31.12. Date Description Amount")
+        .containsEntry("pattern", "headerLabels");
+    assertThat(rows.get(1).canonical().amount()).isEqualByComparingTo("10.00");
+    assertThat(rows.get(1).canonical().description()).isEqualTo("Payment");
   }
 
   // --- helpers -------------------------------------------------------------------------------

@@ -783,7 +783,10 @@ lines:
   and a table that moves between pages is still read by its labels, never by coordinates. A word
   is placed by position alone: text that runs on past its column's label (a long description
   under `REFERENZ`) lands in the next column's cell, so a template maps a column such as the
-  external id only where the bank keeps its text within the column.
+  external id only where the bank keeps its text within the column. A header line that the
+  record-start pattern finds too is the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the line, and
+  `headerLabels`): it still sets the columns, but a booking line holding every label would
+  otherwise vanish without a trace.
 - `continuationColumn`: lines after a booking line that are no booking are appended whole to that
   column's cell (a counterparty, an IBAN). When it is a header label, only lines that start in its
   column: a remark at the margin ends the booking. A header line ends the booking too, except the
@@ -810,7 +813,10 @@ lines:
   there and does not start it again: the running balance goes on, and a booking at the foot of the
   page before keeps its continuation lines. A balance line between such a marker and the next
   booking only states the balance that booking starts from, as at a section's start, since the
-  marker may also open a new section of the same value (a second account in that currency). A
+  marker may also open a new section of the same value (a second account in that currency).
+  Nothing else tells the two apart: a second section of the same value that opens at a page's top
+  without such a balance line continues the running balance of the section before, so its first
+  booking is the row error `IMPORT_ROW_BALANCE_MISMATCH` - reported, never imported unchecked. A
   marker below a booking on its page always starts a new section. A section's start
   that the record-start pattern finds too is also the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the
   line, and `sectionPattern`): it starts the section, but a booking a too-broad section pattern
@@ -826,8 +832,11 @@ lines:
   error row of its own, `IMPORT_ROW_BALANCE_LINE_MISMATCH` with the line as its raw data, since a
   booking above it was not read as one - for instance a line the balance line pattern took for its
   own. The bookings around it keep their own status, so the ones read correctly still import. A
-  booking whose balance column cell is no amount is the row error `IMPORT_ROW_AMOUNT_UNPARSEABLE`
-  for that column: the check it was asked for cannot be made. Without `balanceColumn`, nothing
+  balance that the template's amount rule does not read (e.g. a trailing minus, `1.234,56-`, or a
+  debit suffix, `1.234,56 S`) states nothing, in the balance column as on a balance line: it checks
+  nothing, the booking beside it keeps its own status (the balance column only checks the
+  amounts), and the running balance goes on from the booking's amount, so the next balance that is
+  an amount checks that booking too. Without `balanceColumn`, nothing
   checks a balance line, so one the record-start pattern finds too (e.g. a dated opening entry) is
   also the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the line, and `balanceLinePattern`), never a
   silently skipped booking. Every PDF row counts against the file's row limit, a balance line's

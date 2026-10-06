@@ -26,8 +26,9 @@ import java.util.Objects;
  *   <li>{@code headerLabels}: the labels of the booking table's header line. Each word of a booking
  *       line is the cell of the label it sits under (by position on the page, so text layer only),
  *       named by the label - how an unsigned amount tells a debit from a credit. A header line is
- *       never a booking, and each one sets the columns again for the lines below it. The labels are
- *       also the template's header fingerprint for detection.
+ *       never a booking, and each one sets the columns again for the lines below it; one that
+ *       {@code recordStartPattern} finds too is an error row, never a silently dropped booking. The
+ *       labels are also the template's header fingerprint for detection.
  *   <li>{@code continuationColumn}: lines after a booking line that are no booking are appended to
  *       this column's cell (a counterparty, a reference). Under {@code headerLabels}, only lines
  *       that start in that column, so a remark at the margin ends the booking. Text layer only: OCR
@@ -43,16 +44,20 @@ import java.util.Objects;
  *       booking. Its first capture group is the cell {@code sectionColumn} of every booking in the
  *       section (e.g. the section's currency). A marker of the same value at the top of a later
  *       page, before any booking on it, repeats the section's title there and does not start it
- *       again.
+ *       again. Nothing in the text tells that from a second section of the same value (a second
+ *       account in that currency) opening at the page's top: such a section starts from the balance
+ *       line below its marker, and without one its first booking is checked against the section
+ *       before and is a balance mismatch - an error row, never a booking imported unchecked.
  *   <li>{@code balanceLinePattern}: a line on which it finds a match states a balance and is never
  *       a booking; its first capture group, when it has one, is that balance. With {@code
  *       balanceColumn}, the column holding each booking's running balance, every booking is checked
- *       to lead from the balance before it to its own: a misread amount or sign is an error row.
- *       Carry-forward lines that state the balance at a page break (e.g. "Uebertrag") belong in
- *       this pattern: their amount changes from page to page, so they are no page furniture, and
- *       would otherwise continue the page's last booking. One at the top of a later page carries
- *       the booking above it over, so a booking split across the page keeps its continuation lines
- *       from there.
+ *       to lead from the balance before it to its own: a misread amount or sign is an error row. A
+ *       balance the template's amount rule does not read (e.g. {@code 1.234,56-}) checks nothing,
+ *       and the booking beside it keeps its own status. Carry-forward lines that state the balance
+ *       at a page break (e.g. "Uebertrag") belong in this pattern: their amount changes from page
+ *       to page, so they are no page furniture, and would otherwise continue the page's last
+ *       booking. One at the top of a later page carries the booking above it over, so a booking
+ *       split across the page keeps its continuation lines from there.
  * </ul>
  *
  * <p>Lines repeated at the same place at the top or bottom of every page (a page header or footer,

@@ -38,7 +38,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.apache.commons.csv.CSVFormat;
@@ -100,9 +99,12 @@ public class ImportFileParserService {
   public static final String RAW_LINE_KEY = "#line";
 
   private final PdfImportReaderService pdfReader;
+  private final PdfBalanceCheckService balances;
 
-  public ImportFileParserService(PdfImportReaderService pdfReader) {
+  public ImportFileParserService(
+      PdfImportReaderService pdfReader, PdfBalanceCheckService balances) {
     this.pdfReader = pdfReader;
+    this.balances = balances;
   }
 
   /**
@@ -152,76 +154,41 @@ public class ImportFileParserService {
       List<String> record = data.get(i);
       Map<String, String> rawData = rawData(record, keys, template.hasHeaderRow());
       ImportPdfBookingLine booking = bookingLines == null ? null : bookingLines.get(i);
-      // A line read as another pattern's, or one before the first section (PR #281 review), is no
-      // booking: it neither reads nor changes the running balance.
-      boolean noBooking =
-          booking != null && (booking.alsoFoundBy() != null || booking.beforeFirstSection());
       if (booking != null) {
         rawData.putIfAbsent(RAW_LINE_KEY, booking.fullText());
-        if (!noBooking) {
-          running = balanceBefore(booking, running, template);
-        }
+      }
+      // Only a booking line reads and moves the running balance: a line read as another pattern's,
+      // or one before the first section, is none.
+      boolean checked = booking != null && balanceColumn >= 0 && booking.status().isBooking();
+      if (checked) {
+        running = balances.balanceBefore(booking, running, template);
       }
       try {
-        if (booking != null && booking.beforeFirstSection()) {
-          throw rowError(ImportRowErrorValues.LINE_BEFORE_SECTION, ARG_VALUE, booking.line());
-        }
-        if (booking != null && booking.alsoFoundBy() != null) {
-          throw rowError(
-              ImportRowErrorValues.LINE_AMBIGUOUS,
-              ARG_VALUE,
-              booking.line(),
-              "pattern",
-              booking.alsoFoundBy());
-        }
-        if (booking != null && !booking.matched()) {
-          throw rowError(ImportRowErrorValues.LINE_UNMATCHED, ARG_VALUE, booking.line());
-        }
-        if (booking != null && booking.continuationOverflow()) {
-          throw rowError(
-              ImportRowErrorValues.CONTINUATION_TOO_LONG,
-              ARG_VALUE,
-              booking.line(),
-              "max",
-              String.valueOf(ImportPdfLayout.MAX_CONTINUATION_LINES));
+        if (booking != null) {
+          requireBooking(booking);
         }
         CanonicalImportRow canonical =
             canonicalRow(record, template, columns, dateFormatter, typeMapping, accountCurrency);
-        if (balanceColumn >= 0) {
-          BigDecimal stated = statedBalance(record, balanceColumn, header, template);
-          BigDecimal expected = running == null ? null : running.add(canonical.amount());
-          // A wrong row does not make every row after it wrong: the next one starts from the
-          // balance this one states.
-          running = stated == null ? expected : stated;
-          if (stated != null && expected != null && stated.compareTo(expected) != 0) {
-            throw rowError(
-                ImportRowErrorValues.BALANCE_MISMATCH,
-                ARG_VALUE,
-                stated.toPlainString(),
-                "expected",
-                expected.toPlainString());
-          }
+        if (checked) {
+          running =
+              balances.balanceAfter(
+                  running, canonical.amount(), optionalCell(record, balanceColumn), template);
         }
         rows.add(ParsedImportRow.parsed(rows.size() + 1, rawData, canonical));
       } catch (ImportRowRejectedException e) {
         rejected++;
         rows.add(ParsedImportRow.error(rows.size() + 1, rawData, e.getCode(), e.getArgs()));
-        if (balanceColumn >= 0
-            && !noBooking
-            && !ImportRowErrorValues.BALANCE_MISMATCH.equals(e.getCode())) {
-          // Its amount is unknown: only the balance it states, if any, carries on.
-          running = quietBalance(record, balanceColumn, header, template);
+        if (checked) {
+          // Its amount is unknown, or not the one its balance shows: only the balance it states,
+          // if any, carries on.
+          running = balances.read(optionalCell(record, balanceColumn), template);
         }
       }
-      if (balanceColumn >= 0 && booking != null) {
-        for (ImportPdfBookingLine.BalanceLine below : booking.balancesAfter()) {
-          Optional<ParsedImportRow> mismatch =
-              balanceLineMismatch(below, running, rows.size() + 1, template);
-          if (mismatch.isPresent()) {
-            rejected++;
-            rows.add(mismatch.get());
-          }
-        }
+      if (checked) {
+        List<ParsedImportRow> balanceLineErrors =
+            balances.balanceLineErrors(booking, running, rows.size() + 1, template);
+        rejected += balanceLineErrors.size();
+        rows.addAll(balanceLineErrors);
         // A balance line's own error row counts against the file's limit like any other row.
         if (rows.size() > MAX_DATA_ROWS) {
           throw tooManyRows();
@@ -251,70 +218,31 @@ public class ImportFileParserService {
     return headerFingerprint(template, header);
   }
 
-  // PR #281 review: a balance line below a booking, before the next one of its section (e.g. the
-  // section's closing balance), must state the balance the bookings lead to. Otherwise a booking
-  // between them was lost - say, a line the balance line pattern took for its own. The balance line
-  // is then an error row of its own, so the bookings around it, read correctly, still import.
-  // Empty when it adds up, or when nothing is known to check it against.
-  private static Optional<ParsedImportRow> balanceLineMismatch(
-      ImportPdfBookingLine.BalanceLine below,
-      BigDecimal running,
-      int rowNumber,
-      ImportTemplateDefinition template) {
-    BigDecimal stated = running == null ? null : quietAmount(below.balance(), template);
-    if (stated == null || stated.compareTo(running) == 0) {
-      return Optional.empty();
+  // #268: a line the reader did not read as a booking it could cut into cells is that row's error.
+  private static void requireBooking(ImportPdfBookingLine booking) {
+    ImportPdfBookingLine.Status status = booking.status();
+    if (status == ImportPdfBookingLine.Status.MATCHED) {
+      return;
     }
-    return Optional.of(
-        ParsedImportRow.error(
-            rowNumber,
-            Map.of(RAW_LINE_KEY, below.line()),
-            ImportRowErrorValues.BALANCE_LINE_MISMATCH,
-            rowArgs(ARG_VALUE, stated.toPlainString(), "expected", running.toPlainString())));
-  }
-
-  // The balance before booking: none at a section's start, else the one a balance line stated
-  // since the booking before, else what the bookings so far lead to.
-  private static BigDecimal balanceBefore(
-      ImportPdfBookingLine booking, BigDecimal running, ImportTemplateDefinition template) {
-    if (booking.statedBalance() == null) {
-      return booking.sectionStart() ? null : running;
+    // Ifs, not a switch: a switch on an enum compiles to a class of its own, which no service may
+    // hold (ArchitectureTest).
+    String line = booking.line();
+    if (status == ImportPdfBookingLine.Status.UNMATCHED) {
+      throw rowError(ImportRowErrorValues.LINE_UNMATCHED, ARG_VALUE, line);
     }
-    return quietAmount(booking.statedBalance(), template);
-  }
-
-  // A balance line's balance; null when it is no amount, which then checks nothing.
-  private static BigDecimal quietAmount(String balance, ImportTemplateDefinition template) {
-    try {
-      return parseAmount(balance, "balanceLinePattern", template, balanceInParentheses(template));
-    } catch (ImportRowRejectedException e) {
-      return null;
+    if (status == ImportPdfBookingLine.Status.CONTINUATION_TOO_LONG) {
+      throw rowError(
+          ImportRowErrorValues.CONTINUATION_TOO_LONG,
+          ARG_VALUE,
+          line,
+          "max",
+          String.valueOf(ImportPdfLayout.MAX_CONTINUATION_LINES));
     }
-  }
-
-  // The running balance the booking states in its balance column; null where it states none.
-  private static BigDecimal statedBalance(
-      List<String> record, int column, List<String> header, ImportTemplateDefinition template) {
-    String cell = optionalCell(record, column);
-    return cell == null
-        ? null
-        : parseAmount(cell, header.get(column), template, balanceInParentheses(template));
-  }
-
-  // A balance is written like the template's amounts: a statement that puts a negative amount in
-  // parentheses puts a negative balance (a loan account's, all along) in them too (PR #281 review).
-  private static boolean balanceInParentheses(ImportTemplateDefinition template) {
-    return ImportTemplateValues.AMOUNT_NEGATIVE_IN_PARENTHESES.equals(
-        template.amountRepresentation());
-  }
-
-  private static BigDecimal quietBalance(
-      List<String> record, int column, List<String> header, ImportTemplateDefinition template) {
-    try {
-      return statedBalance(record, column, header, template);
-    } catch (ImportRowRejectedException e) {
-      return null;
+    if (status == ImportPdfBookingLine.Status.BEFORE_FIRST_SECTION) {
+      throw rowError(ImportRowErrorValues.LINE_BEFORE_SECTION, ARG_VALUE, line);
     }
+    throw rowError(
+        ImportRowErrorValues.LINE_AMBIGUOUS, ARG_VALUE, line, "pattern", status.otherPattern());
   }
 
   /**
@@ -1217,7 +1145,8 @@ public class ImportFileParserService {
     return new ImportRowRejectedException(code, rowArgs(namesAndValues));
   }
 
-  private static Map<String, String> rowArgs(String... namesAndValues) {
+  // Package-private for PdfBalanceCheckService's row errors.
+  static Map<String, String> rowArgs(String... namesAndValues) {
     Map<String, String> args = new LinkedHashMap<>();
     for (int i = 0; i < namesAndValues.length; i += 2) {
       String value = namesAndValues[i + 1];
