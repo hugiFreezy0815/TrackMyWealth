@@ -29,6 +29,13 @@ public final class ReconciliationResultValues {
   public static final String SUPERSEDED = "SUPERSEDED";
 
   public static final String CAUSE_DUPLICATE_ENTRY = "DUPLICATE_ENTRY";
+
+  /**
+   * FR-REC-003: an import of the account holds the missing booking but did not import it (#230) - a
+   * discarded batch, an error row, or a row left out of a committed batch.
+   */
+  public static final String CAUSE_MISSING_TRANSACTION = "MISSING_TRANSACTION";
+
   public static final String CAUSE_FX_ROUNDING = "FX_ROUNDING";
   public static final String CAUSE_UNRECORDED_FEE = "UNRECORDED_FEE";
   public static final String CAUSE_UNKNOWN = "UNKNOWN";

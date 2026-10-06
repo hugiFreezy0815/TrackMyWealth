@@ -163,16 +163,38 @@ public class CategorizationService {
    */
   @Transactional
   public Map<UUID, String> categorizeAll(List<Transaction> transactions) {
+    return categorizeAll(transactions, new HashMap<>());
+  }
+
+  /**
+   * {@link #categorizeAll(List)} for one import in several calls (#230): {@code fuzzyByMerchant}
+   * keeps each merchant text's fuzzy match, by workspace and text, from one call to the next.
+   */
+  @Transactional
+  public Map<UUID, String> categorizeAll(
+      List<Transaction> transactions,
+      Map<String, Optional<FuzzyCategoryCandidate>> fuzzyByMerchant) {
+    // #230: an import categorizes thousands of new rows. Their changes are flushed once, at the
+    // end, rather than row by row (each flush checks every entity the session holds), and a
+    // merchant text's fuzzy match is looked up once: a new row has no log row yet, so it is no
+    // other new row's candidate, and rows with the same merchant text get the same suggestion.
     Map<UUID, String> assignedBy = new HashMap<>();
+    boolean[] written = {false};
     forEachDecision(
         transactions,
         overridden(currentAssignments(transactions)),
+        fuzzyByMerchant,
         (transaction, decision) -> {
           apply(transaction, decision);
+          written[0] = true;
           if (decision.assignedBy() != null) {
             assignedBy.put(transaction.getId(), decision.assignedBy());
           }
         });
+    // A call that categorizes nothing touches nothing.
+    if (written[0]) {
+      transactionRepository.flush();
+    }
     return assignedBy;
   }
 
@@ -206,9 +228,11 @@ public class CategorizationService {
       }
       Map<UUID, LatestCategoryAssignment> current = currentAssignments(page);
       int[] writtenInPage = {0};
+      // No fuzzy cache: an existing row may be another one's candidate, never its own.
       forEachDecision(
           page,
           overridden(current),
+          null,
           (transaction, decision) -> {
             if (!unchanged(transaction, current.get(transaction.getId()), decision)) {
               apply(transaction, decision);
@@ -282,10 +306,12 @@ public class CategorizationService {
     forEachDecision(
         List.of(transaction),
         Set.of(),
+        null,
         (row, decision) -> {
           apply(row, decision);
           assignedBy[0] = decision.assignedBy();
         });
+    transactionRepository.flush();
     return Optional.ofNullable(assignedBy[0]);
   }
 
@@ -301,6 +327,7 @@ public class CategorizationService {
   private void forEachDecision(
       List<Transaction> transactions,
       Set<UUID> skipped,
+      Map<String, Optional<FuzzyCategoryCandidate>> fuzzyByMerchant,
       BiConsumer<Transaction, CategoryDecision> action) {
     Map<UUID, List<Transaction>> byWorkspace = new LinkedHashMap<>();
     for (Transaction transaction : transactions) {
@@ -331,7 +358,9 @@ public class CategorizationService {
               Double.toString(fuzzyThreshold));
           thresholdSet = true;
         }
-        action.accept(transaction, decide(transaction, assignable, rules, shipped, mappings));
+        action.accept(
+            transaction,
+            decide(transaction, assignable, rules, shipped, mappings, fuzzyByMerchant));
       }
     }
   }
@@ -391,7 +420,8 @@ public class CategorizationService {
       Set<UUID> assignable,
       List<CategorizationRule> rules,
       Map<String, UUID> shipped,
-      Map<TransactionSourceCode, Optional<UUID>> mappings) {
+      Map<TransactionSourceCode, Optional<UUID>> mappings,
+      Map<String, Optional<FuzzyCategoryCandidate>> fuzzyByMerchant) {
     String merchant = normalizeMerchant(transaction.getMerchantDescription());
     List<TransactionSourceCode> codes = sourceCodes(transaction.getRawSourceData());
 
@@ -413,7 +443,11 @@ public class CategorizationService {
       return new CategoryDecision(typed, ASSIGNED_BY_TRANSACTION_TYPE, null, null);
     }
     Optional<FuzzyCategoryCandidate> similar =
-        fuzzyMatch(transaction, transaction.getWorkspace().getId(), assignable);
+        fuzzyByMerchant == null || transaction.getMerchantDescription() == null
+            ? fuzzyMatch(transaction, transaction.getWorkspace().getId(), assignable)
+            : fuzzyByMerchant.computeIfAbsent(
+                transaction.getWorkspace().getId() + "/" + transaction.getMerchantDescription(),
+                text -> fuzzyMatch(transaction, transaction.getWorkspace().getId(), assignable));
     if (similar.isPresent()) {
       return new CategoryDecision(
           similar.get().getCategoryId(), ASSIGNED_BY_FALLBACK, null, similar.get().getSimilarity());
@@ -430,10 +464,11 @@ public class CategorizationService {
         .getId();
   }
 
-  // UNCATEGORIZED (no assignedBy) is recorded without a log row: nothing assigned it.
+  // UNCATEGORIZED (no assignedBy) is recorded without a log row: nothing assigned it. Both callers
+  // flush when they are done.
   private void apply(Transaction transaction, CategoryDecision decision) {
     transaction.setCategoryId(decision.categoryId());
-    transactionRepository.saveAndFlush(transaction);
+    transactionRepository.save(transaction);
     if (decision.assignedBy() != null) {
       logRepository.save(
           new TransactionCategorizationLog(

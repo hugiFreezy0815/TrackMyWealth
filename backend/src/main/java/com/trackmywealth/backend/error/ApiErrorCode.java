@@ -177,6 +177,16 @@ public final class ApiErrorCode {
    */
   public static final String IMPORT_OCR_UNAVAILABLE = "IMPORT_OCR_UNAVAILABLE";
 
+  /**
+   * 409: the import batch's status does not allow this step (US-07-04) - e.g. parsing or committing
+   * a batch that is already committed or discarded; {@code status} says which it is. A retried
+   * commit is answered with this, never with a second import (FR-API-006).
+   */
+  public static final String IMPORT_BATCH_STATE = "IMPORT_BATCH_STATE";
+
+  /** 422: an import row with status {@code ERROR} cannot be included in the commit (US-07-04). */
+  public static final String IMPORT_ROW_NOT_INCLUDABLE = "IMPORT_ROW_NOT_INCLUDABLE";
+
   /** 423: the user account is temporarily locked (FR-AUT lockout). */
   public static final String LOCKED = "LOCKED";
 

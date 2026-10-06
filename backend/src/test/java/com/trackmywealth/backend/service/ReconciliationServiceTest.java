@@ -17,6 +17,7 @@ import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.ImportRowRawRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -53,12 +54,14 @@ class ReconciliationServiceTest {
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
   private final ReconciliationResultRepository resultRepository =
       mock(ReconciliationResultRepository.class);
+  private final ImportRowRawRepository importRowRawRepository = mock(ImportRowRawRepository.class);
   private final ReconciliationService service =
       new ReconciliationService(
           accessControlService,
           snapshotRepository,
           transactionRepository,
           resultRepository,
+          importRowRawRepository,
           Clock.fixed(Instant.parse("2026-10-03T12:00:00Z"), ZoneOffset.UTC));
 
   private Account account;
@@ -172,6 +175,43 @@ class ReconciliationServiceTest {
     verify(transactionRepository)
         .existsDuplicateEntrySignature(
             eq(account.getId()), eq(OPENING_DATE), eq(SNAPSHOT_DATE), amountOf("-45.67"));
+  }
+
+  @Test
+  void aBookingAnImportDidNotBringInIsAMissingTransaction() {
+    // #230: the snapshot is 45.67 above the ledger, and an import of the account holds a 45.67 row
+    // that never reached the ledger (discarded, an error row or left out of the commit).
+    when(importRowRawRepository.existsNotImportedRow(
+            eq(account.getId()),
+            eq(OPENING_DATE),
+            eq(SNAPSHOT_DATE),
+            amountOf("45.67"),
+            eq(account.getNativeCurrency())))
+        .thenReturn(true);
+
+    service.reconcileLatest(account, ACTOR.userId());
+
+    ArgumentCaptor<ReconciliationResult> captor =
+        ArgumentCaptor.forClass(ReconciliationResult.class);
+    verify(resultRepository).saveAndFlush(captor.capture());
+    assertThat(captor.getValue().getProbableCause()).isEqualTo("MISSING_TRANSACTION");
+  }
+
+  @Test
+  void duplicateEvidenceIsCheckedBeforeAnImportedRow() {
+    when(transactionRepository.existsDuplicateEntrySignature(
+            any(), any(), any(), any(BigDecimal.class)))
+        .thenReturn(true);
+    when(importRowRawRepository.existsNotImportedRow(
+            any(), any(), any(), any(BigDecimal.class), any()))
+        .thenReturn(true);
+
+    service.reconcileLatest(account, ACTOR.userId());
+
+    ArgumentCaptor<ReconciliationResult> captor =
+        ArgumentCaptor.forClass(ReconciliationResult.class);
+    verify(resultRepository).saveAndFlush(captor.capture());
+    assertThat(captor.getValue().getProbableCause()).isEqualTo("DUPLICATE_ENTRY");
   }
 
   @Test

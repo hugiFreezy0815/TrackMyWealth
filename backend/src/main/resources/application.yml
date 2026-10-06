@@ -29,11 +29,11 @@ spring:
 
   # US-07-03/04: an import file may have at most 5 MB (sprint 5 decision, 2026-10-02); a larger
   # upload is a 413 IMPORT_FILE_TOO_LARGE (GlobalExceptionHandler). The request limit leaves room
-  # for the multipart envelope and a template part.
+  # for the multipart envelope and a template part; raise both together.
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      max-file-size: ${IMPORT_MAX_FILE_SIZE:5MB}
+      max-request-size: ${IMPORT_MAX_REQUEST_SIZE:6MB}
 
   # --- Datasource -------------------------------------------------------
   # Points at the *target* application database. DatabaseBootstrapInitializer

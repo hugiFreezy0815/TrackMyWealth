@@ -255,6 +255,9 @@ class ArchitectureTest {
           "InstitutionService#applyCatalogueEntry",
           // An account the caller was already cleared for simply has no opening balance.
           "OpeningBalanceService#notRecorded",
+          // A row number of an import batch the caller was already cleared for (#230): row numbers
+          // are 1..n of that batch, so nothing is learned by trying others.
+          "ImportBatchService#requireRow",
           // Missing FX data, not an authorization decision.
           "FxRateService#getRate",
           "FxRateService#noConversionRateAvailable",

@@ -86,4 +86,23 @@ public final class ImportRowErrorValues {
 
   /** {@code column, value}: not a four-digit ISO 18245 merchant category code. */
   public static final String MCC_INVALID = "IMPORT_ROW_MCC_INVALID";
+
+  /**
+   * {@code externalId, firstRow}: an earlier row of the same file carries the same bank reference
+   * (US-07-04); one reference is one booking, so only the first row is imported.
+   */
+  public static final String EXTERNAL_ID_REPEATED = "IMPORT_ROW_EXTERNAL_ID_REPEATED";
+
+  /**
+   * {@code currency, accountCurrency, date}: the row is in another currency than the account and no
+   * exchange rate for its booking date is available, not even from the provider (US-07-04, #223).
+   */
+  public static final String FX_RATE_UNAVAILABLE = "IMPORT_ROW_FX_RATE_UNAVAILABLE";
+
+  /**
+   * {@code reason}: the ledger would refuse the row as a manual entry on this account (e.g. a type
+   * the account does not take, or an amount whose sign does not fit its type); {@code reason} is
+   * the ledger's own explanation, in English until EPIC-21 (US-07-04).
+   */
+  public static final String LEDGER_REJECTED = "IMPORT_ROW_LEDGER_REJECTED";
 }

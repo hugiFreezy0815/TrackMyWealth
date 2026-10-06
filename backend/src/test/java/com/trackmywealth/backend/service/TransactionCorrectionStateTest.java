@@ -12,6 +12,7 @@ import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.TransactionCategorizationLogRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -60,7 +61,8 @@ class TransactionCorrectionStateTest {
           new VersionPreconditionService(),
           mock(AccountDataQualityService.class),
           mock(ReconciliationService.class),
-          mock(ReconciliationAdjustmentService.class));
+          mock(ReconciliationAdjustmentService.class),
+          mock(EntityManager.class));
 
   private Transaction row;
 
