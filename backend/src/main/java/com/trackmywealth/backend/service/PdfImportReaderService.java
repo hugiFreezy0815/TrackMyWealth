@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.google.re2j.Matcher;
 import com.google.re2j.Pattern;
 import com.trackmywealth.backend.dto.ImportPdfBookingLine;
+import com.trackmywealth.backend.dto.ImportPdfBookingLine.Status;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.error.ApiErrorCode;
@@ -11,9 +12,14 @@ import com.trackmywealth.backend.error.ImportFileRejectedException;
 import com.trackmywealth.backend.pdf.BoundedPdfParser;
 import com.trackmywealth.backend.pdf.BoundedPdfRenderer;
 import com.trackmywealth.backend.pdf.BoundedTextStripper;
+import com.trackmywealth.backend.pdf.PageFurniture;
+import com.trackmywealth.backend.pdf.PdfBooking;
+import com.trackmywealth.backend.pdf.PdfBooking.Kind;
+import com.trackmywealth.backend.pdf.PdfColumns;
 import com.trackmywealth.backend.pdf.PdfLimitException;
 import com.trackmywealth.backend.pdf.PdfReadBudget;
 import com.trackmywealth.backend.pdf.PdfStreamBudget;
+import com.trackmywealth.backend.pdf.PdfTextLine;
 import com.trackmywealth.backend.validation.Re2Patterns;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -21,7 +27,11 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -29,7 +39,6 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -79,6 +88,15 @@ public class PdfImportReaderService {
   // The Retry-After of IMPORT_PDF_BUSY: about as long as the reads ahead take.
   static final long BUSY_RETRY_AFTER_SECONDS = 10;
   private static final int OCR_DPI = 200;
+  // The status of each kind of line that is no booking for sure. A map, not a switch: a switch on
+  // an
+  // enum compiles to a class of its own, which no service may hold (ArchitectureTest).
+  private static final Map<Kind, Status> NO_BOOKING_STATUS =
+      Map.of(
+          Kind.ALSO_SECTION_START, Status.ALSO_SECTION_START,
+          Kind.ALSO_BALANCE_LINE, Status.ALSO_BALANCE_LINE,
+          Kind.ALSO_HEADER_LINE, Status.ALSO_HEADER_LINE,
+          Kind.BEFORE_FIRST_SECTION, Status.BEFORE_FIRST_SECTION);
   private static final byte[] PDF_MAGIC = "%PDF-".getBytes(StandardCharsets.US_ASCII);
 
   private final LocalOcrService ocr;
@@ -99,7 +117,8 @@ public class PdfImportReaderService {
 
   /**
    * Every booking line of {@code content} (a line on which the layout's record-start pattern finds
-   * a match), in document order, after the template's skipped lines.
+   * a match), in document order, after the template's skipped lines, with the cells, continuation
+   * lines, section and stated balance its layout reads (see {@link ImportPdfLayout}).
    *
    * @throws ApiException an {@code IMPORT_*} file-level code when the file is not a readable PDF of
    *     this template's layout, or has no booking line
@@ -107,26 +126,286 @@ public class PdfImportReaderService {
   public List<ImportPdfBookingLine> readBookingLines(
       byte[] content, ImportTemplateDefinition template) {
     ImportPdfLayout layout = template.pdfLayout();
-    String text = readText(content, template.isOcr());
-    if (!hasMarker(text, layout)) {
+    List<PdfTextLine> lines = readLines(content, template.isOcr());
+    if (!hasMarker(joined(lines), layout)) {
       throw mismatch("The PDF does not contain this template's document marker.");
     }
-    List<String> lines = text.lines().toList();
-    Pattern recordStart = Re2Patterns.compile(layout.recordStartPattern());
-    Pattern row = Re2Patterns.compile(layout.rowPattern());
-    int end = lines.size() - template.trailingSummaryRowCount();
-    List<ImportPdfBookingLine> bookings = new ArrayList<>();
-    for (int i = template.preambleRowCount(); i < end; i++) {
-      String line = lines.get(i).strip();
-      if (recordStart.matcher(line).find()) {
-        bookings.add(bookingLine(line, row));
-      }
-    }
-    if (bookings.isEmpty()) {
+    List<PdfBooking> walked =
+        walk(
+            lines,
+            template.preambleRowCount(),
+            lines.size() - template.trailingSummaryRowCount(),
+            layout);
+    if (walked.isEmpty()) {
       throw new ImportFileRejectedException(
           ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS, "The statement has no booking lines.");
     }
+    Pattern row = Re2Patterns.compile(layout.rowPattern());
+    return walked.stream().map(booking -> bookingLine(booking, layout, row)).toList();
+  }
+
+  // The bookings of lines from (inclusive) to (exclusive), line by line: a section's start, a
+  // header line, a balance line, a booking line, page furniture, then a line continuing the
+  // booking before it, unless the continuation end pattern finds it or the booking has as many
+  // continuation lines as one may have. Each kind is never one of the later ones. A balance line
+  // below a booking of the same section is also kept with that booking, so the parser can check it
+  // (PR #281 review).
+  //
+  // A section's start, a header line or a balance line that the record-start pattern finds too is
+  // also kept, as a line that is no booking for sure, so the parser reports it: read as the other
+  // kind, a booking a too-broad pattern takes would otherwise vanish without a trace. A balance
+  // line
+  // is exempt when the layout checks a balance column: the balance the next booking or balance line
+  // of its section states then catches a booking lost that way (PR #281 review).
+  //
+  // A balance line pauses the booking above it rather than ending it: a carry-forward line at the
+  // top of the next page carries a booking split across the page over to there, so its
+  // continuation lines below still continue it (PR #281 review).
+  //
+  // A header line is found before the first section too, so one table header above all sections
+  // sets their columns. A section marker of the section's own value at the top of a later page
+  // (no booking on that page before it) repeats the section's title there: the section goes on,
+  // its running balance and a booking carried over from the page before with it. A balance line
+  // between such a marker and the next booking only states the balance that booking starts from,
+  // as at a section's start, since it may also open a new section of the same value (PR #281
+  // review).
+  private static List<PdfBooking> walk(
+      List<PdfTextLine> lines, int from, int to, ImportPdfLayout layout) {
+    Pattern recordStart = Re2Patterns.compile(layout.recordStartPattern());
+    Pattern section = optionalPattern(layout.sectionPattern());
+    Pattern balance = optionalPattern(layout.balanceLinePattern());
+    Pattern continuationEnd = optionalPattern(layout.continuationEndPattern());
+    int continuationLabel = labelIndex(layout, layout.continuationColumn());
+    Set<Integer> furniture = PageFurniture.indexes(lines);
+    List<PdfBooking> bookings = new ArrayList<>();
+    // The last booking, open while lines may still continue it; null before the first.
+    PdfBooking current = null;
+    PdfColumns columns = null;
+    String sectionValue = null;
+    boolean sectionStart = false;
+    // Whether a repeated section marker came since the last booking.
+    boolean sectionRepeated = false;
+    Optional<String> statedBalance = Optional.empty();
+    // The pages of the last header line, section marker and booking; 0 before one.
+    int headerPage = 0;
+    int sectionPage = 0;
+    int bookingPage = 0;
+    for (int i = Math.max(0, from); i < Math.min(to, lines.size()); i++) {
+      PdfTextLine line = lines.get(i);
+      String text = line.text().strip();
+      if (text.isEmpty()) {
+        continue;
+      }
+      Matcher sectionMatch = section == null ? null : section.matcher(text);
+      if (sectionMatch != null && sectionMatch.find()) {
+        if (recordStart.matcher(text).find()) {
+          bookings.add(PdfBooking.noBooking(line, Kind.ALSO_SECTION_START));
+        }
+        String value = firstGroup(sectionMatch).orElse("");
+        if (value.equals(sectionValue) && line.page() > sectionPage && line.page() > bookingPage) {
+          sectionRepeated = true;
+        } else {
+          sectionValue = value;
+          sectionStart = true;
+          statedBalance = Optional.empty();
+          end(current);
+        }
+        sectionPage = line.page();
+        continue;
+      }
+      Optional<PdfColumns> header =
+          layout.hasHeaderLabels() ? PdfColumns.of(line, layout.headerLabels()) : Optional.empty();
+      if (header.isPresent()) {
+        if (recordStart.matcher(text).find()) {
+          bookings.add(PdfBooking.noBooking(line, Kind.ALSO_HEADER_LINE));
+        }
+        columns = header.get();
+        // The table header repeated at the top of the next page does not end a booking that
+        // continues there: its cells keep their own page's columns, its continuation lines are
+        // placed by this page's. Any other header line - on the booking's own page, or a second
+        // table on the next - ends it (PR #281 review).
+        if (current != null
+            && (current.line().page() == line.page() || headerPage == line.page())) {
+          end(current);
+        }
+        headerPage = line.page();
+        continue;
+      }
+      if (section != null && sectionValue == null) {
+        // Before the first section: a summary, no booking. A line the record-start pattern finds
+        // below a table header line, and that states no balance, is reported: it is a booking of a
+        // section whose title the section pattern missed, which would otherwise vanish without a
+        // trace. A dated line of the summary above any table header stays no row (PR #281 review).
+        if (columns != null
+            && recordStart.matcher(text).find()
+            && (balance == null || !balance.matcher(text).find())) {
+          bookings.add(PdfBooking.noBooking(line, Kind.BEFORE_FIRST_SECTION));
+        }
+        continue;
+      }
+      Matcher balanceMatch = balance == null ? null : balance.matcher(text);
+      if (balanceMatch != null && balanceMatch.find()) {
+        if (layout.balanceColumn() == null && recordStart.matcher(text).find()) {
+          bookings.add(PdfBooking.noBooking(line, Kind.ALSO_BALANCE_LINE));
+        }
+        Optional<String> stated = firstGroup(balanceMatch);
+        if (stated.isPresent()) {
+          statedBalance = stated;
+          // Below the section's last booking; at a section's start, the previous section's.
+          if (current != null && !sectionStart && !sectionRepeated) {
+            current.addBalanceAfter(line, stated.get());
+          }
+        }
+        if (current != null) {
+          current.balanceLine(line);
+        }
+      } else if (recordStart.matcher(text).find()) {
+        end(current);
+        current =
+            new PdfBooking(line, columns, sectionValue, sectionStart, statedBalance.orElse(null));
+        bookings.add(current);
+        sectionStart = false;
+        sectionRepeated = false;
+        statedBalance = Optional.empty();
+        bookingPage = line.page();
+      } else if (!furniture.contains(i) && current != null) {
+        current.resumeFor(line);
+        if (continuationEnd != null && continuationEnd.matcher(text).find()
+            || !continues(line, current, columns, layout, continuationLabel)) {
+          current.end();
+        } else if (current.continuationCount() >= ImportPdfLayout.MAX_CONTINUATION_LINES) {
+          current.endOverflowing();
+        } else {
+          current.continueWith(line);
+        }
+      }
+    }
     return bookings;
+  }
+
+  // Whether line continues booking: the layout has a continuation column and, when that is a
+  // header label and the line's positions are known, the line starts in that column.
+  private static boolean continues(
+      PdfTextLine line,
+      PdfBooking booking,
+      PdfColumns columns,
+      ImportPdfLayout layout,
+      int continuationLabel) {
+    if (layout.continuationColumn() == null || !booking.isOpen()) {
+      return false;
+    }
+    if (continuationLabel < 0 || columns == null || line.words().isEmpty()) {
+      return true;
+    }
+    return columns.columnOf(line.words().get(0)) == continuationLabel;
+  }
+
+  private static void end(PdfBooking booking) {
+    if (booking != null) {
+      booking.end();
+    }
+  }
+
+  // The cells of a walked booking, in the order of ImportPdfLayout#cellNames(): the row pattern's
+  // groups, the words under each header label, the section's value, with the continuation lines
+  // appended to the continuation column's cell. A line the row pattern misses, or that is no
+  // booking, keeps the whole line as its one cell.
+  private static ImportPdfBookingLine bookingLine(
+      PdfBooking booking, ImportPdfLayout layout, Pattern row) {
+    String line = booking.line().text().strip();
+    if (booking.kind() != Kind.BOOKING) {
+      return ImportPdfBookingLine.unread(line, NO_BOOKING_STATUS.get(booking.kind()));
+    }
+    Matcher match = row.matcher(line);
+    boolean matched = match.matches();
+    List<String> cells = new ArrayList<>();
+    if (matched) {
+      for (int group = 1; group <= match.groupCount(); group++) {
+        String cell = match.group(group);
+        cells.add(cell == null ? "" : cell);
+      }
+      if (layout.hasHeaderLabels()) {
+        cells.addAll(
+            booking
+                .columns()
+                .map(columns -> columns.cells(booking.line().words()))
+                .orElseGet(() -> Collections.nCopies(layout.headerLabels().size(), "")));
+      }
+      if (layout.sectionColumn() != null) {
+        cells.add(booking.section().orElse(""));
+      }
+      appendContinuation(cells, booking, layout);
+    } else {
+      cells.add(line);
+    }
+    return ImportPdfBookingLine.builder(line, cells, statusOf(matched, booking.overflowing()))
+        .withContinuation(booking.continuation().stream().map(next -> next.text().strip()).toList())
+        .withSectionStart(booking.sectionStart())
+        .withStatedBalance(booking.statedBalance().orElse(null))
+        .withBalancesAfter(
+            booking.balancesAfter().stream()
+                .map(below -> new ImportPdfBookingLine.BalanceLine(below.text(), below.balance()))
+                .toList())
+        .withHeaded(booking.columns().isPresent())
+        .build();
+  }
+
+  // The status of a booking line: a row pattern that misses it outweighs too many continuations.
+  private static Status statusOf(boolean matched, boolean overflowing) {
+    if (!matched) {
+      return Status.UNMATCHED;
+    }
+    return overflowing ? Status.CONTINUATION_TOO_LONG : Status.MATCHED;
+  }
+
+  // Each continuation line goes to the continuation column whole: its text may run on under the
+  // next column (a long IBAN under the reference), and where it starts already decided it is one.
+  private static void appendContinuation(
+      List<String> cells, PdfBooking booking, ImportPdfLayout layout) {
+    int cell = cellIndex(layout, layout.continuationColumn());
+    if (cell < 0) {
+      return;
+    }
+    StringBuilder value = new StringBuilder(cells.get(cell));
+    for (PdfTextLine next : booking.continuation()) {
+      String text = next.text().strip();
+      if (!value.isEmpty()) {
+        value.append(' ');
+      }
+      value.append(text);
+    }
+    cells.set(cell, value.toString());
+  }
+
+  // Where name is among the layout's cells, compared as the column mapping compares header cells;
+  // -1 for none.
+  private static int cellIndex(ImportPdfLayout layout, String name) {
+    return indexOfName(layout.cellNames(), name);
+  }
+
+  // Where name is among the header labels; -1 for none (also for a row pattern column).
+  private static int labelIndex(ImportPdfLayout layout, String name) {
+    return indexOfName(layout.headerLabels(), name);
+  }
+
+  private static int indexOfName(List<String> names, String name) {
+    if (name == null) {
+      return -1;
+    }
+    for (int i = 0; i < names.size(); i++) {
+      if (names.get(i) != null && names.get(i).strip().equalsIgnoreCase(name.strip())) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private static Pattern optionalPattern(String pattern) {
+    return pattern == null ? null : Re2Patterns.compile(pattern);
+  }
+
+  private static Optional<String> firstGroup(Matcher match) {
+    return match.groupCount() == 0 ? Optional.empty() : Optional.ofNullable(match.group(1));
   }
 
   /**
@@ -137,7 +416,7 @@ public class PdfImportReaderService {
    *     {@code IMPORT_PDF_BUSY} when no turn to read it comes free in time
    */
   public String readTextLayer(byte[] content) {
-    return readText(content, false);
+    return joined(readLines(content, false));
   }
 
   /**
@@ -146,17 +425,22 @@ public class PdfImportReaderService {
    * @throws ApiException as {@link #readTextLayer}, and as {@link LocalOcrService#recognizePages}
    */
   public String readScannedText(byte[] content) {
-    return readText(content, true);
+    return joined(readLines(content, true));
   }
 
-  private String readText(byte[] content, boolean ocr) {
+  // The lines one below the other, as read.
+  private static String joined(List<PdfTextLine> lines) {
+    return String.join("\n", lines.stream().map(PdfTextLine::text).toList());
+  }
+
+  private List<PdfTextLine> readLines(byte[] content, boolean ocr) {
     if (!isPdf(content)) {
       throw mismatch("The file is not a PDF, but this template reads PDF statements.");
     }
     acquireRead();
     AtomicBoolean turn = new AtomicBoolean(true);
     try {
-      return readTextHoldingTurn(content, ocr, turn);
+      return readLinesHoldingTurn(content, ocr, turn);
     } finally {
       releaseRead(turn);
     }
@@ -186,7 +470,7 @@ public class PdfImportReaderService {
     }
   }
 
-  private String readTextHoldingTurn(byte[] content, boolean ocr, AtomicBoolean turn) {
+  private List<PdfTextLine> readLinesHoldingTurn(byte[] content, boolean ocr, AtomicBoolean turn) {
     try (PDDocument document = BoundedPdfParser.load(content, new PdfStreamBudget(ocr))) {
       if (document.isEncrypted()) {
         throw malformed("The PDF is encrypted; export the statement without a password.", null);
@@ -205,7 +489,7 @@ public class PdfImportReaderService {
               MAX_TEXT,
               Duration.ofSeconds(
                   ocr ? LocalOcrService.DOCUMENT_TIMEOUT_SECONDS : READ_SECONDS_TEXT_LAYER));
-      return ocr ? recognize(document, budget, turn) : layerText(document, budget);
+      return ocr ? recognize(document, budget, turn) : layerLines(document, budget);
     } catch (PdfLimitException e) {
       throw overLimit(e);
     } catch (UncheckedIOException e) {
@@ -221,7 +505,7 @@ public class PdfImportReaderService {
   /**
    * Whether {@code text} is a statement of {@code layout}: it holds the document marker and at
    * least one line the record-start pattern finds. Detection's test - a weaker signal than a CSV
-   * file's header row, so a PDF template is never an exact header match (#268 adds one).
+   * file's header row; {@link #hasHeaderLine} is the stronger one.
    */
   public static boolean isLayoutOf(String text, ImportPdfLayout layout) {
     if (!hasMarker(text, layout)) {
@@ -229,6 +513,18 @@ public class PdfImportReaderService {
     }
     Pattern recordStart = Re2Patterns.compile(layout.recordStartPattern());
     return text.lines().anyMatch(line -> recordStart.matcher(line.strip()).find());
+  }
+
+  /**
+   * Whether {@code text} holds the header line of {@code layout}'s booking table: a line holding
+   * every header label in order; false for a layout without header labels. For a statement that
+   * {@link #isLayoutOf} accepts, detection's equivalent of a CSV file's exact header fingerprint. A
+   * statement holding the header line but no booking line is no match at all (PR #281 review), so
+   * detection asks {@link #isLayoutOf} first, and each statement's text is scanned once for each.
+   */
+  public static boolean hasHeaderLine(String text, ImportPdfLayout layout) {
+    return layout.hasHeaderLabels()
+        && text.lines().anyMatch(line -> PdfColumns.isHeaderLine(line, layout.headerLabels()));
   }
 
   /** Whether {@code content} starts like a PDF file. */
@@ -248,34 +544,27 @@ public class PdfImportReaderService {
     return text.contains(layout.documentMarker());
   }
 
-  private static ImportPdfBookingLine bookingLine(String line, Pattern row) {
-    Matcher match = row.matcher(line);
-    if (!match.matches()) {
-      return ImportPdfBookingLine.unmatched(line);
-    }
-    List<String> cells = new ArrayList<>(match.groupCount());
-    for (int group = 1; group <= match.groupCount(); group++) {
-      String cell = match.group(group);
-      cells.add(cell == null ? "" : cell);
-    }
-    return new ImportPdfBookingLine(line, cells, true);
-  }
-
   // Page by page, so a document with too much text, or too much to draw, stops at the limit.
-  private String layerText(PDDocument document, PdfReadBudget budget) throws IOException {
-    PDFTextStripper stripper = new BoundedTextStripper(budget);
+  private List<PdfTextLine> layerLines(PDDocument document, PdfReadBudget budget)
+      throws IOException {
+    BoundedTextStripper stripper = new BoundedTextStripper(budget);
     stripper.setSortByPosition(true);
-    StringBuilder text = new StringBuilder();
+    List<PdfTextLine> lines = new ArrayList<>();
+    long length = 0;
+    boolean blank = true;
     for (int page = 1; page <= document.getNumberOfPages(); page++) {
-      stripper.setStartPage(page);
-      stripper.setEndPage(page);
-      text.append(stripper.getText(document));
+      List<PdfTextLine> pageLines = stripper.readLines(document, page);
       budget.requireWithinLimits();
-      if (text.length() > MAX_TEXT) {
+      for (PdfTextLine line : pageLines) {
+        length += line.text().length() + 1;
+        blank &= line.text().isBlank();
+      }
+      if (length > MAX_TEXT) {
         throw overLimit(new PdfLimitException("The PDF holds more text than one statement may."));
       }
+      lines.addAll(pageLines);
     }
-    if (text.toString().isBlank()) {
+    if (blank) {
       throw new ImportFileRejectedException(
           ApiErrorCode.IMPORT_PDF_NO_TEXT,
           ocr.isEnabled()
@@ -284,12 +573,14 @@ public class PdfImportReaderService {
               : "The PDF has no text layer (a scanned document), and this server does not read"
                   + " scanned statements.");
     }
-    return text.toString();
+    return lines;
   }
 
   // Every page is checked before the first is rendered, and the read's turn is given back;
   // LocalOcrService then renders one page at a time, and only once it holds a recognition slot.
-  private String recognize(PDDocument document, PdfReadBudget budget, AtomicBoolean turn) {
+  // OCR gives text, no positions: every line is page 1's, without words or place on the page.
+  private List<PdfTextLine> recognize(
+      PDDocument document, PdfReadBudget budget, AtomicBoolean turn) {
     for (int i = 0; i < document.getNumberOfPages(); i++) {
       PDRectangle page = document.getPage(i).getCropBox();
       if (page.getWidth() > MAX_OCR_PAGE_POINTS || page.getHeight() > MAX_OCR_PAGE_POINTS) {
@@ -298,7 +589,9 @@ public class PdfImportReaderService {
     }
     releaseRead(turn);
     PDFRenderer renderer = new BoundedPdfRenderer(document, budget);
-    return ocr.recognizePages(document.getNumberOfPages(), page -> render(renderer, budget, page));
+    String text =
+        ocr.recognizePages(document.getNumberOfPages(), page -> render(renderer, budget, page));
+    return text.lines().map(line -> new PdfTextLine(1, line, List.of())).toList();
   }
 
   private static BufferedImage render(PDFRenderer renderer, PdfReadBudget budget, int page) {

@@ -73,7 +73,8 @@ class PdfImportReaderServiceTest {
 
   private final LocalOcrService ocr = mock(LocalOcrService.class);
   private final PdfImportReaderService reader = new PdfImportReaderService(ocr);
-  private final ImportFileParserService parser = new ImportFileParserService(reader);
+  private final ImportFileParserService parser =
+      new ImportFileParserService(reader, new PdfBalanceCheckService());
 
   @Test
   void textLayerBookingLinesParseThroughTheTemplateRules() throws IOException {
@@ -486,7 +487,10 @@ class PdfImportReaderServiceTest {
     List<ImportPdfBookingLine> lines =
         reader.readBookingLines(pdf(MARKER, "04.01. Invented", "05.01.Invented"), template);
 
-    assertThat(lines).extracting(ImportPdfBookingLine::matched).containsExactly(true, false);
+    assertThat(lines)
+        .extracting(ImportPdfBookingLine::status)
+        .containsExactly(
+            ImportPdfBookingLine.Status.MATCHED, ImportPdfBookingLine.Status.UNMATCHED);
     assertThat(lines.get(1).cells()).containsExactly("05.01.Invented");
   }
 

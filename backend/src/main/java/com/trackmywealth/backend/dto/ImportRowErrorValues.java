@@ -49,6 +49,41 @@ public final class ImportRowErrorValues {
    */
   public static final String LINE_UNMATCHED = "IMPORT_ROW_LINE_UNMATCHED";
 
+  /**
+   * {@code value, expected}: a PDF booking's running balance is not the balance before it plus its
+   * amount, so its amount or sign was misread - e.g. read from the wrong column (#268).
+   */
+  public static final String BALANCE_MISMATCH = "IMPORT_ROW_BALANCE_MISMATCH";
+
+  /**
+   * {@code value, expected}: a PDF balance line states another balance than the bookings above it
+   * lead to, so a booking between them was not read as one (PR #281 review). The row is the balance
+   * line itself, its raw data the line; the bookings around it keep their own status.
+   */
+  public static final String BALANCE_LINE_MISMATCH = "IMPORT_ROW_BALANCE_LINE_MISMATCH";
+
+  /**
+   * {@code value, pattern}: a PDF line that the record-start pattern finds, but another pattern of
+   * the layout too (a section's start, a header line of the header labels, or a balance line
+   * without a balance column to check it), so it was read as that pattern's line and not imported.
+   * One of the two is too broad (#268).
+   */
+  public static final String LINE_AMBIGUOUS = "IMPORT_ROW_LINE_AMBIGUOUS";
+
+  /**
+   * {@code value}: a PDF line that the record-start pattern finds before the first line the
+   * layout's section pattern finds, where no booking is read, so it was not imported. The section
+   * pattern may miss the first section's marker (PR #281 review).
+   */
+  public static final String LINE_BEFORE_SECTION = "IMPORT_ROW_LINE_BEFORE_SECTION";
+
+  /**
+   * {@code value, max}: more lines below a PDF booking would continue it than a booking may have
+   * ({@link ImportPdfLayout#MAX_CONTINUATION_LINES}) - likely the statement's own text, which the
+   * layout's continuation end pattern should end (PR #281 review).
+   */
+  public static final String CONTINUATION_TOO_LONG = "IMPORT_ROW_CONTINUATION_TOO_LONG";
+
   /** {@code column, value}: not a four-digit ISO 18245 merchant category code. */
   public static final String MCC_INVALID = "IMPORT_ROW_MCC_INVALID";
 }

@@ -92,10 +92,19 @@ public class ImportFileParserService {
   private static final String ARG_VALUE = "value";
   private static final Logger LOG = LoggerFactory.getLogger(ImportFileParserService.class);
 
-  private final PdfImportReaderService pdfReader;
+  /**
+   * #268: the raw data key of a PDF row's whole booking line, with its continuation lines below it
+   * - what the cells were cut from. No layout column or header label may take this name.
+   */
+  public static final String RAW_LINE_KEY = "#line";
 
-  public ImportFileParserService(PdfImportReaderService pdfReader) {
+  private final PdfImportReaderService pdfReader;
+  private final PdfBalanceCheckService balances;
+
+  public ImportFileParserService(
+      PdfImportReaderService pdfReader, PdfBalanceCheckService balances) {
     this.pdfReader = pdfReader;
+    this.balances = balances;
   }
 
   /**
@@ -114,7 +123,7 @@ public class ImportFileParserService {
     // #268: a PDF's booking lines, cut into the layout's named columns; null for a CSV file.
     List<ImportPdfBookingLine> bookingLines = null;
     if (template.isPdf()) {
-      header = template.pdfLayout().columns();
+      header = template.pdfLayout().cellNames();
       bookingLines = pdfReader.readBookingLines(content, template);
       if (bookingLines.size() > MAX_DATA_ROWS) {
         throw tooManyRows();
@@ -131,22 +140,59 @@ public class ImportFileParserService {
     DateTimeFormatter dateFormatter = dateFormatter(template.dateFormat());
     Map<String, String> typeMapping = normalizedTypeMapping(template.typeMapping());
 
+    // #268: the column of each booking's running balance, when the layout checks one; and the
+    // balance the bookings so far lead to, null while unknown.
+    int balanceColumn =
+        bookingLines == null || template.pdfLayout().balanceColumn() == null
+            ? -1
+            : columnIndex(template.pdfLayout().balanceColumn(), header);
+    BigDecimal running = null;
+
     List<ParsedImportRow> rows = new ArrayList<>(data.size());
     int rejected = 0;
     for (int i = 0; i < data.size(); i++) {
       List<String> record = data.get(i);
       Map<String, String> rawData = rawData(record, keys, template.hasHeaderRow());
+      ImportPdfBookingLine booking = bookingLines == null ? null : bookingLines.get(i);
+      if (booking != null) {
+        rawData.putIfAbsent(RAW_LINE_KEY, booking.fullText());
+      }
+      // Only a booking line reads and moves the running balance: a line read as another pattern's,
+      // or one before the first section, is none.
+      boolean checked = booking != null && balanceColumn >= 0 && booking.status().isBooking();
+      if (checked) {
+        running = balances.balanceBefore(booking, running, template);
+      }
       try {
-        if (bookingLines != null && !bookingLines.get(i).matched()) {
-          throw rowError(
-              ImportRowErrorValues.LINE_UNMATCHED, ARG_VALUE, bookingLines.get(i).line());
+        if (booking != null) {
+          requireBooking(booking);
         }
         CanonicalImportRow canonical =
             canonicalRow(record, template, columns, dateFormatter, typeMapping, accountCurrency);
-        rows.add(ParsedImportRow.parsed(i + 1, rawData, canonical));
+        if (checked) {
+          running =
+              balances.balanceAfter(
+                  running, canonical.amount(), optionalCell(record, balanceColumn), template);
+        }
+        rows.add(ParsedImportRow.parsed(rows.size() + 1, rawData, canonical));
       } catch (ImportRowRejectedException e) {
         rejected++;
-        rows.add(ParsedImportRow.error(i + 1, rawData, e.getCode(), e.getArgs()));
+        rows.add(ParsedImportRow.error(rows.size() + 1, rawData, e.getCode(), e.getArgs()));
+        if (checked) {
+          // Its amount is unknown, or not the one its balance shows: only the balance it states,
+          // if any, carries on.
+          running = balances.read(optionalCell(record, balanceColumn), template);
+        }
+      }
+      if (checked) {
+        List<ParsedImportRow> balanceLineErrors =
+            balances.balanceLineErrors(booking, running, rows.size() + 1, template);
+        rejected += balanceLineErrors.size();
+        rows.addAll(balanceLineErrors);
+        // A balance line's own error row counts against the file's limit like any other row.
+        if (rows.size() > MAX_DATA_ROWS) {
+          throw tooManyRows();
+        }
       }
     }
     if (LOG.isDebugEnabled()) {
@@ -156,8 +202,47 @@ public class ImportFileParserService {
           rows.size(),
           rejected);
     }
-    return new ImportParseResult(
-        header, hasFingerprint(template) ? fingerprint(header) : null, rows);
+    return new ImportParseResult(header, fileFingerprint(template, header, bookingLines), rows);
+  }
+
+  // The fingerprint of the header the file holds: a CSV file's header row; for a PDF, its layout's
+  // header labels, but only when the statement holds their header line (PR #281 review) - the
+  // labels come from the template, so without that line they say nothing about the file.
+  private static String fileFingerprint(
+      ImportTemplateDefinition template,
+      List<String> header,
+      List<ImportPdfBookingLine> bookingLines) {
+    if (bookingLines != null && bookingLines.stream().noneMatch(ImportPdfBookingLine::headed)) {
+      return null;
+    }
+    return headerFingerprint(template, header);
+  }
+
+  // #268: a line the reader did not read as a booking it could cut into cells is that row's error.
+  private static void requireBooking(ImportPdfBookingLine booking) {
+    ImportPdfBookingLine.Status status = booking.status();
+    if (status == ImportPdfBookingLine.Status.MATCHED) {
+      return;
+    }
+    // Ifs, not a switch: a switch on an enum compiles to a class of its own, which no service may
+    // hold (ArchitectureTest).
+    String line = booking.line();
+    if (status == ImportPdfBookingLine.Status.UNMATCHED) {
+      throw rowError(ImportRowErrorValues.LINE_UNMATCHED, ARG_VALUE, line);
+    }
+    if (status == ImportPdfBookingLine.Status.CONTINUATION_TOO_LONG) {
+      throw rowError(
+          ImportRowErrorValues.CONTINUATION_TOO_LONG,
+          ARG_VALUE,
+          line,
+          "max",
+          String.valueOf(ImportPdfLayout.MAX_CONTINUATION_LINES));
+    }
+    if (status == ImportPdfBookingLine.Status.BEFORE_FIRST_SECTION) {
+      throw rowError(ImportRowErrorValues.LINE_BEFORE_SECTION, ARG_VALUE, line);
+    }
+    throw rowError(
+        ImportRowErrorValues.LINE_AMBIGUOUS, ARG_VALUE, line, "pattern", status.otherPattern());
   }
 
   /**
@@ -192,12 +277,27 @@ public class ImportFileParserService {
   }
 
   /**
-   * Whether the template's header row identifies its files (FR-IMP-022): a CSV file's. A PDF
-   * template's columns are named by its own layout, not read from the file, so a fingerprint of
-   * them would identify nothing; #268 adds one from the statement's header labels.
+   * Whether the template's header row identifies its files (FR-IMP-022): a CSV file's, or a PDF
+   * statement's booking table header (its layout's header labels, #268). A PDF layout's other
+   * columns are named by the template, not read from the file, so they identify nothing.
    */
   public static boolean hasFingerprint(ImportTemplateDefinition template) {
-    return template.hasHeaderRow() && !template.isPdf();
+    if (template.isPdf()) {
+      return template.pdfLayout() != null && template.pdfLayout().hasHeaderLabels();
+    }
+    return template.hasHeaderRow();
+  }
+
+  /**
+   * The template's header fingerprint, per {@link #hasFingerprint}: of {@code headerColumns} for a
+   * CSV template, of the header labels for a PDF one; {@code null} for none.
+   */
+  public static String headerFingerprint(
+      ImportTemplateDefinition template, List<String> headerColumns) {
+    if (!hasFingerprint(template)) {
+      return null;
+    }
+    return fingerprint(template.isPdf() ? template.pdfLayout().headerLabels() : headerColumns);
   }
 
   /**
@@ -241,7 +341,7 @@ public class ImportFileParserService {
           "The file format must be one of " + ImportTemplateValues.FILE_FORMATS + ".");
     }
     if (template.isPdf()) {
-      validatePdfLayout(template.pdfLayout());
+      validatePdfLayout(template);
     } else if (template.pdfLayout() != null) {
       throw invalid("pdfLayout", "Only a PDF template has a PDF layout.");
     }
@@ -263,14 +363,16 @@ public class ImportFileParserService {
     validateCurrency(template);
     // A PDF's columns are its layout's: every mapping by name is checked against them.
     validateColumnMapping(
-        template, template.isPdf() ? template.pdfLayout().columns() : headerColumns);
+        template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
     validateTypeMapping(template.typeMapping());
   }
 
   // --- template rules ----------------------------------------------------------------------
 
-  // #268: the layout must name each capture group of a row pattern that RE2 can compile.
-  private static void validatePdfLayout(ImportPdfLayout layout) {
+  // #268: the layout must name each capture group of a row pattern that RE2 can compile, and its
+  // optional fields must name columns it has.
+  private static void validatePdfLayout(ImportTemplateDefinition template) {
+    ImportPdfLayout layout = template.pdfLayout();
     if (layout == null) {
       throw invalid("pdfLayout", "A PDF template needs a PDF layout.");
     }
@@ -280,14 +382,7 @@ public class ImportFileParserService {
     }
     Set<String> seen = new HashSet<>();
     for (String column : columns) {
-      if (column == null || column.isBlank() || !seen.add(normalize(column))) {
-        throw invalid("pdfLayout.columns", "Each column needs a name of its own.");
-      }
-      if (column.length() > ImportPdfLayout.MAX_COLUMN_NAME_LENGTH) {
-        throw invalid(
-            "pdfLayout.columns",
-            "A column name has at most " + ImportPdfLayout.MAX_COLUMN_NAME_LENGTH + " characters.");
-      }
+      requireCellName(column, seen, "pdfLayout.columns");
     }
     String marker = layout.documentMarker();
     if (marker == null || marker.isBlank() || marker.length() > ImportPdfLayout.MAX_MARKER_LENGTH) {
@@ -303,6 +398,91 @@ public class ImportFileParserService {
       throw invalid(
           "pdfLayout.rowPattern", "The row pattern needs exactly one capture group per column.");
     }
+    validateHeaderLabels(template, seen);
+    validateSections(layout, seen);
+    if (layout.balanceLinePattern() != null) {
+      requireNonBlankPattern(layout.balanceLinePattern(), "pdfLayout.balanceLinePattern");
+    }
+    requireCell(layout, layout.continuationColumn(), "pdfLayout.continuationColumn");
+    if (layout.continuationColumn() != null && template.isOcr()) {
+      // OCR reads every page as one text: a page footer cannot be told from a continuation line.
+      throw invalid(
+          "pdfLayout.continuationColumn",
+          "Continuation lines need each line's page, which only a text layer (PDF_TEXT) gives.");
+    }
+    if (layout.continuationEndPattern() != null) {
+      requireNonBlankPattern(layout.continuationEndPattern(), "pdfLayout.continuationEndPattern");
+      if (layout.continuationColumn() == null) {
+        throw invalid(
+            "pdfLayout.continuationEndPattern",
+            "A continuation end pattern ends continuation lines, which need a continuation"
+                + " column.");
+      }
+    }
+    requireCell(layout, layout.balanceColumn(), "pdfLayout.balanceColumn");
+  }
+
+  private static void validateHeaderLabels(ImportTemplateDefinition template, Set<String> seen) {
+    List<String> labels = template.pdfLayout().headerLabels();
+    if (labels.size() > ImportPdfLayout.MAX_COLUMNS) {
+      throw invalid(
+          "pdfLayout.headerLabels", "Name at most " + ImportPdfLayout.MAX_COLUMNS + " labels.");
+    }
+    if (!labels.isEmpty() && template.isOcr()) {
+      throw invalid(
+          "pdfLayout.headerLabels",
+          "Header labels locate columns by their place on the page, which only a text layer"
+              + " (PDF_TEXT) gives.");
+    }
+    for (String label : labels) {
+      requireCellName(label, seen, "pdfLayout.headerLabels");
+    }
+  }
+
+  private static void validateSections(ImportPdfLayout layout, Set<String> seen) {
+    int groups =
+        layout.sectionPattern() == null
+            ? 0
+            : requireNonBlankPattern(layout.sectionPattern(), "pdfLayout.sectionPattern");
+    if (layout.sectionColumn() != null) {
+      if (groups == 0) {
+        throw invalid(
+            "pdfLayout.sectionColumn",
+            "A section column holds the first capture group of the section pattern, which needs"
+                + " one.");
+      }
+      requireCellName(layout.sectionColumn(), seen, "pdfLayout.sectionColumn");
+    }
+  }
+
+  // A cell's name: not blank, not too long, no other cell's (compared as the mapping does), and not
+  // the raw data key of the whole line (PR #281 review).
+  private static void requireCellName(String name, Set<String> seen, String field) {
+    if (name == null || name.isBlank() || !seen.add(normalize(name))) {
+      throw invalid(field, "Each column needs a name of its own.");
+    }
+    if (normalize(name).equals(normalize(RAW_LINE_KEY))) {
+      throw invalid(field, "The name " + RAW_LINE_KEY + " is kept for the whole booking line.");
+    }
+    if (name.length() > ImportPdfLayout.MAX_COLUMN_NAME_LENGTH) {
+      throw invalid(
+          field,
+          "A column name has at most " + ImportPdfLayout.MAX_COLUMN_NAME_LENGTH + " characters.");
+    }
+  }
+
+  // An optional field naming a column: when set, one of the layout's cells.
+  private static void requireCell(ImportPdfLayout layout, String name, String field) {
+    if (name != null && matchesByName(name, layout.cellNames()).size() != 1) {
+      throw invalid(field, "Name one of the layout's columns or header labels.");
+    }
+  }
+
+  private static int requireNonBlankPattern(String pattern, String field) {
+    if (pattern != null && pattern.isBlank()) {
+      throw invalid(field, "The pattern must not be blank.");
+    }
+    return patternGroups(pattern, field);
   }
 
   // The capture groups of an RE2 pattern; a missing, too long, invalid or too large one is a 422.
@@ -965,7 +1145,8 @@ public class ImportFileParserService {
     return new ImportRowRejectedException(code, rowArgs(namesAndValues));
   }
 
-  private static Map<String, String> rowArgs(String... namesAndValues) {
+  // Package-private for PdfBalanceCheckService's row errors.
+  static Map<String, String> rowArgs(String... namesAndValues) {
     Map<String, String> args = new LinkedHashMap<>();
     for (int i = 0; i < namesAndValues.length; i += 2) {
       String value = namesAndValues[i + 1];

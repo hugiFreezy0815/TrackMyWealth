@@ -769,17 +769,115 @@ adds a confidence threshold below which a row is an error; while off, an OCR rea
 `IMPORT_OCR_UNAVAILABLE` and no `PDF_OCR` template can be saved (a 422 on `fileFormat`). A PDF
 template carries `pdf_layout`: column names (at most 100 characters each), a row
 pattern whose capture groups are the cells, a record-start pattern that marks booking lines, and
-a document marker the statement must contain. #268 extends the layout with further optional
-fields, never by changing these four. Both patterns are RE2 (linear-time matching, no
+a document marker the statement must contain. The text of each page is rebuilt line by line with
+every word's position on the page (PDFBox, sorted by position; the line text is exactly what
+PDFBox's text stripper writes, so a layout of these four fields reads as before). The optional
+fields add to those four without changing them (#268), all of them read in one pass over the
+lines:
+
+- `headerLabels` (text layer only, a 422 for `PDF_OCR`): the labels of the booking table's header
+  line. A line holding every label in order is a header line, never a booking, and sets the
+  columns for the lines below it: each label spans its words on the page, and a word of a booking
+  line is the cell of the label it overlaps most (the nearest when none), named by the label. So an
+  unsigned amount under `BELASTUNG` is a debit through the existing `SEPARATE_DEBIT_CREDIT` rule,
+  and a table that moves between pages is still read by its labels, never by coordinates. A word
+  is placed by position alone: text that runs on past its column's label (a long description
+  under `REFERENZ`) lands in the next column's cell, so a template maps a column such as the
+  external id only where the bank keeps its text within the column. A header line that the
+  record-start pattern finds too is the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the line, and
+  `headerLabels`): it still sets the columns, but a booking line holding every label would
+  otherwise vanish without a trace.
+- `continuationColumn`: lines after a booking line that are no booking are appended whole to that
+  column's cell (a counterparty, an IBAN). When it is a header label, only lines that start in its
+  column: a remark at the margin ends the booking. A header line ends the booking too, except the
+  table header the next page repeats at its top: a booking at the foot of a page continues below
+  it, its own cells read by its page's columns and its continuation lines placed by the next
+  page's. A second table header on that page ends it. Text layer only (a 422 for `PDF_OCR`): OCR
+  reads every page as one text, so it cannot tell a page footer from a continuation line. A
+  booking with more than 20 continuation lines is the row error `IMPORT_ROW_CONTINUATION_TOO_LONG`
+  rather than a row with the rest of the statement in its description.
+- `continuationEndPattern` (needs `continuationColumn`): a matching line that is no page furniture
+  ends the booking above it, and no line continues one until the next booking line - e.g. the
+  closing text after a statement's last booking, which a continuation column that is no header
+  label would otherwise append to it.
+- `sectionPattern` and `sectionColumn`: a matching line starts a section, and its first capture
+  group is the `sectionColumn` cell of the section's bookings (with currency mode `PER_ROW`, its
+  currency). Text before the first section, such as a summary page, is ignored, except a table
+  header line, so one header above all sections sets their columns. A line below such a table
+  header that the record-start pattern finds and no balance line pattern does is the row error
+  `IMPORT_ROW_LINE_BEFORE_SECTION` (the line): a section pattern that misses the first section's
+  title would otherwise drop that section's bookings without a trace. A dated line of the summary
+  above any table header stays no row; without header labels nothing tells it from a booking, so
+  such a layout reports none. A marker of the section's own
+  value at the top of a later page (no booking on that page before it) repeats the section's title
+  there and does not start it again: the running balance goes on, and a booking at the foot of the
+  page before keeps its continuation lines. A balance line between such a marker and the next
+  booking only states the balance that booking starts from, as at a section's start, since the
+  marker may also open a new section of the same value (a second account in that currency).
+  Nothing else tells the two apart: a second section of the same value that opens at a page's top
+  without such a balance line continues the running balance of the section before, so its first
+  booking is the row error `IMPORT_ROW_BALANCE_MISMATCH` - reported, never imported unchecked. A
+  marker below a booking on its page always starts a new section. A section's start
+  that the record-start pattern finds too is also the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the
+  line, and `sectionPattern`): it starts the section, but a booking a too-broad section pattern
+  takes would otherwise vanish, since a section starts with no balance to check it against.
+- `balanceLinePattern` and `balanceColumn`: a matching line states a balance (its first capture
+  group) and is never a booking. Each booking is checked against the balance before it (the one
+  stated since the last booking, or the last booking's): stated balance = balance before + amount,
+  compared exactly. A mismatch is the row error `IMPORT_ROW_BALANCE_MISMATCH`, which catches an
+  amount or sign read from the wrong column; the next booking starts from the balance the statement
+  prints, so one misread row does not fail the rows after it. A section starts with no balance.
+  A balance line below a booking (before the next booking of its section, e.g. the section's
+  closing balance) must state the balance the bookings lead to; otherwise the balance line is an
+  error row of its own, `IMPORT_ROW_BALANCE_LINE_MISMATCH` with the line as its raw data, since a
+  booking above it was not read as one - for instance a line the balance line pattern took for its
+  own. The bookings around it keep their own status, so the ones read correctly still import. A
+  balance that the template's amount rule does not read (e.g. a trailing minus, `1.234,56-`, or a
+  debit suffix, `1.234,56 S`) states nothing, in the balance column as on a balance line: it checks
+  nothing, the booking beside it keeps its own status (the balance column only checks the
+  amounts), and the running balance goes on from the booking's amount, so the next balance that is
+  an amount checks that booking too. Without `balanceColumn`, nothing
+  checks a balance line, so one the record-start pattern finds too (e.g. a dated opening entry) is
+  also the row error `IMPORT_ROW_LINE_AMBIGUOUS` (the line, and `balanceLinePattern`), never a
+  silently skipped booking. Every PDF row counts against the file's row limit, a balance line's
+  error row included; a PDF row's number is its place among the rows, not an index into the
+  statement's booking lines. Carry-forward lines that state the balance at a page break (e.g.
+  `Uebertrag`) belong in this pattern: their amount changes from page to page, so they are no page
+  furniture, and a continuation column would otherwise append them to the page's last booking. As
+  balance lines they continue no booking, and with `balanceColumn` the one below a booking is
+  checked like a closing balance. A balance line pauses the booking above it: lines below it on
+  that page no longer continue it, but a balance line at the top of a later page, before any
+  booking there, carries it over, so a booking split across the page keeps the continuation lines
+  below the carry-forward line on the next page. The amount representation applies to balances
+  too: with `NEGATIVE_IN_PARENTHESES`, `(1,100.00)` is a negative balance.
+
+Lines repeated in the top or bottom three lines of every page, or every page but one, are page
+furniture and never continue a booking. In a text layer the line must also sit at the same place
+on those pages, within 6 points of the same distance from the page's top or from its bottom edge:
+a page header or footer is printed at a fixed place (a footer keeps its distance from the bottom
+also on a portrait first page before landscape ones), while a counterparty that happens to end a
+booking at the foot of each page moves with the bookings above it and stays in its booking. Only
+page numbers set their digits aside - `Seite 2 von 3`, `Page 2/3`, `Blatt 2`, `S. 2` anywhere in
+the line, or a line that is just `2/3` or `- 2 -`; dates, transaction references and account
+identifiers must repeat exactly, so distinct references at the foot of each page remain in their
+bookings. A word's text is the text the line holds for it, a ligature glyph resolved (`ﬁ` reads
+`fi`), so a header label is found on the page exactly as detection finds it in the text. A line a
+pattern marks as a booking, balance, section or header is never furniture, so no booking is ever
+dropped as one. A row's raw data also keeps the whole booking line with its continuation lines,
+under `#line`, a name no layout column or header label may take. All patterns are RE2 (linear-time matching, no
 backreferences), so a member's pattern cannot backtrack catastrophically; RE2 is linear in its
 compiled program too, so a pattern whose program would exceed 2,000 instructions
 (`Re2Patterns`, e.g. nested counted repeats) is refused with a 422. From the cut columns on,
 a PDF row goes through exactly the CSV rules; a booking line the row pattern misses is the row
-error `IMPORT_ROW_LINE_UNMATCHED`. The layout's column names act as the stored header columns, but a PDF template stores no
-`header_fingerprint`: those names come from the template, not the file, so they identify nothing.
+error `IMPORT_ROW_LINE_UNMATCHED`. The layout's cell names (its columns, then its header labels,
+then its section column) act as the stored header columns. A dry run reports the header
+fingerprint of a PDF only when the statement holds the header line of its labels. A PDF template stores a
+`header_fingerprint` only of its header labels, the one part of its names read from the file;
+without labels, it stores none.
 Detection differs from CSV: a PDF has no header row to read, so a `PDF_TEXT` template is a
-candidate when the statement holds its marker and at least one booking line, never an exact header
-match (#268 adds a fingerprint of the booking table's header labels). The PDF is read once per
+candidate when the statement holds its marker and at least one booking line, and an exact header
+match when it also holds the header line of the layout's labels (a layout without labels is never
+one; a statement with the header line but no booking line is no candidate at all). The PDF is read once per
 detection, however many PDF templates there are; an OCR template is never a candidate (OCR per
 candidate is too slow). A PDF without a text layer is therefore a 422 `IMPORT_PDF_NO_TEXT` from
 detection, not an empty list, so the member learns why no template fits. Limits: 20 pages, no encrypted PDF, no damaged PDF (it is parsed strictly,
