@@ -29,6 +29,7 @@ final class CurrentVersion {
           "categorization_rule",
           "fx_import_setting",
           "import_template",
+          "import_batch",
           "reconciliation_result",
           "settlement_match",
           "sharing_grant",

@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -138,6 +140,20 @@ public class TransferDetectionService {
     }
     lockForWrite(written);
     detectAroundLocked(written.getWorkspace().getId(), bookedOn);
+  }
+
+  /**
+   * US-07-04: {@link #detectAfterWrite} for rows written to {@code written} on several dates at
+   * once - an import batch - under one lock, once per date rather than once per row.
+   */
+  @Transactional
+  public void detectAfterWrites(Account written, Collection<LocalDate> bookedOn) {
+    if (written.isHasStatementCycle()) {
+      return;
+    }
+    lockForWrite(written);
+    UUID workspaceId = written.getWorkspace().getId();
+    new TreeSet<>(bookedOn).forEach(date -> detectAroundLocked(workspaceId, date));
   }
 
   /**

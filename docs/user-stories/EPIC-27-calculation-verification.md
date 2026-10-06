@@ -72,6 +72,10 @@ clear.
 | V-20 Debit/credit-column CSV, trailing summary row | EPIC 07, US-07-04 |
 | V-21 Institution changes export format between imports | EPIC 07, US-07-03/04 |
 
+Automated so far: V-18 to V-21 in `ImportBatchControllerTest` (#230), on the synthetic fixtures
+`backend/src/test/resources/import/swiss-cash-iso-8859-1.csv` (V-19) and
+`german-cash-utf8-bom.csv` (V-19, V-20); V-18 and V-21 build their files in the test.
+
 ---
 
 ## US-27-02 — Documented calculation methodology (net worth, TWR, MWR, cost basis, FX, ...)

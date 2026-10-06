@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
+import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
 import com.trackmywealth.backend.entity.Transaction;
 import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
@@ -592,4 +593,41 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param(AFTER) LocalDate after,
       @Param(AS_OF) LocalDate asOf,
       @Param("amount") BigDecimal amount);
+
+  /**
+   * US-07-04 duplicate rule 1: the account's rows of {@code source} that carry one of {@code
+   * externalIds}. Every row counts, voided and soft-deleted ones too: {@code
+   * uq_transaction_external_id} holds their keys as well, so the import could not insert them.
+   */
+  @Query(
+      value =
+          "SELECT t.id AS id, t.booking_date AS bookingDate, t.amount AS amount,"
+              + " t.currency AS currency, t.merchant_description AS merchantDescription,"
+              + " t.source AS source, t.external_id AS externalId"
+              + " FROM transaction t WHERE t.account_id = :accountId AND t.source = :source"
+              + " AND t.external_id IN (:externalIds)",
+      nativeQuery = true)
+  List<ImportDuplicateCandidate> findByExternalIds(
+      @Param(ACCOUNT_ID) UUID accountId,
+      @Param("source") String source,
+      @Param("externalIds") Collection<String> externalIds);
+
+  /**
+   * US-07-04 duplicate rule 2: the account's live rows booked from {@code from} to {@code to} -
+   * neither soft-deleted, voided, a reversal nor a reconciliation adjustment, of any source. Read
+   * through {@code idx_transaction_account_date}; the rest of the match is compared in memory.
+   */
+  @Query(
+      value =
+          "SELECT t.id AS id, t.booking_date AS bookingDate, t.amount AS amount,"
+              + " t.currency AS currency, t.merchant_description AS merchantDescription,"
+              + " t.source AS source, t.external_id AS externalId"
+              + " FROM transaction t WHERE t.account_id = :accountId"
+              + " AND t.booking_date BETWEEN :from AND :to"
+              + " AND t.deleted_at IS NULL AND t.voided_at IS NULL"
+              + " AND t.replaces_transaction_id IS NULL AND t.reconciliation_result_id IS NULL"
+              + " ORDER BY t.created_at, t.id",
+      nativeQuery = true)
+  List<ImportDuplicateCandidate> findLiveForDuplicateCheck(
+      @Param(ACCOUNT_ID) UUID accountId, @Param(FROM) LocalDate from, @Param("to") LocalDate to);
 }

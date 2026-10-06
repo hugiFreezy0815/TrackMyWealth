@@ -84,7 +84,10 @@ class CrossTenantIsolationTest {
           "category",
           "workspace_category_override",
           "categorization_rule",
-          "import_template");
+          "import_template",
+          "import_batch",
+          "import_file",
+          "import_row_raw");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -254,6 +257,57 @@ class CrossTenantIsolationTest {
 
     assertThat(rowVisibleUnderContext(workspaceAId, "reconciliation_result", resultAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "reconciliation_result", resultAId)).isFalse();
+  }
+
+  // US-07-04 (#230): an import batch, its stored file and its rows are raw bank data. The file and
+  // the rows carry a workspace policy of their own (V67) rather than relying on their batch's.
+  @Test
+  void importBatchFileAndRowsAreInvisibleAcrossWorkspaces() throws Exception {
+    UUID batchAId = insertImportBatch(workspaceAId, accountAId);
+    UUID rowAId = UUID.randomUUID();
+    rowsCommittedUnderContext(
+        workspaceAId,
+        "INSERT INTO import_file (import_batch_id, workspace_id, content, sha256, size_bytes)"
+            + " VALUES (?, ?, ?, repeat('a', 64), 3)",
+        batchAId,
+        workspaceAId,
+        new byte[] {1, 2, 3});
+    rowsCommittedUnderContext(
+        workspaceAId,
+        "INSERT INTO import_row_raw (id, import_batch_id, workspace_id, row_number, raw_data,"
+            + " parse_status) VALUES (?, ?, ?, 1, '{}', 'PARSED')",
+        rowAId,
+        batchAId,
+        workspaceAId);
+
+    assertThat(rowVisibleUnderContext(workspaceAId, "import_batch", batchAId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "import_batch", batchAId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceAId, "import_row_raw", rowAId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "import_row_raw", rowAId)).isFalse();
+    assertThat(importFileVisibleUnderContext(workspaceAId, batchAId)).isTrue();
+    assertThat(importFileVisibleUnderContext(workspaceBId, batchAId)).isFalse();
+
+    // Neither read nor changed nor removed from the other workspace.
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceBId, "UPDATE import_row_raw SET included = TRUE WHERE id = ?", rowAId))
+        .isZero();
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceBId, "DELETE FROM import_file WHERE import_batch_id = ?", batchAId))
+        .isZero();
+    // Nor written into it: a row naming workspace A fails B's policy check.
+    assertThatThrownBy(
+            () ->
+                rowsChangedUnderContext(
+                    workspaceBId,
+                    "INSERT INTO import_row_raw (id, import_batch_id, workspace_id, row_number,"
+                        + " raw_data, parse_status) VALUES (?, ?, ?, 2, '{}', 'PARSED')",
+                    UUID.randomUUID(),
+                    batchAId,
+                    workspaceAId))
+        .isInstanceOf(SQLException.class)
+        .hasMessageContaining("row-level security");
   }
 
   // US-25-04: an opening balance is an account_snapshot row like any other, under the same policy -
@@ -721,6 +775,35 @@ class CrossTenantIsolationTest {
       connection.commit();
     }
     return resultId;
+  }
+
+  private UUID insertImportBatch(UUID workspaceId, UUID accountId) throws Exception {
+    UUID batchId = UUID.randomUUID();
+    rowsCommittedUnderContext(
+        workspaceId,
+        "INSERT INTO import_batch (id, workspace_id, account_id) VALUES (?, ?, ?)",
+        batchId,
+        workspaceId,
+        accountId);
+    return batchId;
+  }
+
+  // import_file is keyed by its batch, not by an id column of its own.
+  private boolean importFileVisibleUnderContext(UUID contextWorkspaceId, UUID batchId)
+      throws Exception {
+    try (Connection connection = testRoleConnection()) {
+      connection.setAutoCommit(false);
+      setWorkspaceContext(connection, contextWorkspaceId);
+      try (PreparedStatement statement =
+          connection.prepareStatement("SELECT 1 FROM import_file WHERE import_batch_id = ?")) {
+        statement.setObject(1, batchId);
+        try (ResultSet resultSet = statement.executeQuery()) {
+          boolean visible = resultSet.next();
+          connection.rollback();
+          return visible;
+        }
+      }
+    }
   }
 
   // A shipped template (null workspace) can only be written past RLS, as the reference data

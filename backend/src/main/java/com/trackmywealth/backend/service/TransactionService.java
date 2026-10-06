@@ -4,6 +4,8 @@ import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.ForeignCurrencyResolution;
+import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
+import com.trackmywealth.backend.dto.ImportLedgerRow;
 import com.trackmywealth.backend.dto.LatestCategoryAssignment;
 import com.trackmywealth.backend.dto.TransactionRemovalValues;
 import com.trackmywealth.backend.dto.TransactionResponse;
@@ -17,11 +19,15 @@ import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.TransactionCategorizationLogRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Currency;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -156,6 +162,8 @@ public class TransactionService {
   // taken from the request: newest booking first, with created_at and id as tie-breakers so paging
   // is stable across rows booked on the same day.
   private static final int MAX_PAGE_SIZE = 200;
+  // #230: how many imported rows are inserted and categorized before they are detached.
+  private static final int IMPORT_CHUNK_SIZE = 500;
   private static final Sort LEDGER_ORDER =
       Sort.by(Sort.Order.desc("bookingDate"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
 
@@ -176,6 +184,7 @@ public class TransactionService {
   private final AccountDataQualityService accountDataQualityService;
   private final ReconciliationService reconciliationService;
   private final ReconciliationAdjustmentService reconciliationAdjustmentService;
+  private final EntityManager entityManager;
 
   public TransactionService(
       AccountLookupService accountLookupService,
@@ -194,7 +203,8 @@ public class TransactionService {
       VersionPreconditionService versionPreconditionService,
       AccountDataQualityService accountDataQualityService,
       ReconciliationService reconciliationService,
-      ReconciliationAdjustmentService reconciliationAdjustmentService) {
+      ReconciliationAdjustmentService reconciliationAdjustmentService,
+      EntityManager entityManager) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -212,6 +222,7 @@ public class TransactionService {
     this.accountDataQualityService = accountDataQualityService;
     this.reconciliationService = reconciliationService;
     this.reconciliationAdjustmentService = reconciliationAdjustmentService;
+    this.entityManager = entityManager;
   }
 
   /**
@@ -291,10 +302,7 @@ public class TransactionService {
     // previously
     // needed no such lookup, and still doesn't.
     boolean isCardPurchase = CREDIT_CARD_PURCHASE.equals(request.transactionType());
-    AccountCreditCard cardExtension =
-        isCardPurchase && account.isHasStatementCycle()
-            ? accountCreditCardRepository.findById(accountId).orElse(null)
-            : null;
+    AccountCreditCard cardExtension = cardExtensionFor(account, request);
     boolean foreignCurrency = validate(account, cardExtension, request);
     if (request.securityId() != null && !securityRepository.existsById(request.securityId())) {
       // Same answer as a snapshot holding (US-25-01): the master is shared, and the id reveals
@@ -311,46 +319,16 @@ public class TransactionService {
     String accountCurrency =
         cardExtension != null ? cardExtension.getBillingCurrency() : account.getNativeCurrency();
 
-    Transaction transaction = new Transaction();
-    transaction.setWorkspace(account.getWorkspace());
-    transaction.setAccount(account);
-    transaction.setTransactionType(request.transactionType());
-    transaction.setBookingDate(request.bookingDate());
-    transaction.setAmount(request.amount());
-    transaction.setCurrency(request.currency());
-    transaction.setMerchantDescription(request.merchantDescription());
-    transaction.setNotes(request.notes());
-    transaction.setSource(source);
+    Transaction transaction = newTransaction(account, request, source, rawSourceData, actor);
     transaction.setExternalId(allowReplay ? request.externalId() : null);
     transaction.setCorrectsTransactionId(correctsTransactionId);
-    // FR-CC-002/RULE-011: the MCC is source data, kept in raw_source_data - category_id is a
-    // separate column a later categorization writes, so neither can overwrite the other.
-    transaction.setRawSourceData(sourceDataWithMcc(rawSourceData, request.mcc()));
-    transaction.setCreatedBy(actor.userId());
-    transaction.setSecurityId(request.securityId());
-    transaction.setQuantity(request.quantity());
-    transaction.setUnitPrice(request.unitPrice());
-    transaction.setTradeDate(request.tradeDate());
-    transaction.setSettlementDate(request.settlementDate());
-    transaction.setGrossAmount(request.grossAmount());
-    transaction.setTaxWithheldAmount(request.taxWithheldAmount());
-    // Only a dividend with its withholding disclosed has a known net that differs from "amount
-    // received"; without the gross, amount is simply what arrived.
-    transaction.setNetAmount(request.grossAmount() == null ? null : request.amount());
-    if (!isCardPurchase) {
-      // A trade's costs are part of its own row; a card purchase's fee becomes a FEE row below.
-      transaction.setFeeAmount(request.feeAmount());
-    }
     if (counterparty != null) {
       // Linked from the start: a manual two-sided transfer never waits for matching (DM-05).
       transaction.setInternalTransfer(true);
       transaction.setCounterpartyAccountId(counterparty.getId());
     }
     if (foreignCurrency) {
-      ForeignCurrencyResolution resolution = resolveForeignCurrency(accountCurrency, request);
-      transaction.setFxRateToAccountCurrency(resolution.rate());
-      transaction.setFxRateDate(request.bookingDate());
-      transaction.setFxRateEstimated(resolution.estimated());
+      applyForeignCurrency(transaction, accountCurrency, request);
     }
 
     // flush, not a plain save: forces the INSERT (and any constraint/trigger rejection) to happen
@@ -396,6 +374,150 @@ public class TransactionService {
           counterparty, request.bookingDate(), actor.userId());
     }
     return toResponse(saved, assignedBy.orElse(null));
+  }
+
+  /**
+   * US-07-04: throws exactly what {@link #recordTransaction} would throw for {@code request} on
+   * {@code account}, without writing anything - short of the exchange rate of a foreign-currency
+   * row, which an import looks up once per currency and date itself. The import preview turns the
+   * refusal into an error row instead of letting the commit fail on it.
+   *
+   * @return the currency a foreign-currency row is converted into (the account's, or a card's
+   *     billing currency for a purchase); empty when the row is in it already
+   */
+  // Deliberately not @Transactional: it throws by design, and a transactional method that throws
+  // marks the import's surrounding transaction rollback-only.
+  public Optional<String> requireRecordable(Account account, CreateTransactionRequest request) {
+    AccountCreditCard cardExtension = cardExtensionFor(account, request);
+    if (!validate(account, cardExtension, request)) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        cardExtension != null ? cardExtension.getBillingCurrency() : account.getNativeCurrency());
+  }
+
+  /**
+   * US-07-04: records the included rows of one import batch through the same rules and the same row
+   * building as {@link #recordTransaction} - validation, categorization, the exchange rate of a
+   * foreign-currency row - tagged with {@code importBatchId}, {@code source} and each row's
+   * external id, in the caller's transaction. A row the ledger refuses fails the whole batch.
+   * Settlement and transfer detection and the reconciliation run once for the batch, after every
+   * row is inserted, not once per row; categorization loads its rules once (FR-IMP-005).
+   *
+   * <p>The caller has checked that {@code actor} may write to {@code account}. An import row never
+   * names a counterparty account or a fee, so neither a transfer's credit leg nor a card purchase's
+   * FEE row is written.
+   *
+   * @return the new rows, in the order of {@code rows}
+   */
+  @Transactional
+  public List<Transaction> recordImported(
+      Account account,
+      List<ImportLedgerRow> rows,
+      UUID importBatchId,
+      String source,
+      AuthenticatedUserPrincipal actor) {
+    AccountCreditCard card =
+        account.isHasStatementCycle()
+            ? accountCreditCardRepository.findById(account.getId()).orElse(null)
+            : null;
+    List<Transaction> recorded = new ArrayList<>(rows.size());
+    Map<String, Optional<FuzzyCategoryCandidate>> fuzzyByMerchant = new HashMap<>();
+    // In chunks, each detached once inserted and categorized: a flush checks every entity the
+    // session holds, so thousands of managed rows would make each later flush slower (#230).
+    for (int from = 0; from < rows.size(); from += IMPORT_CHUNK_SIZE) {
+      List<Transaction> chunk = new ArrayList<>(IMPORT_CHUNK_SIZE);
+      for (ImportLedgerRow row :
+          rows.subList(from, Math.min(from + IMPORT_CHUNK_SIZE, rows.size()))) {
+        CreateTransactionRequest request = row.request();
+        AccountCreditCard cardExtension =
+            CREDIT_CARD_PURCHASE.equals(request.transactionType()) ? card : null;
+        boolean foreignCurrency = validate(account, cardExtension, request);
+        Transaction transaction =
+            newTransaction(account, request, source, row.rawSourceData(), actor);
+        transaction.setExternalId(request.externalId());
+        transaction.setImportBatchId(importBatchId);
+        if (foreignCurrency) {
+          applyForeignCurrency(
+              transaction,
+              cardExtension != null
+                  ? cardExtension.getBillingCurrency()
+                  : account.getNativeCurrency(),
+              request);
+        }
+        chunk.add(transactionRepository.save(transaction));
+      }
+      // One flush per chunk: any constraint or trigger rejection still surfaces here.
+      transactionRepository.flush();
+      categorizationService.categorizeAll(chunk, fuzzyByMerchant);
+      chunk.forEach(entityManager::detach);
+      recorded.addAll(chunk);
+    }
+    if (recorded.isEmpty()) {
+      return recorded;
+    }
+    Set<LocalDate> bookedOn =
+        recorded.stream().map(Transaction::getBookingDate).collect(Collectors.toSet());
+    LocalDate earliest = Collections.min(bookedOn);
+    settlementDetectionService.detectAfterWrite(account, earliest);
+    transferDetectionService.detectAfterWrites(account, bookedOn);
+    reconciliationService.reconcileAfterLedgerChange(account, earliest, actor.userId());
+    return recorded;
+  }
+
+  // The new row for request as every writer here builds it; the caller adds its links (external
+  // id, correction, transfer counterparty) and the exchange rate.
+  private Transaction newTransaction(
+      Account account,
+      CreateTransactionRequest request,
+      String source,
+      String rawSourceData,
+      AuthenticatedUserPrincipal actor) {
+    Transaction transaction = new Transaction();
+    transaction.setWorkspace(account.getWorkspace());
+    transaction.setAccount(account);
+    transaction.setTransactionType(request.transactionType());
+    transaction.setBookingDate(request.bookingDate());
+    transaction.setAmount(request.amount());
+    transaction.setCurrency(request.currency());
+    transaction.setMerchantDescription(request.merchantDescription());
+    transaction.setNotes(request.notes());
+    transaction.setSource(source);
+    // FR-CC-002/RULE-011: the MCC is source data, kept in raw_source_data - category_id is a
+    // separate column a later categorization writes, so neither can overwrite the other.
+    transaction.setRawSourceData(sourceDataWithMcc(rawSourceData, request.mcc()));
+    transaction.setCreatedBy(actor.userId());
+    transaction.setSecurityId(request.securityId());
+    transaction.setQuantity(request.quantity());
+    transaction.setUnitPrice(request.unitPrice());
+    transaction.setTradeDate(request.tradeDate());
+    transaction.setSettlementDate(request.settlementDate());
+    transaction.setGrossAmount(request.grossAmount());
+    transaction.setTaxWithheldAmount(request.taxWithheldAmount());
+    // Only a dividend with its withholding disclosed has a known net that differs from "amount
+    // received"; without the gross, amount is simply what arrived.
+    transaction.setNetAmount(request.grossAmount() == null ? null : request.amount());
+    if (!CREDIT_CARD_PURCHASE.equals(request.transactionType())) {
+      // A trade's costs are part of its own row; a card purchase's fee becomes a FEE row.
+      transaction.setFeeAmount(request.feeAmount());
+    }
+    return transaction;
+  }
+
+  private void applyForeignCurrency(
+      Transaction transaction, String accountCurrency, CreateTransactionRequest request) {
+    ForeignCurrencyResolution resolution = resolveForeignCurrency(accountCurrency, request);
+    transaction.setFxRateToAccountCurrency(resolution.rate());
+    transaction.setFxRateDate(request.bookingDate());
+    transaction.setFxRateEstimated(resolution.estimated());
+  }
+
+  // Only a CREDIT_CARD_PURCHASE on a card needs the card's billing currency (see
+  // recordTransaction).
+  private AccountCreditCard cardExtensionFor(Account account, CreateTransactionRequest request) {
+    return CREDIT_CARD_PURCHASE.equals(request.transactionType()) && account.isHasStatementCycle()
+        ? accountCreditCardRepository.findById(account.getId()).orElse(null)
+        : null;
   }
 
   /**

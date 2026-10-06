@@ -8,6 +8,7 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.ImportRowRawRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -65,6 +66,7 @@ public class ReconciliationService {
   private final AccountSnapshotRepository snapshotRepository;
   private final TransactionRepository transactionRepository;
   private final ReconciliationResultRepository resultRepository;
+  private final ImportRowRawRepository importRowRawRepository;
   private final Clock clock;
 
   public ReconciliationService(
@@ -72,11 +74,13 @@ public class ReconciliationService {
       AccountSnapshotRepository snapshotRepository,
       TransactionRepository transactionRepository,
       ReconciliationResultRepository resultRepository,
+      ImportRowRawRepository importRowRawRepository,
       Clock clock) {
     this.accessControlService = accessControlService;
     this.snapshotRepository = snapshotRepository;
     this.transactionRepository = transactionRepository;
     this.resultRepository = resultRepository;
+    this.importRowRawRepository = importRowRawRepository;
     this.clock = clock;
   }
 
@@ -350,6 +354,15 @@ public class ReconciliationService {
     if (transactionRepository.existsDuplicateEntrySignature(
         account.getId(), periodStart, snapshot.getSnapshotDate(), missing.negate())) {
       return ReconciliationResultValues.CAUSE_DUPLICATE_ENTRY;
+    }
+    // #230: the missing booking is in an import of the account that did not reach the ledger.
+    if (importRowRawRepository.existsNotImportedRow(
+        account.getId(),
+        periodStart,
+        snapshot.getSnapshotDate(),
+        missing,
+        account.getNativeCurrency())) {
+      return ReconciliationResultValues.CAUSE_MISSING_TRANSACTION;
     }
     BigDecimal absolute = missing.abs();
     if (absolute.compareTo(FX_ROUNDING_LIMIT) <= 0

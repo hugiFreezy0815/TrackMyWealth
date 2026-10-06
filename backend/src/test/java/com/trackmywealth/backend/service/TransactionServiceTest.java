@@ -20,6 +20,7 @@ import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.TransactionCategorizationLogRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -69,7 +70,8 @@ class TransactionServiceTest {
           new VersionPreconditionService(),
           mock(AccountDataQualityService.class),
           mock(ReconciliationService.class),
-          mock(ReconciliationAdjustmentService.class));
+          mock(ReconciliationAdjustmentService.class),
+          mock(EntityManager.class));
 
   private Account depot;
 

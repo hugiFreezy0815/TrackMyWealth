@@ -70,6 +70,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V64` | Import template versioning: `template_family_id`, `is_current` (one current version per family, `uq_import_template_family_current`), `is_active`, `header_columns`, `version` + `import_template_bump_version`, and a check on the row-skipping counts (#229) |
 | `V65` | `category` and `import_template`: V20's shared-or-own policy split per command - every workspace reads the shipped rows (`workspace_id IS NULL`), but `INSERT`/`UPDATE`/`DELETE` reach its own rows only. V20 let a workspace delete a shipped row and move a shipped template into its own workspace (#279) |
 | `V66` | `import_template.file_format` (`CSV`, `PDF_TEXT`, `PDF_OCR`) and `pdf_layout` (required exactly for PDF) (#268, #276) |
+| `V67` | Import batches (US-07-04, #230): `import_file` (the original file, own RLS policy), `import_batch.version` + `import_batch_bump_version`, `file_sha256`, `source_kind`; `import_row_raw.workspace_id` + RLS policy, `included`, `duplicate_of_transaction_id`, `warning_codes`, `error_code`/`error_args`, the canonical values (`canonical_data`, `booking_date`, `amount`, `currency`), and `raw_data` as `JSON` so the cells keep their order |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -900,6 +901,67 @@ recognition (up to two minutes) holds only its OCR slot. A readable PDF over any
 is a 422 `IMPORT_PDF_LIMIT_EXCEEDED` (a shorter export helps); a damaged or encrypted one is
 `IMPORT_FILE_MALFORMED`. Detection and dry runs parse after
 their read-only transaction has ended, so OCR never holds a pooled connection.
+
+### Import batches (US-07-04)
+
+A member uploads a bank file for one account, previews what its import would do, adjusts it and
+commits it (`/api/v1/accounts/{accountId}/imports`, `ImportBatchService`, `ImportCommitService`).
+Nothing reaches the ledger before the commit, and every endpoint needs `EDIT` on the account (the
+rows are raw bank data); anything else is the audited 404.
+
+**Status machine.** `UPLOADED` (stored, no template yet) -> `PARSED` (rows previewed; a parse
+again replaces them) -> `COMMITTED`; `UPLOADED`/`PARSED` -> `DISCARDED`. A step the status does not
+allow is a 409 `IMPORT_BATCH_STATE`, so a retried commit never imports twice. Parse, row
+inclusion, commit and discard need `If-Match` on `import_batch.version`; changing a row's inclusion
+moves the batch's version, so a commit always confirms the rows as last seen. An upload parses at
+once when a template is given or exactly one template's header fingerprint matches; otherwise the
+answer lists the candidates. `ROLLED_BACK`/`VOIDED` are US-07-05's.
+
+**File storage.** `import_file` holds the original bytes (at most 5 MB, `IMPORT_MAX_FILE_SIZE`),
+their SHA-256 and media type, keyed by the batch and under its own RLS policy, so reading a batch
+never loads the file. `import_batch.file_sha256` stays after a discard deletes the file: a batch
+whose file equals one already committed to the account reports `sameFileImportedIn`. The file is
+parsed outside any database transaction (as detection is), and so are the exchange-rate lookups
+its rows need (one per currency pair and date; an old date can make the FX provider answer first,
+#223); the rows are then written in one. An account holds at most
+`app.import.max-open-batches-per-account` (`IMPORT_MAX_OPEN_BATCHES`, default 20) batches that are
+`UPLOADED` or `PARSED`, since each keeps its file until it is committed or discarded; one more
+upload is a 409 `IMPORT_TOO_MANY_OPEN_BATCHES` (uploads into one account take an advisory lock, so
+two at once cannot both take the last place). Workspace erasure (EPIC 31) must delete
+`import_file` and `import_row_raw` too.
+
+**Rows.** One `import_row_raw` per data row: `PARSED` (new, included), `DUPLICATE` (excluded, with
+`duplicate_of_transaction_id`) or `ERROR` (`error_code` + ordered `error_args`, never included). A
+parsed row the ledger would refuse as a manual entry (`TransactionService#requireRecordable`, e.g.
+a type the account does not take) is the error `IMPORT_ROW_LEDGER_REJECTED`, one in another
+currency without a rate `IMPORT_ROW_FX_RATE_UNAVAILABLE`, a second row with an already used bank
+reference `IMPORT_ROW_EXTERNAL_ID_REPEATED`. Warnings (`IMPORT_ROW_FUTURE_DATE`,
+`IMPORT_ROW_CURRENCY_DIFFERS_FROM_ACCOUNT`) leave the row included. `raw_data` and `error_args` are
+`JSON`, not `JSONB`, which would sort their keys: cells keep the file's column order and arguments
+fill `{0}`, `{1}`, ... in order. The canonical values stay on error rows that have them, for the
+reconciliation's `MISSING_TRANSACTION`. `GET .../errors.csv` exports the error rows in the source's
+delimiter and encoding (FR-IMP-012), formula-like cells defused.
+
+**Duplicate rule** (`ImportDuplicateService`, at preview and again at commit). (1) A row with a
+bank reference duplicates the account's row of the batch's source (`CSV`, `DOCUMENT` for a PDF,
+`API` later) with that `external_id`, voided rows included (`uq_transaction_external_id` holds
+them). (2) Every other row duplicates a live row (not deleted, voided, a reversal or an adjusting
+entry) of any source with the same booking date, amount, currency and normalized description
+(trimmed, lower case, blanks collapsed, none = empty); a referenced row is not matched to a row of
+its own source with another reference. No date tolerance. (3) Each ledger row is the duplicate of
+one import row at most, in file order, so *n* identical rows against *m* matches give min(n, m)
+duplicates. The ledger is read in two queries per batch; rule 2 reads the file's date range
+through `idx_transaction_account_date`, so no further index was added. A member may force a
+duplicate in; one whose reference the ledger already holds goes in without it.
+
+**Commit.** One transaction: an advisory lock per account (commits into one account run one after
+the other), the batch row's lock, the status, then `If-Match`. The duplicate rule runs again over
+every readable row; a row that is new no longer is recorded as `DUPLICATE` and skipped. The
+included rows go through `TransactionService#recordImported` - the manual entry's validation, row
+building, FX and categorization - in chunks of 500, with `source` from the batch, `import_batch_id`,
+the reference and the raw cells in `raw_source_data`. Settlement and transfer detection and the
+reconciliation run once for the batch, after the inserts, taking the same locks as a manual write.
+A row the ledger refuses fails the whole commit; the batch stays `PARSED`.
 
 ## 5. Time-series data and partitioning
 

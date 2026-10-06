@@ -105,6 +105,10 @@ public class Transaction {
   @Column(name = "external_id")
   private String externalId;
 
+  // US-07-04: the import batch whose commit created this row; null for any other writer.
+  @Column(name = "import_batch_id", updatable = false)
+  private UUID importBatchId;
+
   // FR-CC-002/RULE-011: the source-provided MCC lives here, never in category_id - so a later
   // (re)categorization can only ever touch category_id, not the original source data (FR-TRX-003).
   @JdbcTypeCode(SqlTypes.JSON)
@@ -310,6 +314,14 @@ public class Transaction {
 
   public void setExternalId(String externalId) {
     this.externalId = externalId;
+  }
+
+  public UUID getImportBatchId() {
+    return importBatchId;
+  }
+
+  public void setImportBatchId(UUID importBatchId) {
+    this.importBatchId = importBatchId;
   }
 
   public String getRawSourceData() {

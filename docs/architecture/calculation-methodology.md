@@ -333,16 +333,20 @@ one), evidence is evaluated in this order:
 1. `DUPLICATE_ENTRY`: a live row whose account-currency amount equals the opposite of the missing
    amount (the row counted once too often) has another live row with the same booking date,
    original amount/currency, and normalized description.
-2. `FX_ROUNDING`: the absolute missing amount is at most 0.05 and the period contains a converted
+2. `MISSING_TRANSACTION` (#230): an import of the account holds a row of exactly the missing amount,
+   in the account's currency and booked in the period, that did not reach the ledger - its batch
+   was discarded, it is an error row with a readable amount, or it was left out of a committed
+   batch (a duplicate not forced in, or a row the member excluded) - and the ledger holds no live
+   row of that date, amount and currency anyway (read as the import's duplicate rule reads it). A
+   discarded file that was uploaded again and committed, or a duplicate left out because the ledger
+   had it, is therefore no evidence. The import is the evidence; without one, no missing bank row
+   is inferred.
+3. `FX_ROUNDING`: the absolute missing amount is at most 0.05 and the period contains a converted
    ledger row.
-3. `UNRECORDED_FEE`: the missing amount is a debit of at most 50.00 with at most two decimals
+4. `UNRECORDED_FEE`: the missing amount is a debit of at most 50.00 with at most two decimals
    (1.12, 33.20, 40.00, ...), in the account's own currency whatever that currency is - the
    currency both the snapshot and the derived ledger are expressed in.
-4. Otherwise `UNKNOWN`.
-
-`MISSING_TRANSACTION` needs the import-preview evidence from US-07-04 and is intentionally added
-by whichever import story merges that data surface; this ticket does not infer a missing bank row
-without evidence.
+5. Otherwise `UNKNOWN`.
 
 ## Card settlement matching and spending (US-09-02, FR-CC-004/005/007, FR-CF-001/004/005)
 
