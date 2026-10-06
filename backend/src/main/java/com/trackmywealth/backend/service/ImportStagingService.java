@@ -71,11 +71,15 @@ public class ImportStagingService {
    * Stores {@code rows} as the preview of {@code batch}, an import into {@code account}, replacing
    * any earlier rows, and marks the batch {@code PARSED} with its counts. The caller holds the
    * batch's lock and has checked that it may be parsed.
+   *
+   * @param rates the exchange rates the rows need, as {@link ImportRowCheckService#lookUpRates}
+   *     found them before the caller's transaction began, so no provider call waits under the
+   *     batch's lock; a pair it lacks is looked up here. Mutable: the lookups made here are added.
    */
   @Transactional
-  public void stage(ImportBatch batch, Account account, List<ParsedImportRow> rows) {
+  public void stage(
+      ImportBatch batch, Account account, List<ParsedImportRow> rows, Map<String, Boolean> rates) {
     List<ParsedImportRow> checked = rejectRepeatedReferences(rows);
-    Map<String, Boolean> rates = new HashMap<>();
     List<ParsedImportRow> recordable = new ArrayList<>();
     for (int i = 0; i < checked.size(); i++) {
       ParsedImportRow row = checked.get(i);

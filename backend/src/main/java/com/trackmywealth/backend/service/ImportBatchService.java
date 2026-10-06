@@ -6,10 +6,12 @@ import com.trackmywealth.backend.dto.ImportBatchCountsResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportParseResult;
+import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
 import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.ImportSameFileResponse;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
+import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
@@ -21,18 +23,23 @@ import com.trackmywealth.backend.error.ImportFileRejectedException;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportFileRepository;
 import com.trackmywealth.backend.repository.ImportRowRawRepository;
+import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import jakarta.persistence.EntityManager;
-import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.data.domain.Page;
@@ -60,7 +67,12 @@ import tools.jackson.databind.ObjectMapper;
  * <p>A file is read by the parser outside any database transaction (as template detection and dry
  * runs are, #267 review): a PDF statement can take seconds and must not hold a pooled connection.
  * The batch and its rows are then written in a transaction of their own, which checks the account,
- * the batch's status and its version again.
+ * the batch's status and its version again. The exchange rates the rows need are looked up between
+ * the two, outside any transaction too: an old date can make the FX provider answer first (#223).
+ *
+ * <p>An account holds at most {@code app.import.max-open-batches-per-account} batches that are
+ * neither committed nor discarded (409 {@code IMPORT_TOO_MANY_OPEN_BATCHES}): each keeps its file
+ * of up to 5 MB in the database until then.
  */
 @Service
 public class ImportBatchService {
@@ -69,8 +81,10 @@ public class ImportBatchService {
   private static final String BATCH_ENTITY_TYPE = "ImportBatch";
   private static final String MESSAGE_PREFIX = "tmw.import.row.";
   private static final String ACTIVE = "ACTIVE";
+  private static final String UPLOAD_LOCK_PREFIX = "import-upload:";
   private static final int MAX_PAGE_SIZE = 200;
   private static final int MAX_FILE_NAME_LENGTH = 255;
+  private static final Pattern CONTROL_CHARACTERS = Pattern.compile("\\p{Cntrl}");
   private static final Sort NEWEST_FIRST =
       Sort.by(Sort.Order.desc("uploadedAt"), Sort.Order.desc("id"));
 
@@ -79,15 +93,18 @@ public class ImportBatchService {
   private final ImportTemplateService importTemplateService;
   private final ImportFileParserService parser;
   private final ImportStagingService stagingService;
+  private final ImportRowCheckService rowCheckService;
   private final ImportBatchRepository batchRepository;
   private final ImportFileRepository fileRepository;
   private final ImportRowRawRepository rowRepository;
   private final VersionPreconditionService versionPreconditionService;
+  private final WorkspaceRepository workspaceRepository;
   private final MessageSource messageSource;
   private final ObjectMapper objectMapper;
   private final EntityManager entityManager;
   private final TransactionTemplate readOnlyTransaction;
   private final TransactionTemplate writeTransaction;
+  private final int maxOpenBatches;
 
   public ImportBatchService(
       AccountLookupService accountLookupService,
@@ -95,29 +112,35 @@ public class ImportBatchService {
       ImportTemplateService importTemplateService,
       ImportFileParserService parser,
       ImportStagingService stagingService,
+      ImportRowCheckService rowCheckService,
       ImportBatchRepository batchRepository,
       ImportFileRepository fileRepository,
       ImportRowRawRepository rowRepository,
       VersionPreconditionService versionPreconditionService,
+      WorkspaceRepository workspaceRepository,
       MessageSource messageSource,
       ObjectMapper objectMapper,
       EntityManager entityManager,
-      PlatformTransactionManager transactionManager) {
+      PlatformTransactionManager transactionManager,
+      @Value("${app.import.max-open-batches-per-account}") int maxOpenBatches) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.importTemplateService = importTemplateService;
     this.parser = parser;
     this.stagingService = stagingService;
+    this.rowCheckService = rowCheckService;
     this.batchRepository = batchRepository;
     this.fileRepository = fileRepository;
     this.rowRepository = rowRepository;
     this.versionPreconditionService = versionPreconditionService;
+    this.workspaceRepository = workspaceRepository;
     this.messageSource = messageSource;
     this.objectMapper = objectMapper;
     this.entityManager = entityManager;
     this.readOnlyTransaction = new TransactionTemplate(transactionManager);
     this.readOnlyTransaction.setReadOnly(true);
     this.writeTransaction = new TransactionTemplate(transactionManager);
+    this.maxOpenBatches = maxOpenBatches;
   }
 
   /**
@@ -128,6 +151,8 @@ public class ImportBatchService {
    *
    * @throws ImportFileRejectedException 422 for an empty file, or one the chosen template cannot
    *     read; nothing is stored then
+   * @throws ApiException 409 {@code IMPORT_TOO_MANY_OPEN_BATCHES} when the account holds as many
+   *     open batches as it may
    */
   public ImportBatchResponse upload(
       UUID accountId,
@@ -138,7 +163,11 @@ public class ImportBatchService {
       AuthenticatedUserPrincipal actor) {
     String accountCurrency =
         readOnlyTransaction.execute(
-            status -> requireImportableAccount(accountId, actor).getNativeCurrency());
+            status -> {
+              Account account = requireImportableAccount(accountId, actor);
+              requireRoomForAnotherBatch(account);
+              return account.getNativeCurrency();
+            });
     if (content.length == 0) {
       throw new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_EMPTY, "The file is empty.");
     }
@@ -153,10 +182,15 @@ public class ImportBatchService {
     ImportParseResult parsed =
         template == null ? null : parser.parse(content, template.definition(), accountCurrency);
     List<ImportTemplateCandidateResponse> offered = template == null ? candidates : List.of();
+    Map<String, Boolean> rates =
+        parsed == null ? new HashMap<>() : lookUpRates(accountId, parsed.rows(), actor);
 
     return writeTransaction.execute(
         status -> {
           Account account = requireImportableAccount(accountId, actor);
+          // Uploads into one account queue here, so two at once cannot both take the last place.
+          workspaceRepository.lockAdvisory(UPLOAD_LOCK_PREFIX + account.getId());
+          requireRoomForAnotherBatch(account);
           ImportBatch batch = new ImportBatch();
           batch.setWorkspaceId(account.getWorkspace().getId());
           batch.setAccountId(account.getId());
@@ -177,7 +211,7 @@ public class ImportBatchService {
 
           if (parsed != null) {
             useTemplate(batch, template);
-            stagingService.stage(batch, account, parsed.rows());
+            stagingService.stage(batch, account, parsed.rows(), rates);
           }
           return summary(batch, account, offered);
         });
@@ -210,6 +244,7 @@ public class ImportBatchService {
                     .orElseThrow(() -> new IllegalStateException("Batch has no stored file.")));
     ResolvedImportTemplate template = importTemplateService.resolveForImport(templateId, actor);
     ImportParseResult parsed = parser.parse(content, template.definition(), accountCurrency);
+    Map<String, Boolean> rates = lookUpRates(accountId, parsed.rows(), actor);
 
     return writeTransaction.execute(
         status -> {
@@ -218,7 +253,7 @@ public class ImportBatchService {
           // Checked again under the lock: another parse, a discard or a commit may have come first.
           requireParseable(batch, expectedVersion);
           useTemplate(batch, template);
-          stagingService.stage(batch, account, parsed.rows());
+          stagingService.stage(batch, account, parsed.rows(), rates);
           return summary(batch, account, List.of());
         });
   }
@@ -229,10 +264,12 @@ public class ImportBatchService {
       UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = requireEditableAccount(accountId, actor);
     int size = Math.min(Math.max(pageable.getPageSize(), 1), MAX_PAGE_SIZE);
-    return batchRepository
-        .findByAccountId(
-            account.getId(), PageRequest.of(pageable.getPageNumber(), size, NEWEST_FIRST))
-        .map(batch -> summary(batch, account, List.of()));
+    Page<ImportBatch> page =
+        batchRepository.findByAccountId(
+            account.getId(), PageRequest.of(pageable.getPageNumber(), size, NEWEST_FIRST));
+    Map<UUID, ImportBatchCountsResponse> counts = counts(page.getContent());
+    Map<UUID, ImportSameFileResponse> sameFiles = sameFilesImportedIn(page.getContent());
+    return page.map(batch -> summary(batch, account, List.of(), counts, sameFiles));
   }
 
   /** The batch's summary: status, template version, counts and the same-file warning. */
@@ -388,6 +425,16 @@ public class ImportBatchService {
 
   ImportBatchResponse summary(
       ImportBatch batch, Account account, List<ImportTemplateCandidateResponse> candidates) {
+    List<ImportBatch> one = List.of(batch);
+    return summary(batch, account, candidates, counts(one), sameFilesImportedIn(one));
+  }
+
+  private static ImportBatchResponse summary(
+      ImportBatch batch,
+      Account account,
+      List<ImportTemplateCandidateResponse> candidates,
+      Map<UUID, ImportBatchCountsResponse> counts,
+      Map<UUID, ImportSameFileResponse> sameFiles) {
     return new ImportBatchResponse(
         batch.getId(),
         account.getId(),
@@ -396,8 +443,8 @@ public class ImportBatchService {
         batch.getSourceFileName(),
         batch.getTemplateId(),
         batch.getTemplateVersionUsed(),
-        counts(batch),
-        sameFileImportedIn(batch),
+        counts.getOrDefault(batch.getId(), ImportBatchCountsResponse.NONE),
+        sameFiles.get(batch.getId()),
         candidates,
         batch.getUploadedAt(),
         batch.getParsedAt(),
@@ -462,34 +509,95 @@ public class ImportBatchService {
             : ImportBatchValues.SOURCE_CSV);
   }
 
-  private ImportBatchCountsResponse counts(ImportBatch batch) {
-    if (ImportBatchValues.UPLOADED.equals(batch.getStatus())) {
-      return ImportBatchCountsResponse.NONE;
+  // The row counts of every batch that has rows, in one query however many batches a page holds;
+  // a batch without rows (UPLOADED) is absent.
+  private Map<UUID, ImportBatchCountsResponse> counts(List<ImportBatch> batches) {
+    List<UUID> parsed =
+        batches.stream()
+            .filter(batch -> !ImportBatchValues.UPLOADED.equals(batch.getStatus()))
+            .map(ImportBatch::getId)
+            .toList();
+    Map<UUID, ImportBatchCountsResponse> counts = new HashMap<>();
+    if (parsed.isEmpty()) {
+      return counts;
     }
-    Object[] counts = rowRepository.countByBatch(batch.getId()).get(0);
-    return new ImportBatchCountsResponse(
-        count(counts[0]),
-        count(counts[1]),
-        count(counts[2]),
-        count(counts[3]),
-        count(counts[4]),
-        count(counts[5]),
-        count(counts[6]));
+    for (Object[] row : rowRepository.countByBatches(parsed)) {
+      counts.put(
+          (UUID) row[0],
+          new ImportBatchCountsResponse(
+              count(row[1]),
+              count(row[2]),
+              count(row[3]),
+              count(row[4]),
+              count(row[5]),
+              count(row[6]),
+              count(row[7])));
+    }
+    return counts;
   }
 
   private static int count(Object value) {
     return ((Number) value).intValue();
   }
 
-  private ImportSameFileResponse sameFileImportedIn(ImportBatch batch) {
-    if (batch.getFileSha256() == null) {
-      return null;
+  // Per batch of one account, the latest other committed batch of the same file (the same-file
+  // warning), in one query however many batches a page holds; a batch without one is absent.
+  private Map<UUID, ImportSameFileResponse> sameFilesImportedIn(List<ImportBatch> batches) {
+    Map<UUID, ImportSameFileResponse> sameFiles = new HashMap<>();
+    List<String> hashes =
+        batches.stream()
+            .map(ImportBatch::getFileSha256)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+    if (hashes.isEmpty()) {
+      return sameFiles;
     }
-    return batchRepository
-        .findFirstByAccountIdAndFileSha256AndStatusAndIdNotOrderByCommittedAtDesc(
-            batch.getAccountId(), batch.getFileSha256(), ImportBatchValues.COMMITTED, batch.getId())
-        .map(earlier -> new ImportSameFileResponse(earlier.getId(), earlier.getCommittedAt()))
-        .orElse(null);
+    List<ImportBatch> committed =
+        batchRepository.findByAccountIdAndStatusAndFileSha256InOrderByCommittedAtDesc(
+            batches.get(0).getAccountId(), ImportBatchValues.COMMITTED, hashes);
+    for (ImportBatch batch : batches) {
+      committed.stream()
+          .filter(earlier -> !earlier.getId().equals(batch.getId()))
+          .filter(earlier -> earlier.getFileSha256().equals(batch.getFileSha256()))
+          .findFirst()
+          .ifPresent(
+              earlier ->
+                  sameFiles.put(
+                      batch.getId(),
+                      new ImportSameFileResponse(earlier.getId(), earlier.getCommittedAt())));
+    }
+    return sameFiles;
+  }
+
+  // The exchange rates the rows need, looked up outside any transaction: the provider can take
+  // seconds for an old date (#223), which must not hold a connection's transaction or the batch's
+  // lock. Only which rates are needed is read in a (short) transaction.
+  private Map<String, Boolean> lookUpRates(
+      UUID accountId, List<ParsedImportRow> rows, AuthenticatedUserPrincipal actor) {
+    Set<ImportRateNeed> needed =
+        readOnlyTransaction.execute(
+            status ->
+                rowCheckService.ratesNeeded(requireImportableAccount(accountId, actor), rows));
+    return rowCheckService.lookUpRates(needed);
+  }
+
+  // Each open batch keeps its file in the database until it is committed or discarded.
+  private void requireRoomForAnotherBatch(Account account) {
+    long open =
+        batchRepository.countByAccountIdAndStatusIn(account.getId(), ImportBatchValues.PARSEABLE);
+    if (open >= maxOpenBatches) {
+      ApiException full =
+          new ApiException(
+              HttpStatus.CONFLICT,
+              ApiErrorCode.IMPORT_TOO_MANY_OPEN_BATCHES,
+              "This account already has "
+                  + maxOpenBatches
+                  + " imports that are neither committed nor discarded; commit or discard one"
+                  + " first.");
+      full.getBody().setProperty("maxOpenBatches", maxOpenBatches);
+      throw full;
+    }
   }
 
   private ImportRowResponse rowResponse(ImportRowRaw row, Account account, Locale locale) {
@@ -527,13 +635,20 @@ public class ImportBatchService {
     return exact.size() == 1 ? exact.get(0).template().id() : null;
   }
 
-  // The name only, never a client's directory path; bounded like any other stored text.
-  private static String safeFileName(String fileName) {
-    if (fileName == null || fileName.isBlank()) {
+  /**
+   * The name only, never a client's directory path (either separator), without control characters
+   * (a NUL included), bounded like any other stored text; {@code null} when nothing is left. Plain
+   * string handling: the name is client input, and {@code Path.of} throws on some of it.
+   */
+  static String safeFileName(String fileName) {
+    if (fileName == null) {
       return null;
     }
-    Path name = Path.of(fileName.replace('\\', '/')).getFileName();
-    String safe = name == null ? fileName : name.toString();
+    int lastSeparator = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
+    String safe = CONTROL_CHARACTERS.matcher(fileName.substring(lastSeparator + 1)).replaceAll("");
+    if (safe.isBlank()) {
+      return null;
+    }
     return safe.length() > MAX_FILE_NAME_LENGTH ? safe.substring(0, MAX_FILE_NAME_LENGTH) : safe;
   }
 

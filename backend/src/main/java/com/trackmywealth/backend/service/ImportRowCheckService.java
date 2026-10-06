@@ -2,15 +2,20 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportBatchValues;
+import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -53,8 +58,9 @@ public class ImportRowCheckService {
    * currency on its booking date (#223: the provider is asked for a missing date, as for a manual
    * entry), {@code IMPORT_ROW_LEDGER_REJECTED} with the ledger's reason for anything else.
    *
-   * @param rates whether a rate exists, per currency pair and date, shared by one batch's rows so
-   *     each is looked up once
+   * @param rates whether a rate exists, by {@link ImportRateNeed#key()}, shared by one batch's rows
+   *     so each is looked up once; normally filled beforehand by {@link #lookUpRates}, outside the
+   *     caller's transaction, and a pair it lacks is looked up here
    */
   public ParsedImportRow checkRecordable(
       Account account, ParsedImportRow row, Map<String, Boolean> rates) {
@@ -68,7 +74,9 @@ public class ImportRowCheckService {
       return error(row, ImportRowErrorValues.LEDGER_REJECTED, args);
     }
     if (convertsInto.isEmpty()
-        || hasRate(canonical.currency(), convertsInto.get(), canonical.bookingDate(), rates)) {
+        || hasRate(
+            new ImportRateNeed(canonical.currency(), convertsInto.get(), canonical.bookingDate()),
+            rates)) {
       return row;
     }
     Map<String, String> args = new LinkedHashMap<>();
@@ -76,6 +84,46 @@ public class ImportRowCheckService {
     args.put(ARG_ACCOUNT_CURRENCY, convertsInto.get());
     args.put(ARG_DATE, canonical.bookingDate().toString());
     return error(row, ImportRowErrorValues.FX_RATE_UNAVAILABLE, args);
+  }
+
+  /**
+   * The exchange rates the readable {@code rows} need to be recorded on {@code account}, one per
+   * pair and date. Reads the database only (a card's billing currency), so the caller can ask it in
+   * a short transaction and then {@link #lookUpRates} outside it. A row the ledger refuses needs
+   * none: {@link #checkRecordable} makes it an error row anyway.
+   */
+  public Set<ImportRateNeed> ratesNeeded(Account account, List<ParsedImportRow> rows) {
+    Set<ImportRateNeed> needed = new LinkedHashSet<>();
+    for (ParsedImportRow row : rows) {
+      if (!row.isParsed()) {
+        continue;
+      }
+      CanonicalImportRow canonical = row.canonical();
+      Optional<String> convertsInto;
+      try {
+        convertsInto = transactionService.requireRecordable(account, ledgerRows.request(canonical));
+      } catch (ResponseStatusException e) {
+        continue;
+      }
+      convertsInto.ifPresent(
+          into ->
+              needed.add(new ImportRateNeed(canonical.currency(), into, canonical.bookingDate())));
+    }
+    return needed;
+  }
+
+  /**
+   * Whether a rate exists for each of {@code needed}, by {@link ImportRateNeed#key()}; for a date
+   * no stored rate covers, the provider is asked first (#223), as for a manual entry. Call it
+   * outside the transaction that stages the batch: the provider can take seconds, and the batch's
+   * lock must not be held meanwhile (#230 review).
+   */
+  public Map<String, Boolean> lookUpRates(Collection<ImportRateNeed> needed) {
+    Map<String, Boolean> rates = new HashMap<>();
+    for (ImportRateNeed need : needed) {
+      hasRate(need, rates);
+    }
+    return rates;
   }
 
   /** The warnings of a row the ledger accepts; it stays included. */
@@ -106,12 +154,13 @@ public class ImportRowCheckService {
     return args;
   }
 
-  private boolean hasRate(String from, String to, LocalDate date, Map<String, Boolean> rates) {
+  private boolean hasRate(ImportRateNeed need, Map<String, Boolean> rates) {
     return rates.computeIfAbsent(
-        String.join("/", from, to, date.toString()),
+        need.key(),
         key ->
             fxRateService
-                .tryGetConversionRateFetchingMissing(from, to, date, fxDefaultSource)
+                .tryGetConversionRateFetchingMissing(
+                    need.from(), need.into(), need.date(), fxDefaultSource)
                 .isPresent());
   }
 

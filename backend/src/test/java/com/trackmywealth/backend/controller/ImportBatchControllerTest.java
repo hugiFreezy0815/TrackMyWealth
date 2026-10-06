@@ -100,6 +100,8 @@ class ImportBatchControllerTest {
   private static final List<String> SIMPLE_COLUMNS =
       List.of("Date", "Amount", "Currency", "Text", "Reference", "MCC");
   private static final LocalDate DAY = LocalDate.of(2019, 1, 5);
+  // Lower than the default, so the limit is reached quickly; no other test needs more.
+  private static final int MAX_OPEN_BATCHES = 4;
   private static final Logger LOG = LoggerFactory.getLogger(ImportBatchControllerTest.class);
 
   @Container
@@ -115,6 +117,7 @@ class ImportBatchControllerTest {
     registry.add("spring.datasource.username", postgres::getUsername);
     registry.add("spring.datasource.password", postgres::getPassword);
     registry.add("app.rate-limit.enabled", () -> "false");
+    registry.add("app.import.max-open-batches-per-account", () -> MAX_OPEN_BATCHES);
   }
 
   @LocalServerPort int port;
@@ -704,6 +707,40 @@ class ImportBatchControllerTest {
     assertThat(single("SELECT status FROM reconciliation_result")).isEqualTo("RESOLVED");
   }
 
+  @Test
+  void anImportWhoseBookingReachedTheLedgerAnywayIsNoEvidenceOfAMissingTransaction() {
+    ImportTemplateResponse simple = createTemplate(simpleTemplate("Simple", SIMPLE_COLUMNS));
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + account + "/opening-balance")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new OpeningBalanceRequest(DAY.minusDays(5), new BigDecimal("1000.00"), "CHF", null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+    byte[] file = csv("2019-01-05;-50.00;CHF;Electricity;E1;");
+    // The file was discarded once, then uploaded again and committed: its booking is in the ledger.
+    ImportBatchResponse discarded = upload(token, simple.id(), file);
+    discard(discarded.id(), discarded.version());
+    ImportBatchResponse batch = upload(token, simple.id(), file);
+    commit(account, batch.id(), batch.version());
+
+    // The bank says 900: another 50.00 is missing, but not the one the discarded import held.
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + account + "/snapshots")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new RecordAccountSnapshotRequest(DAY.plusDays(5), new BigDecimal("900.00"), List.of()))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+
+    assertThat(single("SELECT status FROM reconciliation_result")).isEqualTo("OPEN");
+    assertThat(single("SELECT probable_cause FROM reconciliation_result"))
+        .isNotEqualTo("MISSING_TRANSACTION");
+  }
+
   // --- discard, limits, authorization
   // ---------------------------------------------------------------
 
@@ -777,6 +814,19 @@ class ImportBatchControllerTest {
         .exchange()
         .expectStatus()
         .isNotFound();
+    // READ is not enough either: the rows are raw bank data, and an import is a write.
+    UUID readerId = createSecondMember("reader@example.com");
+    String readerToken = login("reader@example.com");
+    grantOnAccount(readerId, account, AccessLevelValues.READ);
+    client(readerToken)
+        .get()
+        .uri(imports() + "/" + batch.id() + "/rows")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    upload(readerToken, account, csv("2019-01-05;-1.00;CHF;x;;"), simple.id())
+        .expectStatus()
+        .isNotFound();
     // A batch id under another account of the caller's own, and an unknown account.
     UUID other = createAccount("Other", "CHF");
     client()
@@ -792,7 +842,7 @@ class ImportBatchControllerTest {
         .expectStatus()
         .isNotFound();
 
-    awaitDenials("Account", account, 2);
+    awaitDenials("Account", account, 4);
     awaitDenials("ImportBatch", batch.id(), 1);
   }
 
@@ -813,7 +863,9 @@ class ImportBatchControllerTest {
   void theAccountsBatchesAreListedNewestFirst() {
     ImportTemplateResponse simple = createTemplate(simpleTemplate("Simple", SIMPLE_COLUMNS));
     ImportBatchResponse older = upload(token, simple.id(), csv("2019-01-05;-1.00;CHF;a;;"));
+    commit(account, older.id(), older.version());
     ImportBatchResponse newer = upload(token, simple.id(), csv("2019-01-05;-2.00;CHF;b;;"));
+    ImportBatchResponse again = upload(token, simple.id(), csv("2019-01-05;-1.00;CHF;a;;"));
 
     PageOf<ImportBatchResponse> page =
         client()
@@ -828,8 +880,68 @@ class ImportBatchControllerTest {
 
     assertThat(page.content())
         .extracting(ImportBatchResponse::id)
-        .containsExactly(newer.id(), older.id());
-    assertThat(page.content().get(0).counts().newRows()).isEqualTo(1);
+        .containsExactly(again.id(), newer.id(), older.id());
+    // Each batch's own counts and same-file warning, though the page reads them in one query each.
+    assertThat(page.content().get(0).counts().duplicates()).isEqualTo(1);
+    assertThat(page.content().get(0).sameFileImportedIn().batchId()).isEqualTo(older.id());
+    assertThat(page.content().get(1).counts().newRows()).isEqualTo(1);
+    assertThat(page.content().get(1).sameFileImportedIn()).isNull();
+    assertThat(page.content().get(2).counts().imported()).isEqualTo(1);
+    assertThat(page.content().get(2).sameFileImportedIn()).isNull();
+  }
+
+  @Test
+  void anAccountHoldsABoundedNumberOfOpenBatches() {
+    ImportTemplateResponse simple = createTemplate(simpleTemplate("Simple", SIMPLE_COLUMNS));
+    List<ImportBatchResponse> open = new ArrayList<>();
+    for (int i = 1; i <= MAX_OPEN_BATCHES; i++) {
+      open.add(upload(token, simple.id(), csv("2019-01-05;-" + i + ".00;CHF;Row;;")));
+    }
+
+    upload(token, account, csv("2019-01-05;-9.00;CHF;Row;;"), simple.id())
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo(ApiErrorCode.IMPORT_TOO_MANY_OPEN_BATCHES)
+        .jsonPath("$.maxOpenBatches")
+        .isEqualTo(MAX_OPEN_BATCHES);
+    assertThat(count("SELECT count(*) FROM import_batch")).isEqualTo(MAX_OPEN_BATCHES);
+
+    // A committed and a discarded batch make room again; another account has room of its own.
+    commit(account, open.get(0).id(), open.get(0).version());
+    discard(open.get(1).id(), open.get(1).version());
+    upload(token, simple.id(), csv("2019-01-05;-9.00;CHF;Row;;"));
+    upload(token, simple.id(), csv("2019-01-05;-10.00;CHF;Row;;"));
+    UUID other = createAccount("Other", "CHF");
+    upload(token, other, csv("2019-01-05;-11.00;CHF;Row;;"), simple.id())
+        .expectStatus()
+        .isCreated();
+  }
+
+  @Test
+  void anUnknownRowStatusIsA400AndAnUnknownRowA404() {
+    ImportTemplateResponse simple = createTemplate(simpleTemplate("Simple", SIMPLE_COLUMNS));
+    ImportBatchResponse batch = upload(token, simple.id(), csv("2019-01-05;-12.40;CHF;Bakery;R1;"));
+
+    client()
+        .get()
+        .uri(imports() + "/" + batch.id() + "/rows?status=NEW")
+        .exchange()
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+    client()
+        .patch()
+        .uri(imports() + "/" + batch.id() + "/rows/99")
+        .header(HttpHeaders.IF_MATCH, "\"" + batch.version() + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new ImportRowInclusionRequest(false))
+        .exchange()
+        .expectStatus()
+        .isNotFound();
   }
 
   // --- performance -----------------------------------------------------------------------------
@@ -904,9 +1016,11 @@ class ImportBatchControllerTest {
     assertThat(committed.counts().imported()).isEqualTo(5_000);
     LOG.info(
         "5,000 import rows: preview {} ms, commit {} ms", preview.toMillis(), commit.toMillis());
-    // US-07-04's targets on a developer laptop: parse and preview < 5 s, commit < 30 s.
-    assertThat(preview).isLessThan(Duration.ofSeconds(5));
-    assertThat(commit).isLessThan(Duration.ofSeconds(30));
+    // US-07-04's targets on a developer laptop: parse and preview < 5 s, commit < 30 s (logged
+    // above; measured 0.2 s and 8.6 s). Asserted with room for a slower CI runner: the check is
+    // for a regression in kind - the first commit took 11 minutes - not for the runner's speed.
+    assertThat(preview).isLessThan(Duration.ofSeconds(5).multipliedBy(3));
+    assertThat(commit).isLessThan(Duration.ofSeconds(30).multipliedBy(3));
   }
 
   // --- requests --------------------------------------------------------------------------------

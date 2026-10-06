@@ -115,6 +115,10 @@ app:
   # (NFR-DEP-002) - never a compile-time variant between self-hosted and
   # hosted topologies.
   import:
+    # US-07-04: how many import batches an account may hold that are neither committed nor
+    # discarded. Each keeps its file (up to 5 MB) in the database until then; one more upload is a
+    # 409 IMPORT_TOO_MANY_OPEN_BATCHES.
+    max-open-batches-per-account: ${IMPORT_MAX_OPEN_BATCHES:20}
     # #276: OCR of scanned PDF statements (template file format PDF_OCR) runs a local Tesseract
     # process; the Docker image installs it with these language models. Off until #276 adds a
     # confidence threshold: a misread digit is still a valid amount, and nothing would flag it.

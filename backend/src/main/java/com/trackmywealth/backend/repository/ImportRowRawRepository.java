@@ -21,8 +21,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface ImportRowRawRepository extends JpaRepository<ImportRowRaw, UUID> {
 
-  String BATCH_ID = "batchId";
-
   Page<ImportRowRaw> findByImportBatchIdOrderByRowNumber(UUID importBatchId, Pageable pageable);
 
   Page<ImportRowRaw> findByImportBatchIdAndParseStatusOrderByRowNumber(
@@ -40,28 +38,33 @@ public interface ImportRowRawRepository extends JpaRepository<ImportRowRaw, UUID
       UUID importBatchId, String parseStatus);
 
   /**
-   * The batch's counts, one array: total, new (PARSED), duplicates, errors, rows with a warning,
-   * included, imported.
+   * The counts of each of {@code batchIds} that has rows, one array per batch: its id, then total,
+   * new (PARSED), duplicates, errors, rows with a warning, included, imported. One query for a
+   * whole page of batches.
    */
   @Query(
       value =
-          "SELECT count(*),"
+          "SELECT r.import_batch_id, count(*),"
               + " count(*) FILTER (WHERE r.parse_status = 'PARSED'),"
               + " count(*) FILTER (WHERE r.parse_status = 'DUPLICATE'),"
               + " count(*) FILTER (WHERE r.parse_status = 'ERROR'),"
               + " count(*) FILTER (WHERE cardinality(r.warning_codes) > 0),"
               + " count(*) FILTER (WHERE r.included),"
               + " count(*) FILTER (WHERE r.resulting_transaction_id IS NOT NULL)"
-              + " FROM import_row_raw r WHERE r.import_batch_id = :batchId",
+              + " FROM import_row_raw r WHERE r.import_batch_id IN (:batchIds)"
+              + " GROUP BY r.import_batch_id",
       nativeQuery = true)
-  List<Object[]> countByBatch(@Param(BATCH_ID) UUID batchId);
+  List<Object[]> countByBatches(@Param("batchIds") Collection<UUID> batchIds);
 
   /**
    * US-25-02/FR-REC-003 {@code MISSING_TRANSACTION}: whether an import of the account holds a row
    * of exactly {@code amount} in the account's {@code currency}, booked in the reconciliation
    * period, that did not reach the ledger - its batch was discarded, it could not be imported (an
    * {@code ERROR} row with a readable amount) or it was left out of a committed batch (a duplicate
-   * not forced in, or a row excluded).
+   * not forced in, or a row excluded) - and whose booking the ledger does not hold anyway: a live
+   * row of the same date, amount and currency (as the duplicate rule reads the ledger) means this
+   * one is not what is missing, e.g. a discarded file uploaded again and committed, or a duplicate
+   * left out because the ledger had it.
    */
   @Query(
       value =
@@ -71,7 +74,11 @@ public interface ImportRowRawRepository extends JpaRepository<ImportRowRaw, UUID
               + " AND r.booking_date > :after AND r.booking_date <= :asOf"
               + " AND r.amount = :amount AND r.currency = :currency"
               + " AND (b.status = 'DISCARDED' OR r.parse_status = 'ERROR'"
-              + " OR (b.status = 'COMMITTED' AND NOT r.included)))",
+              + " OR (b.status = 'COMMITTED' AND NOT r.included))"
+              + " AND NOT EXISTS (SELECT 1 FROM transaction t WHERE t.account_id = b.account_id"
+              + " AND t.booking_date = r.booking_date AND t.amount = r.amount"
+              + " AND t.currency = r.currency AND t.deleted_at IS NULL AND t.voided_at IS NULL"
+              + " AND t.replaces_transaction_id IS NULL AND t.reconciliation_result_id IS NULL))",
       nativeQuery = true)
   boolean existsNotImportedRow(
       @Param("accountId") UUID accountId,

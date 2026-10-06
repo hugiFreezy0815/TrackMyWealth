@@ -336,8 +336,11 @@ one), evidence is evaluated in this order:
 2. `MISSING_TRANSACTION` (#230): an import of the account holds a row of exactly the missing amount,
    in the account's currency and booked in the period, that did not reach the ledger - its batch
    was discarded, it is an error row with a readable amount, or it was left out of a committed
-   batch (a duplicate not forced in, or a row the member excluded). The import is the evidence;
-   without one, no missing bank row is inferred.
+   batch (a duplicate not forced in, or a row the member excluded) - and the ledger holds no live
+   row of that date, amount and currency anyway (read as the import's duplicate rule reads it). A
+   discarded file that was uploaded again and committed, or a duplicate left out because the ledger
+   had it, is therefore no evidence. The import is the evidence; without one, no missing bank row
+   is inferred.
 3. `FX_ROUNDING`: the absolute missing amount is at most 0.05 and the period contains a converted
    ledger row.
 4. `UNRECORDED_FEE`: the missing amount is a debit of at most 50.00 with at most two decimals

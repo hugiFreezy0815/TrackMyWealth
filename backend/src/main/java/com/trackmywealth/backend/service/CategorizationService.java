@@ -176,8 +176,11 @@ public class CategorizationService {
       Map<String, Optional<FuzzyCategoryCandidate>> fuzzyByMerchant) {
     // #230: an import categorizes thousands of new rows. Their changes are flushed once, at the
     // end, rather than row by row (each flush checks every entity the session holds), and a
-    // merchant text's fuzzy match is looked up once: a new row has no log row yet, so it is no
-    // other new row's candidate, and rows with the same merchant text get the same suggestion.
+    // merchant text's fuzzy match is looked up once per import: rows with the same merchant text
+    // get the same suggestion. Not exactly what row-by-row lookups would give: a row of the same
+    // import that a rule or a code categorized earlier gets a log row and could become a later
+    // row's candidate, which the cached answer does not see. Accepted: the fallback is a guess by
+    // similarity, and without the cache 5,000 rows take minutes.
     Map<UUID, String> assignedBy = new HashMap<>();
     boolean[] written = {false};
     forEachDecision(

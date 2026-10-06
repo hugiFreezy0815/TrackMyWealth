@@ -6,11 +6,14 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.ImportBatchValues;
+import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
@@ -18,6 +21,7 @@ import com.trackmywealth.backend.entity.Workspace;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -94,6 +98,53 @@ class ImportRowCheckServiceTest {
     assertThat(service.checkRecordable(account, first, rates)).isSameAs(first);
     service.checkRecordable(account, row("USD", DAY), rates);
 
+    verify(fxRateService, times(1)).tryGetConversionRateFetchingMissing("USD", "EUR", DAY, SOURCE);
+  }
+
+  @Test
+  void theRatesABatchNeedsAreOnePerPairAndDateAndSkipRowsTheLedgerRefuses() {
+    ParsedImportRow refused = row("CHF", DAY);
+    when(transactionService.requireRecordable(eq(account), any()))
+        .thenAnswer(
+            invocation -> {
+              String currency = invocation.<CreateTransactionRequest>getArgument(1).currency();
+              if ("CHF".equals(currency)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, "refused");
+              }
+              return "EUR".equals(currency) ? Optional.empty() : Optional.of("EUR");
+            });
+
+    assertThat(
+            service.ratesNeeded(
+                account,
+                List.of(
+                    row("USD", DAY),
+                    row("USD", DAY),
+                    row("USD", DAY.plusDays(1)),
+                    row("EUR", DAY),
+                    refused,
+                    ParsedImportRow.error(
+                        2, Map.of(), ImportRowErrorValues.DATE_UNPARSEABLE, Map.of()))))
+        .containsExactly(
+            new ImportRateNeed("USD", "EUR", DAY),
+            new ImportRateNeed("USD", "EUR", DAY.plusDays(1)));
+    verifyNoInteractions(fxRateService);
+  }
+
+  @Test
+  void ratesLookedUpBeforeTheStagingTransactionAreNotAskedForAgain() {
+    when(transactionService.requireRecordable(eq(account), any())).thenReturn(Optional.of("EUR"));
+    when(fxRateService.tryGetConversionRateFetchingMissing("USD", "EUR", DAY, SOURCE))
+        .thenReturn(Optional.empty());
+
+    // Outside any transaction: the provider may be asked for a missing date here.
+    Map<String, Boolean> rates =
+        service.lookUpRates(List.of(new ImportRateNeed("USD", "EUR", DAY)));
+    // Inside the staging transaction: only the answer above is used.
+    ParsedImportRow checked = service.checkRecordable(account, row("USD", DAY), rates);
+
+    assertThat(rates).containsExactly(Map.entry("USD/EUR/2019-01-05", false));
+    assertThat(checked.errorCode()).isEqualTo(ImportRowErrorValues.FX_RATE_UNAVAILABLE);
     verify(fxRateService, times(1)).tryGetConversionRateFetchingMissing("USD", "EUR", DAY, SOURCE);
   }
 

@@ -2,6 +2,8 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.ImportBatch;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -42,7 +44,13 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
   // The caller fixes the order (newest first): a Pageable's sort is client input.
   Page<ImportBatch> findByAccountId(UUID accountId, Pageable pageable);
 
-  /** The latest committed batch of exactly this file on the account, other than {@code batchId}. */
-  Optional<ImportBatch> findFirstByAccountIdAndFileSha256AndStatusAndIdNotOrderByCommittedAtDesc(
-      UUID accountId, String fileSha256, String status, UUID batchId);
+  /**
+   * The account's batches in {@code status} of any of these files, latest commit first: the
+   * same-file warning of a whole page of batches in one query.
+   */
+  List<ImportBatch> findByAccountIdAndStatusAndFileSha256InOrderByCommittedAtDesc(
+      UUID accountId, String status, Collection<String> fileSha256s);
+
+  /** How many of the account's batches are in one of {@code statuses}. */
+  long countByAccountIdAndStatusIn(UUID accountId, Collection<String> statuses);
 }

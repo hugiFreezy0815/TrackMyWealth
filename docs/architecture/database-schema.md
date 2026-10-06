@@ -921,8 +921,14 @@ answer lists the candidates. `ROLLED_BACK`/`VOIDED` are US-07-05's.
 their SHA-256 and media type, keyed by the batch and under its own RLS policy, so reading a batch
 never loads the file. `import_batch.file_sha256` stays after a discard deletes the file: a batch
 whose file equals one already committed to the account reports `sameFileImportedIn`. The file is
-parsed outside any database transaction (as detection is); the rows are then written in one.
-Workspace erasure (EPIC 31) must delete `import_file` and `import_row_raw` too.
+parsed outside any database transaction (as detection is), and so are the exchange-rate lookups
+its rows need (one per currency pair and date; an old date can make the FX provider answer first,
+#223); the rows are then written in one. An account holds at most
+`app.import.max-open-batches-per-account` (`IMPORT_MAX_OPEN_BATCHES`, default 20) batches that are
+`UPLOADED` or `PARSED`, since each keeps its file until it is committed or discarded; one more
+upload is a 409 `IMPORT_TOO_MANY_OPEN_BATCHES` (uploads into one account take an advisory lock, so
+two at once cannot both take the last place). Workspace erasure (EPIC 31) must delete
+`import_file` and `import_row_raw` too.
 
 **Rows.** One `import_row_raw` per data row: `PARSED` (new, included), `DUPLICATE` (excluded, with
 `duplicate_of_transaction_id`) or `ERROR` (`error_code` + ordered `error_args`, never included). A

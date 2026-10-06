@@ -184,6 +184,12 @@ public final class ApiErrorCode {
    */
   public static final String IMPORT_BATCH_STATE = "IMPORT_BATCH_STATE";
 
+  /**
+   * 409: the account already holds as many import batches that are neither committed nor discarded
+   * as it may ({@code maxOpenBatches}); commit or discard one before uploading another (US-07-04).
+   */
+  public static final String IMPORT_TOO_MANY_OPEN_BATCHES = "IMPORT_TOO_MANY_OPEN_BATCHES";
+
   /** 422: an import row with status {@code ERROR} cannot be included in the commit (US-07-04). */
   public static final String IMPORT_ROW_NOT_INCLUDABLE = "IMPORT_ROW_NOT_INCLUDABLE";
 

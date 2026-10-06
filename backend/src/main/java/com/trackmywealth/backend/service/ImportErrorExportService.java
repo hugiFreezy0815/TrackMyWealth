@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,9 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
  * caller's language - written with the source file's delimiter and encoding, so it opens like the
  * original. A PDF statement's rows are written comma-separated in UTF-8.
  *
- * <p>The cells are the bank's own texts and the file is meant for a spreadsheet: a cell a
- * spreadsheet would run as a formula (starting with {@code =}, {@code +}, {@code @}, a tab, a
- * carriage return, or a {@code -} that does not start a number) gets a leading apostrophe.
+ * <p>The cells are the bank's own texts - a payer chooses a transfer's description - and the file
+ * is meant for a spreadsheet: a cell a spreadsheet would run as a formula gets a leading
+ * apostrophe. That is one starting with a tab or a carriage return, or, after any leading blanks,
+ * with {@code =}, {@code +}, {@code @} or a {@code -}, unless the whole cell is a plain negative
+ * number such as {@code -1'234.50} ({@code -2+3+cmd|...} is a formula, not an amount).
  */
 @Service
 public class ImportErrorExportService {
@@ -41,6 +44,11 @@ public class ImportErrorExportService {
   private static final String PDF_ENCODING = ImportTemplateValues.ENCODING_UTF_8;
   private static final String LINE_END = "\r\n";
   private static final char QUOTE = '"';
+  // A tab or carriage return first makes some spreadsheets read the rest as a formula.
+  private static final String CONTROL_STARTS = "\t\r";
+  // A negative amount as banks write it: digits with decimal and grouping marks, nothing else.
+  private static final Pattern NEGATIVE_NUMBER =
+      Pattern.compile("-[.,' \\u00A0]*\\d[\\d.,' \\u00A0]*");
 
   private final ImportBatchService batchService;
   private final ImportRowRawRepository rowRepository;
@@ -133,16 +141,19 @@ public class ImportErrorExportService {
     if (text.isEmpty()) {
       return false;
     }
-    char first = text.charAt(0);
-    return switch (first) {
-      case '=', '+', '@', '\t', '\r' -> true;
-      // An amount such as -85,00 stays as it is; "-cmd" would run as a formula.
-      case '-' -> text.length() == 1 || !isNumberStart(text.charAt(1));
+    if (CONTROL_STARTS.indexOf(text.charAt(0)) >= 0) {
+      return true;
+    }
+    // Spreadsheets skip leading blanks: " =cmd" runs as well.
+    String trimmed = text.stripLeading();
+    if (trimmed.isEmpty()) {
+      return false;
+    }
+    return switch (trimmed.charAt(0)) {
+      case '=', '+', '@' -> true;
+      // An amount such as -85,00 stays as it is; "-cmd" or "-2+3+cmd|..." would run as a formula.
+      case '-' -> !NEGATIVE_NUMBER.matcher(trimmed).matches();
       default -> false;
     };
-  }
-
-  private static boolean isNumberStart(char c) {
-    return Character.isDigit(c) || c == '.' || c == ',';
   }
 }
