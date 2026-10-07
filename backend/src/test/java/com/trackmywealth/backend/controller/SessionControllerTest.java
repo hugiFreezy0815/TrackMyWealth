@@ -12,6 +12,7 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.entity.AuthorizationDenialLog;
 import com.trackmywealth.backend.repository.AuthorizationDenialLogRepository;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -76,9 +77,10 @@ class SessionControllerTest {
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE authorization_denial_log, admin_audit_log, user_session, refresh_token,"
-              + " app_user, workspace_member, financial_institution, workspace RESTART IDENTITY"
-              + " CASCADE");
+          LedgerCleanup.withGuardsOff(
+              "TRUNCATE TABLE authorization_denial_log, admin_audit_log, user_session, refresh_token,"
+                  + " app_user, workspace_member, financial_institution, workspace RESTART IDENTITY"
+                  + " CASCADE"));
     }
   }
 

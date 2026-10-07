@@ -42,8 +42,8 @@ public final class ImportRollbackValues {
 
   /**
    * Something outside the batch points at the transaction: a row of another batch or account
-   * ({@code related_transaction_id}), another batch's preview row found to duplicate it, or a tax
-   * lot.
+   * ({@code related_transaction_id}), a row of another batch found to duplicate it (unless that
+   * batch was discarded), or a tax lot.
    */
   public static final String REFERENCED = "REFERENCED";
 

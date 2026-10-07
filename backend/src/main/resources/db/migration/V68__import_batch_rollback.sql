@@ -9,7 +9,14 @@
 -- The hard delete is the one exception to "a transaction is never hard-deleted" (FR-LIF-001,
 -- V39). trg_transaction_no_hard_delete keeps the rule in the database for everything else: a
 -- transaction can only be deleted by the rollback of its own batch, which names that batch in the
--- transaction-local setting app.import_rollback_batch_id (set_config(..., TRUE)) first.
+-- transaction-local setting app.import_rollback_batch_id (set_config(..., TRUE)) first. TRUNCATE
+-- fires no row trigger, so trg_transaction_no_truncate refuses it outright. The guard catches
+-- application bugs; it is no boundary against SQL run as the application's own role, which can
+-- set the same setting.
+--
+-- Until now no transaction was ever deleted, so the columns that reference one had no index of
+-- their own. A delete checks every such foreign key per deleted row, and the rollback's
+-- "modified" queries look them up per transaction: without an index each is a full scan.
 -- =============================================================================================
 
 ALTER TABLE import_batch
@@ -45,3 +52,36 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER transaction_no_hard_delete
 BEFORE DELETE ON transaction
 FOR EACH ROW EXECUTE FUNCTION trg_transaction_no_hard_delete();
+
+CREATE FUNCTION trg_transaction_no_truncate()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'transaction_no_hard_delete: the ledger cannot be truncated (FR-LIF-001).'
+        USING ERRCODE = '23514';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER transaction_no_truncate
+BEFORE TRUNCATE ON transaction
+FOR EACH STATEMENT EXECUTE FUNCTION trg_transaction_no_truncate();
+
+-- The referencing columns no earlier migration indexed (the others: V10, V13, V30, V39, V49, V50).
+CREATE INDEX idx_transaction_related_transaction
+ON transaction (related_transaction_id)
+WHERE related_transaction_id IS NOT NULL;
+
+CREATE INDEX idx_import_row_raw_resulting_transaction
+ON import_row_raw (resulting_transaction_id)
+WHERE resulting_transaction_id IS NOT NULL;
+
+CREATE INDEX idx_import_row_raw_duplicate_of_transaction
+ON import_row_raw (duplicate_of_transaction_id)
+WHERE duplicate_of_transaction_id IS NOT NULL;
+
+CREATE INDEX idx_reconciliation_result_resolution_transaction
+ON reconciliation_result (resolution_transaction_id)
+WHERE resolution_transaction_id IS NOT NULL;
+
+CREATE INDEX idx_tax_lot_acquisition_transaction
+ON tax_lot (acquisition_transaction_id)
+WHERE acquisition_transaction_id IS NOT NULL;

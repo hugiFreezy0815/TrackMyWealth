@@ -13,6 +13,7 @@ import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.repository.AppUserRepository;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.MutableClock;
 import com.trackmywealth.backend.testsupport.TestClockConfig;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
@@ -89,8 +90,9 @@ class MfaControllerTest {
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE admin_audit_log, user_session, refresh_token, app_user,"
-              + " workspace_member, financial_institution, workspace RESTART IDENTITY CASCADE");
+          LedgerCleanup.withGuardsOff(
+              "TRUNCATE TABLE admin_audit_log, user_session, refresh_token, app_user,"
+                  + " workspace_member, financial_institution, workspace RESTART IDENTITY CASCADE"));
     }
   }
 

@@ -136,6 +136,7 @@ class ImportRollbackControllerTest {
               "DELETE FROM transaction_category_split",
               "DELETE FROM categorization_rule",
               "DELETE FROM import_row_raw",
+              "DELETE FROM tax_lot",
               LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM import_file",
               "DELETE FROM import_batch",
@@ -293,7 +294,8 @@ class ImportRollbackControllerTest {
     CATEGORY_SPLIT(ImportRollbackValues.CATEGORY_SPLIT),
     RECONCILIATION_RESOLUTION(ImportRollbackValues.RECONCILIATION_RESOLUTION),
     RESTORED(ImportRollbackValues.RESTORED),
-    DUPLICATE_IN_ANOTHER_BATCH(ImportRollbackValues.REFERENCED);
+    DUPLICATE_IN_ANOTHER_BATCH(ImportRollbackValues.REFERENCED),
+    TAX_LOT(ImportRollbackValues.REFERENCED);
 
     final String criterion;
 
@@ -398,6 +400,84 @@ class ImportRollbackControllerTest {
   }
 
   @Test
+  void aTransferMatchAMemberRejectedForcesTheVoidToo() {
+    UUID savings = createAccount("Sparkonto");
+    TransactionResponse credit = recordManual(savings, "DEPOSIT", "100.00", "From checking");
+    ImportBatchResponse batch = importFile(csv("2019-01-05;-100.00;CHF;To savings;T1"));
+    UUID debit = batchRows(batch.id()).get(0);
+    UUID match = (UUID) single("SELECT id FROM settlement_match WHERE status = 'PROPOSED'");
+    client()
+        .post()
+        .uri("/api/v1/settlement-matches/" + match + "/reject")
+        .header(HttpHeaders.IF_MATCH, etag(single("SELECT version FROM settlement_match")))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    ImportRollbackResponse rollback = rollback(batch, REASON);
+
+    assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.VOID);
+    assertThat(rollback.modified())
+        .containsExactly(
+            new ImportRollbackModifiedResponse(debit, List.of(ImportRollbackValues.MATCH_DECIDED)));
+    assertThat(rollback.voided()).extracting(TransactionResponse::id).containsExactly(debit);
+    assertThat(single("SELECT voided_at IS NULL FROM transaction WHERE id = ?", credit.id()))
+        .isEqualTo(true);
+  }
+
+  @Test
+  void aRowOutsideTheBatchPointingAtOneOfItsRowsForcesTheVoid() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    UUID purchase = batchRows(batch.id()).get(0);
+    // A fee recorded outside the batch, linked to the imported row (US-09-04's related row).
+    UUID fee =
+        (UUID)
+            single(
+                "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, related_transaction_id)"
+                    + " SELECT workspace_id, account_id, 'FEE', booking_date, -1.00, currency, id"
+                    + " FROM transaction WHERE id = ? RETURNING id",
+                purchase);
+
+    ImportRollbackResponse rollback = rollback(batch, REASON);
+
+    assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.VOID);
+    assertThat(rollback.modified())
+        .containsExactly(
+            new ImportRollbackModifiedResponse(purchase, List.of(ImportRollbackValues.REFERENCED)));
+    // The fee goes with its purchase, as in a single removal.
+    assertThat(rollback.voided()).extracting(TransactionResponse::id).contains(purchase, fee);
+    assertThat(count("SELECT count(*) FROM transaction WHERE id = ?", fee)).isEqualTo(1);
+  }
+
+  @Test
+  void aDiscardedPreviewOfTheSameFileDoesNotKeepTheBatch() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    assertThat(preview.counts().duplicates()).isEqualTo(3);
+    client()
+        .post()
+        .uri(imports() + "/" + preview.id() + "/discard")
+        .header(HttpHeaders.IF_MATCH, etag(preview.version()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    ImportRollbackResponse rollback = rollback(batch, REASON);
+
+    assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.HARD_DELETE);
+    assertThat(rollback.deletedTransactionCount()).isEqualTo(3);
+    assertThat(count("SELECT count(*) FROM transaction")).isZero();
+    // The discarded preview keeps its rows, no longer pointing at the deleted ones.
+    assertThat(
+            count(
+                "SELECT count(*) FROM import_row_raw WHERE import_batch_id = ?"
+                    + " AND duplicate_of_transaction_id IS NULL",
+                preview.id()))
+        .isEqualTo(3);
+  }
+
+  @Test
   void aVoidingRollbackReopensTheReconciliationItHadClosed() {
     openingBalance("1000.00");
     ImportBatchResponse batch = importFile(csv("2019-01-05;-50.00;CHF;Electricity;E1"));
@@ -471,6 +551,11 @@ class ImportRollbackControllerTest {
                         + " DELETE FROM transaction WHERE id = ? AND EXISTS (SELECT 1 FROM permit)",
                     UUID.randomUUID().toString(),
                     imported))
+        .hasMessageContaining("transaction_no_hard_delete");
+    // TRUNCATE fires no row trigger; its own guard refuses it, also as a workspace's CASCADE.
+    assertThatThrownBy(() -> execute("TRUNCATE transaction CASCADE"))
+        .hasMessageContaining("transaction_no_hard_delete");
+    assertThatThrownBy(() -> execute("TRUNCATE workspace CASCADE"))
         .hasMessageContaining("transaction_no_hard_delete");
     assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(4);
   }
@@ -621,6 +706,21 @@ class ImportRollbackControllerTest {
         // The same file again, previewed but not committed: its rows are duplicates of these.
         ImportBatchResponse preview = upload(THREE_ROWS);
         assertThat(preview.counts().duplicates()).isEqualTo(3);
+      }
+      case TAX_LOT -> {
+        UUID security = UUID.randomUUID();
+        execute(
+            "INSERT INTO security (id, synthetic_key, legal_name, display_name,"
+                + " denomination_currency) VALUES (?, ?, 'Test ETF', 'Test ETF', 'CHF')",
+            security,
+            "MANUAL-" + security);
+        execute(
+            "INSERT INTO tax_lot (account_id, security_id, acquisition_transaction_id,"
+                + " acquisition_date, original_quantity, remaining_quantity, unit_cost, currency,"
+                + " cost_basis_method) SELECT account_id, ?, id, booking_date, 1, 1, 10, 'CHF',"
+                + " 'FIFO' FROM transaction WHERE id = ?",
+            security,
+            row);
       }
     }
   }

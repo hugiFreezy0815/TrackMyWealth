@@ -3,6 +3,7 @@ package com.trackmywealth.backend.tenancy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -136,8 +137,9 @@ class CrossTenantIsolationTest {
     try (Connection admin = adminConnection();
         Statement statement = admin.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE account_snapshot, settlement_match, transaction, sharing_grant, account, financial_institution,"
-              + " workspace_member, workspace RESTART IDENTITY CASCADE");
+          LedgerCleanup.withGuardsOff(
+              "TRUNCATE TABLE account_snapshot, settlement_match, transaction, sharing_grant, account, financial_institution,"
+                  + " workspace_member, workspace RESTART IDENTITY CASCADE"));
       // The CASCADE above also empties `category` (it references workspace), shipped defaults
       // included, so this suite seeds its own shared default: only a superuser can, since V20's
       // WITH CHECK rejects a NULL workspace_id for every workspace.
