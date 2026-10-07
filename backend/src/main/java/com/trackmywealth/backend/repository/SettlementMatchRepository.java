@@ -64,6 +64,12 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
           + " WHERE m.paymentTransaction.id = :id OR m.cardTransaction.id = :id")
   List<SettlementMatch> findByTransactionId(@Param("id") UUID id);
 
+  /** {@link #findByTransactionId} for every transaction among {@code ids}, each match once. */
+  @Query(
+      "SELECT m FROM SettlementMatch m"
+          + " WHERE m.paymentTransaction.id IN :ids OR m.cardTransaction.id IN :ids")
+  List<SettlementMatch> findByTransactionIdIn(@Param("ids") Collection<UUID> ids);
+
   // A scalar, not the entity: a decision must first learn WHICH card to serialise on, without
   // loading (and so caching, possibly stale) the match before that lock is held. Empty while a leg
   // is soft-deleted (US-07-02): such a match is not actionable, and loading it would fail.

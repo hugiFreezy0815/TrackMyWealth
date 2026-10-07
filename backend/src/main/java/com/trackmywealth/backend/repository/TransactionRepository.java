@@ -78,6 +78,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   @Query("SELECT t FROM Transaction t WHERE t.id = :id")
   Optional<Transaction> findByIdForUpdate(@Param("id") UUID id);
 
+  /**
+   * {@link #findByIdForUpdate} for many rows, locked in id order as every multi-row lock is taken
+   * (US-07-05: the outgoing legs of a rolled-back batch's transfers).
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT t FROM Transaction t WHERE t.id IN :ids ORDER BY t.id")
+  List<Transaction> findAllByIdForUpdate(@Param("ids") Collection<UUID> ids);
+
   // FR-CAT-013: the account's rows in one category - with UNCATEGORIZED, the actionable list. A
   // voided row or a reversal is not actionable (US-07-02).
   Page<Transaction> findByAccountIdAndCategoryIdAndVoidedAtIsNullAndReplacesTransactionIdIsNull(
@@ -212,6 +220,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   // US-09-04: the FEE row (if any) a foreign-currency purchase's replay check compares feeAmount
   // against - at most one exists per purchase (TransactionService only ever creates one).
   Optional<Transaction> findByRelatedTransactionId(UUID relatedTransactionId);
+
+  /** US-07-05: the rows linked to any of {@code ids} - a FEE row, a transfer's incoming leg. */
+  List<Transaction> findByRelatedTransactionIdIn(Collection<UUID> ids);
 
   /**
    * The signed sum of every ledger row on {@code accountId} booked on or before {@code asOf}, in

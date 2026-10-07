@@ -10,29 +10,32 @@ import java.util.UUID;
  *
  * <ul>
  *   <li>{@code HARD_DELETE}: {@code deletedTransactionCount} transactions no longer exist; {@code
- *       modified}, {@code voided} and {@code reversals} are empty.
+ *       modified}, {@code voidedTransactionIds} and {@code reversalTransactionIds} are empty.
  *   <li>{@code VOID}: {@code modified} names every transaction that made the batch count as
- *       modified, with why; {@code voided} lists every row this rollback voided as it is now - the
- *       batch's still active rows, and a linked row voided with one of them (a purchase's FEE row);
- *       {@code reversals} the reversing rows added. Rows voided or deleted before are left alone.
+ *       modified, with why; {@code voidedTransactionIds} every row this rollback voided - the
+ *       batch's still active rows, and a linked row voided with one of them (a purchase's FEE row)
+ *       - and {@code reversalTransactionIds} the reversing rows added, in the same order. Rows
+ *       voided or deleted before are left alone.
  * </ul>
  *
- * <p>Either way {@code unmatchedTransactionIds} names the other leg of every settlement or transfer
- * match the rollback dissolved, which counts as an ordinary payment or credit again (FR-LIF-007).
+ * <p>Ids rather than rows: a batch holds thousands of rows, and the ledger endpoints read the ones
+ * a client shows. Either way {@code unmatchedTransactionIds} names the other leg of every
+ * settlement or transfer match the rollback dissolved, which counts as an ordinary payment or
+ * credit again (FR-LIF-007).
  */
 public record ImportRollbackResponse(
     ImportBatchResponse batch,
     String rollback,
     int deletedTransactionCount,
     List<ImportRollbackModifiedResponse> modified,
-    List<TransactionResponse> voided,
-    List<TransactionResponse> reversals,
+    List<UUID> voidedTransactionIds,
+    List<UUID> reversalTransactionIds,
     List<UUID> unmatchedTransactionIds) {
 
   public ImportRollbackResponse {
     modified = List.copyOf(modified);
-    voided = List.copyOf(voided);
-    reversals = List.copyOf(reversals);
+    voidedTransactionIds = List.copyOf(voidedTransactionIds);
+    reversalTransactionIds = List.copyOf(reversalTransactionIds);
     unmatchedTransactionIds = List.copyOf(unmatchedTransactionIds);
   }
 }

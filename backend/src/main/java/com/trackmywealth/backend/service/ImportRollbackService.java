@@ -74,7 +74,6 @@ public class ImportRollbackService {
   private final SettlementMatchRepository settlementMatchRepository;
   private final SettlementDetectionService settlementDetectionService;
   private final TransactionRemovalService removalService;
-  private final TransactionService transactionService;
   private final ReconciliationService reconciliationService;
   private final VersionPreconditionService versionPreconditionService;
   private final WorkspaceRepository workspaceRepository;
@@ -89,7 +88,6 @@ public class ImportRollbackService {
       SettlementMatchRepository settlementMatchRepository,
       SettlementDetectionService settlementDetectionService,
       TransactionRemovalService removalService,
-      TransactionService transactionService,
       ReconciliationService reconciliationService,
       VersionPreconditionService versionPreconditionService,
       WorkspaceRepository workspaceRepository,
@@ -102,7 +100,6 @@ public class ImportRollbackService {
     this.settlementMatchRepository = settlementMatchRepository;
     this.settlementDetectionService = settlementDetectionService;
     this.removalService = removalService;
-    this.transactionService = transactionService;
     this.reconciliationService = reconciliationService;
     this.versionPreconditionService = versionPreconditionService;
     this.workspaceRepository = workspaceRepository;
@@ -151,7 +148,7 @@ public class ImportRollbackService {
           batch.getId(),
           response.rollback(),
           response.deletedTransactionCount(),
-          response.voided().size(),
+          response.voidedTransactionIds().size(),
           response.modified().size());
     }
     return response;
@@ -219,17 +216,14 @@ public class ImportRollbackService {
     // (the entity's restriction); voided ones are skipped.
     Map<UUID, Transaction> found = new HashMap<>();
     transactionRepository.findAllById(transactionIds).forEach(row -> found.put(row.getId(), row));
-    Map<UUID, Transaction> toVoid = new LinkedHashMap<>();
+    List<Transaction> active = new ArrayList<>();
     for (UUID id : transactionIds) {
       Transaction row = found.get(id);
-      if (row == null || row.getVoidedAt() != null) {
-        continue;
-      }
-      for (Transaction removed : removalService.removalGroupOf(row)) {
-        toVoid.putIfAbsent(removed.getId(), removed);
+      if (row != null && row.getVoidedAt() == null) {
+        active.add(row);
       }
     }
-    List<Transaction> voided = List.copyOf(toVoid.values());
+    List<Transaction> voided = removalService.removalGroupsOf(active);
     removalService.requireEditOnOtherAccounts(voided, account, actor);
     SortedSet<UUID> unmatched = new TreeSet<>();
     List<Transaction> reversals =
@@ -246,8 +240,8 @@ public class ImportRollbackService {
         ImportRollbackValues.VOID,
         0,
         reasons,
-        transactionService.toResponses(voided),
-        transactionService.toResponses(reversals),
+        idsOf(voided),
+        idsOf(reversals),
         List.copyOf(unmatched));
   }
 
@@ -290,6 +284,10 @@ public class ImportRollbackService {
       cards.addAll(settlementMatchRepository.findCardAccountIdsTouching(transactionIds));
     }
     cards.forEach(settlementDetectionService::lockCard);
+  }
+
+  private static List<UUID> idsOf(List<Transaction> rows) {
+    return rows.stream().map(Transaction::getId).toList();
   }
 
   private static List<Transaction> legsOf(SettlementMatch match) {

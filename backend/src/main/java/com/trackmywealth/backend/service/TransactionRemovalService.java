@@ -17,6 +17,8 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -163,22 +165,54 @@ public class TransactionRemovalService {
    * (US-10-01). Only rows still in effect; the transfer leg is locked.
    */
   List<Transaction> removalGroupOf(Transaction original) {
-    List<Transaction> group = new ArrayList<>();
-    group.add(original);
+    return removalGroupsOf(List.of(original));
+  }
+
+  /**
+   * {@link #removalGroupOf} for many rows at once, as an import batch's rollback (US-07-05) voids
+   * them: each of {@code originals} followed by the rows it takes with it, every row once. Two
+   * queries whatever the number of rows; the transfer legs are locked in id order.
+   */
+  List<Transaction> removalGroupsOf(List<Transaction> originals) {
     // A fee removed on its own before is no longer found (voided, or hidden once soft-deleted).
+    Map<UUID, List<Transaction>> linkedTo = new HashMap<>();
     transactionRepository
-        .findByRelatedTransactionId(original.getId())
-        .filter(fee -> fee.getVoidedAt() == null)
-        .ifPresent(group::add);
+        .findByRelatedTransactionIdIn(originals.stream().map(Transaction::getId).toList())
+        .stream()
+        .filter(linked -> linked.getVoidedAt() == null)
+        .forEach(
+            linked ->
+                linkedTo
+                    .computeIfAbsent(linked.getRelatedTransactionId(), key -> new ArrayList<>())
+                    .add(linked));
     // A two-sided transfer is one entry: removing its incoming leg takes the outgoing one too (the
     // other direction is the lookup just above).
-    if (isTransferLeg(original) && original.getRelatedTransactionId() != null) {
+    List<UUID> outgoingIds =
+        originals.stream()
+            .filter(row -> isTransferLeg(row) && row.getRelatedTransactionId() != null)
+            .map(Transaction::getRelatedTransactionId)
+            .toList();
+    Map<UUID, Transaction> outgoing = new HashMap<>();
+    if (!outgoingIds.isEmpty()) {
       transactionRepository
-          .findByIdForUpdate(original.getRelatedTransactionId())
-          .filter(debit -> debit.getVoidedAt() == null)
-          .ifPresent(group::add);
+          .findAllByIdForUpdate(outgoingIds)
+          .forEach(debit -> outgoing.put(debit.getId(), debit));
     }
-    return group;
+    Map<UUID, Transaction> group = new LinkedHashMap<>();
+    for (Transaction original : originals) {
+      group.putIfAbsent(original.getId(), original);
+      linkedTo
+          .getOrDefault(original.getId(), List.of())
+          .forEach(linked -> group.putIfAbsent(linked.getId(), linked));
+      Transaction debit =
+          isTransferLeg(original) && original.getRelatedTransactionId() != null
+              ? outgoing.get(original.getRelatedTransactionId())
+              : null;
+      if (debit != null && debit.getVoidedAt() == null) {
+        group.putIfAbsent(debit.getId(), debit);
+      }
+    }
+    return new ArrayList<>(group.values());
   }
 
   /**
@@ -192,14 +226,14 @@ public class TransactionRemovalService {
   List<Transaction> voidRows(
       List<Transaction> rows, String reason, UUID actorUserId, SortedSet<UUID> unmatched) {
     OffsetDateTime now = OffsetDateTime.now(clock);
+    dissolveMatches(rows, unmatched);
     List<Transaction> reversals = new ArrayList<>();
     for (Transaction row : rows) {
-      dissolveMatches(row, unmatched);
       row.setVoidedAt(now);
       row.setVoidedBy(actorUserId);
       row.setVoidReason(reason);
-      transactionRepository.saveAndFlush(row);
-      reversals.add(transactionRepository.saveAndFlush(reversalOf(row, actorUserId)));
+      transactionRepository.save(row);
+      reversals.add(transactionRepository.save(reversalOf(row, actorUserId)));
     }
     finishRemoval(rows, unmatched, actorUserId);
     return reversals;
@@ -208,18 +242,18 @@ public class TransactionRemovalService {
   // T1: hides each row, dissolving its open matches.
   private void softDeleteRows(List<Transaction> rows, UUID actorUserId, SortedSet<UUID> unmatched) {
     OffsetDateTime now = OffsetDateTime.now(clock);
+    dissolveMatches(rows, unmatched);
     for (Transaction row : rows) {
-      dissolveMatches(row, unmatched);
       row.setDeletedAt(now);
       row.setDeletedBy(actorUserId);
-      transactionRepository.saveAndFlush(row);
+      transactionRepository.save(row);
     }
     finishRemoval(rows, unmatched, actorUserId);
   }
 
-  // A removed row is no "other leg" left unmatched. Match dissolution may have changed the rows
-  // again; flush so every returned version - and the ETag - is the one stored, not one Hibernate
-  // would only write at commit.
+  // A removed row is no "other leg" left unmatched. One flush for all rows - a flush per row
+  // dirty-checks every row loaded so far, which made voiding a 2,000-row batch take over 30 s - so
+  // every returned version, and the ETag, is the one stored, not one written only at commit.
   private void finishRemoval(List<Transaction> rows, SortedSet<UUID> unmatched, UUID changedBy) {
     rows.forEach(row -> unmatched.remove(row.getId()));
     transactionRepository.flush();
@@ -655,26 +689,29 @@ public class TransactionRemovalService {
   // A confirmed match flagged both legs an internal transfer; dissolving it makes the other leg an
   // ordinary payment or credit again (SettlementMatchService#reject does the same). A rejected
   // match is a member's decision and is kept whichever way the row goes (see the class comment).
-  private void dissolveMatches(Transaction row, Set<UUID> unmatched) {
-    for (SettlementMatch match : settlementMatchRepository.findByTransactionId(row.getId())) {
+  // One query for all rows; finishRemoval's flush writes the deletes.
+  private void dissolveMatches(List<Transaction> rows, Set<UUID> unmatched) {
+    Set<UUID> removed = new HashSet<>();
+    rows.forEach(row -> removed.add(row.getId()));
+    for (SettlementMatch match : settlementMatchRepository.findByTransactionIdIn(removed)) {
       if (SettlementMatchValues.REJECTED.equals(match.getStatus())) {
         continue;
       }
       if (SettlementMatchValues.CONFIRMED.equals(match.getStatus())) {
         settlementDetectionService.clearFlags(match);
       }
-      addOtherLeg(match, row, unmatched);
+      addOtherLegs(match, removed, unmatched);
       settlementMatchRepository.delete(match);
     }
-    settlementMatchRepository.flush();
   }
 
-  private static void addOtherLeg(SettlementMatch match, Transaction row, Set<UUID> into) {
-    Transaction payment = match.getPaymentTransaction();
-    Transaction card = match.getCardTransaction();
-    Transaction other = row.getId().equals(payment.getId()) ? card : payment;
-    if (other != null) {
-      into.add(other.getId());
+  // The legs not being removed themselves.
+  private static void addOtherLegs(SettlementMatch match, Set<UUID> removed, Set<UUID> into) {
+    for (Transaction leg :
+        Arrays.asList(match.getPaymentTransaction(), match.getCardTransaction())) {
+      if (leg != null && !removed.contains(leg.getId())) {
+        into.add(leg.getId());
+      }
     }
   }
 

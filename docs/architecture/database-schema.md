@@ -997,22 +997,27 @@ A row the ledger refuses fails the whole commit; the batch stays `PARSED`.
   (`RESTORED`), or is pointed at from outside the batch (`REFERENCED`: another row's
   `related_transaction_id`, a row of another batch as `duplicate_of_transaction_id` unless that
   batch was discarded, a tax lot). An open preview still counts: its commit never re-checks a row
-  it found duplicate, so it relies on the pointer. `ImportRollbackRepository` asks one query per criterion, under the locks, every time;
-  `contains_modified_records` is only set afterwards, as a record, and never decides.
+  it found duplicate, so it relies on the pointer. `ImportRollbackRepository` asks one query per
+  criterion, under the locks, every time; `contains_modified_records` is only set afterwards, as a
+  record, and never decides.
 - **Unmodified: hard delete (FR-LIF-010).** In one transaction: the other leg of every match the
   system confirmed loses its transfer flags, the batch's matches and categorization log rows are
   deleted, `import_row_raw.resulting_transaction_id` is cleared (and so is a discarded batch's
   `duplicate_of_transaction_id` pointing at them), and the transactions are deleted under the
   `V68` permit. The batch becomes `ROLLED_BACK`. The batch, its rows and its file stay as
   evidence; re-uploading the file is an ordinary import again, and the reconciliation reads a
-  rolled-back batch's rows like a discarded one's (`MISSING_TRANSACTION`).
+  rolled-back batch's rows like a discarded one's (`MISSING_TRANSACTION`). A currency the batch
+  added to `fx_rate_currency_in_use` stays there: that list only ever grows (`V54`), so at worst
+  the FX import keeps storing the cross rates of a currency nothing uses any more.
 - **Modified: void (FR-LIF-011).** Every transaction of the batch still in effect is voided through
   the T2 path with the rollback's reason (reversing rows, open matches dissolved, a purchase's FEE
   row with it); rows voided, deleted or corrected before keep what was done to them, and so do a
   restored copy and a correction's replacement, which are not rows of the batch. The batch becomes
-  `VOIDED`, and the answer names each modified transaction with its criteria. A voided row's bank
-  reference stays taken (`uq_transaction_external_id`), so re-importing the file marks those rows
-  duplicates, which the member can force in.
+  `VOIDED`. The answer names each modified transaction with its criteria, and the voided and
+  reversing rows by id only, as a batch can hold thousands. The rows are voided together: one
+  query per lookup and one flush, never one per row. A voided row's bank reference stays taken
+  (`uq_transaction_external_id`), so re-importing the file marks those rows duplicates, which the
+  member can force in.
 - **Atomic and ordered (FR-LIF-012).** All or nothing in one database transaction. Locks: the
   account's import advisory lock (the one a commit takes first), the batch row, every card whose
   matching the rows take part in, then the batch's transactions, each in id order. Every affected

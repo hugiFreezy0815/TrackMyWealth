@@ -184,8 +184,8 @@ class ImportRollbackControllerTest {
     assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.HARD_DELETE);
     assertThat(rollback.deletedTransactionCount()).isEqualTo(3);
     assertThat(rollback.modified()).isEmpty();
-    assertThat(rollback.voided()).isEmpty();
-    assertThat(rollback.reversals()).isEmpty();
+    assertThat(rollback.voidedTransactionIds()).isEmpty();
+    assertThat(rollback.reversalTransactionIds()).isEmpty();
     assertThat(rollback.unmatchedTransactionIds()).isEmpty();
     ImportBatchResponse rolledBack =
         CurrentVersion.storedEtag(result, dataSource, "import_batch", batch.id()).batch();
@@ -329,12 +329,12 @@ class ImportRollbackControllerTest {
         .singleElement()
         .extracting(ImportRollbackModifiedResponse::reasons)
         .satisfies(reasons -> assertThat(reasons).contains(modification.criterion));
-    assertThat(rollback.voided())
-        .extracting(TransactionResponse::id)
-        .containsExactlyElementsOf(active);
-    assertThat(rollback.voided()).allSatisfy(row -> assertThat(row.voidReason()).isEqualTo(REASON));
-    assertThat(rollback.reversals())
-        .extracting(TransactionResponse::replacesTransactionId)
+    assertThat(rollback.voidedTransactionIds()).containsExactlyElementsOf(active);
+    for (UUID id : active) {
+      assertThat(single("SELECT void_reason FROM transaction WHERE id = ?", id)).isEqualTo(REASON);
+    }
+    assertThat(rollback.reversalTransactionIds())
+        .map(id -> single("SELECT replaces_transaction_id FROM transaction WHERE id = ?", id))
         .containsExactlyElementsOf(active);
     ImportBatchResponse voided =
         CurrentVersion.storedEtag(result, dataSource, "import_batch", batch.id()).batch();
@@ -420,7 +420,7 @@ class ImportRollbackControllerTest {
     assertThat(rollback.modified())
         .containsExactly(
             new ImportRollbackModifiedResponse(debit, List.of(ImportRollbackValues.MATCH_DECIDED)));
-    assertThat(rollback.voided()).extracting(TransactionResponse::id).containsExactly(debit);
+    assertThat(rollback.voidedTransactionIds()).containsExactly(debit);
     assertThat(single("SELECT voided_at IS NULL FROM transaction WHERE id = ?", credit.id()))
         .isEqualTo(true);
   }
@@ -446,7 +446,7 @@ class ImportRollbackControllerTest {
         .containsExactly(
             new ImportRollbackModifiedResponse(purchase, List.of(ImportRollbackValues.REFERENCED)));
     // The fee goes with its purchase, as in a single removal.
-    assertThat(rollback.voided()).extracting(TransactionResponse::id).contains(purchase, fee);
+    assertThat(rollback.voidedTransactionIds()).contains(purchase, fee);
     assertThat(count("SELECT count(*) FROM transaction WHERE id = ?", fee)).isEqualTo(1);
   }
 
@@ -594,6 +594,9 @@ class ImportRollbackControllerTest {
     rollbackStatus(batch.id(), null, REASON).isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
     rollbackStatus(batch.id(), etag(batch.version()), null).isEqualTo(HttpStatus.BAD_REQUEST);
     rollbackStatus(batch.id(), etag(batch.version()), "   ").isEqualTo(HttpStatus.BAD_REQUEST);
+    // Unicode whitespace alone is blank too: the reason is stripped before it is stored.
+    rollbackStatus(batch.id(), etag(batch.version()), "\u2003\u3000")
+        .isEqualTo(HttpStatus.BAD_REQUEST);
     rollbackStatus(batch.id(), etag(batch.version()), "x".repeat(501))
         .isEqualTo(HttpStatus.BAD_REQUEST);
 
