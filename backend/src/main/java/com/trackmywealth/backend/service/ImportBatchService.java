@@ -449,6 +449,8 @@ public class ImportBatchService {
         batch.getUploadedAt(),
         batch.getParsedAt(),
         batch.getCommittedAt(),
+        batch.getRolledBackAt(),
+        batch.getRollbackReason(),
         VersionPreconditionService.persistedVersion(batch.getVersion(), VERSIONED_RESOURCE));
   }
 

@@ -31,6 +31,7 @@ import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SettlementDetectionService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -127,9 +128,7 @@ class TransactionRemovalControllerTest {
               "DELETE FROM transaction_categorization_log",
               "DELETE FROM categorization_rule",
               // reversals first: they reference their originals
-              "DELETE FROM transaction WHERE replaces_transaction_id IS NOT NULL",
-              "DELETE FROM transaction WHERE related_transaction_id IS NOT NULL",
-              "DELETE FROM transaction",
+              LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM sharing_grant",
               "DELETE FROM account_ownership",
               "DELETE FROM account_credit_card",

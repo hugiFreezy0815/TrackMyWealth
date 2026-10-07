@@ -27,6 +27,7 @@ import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -105,8 +106,7 @@ class OpeningBalanceControllerTest {
               "DELETE FROM reconciliation_result",
               "DELETE FROM settlement_match",
               // reversals first: they reference their originals
-              "DELETE FROM transaction WHERE replaces_transaction_id IS NOT NULL",
-              "DELETE FROM transaction",
+              LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM snapshot_holding",
               "DELETE FROM account_snapshot",
               "DELETE FROM custom_asset_valuation",

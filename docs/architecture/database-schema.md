@@ -71,6 +71,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V65` | `category` and `import_template`: V20's shared-or-own policy split per command - every workspace reads the shipped rows (`workspace_id IS NULL`), but `INSERT`/`UPDATE`/`DELETE` reach its own rows only. V20 let a workspace delete a shipped row and move a shipped template into its own workspace (#279) |
 | `V66` | `import_template.file_format` (`CSV`, `PDF_TEXT`, `PDF_OCR`) and `pdf_layout` (required exactly for PDF) (#268, #276) |
 | `V67` | Import batches (US-07-04, #230): `import_file` (the original file, own RLS policy), `import_batch.version` + `import_batch_bump_version`, `file_sha256`, `source_kind`; `import_row_raw.workspace_id` + RLS policy, `included`, `duplicate_of_transaction_id`, `warning_codes`, `error_code`/`error_args`, the canonical values (`canonical_data`, `booking_date`, `amount`, `currency`), and `raw_data` as `JSON` so the cells keep their order |
+| `V68` | Import batch rollback (US-07-05, #231): `import_batch.rolled_back_by` + `rollback_reason` (`chk_import_batch_rollback_recorded`: set exactly when `ROLLED_BACK`/`VOIDED`, with `rolled_back_at`), and `trg_transaction_no_hard_delete`, which refuses every `DELETE` of a transaction except its own batch's rollback |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -619,7 +620,9 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   deleted rows on purpose. A soft-deleted row is restorable for 30 days
   (`POST …/transactions/{id}/restore`, listed at `GET …/transactions/deleted`), then only no longer
   restorable. It is **never purged**: FR-LIF-001 forbids a hard delete of a transaction, which
-  closes OPEN-032. Its idempotency key stays taken.
+  closes OPEN-032. Its idempotency key stays taken. The one exception is the rollback of an
+  unmodified import batch (below); `trg_transaction_no_hard_delete` (`V68`) enforces both in the
+  database.
 - **T2, imported row: void.** The original gets `voided_at`/`voided_by`/`void_reason`, with the
   reason required (`V39`). A reversing row of the same type is added, with every amount and the
   quantity negated, dated to the void (or to the original's date if that is later), and linked by
@@ -689,7 +692,17 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
     re-proposes a pair the member rejected (as for a soft delete).
   - A void older than 30 days, already restored, or made by a correction (`corrects_transaction_id`)
     is not restorable (409). `GET …/transactions/deleted` lists every restorable row of both tiers.
-- **Not yet:** T3 (a reconciled row reopens its reconciliation) arrives with US-25-02.
+- **Import batch rollback (US-07-05, FR-LIF-002c/010/011).** Imported rows are removed in bulk
+  only by rolling back their batch, never by a multi-select; see "Import batches" below. The batch
+  path deletes an unmodified batch's rows outright and voids a modified batch's rows through the
+  same T2 code (`TransactionRemovalService#voidRows`).
+- **Hard delete guard (V68).** `trg_transaction_no_hard_delete` (`BEFORE DELETE`) raises unless
+  the row has an `import_batch_id` equal to the transaction-local setting
+  `app.import_rollback_batch_id`, which only `ImportRollbackRepository#deleteTransactions` sets
+  (`set_config(..., TRUE)`) and clears right after its delete. Test cleanup that empties the ledger
+  goes through `LedgerCleanup.DELETE_ALL_TRANSACTIONS` (triggers off for that one statement).
+- **T3.** Every removal, restore and rollback reconciles each account it touched again
+  (US-25-02), from the earliest booking date it changed.
 
 ### Workspace display currency (US-06-05)
 
@@ -910,12 +923,13 @@ Nothing reaches the ledger before the commit, and every endpoint needs `EDIT` on
 rows are raw bank data); anything else is the audited 404.
 
 **Status machine.** `UPLOADED` (stored, no template yet) -> `PARSED` (rows previewed; a parse
-again replaces them) -> `COMMITTED`; `UPLOADED`/`PARSED` -> `DISCARDED`. A step the status does not
+again replaces them) -> `COMMITTED` -> `ROLLED_BACK` or `VOIDED` (US-07-05, below);
+`UPLOADED`/`PARSED` -> `DISCARDED`. A step the status does not
 allow is a 409 `IMPORT_BATCH_STATE`, so a retried commit never imports twice. Parse, row
 inclusion, commit and discard need `If-Match` on `import_batch.version`; changing a row's inclusion
 moves the batch's version, so a commit always confirms the rows as last seen. An upload parses at
 once when a template is given or exactly one template's header fingerprint matches; otherwise the
-answer lists the candidates. `ROLLED_BACK`/`VOIDED` are US-07-05's.
+answer lists the candidates.
 
 **File storage.** `import_file` holds the original bytes (at most 5 MB, `IMPORT_MAX_FILE_SIZE`),
 their SHA-256 and media type, keyed by the batch and under its own RLS policy, so reading a batch
@@ -962,6 +976,40 @@ building, FX and categorization - in chunks of 500, with `source` from the batch
 the reference and the raw cells in `raw_source_data`. Settlement and transfer detection and the
 reconciliation run once for the batch, after the inserts, taking the same locks as a manual write.
 A row the ledger refuses fails the whole commit; the batch stays `PARSED`.
+
+**Rollback (US-07-05, #231).** `POST .../imports/{batchId}/rollback` with `If-Match` and a
+`reason` (required, at most 500 characters) undoes a `COMMITTED` batch as a whole
+(`ImportRollbackService`); the system decides how, never the member. Anything else is a 409
+`IMPORT_BATCH_STATE`, so a second rollback, concurrent or retried, never runs twice.
+
+- **Modified or not.** A batch is modified when any of its transactions (voided and soft-deleted
+  rows included) was corrected (`CORRECTED`), voided or deleted on its own (`REMOVED`), ever got a
+  member's category (`USER_CATEGORY_OVERRIDE`, a reset override still counts) or a split
+  (`CATEGORY_SPLIT`), is a leg of a settlement or transfer match a **member** confirmed or rejected
+  (`MATCH_DECIDED`; a match the system decided, `decided_by IS NULL`, does not count), is a
+  reconciliation result's resolution (`RECONCILIATION_RESOLUTION`) or had its void restored
+  (`RESTORED`), or is pointed at from outside the batch (`REFERENCED`: another row's
+  `related_transaction_id`, another batch's preview row as `duplicate_of_transaction_id`, a tax
+  lot). `ImportRollbackRepository` asks one query per criterion, under the locks, every time;
+  `contains_modified_records` is only set afterwards, as a record, and never decides.
+- **Unmodified: hard delete (FR-LIF-010).** In one transaction: the other leg of every match the
+  system confirmed loses its transfer flags, the batch's matches and categorization log rows are
+  deleted, `import_row_raw.resulting_transaction_id` is cleared, and the transactions are deleted
+  under the `V68` permit. The batch becomes `ROLLED_BACK`. The batch, its rows and its file stay as
+  evidence; re-uploading the file is an ordinary import again, and the reconciliation reads a
+  rolled-back batch's rows like a discarded one's (`MISSING_TRANSACTION`).
+- **Modified: void (FR-LIF-011).** Every transaction of the batch still in effect is voided through
+  the T2 path with the rollback's reason (reversing rows, open matches dissolved, a purchase's FEE
+  row with it); rows voided, deleted or corrected before keep what was done to them, and so do a
+  restored copy and a correction's replacement, which are not rows of the batch. The batch becomes
+  `VOIDED`, and the answer names each modified transaction with its criteria. A voided row's bank
+  reference stays taken (`uq_transaction_external_id`), so re-importing the file marks those rows
+  duplicates, which the member can force in.
+- **Atomic and ordered (FR-LIF-012).** All or nothing in one database transaction. Locks: the
+  account's import advisory lock (the one a commit takes first), the batch row, every card whose
+  matching the rows take part in, then the batch's transactions, each in id order. Every affected
+  account is reconciled again (T3). The batch records `rolled_back_at`, `rolled_back_by` and
+  `rollback_reason`.
 
 ## 5. Time-series data and partitioning
 

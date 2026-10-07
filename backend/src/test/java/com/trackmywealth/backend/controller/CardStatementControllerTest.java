@@ -19,6 +19,7 @@ import com.trackmywealth.backend.dto.StatementConfigResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.MutableClock;
 import com.trackmywealth.backend.testsupport.TestClockConfig;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
@@ -96,7 +97,7 @@ class CardStatementControllerTest {
       statement.execute("DELETE FROM transaction_category_split");
       // US-08-01: every categorized row has a log row referencing it.
       statement.execute("DELETE FROM transaction_categorization_log");
-      statement.execute("DELETE FROM transaction");
+      statement.execute(LedgerCleanup.DELETE_ALL_TRANSACTIONS);
       for (String table :
           List.of(
               "sharing_grant",

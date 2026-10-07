@@ -16,10 +16,11 @@ import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Maps {@code import_batch} (V15, V67): one uploaded file for one account and what became of it
- * (US-07-04). Its status moves {@code UPLOADED -> PARSED -> COMMITTED}, or to {@code DISCARDED}
- * before the commit; see {@link ImportBatchValues}. The file itself is an {@link ImportFile}, its
- * rows {@link ImportRowRaw}s, so reading a batch never loads either.
+ * Maps {@code import_batch} (V15, V67, V68): one uploaded file for one account and what became of
+ * it (US-07-04). Its status moves {@code UPLOADED -> PARSED -> COMMITTED}, or to {@code DISCARDED}
+ * before the commit, and a rollback ends a committed batch {@code ROLLED_BACK} or {@code VOIDED}
+ * (US-07-05); see {@link ImportBatchValues}. The file itself is an {@link ImportFile}, its rows
+ * {@link ImportRowRaw}s, so reading a batch never loads either.
  */
 @Entity
 @Table(name = "import_batch")
@@ -89,6 +90,15 @@ public class ImportBatch {
 
   @Column(name = "uploaded_by", columnDefinition = UUID_COLUMN, updatable = false)
   private UUID uploadedBy;
+
+  @Column(name = "rolled_back_at")
+  private OffsetDateTime rolledBackAt;
+
+  @Column(name = "rolled_back_by", columnDefinition = UUID_COLUMN)
+  private UUID rolledBackBy;
+
+  @Column(name = "rollback_reason")
+  private String rollbackReason;
 
   @Version
   @Generated(event = {EventType.INSERT, EventType.UPDATE})
@@ -207,6 +217,10 @@ public class ImportBatch {
     return containsModifiedRecords;
   }
 
+  public void setContainsModifiedRecords(boolean containsModifiedRecords) {
+    this.containsModifiedRecords = containsModifiedRecords;
+  }
+
   public OffsetDateTime getUploadedAt() {
     return uploadedAt;
   }
@@ -233,6 +247,25 @@ public class ImportBatch {
 
   public void setUploadedBy(UUID uploadedBy) {
     this.uploadedBy = uploadedBy;
+  }
+
+  public OffsetDateTime getRolledBackAt() {
+    return rolledBackAt;
+  }
+
+  public UUID getRolledBackBy() {
+    return rolledBackBy;
+  }
+
+  public String getRollbackReason() {
+    return rollbackReason;
+  }
+
+  /** US-07-05: who rolled the batch back, when and why (V68 requires all three together). */
+  public void recordRollback(OffsetDateTime at, UUID by, String reason) {
+    this.rolledBackAt = at;
+    this.rolledBackBy = by;
+    this.rollbackReason = reason;
   }
 
   public Integer getVersion() {

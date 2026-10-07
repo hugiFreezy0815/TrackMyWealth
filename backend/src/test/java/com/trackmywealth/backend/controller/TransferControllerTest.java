@@ -20,6 +20,7 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.service.TransferDetectionService;
 import com.trackmywealth.backend.service.TransferRecheckService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -92,9 +93,7 @@ class TransferControllerTest {
               "DELETE FROM settlement_match",
               "DELETE FROM fx_rate",
               "DELETE FROM transaction_categorization_log",
-              "DELETE FROM transaction WHERE replaces_transaction_id IS NOT NULL",
-              "DELETE FROM transaction WHERE related_transaction_id IS NOT NULL",
-              "DELETE FROM transaction",
+              LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM sharing_grant",
               "DELETE FROM account_ownership",
               "DELETE FROM account_securities",

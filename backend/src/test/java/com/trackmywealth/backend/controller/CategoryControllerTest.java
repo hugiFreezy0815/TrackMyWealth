@@ -17,6 +17,7 @@ import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategoryService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
 import jakarta.persistence.EntityManager;
 import java.sql.Connection;
@@ -104,7 +105,7 @@ class CategoryControllerTest {
               "DELETE FROM categorization_rule",
               "DELETE FROM transaction_categorization_log",
               "DELETE FROM transaction_category_split",
-              "DELETE FROM transaction",
+              LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               // children first: the parent FK has no cascade
               "DELETE FROM category WHERE workspace_id IS NOT NULL AND parent_category_id IN"
                   + " (SELECT id FROM category WHERE workspace_id IS NOT NULL)",

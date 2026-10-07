@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.ReferenceDataResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
@@ -71,7 +72,7 @@ class AdminReferenceDataControllerTest {
       for (String sql :
           List.of(
               "DELETE FROM transaction_categorization_log",
-              "DELETE FROM transaction",
+              LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM sharing_grant",
               "DELETE FROM account_ownership",
               "DELETE FROM account",

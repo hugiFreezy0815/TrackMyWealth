@@ -27,6 +27,7 @@ import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -103,7 +104,7 @@ class TransactionControllerTest {
       statement.execute("DELETE FROM transaction_category_split");
       // US-08-01: every categorized row has a log row referencing it.
       statement.execute("DELETE FROM transaction_categorization_log");
-      statement.execute("DELETE FROM transaction");
+      statement.execute(LedgerCleanup.DELETE_ALL_TRANSACTIONS);
       statement.execute("DELETE FROM category WHERE code = '" + TEST_CATEGORY_CODE + "'");
       for (String table :
           List.of(

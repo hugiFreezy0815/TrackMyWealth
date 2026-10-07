@@ -48,7 +48,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ImportCommitService {
 
   private static final Logger LOG = LoggerFactory.getLogger(ImportCommitService.class);
-  private static final String LOCK_PREFIX = "import-commit:";
+  // Per account; a rollback (ImportRollbackService) takes it too, before the batch row like here.
+  static final String LOCK_PREFIX = "import-commit:";
 
   private final ImportBatchService batchService;
   private final ImportBatchRepository batchRepository;

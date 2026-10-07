@@ -59,8 +59,8 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>Needs EDIT on the account, the same as recording there. An accepted reconciliation
  * difference's adjusting entry is neither removed nor restored here: its result's reopen does that
- * (US-25-03). T3 - a reconciled row whose void reopens its reconciliation - arrives with the import
- * rollback (US-07-05).
+ * (US-25-03). Every removal reconciles the accounts it touched again (T3, US-25-02), and an import
+ * batch's rollback (US-07-05, {@code ImportRollbackService}) voids through {@link #voidRows}.
  */
 @Service
 public class TransactionRemovalService {
@@ -134,48 +134,19 @@ public class TransactionRemovalService {
     boolean softDelete = TransactionRemovalValues.SOFT_DELETE.equals(removal);
     String voidReason = softDelete ? null : requireReason(reason);
 
-    List<Transaction> affected = new ArrayList<>();
-    affected.add(original);
-    // A card purchase's disclosed FX fee is part of it (US-09-04); a fee removed on its own before
-    // is no longer found (voided, or hidden once soft-deleted).
-    transactionRepository
-        .findByRelatedTransactionId(original.getId())
-        .filter(fee -> fee.getVoidedAt() == null)
-        .ifPresent(affected::add);
-    // US-10-01: a two-sided transfer is one entry - removing its incoming leg takes the outgoing
-    // one too (the other direction is the lookup just above).
-    if (isTransferLeg(original) && original.getRelatedTransactionId() != null) {
-      transactionRepository
-          .findByIdForUpdate(original.getRelatedTransactionId())
-          .filter(debit -> debit.getVoidedAt() == null)
-          .ifPresent(affected::add);
-    }
+    List<Transaction> affected = removalGroupOf(original);
     requireEditOnOtherAccounts(affected, account, actor);
     versionPreconditionService.requireCurrent(
         expectedVersion, original.getVersion(), TransactionService.VERSIONED_RESOURCE);
 
-    OffsetDateTime now = OffsetDateTime.now(clock);
     SortedSet<UUID> unmatched = new TreeSet<>();
-    List<Transaction> reversals = new ArrayList<>();
-    for (Transaction row : affected) {
-      dissolveMatches(row, unmatched);
-      if (softDelete) {
-        row.setDeletedAt(now);
-        row.setDeletedBy(actor.userId());
-        transactionRepository.saveAndFlush(row);
-      } else {
-        row.setVoidedAt(now);
-        row.setVoidedBy(actor.userId());
-        row.setVoidReason(voidReason);
-        transactionRepository.saveAndFlush(row);
-        reversals.add(transactionRepository.saveAndFlush(reversalOf(row, actor.userId())));
-      }
+    List<Transaction> reversals;
+    if (softDelete) {
+      softDeleteRows(affected, actor.userId(), unmatched);
+      reversals = List.of();
+    } else {
+      reversals = voidRows(affected, voidReason, actor.userId(), unmatched);
     }
-    affected.forEach(row -> unmatched.remove(row.getId()));
-    // Match dissolution may have changed the rows again; flush so every returned version - and
-    // the ETag - is the one stored, not one Hibernate would only write at commit.
-    transactionRepository.flush();
-    reconcileAfterLedgerChanges(affected, actor.userId());
     return new TransactionRemovalResponse(
         removal,
         VersionPreconditionService.persistedVersion(
@@ -184,6 +155,75 @@ public class TransactionRemovalService {
         transactionService.toResponses(reversals),
         List.copyOf(unmatched),
         List.of());
+  }
+
+  /**
+   * The rows a removal of {@code original} takes with it, {@code original} first: a card purchase's
+   * linked FEE row (US-09-04) and the outgoing leg of a two-sided transfer's incoming leg
+   * (US-10-01). Only rows still in effect; the transfer leg is locked.
+   */
+  List<Transaction> removalGroupOf(Transaction original) {
+    List<Transaction> group = new ArrayList<>();
+    group.add(original);
+    // A fee removed on its own before is no longer found (voided, or hidden once soft-deleted).
+    transactionRepository
+        .findByRelatedTransactionId(original.getId())
+        .filter(fee -> fee.getVoidedAt() == null)
+        .ifPresent(group::add);
+    // A two-sided transfer is one entry: removing its incoming leg takes the outgoing one too (the
+    // other direction is the lookup just above).
+    if (isTransferLeg(original) && original.getRelatedTransactionId() != null) {
+      transactionRepository
+          .findByIdForUpdate(original.getRelatedTransactionId())
+          .filter(debit -> debit.getVoidedAt() == null)
+          .ifPresent(group::add);
+    }
+    return group;
+  }
+
+  /**
+   * T2: voids each of {@code rows} with {@code reason} and adds its reversing row, dissolving every
+   * open match it is a leg of (the other legs land in {@code unmatched}), then reconciles each
+   * account once. The caller has locked the rows and checked access and preconditions; US-07-05's
+   * rollback voids a whole batch through here.
+   *
+   * @return the reversing rows, in the order of {@code rows}
+   */
+  List<Transaction> voidRows(
+      List<Transaction> rows, String reason, UUID actorUserId, SortedSet<UUID> unmatched) {
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    List<Transaction> reversals = new ArrayList<>();
+    for (Transaction row : rows) {
+      dissolveMatches(row, unmatched);
+      row.setVoidedAt(now);
+      row.setVoidedBy(actorUserId);
+      row.setVoidReason(reason);
+      transactionRepository.saveAndFlush(row);
+      reversals.add(transactionRepository.saveAndFlush(reversalOf(row, actorUserId)));
+    }
+    finishRemoval(rows, unmatched, actorUserId);
+    return reversals;
+  }
+
+  // T1: hides each row, dissolving its open matches.
+  private void softDeleteRows(List<Transaction> rows, UUID actorUserId, SortedSet<UUID> unmatched) {
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    for (Transaction row : rows) {
+      dissolveMatches(row, unmatched);
+      row.setDeletedAt(now);
+      row.setDeletedBy(actorUserId);
+      transactionRepository.saveAndFlush(row);
+    }
+    finishRemoval(rows, unmatched, actorUserId);
+  }
+
+  // A removed row is no "other leg" left unmatched. Match dissolution may have changed the rows
+  // again; flush so every returned version - and the ETag - is the one stored, not one Hibernate
+  // would only write at commit.
+  private void finishRemoval(List<Transaction> rows, SortedSet<UUID> unmatched, UUID changedBy) {
+    rows.forEach(row -> unmatched.remove(row.getId()));
+    transactionRepository.flush();
+    reconcileAfterLedgerChanges(rows, changedBy);
   }
 
   // Why a row the API still lists cannot be removed (again).
@@ -566,7 +606,7 @@ public class TransactionRemovalService {
 
   // The other leg of a two-sided transfer sits on another account, which the member must be able to
   // edit too - the same rule as recording it.
-  private void requireEditOnOtherAccounts(
+  void requireEditOnOtherAccounts(
       List<Transaction> rows, Account account, AuthenticatedUserPrincipal actor) {
     for (Transaction row : rows) {
       if (!row.getAccount().getId().equals(account.getId())) {

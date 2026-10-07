@@ -20,6 +20,7 @@ import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -106,7 +107,11 @@ class WorkspaceCurrencyControllerTest {
               "workspace_member",
               "financial_institution",
               "workspace")) {
-        statement.execute("DELETE FROM " + table);
+        // V68 refuses a plain DELETE of transactions outside an import rollback.
+        statement.execute(
+            "transaction".equals(table)
+                ? LedgerCleanup.DELETE_ALL_TRANSACTIONS
+                : "DELETE FROM " + table);
       }
     }
   }

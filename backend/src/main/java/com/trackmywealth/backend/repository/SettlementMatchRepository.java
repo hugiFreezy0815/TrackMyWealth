@@ -37,6 +37,27 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
           + " AND (m.paymentTransaction.id IN :ids OR m.cardTransaction.id IN :ids)")
   List<SettlementMatch> findTransferMatchesTouching(@Param("ids") Collection<UUID> ids);
 
+  /**
+   * US-07-05: every match, any status, one of whose legs is among {@code ids}, both legs loaded. A
+   * match with a soft-deleted leg is left out ({@link #HIDDEN_LEG_EXCLUDED}): it is not actionable,
+   * and Hibernate could not load that leg. {@code ids} must not be empty.
+   */
+  @Query(
+      "SELECT m FROM SettlementMatch m JOIN FETCH m.paymentTransaction p"
+          + " LEFT JOIN FETCH m.cardTransaction c WHERE (p.id IN :ids OR c.id IN :ids)"
+          + HIDDEN_LEG_EXCLUDED)
+  List<SettlementMatch> findLoadableTouching(@Param("ids") Collection<UUID> ids);
+
+  /**
+   * US-07-05: the card (for a transfer, the credit account) of every match one of whose legs is
+   * among {@code ids} - scalars, so the cards can be locked before any match is loaded. {@code ids}
+   * must not be empty.
+   */
+  @Query(
+      "SELECT DISTINCT m.cardAccount.id FROM SettlementMatch m"
+          + " WHERE m.paymentTransaction.id IN :ids OR m.cardTransaction.id IN :ids")
+  List<UUID> findCardAccountIdsTouching(@Param("ids") Collection<UUID> ids);
+
   /** US-07-02: every match, any status, one of whose legs is the given transaction. */
   @Query(
       "SELECT m FROM SettlementMatch m"

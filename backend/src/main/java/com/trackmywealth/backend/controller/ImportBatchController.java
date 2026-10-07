@@ -3,12 +3,15 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportErrorExportResponse;
 import com.trackmywealth.backend.dto.ImportParseRequest;
+import com.trackmywealth.backend.dto.ImportRollbackRequest;
+import com.trackmywealth.backend.dto.ImportRollbackResponse;
 import com.trackmywealth.backend.dto.ImportRowInclusionRequest;
 import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportBatchService;
 import com.trackmywealth.backend.service.ImportCommitService;
 import com.trackmywealth.backend.service.ImportErrorExportService;
+import com.trackmywealth.backend.service.ImportRollbackService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
 import com.trackmywealth.backend.web.VersionedResponse;
@@ -40,9 +43,9 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
  * US-07-04: upload a bank file for one account, preview what its import would do, adjust it, and
- * commit or discard it. Rules in {@link ImportBatchService} and {@link ImportCommitService}. Every
- * endpoint needs {@code EDIT} access to the account; the batch's {@code version} is its {@code
- * If-Match} revision (ADR 0004).
+ * commit or discard it; US-07-05: roll a committed one back. Rules in {@link ImportBatchService},
+ * {@link ImportCommitService} and {@link ImportRollbackService}. Every endpoint needs {@code EDIT}
+ * access to the account; the batch's {@code version} is its {@code If-Match} revision (ADR 0004).
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/imports")
@@ -53,14 +56,17 @@ public class ImportBatchController {
   private final ImportBatchService importBatchService;
   private final ImportCommitService importCommitService;
   private final ImportErrorExportService importErrorExportService;
+  private final ImportRollbackService importRollbackService;
 
   public ImportBatchController(
       ImportBatchService importBatchService,
       ImportCommitService importCommitService,
-      ImportErrorExportService importErrorExportService) {
+      ImportErrorExportService importErrorExportService,
+      ImportRollbackService importRollbackService) {
     this.importBatchService = importBatchService;
     this.importCommitService = importCommitService;
     this.importErrorExportService = importErrorExportService;
+    this.importRollbackService = importRollbackService;
   }
 
   /**
@@ -205,6 +211,25 @@ public class ImportBatchController {
     ImportBatchResponse batch =
         importBatchService.discard(accountId, batchId, IfMatchVersionParser.parse(ifMatch), actor);
     return VersionedResponse.ok(batch, batch.version());
+  }
+
+  /**
+   * Rolls a committed batch back as a whole ({@code COMMITTED -> ROLLED_BACK} or {@code VOIDED}):
+   * its transactions are deleted while nobody has worked on them, and voided once someone has - the
+   * answer names those and why. {@code reason} (required, at most 500 characters) is recorded on
+   * the batch and becomes the void reason. The {@code ETag} is the batch's new version.
+   */
+  @PostMapping(BY_ID + "/rollback")
+  public ResponseEntity<ImportRollbackResponse> rollback(
+      @PathVariable UUID accountId,
+      @PathVariable UUID batchId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @Valid @RequestBody ImportRollbackRequest request,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    ImportRollbackResponse rollback =
+        importRollbackService.rollback(
+            accountId, batchId, request.reason(), IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(rollback, rollback.batch().version());
   }
 
   private static byte[] bytesOf(MultipartFile file) {

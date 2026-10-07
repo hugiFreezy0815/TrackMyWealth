@@ -7,8 +7,9 @@ import java.util.Set;
  *
  * <p>A batch is {@link #UPLOADED} until its rows are parsed with a template, {@link #PARSED} while
  * the member reviews them (a re-parse replaces them), and {@link #COMMITTED} once its included rows
- * are in the ledger. {@link #DISCARDED} ends it before the commit and deletes its file. US-07-05
- * adds {@code ROLLED_BACK} and {@code VOIDED} after a commit.
+ * are in the ledger. {@link #DISCARDED} ends it before the commit and deletes its file. A rollback
+ * (US-07-05) ends a committed batch {@link #ROLLED_BACK} (its transactions deleted) or {@link
+ * #VOIDED} (its transactions voided).
  */
 public final class ImportBatchValues {
 
@@ -16,6 +17,12 @@ public final class ImportBatchValues {
   public static final String PARSED = "PARSED";
   public static final String COMMITTED = "COMMITTED";
   public static final String DISCARDED = "DISCARDED";
+
+  /** US-07-05: rolled back while unmodified; its transactions were deleted. */
+  public static final String ROLLED_BACK = "ROLLED_BACK";
+
+  /** US-07-05: rolled back once modified; its transactions were voided. */
+  public static final String VOIDED = "VOIDED";
 
   /** The statuses a batch can still be parsed in. */
   public static final Set<String> PARSEABLE = Set.of(UPLOADED, PARSED);
