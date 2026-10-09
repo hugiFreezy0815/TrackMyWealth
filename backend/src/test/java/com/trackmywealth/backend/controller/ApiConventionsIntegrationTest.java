@@ -15,6 +15,7 @@ import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.net.URI;
@@ -115,7 +116,7 @@ class ApiConventionsIntegrationTest {
       for (String sql :
           List.of(
               "DELETE FROM transaction_categorization_log",
-              "DELETE FROM transaction",
+              LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM category WHERE workspace_id IS NOT NULL",
               "DELETE FROM sharing_grant",
               "DELETE FROM account_ownership",

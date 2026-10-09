@@ -13,6 +13,7 @@ import com.trackmywealth.backend.repository.AdminAuditLogRepository;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.UserSessionRepository;
 import com.trackmywealth.backend.service.TokenIssuanceService;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -78,8 +79,9 @@ class AdminUserControllerTest {
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE admin_audit_log, user_session, refresh_token, app_user,"
-              + " workspace_member, financial_institution, workspace RESTART IDENTITY CASCADE");
+          LedgerCleanup.withGuardsOff(
+              "TRUNCATE TABLE admin_audit_log, user_session, refresh_token, app_user,"
+                  + " workspace_member, financial_institution, workspace RESTART IDENTITY CASCADE"));
     }
   }
 

@@ -266,4 +266,47 @@ class SchemaConventionsTest {
                 + " database-schema.md")
         .isEmpty();
   }
+
+  /**
+   * US-07-05: an import rollback hard-deletes transactions (V68), and a delete checks every foreign
+   * key that references the deleted row, one lookup per row. Each such column needs an index that
+   * starts with it, or deleting a batch scans the referencing table once per transaction.
+   */
+  @Test
+  void everyForeignKeyToATransactionIsIndexed() throws Exception {
+    String sql =
+        """
+        SELECT src.relname AS table_name, a.attname AS column_name,
+          EXISTS (
+            SELECT 1 FROM pg_index i
+            WHERE i.indrelid = con.conrelid AND i.indkey[0] = con.conkey[1]
+          ) AS indexed
+        FROM pg_constraint con
+        JOIN pg_class src ON src.oid = con.conrelid
+        JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
+        WHERE con.contype = 'f'
+          AND con.confrelid = 'public.transaction'::regclass
+          AND cardinality(con.conkey) = 1
+        """;
+
+    List<String> foreignKeys = new ArrayList<>();
+    List<String> unindexed = new ArrayList<>();
+    try (Statement stmt = connection.createStatement();
+        ResultSet rs = stmt.executeQuery(sql)) {
+      while (rs.next()) {
+        String column = rs.getString("table_name") + "." + rs.getString("column_name");
+        foreignKeys.add(column);
+        if (!rs.getBoolean("indexed")) {
+          unindexed.add(column);
+        }
+      }
+    }
+
+    assertThat(foreignKeys)
+        .as("the catalog query found the foreign keys to transaction at all")
+        .contains("settlement_match.payment_transaction_id", "transaction.related_transaction_id");
+    assertThat(unindexed)
+        .as("columns referencing transaction without an index that starts with them")
+        .isEmpty();
+  }
 }

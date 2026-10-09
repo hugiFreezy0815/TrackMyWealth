@@ -21,6 +21,7 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.service.CategorizationService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -106,7 +107,7 @@ class CategorizationControllerTest {
           List.of(
               "DELETE FROM transaction_categorization_log",
               "DELETE FROM categorization_rule",
-              "DELETE FROM transaction",
+              LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM workspace_category_override",
               "DELETE FROM category WHERE workspace_id IS NOT NULL AND parent_category_id IN"
                   + " (SELECT id FROM category WHERE workspace_id IS NOT NULL)",

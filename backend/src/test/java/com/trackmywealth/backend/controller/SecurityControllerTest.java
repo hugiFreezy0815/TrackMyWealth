@@ -17,6 +17,7 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SecurityService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.validation.IsinValidator;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -90,7 +91,7 @@ class SecurityControllerTest {
       statement.execute("DELETE FROM transaction_category_split");
       // US-08-01: every categorized row has a log row referencing it.
       statement.execute("DELETE FROM transaction_categorization_log");
-      statement.execute("DELETE FROM transaction");
+      statement.execute(LedgerCleanup.DELETE_ALL_TRANSACTIONS);
       statement.execute("DELETE FROM security_field_provenance");
       statement.execute("DELETE FROM security_asset_class_weight");
       statement.execute("DELETE FROM security_identifier");

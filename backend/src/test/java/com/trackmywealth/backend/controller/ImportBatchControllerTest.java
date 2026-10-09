@@ -29,6 +29,7 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.io.IOException;
 import java.io.InputStream;
@@ -138,8 +139,7 @@ class ImportBatchControllerTest {
               "DELETE FROM transfer_detection_fx_pending",
               "DELETE FROM transaction_categorization_log",
               "DELETE FROM import_row_raw",
-              "DELETE FROM transaction WHERE replaces_transaction_id IS NOT NULL",
-              "DELETE FROM transaction",
+              LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM import_file",
               "DELETE FROM import_batch",
               "DELETE FROM import_template",

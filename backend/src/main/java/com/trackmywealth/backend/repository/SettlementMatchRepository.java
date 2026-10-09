@@ -17,6 +17,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface SettlementMatchRepository extends JpaRepository<SettlementMatch, UUID> {
 
+  String IDS = "ids";
+
   // A card leg that exists but is soft-deleted (US-07-02) joins as null: such a match is left out
   // rather than read as one-sided, or loaded with a leg Hibernate cannot find.
   String HIDDEN_LEG_EXCLUDED = " AND (m.cardTransactionId IS NULL OR c.id IS NOT NULL)";
@@ -35,13 +37,40 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   @Query(
       "SELECT m FROM SettlementMatch m WHERE m.matchKind = 'TRANSFER'"
           + " AND (m.paymentTransaction.id IN :ids OR m.cardTransaction.id IN :ids)")
-  List<SettlementMatch> findTransferMatchesTouching(@Param("ids") Collection<UUID> ids);
+  List<SettlementMatch> findTransferMatchesTouching(@Param(IDS) Collection<UUID> ids);
+
+  /**
+   * US-07-05: every match, any status, one of whose legs is among {@code ids}, both legs loaded. A
+   * match with a soft-deleted leg is left out ({@link #HIDDEN_LEG_EXCLUDED}): it is not actionable,
+   * and Hibernate could not load that leg. {@code ids} must not be empty.
+   */
+  @Query(
+      "SELECT m FROM SettlementMatch m JOIN FETCH m.paymentTransaction p"
+          + " LEFT JOIN FETCH m.cardTransaction c WHERE (p.id IN :ids OR c.id IN :ids)"
+          + HIDDEN_LEG_EXCLUDED)
+  List<SettlementMatch> findLoadableTouching(@Param(IDS) Collection<UUID> ids);
+
+  /**
+   * US-07-05: the card (for a transfer, the credit account) of every match one of whose legs is
+   * among {@code ids} - scalars, so the cards can be locked before any match is loaded. {@code ids}
+   * must not be empty.
+   */
+  @Query(
+      "SELECT DISTINCT m.cardAccount.id FROM SettlementMatch m"
+          + " WHERE m.paymentTransaction.id IN :ids OR m.cardTransaction.id IN :ids")
+  List<UUID> findCardAccountIdsTouching(@Param(IDS) Collection<UUID> ids);
 
   /** US-07-02: every match, any status, one of whose legs is the given transaction. */
   @Query(
       "SELECT m FROM SettlementMatch m"
           + " WHERE m.paymentTransaction.id = :id OR m.cardTransaction.id = :id")
   List<SettlementMatch> findByTransactionId(@Param("id") UUID id);
+
+  /** {@link #findByTransactionId} for every transaction among {@code ids}, each match once. */
+  @Query(
+      "SELECT m FROM SettlementMatch m"
+          + " WHERE m.paymentTransaction.id IN :ids OR m.cardTransaction.id IN :ids")
+  List<SettlementMatch> findByTransactionIdIn(@Param(IDS) Collection<UUID> ids);
 
   // A scalar, not the entity: a decision must first learn WHICH card to serialise on, without
   // loading (and so caching, possibly stale) the match before that lock is held. Empty while a leg

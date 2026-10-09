@@ -78,6 +78,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   @Query("SELECT t FROM Transaction t WHERE t.id = :id")
   Optional<Transaction> findByIdForUpdate(@Param("id") UUID id);
 
+  /**
+   * {@link #findByIdForUpdate} for many rows, locked in id order as every multi-row lock is taken
+   * (US-07-05: the outgoing legs of a rolled-back batch's transfers).
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT t FROM Transaction t WHERE t.id IN :ids ORDER BY t.id")
+  List<Transaction> findAllByIdForUpdate(@Param("ids") Collection<UUID> ids);
+
   // FR-CAT-013: the account's rows in one category - with UNCATEGORIZED, the actionable list. A
   // voided row or a reversal is not actionable (US-07-02).
   Page<Transaction> findByAccountIdAndCategoryIdAndVoidedAtIsNullAndReplacesTransactionIdIsNull(
@@ -212,6 +220,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   // US-09-04: the FEE row (if any) a foreign-currency purchase's replay check compares feeAmount
   // against - at most one exists per purchase (TransactionService only ever creates one).
   Optional<Transaction> findByRelatedTransactionId(UUID relatedTransactionId);
+
+  /** US-07-05: the rows linked to any of {@code ids} - a FEE row, a transfer's incoming leg. */
+  List<Transaction> findByRelatedTransactionIdIn(Collection<UUID> ids);
 
   /**
    * The signed sum of every ledger row on {@code accountId} booked on or before {@code asOf}, in
@@ -596,8 +607,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
   /**
    * US-07-04 duplicate rule 1: the account's rows of {@code source} that carry one of {@code
-   * externalIds}. Every row counts, voided and soft-deleted ones too: {@code
-   * uq_transaction_external_id} holds their keys as well, so the import could not insert them.
+   * externalIds}. Voided rows retain their reference as history but no longer reserve it (V69).
+   * Soft-deleted rows still reserve it, matching {@code uq_transaction_external_id}.
    */
   @Query(
       value =
@@ -605,7 +616,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " t.currency AS currency, t.merchant_description AS merchantDescription,"
               + " t.source AS source, t.external_id AS externalId"
               + " FROM transaction t WHERE t.account_id = :accountId AND t.source = :source"
-              + " AND t.external_id IN (:externalIds)",
+              + " AND t.external_id IN (:externalIds) AND t.voided_at IS NULL",
       nativeQuery = true)
   List<ImportDuplicateCandidate> findByExternalIds(
       @Param(ACCOUNT_ID) UUID accountId,

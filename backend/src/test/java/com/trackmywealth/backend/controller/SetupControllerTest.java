@@ -11,6 +11,7 @@ import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.List;
@@ -84,8 +85,9 @@ class SetupControllerTest {
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       statement.execute(
-          "TRUNCATE TABLE user_session, refresh_token, app_user, workspace_member,"
-              + " financial_institution, workspace RESTART IDENTITY CASCADE");
+          LedgerCleanup.withGuardsOff(
+              "TRUNCATE TABLE user_session, refresh_token, app_user, workspace_member,"
+                  + " financial_institution, workspace RESTART IDENTITY CASCADE"));
     }
   }
 
