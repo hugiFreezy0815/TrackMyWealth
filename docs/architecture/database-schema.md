@@ -964,8 +964,9 @@ delimiter and encoding (FR-IMP-012), formula-like cells defused.
 
 **Duplicate rule** (`ImportDuplicateService`, at preview and again at commit). (1) A row with a
 bank reference duplicates the account's row of the batch's source (`CSV`, `DOCUMENT` for a PDF,
-`API` later) with that `external_id`, voided rows included (`uq_transaction_external_id` holds
-them). (2) Every other row duplicates a live row (not deleted, voided, a reversal or an adjusting
+`API` later) with that `external_id`, excluding voided rows. V69 keeps their references as audit
+history but excludes them from `uq_transaction_external_id`; soft-deleted rows still reserve their
+keys. (2) Every other row duplicates a live row (not deleted, voided, a reversal or an adjusting
 entry) of any source with the same booking date, amount, currency and normalized description
 (trimmed, lower case, blanks collapsed, none = empty); a referenced row is not matched to a row of
 its own source with another reference. No date tolerance. (3) Each ledger row is the duplicate of
@@ -1015,9 +1016,9 @@ A row the ledger refuses fails the whole commit; the batch stays `PARSED`.
   restored copy and a correction's replacement, which are not rows of the batch. The batch becomes
   `VOIDED`. The answer names each modified transaction with its criteria, and the voided and
   reversing rows by id only, as a batch can hold thousands. The rows are voided together: one
-  query per lookup and one flush, never one per row. A voided row's bank reference stays taken
-  (`uq_transaction_external_id`), so re-importing the file marks those rows duplicates, which the
-  member can force in.
+  query per lookup and one flush, never one per row. A voided row keeps its bank reference as audit
+  history, but V69 releases its uniqueness reservation. Re-importing the file treats those rows as
+  new, without forcing them; the newly committed live rows reserve the references again.
 - **Atomic and ordered (FR-LIF-012).** All or nothing in one database transaction. Locks: the
   account's import advisory lock (the one a commit takes first), the batch row, every card whose
   matching the rows take part in, then the batch's transactions, each in id order. Every affected

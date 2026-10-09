@@ -607,8 +607,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
   /**
    * US-07-04 duplicate rule 1: the account's rows of {@code source} that carry one of {@code
-   * externalIds}. Every row counts, voided and soft-deleted ones too: {@code
-   * uq_transaction_external_id} holds their keys as well, so the import could not insert them.
+   * externalIds}. Voided rows retain their reference as history but no longer reserve it (V69).
+   * Soft-deleted rows still reserve it, matching {@code uq_transaction_external_id}.
    */
   @Query(
       value =
@@ -616,7 +616,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " t.currency AS currency, t.merchant_description AS merchantDescription,"
               + " t.source AS source, t.external_id AS externalId"
               + " FROM transaction t WHERE t.account_id = :accountId AND t.source = :source"
-              + " AND t.external_id IN (:externalIds)",
+              + " AND t.external_id IN (:externalIds) AND t.voided_at IS NULL",
       nativeQuery = true)
   List<ImportDuplicateCandidate> findByExternalIds(
       @Param(ACCOUNT_ID) UUID accountId,

@@ -214,6 +214,34 @@ class ImportRollbackControllerTest {
   }
 
   @Test
+  void aVoidedBatchCanBeReimportedWithoutForcingRows() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    overrideCategory(batchRows(batch.id()).get(0));
+    assertThat(rollback(batch, REASON).batch().status()).isEqualTo("VOIDED");
+    ImportBatchResponse again = upload(THREE_ROWS);
+    assertThat(again.counts().duplicates()).isZero();
+    assertThat(again.counts().newRows()).isEqualTo(3);
+    assertThat(again.sameFileImportedIn()).isNull();
+    ImportBatchResponse reimported = commit(again);
+    assertThat(batchRows(reimported.id())).hasSize(3);
+    // Original references stay on the voided rows as audit evidence, and on the new live rows.
+    assertThat(
+            count(
+                "SELECT count(*) FROM transaction WHERE import_batch_id = ?"
+                    + " AND voided_at IS NOT NULL AND external_id IN ('R1', 'R2', 'R3')",
+                batch.id()))
+        .isEqualTo(3);
+    assertThat(
+            count(
+                "SELECT count(*) FROM transaction WHERE import_batch_id = ?"
+                    + " AND voided_at IS NULL AND external_id IN ('R1', 'R2', 'R3')",
+                reimported.id()))
+        .isEqualTo(3);
+    // The new live rows still prevent an accidental second import.
+    assertThat(upload(THREE_ROWS).counts().duplicates()).isEqualTo(3);
+  }
+
+  @Test
   void aBatchWhoseRowsWereAllDuplicatesIsRolledBackWithNothingToDelete() {
     importFile(THREE_ROWS);
     ImportBatchResponse onlyDuplicates = upload(THREE_ROWS);
