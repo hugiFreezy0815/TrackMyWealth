@@ -175,7 +175,7 @@
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
-            <version>3.0.6</version>
+            <version>3.0.8</version>
         </dependency>
 
         <!-- PdfImportReaderService counts a PDF stream's decoded size without keeping it
