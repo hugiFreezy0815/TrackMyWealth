@@ -700,6 +700,38 @@ class ImportRollbackControllerTest {
   }
 
   @Test
+  void aPreviewRowWhoseBookingWasCorrectedIntoAnotherAccountIsCheckedAgainInItsOwn() {
+    UUID savings = createAccount("Sparkonto");
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    UUID bakery = bookingOf(batch, "R1");
+    correct(bakery, savings);
+    UUID moved =
+        (UUID) single("SELECT id FROM transaction WHERE corrects_transaction_id = ?", bakery);
+    assertThat(single("SELECT account_id FROM transaction WHERE id = ?", moved)).isEqualTo(savings);
+
+    ImportBatchResponse committed = commit(preview);
+
+    // The pointer never leaves the batch's account (product owner, 2026-10-13): the booking is
+    // gone from this one, so the row is what a fresh import of the file would make of it.
+    assertThat(
+            count(
+                "SELECT count(*) FROM import_row_raw r JOIN transaction t"
+                    + " ON t.id = r.duplicate_of_transaction_id"
+                    + " WHERE r.import_batch_id = ? AND t.account_id <> ?",
+                preview.id(),
+                account))
+        .isZero();
+    assertThat(committed.counts().imported()).isEqualTo(1);
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("PARSED");
+    assertThat(
+            single(
+                "SELECT account_id FROM transaction WHERE import_batch_id = ? AND external_id = 'R1'",
+                preview.id()))
+        .isEqualTo(account);
+  }
+
+  @Test
   void aPreviewRowWhoseVoidWasRestoredSinceStaysADuplicateOfTheCopy() {
     ImportBatchResponse batch = importFile(THREE_ROWS);
     // Matched by its reference alone; the restore's copy carries none, and the other text keeps
@@ -1043,6 +1075,11 @@ class ImportRollbackControllerTest {
   }
 
   private void correct(UUID row) {
+    correct(row, null);
+  }
+
+  // A correction of the row, into targetAccount when it is not null.
+  private void correct(UUID row, UUID targetAccount) {
     Map<String, Object> original =
         rowsOf(
                 "SELECT transaction_type, booking_date, amount, currency FROM transaction"
@@ -1057,7 +1094,7 @@ class ImportRollbackControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CorrectTransactionRequest(
-                null,
+                targetAccount,
                 (String) original.get("transaction_type"),
                 ((java.sql.Date) original.get("booking_date")).toLocalDate(),
                 // One more in the row's own direction: an income stays positive, a spending

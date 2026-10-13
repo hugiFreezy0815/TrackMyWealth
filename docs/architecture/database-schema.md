@@ -638,7 +638,8 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   match queries leave the match out (`SettlementMatchRepository.HIDDEN_LEG_EXCLUDED`), since
   Hibernate cannot load a leg its `@SQLRestriction` hides, and the match is not actionable (404).
 - **Concurrency.** Removal, correction and restore first take the import commit's advisory lock of
-  the row's account and of a two-sided transfer's other account, in id order (#287): an import
+  the row's account and of a two-sided transfer's other account, in id order (`ImportLockService`,
+  #287): an import
   commit relies on the row a preview duplicate points at staying as it is until it ends (see
   **Commit** under import batches). Then they lock every card whose matching the row can take part
   in (the account itself if it is a card, else every card using it as settlement source, plus the
@@ -994,10 +995,12 @@ every readable row; a row that is new no longer is recorded as `DUPLICATE` and s
 `DUPLICATE` row keeps its booking while the ledger holds it, and the others are not matched to that
 ledger row (#287): the row it points at while that is in effect, or else what replaced it since -
 a correction's replacement (`corrects_transaction_id`) or a restored void's copy
-(`restores_transaction_id`), followed to the row in effect now, which the duplicate then points at.
-Neither carries the reference, so the duplicate rules alone would not find them, and the booking
-would come in twice. Once the booking is gone - a rollback deleted the row and cleared the pointer,
-or it was voided or soft-deleted for good - the row is checked again with the rest, under the rules
+(`restores_transaction_id`), followed to the row in effect now within the same account, which the
+duplicate then points at. Neither carries the reference, so the duplicate rules alone would not find
+them, and the booking would come in twice. Once the booking is gone - a rollback deleted the row and
+cleared the pointer, it was voided or soft-deleted for good, or a correction moved it to another
+account (product owner, 2026-10-13: the pointer never leaves the batch's account, and the row is
+treated as a fresh import would treat it) - the row is checked again with the rest, under the rules
 of a fresh import: if the ledger holds the booking as another row, the row points there and stays as
 included as it was; if not, it becomes `PARSED` and included (product owner, 2026-10-13: it was only
 left out for being a duplicate) and is imported. This matches V69: a voided row is no duplicate. A

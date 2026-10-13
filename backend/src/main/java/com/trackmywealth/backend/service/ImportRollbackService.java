@@ -13,7 +13,6 @@ import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportRollbackRepository;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
-import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import jakarta.persistence.EntityManager;
 import java.time.Clock;
@@ -76,7 +75,7 @@ public class ImportRollbackService {
   private final TransactionRemovalService removalService;
   private final ReconciliationService reconciliationService;
   private final VersionPreconditionService versionPreconditionService;
-  private final WorkspaceRepository workspaceRepository;
+  private final ImportLockService importLockService;
   private final EntityManager entityManager;
   private final Clock clock;
 
@@ -90,7 +89,7 @@ public class ImportRollbackService {
       TransactionRemovalService removalService,
       ReconciliationService reconciliationService,
       VersionPreconditionService versionPreconditionService,
-      WorkspaceRepository workspaceRepository,
+      ImportLockService importLockService,
       EntityManager entityManager,
       Clock clock) {
     this.batchService = batchService;
@@ -102,7 +101,7 @@ public class ImportRollbackService {
     this.removalService = removalService;
     this.reconciliationService = reconciliationService;
     this.versionPreconditionService = versionPreconditionService;
-    this.workspaceRepository = workspaceRepository;
+    this.importLockService = importLockService;
     this.entityManager = entityManager;
     this.clock = clock;
   }
@@ -124,7 +123,7 @@ public class ImportRollbackService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = batchService.requireImportableAccount(accountId, actor);
-    workspaceRepository.lockAdvisory(ImportCommitService.LOCK_PREFIX + account.getId());
+    importLockService.lockAccount(account.getId());
     ImportBatch batch = batchService.lockBatch(account, batchId, actor);
     // The state before the version: a retried rollback learns that it already happened.
     ImportBatchService.requireStatus(batch, ImportBatchValues.COMMITTED);

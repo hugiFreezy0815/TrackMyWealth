@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
+import com.trackmywealth.backend.dto.ImportDuplicateHold;
 import com.trackmywealth.backend.dto.ImportLedgerRow;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
@@ -12,18 +13,17 @@ import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportRowRawBatchRepository;
 import com.trackmywealth.backend.repository.ImportRowRawRepository;
-import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -48,7 +48,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><b>Stale duplicates (#287).</b> A row the preview found duplicate keeps its booking while the
  * ledger holds it: the row it points at while that is in effect, or what replaced that row since -
- * a correction's replacement or a restored void's copy, which the row then points at. Nothing else
+ * a correction's replacement or a restored void's copy in the same account, which the row then
+ * points at; a booking a correction moved to another account is gone from this one. Nothing else
  * may match that ledger row. Once the booking is gone - a rollback deleted the row and cleared the
  * pointer, or it was voided or soft-deleted for good - the row is checked again with the others,
  * under the duplicate rules of a fresh import: if the ledger holds the booking as another row, the
@@ -62,9 +63,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class ImportCommitService {
 
   private static final Logger LOG = LoggerFactory.getLogger(ImportCommitService.class);
-  // Per account; a rollback (ImportRollbackService) takes it too, before the batch row like here,
-  // and so do a removal, correction or restore (TransactionRemovalService), before the cards.
-  public static final String LOCK_PREFIX = "import-commit:";
 
   private final ImportBatchService batchService;
   private final ImportBatchRepository batchRepository;
@@ -74,7 +72,7 @@ public class ImportCommitService {
   private final ImportLedgerRowService ledgerRows;
   private final TransactionService transactionService;
   private final VersionPreconditionService versionPreconditionService;
-  private final WorkspaceRepository workspaceRepository;
+  private final ImportLockService importLockService;
   private final Clock clock;
 
   public ImportCommitService(
@@ -86,7 +84,7 @@ public class ImportCommitService {
       ImportLedgerRowService ledgerRows,
       TransactionService transactionService,
       VersionPreconditionService versionPreconditionService,
-      WorkspaceRepository workspaceRepository,
+      ImportLockService importLockService,
       Clock clock) {
     this.batchService = batchService;
     this.batchRepository = batchRepository;
@@ -96,7 +94,7 @@ public class ImportCommitService {
     this.ledgerRows = ledgerRows;
     this.transactionService = transactionService;
     this.versionPreconditionService = versionPreconditionService;
-    this.workspaceRepository = workspaceRepository;
+    this.importLockService = importLockService;
     this.clock = clock;
   }
 
@@ -110,7 +108,7 @@ public class ImportCommitService {
   public ImportBatchResponse commit(
       UUID accountId, UUID batchId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = batchService.requireImportableAccount(accountId, actor);
-    workspaceRepository.lockAdvisory(LOCK_PREFIX + account.getId());
+    importLockService.lockAccount(account.getId());
     ImportBatch batch = batchService.lockBatch(account, batchId, actor);
     // The state before the version: a retried commit learns that it already happened.
     ImportBatchService.requireStatus(batch, ImportBatchValues.PARSED);
@@ -124,10 +122,13 @@ public class ImportCommitService {
     List<ImportRowRaw> readable =
         rowRepository.findByImportBatchIdAndParseStatusInOrderByRowNumber(
             batch.getId(), List.of(ImportBatchValues.ROW_PARSED, ImportBatchValues.ROW_DUPLICATE));
-    Map<UUID, UUID> held = new HashMap<>();
-    rowRepository
-        .findDuplicateHolds(batch.getId())
-        .forEach(hold -> held.put(hold.getRowId(), hold.getTransactionId()));
+    // At most one hold per row: a row has at most one successor, so its chain is a line. Should
+    // that ever break, toMap fails the commit rather than keep an arbitrary one.
+    Map<UUID, UUID> held =
+        rowRepository.findDuplicateHolds(batch.getId()).stream()
+            .collect(
+                Collectors.toMap(
+                    ImportDuplicateHold::getRowId, ImportDuplicateHold::getTransactionId));
     Set<UUID> reserved = new HashSet<>(held.values());
     List<ParsedImportRow> recheck = new ArrayList<>();
     for (ImportRowRaw row : readable) {

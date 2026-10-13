@@ -10,7 +10,6 @@ import com.trackmywealth.backend.entity.SettlementMatch;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
-import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -85,7 +84,7 @@ public class TransactionRemovalService {
   private final VersionPreconditionService versionPreconditionService;
   private final ReconciliationService reconciliationService;
   private final ReconciliationAdjustmentService reconciliationAdjustmentService;
-  private final WorkspaceRepository workspaceRepository;
+  private final ImportLockService importLockService;
 
   public TransactionRemovalService(
       AccountLookupService accountLookupService,
@@ -101,7 +100,7 @@ public class TransactionRemovalService {
       VersionPreconditionService versionPreconditionService,
       ReconciliationService reconciliationService,
       ReconciliationAdjustmentService reconciliationAdjustmentService,
-      WorkspaceRepository workspaceRepository) {
+      ImportLockService importLockService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -115,7 +114,7 @@ public class TransactionRemovalService {
     this.versionPreconditionService = versionPreconditionService;
     this.reconciliationService = reconciliationService;
     this.reconciliationAdjustmentService = reconciliationAdjustmentService;
-    this.workspaceRepository = workspaceRepository;
+    this.importLockService = importLockService;
   }
 
   /**
@@ -665,16 +664,16 @@ public class TransactionRemovalService {
   // (#287): a removal or restore of that row must not land between the commit's check and its end,
   // or the duplicate stays out pointing at a void, or a restored booking comes in twice. Before the
   // cards, the order the commit and the rollback take them; every account the row's removal group
-  // or restore can reach (a two-sided transfer's other leg), in id order. Only the ids are read,
+  // or restore can reach (a two-sided transfer's other leg), in id order (ImportLockService). Only
+  // the ids are read,
   // so no access is checked here: the caller checks EDIT on each account the write touches.
   private void lockImports(Account account, UUID transactionId) {
-    SortedSet<UUID> accounts = new TreeSet<>();
-    accounts.add(account.getId());
+    List<UUID> accounts = new ArrayList<>(List.of(account.getId()));
     transactionRepository
         .findTransferCounterpartyAccountId(
             transactionId, account.getId(), TransferRecordingService.TRANSFER_TYPES)
         .ifPresent(accounts::add);
-    accounts.forEach(id -> workspaceRepository.lockAdvisory(ImportCommitService.LOCK_PREFIX + id));
+    importLockService.lockAccounts(accounts);
   }
 
   // Every card whose matching the row can take part in, not only those with a match on it yet: a

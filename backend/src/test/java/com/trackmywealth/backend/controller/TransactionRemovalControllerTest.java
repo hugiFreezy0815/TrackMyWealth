@@ -28,9 +28,8 @@ import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.repository.TransactionRepository;
-import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
-import com.trackmywealth.backend.service.ImportCommitService;
+import com.trackmywealth.backend.service.ImportLockService;
 import com.trackmywealth.backend.service.SettlementDetectionService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
@@ -120,7 +119,7 @@ class TransactionRemovalControllerTest {
 
   @Autowired PlatformTransactionManager transactionManager;
 
-  @Autowired WorkspaceRepository workspaceRepository;
+  @Autowired ImportLockService importLockService;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -1346,8 +1345,7 @@ class TransactionRemovalControllerTest {
                   new TransactionTemplate(transactionManager)
                       .executeWithoutResult(
                           status -> {
-                            workspaceRepository.lockAdvisory(
-                                ImportCommitService.LOCK_PREFIX + accountId);
+                            importLockService.lockAccount(accountId);
                             locked.countDown();
                             await(release);
                           });
