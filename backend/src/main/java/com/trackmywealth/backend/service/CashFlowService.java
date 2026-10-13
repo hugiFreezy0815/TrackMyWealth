@@ -66,14 +66,13 @@ public class CashFlowService {
   // the member incurred, not folded into the purchase amount - the story's own purpose ("see the
   // true cost including any FX fee") is exactly this: it must show up in spending on its own. A
   // card payment typed EXPENSE or WITHDRAWAL is kept out again by settlement matching
-  // (SettlementDetectionService), never here. INCOME, DEPOSIT, INTEREST and REFUND are inflows and
-  // deliberately not netted against spending.
+  // (SettlementDetectionService), never here. REFUND offsets spending (US-07-18), not income.
   // US-10-01: what the household earns. A refund is not income (it undoes spending); a DEPOSIT is
   // money moved in, which is either a transfer or of unknown origin.
   private static final Set<String> INCOME_TYPES = Set.of("INCOME", "INTEREST", "DIVIDEND");
 
   private static final Set<String> SPENDING_TYPES =
-      Set.of("CREDIT_CARD_PURCHASE", "WITHDRAWAL", "FEE", "EXPENSE", "TAX");
+      Set.of("CREDIT_CARD_PURCHASE", "WITHDRAWAL", "FEE", "EXPENSE", "TAX", "REFUND");
 
   private final AccessControlService accessControlService;
   private final AccountRepository accountRepository;
