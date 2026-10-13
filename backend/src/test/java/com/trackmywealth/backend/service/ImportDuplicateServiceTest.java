@@ -22,9 +22,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
- * US-07-04's duplicate rules without a database: reference, exact fallback across sources, and
- * multiplicity. That the two queries read the right ledger rows is {@code
- * ImportBatchControllerTest}'s part.
+ * US-07-04's duplicate rules without a database: reference, the fallback on booking date, amount
+ * and currency across sources (US-07-17), and multiplicity. That the two queries read the right
+ * ledger rows is {@code ImportBatchControllerTest}'s part.
  */
 class ImportDuplicateServiceTest {
 
@@ -60,10 +60,10 @@ class ImportDuplicateServiceTest {
   }
 
   @Test
-  void aBookingAlreadyImportedFromAnotherSourceIsFoundDespiteItsReference() {
+  void aBookingAlreadyImportedFromAnotherSourceIsFoundDespiteItsReferenceAndWording() {
     // The same booking from a PDF statement first, now from the CSV export with its reference.
     UUID fromPdf = UUID.randomUUID();
-    ledger(candidate(fromPdf, "-12.40", "Bakery", "DOCUMENT", "PDF-REF"));
+    ledger(candidate(fromPdf, "-12.40", "BAECKEREI MUSTER GMBH", "DOCUMENT", "PDF-REF"));
 
     Map<Integer, UUID> duplicates =
         service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "-12.40", "Bakery", "REF-1")));
@@ -151,17 +151,108 @@ class ImportDuplicateServiceTest {
   }
 
   @Test
-  void anotherDateAmountCurrencyOrDescriptionIsNoMatch() {
+  void anotherDateAmountOrCurrencyIsNoMatch() {
     ledger(candidate(UUID.randomUUID(), "-12.40", "Bakery", "MANUAL", null));
 
     List<ParsedImportRow> rows =
         List.of(
             row(1, DAY.plusDays(1), "-12.40", "EUR", "Bakery"),
             row(2, DAY, "-12.41", "EUR", "Bakery"),
-            row(3, DAY, "-12.40", "CHF", "Bakery"),
-            row(4, DAY, "-12.40", "EUR", "Bakery 2"));
+            row(3, DAY, "-12.40", "CHF", "Bakery"));
 
     assertThat(service.findDuplicates(ACCOUNT, CSV, rows)).isEmpty();
+  }
+
+  @Test
+  void anotherDescriptionIsStillTheSameBooking() {
+    // US-07-17: the CAMT and MT940 exports of one account word the same booking differently.
+    UUID shop = UUID.randomUUID();
+    ledger(candidate(shop, "-47.35", "Shop A", CSV, null));
+
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT, CSV, List.of(row(1, DAY, "-47.35", "EUR", "SHOP A FILIALE 12"))))
+        .containsExactly(Map.entry(1, shop));
+  }
+
+  @Test
+  void twoRowsAgainstOneBookingOfAnotherWordingGiveExactlyOneDuplicate() {
+    UUID coffee = UUID.randomUUID();
+    ledger(candidate(coffee, "-3.50", "Coffee", "MANUAL", null));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(row(1, "-3.50", "Kiosk", null), row(2, "-3.50", "Cafe Central", null)));
+
+    assertThat(duplicates).containsExactly(Map.entry(1, coffee));
+  }
+
+  @Test
+  void whereSeveralBookingsMatchARowIsPairedWithTheOneOfItsDescription() {
+    UUID coffeeA = UUID.randomUUID();
+    UUID coffeeB = UUID.randomUUID();
+    ledger(
+        candidate(coffeeA, "-3.50", "Coffee A", "MANUAL", null),
+        candidate(coffeeB, "-3.50", "Coffee B", "MANUAL", null));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(row(1, "-3.50", " COFFEE  b", null), row(2, "-3.50", "Coffee A", null)));
+
+    assertThat(duplicates).containsEntry(1, coffeeB).containsEntry(2, coffeeA).hasSize(2);
+  }
+
+  @Test
+  void aRowWithoutADescriptionMatchTakesABookingNoOtherRowSharesTheWordingOf() {
+    // Row 2 shares its wording with the first booking, so row 1 gets the second one, although it
+    // comes first in the file.
+    UUID coffeeA = UUID.randomUUID();
+    UUID coffeeB = UUID.randomUUID();
+    ledger(
+        candidate(coffeeA, "-3.50", "Coffee A", "MANUAL", null),
+        candidate(coffeeB, "-3.50", "Coffee B", "MANUAL", null));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(row(1, "-3.50", "Kiosk", null), row(2, "-3.50", "Coffee A", null)));
+
+    assertThat(duplicates).containsEntry(1, coffeeB).containsEntry(2, coffeeA).hasSize(2);
+  }
+
+  @Test
+  void aDescriptionMatchDoesNotTakeTheOnlyBookingAReferencedRowMayMatch() {
+    // Row 1 shares its wording with the manual booking, but could also be the referenced CSV one;
+    // row 2 carries another reference of the same source, so only the manual booking fits it.
+    UUID referenced = UUID.randomUUID();
+    UUID manual = UUID.randomUUID();
+    ledger(
+        candidate(referenced, "-12.40", "Bakery", CSV, "REF-0"),
+        candidate(manual, "-12.40", "Coffee", "MANUAL", null));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(row(1, "-12.40", "Coffee", null), row(2, "-12.40", "Bakery", "REF-2")));
+
+    assertThat(duplicates).containsEntry(1, referenced).containsEntry(2, manual).hasSize(2);
+  }
+
+  @Test
+  void aSameSourceBookingWithAnotherReferenceIsSkippedForAMatchingOne() {
+    UUID unreferenced = UUID.randomUUID();
+    ledger(
+        candidate(UUID.randomUUID(), "-12.40", "Bakery", CSV, "REF-0"),
+        candidate(unreferenced, "-12.40", "Other wording", CSV, null));
+
+    assertThat(service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "-12.40", "Bakery", "REF-1"))))
+        .containsExactly(Map.entry(1, unreferenced));
   }
 
   @Test

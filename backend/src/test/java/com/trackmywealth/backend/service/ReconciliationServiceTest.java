@@ -198,7 +198,8 @@ class ReconciliationServiceTest {
   }
 
   @Test
-  void duplicateEvidenceIsCheckedBeforeAnImportedRow() {
+  void anImportedRowIsCheckedBeforeDuplicateEvidence() {
+    // US-07-17: the duplicate signature ignores descriptions, so two real bookings meet it too.
     when(transactionRepository.existsDuplicateEntrySignature(
             any(), any(), any(), any(BigDecimal.class)))
         .thenReturn(true);
@@ -211,7 +212,7 @@ class ReconciliationServiceTest {
     ArgumentCaptor<ReconciliationResult> captor =
         ArgumentCaptor.forClass(ReconciliationResult.class);
     verify(resultRepository).saveAndFlush(captor.capture());
-    assertThat(captor.getValue().getProbableCause()).isEqualTo("DUPLICATE_ENTRY");
+    assertThat(captor.getValue().getProbableCause()).isEqualTo("MISSING_TRANSACTION");
   }
 
   @Test
