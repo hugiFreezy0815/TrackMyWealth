@@ -1,0 +1,32 @@
+# Temporary formatter workflow: removed after running on the feature branch.
+name: Format Credit Card Import
+on:
+  push:
+    branches: [feat/us-07-18-credit-card-statement-import]
+    paths:
+      - ".github/workflows/format-card-import-once.yml"
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Apply mandated Spotless Java format
+        working-directory: backend
+        run: ./mvnw -B spotless:apply
+      - name: Commit formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add backend/src/main/java backend/src/test/java
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name="TrackMyWealth CI" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "style(import): apply project Spotless Java formatting"
+          git push origin HEAD:refs/heads/feat/us-07-18-credit-card-statement-import
