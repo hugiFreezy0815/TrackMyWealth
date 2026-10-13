@@ -104,8 +104,7 @@ class CashFlowServiceTest {
 
     CashFlowResponse response = service.getCashFlow(MONTH, ACTOR, null);
 
-    assertThat(response.spending())
-        .containsExactly(new CurrencyAmount("CHF", new BigDecimal("4")));
+    assertThat(response.spending()).containsExactly(new CurrencyAmount("CHF", new BigDecimal("4")));
     assertThat(response.income()).isEmpty();
     verify(transactionRepository)
         .sumSpendingByDateAndCurrency(
