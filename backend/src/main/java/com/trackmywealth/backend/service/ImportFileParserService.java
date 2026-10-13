@@ -914,7 +914,7 @@ public class ImportFileParserService {
         optionalCell(record, columns.get("iso20022BankTransactionCode")),
         optionalCell(record, columns.get("notes")),
         originalAmountOf(record, template, columns),
-        optionalCell(record, columns.get("originalCurrency")),
+        originalCurrencyOf(record, template, columns),
         exchangeRateOf(record, template, columns));
   }
 
@@ -924,11 +924,37 @@ public class ImportFileParserService {
     return value == null ? null : parseAmount(value, template.columnMapping().originalAmount(), template, false);
   }
 
+  private static String originalCurrencyOf(
+      List<String> record, ImportTemplateDefinition template, Map<String, Integer> columns) {
+    String value = optionalCell(record, columns.get("originalCurrency"));
+    if (value == null) {
+      return null;
+    }
+    String normalized = value.toUpperCase(Locale.ROOT);
+    if (!CurrencyCodes.isValid(normalized)) {
+      throw rowError(
+          ImportRowErrorValues.CURRENCY_INVALID,
+          ARG_COLUMN,
+          template.columnMapping().originalCurrency(),
+          ARG_VALUE,
+          value);
+    }
+    return normalized;
+  }
+
   private static BigDecimal exchangeRateOf(
       List<String> record, ImportTemplateDefinition template, Map<String, Integer> columns) {
     String value = optionalCell(record, columns.get("exchangeRate"));
     if (value == null) {
       return null;
+    }
+    if (value.length() > 40) {
+      throw rowError(
+          ImportRowErrorValues.AMOUNT_OUT_OF_RANGE,
+          ARG_COLUMN,
+          template.columnMapping().exchangeRate(),
+          ARG_VALUE,
+          value.substring(0, MAX_ECHOED_VALUE_LENGTH));
     }
     String normalized = value.strip().replace(template.decimalSeparator(), ".");
     try {

@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.ImportLedgerRow;
+import java.math.BigDecimal;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -76,7 +77,9 @@ public class ImportLedgerRowService {
     return new CreateTransactionRequest(
         row.transactionType(),
         row.bookingDate(),
-        originalPurchase ? row.originalAmount() : row.amount(),
+        originalPurchase
+            ? row.originalAmount().abs().multiply(BigDecimal.valueOf(row.amount().signum()))
+            : row.amount(),
         originalPurchase ? row.originalCurrency() : row.currency(),
         merchantDescription(row),
         row.mcc(),

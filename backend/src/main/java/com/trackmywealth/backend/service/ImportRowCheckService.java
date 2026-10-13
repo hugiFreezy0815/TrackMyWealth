@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
@@ -73,14 +74,17 @@ public class ImportRowCheckService {
       args.put(ARG_REASON, e.getReason());
       return error(row, ImportRowErrorValues.LEDGER_REJECTED, args);
     }
+    CreateTransactionRequest request = ledgerRows.request(canonical);
     if (convertsInto.isEmpty()
+        || request.fxRateToAccountCurrency() != null
+        || request.billedAmount() != null
         || hasRate(
-            new ImportRateNeed(canonical.currency(), convertsInto.get(), canonical.bookingDate()),
+            new ImportRateNeed(request.currency(), convertsInto.get(), canonical.bookingDate()),
             rates)) {
       return row;
     }
     Map<String, String> args = new LinkedHashMap<>();
-    args.put(ARG_CURRENCY, canonical.currency());
+    args.put(ARG_CURRENCY, request.currency());
     args.put(ARG_ACCOUNT_CURRENCY, convertsInto.get());
     args.put(ARG_DATE, canonical.bookingDate().toString());
     return error(row, ImportRowErrorValues.FX_RATE_UNAVAILABLE, args);
@@ -105,9 +109,13 @@ public class ImportRowCheckService {
       } catch (ResponseStatusException e) {
         continue;
       }
-      convertsInto.ifPresent(
-          into ->
-              needed.add(new ImportRateNeed(canonical.currency(), into, canonical.bookingDate())));
+      CreateTransactionRequest request = ledgerRows.request(canonical);
+      if (request.fxRateToAccountCurrency() == null && request.billedAmount() == null) {
+        convertsInto.ifPresent(
+            into ->
+                needed.add(
+                    new ImportRateNeed(request.currency(), into, canonical.bookingDate())));
+      }
     }
     return needed;
   }
