@@ -389,6 +389,42 @@ class ReconciliationControllerTest {
   }
 
   @Test
+  void aPurchaseImportedTwiceInTwoWordingsIsStillClassifiedAsADuplicate() {
+    // US-07-17: two export formats of one account describe the same booking differently.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card =
+        client(token)
+            .post()
+            .uri("/api/v1/accounts")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(AccountRequests.account("Visa", "CREDIT_CARD", "CHF").build())
+            .exchange()
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+    recordOpeningBalance(token, card.id(), "500.00");
+    insertCardPurchase(card.id(), "-20.00", SNAPSHOT_DATE.minusDays(3), "Coffee Bar");
+    insertCardPurchase(card.id(), "-20.00", SNAPSHOT_DATE.minusDays(3), "COFFEE BAR ZUERICH 12");
+
+    // The statement owes 520.00; the ledger derives 540.00 because of the duplicate.
+    recordSnapshot(token, card.id(), SNAPSHOT_DATE, "520.00");
+
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + card.id() + "/reconciliations")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.content[0].differenceAmount")
+        .isEqualTo("-20.0000")
+        .jsonPath("$.content[0].probableCause")
+        .isEqualTo("DUPLICATE_ENTRY");
+  }
+
+  @Test
   void aBalanceOnlyMemberSeesTheSignalButNeitherDetailsNorHistory() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse cash = createCashAccount(adminToken);

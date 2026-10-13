@@ -331,8 +331,9 @@ whose booking would close the gap: the difference itself on an asset, its negati
 one), evidence is evaluated in this order:
 
 1. `DUPLICATE_ENTRY`: a live row whose account-currency amount equals the opposite of the missing
-   amount (the row counted once too often) has another live row with the same booking date,
-   original amount/currency, and normalized description.
+   amount (the row counted once too often) has another live row with the same booking date and
+   original amount/currency. The description is not compared (US-07-17, as in the import's
+   duplicate rule): two export formats of one account word the same booking differently.
 2. `MISSING_TRANSACTION` (#230): an import of the account holds a row of exactly the missing amount,
    in the account's currency and booked in the period, that did not reach the ledger - its batch
    was discarded, it is an error row with a readable amount, or it was left out of a committed

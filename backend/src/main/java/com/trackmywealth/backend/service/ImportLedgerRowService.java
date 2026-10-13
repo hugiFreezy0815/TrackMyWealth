@@ -88,14 +88,17 @@ public class ImportLedgerRowService {
         null);
   }
 
-  /** The text the row's ledger entry is described by, and the duplicate rule compares. */
+  /**
+   * The text the row's ledger entry is described by, and the duplicate rule pairs matches by
+   * (US-07-17: it no longer decides whether a row is a duplicate).
+   */
   public static String merchantDescription(CanonicalImportRow row) {
     return row.description() != null ? row.description() : row.counterpartyName();
   }
 
   /**
-   * The duplicate rule's form of a description: trimmed, lower case, blanks collapsed to one space;
-   * no description at all compares like an empty one.
+   * The form in which the duplicate rule pairs descriptions: trimmed, lower case, blanks collapsed
+   * to one space; no description at all compares like an empty one.
    */
   public static String normalizedDescription(String description) {
     if (description == null) {
