@@ -63,5 +63,9 @@ public final class ImportBatchValues {
    */
   public static final String WARNING_CURRENCY_DIFFERS = "IMPORT_ROW_CURRENCY_DIFFERS_FROM_ACCOUNT";
 
+  /** A positive card-side settlement has no matching source-account payment yet. */
+  public static final String WARNING_CARD_SETTLEMENT_UNMATCHED =
+      "IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED";
+
   private ImportBatchValues() {}
 }

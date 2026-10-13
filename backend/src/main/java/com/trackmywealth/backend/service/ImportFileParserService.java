@@ -368,6 +368,7 @@ public class ImportFileParserService {
     validateColumnMapping(
         template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
     validateTypeMapping(template.typeMapping());
+    validateDescriptionPatterns(template);
   }
 
   // --- template rules ----------------------------------------------------------------------
@@ -626,6 +627,28 @@ public class ImportFileParserService {
     }
   }
 
+  private static void validateDescriptionPatterns(ImportTemplateDefinition template) {
+    if (template.descriptionTypePatterns().size()
+        > ImportTemplateRequest.MAX_DESCRIPTION_TYPE_PATTERNS) {
+      throw invalid("descriptionTypePatterns", "Too many description type patterns.");
+    }
+    if (!template.descriptionTypePatterns().isEmpty()
+        && template.columnMapping().description() == null) {
+      throw invalid(
+          "descriptionTypePatterns", "A description column is required for type patterns.");
+    }
+    for (Map.Entry<String, String> entry : template.descriptionTypePatterns().entrySet()) {
+      if (!ImportTemplateValues.CASH_TRANSACTION_TYPES.contains(entry.getKey())) {
+        throw invalid("descriptionTypePatterns", "Unknown transaction type for a pattern.");
+      }
+      String pattern = entry.getValue();
+      if (pattern == null || pattern.isBlank()) {
+        throw invalid("descriptionTypePatterns", "A description pattern cannot be blank.");
+      }
+      patternGroups(pattern, "descriptionTypePatterns." + entry.getKey());
+    }
+  }
+
   private static boolean isValidDateFormat(String pattern) {
     if (pattern == null || pattern.isBlank()) {
       return false;
@@ -855,7 +878,9 @@ public class ImportFileParserService {
             optionalCell(record, columns.get("transactionType")),
             mapping.transactionType(),
             typeMapping,
-            amount);
+            amount,
+            optionalCell(record, columns.get("description")),
+            template.descriptionTypePatterns());
     String mcc = optionalCell(record, columns.get("mcc"));
     if (mcc != null && !MCC.matcher(mcc).matches()) {
       throw rowError(ImportRowErrorValues.MCC_INVALID, ARG_COLUMN, mapping.mcc(), ARG_VALUE, mcc);
@@ -871,7 +896,39 @@ public class ImportFileParserService {
         optionalCell(record, columns.get("externalId")),
         mcc,
         optionalCell(record, columns.get("iso20022BankTransactionCode")),
-        optionalCell(record, columns.get("notes")));
+        optionalCell(record, columns.get("notes")),
+        originalAmountOf(record, template, columns),
+        optionalCell(record, columns.get("originalCurrency")),
+        exchangeRateOf(record, template, columns));
+  }
+
+  private static BigDecimal originalAmountOf(
+      List<String> record, ImportTemplateDefinition template, Map<String, Integer> columns) {
+    String value = optionalCell(record, columns.get("originalAmount"));
+    return value == null ? null : parseAmount(value, template.columnMapping().originalAmount(), template, false);
+  }
+
+  private static BigDecimal exchangeRateOf(
+      List<String> record, ImportTemplateDefinition template, Map<String, Integer> columns) {
+    String value = optionalCell(record, columns.get("exchangeRate"));
+    if (value == null) {
+      return null;
+    }
+    String normalized = value.strip().replace(template.decimalSeparator(), ".");
+    try {
+      BigDecimal rate = new BigDecimal(normalized);
+      if (rate.signum() <= 0 || rate.scale() > 10 || rate.precision() - rate.scale() > 10) {
+        throw new NumberFormatException("Out of range");
+      }
+      return rate;
+    } catch (NumberFormatException exception) {
+      throw rowError(
+          ImportRowErrorValues.AMOUNT_UNPARSEABLE,
+          ARG_COLUMN,
+          template.columnMapping().exchangeRate(),
+          ARG_VALUE,
+          value);
+    }
   }
 
   // The trimmed cell, or null when the column is unmapped, beyond this (short) row, or empty.
@@ -1073,7 +1130,12 @@ public class ImportFileParserService {
   // The template's mapping first; a cell already naming a transaction type is taken as it is if
   // the template class allows it; anything else (or nothing) goes by the amount's sign.
   private static String transactionTypeOf(
-      String value, String column, Map<String, String> typeMapping, BigDecimal amount) {
+      String value,
+      String column,
+      Map<String, String> typeMapping,
+      BigDecimal amount,
+      String description,
+      Map<String, String> descriptionPatterns) {
     if (value != null) {
       String mapped = typeMapping.get(normalize(value));
       if (mapped != null) {
@@ -1086,6 +1148,19 @@ public class ImportFileParserService {
       if (ImportTemplateValues.TRANSACTION_TYPES.contains(named)) {
         throw rowError(ImportRowErrorValues.TYPE_NOT_ALLOWED, ARG_COLUMN, column, ARG_VALUE, value);
       }
+    }
+    String match = null;
+    for (Map.Entry<String, String> entry : descriptionPatterns.entrySet()) {
+      if (description != null
+          && Re2Patterns.compile("(?i)" + entry.getValue()).matcher(description).find()) {
+        if (match != null && !match.equals(entry.getKey())) {
+          throw rowError(ImportRowErrorValues.TYPE_AMBIGUOUS, ARG_COLUMN, column == null ? "description" : column);
+        }
+        match = entry.getKey();
+      }
+    }
+    if (match != null) {
+      return match;
     }
     return amount.signum() < 0
         ? ImportTemplateValues.FALLBACK_TYPE_NEGATIVE
