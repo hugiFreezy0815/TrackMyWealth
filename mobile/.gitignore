@@ -42,3 +42,6 @@ example
 # generated native folders
 /ios
 /android
+
+# native smoke test output (scripts/native-smoke.sh)
+/smoke
