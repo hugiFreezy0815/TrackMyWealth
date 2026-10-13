@@ -33,7 +33,6 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-      semver-major-days: 14
 
   - package-ecosystem: github-actions
     directory: /
@@ -41,4 +40,3 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-      semver-major-days: 14
