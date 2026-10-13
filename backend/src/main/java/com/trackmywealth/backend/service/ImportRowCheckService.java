@@ -4,7 +4,6 @@ import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
-import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
 import java.time.LocalDate;
@@ -63,28 +62,6 @@ public class ImportRowCheckService {
    *     so each is looked up once; normally filled beforehand by {@link #lookUpRates}, outside the
    *     caller's transaction, and a pair it lacks is looked up here
    */
-  public ParsedImportRow cardType(Account account, ParsedImportRow row) {
-    if (!account.isHasStatementCycle() || !row.isParsed()) {
-      return row;
-    }
-    CanonicalImportRow old = row.canonical();
-    String type = old.transactionType();
-    if (ImportTemplateValues.FALLBACK_TYPE_NEGATIVE.equals(type)) {
-      type = "CREDIT_CARD_PURCHASE";
-    } else if (ImportTemplateValues.FALLBACK_TYPE_NOT_NEGATIVE.equals(type)) {
-      type = "SETTLEMENT";
-    } else {
-      return row;
-    }
-    CanonicalImportRow converted =
-        new CanonicalImportRow(
-            old.bookingDate(), old.valueDate(), old.amount(), old.currency(), type,
-            old.description(), old.counterpartyName(), old.externalId(), old.mcc(),
-            old.iso20022BankTransactionCode(), old.notes(), old.originalAmount(),
-            old.originalCurrency(), old.bankExchangeRate());
-    return ParsedImportRow.parsed(row.rowNumber(), row.rawData(), converted);
-  }
-
   public ParsedImportRow checkRecordable(
       Account account, ParsedImportRow row, Map<String, Boolean> rates) {
     CanonicalImportRow canonical = row.canonical();
@@ -121,7 +98,7 @@ public class ImportRowCheckService {
       if (!row.isParsed()) {
         continue;
       }
-      CanonicalImportRow canonical = cardType(account, row).canonical();
+      CanonicalImportRow canonical = row.canonical();
       Optional<String> convertsInto;
       try {
         convertsInto = transactionService.requireRecordable(account, ledgerRows.request(canonical));

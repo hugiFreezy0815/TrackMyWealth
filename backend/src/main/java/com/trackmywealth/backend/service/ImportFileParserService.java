@@ -117,6 +117,18 @@ public class ImportFileParserService {
    */
   public ImportParseResult parse(
       byte[] content, ImportTemplateDefinition template, String accountCurrency) {
+    return parse(content, template, accountCurrency, false);
+  }
+
+  /**
+   * Account-aware import: card fallback types apply only to unmapped types. Unsaved template dry
+   * runs use the three-argument overload because they do not have a target account.
+   */
+  public ImportParseResult parse(
+      byte[] content,
+      ImportTemplateDefinition template,
+      String accountCurrency,
+      boolean creditCardAccount) {
     validateTemplate(template, null);
     List<String> header;
     List<List<String>> data;
@@ -168,7 +180,9 @@ public class ImportFileParserService {
           requireBooking(booking);
         }
         CanonicalImportRow canonical =
-            canonicalRow(record, template, columns, dateFormatter, typeMapping, accountCurrency);
+            canonicalRow(
+                record, template, columns, dateFormatter, typeMapping, accountCurrency,
+                creditCardAccount);
         if (checked) {
           running =
               balances.balanceAfter(
@@ -858,7 +872,8 @@ public class ImportFileParserService {
       Map<String, Integer> columns,
       DateTimeFormatter dateFormatter,
       Map<String, String> typeMapping,
-      String accountCurrency) {
+      String accountCurrency,
+      boolean creditCardAccount) {
     ImportColumnMapping mapping = template.columnMapping();
     LocalDate bookingDate =
         parseDate(
@@ -880,7 +895,8 @@ public class ImportFileParserService {
             typeMapping,
             amount,
             optionalCell(record, columns.get("description")),
-            template.descriptionTypePatterns());
+            template.descriptionTypePatterns(),
+            creditCardAccount);
     String mcc = optionalCell(record, columns.get("mcc"));
     if (mcc != null && !MCC.matcher(mcc).matches()) {
       throw rowError(ImportRowErrorValues.MCC_INVALID, ARG_COLUMN, mapping.mcc(), ARG_VALUE, mcc);
@@ -1135,7 +1151,8 @@ public class ImportFileParserService {
       Map<String, String> typeMapping,
       BigDecimal amount,
       String description,
-      Map<String, String> descriptionPatterns) {
+      Map<String, String> descriptionPatterns,
+      boolean creditCardAccount) {
     if (value != null) {
       String mapped = typeMapping.get(normalize(value));
       if (mapped != null) {
@@ -1161,6 +1178,9 @@ public class ImportFileParserService {
     }
     if (match != null) {
       return match;
+    }
+    if (creditCardAccount) {
+      return amount.signum() < 0 ? "CREDIT_CARD_PURCHASE" : "SETTLEMENT";
     }
     return amount.signum() < 0
         ? ImportTemplateValues.FALLBACK_TYPE_NEGATIVE

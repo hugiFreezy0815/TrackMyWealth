@@ -82,8 +82,7 @@ public class ImportStagingService {
     List<ParsedImportRow> checked = rejectRepeatedReferences(rows);
     List<ParsedImportRow> recordable = new ArrayList<>();
     for (int i = 0; i < checked.size(); i++) {
-      ParsedImportRow row = rowCheckService.cardType(account, checked.get(i));
-      checked.set(i, row);
+      ParsedImportRow row = checked.get(i);
       if (row.isParsed()) {
         row = rowCheckService.checkRecordable(account, row, rates);
         checked.set(i, row);
