@@ -7,6 +7,9 @@ import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.AccountCreditCard;
+import com.trackmywealth.backend.repository.AccountCreditCardRepository;
+import com.trackmywealth.backend.repository.TransactionRepository;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -17,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -41,16 +45,32 @@ public class ImportRowCheckService {
   private final FxRateService fxRateService;
   private final ImportLedgerRowService ledgerRows;
   private final String fxDefaultSource;
+  private final AccountCreditCardRepository creditCards;
+  private final TransactionRepository transactions;
 
+  @Autowired
   public ImportRowCheckService(
       TransactionService transactionService,
       FxRateService fxRateService,
       ImportLedgerRowService ledgerRows,
-      @Value("${app.fx.default-source}") String fxDefaultSource) {
+      @Value("${app.fx.default-source}") String fxDefaultSource,
+      AccountCreditCardRepository creditCards,
+      TransactionRepository transactions) {
     this.transactionService = transactionService;
     this.fxRateService = fxRateService;
     this.ledgerRows = ledgerRows;
     this.fxDefaultSource = fxDefaultSource;
+    this.creditCards = creditCards;
+    this.transactions = transactions;
+  }
+
+  /** Simple constructor for isolated row-check unit tests without a persistence layer. */
+  ImportRowCheckService(
+      TransactionService transactionService,
+      FxRateService fxRateService,
+      ImportLedgerRowService ledgerRows,
+      String fxDefaultSource) {
+    this(transactionService, fxRateService, ledgerRows, fxDefaultSource, null, null);
   }
 
   /**
@@ -142,6 +162,29 @@ public class ImportRowCheckService {
     }
     if (!account.getNativeCurrency().equals(row.currency())) {
       warnings.add(ImportBatchValues.WARNING_CURRENCY_DIFFERS);
+    }
+    // A positive card booking is a payment by default, not a refund. Highlight an
+    // unmatched payment so the member can correct its template instead of silently misclassifying
+    // a refund. This is advisory; settlement matching still decides after commit.
+    if (account.isHasStatementCycle()
+        && "SETTLEMENT".equals(row.transactionType())
+        && row.amount().signum() > 0
+        && creditCards != null
+        && transactions != null) {
+      AccountCreditCard card = creditCards.findById(account.getId()).orElse(null);
+      if (card == null
+          || card.getSettlementSourceAccountId() == null
+          || transactions
+              .findPairablePayments(
+                  card.getSettlementSourceAccountId(),
+                  account.getNativeCurrency(),
+                  Set.of("WITHDRAWAL", "EXPENSE", "SETTLEMENT"),
+                  row.amount().negate(),
+                  row.bookingDate().minusDays(SettlementDetectionService.WINDOW_DAYS),
+                  row.bookingDate().plusDays(SettlementDetectionService.WINDOW_DAYS))
+              .isEmpty()) {
+        warnings.add(ImportBatchValues.WARNING_CARD_SETTLEMENT_UNMATCHED);
+      }
     }
     return warnings;
   }
