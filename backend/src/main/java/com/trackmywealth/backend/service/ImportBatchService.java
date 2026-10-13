@@ -311,8 +311,9 @@ public class ImportBatchService {
 
   /**
    * Forces a {@code DUPLICATE} row into the commit, or keeps a {@code PARSED} row out of it. An
-   * {@code ERROR} or {@code SKIPPED} row cannot be included (422 {@code IMPORT_ROW_NOT_INCLUDABLE}). The batch's
-   * version moves on, so a commit sent with the version read before this change is a 412.
+   * {@code ERROR} or {@code SKIPPED} row cannot be included (422 {@code
+   * IMPORT_ROW_NOT_INCLUDABLE}). The batch's version moves on, so a commit sent with the version
+   * read before this change is a 412.
    *
    * @return the batch's summary with its new counts and version
    */

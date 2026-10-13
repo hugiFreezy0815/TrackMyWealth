@@ -48,7 +48,8 @@ public final class ImportBatchValues {
   public static final String ROW_SKIPPED = ImportRowErrorValues.STATUS_SKIPPED;
 
   /** Every row status, for the preview's filter. */
-  public static final Set<String> ROW_STATUSES = Set.of(ROW_PARSED, ROW_DUPLICATE, ROW_ERROR, ROW_SKIPPED);
+  public static final Set<String> ROW_STATUSES =
+      Set.of(ROW_PARSED, ROW_DUPLICATE, ROW_ERROR, ROW_SKIPPED);
 
   /** Warning {@code date}: the booking date lies after today. The row stays included. */
   public static final String WARNING_FUTURE_DATE = "IMPORT_ROW_FUTURE_DATE";
