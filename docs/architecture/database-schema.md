@@ -951,8 +951,12 @@ two at once cannot both take the last place). Workspace erasure (EPIC 31) must d
 `import_file` and `import_row_raw` too.
 
 **Rows.** One `import_row_raw` per data row: `PARSED` (new, included), `DUPLICATE` (excluded, with
-`duplicate_of_transaction_id`) or `ERROR` (`error_code` + ordered `error_args`, never included). A
-parsed row the ledger would refuse as a manual entry (`TransactionService#requireRecordable`, e.g.
+`duplicate_of_transaction_id`), `ERROR` (rejected, never included), or `SKIPPED` (zero amount,
+never included). A skipped row keeps its original cells and canonical values and carries the stable
+`IMPORT_ROW_ZERO_AMOUNT` explanation, localized in EN/DE when previewed; it is counted separately
+from errors in both batch and template dry-run summaries, is never force-includable, and does not
+appear in `errors.csv`. Row explanations use `error_code` and ordered `error_args` rather than
+stored English text, including for `SKIPPED`. A parsed row the ledger would refuse as a manual entry (`TransactionService#requireRecordable`, e.g.
 a type the account does not take) is the error `IMPORT_ROW_LEDGER_REJECTED`, one in another
 currency without a rate `IMPORT_ROW_FX_RATE_UNAVAILABLE`, a second row with an already used bank
 reference `IMPORT_ROW_EXTERNAL_ID_REPEATED`. Warnings (`IMPORT_ROW_FUTURE_DATE`,

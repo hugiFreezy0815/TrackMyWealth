@@ -17,6 +17,7 @@ public record ImportTemplateTestResponse(
     int rowCount,
     int parsedRowCount,
     int errorRowCount,
+    int skippedRowCount,
     Map<String, Integer> errorCounts,
     List<ImportPreviewRowResponse> rows) {
 

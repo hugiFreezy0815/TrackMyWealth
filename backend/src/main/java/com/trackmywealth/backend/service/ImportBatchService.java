@@ -281,7 +281,7 @@ public class ImportBatchService {
 
   /**
    * The batch's rows in file order, optionally only those of one {@code status} ({@code PARSED},
-   * {@code DUPLICATE}, {@code ERROR}); messages in the caller's language.
+   * {@code DUPLICATE}, {@code ERROR}, {@code SKIPPED}); messages in the caller's language.
    */
   @Transactional(readOnly = true)
   public Page<ImportRowResponse> rows(
@@ -296,7 +296,7 @@ public class ImportBatchService {
       throw new ApiException(
           HttpStatus.BAD_REQUEST,
           ApiErrorCode.VALIDATION_FAILED,
-          "status must be one of PARSED, DUPLICATE, ERROR.");
+          "status must be one of PARSED, DUPLICATE, ERROR, SKIPPED.");
     }
     int size = Math.min(Math.max(pageable.getPageSize(), 1), MAX_PAGE_SIZE);
     PageRequest page = PageRequest.of(pageable.getPageNumber(), size);
@@ -311,7 +311,7 @@ public class ImportBatchService {
 
   /**
    * Forces a {@code DUPLICATE} row into the commit, or keeps a {@code PARSED} row out of it. An
-   * {@code ERROR} row cannot be included (422 {@code IMPORT_ROW_NOT_INCLUDABLE}). The batch's
+   * {@code ERROR} or {@code SKIPPED} row cannot be included (422 {@code IMPORT_ROW_NOT_INCLUDABLE}). The batch's
    * version moves on, so a commit sent with the version read before this change is a 412.
    *
    * @return the batch's summary with its new counts and version
@@ -330,11 +330,13 @@ public class ImportBatchService {
     versionPreconditionService.requireCurrent(
         expectedVersion, batch.getVersion(), VERSIONED_RESOURCE);
     ImportRowRaw row = requireRow(batch, rowNumber);
-    if (included && ImportBatchValues.ROW_ERROR.equals(row.getParseStatus())) {
+    if (included
+        && !ImportBatchValues.ROW_PARSED.equals(row.getParseStatus())
+        && !ImportBatchValues.ROW_DUPLICATE.equals(row.getParseStatus())) {
       throw new ApiException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE,
-          "Row " + rowNumber + " could not be read and cannot be imported.");
+          "Row " + rowNumber + " cannot be imported.");
     }
     if (row.isIncluded() != included) {
       row.setIncluded(included);
@@ -533,7 +535,8 @@ public class ImportBatchService {
               count(row[4]),
               count(row[5]),
               count(row[6]),
-              count(row[7])));
+              count(row[7]),
+              count(row[8])));
     }
     return counts;
   }

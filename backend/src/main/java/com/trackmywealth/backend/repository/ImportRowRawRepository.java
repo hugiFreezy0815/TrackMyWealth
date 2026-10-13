@@ -39,7 +39,7 @@ public interface ImportRowRawRepository extends JpaRepository<ImportRowRaw, UUID
 
   /**
    * The counts of each of {@code batchIds} that has rows, one array per batch: its id, then total,
-   * new (PARSED), duplicates, errors, rows with a warning, included, imported. One query for a
+   * new (PARSED), duplicates, errors, skipped, rows with a warning, included, imported. One query for a
    * whole page of batches.
    */
   @Query(
@@ -48,6 +48,7 @@ public interface ImportRowRawRepository extends JpaRepository<ImportRowRaw, UUID
               + " count(*) FILTER (WHERE r.parse_status = 'PARSED'),"
               + " count(*) FILTER (WHERE r.parse_status = 'DUPLICATE'),"
               + " count(*) FILTER (WHERE r.parse_status = 'ERROR'),"
+               + " count(*) FILTER (WHERE r.parse_status = 'SKIPPED'),"
               + " count(*) FILTER (WHERE cardinality(r.warning_codes) > 0),"
               + " count(*) FILTER (WHERE r.included),"
               + " count(*) FILTER (WHERE r.resulting_transaction_id IS NOT NULL)"

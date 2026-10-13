@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
+import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
@@ -622,7 +623,7 @@ public class ImportTemplateService {
     Map<String, Integer> errorCounts = new LinkedHashMap<>();
     List<ImportPreviewRowResponse> rows = new ArrayList<>();
     for (ParsedImportRow row : result.rows()) {
-      if (!row.isParsed()) {
+      if (ImportRowErrorValues.STATUS_ERROR.equals(row.status())) {
         errorCounts.merge(row.errorCode(), 1, Integer::sum);
       }
       if (rows.size() < ImportTemplateTestResponse.PREVIEW_ROWS) {
@@ -630,12 +631,18 @@ public class ImportTemplateService {
       }
     }
     int errorRows = errorCounts.values().stream().mapToInt(Integer::intValue).sum();
+    int skippedRows =
+        (int)
+            result.rows().stream()
+                .filter(row -> ImportRowErrorValues.STATUS_SKIPPED.equals(row.status()))
+                .count();
     return new ImportTemplateTestResponse(
         result.headerColumns(),
         result.headerFingerprint(),
         result.rows().size(),
-        result.rows().size() - errorRows,
+        result.rows().size() - errorRows - skippedRows,
         errorRows,
+        skippedRows,
         errorCounts,
         rows);
   }
