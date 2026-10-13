@@ -12,6 +12,10 @@ public final class ImportRowErrorValues {
 
   public static final String STATUS_PARSED = "PARSED";
   public static final String STATUS_ERROR = "ERROR";
+  public static final String STATUS_SKIPPED = "SKIPPED";
+
+  /** A zero-amount booking that changes no balance (US-07-19). */
+  public static final String ZERO_AMOUNT = "IMPORT_ROW_ZERO_AMOUNT";
 
   /** {@code column}: the row has no cell at a mapped, required column (a short row). */
   public static final String COLUMN_MISSING = "IMPORT_ROW_COLUMN_MISSING";

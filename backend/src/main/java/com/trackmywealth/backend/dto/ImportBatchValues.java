@@ -44,8 +44,15 @@ public final class ImportBatchValues {
 
   public static final String ROW_ERROR = ImportRowErrorValues.STATUS_ERROR;
 
+  /**
+   * A readable row that is shown but never included or exported as an error; its reason is in
+   * {@code error_code} (so far only {@code IMPORT_ROW_ZERO_AMOUNT}, US-07-19).
+   */
+  public static final String ROW_SKIPPED = ImportRowErrorValues.STATUS_SKIPPED;
+
   /** Every row status, for the preview's filter. */
-  public static final Set<String> ROW_STATUSES = Set.of(ROW_PARSED, ROW_DUPLICATE, ROW_ERROR);
+  public static final Set<String> ROW_STATUSES =
+      Set.of(ROW_PARSED, ROW_DUPLICATE, ROW_ERROR, ROW_SKIPPED);
 
   /** Warning {@code date}: the booking date lies after today. The row stays included. */
   public static final String WARNING_FUTURE_DATE = "IMPORT_ROW_FUTURE_DATE";

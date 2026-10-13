@@ -6,8 +6,15 @@ package com.trackmywealth.backend.dto;
  * the rows a commit inserts (or inserted: then {@code imported} equals it).
  */
 public record ImportBatchCountsResponse(
-    int total, int newRows, int duplicates, int errors, int warnings, int included, int imported) {
+    int total,
+    int newRows,
+    int duplicates,
+    int errors,
+    int skipped,
+    int warnings,
+    int included,
+    int imported) {
 
   public static final ImportBatchCountsResponse NONE =
-      new ImportBatchCountsResponse(0, 0, 0, 0, 0, 0, 0);
+      new ImportBatchCountsResponse(0, 0, 0, 0, 0, 0, 0, 0);
 }

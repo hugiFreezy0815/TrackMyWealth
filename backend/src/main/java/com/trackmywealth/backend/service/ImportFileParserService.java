@@ -174,7 +174,10 @@ public class ImportFileParserService {
               balances.balanceAfter(
                   running, canonical.amount(), optionalCell(record, balanceColumn), template);
         }
-        rows.add(ParsedImportRow.parsed(rows.size() + 1, rawData, canonical));
+        rows.add(
+            canonical.amount().signum() == 0
+                ? ParsedImportRow.skipped(rows.size() + 1, rawData, canonical)
+                : ParsedImportRow.parsed(rows.size() + 1, rawData, canonical));
       } catch (ImportRowRejectedException e) {
         rejected++;
         rows.add(ParsedImportRow.error(rows.size() + 1, rawData, e.getCode(), e.getArgs()));

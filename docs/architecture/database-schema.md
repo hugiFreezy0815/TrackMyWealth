@@ -951,8 +951,17 @@ two at once cannot both take the last place). Workspace erasure (EPIC 31) must d
 `import_file` and `import_row_raw` too.
 
 **Rows.** One `import_row_raw` per data row: `PARSED` (new, included), `DUPLICATE` (excluded, with
-`duplicate_of_transaction_id`) or `ERROR` (`error_code` + ordered `error_args`, never included). A
-parsed row the ledger would refuse as a manual entry (`TransactionService#requireRecordable`, e.g.
+`duplicate_of_transaction_id`), `ERROR` (rejected, never included) or `SKIPPED` (readable, never
+included; US-07-19). A row is `SKIPPED` when its amount is zero (`0.00`, also `-0.00`): it moves no
+money, so it is neither an error nor imported. It keeps its original cells and canonical values, its
+reason is the code `IMPORT_ROW_ZERO_AMOUNT` (localized EN/DE when the row is read), and it is
+counted on its own (`counts.skipped`, a template dry run's `skippedRowCount`), filterable with
+`?status=SKIPPED`, left out of deduplication and the ledger checks, and never in `errors.csv`.
+Neither the API (422 `IMPORT_ROW_NOT_INCLUDABLE`) nor the database
+(`chk_import_row_raw_not_includable_excluded`, V70) lets an `ERROR` or `SKIPPED` row be included. A
+row's reason, an error's or a skip's, is a stable `error_code` with ordered `error_args`, never
+stored English text. A parsed row the ledger would refuse as a manual entry
+(`TransactionService#requireRecordable`, e.g.
 a type the account does not take) is the error `IMPORT_ROW_LEDGER_REJECTED`, one in another
 currency without a rate `IMPORT_ROW_FX_RATE_UNAVAILABLE`, a second row with an already used bank
 reference `IMPORT_ROW_EXTERNAL_ID_REPEATED`. Warnings (`IMPORT_ROW_FUTURE_DATE`,

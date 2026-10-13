@@ -125,6 +125,32 @@ class ImportFileParserServiceTest {
     assertThat(result.rows().get(4).rowNumber()).isEqualTo(5);
   }
 
+  @Test
+  void zeroAmountsAreSkippedWithTheirOriginalCellsAndCanonicalValues() {
+    String csv =
+        "date,amount,text\n"
+            + "2031-05-02,0.00,Waived fee\n"
+            + "2031-05-03,-0.0000,Information\n"
+            + "2031-05-04,-5.00,Coffee\n";
+
+    ImportParseResult result = parser.parse(utf8(csv), new Template().build(), null);
+
+    assertThat(result.rows()).hasSize(3);
+    for (int i = 0; i < 2; i++) {
+      ParsedImportRow row = result.rows().get(i);
+      assertThat(row.status()).isEqualTo(ImportRowErrorValues.STATUS_SKIPPED);
+      assertThat(row.errorCode()).isEqualTo(ImportRowErrorValues.ZERO_AMOUNT);
+      assertThat(row.errorArgs()).isEmpty();
+      assertThat(row.canonical().amount()).isEqualByComparingTo(BigDecimal.ZERO);
+      assertThat(row.rawData()).containsKey("amount");
+      assertThat(row.isParsed()).isFalse();
+      assertThat(row.isSkipped()).isTrue();
+      assertThat(row.isError()).isFalse();
+    }
+    assertThat(result.rows().get(2).isParsed()).isTrue();
+    assertThat(result.rows().get(2).canonical().amount()).isEqualByComparingTo("-5.00");
+  }
+
   // --- separators, quoting, encodings ------------------------------------------------------
 
   @ParameterizedTest

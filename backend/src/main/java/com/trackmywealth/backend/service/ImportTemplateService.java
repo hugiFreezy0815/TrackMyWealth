@@ -621,21 +621,29 @@ public class ImportTemplateService {
     Locale locale = LocaleContextHolder.getLocale();
     Map<String, Integer> errorCounts = new LinkedHashMap<>();
     List<ImportPreviewRowResponse> rows = new ArrayList<>();
+    int parsedRows = 0;
+    int errorRows = 0;
+    int skippedRows = 0;
     for (ParsedImportRow row : result.rows()) {
-      if (!row.isParsed()) {
+      if (row.isParsed()) {
+        parsedRows++;
+      } else if (row.isError()) {
+        errorRows++;
         errorCounts.merge(row.errorCode(), 1, Integer::sum);
+      } else if (row.isSkipped()) {
+        skippedRows++;
       }
       if (rows.size() < ImportTemplateTestResponse.PREVIEW_ROWS) {
         rows.add(previewRow(row, locale));
       }
     }
-    int errorRows = errorCounts.values().stream().mapToInt(Integer::intValue).sum();
     return new ImportTemplateTestResponse(
         result.headerColumns(),
         result.headerFingerprint(),
         result.rows().size(),
-        result.rows().size() - errorRows,
+        parsedRows,
         errorRows,
+        skippedRows,
         errorCounts,
         rows);
   }

@@ -7,6 +7,7 @@ import static org.assertj.core.groups.Tuple.tuple;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
+import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
@@ -388,6 +389,43 @@ class ImportTemplateControllerTest {
         .isEqualTo(
             "Spalte \u201eBetrag\u201c: \u201ezwei\u201c ist kein Betrag mit dem Dezimal- und"
                 + " Tausendertrennzeichen dieser Vorlage.");
+  }
+
+  @Test
+  void zeroAmountRowsAreCountedAsSkippedNotParsedAndExplainedInTheCallersLanguage()
+      throws Exception {
+    byte[] csv =
+        ("Buchungsdatum;Valuta;Avisierungstext;Betrag;W\u00e4hrung;Saldo\r\n"
+                + "02.05.2031;;a;0.00;CHF;0\r\n"
+                + "03.05.2031;;b;-12.40;CHF;0\r\n"
+                + "04.05.2031;;c;-0.0000;CHF;0\r\n"
+                + "05.05.2031;;d;zwei;CHF;0\r\n")
+            .getBytes(StandardCharsets.ISO_8859_1);
+
+    ImportTemplateTestResponse preview = testUnsaved(swissRequest(null), csv);
+
+    assertThat(preview.rowCount()).isEqualTo(4);
+    assertThat(preview.parsedRowCount()).isEqualTo(1);
+    assertThat(preview.errorRowCount()).isEqualTo(1);
+    assertThat(preview.skippedRowCount()).isEqualTo(2);
+    assertThat(preview.errorCounts()).containsOnlyKeys("IMPORT_ROW_AMOUNT_UNPARSEABLE");
+    ImportPreviewRowResponse skipped = preview.rows().get(0);
+    assertThat(skipped.status()).isEqualTo("SKIPPED");
+    assertThat(skipped.canonical().amount()).isEqualByComparingTo("0");
+    assertThat(skipped.error().code()).isEqualTo("IMPORT_ROW_ZERO_AMOUNT");
+    assertThat(skipped.error().args()).isEmpty();
+    assertThat(skipped.error().message())
+        .isEqualTo(
+            "This row has a zero amount and moves no money. It is shown but will not be imported.");
+    assertThat(preview.rows().get(1).status()).isEqualTo("PARSED");
+    assertThat(preview.rows().get(1).error()).isNull();
+    assertThat(preview.rows().get(2).status()).isEqualTo("SKIPPED");
+
+    setLanguage("DE");
+    assertThat(testUnsaved(swissRequest(null), csv).rows().get(0).error().message())
+        .isEqualTo(
+            "Diese Zeile hat den Betrag null und ver\u00e4ndert keinen Kontostand. Sie wird"
+                + " angezeigt, aber nicht importiert.");
   }
 
   @Test
