@@ -21,4 +21,27 @@ public record CanonicalImportRow(
     String externalId,
     String mcc,
     String iso20022BankTransactionCode,
-    String notes) {}
+    String notes,
+    BigDecimal originalAmount,
+    String originalCurrency,
+    BigDecimal bankExchangeRate) {
+
+  /** Legacy cash templates have no separately disclosed original-currency amount. */
+  public CanonicalImportRow(
+      LocalDate bookingDate,
+      LocalDate valueDate,
+      BigDecimal amount,
+      String currency,
+      String transactionType,
+      String description,
+      String counterpartyName,
+      String externalId,
+      String mcc,
+      String iso20022BankTransactionCode,
+      String notes) {
+    this(
+        bookingDate, valueDate, amount, currency, transactionType, description,
+        counterpartyName, externalId, mcc, iso20022BankTransactionCode, notes,
+        null, null, null);
+  }
+}

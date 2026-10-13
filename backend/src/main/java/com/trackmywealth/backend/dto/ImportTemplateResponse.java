@@ -47,10 +47,13 @@ public record ImportTemplateResponse(
     String headerFingerprint,
     String fileFormat,
     ImportPdfLayout pdfLayout,
-    int version) {
+    int version,
+    Map<String, String> descriptionTypePatterns) {
 
   public ImportTemplateResponse {
     typeMapping = Collections.unmodifiableMap(new LinkedHashMap<>(typeMapping));
+    descriptionTypePatterns =
+        Collections.unmodifiableMap(new LinkedHashMap<>(descriptionTypePatterns));
     if (headerColumns != null) {
       headerColumns = List.copyOf(headerColumns);
     }

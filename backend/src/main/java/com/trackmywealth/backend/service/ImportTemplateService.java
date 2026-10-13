@@ -516,7 +516,8 @@ public class ImportTemplateService {
         definition.typeMapping(),
         definition.accountIdentificationStrategy(),
         definition.fileFormat(),
-        definition.pdfLayout());
+        definition.pdfLayout(),
+        definition.descriptionTypePatterns());
   }
 
   private ImportTemplateDefinition definitionOf(ImportTemplate template) {
@@ -539,7 +540,8 @@ public class ImportTemplateService {
         template.getFileFormat(),
         template.getPdfLayout() == null
             ? null
-            : objectMapper.readValue(template.getPdfLayout(), ImportPdfLayout.class));
+            : objectMapper.readValue(template.getPdfLayout(), ImportPdfLayout.class),
+        objectMapper.readValue(template.getDescriptionTypePatterns(), stringMap));
   }
 
   private void apply(
@@ -564,6 +566,8 @@ public class ImportTemplateService {
     template.setFixedCurrency(definition.fixedCurrency());
     template.setColumnMapping(objectMapper.writeValueAsString(definition.columnMapping()));
     template.setTypeMapping(objectMapper.writeValueAsString(definition.typeMapping()));
+    template.setDescriptionTypePatterns(
+        objectMapper.writeValueAsString(definition.descriptionTypePatterns()));
     template.setAccountIdentificationStrategy(definition.accountIdentificationStrategy());
     template.setFileFormat(definition.fileFormat());
     if (definition.pdfLayout() != null) {
@@ -614,7 +618,8 @@ public class ImportTemplateService {
         template.getHeaderFingerprint(),
         definition.fileFormat(),
         definition.pdfLayout(),
-        VersionPreconditionService.persistedVersion(template.getVersion(), VERSIONED_RESOURCE));
+        VersionPreconditionService.persistedVersion(template.getVersion(), VERSIONED_RESOURCE),
+        definition.descriptionTypePatterns());
   }
 
   private ImportTemplateTestResponse preview(ImportParseResult result) {

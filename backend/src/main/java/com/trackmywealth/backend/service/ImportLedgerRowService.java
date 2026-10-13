@@ -60,22 +60,30 @@ public class ImportLedgerRowService {
         null,
         row.mcc(),
         row.iso20022BankTransactionCode(),
-        row.notes());
+        row.notes(),
+        row.originalAmount(),
+        row.originalCurrency(),
+        row.bankExchangeRate());
   }
 
   /** The manual entry this row amounts to; nothing a file cannot state is set. */
   public CreateTransactionRequest request(CanonicalImportRow row) {
+    boolean originalPurchase =
+        "CREDIT_CARD_PURCHASE".equals(row.transactionType())
+            && row.originalAmount() != null
+            && row.originalCurrency() != null
+            && !row.originalCurrency().equals(row.currency());
     return new CreateTransactionRequest(
         row.transactionType(),
         row.bookingDate(),
-        row.amount(),
-        row.currency(),
+        originalPurchase ? row.originalAmount() : row.amount(),
+        originalPurchase ? row.originalCurrency() : row.currency(),
         merchantDescription(row),
         row.mcc(),
         row.notes(),
         row.externalId(),
-        null,
-        null,
+        originalPurchase ? row.bankExchangeRate() : null,
+        originalPurchase && row.bankExchangeRate() == null ? row.amount() : null,
         null,
         null,
         null,

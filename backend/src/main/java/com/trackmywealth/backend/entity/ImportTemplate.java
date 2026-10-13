@@ -100,6 +100,10 @@ public class ImportTemplate {
   @Column(name = "type_mapping", columnDefinition = JSONB, nullable = false, updatable = false)
   private String typeMapping;
 
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "description_type_patterns", columnDefinition = JSONB, nullable = false, updatable = false)
+  private String descriptionTypePatterns = "{}";
+
   @Column(name = "account_identification_strategy", nullable = false, updatable = false)
   private String accountIdentificationStrategy;
 
@@ -302,6 +306,14 @@ public class ImportTemplate {
 
   public void setTypeMapping(String typeMapping) {
     this.typeMapping = typeMapping;
+  }
+
+  public String getDescriptionTypePatterns() {
+    return descriptionTypePatterns;
+  }
+
+  public void setDescriptionTypePatterns(String descriptionTypePatterns) {
+    this.descriptionTypePatterns = descriptionTypePatterns;
   }
 
   public String getAccountIdentificationStrategy() {
