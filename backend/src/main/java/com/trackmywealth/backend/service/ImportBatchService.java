@@ -331,13 +331,17 @@ public class ImportBatchService {
     versionPreconditionService.requireCurrent(
         expectedVersion, batch.getVersion(), VERSIONED_RESOURCE);
     ImportRowRaw row = requireRow(batch, rowNumber);
-    if (included
-        && !ImportBatchValues.ROW_PARSED.equals(row.getParseStatus())
-        && !ImportBatchValues.ROW_DUPLICATE.equals(row.getParseStatus())) {
+    if (included && ImportBatchValues.ROW_SKIPPED.equals(row.getParseStatus())) {
       throw new ApiException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE,
-          "Row " + rowNumber + " cannot be imported.");
+          "Row " + rowNumber + " moves no money and is never imported.");
+    }
+    if (included && ImportBatchValues.ROW_ERROR.equals(row.getParseStatus())) {
+      throw new ApiException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE,
+          "Row " + rowNumber + " could not be read and cannot be imported.");
     }
     if (row.isIncluded() != included) {
       row.setIncluded(included);

@@ -5,10 +5,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * One data row of an import file after parsing (US-07-03, FR-IMP-012/025). A row is either {@code
- * PARSED} with its {@code canonical} values, or {@code ERROR} with a stable {@code errorCode} from
- * {@link ImportRowErrorValues} and its {@code errorArgs}; a client renders the message in its own
- * language from the two, so no English text is ever stored with the row.
+ * One data row of an import file after parsing (US-07-03, FR-IMP-012/025). A row is {@code PARSED}
+ * with its {@code canonical} values, {@code ERROR} with a stable {@code errorCode} from {@link
+ * ImportRowErrorValues} and its {@code errorArgs}, or {@code SKIPPED} (US-07-19): readable, with
+ * its {@code canonical} values, but never imported, its reason a code like an error's. A client
+ * renders the message in its own language from code and arguments, so no English text is ever
+ * stored with the row.
  *
  * @param rowNumber 1-based position among the file's data rows (header, preamble, empty lines and
  *     summary rows not counted); in a PDF, a balance line whose balance does not add up is a row of
@@ -58,7 +60,18 @@ public record ParsedImportRow(
         rowNumber, rawData, ImportRowErrorValues.STATUS_ERROR, errorCode, errorArgs, null);
   }
 
+  /** A readable row the import may record. */
   public boolean isParsed() {
     return ImportRowErrorValues.STATUS_PARSED.equals(status);
+  }
+
+  /** A row that could not be read or that the ledger refuses. */
+  public boolean isError() {
+    return ImportRowErrorValues.STATUS_ERROR.equals(status);
+  }
+
+  /** A readable row that is shown but never imported, such as a zero amount. */
+  public boolean isSkipped() {
+    return ImportRowErrorValues.STATUS_SKIPPED.equals(status);
   }
 }

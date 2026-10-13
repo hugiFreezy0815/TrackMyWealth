@@ -98,12 +98,15 @@ public class ImportStagingService {
     List<StagedImportRow> staged = new ArrayList<>(checked.size());
     int duplicateCount = 0;
     int errorCount = 0;
+    int skippedCount = 0;
     for (ParsedImportRow row : checked) {
       UUID duplicateOf = duplicates.get(row.rowNumber());
       if (duplicateOf != null) {
         duplicateCount++;
-      } else if (ImportRowErrorValues.STATUS_ERROR.equals(row.status())) {
+      } else if (row.isError()) {
         errorCount++;
+      } else if (row.isSkipped()) {
+        skippedCount++;
       }
       staged.add(staged(row, duplicateOf, account, today));
     }
@@ -118,11 +121,12 @@ public class ImportStagingService {
     batchRepository.saveAndFlush(batch);
     if (LOG.isInfoEnabled()) {
       LOG.info(
-          "Staged import batch {}: {} rows, {} duplicates, {} errors",
+          "Staged import batch {}: {} rows, {} duplicates, {} errors, {} skipped",
           batch.getId(),
           checked.size(),
           duplicateCount,
-          errorCount);
+          errorCount,
+          skippedCount);
     }
   }
 
@@ -159,9 +163,9 @@ public class ImportStagingService {
       ParsedImportRow row, UUID duplicateOf, Account account, LocalDate today) {
     CanonicalImportRow canonical = row.canonical();
     String status;
-    if (ImportRowErrorValues.STATUS_SKIPPED.equals(row.status())) {
+    if (row.isSkipped()) {
       status = ImportBatchValues.ROW_SKIPPED;
-    } else if (!row.isParsed()) {
+    } else if (row.isError()) {
       status = ImportBatchValues.ROW_ERROR;
     } else if (duplicateOf != null) {
       status = ImportBatchValues.ROW_DUPLICATE;

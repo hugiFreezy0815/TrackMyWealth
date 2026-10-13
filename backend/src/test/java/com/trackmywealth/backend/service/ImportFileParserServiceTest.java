@@ -144,6 +144,8 @@ class ImportFileParserServiceTest {
       assertThat(row.canonical().amount()).isEqualByComparingTo(BigDecimal.ZERO);
       assertThat(row.rawData()).containsKey("amount");
       assertThat(row.isParsed()).isFalse();
+      assertThat(row.isSkipped()).isTrue();
+      assertThat(row.isError()).isFalse();
     }
     assertThat(result.rows().get(2).isParsed()).isTrue();
     assertThat(result.rows().get(2).canonical().amount()).isEqualByComparingTo("-5.00");

@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.assertj.core.groups.Tuple.tuple;
 
@@ -497,7 +498,9 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE);
+        .isEqualTo(ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE)
+        .jsonPath("$.detail")
+        .isEqualTo("Row 1 moves no money and is never imported.");
 
     EntityExchangeResult<byte[]> export =
         client()
@@ -516,13 +519,64 @@ class ImportBatchControllerTest {
     ImportRowResponse german = rows(batch.id(), "?status=SKIPPED").content().get(0);
     assertThat(german.error().message())
         .isEqualTo(
-            "Diese Zeile hat den Betrag null und verändert keinen Kontostand. Sie wird angezeigt, aber nicht importiert.");
+            "Diese Zeile hat den Betrag null und ver\u00e4ndert keinen Kontostand. Sie wird"
+                + " angezeigt, aber nicht importiert.");
 
     ImportBatchResponse committed = commit(account, batch.id(), batch.version());
     assertThat(committed.counts().skipped()).isEqualTo(1);
     assertThat(committed.counts().imported()).isEqualTo(2);
     assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(2);
     assertThat(count("SELECT count(*) FROM transaction WHERE amount = 0")).isZero();
+  }
+
+  @Test
+  void aFileOfOnlyZeroAmountsHasNothingToImportAndItsCommitAddsNothing() throws Exception {
+    ImportTemplateResponse simple = createTemplate(simpleTemplate("Only zeros", SIMPLE_COLUMNS));
+    ImportBatchResponse batch =
+        upload(
+            token,
+            simple.id(),
+            csv("2031-05-02;0.00;CHF;Information;Z1;", "2031-05-03;-0.00;CHF;Waived fee;Z2;"));
+
+    assertThat(batch.counts().total()).isEqualTo(2);
+    assertThat(batch.counts().skipped()).isEqualTo(2);
+    assertThat(batch.counts().newRows()).isZero();
+    assertThat(batch.counts().errors()).isZero();
+    assertThat(batch.counts().included()).isZero();
+
+    ImportBatchResponse committed = commit(account, batch.id(), batch.version());
+    assertThat(committed.counts().skipped()).isEqualTo(2);
+    assertThat(committed.counts().imported()).isZero();
+    assertThat(count("SELECT count(*) FROM transaction")).isZero();
+  }
+
+  /** The API refuses first (above); the database must refuse too, whoever writes the row. */
+  @Test
+  void theDatabaseRefusesToIncludeASkippedOrErrorRow() {
+    ImportTemplateResponse simple = createTemplate(simpleTemplate("Guarded", SIMPLE_COLUMNS));
+    ImportBatchResponse batch =
+        upload(
+            token,
+            simple.id(),
+            csv("2031-05-02;0.00;CHF;Information;Z1;", "bad-date;-3.00;CHF;Invalid;Z2;"));
+
+    for (String status : List.of("SKIPPED", "ERROR")) {
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      "UPDATE import_row_raw SET included = TRUE"
+                          + " WHERE import_batch_id = ? AND parse_status = ?",
+                      batch.id(),
+                      status))
+          .isInstanceOfSatisfying(
+              SQLException.class, e -> assertThat(e.getSQLState()).isEqualTo("23514"))
+          .hasMessageContaining("chk_import_row_raw_not_includable_excluded");
+    }
+    assertThat(
+            count(
+                "SELECT count(*) FROM import_row_raw WHERE import_batch_id = ? AND included",
+                batch.id()))
+        .isZero();
   }
 
   @Test
@@ -568,7 +622,9 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE);
+        .isEqualTo(ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE)
+        .jsonPath("$.detail")
+        .isEqualTo("Row 2 could not be read and cannot be imported.");
 
     EntityExchangeResult<byte[]> export =
         client()

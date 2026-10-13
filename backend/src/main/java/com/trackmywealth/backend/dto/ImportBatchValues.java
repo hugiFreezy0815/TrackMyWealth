@@ -44,7 +44,10 @@ public final class ImportBatchValues {
 
   public static final String ROW_ERROR = ImportRowErrorValues.STATUS_ERROR;
 
-  /** A zero-amount information row: shown but never included or exported as an error. */
+  /**
+   * A readable row that is shown but never included or exported as an error; its reason is in
+   * {@code error_code} (so far only {@code IMPORT_ROW_ZERO_AMOUNT}, US-07-19).
+   */
   public static final String ROW_SKIPPED = ImportRowErrorValues.STATUS_SKIPPED;
 
   /** Every row status, for the preview's filter. */
