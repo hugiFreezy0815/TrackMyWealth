@@ -101,7 +101,11 @@ public class ImportTemplate {
   private String typeMapping;
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "description_type_patterns", columnDefinition = JSONB, nullable = false, updatable = false)
+  @Column(
+      name = "description_type_patterns",
+      columnDefinition = JSONB,
+      nullable = false,
+      updatable = false)
   private String descriptionTypePatterns = "{}";
 
   @Column(name = "account_identification_strategy", nullable = false, updatable = false)

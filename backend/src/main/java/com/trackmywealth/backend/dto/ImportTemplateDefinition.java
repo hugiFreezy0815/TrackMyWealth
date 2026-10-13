@@ -45,15 +45,42 @@ public record ImportTemplateDefinition(
 
   /** Existing templates have no regex-based type mapping. */
   public ImportTemplateDefinition(
-      String templateClass, String delimiter, String encoding, String decimalSeparator,
-      String thousandsSeparator, String dateFormat, int headerRowIndex, int preambleRowCount,
-      int trailingSummaryRowCount, String amountRepresentation, String currencyMode,
-      String fixedCurrency, ImportColumnMapping columnMapping, Map<String, String> typeMapping,
-      String accountIdentificationStrategy, String fileFormat, ImportPdfLayout pdfLayout) {
-    this(templateClass, delimiter, encoding, decimalSeparator, thousandsSeparator, dateFormat,
-        headerRowIndex, preambleRowCount, trailingSummaryRowCount, amountRepresentation,
-        currencyMode, fixedCurrency, columnMapping, typeMapping, accountIdentificationStrategy,
-        fileFormat, pdfLayout, Map.of());
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      int headerRowIndex,
+      int preambleRowCount,
+      int trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      String fileFormat,
+      ImportPdfLayout pdfLayout) {
+    this(
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        fileFormat,
+        pdfLayout,
+        Map.of());
   }
 
   public ImportTemplateDefinition {

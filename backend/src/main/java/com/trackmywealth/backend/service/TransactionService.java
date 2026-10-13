@@ -128,8 +128,7 @@ public class TransactionService {
   private static final Set<String> CUSTODY_CASH_TYPES =
       Set.of("DEPOSIT", WITHDRAWAL, "INTEREST", FEE, "TAX");
   // A credit card is only ever charged (purchase, incl. its own FEE row) or paid down (settlement).
-  private static final Set<String> CARD_TYPES =
-      Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT, "REFUND");
+  private static final Set<String> CARD_TYPES = Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT, "REFUND");
   private static final String BUY = "BUY";
   private static final String SELL = "SELL";
   private static final String DIVIDEND = "DIVIDEND";

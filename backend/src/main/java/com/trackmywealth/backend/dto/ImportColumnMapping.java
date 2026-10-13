@@ -39,14 +39,36 @@ public record ImportColumnMapping(
 
   /** Backward-compatible constructor for existing cash templates. */
   public ImportColumnMapping(
-      String bookingDate, String valueDate, String amount, String debitAmount,
-      String creditAmount, String currency, String description, String counterpartyName,
-      String externalId, String transactionType, String mcc,
-      String iso20022BankTransactionCode, String notes) {
+      String bookingDate,
+      String valueDate,
+      String amount,
+      String debitAmount,
+      String creditAmount,
+      String currency,
+      String description,
+      String counterpartyName,
+      String externalId,
+      String transactionType,
+      String mcc,
+      String iso20022BankTransactionCode,
+      String notes) {
     this(
-        bookingDate, valueDate, amount, debitAmount, creditAmount, currency, description,
-        counterpartyName, externalId, transactionType, mcc, iso20022BankTransactionCode,
-        notes, null, null, null);
+        bookingDate,
+        valueDate,
+        amount,
+        debitAmount,
+        creditAmount,
+        currency,
+        description,
+        counterpartyName,
+        externalId,
+        transactionType,
+        mcc,
+        iso20022BankTransactionCode,
+        notes,
+        null,
+        null,
+        null);
   }
 
   /** The mapped fields by canonical name, in declaration order; unmapped fields are left out. */

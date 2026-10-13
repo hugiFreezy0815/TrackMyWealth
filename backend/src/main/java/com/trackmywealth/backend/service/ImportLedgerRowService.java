@@ -85,9 +85,7 @@ public class ImportLedgerRowService {
         row.mcc(),
         row.notes(),
         row.externalId(),
-        originalPurchase && row.bankExchangeRate() != null
-            ? row.bankExchangeRate()
-            : null,
+        originalPurchase && row.bankExchangeRate() != null ? row.bankExchangeRate() : null,
         originalPurchase && row.bankExchangeRate() == null ? row.amount() : null,
         null,
         null,

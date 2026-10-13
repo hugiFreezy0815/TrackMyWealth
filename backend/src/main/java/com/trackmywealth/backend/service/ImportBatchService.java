@@ -253,10 +253,7 @@ public class ImportBatchService {
     ResolvedImportTemplate template = importTemplateService.resolveForImport(templateId, actor);
     ImportParseResult parsed =
         parser.parse(
-            content,
-            template.definition(),
-            accountContext.currency(),
-            accountContext.creditCard());
+            content, template.definition(), accountContext.currency(), accountContext.creditCard());
     Map<String, Boolean> rates = lookUpRates(accountId, parsed.rows(), actor);
 
     return writeTransaction.execute(

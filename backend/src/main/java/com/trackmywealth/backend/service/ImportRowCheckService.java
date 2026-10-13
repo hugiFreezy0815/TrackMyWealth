@@ -133,8 +133,7 @@ public class ImportRowCheckService {
       if (request.fxRateToAccountCurrency() == null && request.billedAmount() == null) {
         convertsInto.ifPresent(
             into ->
-                needed.add(
-                    new ImportRateNeed(request.currency(), into, canonical.bookingDate())));
+                needed.add(new ImportRateNeed(request.currency(), into, canonical.bookingDate())));
       }
     }
     return needed;

@@ -200,8 +200,7 @@ class ImportFileParserServiceTest {
         .containsExactly("CREDIT_CARD_PURCHASE", "SETTLEMENT", "REFUND", "SETTLEMENT");
     assertThat(card.get(0).canonical().originalAmount()).isEqualByComparingTo("-50.00");
     assertThat(card.get(0).canonical().originalCurrency()).isEqualTo("EUR");
-    assertThat(card.get(0).canonical().bankExchangeRate())
-        .isEqualByComparingTo("1.100000");
+    assertThat(card.get(0).canonical().bankExchangeRate()).isEqualByComparingTo("1.100000");
 
     assertThat(parser.parse(statement, mapped, "CHF").rows().get(0).canonical().transactionType())
         .isEqualTo("EXPENSE");
@@ -210,12 +209,11 @@ class ImportFileParserServiceTest {
   @Test
   void ambiguousCardDescriptionPatternsAreErrorsAndInvalidPatternsAreRejected() {
     ImportTemplateDefinition template =
-        new Template()
-            .descriptionPatterns(
-                Map.of("REFUND", "refund", "SETTLEMENT", "ref"))
-            .build();
+        new Template().descriptionPatterns(Map.of("REFUND", "refund", "SETTLEMENT", "ref")).build();
     List<ParsedImportRow> rows =
-        parser.parse(utf8("date,amount,text\n2031-05-01,8.00,Refund received\n"), template, "CHF", true)
+        parser
+            .parse(
+                utf8("date,amount,text\n2031-05-01,8.00,Refund received\n"), template, "CHF", true)
             .rows();
 
     assertThat(rows).hasSize(1);

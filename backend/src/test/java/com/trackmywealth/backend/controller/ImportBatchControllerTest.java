@@ -548,7 +548,11 @@ class ImportBatchControllerTest {
     ImportBatchResponse committed = commit(card, batch.id(), batch.version());
     assertThat(committed.counts().imported()).isEqualTo(4);
     assertThat(count("SELECT count(*) FROM transaction WHERE account_id = ?", card)).isEqualTo(4);
-    assertThat(single("SELECT currency FROM transaction WHERE account_id = ? AND external_id = ?", card, "CARD-A"))
+    assertThat(
+            single(
+                "SELECT currency FROM transaction WHERE account_id = ? AND external_id = ?",
+                card,
+                "CARD-A"))
         .isEqualTo("EUR");
     assertThat(
             (BigDecimal)
@@ -584,7 +588,12 @@ class ImportBatchControllerTest {
                 new BigDecimal("3.00"),
                 "CHF",
                 "Manual card refund",
-                null, null, null, null, null, null))
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
         .exchange()
         .expectStatus()
         .isCreated();
@@ -1630,16 +1639,53 @@ class ImportBatchControllerTest {
 
   private static ImportTemplateRequest creditCardTemplate() {
     List<String> headers =
-        List.of("Date", "Amount", "Currency", "Text", "Reference",
-            "OriginalAmount", "OriginalCurrency", "Rate");
+        List.of(
+            "Date",
+            "Amount",
+            "Currency",
+            "Text",
+            "Reference",
+            "OriginalAmount",
+            "OriginalCurrency",
+            "Rate");
     return new ImportTemplateRequest(
-        "Synthetic credit-card statement", null, "CASH_TRANSACTIONS", ";", "UTF-8",
-        ",", null, "yyyy-MM-dd", 0, 0, 0, "SINGLE_SIGNED_COLUMN", "PER_ROW", null,
+        "Synthetic credit-card statement",
+        null,
+        "CASH_TRANSACTIONS",
+        ";",
+        "UTF-8",
+        ",",
+        null,
+        "yyyy-MM-dd",
+        0,
+        0,
+        0,
+        "SINGLE_SIGNED_COLUMN",
+        "PER_ROW",
+        null,
         new ImportColumnMapping(
-            "Date", null, "Amount", null, null, "Currency", "Text", null,
-            "Reference", null, null, null, null,
-            "OriginalAmount", "OriginalCurrency", "Rate"),
-        Map.of(), null, headers, null, null, Map.of("REFUND", "refund"));
+            "Date",
+            null,
+            "Amount",
+            null,
+            null,
+            "Currency",
+            "Text",
+            null,
+            "Reference",
+            null,
+            null,
+            null,
+            null,
+            "OriginalAmount",
+            "OriginalCurrency",
+            "Rate"),
+        Map.of(),
+        null,
+        headers,
+        null,
+        null,
+        Map.of("REFUND", "refund"));
   }
 
   private static ImportTemplateRequest simpleTemplate(String name, List<String> headerColumns) {

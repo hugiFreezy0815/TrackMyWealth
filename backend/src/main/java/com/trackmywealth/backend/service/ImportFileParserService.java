@@ -181,7 +181,12 @@ public class ImportFileParserService {
         }
         CanonicalImportRow canonical =
             canonicalRow(
-                record, template, columns, dateFormatter, typeMapping, accountCurrency,
+                record,
+                template,
+                columns,
+                dateFormatter,
+                typeMapping,
+                accountCurrency,
                 creditCardAccount);
         if (checked) {
           running =
@@ -921,7 +926,9 @@ public class ImportFileParserService {
   private static BigDecimal originalAmountOf(
       List<String> record, ImportTemplateDefinition template, Map<String, Integer> columns) {
     String value = optionalCell(record, columns.get("originalAmount"));
-    return value == null ? null : parseAmount(value, template.columnMapping().originalAmount(), template, false);
+    return value == null
+        ? null
+        : parseAmount(value, template.columnMapping().originalAmount(), template, false);
   }
 
   private static String originalCurrencyOf(
@@ -1197,7 +1204,10 @@ public class ImportFileParserService {
       if (description != null
           && Re2Patterns.compile("(?i)" + entry.getValue()).matcher(description).find()) {
         if (match != null && !match.equals(entry.getKey())) {
-          throw rowError(ImportRowErrorValues.TYPE_AMBIGUOUS, ARG_COLUMN, column == null ? "description" : column);
+          throw rowError(
+              ImportRowErrorValues.TYPE_AMBIGUOUS,
+              ARG_COLUMN,
+              column == null ? "description" : column);
         }
         match = entry.getKey();
       }

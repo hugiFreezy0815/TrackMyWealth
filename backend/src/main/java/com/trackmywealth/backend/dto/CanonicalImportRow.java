@@ -40,8 +40,19 @@ public record CanonicalImportRow(
       String iso20022BankTransactionCode,
       String notes) {
     this(
-        bookingDate, valueDate, amount, currency, transactionType, description,
-        counterpartyName, externalId, mcc, iso20022BankTransactionCode, notes,
-        null, null, null);
+        bookingDate,
+        valueDate,
+        amount,
+        currency,
+        transactionType,
+        description,
+        counterpartyName,
+        externalId,
+        mcc,
+        iso20022BankTransactionCode,
+        notes,
+        null,
+        null,
+        null);
   }
 }
