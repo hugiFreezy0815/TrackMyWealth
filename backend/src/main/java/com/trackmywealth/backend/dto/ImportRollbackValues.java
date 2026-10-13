@@ -42,10 +42,16 @@ public final class ImportRollbackValues {
 
   /**
    * Something outside the batch points at the transaction: a row of another batch or account
-   * ({@code related_transaction_id}), a row of another batch found to duplicate it (unless that
-   * batch was discarded), or a tax lot.
+   * ({@code related_transaction_id}), a row of a committed batch left out as its duplicate (an open
+   * preview's or a discarded batch's pointer does not count), or a tax lot.
    */
   public static final String REFERENCED = "REFERENCED";
+
+  /**
+   * A member confirmed the transaction as a transfer to an own account that is not tracked here
+   * (US-10-01): it is an internal transfer without a counterpart account (#287).
+   */
+  public static final String TRANSFER_UNTRACKED_CONFIRMED = "TRANSFER_UNTRACKED_CONFIRMED";
 
   /** Every criterion, in the order a response lists a transaction's reasons. */
   public static final List<String> CRITERIA =
@@ -57,7 +63,8 @@ public final class ImportRollbackValues {
           MATCH_DECIDED,
           RECONCILIATION_RESOLUTION,
           RESTORED,
-          REFERENCED);
+          REFERENCED,
+          TRANSFER_UNTRACKED_CONFIRMED);
 
   private ImportRollbackValues() {}
 }

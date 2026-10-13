@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -116,6 +117,37 @@ class ImportDuplicateServiceTest {
             List.of(row(1, "-3.50", "Coffee", "REF-1"), row(2, "-3.50", "Coffee", null)));
 
     assertThat(duplicates).containsExactly(Map.entry(1, existing));
+  }
+
+  @Test
+  void aLedgerRowAnotherRowOfTheBatchHoldsIsNoMatchForTheRest() {
+    // #287: the commit re-checks only rows without a live duplicate; those keep their ledger rows.
+    UUID held = UUID.randomUUID();
+    UUID second = UUID.randomUUID();
+    ledger(
+        candidate(held, "-3.50", "Coffee", "MANUAL", null),
+        candidate(second, "-3.50", "Coffee", "MANUAL", null));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(row(2, "-3.50", "Coffee", null), row(3, "-3.50", "Coffee", null)),
+            Set.of(held));
+
+    assertThat(duplicates).containsExactly(Map.entry(2, second));
+  }
+
+  @Test
+  void aReservedLedgerRowIsNoMatchByReferenceEither() {
+    UUID held = UUID.randomUUID();
+    when(transactionRepository.findByExternalIds(eq(ACCOUNT), eq(CSV), anyCollection()))
+        .thenReturn(List.of(candidate(held, "-12.40", "Bakery", CSV, "REF-1")));
+
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT, CSV, List.of(row(1, "-12.40", "Bakery", "REF-1")), Set.of(held)))
+        .isEmpty();
   }
 
   @Test

@@ -29,6 +29,7 @@ import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.ImportLockService;
 import com.trackmywealth.backend.service.SettlementDetectionService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
@@ -46,6 +47,7 @@ import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -116,6 +118,8 @@ class TransactionRemovalControllerTest {
   @Autowired SettlementDetectionService settlementDetectionService;
 
   @Autowired PlatformTransactionManager transactionManager;
+
+  @Autowired ImportLockService importLockService;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -1290,6 +1294,73 @@ class TransactionRemovalControllerTest {
       release.countDown();
       matching.get(30, TimeUnit.SECONDS);
       assertThat(removal.get(30, TimeUnit.SECONDS).removal()).isEqualTo(SOFT_DELETE);
+    } finally {
+      release.countDown();
+      pool.shutdownNow();
+    }
+  }
+
+  // #287: an import commit keeps a preview duplicate while the row it points at is in effect, so a
+  // removal, correction or restore of that row waits for a commit into the account to end.
+  @Test
+  void aRemovalWaitsForAnImportCommitIntoTheAccount() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
+    TransactionResponse payment = record(token, checking.id(), cashRow("WITHDRAWAL", "-120.00"));
+
+    assertThat(
+            whileAnImportCommitHolds(
+                checking.id(), () -> remove(token, checking.id(), payment.id(), null)))
+        .extracting(TransactionRemovalResponse::removal)
+        .isEqualTo(SOFT_DELETE);
+  }
+
+  @Test
+  void aRestoreWaitsForAnImportCommitIntoTheAccount() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse checking = createAccount(token, "CASH", "CHF");
+    TransactionResponse payment = record(token, checking.id(), cashRow("WITHDRAWAL", "-120.00"));
+    remove(token, checking.id(), payment.id(), null);
+
+    whileAnImportCommitHolds(checking.id(), () -> restore(token, checking.id(), payment.id()));
+
+    assertThat(list(token, checking.id())).hasSize(1);
+  }
+
+  // Runs write while another transaction holds the import commit's lock on the account: it must
+  // not finish until that transaction ends, and then it must.
+  private <T> T whileAnImportCommitHolds(UUID accountId, Callable<T> write) throws Exception {
+    AuthenticatedUserPrincipal admin = adminPrincipal();
+    CountDownLatch locked = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> commit =
+          pool.submit(
+              () -> {
+                SecurityContextHolder.getContext()
+                    .setAuthentication(
+                        new UsernamePasswordAuthenticationToken(admin, null, List.of()));
+                try {
+                  new TransactionTemplate(transactionManager)
+                      .executeWithoutResult(
+                          status -> {
+                            importLockService.lockAccount(accountId);
+                            locked.countDown();
+                            await(release);
+                          });
+                } finally {
+                  SecurityContextHolder.clearContext();
+                }
+              });
+      assertThat(locked.await(30, TimeUnit.SECONDS)).isTrue();
+      Future<T> written = pool.submit(write);
+
+      assertThatThrownBy(() -> written.get(1, TimeUnit.SECONDS))
+          .isInstanceOf(TimeoutException.class);
+      release.countDown();
+      commit.get(30, TimeUnit.SECONDS);
+      return written.get(30, TimeUnit.SECONDS);
     } finally {
       release.countDown();
       pool.shutdownNow();

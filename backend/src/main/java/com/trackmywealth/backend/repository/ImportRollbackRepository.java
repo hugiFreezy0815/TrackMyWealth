@@ -1,11 +1,14 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRollbackValues;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -21,6 +24,15 @@ public class ImportRollbackRepository {
 
   /** The transaction-local setting {@code trg_transaction_no_hard_delete} checks (V68). */
   static final String ROLLBACK_SETTING = "app.import_rollback_batch_id";
+
+  // The batch statuses before a commit, or instead of one: a duplicate pointer of such a batch only
+  // described its preview. Every other status - COMMITTED, and ROLLED_BACK/VOIDED, whose excluded
+  // rows stay as the record of what that commit left out - counts for REFERENCED. Both of its
+  // uses share it, so a pointer that does not count is always one deleteTransactions clears.
+  private static final String UNCOMMITTED_STATUSES =
+      Stream.of(ImportBatchValues.UPLOADED, ImportBatchValues.PARSED, ImportBatchValues.DISCARDED)
+          .map(status -> "'" + status + "'")
+          .collect(Collectors.joining(", ", "(", ")"));
 
   private static final String BATCH_ROWS =
       "SELECT t.id FROM transaction t WHERE t.import_batch_id = ?";
@@ -68,18 +80,27 @@ public class ImportRollbackRepository {
     criteria.put(
         ImportRollbackValues.RESTORED,
         " AND EXISTS (SELECT 1 FROM transaction c WHERE c.restores_transaction_id = t.id)");
-    // Rows of the batch may point at each other; anything else pointing in keeps the row. A
-    // discarded batch's duplicate is a dead preview: deleteTransactions unlinks it instead.
+    // Rows of the batch may point at each other; anything else pointing in keeps the row. Only a
+    // committed batch's duplicate counts: it records why that batch left its row out. An open
+    // preview's commit checks such a row again, and a discarded one is never committed, so
+    // deleteTransactions unlinks both instead.
     criteria.put(
         ImportRollbackValues.REFERENCED,
         " AND (EXISTS (SELECT 1 FROM transaction o WHERE o.related_transaction_id = t.id"
             + " AND o.import_batch_id IS DISTINCT FROM t.import_batch_id)"
             + " OR EXISTS (SELECT 1 FROM import_row_raw r JOIN import_batch b"
             + " ON b.id = r.import_batch_id WHERE r.duplicate_of_transaction_id = t.id"
-            + " AND b.status <> 'DISCARDED')"
+            + " AND b.status NOT IN "
+            + UNCOMMITTED_STATUSES
+            + ")"
             + " OR EXISTS (SELECT 1 FROM tax_lot l WHERE l.acquisition_transaction_id = t.id)"
             + " OR EXISTS (SELECT 1 FROM tax_lot_disposal d"
             + " WHERE d.disposal_transaction_id = t.id))");
+    // Only TransferResolutionService#confirmUntracked leaves the flag without a counterpart: every
+    // detected or recorded transfer names the other account.
+    criteria.put(
+        ImportRollbackValues.TRANSFER_UNTRACKED_CONFIRMED,
+        " AND t.is_internal_transfer AND t.counterparty_account_id IS NULL");
     return criteria;
   }
 
@@ -125,9 +146,9 @@ public class ImportRollbackRepository {
   /**
    * FR-LIF-010: deletes every transaction of an unmodified batch and what only described them - the
    * settlement and transfer matches they are a leg of (the caller has cleared the other legs'
-   * flags), their categorization log - and unlinks the batch's rows, and a discarded batch's
-   * duplicate rows, from them. The rows, the batch and its file stay. Only here does {@code
-   * trg_transaction_no_hard_delete} let a delete through.
+   * flags), their categorization log - and unlinks the batch's rows, and the duplicate rows of an
+   * open or discarded preview, from them. The rows, the batch and its file stay. Only here does
+   * {@code trg_transaction_no_hard_delete} let a delete through.
    *
    * @return how many transactions were deleted
    */
@@ -146,13 +167,15 @@ public class ImportRollbackRepository {
         "UPDATE import_row_raw SET resulting_transaction_id = NULL"
             + " WHERE import_batch_id = ? AND resulting_transaction_id IS NOT NULL",
         batchId);
-    // A discarded batch's preview found some of them duplicates; it is never committed, so the
-    // pointer only described them (REFERENCED leaves such rows out).
+    // An open or discarded preview found some of them duplicates; its pointer only described them
+    // (REFERENCED leaves such rows out). An open preview's commit checks the row again.
     jdbcTemplate.update(
         "UPDATE import_row_raw SET duplicate_of_transaction_id = NULL"
             + " WHERE duplicate_of_transaction_id IN "
             + batchRows
-            + " AND import_batch_id IN (SELECT id FROM import_batch WHERE status = 'DISCARDED')",
+            + " AND import_batch_id IN (SELECT id FROM import_batch WHERE status IN "
+            + UNCOMMITTED_STATUSES
+            + ")",
         batchId);
     // Transaction-local (TRUE): a rollback of the surrounding transaction takes the permit too.
     jdbcTemplate.queryForObject(

@@ -84,6 +84,7 @@ public class TransactionRemovalService {
   private final VersionPreconditionService versionPreconditionService;
   private final ReconciliationService reconciliationService;
   private final ReconciliationAdjustmentService reconciliationAdjustmentService;
+  private final ImportLockService importLockService;
 
   public TransactionRemovalService(
       AccountLookupService accountLookupService,
@@ -98,7 +99,8 @@ public class TransactionRemovalService {
       Clock clock,
       VersionPreconditionService versionPreconditionService,
       ReconciliationService reconciliationService,
-      ReconciliationAdjustmentService reconciliationAdjustmentService) {
+      ReconciliationAdjustmentService reconciliationAdjustmentService,
+      ImportLockService importLockService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -112,6 +114,7 @@ public class TransactionRemovalService {
     this.versionPreconditionService = versionPreconditionService;
     this.reconciliationService = reconciliationService;
     this.reconciliationAdjustmentService = reconciliationAdjustmentService;
+    this.importLockService = importLockService;
   }
 
   /**
@@ -289,6 +292,7 @@ public class TransactionRemovalService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
+    lockImports(account, transactionId);
     lockCards(accountsToLockForRestore(account, transactionId, actor), transactionId);
     Transaction removed =
         transactionRepository
@@ -587,6 +591,7 @@ public class TransactionRemovalService {
   Transaction lockActiveTransaction(
       UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
+    lockImports(account, transactionId);
     // Cards before rows, the order settlement matching takes them, so a concurrent match decision
     // and this lifecycle write queue behind each other instead of deadlocking.
     lockCards(account, transactionId);
@@ -653,6 +658,22 @@ public class TransactionRemovalService {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
     return account;
+  }
+
+  // An import's commit keeps a preview row a duplicate while the row it points at is in effect
+  // (#287): a removal or restore of that row must not land between the commit's check and its end,
+  // or the duplicate stays out pointing at a void, or a restored booking comes in twice. Before the
+  // cards, the order the commit and the rollback take them; every account the row's removal group
+  // or restore can reach (a two-sided transfer's other leg), in id order (ImportLockService). Only
+  // the ids are read,
+  // so no access is checked here: the caller checks EDIT on each account the write touches.
+  private void lockImports(Account account, UUID transactionId) {
+    List<UUID> accounts = new ArrayList<>(List.of(account.getId()));
+    transactionRepository
+        .findTransferCounterpartyAccountId(
+            transactionId, account.getId(), TransferRecordingService.TRANSFER_TYPES)
+        .ifPresent(accounts::add);
+    importLockService.lockAccounts(accounts);
   }
 
   // Every card whose matching the row can take part in, not only those with a match on it yet: a

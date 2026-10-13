@@ -58,11 +58,21 @@ public class ImportDuplicateService {
   @Transactional(readOnly = true)
   public Map<Integer, UUID> findDuplicates(
       UUID accountId, String source, List<ParsedImportRow> rows) {
+    return findDuplicates(accountId, source, rows, Set.of());
+  }
+
+  /**
+   * As {@link #findDuplicates(UUID, String, List)}, but no row may match a ledger row of {@code
+   * reserved}: other rows of the batch are its duplicates already (the commit's re-check, #287).
+   */
+  @Transactional(readOnly = true)
+  public Map<Integer, UUID> findDuplicates(
+      UUID accountId, String source, List<ParsedImportRow> rows, Set<UUID> reserved) {
     Map<Integer, UUID> duplicates = new HashMap<>();
     if (rows.isEmpty()) {
       return duplicates;
     }
-    Set<UUID> taken = new HashSet<>();
+    Set<UUID> taken = new HashSet<>(reserved);
     matchByReference(accountId, source, rows, duplicates, taken);
 
     List<ParsedImportRow> open =
@@ -141,7 +151,7 @@ public class ImportDuplicateService {
     }
     for (ParsedImportRow row : rows) {
       UUID match = byReference.get(row.canonical().externalId());
-      if (match != null) {
+      if (match != null && !taken.contains(match)) {
         duplicates.put(row.rowNumber(), match);
         taken.add(match);
       }

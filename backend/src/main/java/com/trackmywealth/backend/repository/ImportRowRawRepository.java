@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.ImportDuplicateHold;
 import com.trackmywealth.backend.entity.ImportRowRaw;
 import jakarta.persistence.QueryHint;
 import java.math.BigDecimal;
@@ -36,6 +37,41 @@ public interface ImportRowRawRepository extends JpaRepository<ImportRowRaw, UUID
 
   List<ImportRowRaw> findByImportBatchIdAndParseStatusOrderByRowNumber(
       UUID importBatchId, String parseStatus);
+
+  /**
+   * The batch's {@code DUPLICATE} rows whose booking the ledger still holds when the commit runs
+   * (#287), each with the row that holds it: the transaction the row points at while that is in
+   * effect - neither voided nor soft-deleted - or else what replaced it since, following a
+   * correction ({@code corrects_transaction_id}) or a restored void ({@code
+   * restores_transaction_id}) to the row in effect now. Each row has at most one successor ({@code
+   * uq_transaction_correction}; a corrected row cannot be restored, nor a voided one corrected).
+   * Any other duplicate row lost its booking since the preview: a rollback cleared its pointer, the
+   * row it pointed at was removed for good, or a correction moved the booking to another account
+   * (only successors in the same account are followed; product owner, 2026-10-13), and the commit
+   * checks it again as a fresh import would. Each link is looked up on its own, so each uses its
+   * unique index ({@code uq_transaction_correction}, {@code uq_transaction_restore}).
+   */
+  @Query(
+      value =
+          "WITH RECURSIVE chain (row_id, transaction_id) AS ("
+              + " SELECT r.id, r.duplicate_of_transaction_id FROM import_row_raw r"
+              + " WHERE r.import_batch_id = :batchId AND r.parse_status = 'DUPLICATE'"
+              + " AND r.duplicate_of_transaction_id IS NOT NULL"
+              + " UNION ALL"
+              + " SELECT c.row_id, n.id FROM chain c"
+              + " JOIN transaction p ON p.id = c.transaction_id"
+              + " CROSS JOIN LATERAL ("
+              + " SELECT s.id FROM transaction s"
+              + " WHERE s.corrects_transaction_id = p.id AND s.account_id = p.account_id"
+              + " UNION ALL"
+              + " SELECT s.id FROM transaction s"
+              + " WHERE s.restores_transaction_id = p.id AND s.account_id = p.account_id) n"
+              + " WHERE p.voided_at IS NOT NULL OR p.deleted_at IS NOT NULL)"
+              + " SELECT c.row_id AS rowId, c.transaction_id AS transactionId FROM chain c"
+              + " JOIN transaction t ON t.id = c.transaction_id"
+              + " WHERE t.voided_at IS NULL AND t.deleted_at IS NULL",
+      nativeQuery = true)
+  List<ImportDuplicateHold> findDuplicateHolds(@Param("batchId") UUID batchId);
 
   /**
    * The counts of each of {@code batchIds} that has rows, one array per batch: its id, then total,

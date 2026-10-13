@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
@@ -58,6 +59,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -273,10 +275,17 @@ class ImportRollbackControllerTest {
             + " WHERE id = ?",
         account,
         credit.id());
+    // The imported leg is a transfer too, but with its counterpart: no member's confirmation.
+    execute(
+        "UPDATE transaction SET is_internal_transfer = TRUE, counterparty_account_id = ?"
+            + " WHERE id = ?",
+        savings,
+        debit);
 
     ImportRollbackResponse rollback = rollback(batch, REASON);
 
     assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.HARD_DELETE);
+    assertThat(rollback.modified()).isEmpty();
     assertThat(rollback.unmatchedTransactionIds()).containsExactly(credit.id());
     assertThat(count("SELECT count(*) FROM settlement_match")).isZero();
     assertThat(count("SELECT count(*) FROM transaction WHERE id = ?", debit)).isZero();
@@ -323,7 +332,8 @@ class ImportRollbackControllerTest {
     RECONCILIATION_RESOLUTION(ImportRollbackValues.RECONCILIATION_RESOLUTION),
     RESTORED(ImportRollbackValues.RESTORED),
     DUPLICATE_IN_ANOTHER_BATCH(ImportRollbackValues.REFERENCED),
-    TAX_LOT(ImportRollbackValues.REFERENCED);
+    TAX_LOT(ImportRollbackValues.REFERENCED),
+    TRANSFER_UNTRACKED_CONFIRMED(ImportRollbackValues.TRANSFER_UNTRACKED_CONFIRMED);
 
     final String criterion;
 
@@ -502,6 +512,310 @@ class ImportRollbackControllerTest {
                 "SELECT count(*) FROM import_row_raw WHERE import_batch_id = ?"
                     + " AND duplicate_of_transaction_id IS NULL",
                 preview.id()))
+        .isEqualTo(3);
+  }
+
+  @Test
+  void aTransferConfirmedAsUntrackedForcesTheVoid() {
+    UUID typed =
+        createTemplate("Typed", "Type", Map.of("Transfer", "TRANSFER", "Card", "EXPENSE")).id();
+    ImportBatchResponse batch =
+        commit(
+            upload(
+                typedCsv(
+                    "2019-01-05;-500.00;CHF;To my other bank;U1;Transfer",
+                    "2019-01-06;-80.00;CHF;Groceries;U2;Card"),
+                typed));
+    UUID leg =
+        (UUID)
+            single(
+                "SELECT id FROM transaction WHERE import_batch_id = ? AND external_id = 'U1'",
+                batch.id());
+    client()
+        .post()
+        .uri(transactions() + "/" + leg + "/untracked-transfer")
+        .header(HttpHeaders.IF_MATCH, etag(versionOf(leg)))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    ImportRollbackResponse rollback = rollback(batch, REASON);
+
+    assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.VOID);
+    assertThat(rollback.batch().status()).isEqualTo("VOIDED");
+    assertThat(rollback.modified())
+        .containsExactly(
+            new ImportRollbackModifiedResponse(
+                leg, List.of(ImportRollbackValues.TRANSFER_UNTRACKED_CONFIRMED)));
+    // The member's decision stays on the voided row.
+    assertThat(
+            rowsOf(
+                    "SELECT is_internal_transfer, voided_at IS NOT NULL AS voided FROM transaction"
+                        + " WHERE id = ?",
+                    leg)
+                .get(0))
+        .containsEntry("is_internal_transfer", true)
+        .containsEntry("voided", true);
+  }
+
+  // --- an open preview of the rolled-back rows (#287)
+  // -----------------------------------------------------------------------------
+
+  @Test
+  void anOpenPreviewOfTheSameFileNeitherKeepsTheBatchNorLosesItsBookings() {
+    openingBalance("1000.00");
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    snapshot("3407.60");
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    assertThat(preview.counts().duplicates()).isEqualTo(3);
+
+    ImportRollbackResponse rollback = rollback(batch, REASON);
+
+    assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.HARD_DELETE);
+    assertThat(rollback.batch().status()).isEqualTo("ROLLED_BACK");
+    assertThat(
+            count(
+                "SELECT count(*) FROM import_row_raw WHERE import_batch_id = ?"
+                    + " AND duplicate_of_transaction_id IS NOT NULL",
+                preview.id()))
+        .isZero();
+
+    // Committed after the rollback, the preview imports what the rollback took out, once.
+    ImportBatchResponse committed = commit(preview);
+
+    assertThat(committed.counts().imported()).isEqualTo(3);
+    assertThat(committed.counts().duplicates()).isZero();
+    assertThat(committed.counts().newRows()).isEqualTo(3);
+    for (int row = 1; row <= 3; row++) {
+      assertThat(rowStatus(preview.id(), row)).isEqualTo("PARSED");
+    }
+    assertThat(
+            uuids(
+                "SELECT import_batch_id FROM transaction WHERE voided_at IS NULL"
+                    + " AND deleted_at IS NULL AND external_id IN ('R1', 'R2', 'R3')"))
+        .hasSize(3)
+        .containsOnly(preview.id());
+    assertThat(reconciliationStatus()).isEqualTo(ReconciliationStatusValues.RECONCILED);
+  }
+
+  @Test
+  void aPreviewRowWhoseBookingWasVoidedSinceIsImportedAsNew() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    UUID bakery =
+        (UUID)
+            single(
+                "SELECT id FROM transaction WHERE import_batch_id = ? AND external_id = 'R1'",
+                batch.id());
+    assertThat(remove(bakery).removal()).isEqualTo("VOID");
+
+    ImportBatchResponse committed = commit(preview);
+
+    // Only the voided booking comes in again; the other two stay duplicates of the live rows.
+    assertThat(committed.counts().imported()).isEqualTo(1);
+    assertThat(committed.counts().duplicates()).isEqualTo(2);
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("PARSED");
+    assertThat(rowStatus(preview.id(), 2)).isEqualTo("DUPLICATE");
+    assertThat(rowStatus(preview.id(), 3)).isEqualTo("DUPLICATE");
+    assertThat(
+            count(
+                "SELECT count(*) FROM transaction WHERE voided_at IS NULL AND deleted_at IS NULL"
+                    + " AND replaces_transaction_id IS NULL"))
+        .isEqualTo(3);
+    assertThat(
+            single(
+                "SELECT import_batch_id FROM transaction WHERE external_id = 'R1'"
+                    + " AND voided_at IS NULL"))
+        .isEqualTo(preview.id());
+  }
+
+  @Test
+  void aPreviewRowWhoseBookingTheLedgerHoldsAsAnotherRowStaysADuplicateOfThatRow() {
+    ImportBatchResponse batch = importFile(csv("2019-01-05;-3.50;CHF;Coffee;"));
+    UUID manual = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+    ImportBatchResponse preview = upload(csv("2019-01-05;-3.50;CHF;Coffee;"));
+    assertThat(
+            single(
+                "SELECT duplicate_of_transaction_id FROM import_row_raw WHERE import_batch_id = ?",
+                preview.id()))
+        .isEqualTo(batchRows(batch.id()).get(0));
+    rollback(batch, REASON);
+
+    ImportBatchResponse committed = commit(preview);
+
+    assertThat(committed.counts().imported()).isZero();
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
+    assertThat(
+            single(
+                "SELECT duplicate_of_transaction_id FROM import_row_raw WHERE import_batch_id = ?",
+                preview.id()))
+        .isEqualTo(manual);
+    assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(1);
+  }
+
+  @Test
+  void ofTwoIdenticalDuplicatesOnlyTheOneWhoseBookingWasRemovedComesIn() {
+    UUID first = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+    UUID second = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+    ImportBatchResponse preview =
+        upload(csv("2019-01-05;-3.50;CHF;Coffee;", "2019-01-05;-3.50;CHF;Coffee;"));
+    assertThat(preview.counts().duplicates()).isEqualTo(2);
+    remove(first);
+
+    ImportBatchResponse committed = commit(preview);
+
+    // The second row keeps the booking it found; the first finds no other and is new.
+    assertThat(committed.counts().imported()).isEqualTo(1);
+    assertThat(
+            rowsOf(
+                "SELECT row_number, parse_status, duplicate_of_transaction_id FROM import_row_raw"
+                    + " WHERE import_batch_id = ? ORDER BY row_number",
+                preview.id()))
+        .extracting(row -> row.get("parse_status"), row -> row.get("duplicate_of_transaction_id"))
+        .containsExactly(tuple("PARSED", null), tuple("DUPLICATE", second));
+    assertThat(
+            count(
+                "SELECT count(*) FROM transaction WHERE voided_at IS NULL AND deleted_at IS NULL"
+                    + " AND replaces_transaction_id IS NULL"))
+        .isEqualTo(2);
+  }
+
+  @Test
+  void aPreviewRowWhoseBookingWasCorrectedSinceStaysADuplicateOfTheReplacement() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    UUID bakery = bookingOf(batch, "R1");
+    correct(bakery);
+    UUID replacement =
+        (UUID) single("SELECT id FROM transaction WHERE corrects_transaction_id = ?", bakery);
+
+    ImportBatchResponse committed = commit(preview);
+
+    // The member's correction carries the booking now, without the reference and at another
+    // amount: the file's row must not come in again beside it.
+    assertThat(committed.counts().imported()).isZero();
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
+    assertThat(duplicateOf(preview.id(), 1)).isEqualTo(replacement);
+    assertThat(liveBookings()).isEqualTo(3);
+  }
+
+  @Test
+  void aPreviewRowWhoseBookingWasCorrectedIntoAnotherAccountIsCheckedAgainInItsOwn() {
+    UUID savings = createAccount("Sparkonto");
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    UUID bakery = bookingOf(batch, "R1");
+    correct(bakery, savings);
+    UUID moved =
+        (UUID) single("SELECT id FROM transaction WHERE corrects_transaction_id = ?", bakery);
+    assertThat(single("SELECT account_id FROM transaction WHERE id = ?", moved)).isEqualTo(savings);
+
+    ImportBatchResponse committed = commit(preview);
+
+    // The pointer never leaves the batch's account (product owner, 2026-10-13): the booking is
+    // gone from this one, so the row is what a fresh import of the file would make of it.
+    assertThat(
+            count(
+                "SELECT count(*) FROM import_row_raw r JOIN transaction t"
+                    + " ON t.id = r.duplicate_of_transaction_id"
+                    + " WHERE r.import_batch_id = ? AND t.account_id <> ?",
+                preview.id(),
+                account))
+        .isZero();
+    assertThat(committed.counts().imported()).isEqualTo(1);
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("PARSED");
+    assertThat(
+            single(
+                "SELECT account_id FROM transaction WHERE import_batch_id = ? AND external_id = 'R1'",
+                preview.id()))
+        .isEqualTo(account);
+  }
+
+  @Test
+  void aPreviewRowWhoseVoidWasRestoredSinceStaysADuplicateOfTheCopy() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    // Matched by its reference alone; the restore's copy carries none, and the other text keeps
+    // the fallback rule from finding it.
+    ImportBatchResponse preview = upload(csv("2019-01-05;-12.40;CHF;Card payment 4711;R1"));
+    assertThat(preview.counts().duplicates()).isEqualTo(1);
+    UUID bakery = bookingOf(batch, "R1");
+    modify(Modification.RESTORED, bakery);
+    UUID copy =
+        (UUID) single("SELECT id FROM transaction WHERE restores_transaction_id = ?", bakery);
+
+    ImportBatchResponse committed = commit(preview);
+
+    assertThat(committed.counts().imported()).isZero();
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
+    assertThat(duplicateOf(preview.id(), 1)).isEqualTo(copy);
+    assertThat(liveBookings()).isEqualTo(3);
+  }
+
+  @Test
+  void aPreviewRowWhoseManualBookingWasDeletedSinceIsImportedAsNew() {
+    UUID coffee = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+    ImportBatchResponse preview = upload(csv("2019-01-05;-3.50;CHF;Coffee;"));
+    assertThat(preview.counts().duplicates()).isEqualTo(1);
+    assertThat(remove(coffee).removal()).isEqualTo("SOFT_DELETE");
+
+    ImportBatchResponse committed = commit(preview);
+
+    assertThat(committed.counts().imported()).isEqualTo(1);
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("PARSED");
+    assertThat(liveBookings()).isEqualTo(1);
+  }
+
+  @Test
+  void aPreviewRowWhoseSoftDeletedBookingHoldsItsReferenceStaysItsDuplicate() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    UUID bakery = bookingOf(batch, "R1");
+    // The API voids an imported row; a soft-deleted one still reserves its reference
+    // (uq_transaction_external_id), so the row could not go in with it anyway.
+    execute(
+        "UPDATE transaction SET deleted_at = now(), deleted_by = created_by WHERE id = ?", bakery);
+
+    ImportBatchResponse committed = commit(preview);
+
+    assertThat(committed.counts().imported()).isZero();
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
+    assertThat(duplicateOf(preview.id(), 1)).isEqualTo(bakery);
+  }
+
+  // The ticket counts a COMMITTED batch's duplicate pointer; one rolled back since counts too, as
+  // the record of what that commit left out (#287).
+  @ParameterizedTest
+  @ValueSource(strings = {"ROLLED_BACK", "VOIDED"})
+  void aDuplicatePointerOfABatchRolledBackSinceStillForcesTheVoid(String status) {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse again =
+        commit(
+            upload(
+                csv(
+                    "2019-01-05;-12.40;CHF;Bakery;R1",
+                    "2019-01-06;-80.00;CHF;Groceries;R2",
+                    "2019-01-07;2500.00;CHF;Salary;R3",
+                    "2019-01-08;-5.00;CHF;Kiosk;R4")));
+    assertThat(again.counts().duplicates()).isEqualTo(3);
+    if ("VOIDED".equals(status)) {
+      overrideCategory(bookingOf(again, "R4"));
+    }
+    assertThat(rollback(again, REASON).batch().status()).isEqualTo(status);
+
+    ImportRollbackResponse rollback = rollback(batch, REASON);
+
+    assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.VOID);
+    assertThat(rollback.modified())
+        .extracting(ImportRollbackModifiedResponse::reasons)
+        .containsExactly(
+            List.of(ImportRollbackValues.REFERENCED),
+            List.of(ImportRollbackValues.REFERENCED),
+            List.of(ImportRollbackValues.REFERENCED));
+    assertThat(
+            count(
+                "SELECT count(*) FROM import_row_raw WHERE import_batch_id = ?"
+                    + " AND duplicate_of_transaction_id IS NOT NULL",
+                again.id()))
         .isEqualTo(3);
   }
 
@@ -734,9 +1048,9 @@ class ImportRollbackControllerTest {
             .isOk();
       }
       case DUPLICATE_IN_ANOTHER_BATCH -> {
-        // The same file again, previewed but not committed: its rows are duplicates of these.
-        ImportBatchResponse preview = upload(THREE_ROWS);
-        assertThat(preview.counts().duplicates()).isEqualTo(3);
+        // The same file again, committed: it left its rows out as duplicates of these.
+        ImportBatchResponse again = commit(upload(THREE_ROWS));
+        assertThat(again.counts().duplicates()).isEqualTo(3);
       }
       case TAX_LOT -> {
         UUID security = UUID.randomUUID();
@@ -753,10 +1067,19 @@ class ImportRollbackControllerTest {
             security,
             row);
       }
+      // The state TransferResolutionService#confirmUntracked leaves; only a TRANSFER leg may get
+      // it through the API, which anATransferConfirmedAsUntrackedForcesTheVoid goes through.
+      case TRANSFER_UNTRACKED_CONFIRMED ->
+          execute("UPDATE transaction SET is_internal_transfer = TRUE WHERE id = ?", row);
     }
   }
 
   private void correct(UUID row) {
+    correct(row, null);
+  }
+
+  // A correction of the row, into targetAccount when it is not null.
+  private void correct(UUID row, UUID targetAccount) {
     Map<String, Object> original =
         rowsOf(
                 "SELECT transaction_type, booking_date, amount, currency FROM transaction"
@@ -771,7 +1094,7 @@ class ImportRollbackControllerTest {
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new CorrectTransactionRequest(
-                null,
+                targetAccount,
                 (String) original.get("transaction_type"),
                 ((java.sql.Date) original.get("booking_date")).toLocalDate(),
                 // One more in the row's own direction: an income stays positive, a spending
@@ -866,12 +1189,16 @@ class ImportRollbackControllerTest {
   }
 
   private ImportBatchResponse upload(byte[] content) {
+    return upload(content, template);
+  }
+
+  private ImportBatchResponse upload(byte[] content, UUID templateId) {
     HttpHeaders fileHeaders = new HttpHeaders();
     fileHeaders.setContentType(MediaType.parseMediaType("text/csv"));
     fileHeaders.setContentDispositionFormData("file", "statement.csv");
     MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
     body.add("file", new HttpEntity<>(new ByteArrayResource(content), fileHeaders));
-    body.add("templateId", template.toString());
+    body.add("templateId", templateId.toString());
     return client()
         .post()
         .uri(imports())
@@ -1002,13 +1329,23 @@ class ImportRollbackControllerTest {
   }
 
   private ImportTemplateResponse createTemplate() {
+    return createTemplate("Simple", null, Map.of());
+  }
+
+  private ImportTemplateResponse createTemplate(
+      String name, String typeColumn, Map<String, String> typeMapping) {
+    List<String> headers =
+        new ArrayList<>(List.of("Date", "Amount", "Currency", "Text", "Reference"));
+    if (typeColumn != null) {
+      headers.add(typeColumn);
+    }
     return client()
         .post()
         .uri("/api/v1/import-templates")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new ImportTemplateRequest(
-                "Simple",
+                name,
                 null,
                 null,
                 ";",
@@ -1032,13 +1369,13 @@ class ImportRollbackControllerTest {
                     "Text",
                     null,
                     "Reference",
-                    null,
+                    typeColumn,
                     null,
                     null,
                     null),
-                Map.of(),
+                typeMapping,
                 null,
-                List.of("Date", "Amount", "Currency", "Text", "Reference"),
+                headers,
                 null,
                 null))
         .exchange()
@@ -1152,10 +1489,37 @@ class ImportRollbackControllerTest {
     return (HEADER + "\n" + String.join("\n", rows) + "\n").getBytes(StandardCharsets.UTF_8);
   }
 
+  private static byte[] typedCsv(String... rows) {
+    return (HEADER + ";Type\n" + String.join("\n", rows) + "\n").getBytes(StandardCharsets.UTF_8);
+  }
+
   // --- database helpers
   // ---------------------------------------------------------------------------
 
   // The batch's transactions in id order, the order a rollback locks and voids them in.
+  private UUID bookingOf(ImportBatchResponse batch, String reference) {
+    return (UUID)
+        single(
+            "SELECT id FROM transaction WHERE import_batch_id = ? AND external_id = ?",
+            batch.id(),
+            reference);
+  }
+
+  private Object duplicateOf(UUID batchId, int rowNumber) {
+    return single(
+        "SELECT duplicate_of_transaction_id FROM import_row_raw WHERE import_batch_id = ?"
+            + " AND row_number = ?",
+        batchId,
+        rowNumber);
+  }
+
+  // The bookings in effect: neither voided nor soft-deleted, and no reversing row.
+  private long liveBookings() {
+    return count(
+        "SELECT count(*) FROM transaction WHERE voided_at IS NULL AND deleted_at IS NULL"
+            + " AND replaces_transaction_id IS NULL");
+  }
+
   private List<UUID> batchRows(UUID batchId) {
     return uuids("SELECT id FROM transaction WHERE import_batch_id = ? ORDER BY id", batchId);
   }

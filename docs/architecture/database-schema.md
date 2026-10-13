@@ -637,7 +637,11 @@ provenance (FR-LIF-002b), and every response shows it as `removal`. Decisions ar
   so a restore cannot re-propose or auto-confirm the rejected pair. While a leg is soft-deleted,
   match queries leave the match out (`SettlementMatchRepository.HIDDEN_LEG_EXCLUDED`), since
   Hibernate cannot load a leg its `@SQLRestriction` hides, and the match is not actionable (404).
-- **Concurrency.** Removal and restore first lock every card whose matching the row can take part
+- **Concurrency.** Removal, correction and restore first take the import commit's advisory lock of
+  the row's account and of a two-sided transfer's other account, in id order (`ImportLockService`,
+  #287): an import
+  commit relies on the row a preview duplicate points at staying as it is until it ends (see
+  **Commit** under import batches). Then they lock every card whose matching the row can take part
   in (the account itself if it is a card, else every card using it as settlement source, plus the
   cards of existing matches), in id order, before the row. A detection run holding a card's lock
   therefore finishes before the row is hidden or voided, and never links a match to it.
@@ -951,7 +955,8 @@ two at once cannot both take the last place). Workspace erasure (EPIC 31) must d
 `import_file` and `import_row_raw` too.
 
 **Rows.** One `import_row_raw` per data row: `PARSED` (new, included), `DUPLICATE` (excluded, with
-`duplicate_of_transaction_id`), `ERROR` (rejected, never included) or `SKIPPED` (readable, never
+`duplicate_of_transaction_id`; a rollback that deletes that row clears the pointer of an open
+preview, #287), `ERROR` (rejected, never included) or `SKIPPED` (readable, never
 included; US-07-19). A row is `SKIPPED` when its amount is zero (`0.00`, also `-0.00`): it moves no
 money, so it is neither an error nor imported. It keeps its original cells and canonical values, its
 reason is the code `IMPORT_ROW_ZERO_AMOUNT` (localized EN/DE when the row is read), and it is
@@ -986,8 +991,26 @@ duplicate in; one whose reference the ledger already holds goes in without it.
 
 **Commit.** One transaction: an advisory lock per account (commits into one account run one after
 the other), the batch row's lock, the status, then `If-Match`. The duplicate rule runs again over
-every readable row; a row that is new no longer is recorded as `DUPLICATE` and skipped. The
-included rows go through `TransactionService#recordImported` - the manual entry's validation, row
+every readable row; a row that is new no longer is recorded as `DUPLICATE` and skipped. A
+`DUPLICATE` row keeps its booking while the ledger holds it, and the others are not matched to that
+ledger row (#287): the row it points at while that is in effect, or else what replaced it since -
+a correction's replacement (`corrects_transaction_id`) or a restored void's copy
+(`restores_transaction_id`), followed to the row in effect now within the same account, which the
+duplicate then points at. Neither carries the reference, so the duplicate rules alone would not find
+them, and the booking would come in twice. Once the booking is gone - a rollback deleted the row and
+cleared the pointer, it was voided or soft-deleted for good, or a correction moved it to another
+account (product owner, 2026-10-13: the pointer never leaves the batch's account, and the row is
+treated as a fresh import would treat it) - the row is checked again with the rest, under the rules
+of a fresh import: if the ledger holds the booking as another row, the row points there and stays as
+included as it was; if not, it becomes `PARSED` and included (product owner, 2026-10-13: it was only
+left out for being a duplicate) and is imported. This matches V69: a voided row is no duplicate. A
+soft-deleted row still reserves its reference (`uq_transaction_external_id`), so a row matching it
+by reference stays its duplicate. Removals, corrections and restores take this commit's lock first
+(see the ledger's **Concurrency**), so none of them lands between that check and the commit's end.
+A voiding rollback is the one exception: it holds only its own account's lock, so a transfer leg it
+voids on another account is not covered against a commit into that account running at the same
+time. Taking that lock too would invert the lock order against a removal there. The included rows go
+through `TransactionService#recordImported` - the manual entry's validation, row
 building, FX and categorization - in chunks of 500, with `source` from the batch, `import_batch_id`,
 the reference and the raw cells in `raw_source_data`. Settlement and transfer detection and the
 reconciliation run once for the batch, after the inserts, taking the same locks as a manual write.
@@ -1004,15 +1027,19 @@ A row the ledger refuses fails the whole commit; the batch stays `PARSED`.
   (`CATEGORY_SPLIT`), is a leg of a settlement or transfer match a **member** confirmed or rejected
   (`MATCH_DECIDED`; a match the system decided, `decided_by IS NULL`, does not count), is a
   reconciliation result's resolution (`RECONCILIATION_RESOLUTION`) or had its void restored
-  (`RESTORED`), or is pointed at from outside the batch (`REFERENCED`: another row's
-  `related_transaction_id`, a row of another batch as `duplicate_of_transaction_id` unless that
-  batch was discarded, a tax lot). An open preview still counts: its commit never re-checks a row
-  it found duplicate, so it relies on the pointer. `ImportRollbackRepository` asks one query per
+  (`RESTORED`), is pointed at from outside the batch (`REFERENCED`: another row's
+  `related_transaction_id`, a row of a committed - or since rolled-back - batch as
+  `duplicate_of_transaction_id`, a tax lot), or was confirmed by a member as a transfer to an
+  untracked account (`TRANSFER_UNTRACKED_CONFIRMED`: `is_internal_transfer` without a
+  `counterparty_account_id`, which only that confirmation leaves; #287). Criterion codes are
+  contract: new ones are appended, never renamed. An open (`UPLOADED`/`PARSED`) or discarded
+  preview's duplicate pointer does not count: its commit checks such a row again (see **Commit**),
+  and a discarded one is never committed. `ImportRollbackRepository` asks one query per
   criterion, under the locks, every time; `contains_modified_records` is only set afterwards, as a
   record, and never decides.
 - **Unmodified: hard delete (FR-LIF-010).** In one transaction: the other leg of every match the
   system confirmed loses its transfer flags, the batch's matches and categorization log rows are
-  deleted, `import_row_raw.resulting_transaction_id` is cleared (and so is a discarded batch's
+  deleted, `import_row_raw.resulting_transaction_id` is cleared (and so is an open or discarded preview's
   `duplicate_of_transaction_id` pointing at them), and the transactions are deleted under the
   `V68` permit. The batch becomes `ROLLED_BACK`. The batch, its rows and its file stay as
   evidence; re-uploading the file is an ordinary import again, and the reconciliation reads a
