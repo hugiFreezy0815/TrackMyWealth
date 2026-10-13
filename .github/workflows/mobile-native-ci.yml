@@ -1,0 +1,118 @@
+name: Mobile Native CI
+
+# Builds the iOS and Android release apps from the Expo config and launches each on a simulator
+# or emulator (mobile/scripts/native-smoke.sh), so SDK and native-module upgrades are checked
+# beyond Mobile Web CI's web export. Native builds take a while, so this runs only when the native
+# dependency set, the app config or this check itself changes. Screenshots and logs are uploaded
+# as the "native-smoke-*" artifacts for review.
+on:
+  pull_request:
+    paths:
+      - "mobile/package.json"
+      - "mobile/package-lock.json"
+      - "mobile/.npmrc"
+      - "mobile/app.json"
+      - "mobile/scripts/native-smoke.sh"
+      - ".github/workflows/mobile-native-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native project
+        run: npx expo prebuild --platform android --no-install
+
+      # x86_64 only: the emulator's ABI, and a quarter of the native compile time.
+      - name: Build release APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=x86_64
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Smoke test on emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          working-directory: mobile
+          script: scripts/native-smoke.sh android
+
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-smoke-android
+          path: mobile/smoke/
+          if-no-files-found: ignore
+
+  ios:
+    # Expo SDK 58's ExpoModulesJSI needs Swift 6.2, i.e. Xcode 26; macos-15 ships Xcode 16.4.
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native project
+        run: npx expo prebuild --platform ios
+
+      - name: Build release app for the simulator
+        run: >
+          xcodebuild -workspace ios/TrackMyWealth.xcworkspace -scheme TrackMyWealth
+          -configuration Release -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/build
+          CODE_SIGNING_ALLOWED=NO build
+
+      - name: Smoke test on simulator
+        run: scripts/native-smoke.sh ios
+
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-smoke-ios
+          path: mobile/smoke/
+          if-no-files-found: ignore

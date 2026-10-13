@@ -9,9 +9,9 @@ PR has no conflicts. It then squash-merges with --match-head-commit, so a commit
 check cannot be merged unverified. It never uses --admin.
 
 Which checks apply follows the workflows' own triggers: Semgrep and secret scanning run on every
-pull request, Backend CI, Mobile Web CI and Scripts CI only when their part of the repository
-changed (REQUIRED_CHECKS). scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in step with the
-workflows.
+pull request, Backend CI, Mobile Web CI, Mobile Native CI and Scripts CI only when their part of
+the repository changed (REQUIRED_CHECKS). scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in
+step with the workflows.
 
 Usage: scripts/merge_pr.py <pr-number> [--dry-run] [--delete-branch]
 Needs the GitHub CLI (gh), logged in with access to the repository.
@@ -26,6 +26,17 @@ import sys
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+# Mobile Native CI builds and launches the apps only when the native dependency set, the app config
+# or the check itself changes.
+MOBILE_NATIVE_PATHS = (
+    "mobile/package.json",
+    "mobile/package-lock.json",
+    "mobile/.npmrc",
+    "mobile/app.json",
+    "mobile/scripts/native-smoke.sh",
+    ".github/workflows/mobile-native-ci.yml",
+)
+
 # Job name -> (workflow it belongs to, the paths whose change makes that workflow run on a pull
 # request; None when it runs on every pull request). A check run is named after its job. A path
 # ending in "/" covers everything below it.
@@ -35,6 +46,8 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
     "test": ("Backend CI", ("backend/", ".github/workflows/backend-ci.yml")),
     "sql-lint": ("Backend CI", ("backend/", ".github/workflows/backend-ci.yml")),
     "build-web": ("Mobile Web CI", ("mobile/", ".github/workflows/mobile-web-ci.yml")),
+    "android": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
+    "ios": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "scripts": ("Scripts CI", ("scripts/", ".github/workflows/scripts-ci.yml")),
 }
 

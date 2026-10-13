@@ -110,6 +110,15 @@ class ProblemsTest(unittest.TestCase):
             required_checks([".github/workflows/mobile-web-ci.yml"]),
             ["semgrep", "gitleaks", "build-web"],
         )
+        self.assertEqual(
+            required_checks(["mobile/package-lock.json"]),
+            ["semgrep", "gitleaks", "build-web", "android", "ios"],
+        )
+        self.assertEqual(
+            required_checks(["mobile/src/app/index.tsx"]),
+            ["semgrep", "gitleaks", "build-web"],
+            "app code alone does not need the native builds",
+        )
         self.assertEqual(required_checks(["scripts/merge_pr.py"]), ["semgrep", "gitleaks", "scripts"])
         self.assertEqual(
             required_checks(["backendish.md"]), ["semgrep", "gitleaks"], "a prefix is a directory"
