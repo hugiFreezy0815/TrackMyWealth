@@ -35,7 +35,8 @@ and excluded from that check via `expo.install.exclude` in `package.json`.
 `.npmrc` temporarily enables `legacy-peer-deps`: npm never matches a prerelease against ranges
 such as `>=0.78`, so packages with a `react-native` peer range reject the release candidate, and
 `overrides` cannot rewrite peer ranges. Remove it once Expo SDK 58 ships a stable React Native
-0.88. Dependency age is enforced by Dependabot's 7-day cooldown (`.github/dependabot.yml`).
+0.88. New releases must be 7 days old before they are resolved: `min-release-age` in `.npmrc`
+(npm 11.10+, local installs) and Dependabot's cooldown (`.github/dependabot.yml`).
 
 Mobile Web CI verifies `npm ci`, the Expo version check, TypeScript, ESLint, Prettier, Jest and
 the static web export. Mobile Native CI builds the iOS and Android release apps and launches them
