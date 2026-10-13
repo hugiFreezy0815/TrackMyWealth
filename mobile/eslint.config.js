@@ -18,6 +18,13 @@ module.exports = defineConfig([
     },
   },
   {
+    // Expo SDK 58's package layout currently crashes eslint-import-resolver-typescript
+    // while import/namespace resolves expo/tsconfig.base. Keep the other import checks.
+    rules: {
+      'import/namespace': 'off',
+    },
+  },
+  {
     ignores: ['dist/*'],
   },
 ]);
