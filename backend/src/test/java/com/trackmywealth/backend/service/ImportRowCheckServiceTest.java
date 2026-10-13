@@ -149,6 +149,22 @@ class ImportRowCheckServiceTest {
   }
 
   @Test
+  void issuerProvidedCardFxDoesNotLookUpAGenericRate() {
+    CanonicalImportRow purchase =
+        new CanonicalImportRow(
+            DAY, null, new BigDecimal("-55.00"), "CHF", "CREDIT_CARD_PURCHASE",
+            "Foreign merchant", null, "BANK-1", null, null, null,
+            new BigDecimal("-50.00"), "EUR", new BigDecimal("1.100000"));
+    ParsedImportRow parsed = ParsedImportRow.parsed(1, Map.of(), purchase);
+    when(transactionService.requireRecordable(eq(account), any()))
+        .thenReturn(Optional.of("CHF"));
+
+    assertThat(service.ratesNeeded(account, List.of(parsed))).isEmpty();
+    assertThat(service.checkRecordable(account, parsed, new HashMap<>())).isSameAs(parsed);
+    verifyNoInteractions(fxRateService);
+  }
+
+  @Test
   void aFutureDateAndAnotherCurrencyAreWarnings() {
     CanonicalImportRow future = row("USD", DAY.plusDays(1)).canonical();
 
