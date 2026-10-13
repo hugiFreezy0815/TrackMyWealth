@@ -918,8 +918,8 @@ public class ImportFileParserService {
           template,
           ImportTemplateValues.AMOUNT_NEGATIVE_IN_PARENTHESES.equals(representation));
     }
-    // The column decides the sign, whichever way a bank writes it there. A side holding zero
-    // counts as empty: some exports fill the unused side with 0,00.
+    // The column decides the sign, whichever way a bank writes it there. An unused side can
+    // contain zero, so only a nonzero amount makes it an active debit or credit.
     String debitCell = optionalCell(record, columns.get("debitAmount"));
     String creditCell = optionalCell(record, columns.get("creditAmount"));
     BigDecimal debit =
@@ -944,7 +944,14 @@ public class ImportFileParserService {
     if (hasCredit) {
       return credit.abs();
     }
-    // Neither side holds an amount, zeros included: no booking to import.
+    // Explicit zeros are information rows: return their amount so the parser marks them SKIPPED.
+    // Only two truly empty cells mean the amount is missing and must remain an ERROR.
+    if (debit != null) {
+      return debit.abs();
+    }
+    if (credit != null) {
+      return credit.abs();
+    }
     throw rowError(
         ImportRowErrorValues.VALUE_MISSING,
         ARG_COLUMN,
