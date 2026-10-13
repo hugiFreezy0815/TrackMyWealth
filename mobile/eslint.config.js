@@ -18,10 +18,12 @@ module.exports = defineConfig([
     },
   },
   {
-    // Expo SDK 58's package layout currently crashes eslint-import-resolver-typescript
-    // while import/namespace resolves expo/tsconfig.base. Keep the other import checks.
+    // eslint-import-resolver-typescript cannot resolve Expo 58's extended tsconfig in ESLint 10.
+    // TypeScript's strict `tsc --noEmit` check in CI still verifies actual module resolution.
+    // Preserve other ESLint import checks rather than suppressing npm dependency validation.
     rules: {
       'import/namespace': 'off',
+      'import/no-unresolved': 'off',
     },
   },
   {
