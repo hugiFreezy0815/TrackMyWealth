@@ -161,13 +161,12 @@ public class ImportBatchService {
       byte[] content,
       UUID templateId,
       AuthenticatedUserPrincipal actor) {
-    ImportAccountContext accountContext =
+    Map.Entry<String, Boolean> accountContext =
         readOnlyTransaction.execute(
             status -> {
               Account account = requireImportableAccount(accountId, actor);
               requireRoomForAnotherBatch(account);
-              return new ImportAccountContext(
-                  account.getNativeCurrency(), account.isHasStatementCycle());
+              return Map.entry(account.getNativeCurrency(), account.isHasStatementCycle());
             });
     if (content.length == 0) {
       throw new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_EMPTY, "The file is empty.");
@@ -186,8 +185,8 @@ public class ImportBatchService {
             : parser.parse(
                 content,
                 template.definition(),
-                accountContext.currency(),
-                accountContext.creditCard());
+                accountContext.getKey(),
+                accountContext.getValue());
     List<ImportTemplateCandidateResponse> offered = template == null ? candidates : List.of();
     Map<String, Boolean> rates =
         parsed == null ? new HashMap<>() : lookUpRates(accountId, parsed.rows(), actor);
@@ -234,13 +233,12 @@ public class ImportBatchService {
       UUID templateId,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    ImportAccountContext accountContext =
+    Map.Entry<String, Boolean> accountContext =
         readOnlyTransaction.execute(
             status -> {
               Account account = requireImportableAccount(accountId, actor);
               requireParseable(requireBatch(account, batchId, actor), expectedVersion);
-              return new ImportAccountContext(
-                  account.getNativeCurrency(), account.isHasStatementCycle());
+              return Map.entry(account.getNativeCurrency(), account.isHasStatementCycle());
             });
     // Every parseable batch has its file: only a discard (no longer parseable) deletes it.
     byte[] content =
@@ -253,7 +251,7 @@ public class ImportBatchService {
     ResolvedImportTemplate template = importTemplateService.resolveForImport(templateId, actor);
     ImportParseResult parsed =
         parser.parse(
-            content, template.definition(), accountContext.currency(), accountContext.creditCard());
+            content, template.definition(), accountContext.getKey(), accountContext.getValue());
     Map<String, Boolean> rates = lookUpRates(accountId, parsed.rows(), actor);
 
     return writeTransaction.execute(
@@ -589,8 +587,6 @@ public class ImportBatchService {
     }
     return sameFiles;
   }
-
-  private record ImportAccountContext(String currency, boolean creditCard) {}
 
   // The exchange rates the rows need, looked up outside any transaction: the provider can take
   // seconds for an old date (#223), which must not hold a connection's transaction or the batch's
