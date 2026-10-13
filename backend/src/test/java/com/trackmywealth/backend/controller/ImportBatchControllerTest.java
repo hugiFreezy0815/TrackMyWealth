@@ -25,6 +25,7 @@ import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
+import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
@@ -148,6 +149,7 @@ class ImportBatchControllerTest {
               "DELETE FROM account_snapshot",
               "DELETE FROM sharing_grant",
               "DELETE FROM account_ownership",
+              "DELETE FROM account_credit_card",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
               "DELETE FROM user_session",
@@ -454,6 +456,138 @@ class ImportBatchControllerTest {
     assertThat(second.error().message())
         .isEqualTo("Row 1 already has the bank reference \"R1\"; only that row is imported.");
     assertThat(second.canonical()).isNotNull();
+  }
+
+  @Test
+  void creditCardStatementImportsPurchasesSettlementsRefundsAndIssuerFx() throws Exception {
+    UUID card =
+        client()
+            .post()
+            .uri("/api/v1/accounts")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(AccountRequests.account("Synthetic card", "CREDIT_CARD", "CHF").build())
+            .exchange()
+            .expectStatus()
+            .isCreated()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody()
+            .id();
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + card + "/settlement-source")
+        .headers(CurrentVersion.ifMatchForCard(dataSource, card))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetSettlementSourceRequest(account))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + account + "/transactions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            TransactionRequests.cash(
+                "WITHDRAWAL",
+                LocalDate.of(2031, 5, 2),
+                new BigDecimal("-30.00"),
+                "CHF",
+                "Synthetic card payment",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+
+    ImportTemplateResponse template = createTemplate(creditCardTemplate());
+    byte[] file =
+        ("Date;Amount;Currency;Text;Reference;OriginalAmount;OriginalCurrency;Rate\n"
+                + "2031-05-01;-55,00;CHF;Overseas purchase;CARD-A;-50,00;EUR;1,100000\n"
+                + "2031-05-02;30,00;CHF;Monthly card payment;CARD-B;;;\n"
+                + "2031-05-03;8,00;CHF;SHOP rEfUnD;CARD-C;;;\n"
+                + "2031-05-04;4,00;CHF;Other credit;CARD-D;;;\n")
+            .getBytes(StandardCharsets.UTF_8);
+    ImportBatchResponse batch =
+        upload(token, card, file, template.id())
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(batch.counts().total()).isEqualTo(4);
+    assertThat(batch.counts().newRows()).isEqualTo(4);
+    assertThat(batch.counts().errors()).isZero();
+    List<ImportRowResponse> preview =
+        client()
+            .get()
+            .uri("/api/v1/accounts/" + card + "/imports/" + batch.id() + "/rows")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+            .returnResult()
+            .getResponseBody()
+            .content();
+    assertThat(preview)
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("CREDIT_CARD_PURCHASE", "SETTLEMENT", "REFUND", "SETTLEMENT");
+    assertThat(preview.get(0).canonical().originalCurrency()).isEqualTo("EUR");
+    assertThat(preview.get(3).warnings())
+        .extracting(warning -> warning.code())
+        .contains("IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED");
+    assertThat(preview.get(1).warnings())
+        .extracting(warning -> warning.code())
+        .doesNotContain("IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED");
+
+    ImportBatchResponse committed = commit(card, batch.id(), batch.version());
+    assertThat(committed.counts().imported()).isEqualTo(4);
+    assertThat(count("SELECT count(*) FROM transaction WHERE account_id = ?", card)).isEqualTo(4);
+    assertThat(single("SELECT currency FROM transaction WHERE account_id = ? AND external_id = ?", card, "CARD-A"))
+        .isEqualTo("EUR");
+    assertThat(
+            (BigDecimal)
+                single(
+                    "SELECT amount FROM transaction WHERE account_id = ? AND external_id = ?",
+                    card,
+                    "CARD-A"))
+        .isEqualByComparingTo("-50.00");
+    assertThat(
+            (BigDecimal)
+                single(
+                    "SELECT fx_rate_to_account_currency FROM transaction WHERE account_id = ? AND external_id = ?",
+                    card,
+                    "CARD-A"))
+        .isEqualByComparingTo("1.100000");
+    assertThat(
+            single(
+                "SELECT fx_rate_estimated FROM transaction WHERE account_id = ? AND external_id = ?",
+                card,
+                "CARD-A"))
+        .isEqualTo(false);
+    assertThat(count("SELECT count(*) FROM settlement_match WHERE status = 'CONFIRMED'"))
+        .isEqualTo(1);
+
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + card + "/transactions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            TransactionRequests.cash(
+                "REFUND",
+                LocalDate.of(2031, 5, 5),
+                new BigDecimal("3.00"),
+                "CHF",
+                "Manual card refund",
+                null, null, null, null, null, null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
   }
 
   // --- errors and warnings
@@ -1492,6 +1626,20 @@ class ImportBatchControllerTest {
         ImportBatchControllerTest.class.getResourceAsStream("/import/" + name)) {
       return stream.readAllBytes();
     }
+  }
+
+  private static ImportTemplateRequest creditCardTemplate() {
+    List<String> headers =
+        List.of("Date", "Amount", "Currency", "Text", "Reference",
+            "OriginalAmount", "OriginalCurrency", "Rate");
+    return new ImportTemplateRequest(
+        "Synthetic credit-card statement", null, "CASH_TRANSACTIONS", ";", "UTF-8",
+        ",", null, "yyyy-MM-dd", 0, 0, 0, "SINGLE_SIGNED_COLUMN", "PER_ROW", null,
+        new ImportColumnMapping(
+            "Date", null, "Amount", null, null, "Currency", "Text", null,
+            "Reference", null, null, null, null,
+            "OriginalAmount", "OriginalCurrency", "Rate"),
+        Map.of(), null, headers, null, null, Map.of("REFUND", "refund"));
   }
 
   private static ImportTemplateRequest simpleTemplate(String name, List<String> headerColumns) {
