@@ -40,6 +40,18 @@ public record ParsedImportRow(
         rowNumber, rawData, ImportRowErrorValues.STATUS_PARSED, null, null, canonical);
   }
 
+  /** A zero-amount row stays visible with its canonical values but cannot be committed. */
+  public static ParsedImportRow skipped(
+      int rowNumber, Map<String, String> rawData, CanonicalImportRow canonical) {
+    return new ParsedImportRow(
+        rowNumber,
+        rawData,
+        ImportRowErrorValues.STATUS_SKIPPED,
+        ImportRowErrorValues.ZERO_AMOUNT,
+        Map.of(),
+        canonical);
+  }
+
   public static ParsedImportRow error(
       int rowNumber, Map<String, String> rawData, String errorCode, Map<String, String> errorArgs) {
     return new ParsedImportRow(

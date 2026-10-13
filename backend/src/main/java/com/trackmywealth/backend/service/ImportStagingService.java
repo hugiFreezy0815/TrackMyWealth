@@ -102,7 +102,7 @@ public class ImportStagingService {
       UUID duplicateOf = duplicates.get(row.rowNumber());
       if (duplicateOf != null) {
         duplicateCount++;
-      } else if (!row.isParsed()) {
+      } else if (ImportRowErrorValues.STATUS_ERROR.equals(row.status())) {
         errorCount++;
       }
       staged.add(staged(row, duplicateOf, account, today));
@@ -159,7 +159,9 @@ public class ImportStagingService {
       ParsedImportRow row, UUID duplicateOf, Account account, LocalDate today) {
     CanonicalImportRow canonical = row.canonical();
     String status;
-    if (!row.isParsed()) {
+    if (ImportRowErrorValues.STATUS_SKIPPED.equals(row.status())) {
+      status = ImportBatchValues.ROW_SKIPPED;
+    } else if (!row.isParsed()) {
       status = ImportBatchValues.ROW_ERROR;
     } else if (duplicateOf != null) {
       status = ImportBatchValues.ROW_DUPLICATE;
