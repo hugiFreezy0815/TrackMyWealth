@@ -990,15 +990,16 @@ CSV-CAMT and CSV-MT940) word the same booking differently, and no duplicate may 
 real bookings of equal date, amount and currency are therefore flagged too, an accepted
 trade-off: the preview's `duplicateOf` shows the matched ledger row (booking date, amount,
 currency, description) next to the row, so the member can force it in. (3) Each ledger row is the
-duplicate of one import row at most, in file order, so *n* rows against *m* matches give min(n, m)
-duplicates. Where several ledger rows match, a row is first paired with one of the same normalized
-description (trimmed, lower case, blanks collapsed, none = empty), so the preview shows the
-closest booking; the count does not depend on it. The ledger is read in two queries per batch;
+duplicate of one import row at most, so *n* rows against *m* matches give min(n, m) duplicates.
+Rows are paired with ledger rows of the same normalized description (trimmed, lower case, blanks
+collapsed, none = empty) first, so the preview shows the closest booking, then in file order; an
+augmenting-path step then pairs every row left over that the rule allows, so a greedy pairing never
+spends the only ledger row a referenced row may match. The ledger is read in two queries per batch;
 rule 2 reads the file's date range through `idx_transaction_account_date`, so no further index was
-added. Reading a page of rows adds one query for the ledger rows its duplicates point at. A member
+added. Reading a page of rows that point at ledger rows adds one query for them. A member
 may force a duplicate in; one whose reference the ledger already holds goes in without it.
 Reconciliation's `DUPLICATE_ENTRY` heuristic follows the same rule and no longer compares the
-description either (`calculation-methodology.md`).
+description either, so it is now checked after `MISSING_TRANSACTION` (`calculation-methodology.md`).
 
 **Commit.** One transaction: an advisory lock per account (commits into one account run one after
 the other), the batch row's lock, the status, then `If-Match`. The duplicate rule runs again over

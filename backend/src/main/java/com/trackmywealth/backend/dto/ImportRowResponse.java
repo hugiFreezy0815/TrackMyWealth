@@ -25,10 +25,10 @@ public record ImportRowResponse(
     UUID duplicateOfTransactionId,
     @Schema(
             description =
-                "For a DUPLICATE row, the ledger row it duplicates: its booking date, amount,"
+                "For a row with a duplicateOfTransactionId, that ledger row: its booking date, amount,"
                     + " currency and description. The duplicate rule compares booking date, amount"
                     + " and currency only (US-07-17), so the descriptions may differ; the member"
-                    + " can force the row in. Null when the row points at no ledger row.")
+                    + " can force the row in. Null exactly when duplicateOfTransactionId is.")
         ImportDuplicateOfResponse duplicateOf,
     @Schema(
             description =

@@ -30,6 +30,7 @@ import jakarta.persistence.EntityManager;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -310,13 +311,15 @@ public class ImportBatchService {
             ? rowRepository.findByImportBatchIdOrderByRowNumber(batch.getId(), page)
             : rowRepository.findByImportBatchIdAndParseStatusOrderByRowNumber(
                 batch.getId(), status, page);
+    Set<UUID> duplicateIds =
+        rows.stream()
+            .map(ImportRowRaw::getDuplicateOfTransactionId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
     Map<UUID, ImportDuplicateOfResponse> duplicateOf =
-        duplicateService.duplicateTargets(
-            account.getId(),
-            rows.stream()
-                .map(ImportRowRaw::getDuplicateOfTransactionId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet()));
+        duplicateIds.isEmpty()
+            ? Collections.emptyMap()
+            : duplicateService.duplicateTargets(account.getId(), duplicateIds);
     Locale locale = LocaleContextHolder.getLocale();
     return rows.map(
         row ->

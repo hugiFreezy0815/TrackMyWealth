@@ -351,11 +351,9 @@ public class ReconciliationService {
     // the gap, not on the balance difference: a liability's balance moves against its ledger.
     BigDecimal missing = missingLedgerAmount(account, difference);
 
-    if (transactionRepository.existsDuplicateEntrySignature(
-        account.getId(), periodStart, snapshot.getSnapshotDate(), missing.negate())) {
-      return ReconciliationResultValues.CAUSE_DUPLICATE_ENTRY;
-    }
-    // #230: the missing booking is in an import of the account that did not reach the ledger.
+    // #230: the missing booking is in an import of the account that did not reach the ledger. A
+    // concrete row of the bank's file outweighs the duplicate signature, which two real bookings of
+    // equal date and amount also meet since it no longer compares descriptions (US-07-17).
     if (importRowRawRepository.existsNotImportedRow(
         account.getId(),
         periodStart,
@@ -363,6 +361,10 @@ public class ReconciliationService {
         missing,
         account.getNativeCurrency())) {
       return ReconciliationResultValues.CAUSE_MISSING_TRANSACTION;
+    }
+    if (transactionRepository.existsDuplicateEntrySignature(
+        account.getId(), periodStart, snapshot.getSnapshotDate(), missing.negate())) {
+      return ReconciliationResultValues.CAUSE_DUPLICATE_ENTRY;
     }
     BigDecimal absolute = missing.abs();
     if (absolute.compareTo(FX_ROUNDING_LIMIT) <= 0

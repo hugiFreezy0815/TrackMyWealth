@@ -8,11 +8,10 @@ import com.trackmywealth.backend.repository.TransactionRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
  *       (two equal coffees on one day are two bookings). Where several ledger rows match, a row is
  *       paired with one of the same normalized description ({@link
  *       ImportLedgerRowService#normalizedDescription}) first, so the preview shows the closest
- *       booking; the count does not depend on it.
+ *       booking; the pairing never costs a duplicate: as many rows are paired as the rule allows.
  * </ol>
  */
 @Service
@@ -106,10 +105,17 @@ public class ImportDuplicateService {
         ledgerByKey.computeIfAbsent(key(candidate), k -> new ArrayList<>()).add(candidate);
       }
     }
-    // Rows whose description a match shares first, then the rest in file order: the pairing
-    // follows the descriptions where it can, the number of duplicates is the same either way.
-    matchByFallback(open, source, ledgerByKey, duplicates, true);
-    matchByFallback(open, source, ledgerByKey, duplicates, false);
+    Map<String, List<ParsedImportRow>> openByKey = new LinkedHashMap<>();
+    for (ParsedImportRow row : open) {
+      openByKey.computeIfAbsent(key(row.canonical()), k -> new ArrayList<>()).add(row);
+    }
+    openByKey.forEach(
+        (key, keyRows) -> {
+          List<ImportDuplicateCandidate> candidates = ledgerByKey.get(key);
+          if (candidates != null) {
+            matchByFallback(keyRows, candidates, source, duplicates);
+          }
+        });
     return duplicates;
   }
 
@@ -145,7 +151,6 @@ public class ImportDuplicateService {
       targets.put(
           candidate.getId(),
           new ImportDuplicateOfResponse(
-              candidate.getId(),
               candidate.getBookingDate(),
               candidate.getAmount(),
               candidate.getCurrency(),
@@ -179,34 +184,76 @@ public class ImportDuplicateService {
     }
   }
 
+  /**
+   * Pairs rows and ledger rows of one booking date, amount and currency, as many as {@link
+   * #fallbackApplies} allows: rows and ledger rows of the same normalized description first, the
+   * rest in file order, then each row left over takes a ledger row another row could do without (an
+   * augmenting path). Greedy pairing alone can spend the only ledger row a referenced row may match
+   * on a row that had another one, and import the referenced row twice.
+   */
   private static void matchByFallback(
-      List<ParsedImportRow> open,
+      List<ParsedImportRow> rows,
+      List<ImportDuplicateCandidate> candidates,
       String source,
-      Map<String, List<ImportDuplicateCandidate>> ledgerByKey,
-      Map<Integer, UUID> duplicates,
-      boolean sameDescriptionOnly) {
-    for (ParsedImportRow row : open) {
-      if (duplicates.containsKey(row.rowNumber())) {
-        continue;
-      }
+      Map<Integer, UUID> duplicates) {
+    int[] rowOfCandidate = new int[candidates.size()];
+    int[] candidateOfRow = new int[rows.size()];
+    Arrays.fill(rowOfCandidate, -1);
+    Arrays.fill(candidateOfRow, -1);
+    boolean[][] applies = new boolean[rows.size()][candidates.size()];
+    boolean[][] sameDescription = new boolean[rows.size()][candidates.size()];
+    List<String> candidateDescriptions =
+        candidates.stream()
+            .map(c -> ImportLedgerRowService.normalizedDescription(c.getMerchantDescription()))
+            .toList();
+    for (int r = 0; r < rows.size(); r++) {
+      CanonicalImportRow row = rows.get(r).canonical();
       String description =
           ImportLedgerRowService.normalizedDescription(
-              ImportLedgerRowService.merchantDescription(row.canonical()));
-      Iterator<ImportDuplicateCandidate> it =
-          ledgerByKey.getOrDefault(key(row.canonical()), Collections.emptyList()).iterator();
-      while (it.hasNext()) {
-        ImportDuplicateCandidate candidate = it.next();
-        if (fallbackApplies(row.canonical(), source, candidate)
-            && (!sameDescriptionOnly
-                || description.equals(
-                    ImportLedgerRowService.normalizedDescription(
-                        candidate.getMerchantDescription())))) {
-          duplicates.put(row.rowNumber(), candidate.getId());
-          it.remove();
-          break;
+              ImportLedgerRowService.merchantDescription(row));
+      for (int c = 0; c < candidates.size(); c++) {
+        applies[r][c] = fallbackApplies(row, source, candidates.get(c));
+        sameDescription[r][c] = applies[r][c] && description.equals(candidateDescriptions.get(c));
+      }
+    }
+    for (boolean[][] allowed : List.of(sameDescription, applies)) {
+      for (int r = 0; r < rows.size(); r++) {
+        for (int c = 0; c < candidates.size() && candidateOfRow[r] < 0; c++) {
+          if (allowed[r][c] && rowOfCandidate[c] < 0) {
+            rowOfCandidate[c] = r;
+            candidateOfRow[r] = c;
+          }
         }
       }
     }
+    for (int r = 0; r < rows.size(); r++) {
+      if (candidateOfRow[r] < 0) {
+        augment(applies, rowOfCandidate, candidateOfRow, new boolean[candidates.size()], r);
+      }
+    }
+    for (int r = 0; r < rows.size(); r++) {
+      if (candidateOfRow[r] >= 0) {
+        duplicates.put(rows.get(r).rowNumber(), candidates.get(candidateOfRow[r]).getId());
+      }
+    }
+  }
+
+  // Kuhn's augmenting path: the row takes a ledger row that is free, or whose row can move on to
+  // another one. Each row already paired stays paired.
+  private static boolean augment(
+      boolean[][] applies, int[] rowOfCandidate, int[] candidateOfRow, boolean[] visited, int row) {
+    for (int c = 0; c < rowOfCandidate.length; c++) {
+      if (applies[row][c] && !visited[c]) {
+        visited[c] = true;
+        if (rowOfCandidate[c] < 0
+            || augment(applies, rowOfCandidate, candidateOfRow, visited, rowOfCandidate[c])) {
+          rowOfCandidate[c] = row;
+          candidateOfRow[row] = c;
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   // A row with a reference is the same booking as a row of another source, or one of its own

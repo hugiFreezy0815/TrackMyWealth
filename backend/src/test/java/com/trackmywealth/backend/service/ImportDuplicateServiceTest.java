@@ -226,6 +226,25 @@ class ImportDuplicateServiceTest {
   }
 
   @Test
+  void aDescriptionMatchDoesNotTakeTheOnlyBookingAReferencedRowMayMatch() {
+    // Row 1 shares its wording with the manual booking, but could also be the referenced CSV one;
+    // row 2 carries another reference of the same source, so only the manual booking fits it.
+    UUID referenced = UUID.randomUUID();
+    UUID manual = UUID.randomUUID();
+    ledger(
+        candidate(referenced, "-12.40", "Bakery", CSV, "REF-0"),
+        candidate(manual, "-12.40", "Coffee", "MANUAL", null));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(row(1, "-12.40", "Coffee", null), row(2, "-12.40", "Bakery", "REF-2")));
+
+    assertThat(duplicates).containsEntry(1, referenced).containsEntry(2, manual).hasSize(2);
+  }
+
+  @Test
   void aSameSourceBookingWithAnotherReferenceIsSkippedForAMatchingOne() {
     UUID unreferenced = UUID.randomUUID();
     ledger(

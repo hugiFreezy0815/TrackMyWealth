@@ -406,7 +406,7 @@ class ImportBatchControllerTest {
     assertThat(duplicates.get(0).duplicateOfTransactionId())
         .isEqualTo(single("SELECT id FROM transaction WHERE external_id = 'R1'"));
     // The preview shows the ledger row next to the import row (US-07-17).
-    assertThat(duplicates.get(1).duplicateOf().transactionId()).isEqualTo(manual.id());
+    assertThat(duplicates.get(1).duplicateOfTransactionId()).isEqualTo(manual.id());
     assertThat(duplicates.get(1).duplicateOf().merchantDescription()).isEqualTo("Pharmacy");
     assertThat(duplicates.get(1).duplicateOf().bookingDate()).isEqualTo(DAY);
     assertThat(duplicates.get(1).duplicateOf().amount()).isEqualByComparingTo("-20.00");
@@ -520,7 +520,7 @@ class ImportBatchControllerTest {
 
     ImportRowResponse row = rows(batch.id(), "").content().get(0);
     assertThat(row.status()).isEqualTo("DUPLICATE");
-    assertThat(row.duplicateOf().transactionId()).isEqualTo(coffee.id());
+    assertThat(row.duplicateOfTransactionId()).isEqualTo(coffee.id());
     assertThat(row.duplicateOf().merchantDescription()).isEqualTo("Cafe Central");
     ImportBatchResponse forced = include(batch.id(), batch.version(), 1, true);
     commit(account, batch.id(), forced.version());
