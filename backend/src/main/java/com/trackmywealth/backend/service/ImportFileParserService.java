@@ -82,6 +82,9 @@ public class ImportFileParserService {
   // construction is quadratic in the length: a megabyte-long cell would hold a thread for minutes.
   private static final int MAX_INTEGER_DIGITS = 16;
   private static final int MAX_FRACTION_DIGITS = 4;
+  // transaction.fx_rate_to_account_currency is NUMERIC(20,10).
+  private static final int MAX_RATE_INTEGER_DIGITS = 10;
+  private static final int MAX_RATE_FRACTION_DIGITS = 10;
   private static final Pattern COLUMN_INDEX = Pattern.compile("\\d{1,4}");
   private static final Pattern DIGITS = Pattern.compile("\\d+");
   private static final Pattern MCC = Pattern.compile("\\d{4}");
@@ -89,6 +92,7 @@ public class ImportFileParserService {
   private static final Set<String> APOSTROPHES = Set.of("'", "\u2019");
   private static final Set<String> SPACES = Set.of(" ", "\u00A0", "\u202F");
   private static final String ARG_COLUMN = "column";
+  private static final String DESCRIPTION_TYPE_PATTERNS = "descriptionTypePatterns";
   private static final String ARG_VALUE = "value";
   private static final Logger LOG = LoggerFactory.getLogger(ImportFileParserService.class);
 
@@ -121,8 +125,10 @@ public class ImportFileParserService {
   }
 
   /**
-   * Account-aware import: card fallback types apply only to unmapped types. Unsaved template dry
-   * runs use the three-argument overload because they do not have a target account.
+   * Account-aware import: on a credit card ({@code creditCardAccount}), a row neither the type
+   * mapping nor a description pattern types is a card purchase (negative) or settlement, not an
+   * expense or income. A template dry run without a target account uses the three-argument
+   * overload.
    */
   public ImportParseResult parse(
       byte[] content,
@@ -649,20 +655,20 @@ public class ImportFileParserService {
   private static void validateDescriptionPatterns(ImportTemplateDefinition template) {
     if (template.descriptionTypePatterns().size()
         > ImportTemplateRequest.MAX_DESCRIPTION_TYPE_PATTERNS) {
-      throw invalid("descriptionTypePatterns", "Too many description type patterns.");
+      throw invalid(DESCRIPTION_TYPE_PATTERNS, "Too many description type patterns.");
     }
     if (!template.descriptionTypePatterns().isEmpty()
         && template.columnMapping().description() == null) {
       throw invalid(
-          "descriptionTypePatterns", "A description column is required for type patterns.");
+          DESCRIPTION_TYPE_PATTERNS, "A description column is required for type patterns.");
     }
     for (Map.Entry<String, String> entry : template.descriptionTypePatterns().entrySet()) {
       if (!ImportTemplateValues.CASH_TRANSACTION_TYPES.contains(entry.getKey())) {
-        throw invalid("descriptionTypePatterns", "Unknown transaction type for a pattern.");
+        throw invalid(DESCRIPTION_TYPE_PATTERNS, "Unknown transaction type for a pattern.");
       }
       String pattern = entry.getValue();
       if (pattern == null || pattern.isBlank()) {
-        throw invalid("descriptionTypePatterns", "A description pattern cannot be blank.");
+        throw invalid(DESCRIPTION_TYPE_PATTERNS, "A description pattern cannot be blank.");
       }
       patternGroups(pattern, "descriptionTypePatterns." + entry.getKey());
     }
@@ -900,6 +906,7 @@ public class ImportFileParserService {
             typeMapping,
             amount,
             optionalCell(record, columns.get("description")),
+            mapping.description(),
             template.descriptionTypePatterns(),
             creditCardAccount);
     String mcc = optionalCell(record, columns.get("mcc"));
@@ -955,29 +962,16 @@ public class ImportFileParserService {
     if (value == null) {
       return null;
     }
-    if (value.length() > 40) {
+    String column = template.columnMapping().exchangeRate();
+    // The amount grammar (separators, grouping), within the ledger's NUMERIC(20,10) rate column.
+    BigDecimal rate =
+        parseDecimal(
+            value, column, template, false, MAX_RATE_INTEGER_DIGITS, MAX_RATE_FRACTION_DIGITS);
+    if (rate.signum() <= 0) {
       throw rowError(
-          ImportRowErrorValues.AMOUNT_OUT_OF_RANGE,
-          ARG_COLUMN,
-          template.columnMapping().exchangeRate(),
-          ARG_VALUE,
-          value.substring(0, MAX_ECHOED_VALUE_LENGTH));
+          ImportRowErrorValues.AMOUNT_OUT_OF_RANGE, ARG_COLUMN, column, ARG_VALUE, value.strip());
     }
-    String normalized = value.strip().replace(template.decimalSeparator(), ".");
-    try {
-      BigDecimal rate = new BigDecimal(normalized);
-      if (rate.signum() <= 0 || rate.scale() > 10 || rate.precision() - rate.scale() > 10) {
-        throw new NumberFormatException("Out of range");
-      }
-      return rate;
-    } catch (NumberFormatException exception) {
-      throw rowError(
-          ImportRowErrorValues.AMOUNT_UNPARSEABLE,
-          ARG_COLUMN,
-          template.columnMapping().exchangeRate(),
-          ARG_VALUE,
-          value);
-    }
+    return rate;
   }
 
   // The trimmed cell, or null when the column is unmapped, beyond this (short) row, or empty.
@@ -1074,6 +1068,18 @@ public class ImportFileParserService {
    */
   static BigDecimal parseAmount(
       String value, String column, ImportTemplateDefinition template, boolean parentheses) {
+    return parseDecimal(
+        value, column, template, parentheses, MAX_INTEGER_DIGITS, MAX_FRACTION_DIGITS);
+  }
+
+  // parseAmount's grammar with the digit limits of the column the value is stored in.
+  private static BigDecimal parseDecimal(
+      String value,
+      String column,
+      ImportTemplateDefinition template,
+      boolean parentheses,
+      int maxIntegerDigits,
+      int maxFractionDigits) {
     String text = value.strip();
     boolean negative = false;
     if (parentheses && text.length() > 2 && text.startsWith("(") && text.endsWith(")")) {
@@ -1097,12 +1103,11 @@ public class ImportFileParserService {
     }
     String integerDigits = stripLeadingZeros(digits);
     String fractionDigits = fraction == null ? "" : fraction;
-    if (fractionDigits.length() > MAX_FRACTION_DIGITS) {
+    if (fractionDigits.length() > maxFractionDigits) {
       // Zeros beyond the stored scale lose nothing ("1.500000" is 1.5000).
-      fractionDigits = stripTrailingZeros(fractionDigits, MAX_FRACTION_DIGITS);
+      fractionDigits = stripTrailingZeros(fractionDigits, maxFractionDigits);
     }
-    if (integerDigits.length() > MAX_INTEGER_DIGITS
-        || fractionDigits.length() > MAX_FRACTION_DIGITS) {
+    if (integerDigits.length() > maxIntegerDigits || fractionDigits.length() > maxFractionDigits) {
       throw rowError(
           ImportRowErrorValues.AMOUNT_OUT_OF_RANGE, ARG_COLUMN, column, ARG_VALUE, value.strip());
     }
@@ -1176,6 +1181,22 @@ public class ImportFileParserService {
     };
   }
 
+  // The one type whose description pattern matches, or null; two matching types are an error, never
+  // a choice. Each type has one pattern (the map's key), so a second match is always another type.
+  private static String typeByDescription(
+      String description, String column, Map<String, String> patterns) {
+    String match = null;
+    for (Map.Entry<String, String> entry : patterns.entrySet()) {
+      if (Re2Patterns.compile("(?i)" + entry.getValue()).matcher(description).find()) {
+        if (match != null) {
+          throw rowError(ImportRowErrorValues.TYPE_AMBIGUOUS, ARG_COLUMN, column);
+        }
+        match = entry.getKey();
+      }
+    }
+    return match;
+  }
+
   // The template's mapping first; a cell already naming a transaction type is taken as it is if
   // the template class allows it; anything else (or nothing) goes by the amount's sign.
   private static String transactionTypeOf(
@@ -1184,6 +1205,7 @@ public class ImportFileParserService {
       Map<String, String> typeMapping,
       BigDecimal amount,
       String description,
+      String descriptionColumn,
       Map<String, String> descriptionPatterns,
       boolean creditCardAccount) {
     if (value != null) {
@@ -1199,19 +1221,10 @@ public class ImportFileParserService {
         throw rowError(ImportRowErrorValues.TYPE_NOT_ALLOWED, ARG_COLUMN, column, ARG_VALUE, value);
       }
     }
-    String match = null;
-    for (Map.Entry<String, String> entry : descriptionPatterns.entrySet()) {
-      if (description != null
-          && Re2Patterns.compile("(?i)" + entry.getValue()).matcher(description).find()) {
-        if (match != null && !match.equals(entry.getKey())) {
-          throw rowError(
-              ImportRowErrorValues.TYPE_AMBIGUOUS,
-              ARG_COLUMN,
-              column == null ? "description" : column);
-        }
-        match = entry.getKey();
-      }
-    }
+    String match =
+        description == null
+            ? null
+            : typeByDescription(description, descriptionColumn, descriptionPatterns);
     if (match != null) {
       return match;
     }

@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -86,17 +87,17 @@ public class ImportRowCheckService {
   public ParsedImportRow checkRecordable(
       Account account, ParsedImportRow row, Map<String, Boolean> rates) {
     CanonicalImportRow canonical = row.canonical();
+    CreateTransactionRequest request = ledgerRows.request(canonical);
     Optional<String> convertsInto;
     try {
-      convertsInto = transactionService.requireRecordable(account, ledgerRows.request(canonical));
+      convertsInto = transactionService.requireRecordable(account, request);
     } catch (ResponseStatusException e) {
       Map<String, String> args = new LinkedHashMap<>();
       args.put(ARG_REASON, e.getReason());
       return error(row, ImportRowErrorValues.LEDGER_REJECTED, args);
     }
-    CreateTransactionRequest request = ledgerRows.request(canonical);
+    // A billed amount carries its own rate (US-07-18): no provider rate is needed.
     if (convertsInto.isEmpty()
-        || request.fxRateToAccountCurrency() != null
         || request.billedAmount() != null
         || hasRate(
             new ImportRateNeed(request.currency(), convertsInto.get(), canonical.bookingDate()),
@@ -123,14 +124,14 @@ public class ImportRowCheckService {
         continue;
       }
       CanonicalImportRow canonical = row.canonical();
+      CreateTransactionRequest request = ledgerRows.request(canonical);
       Optional<String> convertsInto;
       try {
-        convertsInto = transactionService.requireRecordable(account, ledgerRows.request(canonical));
+        convertsInto = transactionService.requireRecordable(account, request);
       } catch (ResponseStatusException e) {
         continue;
       }
-      CreateTransactionRequest request = ledgerRows.request(canonical);
-      if (request.fxRateToAccountCurrency() == null && request.billedAmount() == null) {
+      if (request.billedAmount() == null) {
         convertsInto.ifPresent(
             into ->
                 needed.add(new ImportRateNeed(request.currency(), into, canonical.bookingDate())));
@@ -153,8 +154,26 @@ public class ImportRowCheckService {
     return rates;
   }
 
-  /** The warnings of a row the ledger accepts; it stays included. */
-  public List<String> warnings(Account account, CanonicalImportRow row, LocalDate today) {
+  /**
+   * The account card payments into {@code account} come from, when it is a credit card with one
+   * set; read once per batch for {@link #warnings}.
+   */
+  public Optional<UUID> settlementSourceOf(Account account) {
+    if (!account.isHasStatementCycle() || creditCards == null) {
+      return Optional.empty();
+    }
+    return creditCards
+        .findById(account.getId())
+        .map(AccountCreditCard::getSettlementSourceAccountId);
+  }
+
+  /**
+   * The warnings of a row the ledger accepts; it stays included.
+   *
+   * @param settlementSource {@link #settlementSourceOf} the account, null when it has none
+   */
+  public List<String> warnings(
+      Account account, CanonicalImportRow row, LocalDate today, UUID settlementSource) {
     List<String> warnings = new ArrayList<>();
     if (row.bookingDate().isAfter(today)) {
       warnings.add(ImportBatchValues.WARNING_FUTURE_DATE);
@@ -168,16 +187,13 @@ public class ImportRowCheckService {
     if (account.isHasStatementCycle()
         && "SETTLEMENT".equals(row.transactionType())
         && row.amount().signum() > 0
-        && creditCards != null
         && transactions != null) {
-      AccountCreditCard card = creditCards.findById(account.getId()).orElse(null);
-      if (card == null
-          || card.getSettlementSourceAccountId() == null
+      if (settlementSource == null
           || transactions
               .findPairablePayments(
-                  card.getSettlementSourceAccountId(),
+                  settlementSource,
                   account.getNativeCurrency(),
-                  Set.of("WITHDRAWAL", "EXPENSE", "SETTLEMENT"),
+                  SettlementDetectionService.PAYMENT_TYPES,
                   row.amount().negate(),
                   row.bookingDate().minusDays(SettlementDetectionService.WINDOW_DAYS),
                   row.bookingDate().plusDays(SettlementDetectionService.WINDOW_DAYS))

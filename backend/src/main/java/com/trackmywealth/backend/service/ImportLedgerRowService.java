@@ -67,10 +67,17 @@ public class ImportLedgerRowService {
         row.bankExchangeRate());
   }
 
-  /** The manual entry this row amounts to; nothing a file cannot state is set. */
+  /**
+   * The manual entry this row amounts to; nothing a file cannot state is set. A card purchase in
+   * another currency (US-07-18) is recorded in its original amount and currency with the billed
+   * amount as {@code billedAmount}: the ledger derives the rate from the two, so the booking keeps
+   * exactly the amount the statement charged. The bank's printed rate is not used: it is rounded,
+   * and banks quote it either way round; it stays in the row's source data.
+   */
   public CreateTransactionRequest request(CanonicalImportRow row) {
     boolean originalPurchase =
         "CREDIT_CARD_PURCHASE".equals(row.transactionType())
+            && row.amount().signum() != 0
             && row.originalAmount() != null
             && row.originalCurrency() != null
             && !row.originalCurrency().equals(row.currency());
@@ -85,8 +92,8 @@ public class ImportLedgerRowService {
         row.mcc(),
         row.notes(),
         row.externalId(),
-        originalPurchase && row.bankExchangeRate() != null ? row.bankExchangeRate() : null,
-        originalPurchase && row.bankExchangeRate() == null ? row.amount() : null,
+        null,
+        originalPurchase ? row.amount() : null,
         null,
         null,
         null,

@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportBatchCountsResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
@@ -161,12 +162,13 @@ public class ImportBatchService {
       byte[] content,
       UUID templateId,
       AuthenticatedUserPrincipal actor) {
-    Map.Entry<String, Boolean> accountContext =
+    ImportAccountContext accountContext =
         readOnlyTransaction.execute(
             status -> {
               Account account = requireImportableAccount(accountId, actor);
               requireRoomForAnotherBatch(account);
-              return Map.entry(account.getNativeCurrency(), account.isHasStatementCycle());
+              return new ImportAccountContext(
+                  account.getNativeCurrency(), account.isHasStatementCycle());
             });
     if (content.length == 0) {
       throw new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_EMPTY, "The file is empty.");
@@ -185,8 +187,8 @@ public class ImportBatchService {
             : parser.parse(
                 content,
                 template.definition(),
-                accountContext.getKey(),
-                accountContext.getValue());
+                accountContext.currency(),
+                accountContext.creditCard());
     List<ImportTemplateCandidateResponse> offered = template == null ? candidates : List.of();
     Map<String, Boolean> rates =
         parsed == null ? new HashMap<>() : lookUpRates(accountId, parsed.rows(), actor);
@@ -233,12 +235,13 @@ public class ImportBatchService {
       UUID templateId,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    Map.Entry<String, Boolean> accountContext =
+    ImportAccountContext accountContext =
         readOnlyTransaction.execute(
             status -> {
               Account account = requireImportableAccount(accountId, actor);
               requireParseable(requireBatch(account, batchId, actor), expectedVersion);
-              return Map.entry(account.getNativeCurrency(), account.isHasStatementCycle());
+              return new ImportAccountContext(
+                  account.getNativeCurrency(), account.isHasStatementCycle());
             });
     // Every parseable batch has its file: only a discard (no longer parseable) deletes it.
     byte[] content =
@@ -251,7 +254,7 @@ public class ImportBatchService {
     ResolvedImportTemplate template = importTemplateService.resolveForImport(templateId, actor);
     ImportParseResult parsed =
         parser.parse(
-            content, template.definition(), accountContext.getKey(), accountContext.getValue());
+            content, template.definition(), accountContext.currency(), accountContext.creditCard());
     Map<String, Boolean> rates = lookUpRates(accountId, parsed.rows(), actor);
 
     return writeTransaction.execute(

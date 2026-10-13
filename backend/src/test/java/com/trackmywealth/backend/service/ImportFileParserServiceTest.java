@@ -227,6 +227,73 @@ class ImportFileParserServiceTest {
         .hasMessageContaining("pattern");
   }
 
+  @Test
+  void anExchangeRateReadsWithTheTemplatesSeparatorsAndALongCellIsARowError() {
+    ImportTemplateDefinition template =
+        new Template()
+            .delimiter(";")
+            .decimal(",")
+            .thousands(".")
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .description("text")
+                    .originalAmount("original")
+                    .originalCurrency("originalCurrency")
+                    .exchangeRate("rate")
+                    .build())
+            .build();
+
+    List<ParsedImportRow> rows =
+        parser
+            .parse(
+                utf8(
+                    "date;amount;text;original;originalCurrency;rate\n"
+                        + "2031-05-01;-10,00;Seoul;-14.501,20;KRW;1.450,12\n"
+                        + "2031-05-02;-10,00;Long;-11,00;USD;"
+                        + "1".repeat(60)
+                        + "\n"
+                        + "2031-05-03;-10,00;Zero;-11,00;USD;0,00\n"),
+                template,
+                "CHF",
+                true)
+            .rows();
+
+    assertThat(rows.get(0).isParsed()).isTrue();
+    assertThat(rows.get(0).canonical().bankExchangeRate()).isEqualByComparingTo("1450.12");
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
+    assertThat(rows.get(2).errorCode()).isEqualTo(ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
+  }
+
+  @Test
+  void anAmbiguousDescriptionNamesTheDescriptionColumnNotTheTypeColumn() {
+    ImportTemplateDefinition template =
+        new Template()
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .description("text")
+                    .transactionType("kind")
+                    .build())
+            .descriptionPatterns(Map.of("REFUND", "refund", "SETTLEMENT", "ref"))
+            .build();
+
+    ParsedImportRow row =
+        parser
+            .parse(
+                utf8("date,amount,text,kind\n2031-05-01,8.00,Refund received,\n"),
+                template,
+                "CHF",
+                true)
+            .rows()
+            .get(0);
+
+    assertThat(row.errorCode()).isEqualTo(ImportRowErrorValues.TYPE_AMBIGUOUS);
+    assertThat(row.errorArgs()).containsEntry("column", "text");
+  }
+
   // --- separators, quoting, encodings ------------------------------------------------------
 
   @ParameterizedTest

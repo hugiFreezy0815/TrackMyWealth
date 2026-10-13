@@ -80,7 +80,7 @@ public class SettlementDetectionService {
   // EXPENSE (a manual "I paid my card bill") or SETTLEMENT. All three must be matchable, or the
   // payment counts as spending on top of the purchases it settles (double count). The type is
   // frozen (V21), so matching never re-types - it only flags the row an internal transfer.
-  private static final Set<String> PAYMENT_TYPES = Set.of("WITHDRAWAL", "EXPENSE", "SETTLEMENT");
+  static final Set<String> PAYMENT_TYPES = Set.of("WITHDRAWAL", "EXPENSE", "SETTLEMENT");
 
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final AccountRepository accountRepository;

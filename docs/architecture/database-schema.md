@@ -783,8 +783,11 @@ false`), which hides it from detection and from the default list.
 `column_mapping` maps canonical fields (`bookingDate`, `amount` or `debitAmount` + `creditAmount`,
 `currency`, `description`, ...) to a header cell's text or a 0-based column index;
 `type_mapping` maps source type texts to cash `transaction_type`s. A credit-card template
-may also map `originalAmount`, `originalCurrency` and `exchangeRate`, preserving the bank's
-original amount and conversion rate instead of an estimated daily FX rate. Card accounts
+may also map `originalAmount`, `originalCurrency` and `exchangeRate`. A foreign purchase is
+recorded in its original amount and currency with the statement's billed amount as `billedAmount`,
+so the ledger derives the exact rate and no estimated daily FX rate is used; the printed
+`exchangeRate` (rounded, and quoted either way round by different banks) stays in the row's source
+data only. Card accounts
 (`has_statement_cycle`) infer `CREDIT_CARD_PURCHASE` for negative rows and `SETTLEMENT` for
 positive rows only when neither a type-column mapping nor a description pattern applies.
 A refund is explicitly `REFUND` via the type column or versioned

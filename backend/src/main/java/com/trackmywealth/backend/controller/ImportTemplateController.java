@@ -142,17 +142,20 @@ public class ImportTemplateController {
   }
 
   /**
-   * Dry run of a saved template version: the first rows parsed, plus counts. Writes nothing. A 503
-   * {@code IMPORT_PDF_BUSY} or {@code IMPORT_OCR_UNAVAILABLE} when the server cannot read the PDF
-   * now; {@code Retry-After} when waiting helps.
+   * Dry run of a saved template version: the first rows parsed, plus counts. Writes nothing. With
+   * {@code accountId}, rows are typed as an import into that account would type them (a credit
+   * card's purchases and settlements). A 503 {@code IMPORT_PDF_BUSY} or {@code
+   * IMPORT_OCR_UNAVAILABLE} when the server cannot read the PDF now; {@code Retry-After} when
+   * waiting helps.
    */
   @RetryableWhenBusy
   @PostMapping(path = BY_ID + "/test", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ImportTemplateTestResponse testSaved(
       @PathVariable UUID id,
       @RequestPart("file") MultipartFile file,
+      @RequestParam(required = false) UUID accountId,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return importTemplateService.test(id, bytesOf(file), actor);
+    return importTemplateService.test(id, bytesOf(file), accountId, actor);
   }
 
   /**
@@ -164,8 +167,9 @@ public class ImportTemplateController {
   public ImportTemplateTestResponse testUnsaved(
       @RequestPart("file") MultipartFile file,
       @RequestPart("template") ImportTemplateRequest template,
+      @RequestParam(required = false) UUID accountId,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return importTemplateService.test(template, bytesOf(file), actor);
+    return importTemplateService.test(template, bytesOf(file), accountId, actor);
   }
 
   private static byte[] bytesOf(MultipartFile file) {

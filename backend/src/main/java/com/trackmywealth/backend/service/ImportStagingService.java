@@ -95,6 +95,7 @@ public class ImportStagingService {
         duplicateService.findDuplicates(account.getId(), batch.getSourceKind(), recordable);
 
     LocalDate today = LocalDate.now(clock);
+    UUID settlementSource = rowCheckService.settlementSourceOf(account).orElse(null);
     List<StagedImportRow> staged = new ArrayList<>(checked.size());
     int duplicateCount = 0;
     int errorCount = 0;
@@ -108,7 +109,7 @@ public class ImportStagingService {
       } else if (row.isSkipped()) {
         skippedCount++;
       }
-      staged.add(staged(row, duplicateOf, account, today));
+      staged.add(staged(row, duplicateOf, account, today, settlementSource));
     }
     rowBatchRepository.deleteByBatch(batch.getId());
     rowBatchRepository.insertAll(batch.getId(), batch.getWorkspaceId(), staged);
@@ -160,7 +161,11 @@ public class ImportStagingService {
   }
 
   private StagedImportRow staged(
-      ParsedImportRow row, UUID duplicateOf, Account account, LocalDate today) {
+      ParsedImportRow row,
+      UUID duplicateOf,
+      Account account,
+      LocalDate today,
+      UUID settlementSource) {
     CanonicalImportRow canonical = row.canonical();
     String status;
     if (row.isSkipped()) {
@@ -173,7 +178,9 @@ public class ImportStagingService {
       status = ImportBatchValues.ROW_PARSED;
     }
     List<String> warnings =
-        row.isParsed() ? rowCheckService.warnings(account, canonical, today) : List.of();
+        row.isParsed()
+            ? rowCheckService.warnings(account, canonical, today, settlementSource)
+            : List.of();
     return new StagedImportRow(
         UUID.randomUUID(),
         row.rowNumber(),

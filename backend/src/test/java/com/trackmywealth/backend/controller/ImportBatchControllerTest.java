@@ -20,6 +20,7 @@ import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
+import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
@@ -507,11 +508,18 @@ class ImportBatchControllerTest {
     ImportTemplateResponse template = createTemplate(creditCardTemplate());
     byte[] file =
         ("Date;Amount;Currency;Text;Reference;OriginalAmount;OriginalCurrency;Rate\n"
-                + "2031-05-01;-55,00;CHF;Overseas purchase;CARD-A;-50,00;EUR;1,100000\n"
+                + "2031-05-01;-55,00;CHF;Overseas purchase;CARD-A;-50,00;EUR;0,909091\n"
                 + "2031-05-02;30,00;CHF;Monthly card payment;CARD-B;;;\n"
                 + "2031-05-03;8,00;CHF;SHOP rEfUnD;CARD-C;;;\n"
                 + "2031-05-04;4,00;CHF;Other credit;CARD-D;;;\n")
             .getBytes(StandardCharsets.UTF_8);
+    // The template's dry run for the card types rows as the import into it will.
+    assertThat(templatePreview(template.id(), card, file).rows())
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("CREDIT_CARD_PURCHASE", "SETTLEMENT", "REFUND", "SETTLEMENT");
+    assertThat(templatePreview(template.id(), null, file).rows())
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("EXPENSE", "INCOME", "REFUND", "INCOME");
     ImportBatchResponse batch =
         upload(token, card, file, template.id())
             .expectStatus()
@@ -1389,6 +1397,30 @@ class ImportBatchControllerTest {
         .contentType(MediaType.MULTIPART_FORM_DATA)
         .body(body)
         .exchange();
+  }
+
+  private ImportTemplateTestResponse templatePreview(
+      UUID templateId, UUID accountId, byte[] content) {
+    HttpHeaders fileHeaders = new HttpHeaders();
+    fileHeaders.setContentType(MediaType.parseMediaType("text/csv"));
+    fileHeaders.setContentDispositionFormData("file", "statement.csv");
+    MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+    body.add("file", new HttpEntity<>(new ByteArrayResource(content), fileHeaders));
+    return client()
+        .post()
+        .uri(
+            "/api/v1/import-templates/"
+                + templateId
+                + "/test"
+                + (accountId == null ? "" : "?accountId=" + accountId))
+        .contentType(MediaType.MULTIPART_FORM_DATA)
+        .body(body)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(ImportTemplateTestResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private ImportBatchResponse parse(UUID batchId, int version, UUID templateId) {
