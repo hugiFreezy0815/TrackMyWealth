@@ -151,6 +151,84 @@ class ImportFileParserServiceTest {
     assertThat(result.rows().get(2).canonical().amount()).isEqualByComparingTo("-5.00");
   }
 
+  @Test
+  void cardStatementUsesSafeTypeFallbackAndRefundDescriptionPatterns() {
+    ImportTemplateDefinition template =
+        new Template()
+            .delimiter(";")
+            .decimal(",")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .currency("currency")
+                    .description("description")
+                    .transactionType("type")
+                    .originalAmount("original")
+                    .originalCurrency("originalCurrency")
+                    .exchangeRate("rate")
+                    .build())
+            .descriptionPatterns(Map.of("REFUND", "refund"))
+            .build();
+
+    byte[] statement =
+        utf8(
+            "date;amount;currency;description;type;original;originalCurrency;rate\n"
+                + "2031-05-01;-55,00;CHF;Hotel charge;;-50,00;EUR;1,100000\n"
+                + "2031-05-02;30,00;CHF;Monthly card payment;;;;\n"
+                + "2031-05-03;8,00;CHF;SHOP ReFuNd;;;;\n"
+                + "2031-05-04;4,00;CHF;Refund but explicitly paid;payment;;;\n");
+
+    // The last row has an explicit type mapping, which wins over the description pattern.
+    ImportTemplateDefinition mapped =
+        new Template()
+            .delimiter(";")
+            .decimal(",")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .mapping(template.columnMapping())
+            .typeMapping(Map.of("payment", "SETTLEMENT"))
+            .descriptionPatterns(template.descriptionTypePatterns())
+            .build();
+    List<ParsedImportRow> card = parser.parse(statement, mapped, "CHF", true).rows();
+
+    assertThat(card).allMatch(ParsedImportRow::isParsed).hasSize(4);
+    assertThat(card)
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("CREDIT_CARD_PURCHASE", "SETTLEMENT", "REFUND", "SETTLEMENT");
+    assertThat(card.get(0).canonical().originalAmount()).isEqualByComparingTo("-50.00");
+    assertThat(card.get(0).canonical().originalCurrency()).isEqualTo("EUR");
+    assertThat(card.get(0).canonical().bankExchangeRate())
+        .isEqualByComparingTo("1.100000");
+
+    assertThat(parser.parse(statement, mapped, "CHF").rows().get(0).canonical().transactionType())
+        .isEqualTo("EXPENSE");
+  }
+
+  @Test
+  void ambiguousCardDescriptionPatternsAreErrorsAndInvalidPatternsAreRejected() {
+    ImportTemplateDefinition template =
+        new Template()
+            .descriptionPatterns(
+                Map.of("REFUND", "refund", "SETTLEMENT", "ref"))
+            .build();
+    List<ParsedImportRow> rows =
+        parser.parse(utf8("date,amount,text\n2031-05-01,8.00,Refund received\n"), template, "CHF", true)
+            .rows();
+
+    assertThat(rows).hasSize(1);
+    assertThat(rows.get(0).isError()).isTrue();
+    assertThat(rows.get(0).errorCode()).isEqualTo(ImportRowErrorValues.TYPE_AMBIGUOUS);
+
+    ImportTemplateDefinition invalid =
+        new Template().descriptionPatterns(Map.of("REFUND", "(invalid")).build();
+    assertThatThrownBy(() -> parser.validateTemplate(invalid, null))
+        .isInstanceOf(ApiException.class)
+        .hasMessageContaining("pattern");
+  }
+
   // --- separators, quoting, encodings ------------------------------------------------------
 
   @ParameterizedTest
@@ -965,6 +1043,7 @@ class ImportFileParserServiceTest {
     private ImportColumnMapping mapping =
         ImportFileParserServiceTest.mapping("date", "amount").description("text").build();
     private Map<String, String> typeMapping = Map.of();
+    private Map<String, String> descriptionPatterns = Map.of();
     private String accountStrategy = "USER_SELECTED";
     private String fileFormat = "CSV";
     private ImportPdfLayout pdfLayout;
@@ -1039,6 +1118,11 @@ class ImportFileParserServiceTest {
       return this;
     }
 
+    Template descriptionPatterns(Map<String, String> value) {
+      descriptionPatterns = value;
+      return this;
+    }
+
     Template accountStrategy(String value) {
       accountStrategy = value;
       return this;
@@ -1068,7 +1152,8 @@ class ImportFileParserServiceTest {
           typeMapping,
           accountStrategy,
           fileFormat,
-          pdfLayout);
+          pdfLayout,
+          descriptionPatterns);
     }
   }
 
@@ -1120,6 +1205,21 @@ class ImportFileParserServiceTest {
       return this;
     }
 
+    MappingBuilder originalAmount(String column) {
+      fields.put("originalAmount", column);
+      return this;
+    }
+
+    MappingBuilder originalCurrency(String column) {
+      fields.put("originalCurrency", column);
+      return this;
+    }
+
+    MappingBuilder exchangeRate(String column) {
+      fields.put("exchangeRate", column);
+      return this;
+    }
+
     MappingBuilder mcc(String column) {
       fields.put("mcc", column);
       return this;
@@ -1144,7 +1244,10 @@ class ImportFileParserServiceTest {
           fields.get("transactionType"),
           fields.get("mcc"),
           fields.get("iso20022BankTransactionCode"),
-          fields.get("notes"));
+          fields.get("notes"),
+          fields.get("originalAmount"),
+          fields.get("originalCurrency"),
+          fields.get("exchangeRate"));
     }
   }
 }
