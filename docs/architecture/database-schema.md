@@ -953,7 +953,9 @@ two at once cannot both take the last place). Workspace erasure (EPIC 31) must d
 **Rows.** One `import_row_raw` per data row: `PARSED` (new, included), `DUPLICATE` (excluded, with
 `duplicate_of_transaction_id`), `ERROR` (rejected, never included) or `SKIPPED` (readable, never
 included; US-07-19). A row is `SKIPPED` when its amount is zero (`0.00`, also `-0.00`): it moves no
-money, so it is neither an error nor imported. It keeps its original cells and canonical values, its
+money, so it is neither an error nor imported. In a `SEPARATE_DEBIT_CREDIT` file the non-zero side
+decides the amount; an explicit zero on one side or both, with no non-zero side, is such a zero row
+and `SKIPPED`, while two empty cells stay the error `IMPORT_ROW_VALUE_MISSING` (#305). It keeps its original cells and canonical values, its
 reason is the code `IMPORT_ROW_ZERO_AMOUNT` (localized EN/DE when the row is read), and it is
 counted on its own (`counts.skipped`, a template dry run's `skippedRowCount`), filterable with
 `?status=SKIPPED`, left out of deduplication and the ledger checks, and never in `errors.csv`.

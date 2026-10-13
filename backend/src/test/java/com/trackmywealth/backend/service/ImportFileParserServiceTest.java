@@ -542,8 +542,7 @@ class ImportFileParserServiceTest {
 
   @Test
   void separateDebitAndCreditRejectBothOrNeitherSide() {
-    String csv =
-        "date;debit;credit\n2026-03-01;12,50;7,00\n2026-03-02;;\n";
+    String csv = "date;debit;credit\n2026-03-01;12,50;7,00\n2026-03-02;;\n";
 
     List<ParsedImportRow> rows = parser.parse(utf8(csv), debitCreditTemplate(), null).rows();
 
@@ -580,7 +579,8 @@ class ImportFileParserServiceTest {
       assertThat(row.canonical().amount()).isEqualByComparingTo(BigDecimal.ZERO);
       assertThat(row.rawData()).containsKeys("debit", "credit");
     }
-    assertThat(rows.get(3).canonical().amount()).isEqualByComparingTo("0.0000");
+    // The negative zero keeps its four decimal places.
+    assertThat(rows.get(3).canonical().amount()).isEqualTo(new BigDecimal("0.0000"));
     assertThat(rows.get(4).isParsed()).isTrue();
     assertThat(rows.get(4).canonical().amount()).isEqualByComparingTo("7.00");
     assertThat(rows.get(5).isParsed()).isTrue();
