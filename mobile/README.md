@@ -1,6 +1,6 @@
 # TrackMyWealth Mobile & Web
 
-React Native + Expo (SDK 57) client for TrackMyWealth, built with Expo Router (file-based
+React Native + Expo (SDK 58) client for TrackMyWealth, built with Expo Router (file-based
 routing) and TypeScript. See the root [README](../README.md) for how this fits into the rest of
 the project.
 
@@ -23,6 +23,27 @@ src/
 assets/                   Icons, splash images
 .env.example              Copy to .env - backend base URL for local development
 ```
+
+## SDK 58 upgrade notes
+
+This project uses Expo SDK 58, which pins **React Native 0.88.0-rc.4** (a release candidate),
+Reanimated 4.7.0 and Worklets 0.13.0. Versions follow Expo's bundled-module list
+(`node_modules/expo/bundledNativeModules.json`); after changing a dependency, run
+`npx expo install --check` (CI runs it too). Jest and `@types/jest` are deliberately on Jest 30
+and excluded from that check via `expo.install.exclude` in `package.json`.
+
+`.npmrc` temporarily enables `legacy-peer-deps`: npm never matches a prerelease against ranges
+such as `>=0.78`, so packages with a `react-native` peer range reject the release candidate, and
+`overrides` cannot rewrite peer ranges. Remove it once Expo SDK 58 ships a stable React Native
+0.88. New releases must be 7 days old before they are resolved: `min-release-age` in `.npmrc`
+(npm 11.10+, local installs) and Dependabot's cooldown (`.github/dependabot.yml`).
+
+Mobile Web CI verifies `npm ci`, the Expo version check, TypeScript, ESLint, Prettier, Jest and
+the static web export. Mobile Native CI builds the iOS and Android release apps and launches them
+on a simulator and an emulator (`scripts/native-smoke.sh`) whenever the native dependency set or
+the app config changes; check its `native-smoke-*` screenshots before marking an upgrade ready.
+Building iOS locally needs **Xcode 26** (Expo SDK 58 requires Swift 6.2). A test on a physical
+device is still advisable before a production rollout. Use `npm ci` for reproducible installs.
 
 ## Running locally
 

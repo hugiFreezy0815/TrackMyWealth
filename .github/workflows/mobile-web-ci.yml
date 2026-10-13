@@ -30,6 +30,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # mobile/.npmrc turns off npm's peer-dependency check while Expo SDK 58 pins a React Native
+      # release candidate, so validate every SDK-managed package against Expo's own version list.
+      - name: Check Expo SDK versions
+        run: npx expo install --check
+
       # expo-env.d.ts (gitignored, machine-generated) is normally created the first time the
       # Expo CLI runs against the project; tsc needs it to resolve the ambient *.css/*.module.css
       # module declarations `expo/types` provides. Content matches exactly what `expo start`

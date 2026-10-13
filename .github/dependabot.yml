@@ -18,24 +18,14 @@ updates:
       default-days: 7
       semver-major-days: 14
     ignore:
-      # Expo SDK 57 pins react-native 0.86.x (see node_modules/expo/bundledNativeModules.json), and
-      # react-native-reanimated 4.5.x only accepts react-native <=0.86, so a minor/major bump breaks
-      # `npm ci`. Patch releases are still allowed. Remove this once the project moves to Expo SDK 58.
+      # Expo SDK 58 pins these exact versions (react-native 0.88.0-rc.4, react-native-reanimated
+      # 4.7.0, react-native-worklets 0.13.0 - see node_modules/expo/bundledNativeModules.json), and
+      # Mobile Web CI's `npx expo install --check` fails on any other version, patches included.
+      # They move together on the SDK's schedule (`npx expo install --fix` after an Expo bump), so
+      # Dependabot leaves them alone (#157).
       - dependency-name: react-native
-        update-types:
-          - version-update:semver-minor
-          - version-update:semver-major
-      # Same SDK pin: Expo SDK 57 bundles react-native-reanimated 4.5.1 with react-native-worklets
-      # 0.10.x, and reanimated 4.5.x only accepts worklets 0.10.x, so a worklets minor bump breaks
-      # `npm ci` (#157). The two move together, on the SDK's schedule - remove with the rule above.
       - dependency-name: react-native-worklets
-        update-types:
-          - version-update:semver-minor
-          - version-update:semver-major
       - dependency-name: react-native-reanimated
-        update-types:
-          - version-update:semver-minor
-          - version-update:semver-major
 
   - package-ecosystem: docker
     directory: /backend
@@ -43,7 +33,6 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-      semver-major-days: 14
 
   - package-ecosystem: github-actions
     directory: /
@@ -51,4 +40,3 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-      semver-major-days: 14
