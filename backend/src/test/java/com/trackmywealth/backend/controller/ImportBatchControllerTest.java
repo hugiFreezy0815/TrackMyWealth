@@ -530,6 +530,70 @@ class ImportBatchControllerTest {
   }
 
   @Test
+  void separateDebitCreditExplicitZerosAreSkippedWithoutHidingMissingAmounts() throws Exception {
+    ImportTemplateResponse template = createTemplate(germanTemplate());
+    byte[] content =
+        String.join(
+                "\n",
+                "Synthetic bank export",
+                "Account: Example",
+                "Period: May 2031",
+                "Bookings follow",
+                "Buchungstag;Wertstellung;Buchungstext;Auftraggeber / Begünstigter;Verwendungszweck;Soll;Haben;Währung",
+                "02.05.2031;;Lastschrift;;Waived debit;0,00;;CHF",
+                "03.05.2031;;Gutschrift;;Waived credit;;0,00;CHF",
+                "04.05.2031;;Lastschrift;;Both zero;0,00;0,00;CHF",
+                "05.05.2031;;Lastschrift;;Negative zero;-0,0000;;CHF",
+                "06.05.2031;;Lastschrift;;Coffee;12,40;;CHF",
+                "07.05.2031;;Gutschrift;;Cashback;;5,00;CHF",
+                "08.05.2031;;Lastschrift;;Both blank;;;CHF",
+                "Summary;;;;;;;")
+            .concat("\n")
+            .getBytes(StandardCharsets.UTF_8);
+    ImportBatchResponse batch = upload(token, template.id(), content);
+
+    assertThat(batch.counts().total()).isEqualTo(7);
+    assertThat(batch.counts().skipped()).isEqualTo(4);
+    assertThat(batch.counts().newRows()).isEqualTo(2);
+    assertThat(batch.counts().errors()).isEqualTo(1);
+    assertThat(batch.counts().included()).isEqualTo(2);
+    List<ImportRowResponse> skipped = rows(batch.id(), "?status=SKIPPED").content();
+    assertThat(skipped).extracting(ImportRowResponse::rowNumber).containsExactly(1, 2, 3, 4);
+    assertThat(skipped)
+        .allSatisfy(
+            row -> {
+              assertThat(row.included()).isFalse();
+              assertThat(row.error().code()).isEqualTo("IMPORT_ROW_ZERO_AMOUNT");
+              assertThat(row.canonical().amount()).isEqualByComparingTo("0");
+            });
+    assertThat(rows(batch.id(), "?status=ERROR").content())
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.rowNumber()).isEqualTo(7);
+              assertThat(row.error().code()).isEqualTo("IMPORT_ROW_VALUE_MISSING");
+            });
+
+    EntityExchangeResult<byte[]> exported =
+        client()
+            .get()
+            .uri(imports() + "/" + batch.id() + "/errors.csv")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(byte[].class)
+            .returnResult();
+    String errorCsv = new String(exported.getResponseBody(), StandardCharsets.UTF_8);
+    assertThat(errorCsv).contains("Both blank").doesNotContain("Waived debit", "Both zero");
+
+    ImportBatchResponse committed = commit(account, batch.id(), batch.version());
+    assertThat(committed.counts().imported()).isEqualTo(2);
+    assertThat(committed.counts().skipped()).isEqualTo(4);
+    assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(2);
+    assertThat(count("SELECT count(*) FROM transaction WHERE amount = 0")).isZero();
+  }
+
+  @Test
   void aFileOfOnlyZeroAmountsHasNothingToImportAndItsCommitAddsNothing() throws Exception {
     ImportTemplateResponse simple = createTemplate(simpleTemplate("Only zeros", SIMPLE_COLUMNS));
     ImportBatchResponse batch =

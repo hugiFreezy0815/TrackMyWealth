@@ -542,22 +542,49 @@ class ImportFileParserServiceTest {
 
   @Test
   void separateDebitAndCreditRejectBothOrNeitherSide() {
-    String csv =
-        "date;debit;credit\n2026-03-01;12,50;7,00\n2026-03-02;;\n"
-            + "2026-03-03;0,00;\n2026-03-04;0,00;0,00\n";
+    String csv = "date;debit;credit\n2026-03-01;12,50;7,00\n2026-03-02;;\n";
 
     List<ParsedImportRow> rows = parser.parse(utf8(csv), debitCreditTemplate(), null).rows();
 
     assertThat(rows.get(0).errorCode()).isEqualTo(ImportRowErrorValues.AMOUNT_BOTH_SIDES);
     assertThat(rows.get(0).errorArgs())
         .containsExactly(Map.entry("debitColumn", "debit"), Map.entry("creditColumn", "credit"));
-    // A side holding zero counts as empty, so zeros alone are no amount either.
-    assertThat(rows.subList(1, 4))
-        .allSatisfy(
-            row -> {
-              assertThat(row.errorCode()).isEqualTo(ImportRowErrorValues.VALUE_MISSING);
-              assertThat(row.errorArgs()).containsEntry("column", "debit / credit");
-            });
+    // Two absent amounts are still invalid; they must never become a silent skipped booking.
+    assertThat(rows.get(1).isError()).isTrue();
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.VALUE_MISSING);
+    assertThat(rows.get(1).errorArgs()).containsEntry("column", "debit / credit");
+  }
+
+  @Test
+  void separateDebitAndCreditSkipExplicitZeroAmountsButKeepNonzeroRows() {
+    String csv =
+        "date;debit;credit\n"
+            + "2026-03-01;0,00;\n"
+            + "2026-03-02;;0,00\n"
+            + "2026-03-03;0,00;0,00\n"
+            + "2026-03-04;-0,0000;\n"
+            + "2026-03-05;0,00;7,00\n"
+            + "2026-03-06;3,00;0,00\n";
+
+    List<ParsedImportRow> rows = parser.parse(utf8(csv), debitCreditTemplate(), null).rows();
+
+    assertThat(rows).hasSize(6);
+    for (int i = 0; i < 4; i++) {
+      ParsedImportRow row = rows.get(i);
+      assertThat(row.rowNumber()).isEqualTo(i + 1);
+      assertThat(row.isSkipped()).isTrue();
+      assertThat(row.isError()).isFalse();
+      assertThat(row.errorCode()).isEqualTo(ImportRowErrorValues.ZERO_AMOUNT);
+      assertThat(row.errorArgs()).isEmpty();
+      assertThat(row.canonical().amount()).isEqualByComparingTo(BigDecimal.ZERO);
+      assertThat(row.rawData()).containsKeys("debit", "credit");
+    }
+    // The negative zero keeps its four decimal places.
+    assertThat(rows.get(3).canonical().amount()).isEqualTo(new BigDecimal("0.0000"));
+    assertThat(rows.get(4).isParsed()).isTrue();
+    assertThat(rows.get(4).canonical().amount()).isEqualByComparingTo("7.00");
+    assertThat(rows.get(5).isParsed()).isTrue();
+    assertThat(rows.get(5).canonical().amount()).isEqualByComparingTo("-3.00");
   }
 
   /** DoD: formatted amounts parse back to exactly the same BigDecimal, scale included. */
