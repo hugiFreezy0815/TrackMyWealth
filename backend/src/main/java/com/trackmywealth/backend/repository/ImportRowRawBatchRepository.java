@@ -35,6 +35,13 @@ public class ImportRowRawBatchRepository {
       "UPDATE import_row_raw SET parse_status = 'DUPLICATE', included = FALSE,"
           + " duplicate_of_transaction_id = ? WHERE id = ?";
 
+  private static final String MARK_NEW =
+      "UPDATE import_row_raw SET parse_status = 'PARSED', included = TRUE,"
+          + " duplicate_of_transaction_id = NULL WHERE id = ?";
+
+  private static final String REPOINT_DUPLICATE =
+      "UPDATE import_row_raw SET duplicate_of_transaction_id = ? WHERE id = ?";
+
   private final JdbcTemplate jdbcTemplate;
 
   public ImportRowRawBatchRepository(JdbcTemplate jdbcTemplate) {
@@ -67,6 +74,26 @@ public class ImportRowRawBatchRepository {
    */
   public void markDuplicates(List<UUID> rowIds, List<UUID> transactionIds) {
     updatePairs(MARK_DUPLICATE, rowIds, transactionIds);
+  }
+
+  /**
+   * Records duplicate rows whose booking the ledger no longer holds (#287): each becomes a new,
+   * included {@code PARSED} row.
+   */
+  public void markNew(List<UUID> rowIds) {
+    jdbcTemplate.batchUpdate(
+        MARK_NEW,
+        rowIds,
+        BATCH_SIZE,
+        (PreparedStatement statement, UUID rowId) -> statement.setObject(1, rowId));
+  }
+
+  /**
+   * Records duplicate rows whose booking the ledger now holds as another row (#287): each stays a
+   * {@code DUPLICATE}, of {@code transactionIds[i]}, included or not as before.
+   */
+  public void repointDuplicates(List<UUID> rowIds, List<UUID> transactionIds) {
+    updatePairs(REPOINT_DUPLICATE, rowIds, transactionIds);
   }
 
   // Runs sql once per row: the transaction id as its first parameter, the row id as its second.

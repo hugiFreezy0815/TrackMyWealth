@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.hibernate.jpa.HibernateHints;
 import org.springframework.data.domain.Page;
@@ -36,6 +37,20 @@ public interface ImportRowRawRepository extends JpaRepository<ImportRowRaw, UUID
 
   List<ImportRowRaw> findByImportBatchIdAndParseStatusOrderByRowNumber(
       UUID importBatchId, String parseStatus);
+
+  /**
+   * The batch's {@code DUPLICATE} rows whose transaction is still in effect - neither voided nor
+   * soft-deleted - when the commit runs (#287). Any other duplicate row lost its booking since the
+   * preview: a rollback cleared its pointer, or the row it pointed at was removed.
+   */
+  @Query(
+      value =
+          "SELECT r.id FROM import_row_raw r JOIN transaction t"
+              + " ON t.id = r.duplicate_of_transaction_id"
+              + " WHERE r.import_batch_id = :batchId AND r.parse_status = 'DUPLICATE'"
+              + " AND t.voided_at IS NULL AND t.deleted_at IS NULL",
+      nativeQuery = true)
+  Set<UUID> findDuplicateRowIdsInEffect(@Param("batchId") UUID batchId);
 
   /**
    * The counts of each of {@code batchIds} that has rows, one array per batch: its id, then total,

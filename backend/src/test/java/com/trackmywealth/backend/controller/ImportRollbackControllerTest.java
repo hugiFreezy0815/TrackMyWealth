@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
@@ -273,10 +274,17 @@ class ImportRollbackControllerTest {
             + " WHERE id = ?",
         account,
         credit.id());
+    // The imported leg is a transfer too, but with its counterpart: no member's confirmation.
+    execute(
+        "UPDATE transaction SET is_internal_transfer = TRUE, counterparty_account_id = ?"
+            + " WHERE id = ?",
+        savings,
+        debit);
 
     ImportRollbackResponse rollback = rollback(batch, REASON);
 
     assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.HARD_DELETE);
+    assertThat(rollback.modified()).isEmpty();
     assertThat(rollback.unmatchedTransactionIds()).containsExactly(credit.id());
     assertThat(count("SELECT count(*) FROM settlement_match")).isZero();
     assertThat(count("SELECT count(*) FROM transaction WHERE id = ?", debit)).isZero();
@@ -323,7 +331,8 @@ class ImportRollbackControllerTest {
     RECONCILIATION_RESOLUTION(ImportRollbackValues.RECONCILIATION_RESOLUTION),
     RESTORED(ImportRollbackValues.RESTORED),
     DUPLICATE_IN_ANOTHER_BATCH(ImportRollbackValues.REFERENCED),
-    TAX_LOT(ImportRollbackValues.REFERENCED);
+    TAX_LOT(ImportRollbackValues.REFERENCED),
+    TRANSFER_UNTRACKED_CONFIRMED(ImportRollbackValues.TRANSFER_UNTRACKED_CONFIRMED);
 
     final String criterion;
 
@@ -503,6 +512,171 @@ class ImportRollbackControllerTest {
                     + " AND duplicate_of_transaction_id IS NULL",
                 preview.id()))
         .isEqualTo(3);
+  }
+
+  @Test
+  void aTransferConfirmedAsUntrackedForcesTheVoid() {
+    UUID typed =
+        createTemplate("Typed", "Type", Map.of("Transfer", "TRANSFER", "Card", "EXPENSE")).id();
+    ImportBatchResponse batch =
+        commit(
+            upload(
+                typedCsv(
+                    "2019-01-05;-500.00;CHF;To my other bank;U1;Transfer",
+                    "2019-01-06;-80.00;CHF;Groceries;U2;Card"),
+                typed));
+    UUID leg =
+        (UUID)
+            single(
+                "SELECT id FROM transaction WHERE import_batch_id = ? AND external_id = 'U1'",
+                batch.id());
+    client()
+        .post()
+        .uri(transactions() + "/" + leg + "/untracked-transfer")
+        .header(HttpHeaders.IF_MATCH, etag(versionOf(leg)))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    ImportRollbackResponse rollback = rollback(batch, REASON);
+
+    assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.VOID);
+    assertThat(rollback.batch().status()).isEqualTo("VOIDED");
+    assertThat(rollback.modified())
+        .containsExactly(
+            new ImportRollbackModifiedResponse(
+                leg, List.of(ImportRollbackValues.TRANSFER_UNTRACKED_CONFIRMED)));
+    // The member's decision stays on the voided row.
+    assertThat(
+            rowsOf(
+                    "SELECT is_internal_transfer, voided_at IS NOT NULL AS voided FROM transaction"
+                        + " WHERE id = ?",
+                    leg)
+                .get(0))
+        .containsEntry("is_internal_transfer", true)
+        .containsEntry("voided", true);
+  }
+
+  // --- an open preview of the rolled-back rows (#287)
+  // -----------------------------------------------------------------------------
+
+  @Test
+  void anOpenPreviewOfTheSameFileNeitherKeepsTheBatchNorLosesItsBookings() {
+    openingBalance("1000.00");
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    snapshot("3407.60");
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    assertThat(preview.counts().duplicates()).isEqualTo(3);
+
+    ImportRollbackResponse rollback = rollback(batch, REASON);
+
+    assertThat(rollback.rollback()).isEqualTo(ImportRollbackValues.HARD_DELETE);
+    assertThat(rollback.batch().status()).isEqualTo("ROLLED_BACK");
+    assertThat(
+            count(
+                "SELECT count(*) FROM import_row_raw WHERE import_batch_id = ?"
+                    + " AND duplicate_of_transaction_id IS NOT NULL",
+                preview.id()))
+        .isZero();
+
+    // Committed after the rollback, the preview imports what the rollback took out, once.
+    ImportBatchResponse committed = commit(preview);
+
+    assertThat(committed.counts().imported()).isEqualTo(3);
+    assertThat(committed.counts().duplicates()).isZero();
+    assertThat(committed.counts().newRows()).isEqualTo(3);
+    for (int row = 1; row <= 3; row++) {
+      assertThat(rowStatus(preview.id(), row)).isEqualTo("PARSED");
+    }
+    assertThat(
+            uuids(
+                "SELECT import_batch_id FROM transaction WHERE voided_at IS NULL"
+                    + " AND deleted_at IS NULL AND external_id IN ('R1', 'R2', 'R3')"))
+        .hasSize(3)
+        .containsOnly(preview.id());
+    assertThat(reconciliationStatus()).isEqualTo(ReconciliationStatusValues.RECONCILED);
+  }
+
+  @Test
+  void aPreviewRowWhoseBookingWasVoidedSinceIsImportedAsNew() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    UUID bakery =
+        (UUID)
+            single(
+                "SELECT id FROM transaction WHERE import_batch_id = ? AND external_id = 'R1'",
+                batch.id());
+    assertThat(remove(bakery).removal()).isEqualTo("VOID");
+
+    ImportBatchResponse committed = commit(preview);
+
+    // Only the voided booking comes in again; the other two stay duplicates of the live rows.
+    assertThat(committed.counts().imported()).isEqualTo(1);
+    assertThat(committed.counts().duplicates()).isEqualTo(2);
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("PARSED");
+    assertThat(rowStatus(preview.id(), 2)).isEqualTo("DUPLICATE");
+    assertThat(rowStatus(preview.id(), 3)).isEqualTo("DUPLICATE");
+    assertThat(
+            count(
+                "SELECT count(*) FROM transaction WHERE voided_at IS NULL AND deleted_at IS NULL"
+                    + " AND replaces_transaction_id IS NULL"))
+        .isEqualTo(3);
+    assertThat(
+            single(
+                "SELECT import_batch_id FROM transaction WHERE external_id = 'R1'"
+                    + " AND voided_at IS NULL"))
+        .isEqualTo(preview.id());
+  }
+
+  @Test
+  void aPreviewRowWhoseBookingTheLedgerHoldsAsAnotherRowStaysADuplicateOfThatRow() {
+    ImportBatchResponse batch = importFile(csv("2019-01-05;-3.50;CHF;Coffee;"));
+    UUID manual = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+    ImportBatchResponse preview = upload(csv("2019-01-05;-3.50;CHF;Coffee;"));
+    assertThat(
+            single(
+                "SELECT duplicate_of_transaction_id FROM import_row_raw WHERE import_batch_id = ?",
+                preview.id()))
+        .isEqualTo(batchRows(batch.id()).get(0));
+    rollback(batch, REASON);
+
+    ImportBatchResponse committed = commit(preview);
+
+    assertThat(committed.counts().imported()).isZero();
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
+    assertThat(
+            single(
+                "SELECT duplicate_of_transaction_id FROM import_row_raw WHERE import_batch_id = ?",
+                preview.id()))
+        .isEqualTo(manual);
+    assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(1);
+  }
+
+  @Test
+  void ofTwoIdenticalDuplicatesOnlyTheOneWhoseBookingWasRemovedComesIn() {
+    UUID first = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+    UUID second = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+    ImportBatchResponse preview =
+        upload(csv("2019-01-05;-3.50;CHF;Coffee;", "2019-01-05;-3.50;CHF;Coffee;"));
+    assertThat(preview.counts().duplicates()).isEqualTo(2);
+    remove(first);
+
+    ImportBatchResponse committed = commit(preview);
+
+    // The second row keeps the booking it found; the first finds no other and is new.
+    assertThat(committed.counts().imported()).isEqualTo(1);
+    assertThat(
+            rowsOf(
+                "SELECT row_number, parse_status, duplicate_of_transaction_id FROM import_row_raw"
+                    + " WHERE import_batch_id = ? ORDER BY row_number",
+                preview.id()))
+        .extracting(row -> row.get("parse_status"), row -> row.get("duplicate_of_transaction_id"))
+        .containsExactly(tuple("PARSED", null), tuple("DUPLICATE", second));
+    assertThat(
+            count(
+                "SELECT count(*) FROM transaction WHERE voided_at IS NULL AND deleted_at IS NULL"
+                    + " AND replaces_transaction_id IS NULL"))
+        .isEqualTo(2);
   }
 
   @Test
@@ -734,9 +908,9 @@ class ImportRollbackControllerTest {
             .isOk();
       }
       case DUPLICATE_IN_ANOTHER_BATCH -> {
-        // The same file again, previewed but not committed: its rows are duplicates of these.
-        ImportBatchResponse preview = upload(THREE_ROWS);
-        assertThat(preview.counts().duplicates()).isEqualTo(3);
+        // The same file again, committed: it left its rows out as duplicates of these.
+        ImportBatchResponse again = commit(upload(THREE_ROWS));
+        assertThat(again.counts().duplicates()).isEqualTo(3);
       }
       case TAX_LOT -> {
         UUID security = UUID.randomUUID();
@@ -753,6 +927,10 @@ class ImportRollbackControllerTest {
             security,
             row);
       }
+      // The state TransferResolutionService#confirmUntracked leaves; only a TRANSFER leg may get
+      // it through the API, which anATransferConfirmedAsUntrackedForcesTheVoid goes through.
+      case TRANSFER_UNTRACKED_CONFIRMED ->
+          execute("UPDATE transaction SET is_internal_transfer = TRUE WHERE id = ?", row);
     }
   }
 
@@ -866,12 +1044,16 @@ class ImportRollbackControllerTest {
   }
 
   private ImportBatchResponse upload(byte[] content) {
+    return upload(content, template);
+  }
+
+  private ImportBatchResponse upload(byte[] content, UUID templateId) {
     HttpHeaders fileHeaders = new HttpHeaders();
     fileHeaders.setContentType(MediaType.parseMediaType("text/csv"));
     fileHeaders.setContentDispositionFormData("file", "statement.csv");
     MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
     body.add("file", new HttpEntity<>(new ByteArrayResource(content), fileHeaders));
-    body.add("templateId", template.toString());
+    body.add("templateId", templateId.toString());
     return client()
         .post()
         .uri(imports())
@@ -1002,13 +1184,23 @@ class ImportRollbackControllerTest {
   }
 
   private ImportTemplateResponse createTemplate() {
+    return createTemplate("Simple", null, Map.of());
+  }
+
+  private ImportTemplateResponse createTemplate(
+      String name, String typeColumn, Map<String, String> typeMapping) {
+    List<String> headers =
+        new ArrayList<>(List.of("Date", "Amount", "Currency", "Text", "Reference"));
+    if (typeColumn != null) {
+      headers.add(typeColumn);
+    }
     return client()
         .post()
         .uri("/api/v1/import-templates")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
             new ImportTemplateRequest(
-                "Simple",
+                name,
                 null,
                 null,
                 ";",
@@ -1032,13 +1224,13 @@ class ImportRollbackControllerTest {
                     "Text",
                     null,
                     "Reference",
-                    null,
+                    typeColumn,
                     null,
                     null,
                     null),
-                Map.of(),
+                typeMapping,
                 null,
-                List.of("Date", "Amount", "Currency", "Text", "Reference"),
+                headers,
                 null,
                 null))
         .exchange()
@@ -1150,6 +1342,10 @@ class ImportRollbackControllerTest {
 
   private static byte[] csv(String... rows) {
     return (HEADER + "\n" + String.join("\n", rows) + "\n").getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static byte[] typedCsv(String... rows) {
+    return (HEADER + ";Type\n" + String.join("\n", rows) + "\n").getBytes(StandardCharsets.UTF_8);
   }
 
   // --- database helpers
