@@ -17,6 +17,7 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -45,18 +46,25 @@ import org.springframework.transaction.annotation.Transactional;
  * batch that is already committed - a retry - is a 409 {@code IMPORT_BATCH_STATE}, never a second
  * import (FR-API-006).
  *
- * <p><b>Stale duplicates (#287).</b> A row the preview found duplicate keeps its ledger row while
- * that row is in effect. Once it is not - a rollback deleted it and cleared the pointer, or it was
- * voided or soft-deleted - the row is checked again with the others: if the ledger holds the
- * booking as another row, the row points there; if not, the row is new and included (it was only
- * left out for being a duplicate) and is imported. As V69 says, a voided row is no duplicate.
+ * <p><b>Stale duplicates (#287).</b> A row the preview found duplicate keeps its booking while the
+ * ledger holds it: the row it points at while that is in effect, or what replaced that row since -
+ * a correction's replacement or a restored void's copy, which the row then points at. Nothing else
+ * may match that ledger row. Once the booking is gone - a rollback deleted the row and cleared the
+ * pointer, or it was voided or soft-deleted for good - the row is checked again with the others,
+ * under the duplicate rules of a fresh import: if the ledger holds the booking as another row, the
+ * row points there; if not, the row is new and included (it was only left out for being a
+ * duplicate) and is imported. As V69 says, a voided row is no duplicate; a soft-deleted row still
+ * reserves its reference, so a row matching it by reference stays its duplicate. Removals,
+ * corrections and restores take this commit's lock on every account they reach before anything else
+ * ({@code TransactionRemovalService}), so none lands between the check and the commit's end.
  */
 @Service
 public class ImportCommitService {
 
   private static final Logger LOG = LoggerFactory.getLogger(ImportCommitService.class);
-  // Per account; a rollback (ImportRollbackService) takes it too, before the batch row like here.
-  static final String LOCK_PREFIX = "import-commit:";
+  // Per account; a rollback (ImportRollbackService) takes it too, before the batch row like here,
+  // and so do a removal, correction or restore (TransactionRemovalService), before the cards.
+  public static final String LOCK_PREFIX = "import-commit:";
 
   private final ImportBatchService batchService;
   private final ImportBatchRepository batchRepository;
@@ -109,19 +117,21 @@ public class ImportCommitService {
     versionPreconditionService.requireCurrent(
         expectedVersion, batch.getVersion(), ImportBatchService.VERSIONED_RESOURCE);
 
-    // Every readable row, in file order. A duplicate whose booking is still in effect keeps it, so
-    // an identical row after it stays new (the multiplicity rule); every other row is checked again
-    // against the rest of the ledger, which may have gained or lost the booking since the preview.
+    // Every readable row, in file order. A duplicate whose booking the ledger still holds keeps it,
+    // so an identical row after it stays new (the multiplicity rule); every other row is checked
+    // again against the rest of the ledger, which may have gained or lost the booking since the
+    // preview.
     List<ImportRowRaw> readable =
         rowRepository.findByImportBatchIdAndParseStatusInOrderByRowNumber(
             batch.getId(), List.of(ImportBatchValues.ROW_PARSED, ImportBatchValues.ROW_DUPLICATE));
-    Set<UUID> held = rowRepository.findDuplicateRowIdsInEffect(batch.getId());
-    Set<UUID> reserved = new HashSet<>();
+    Map<UUID, UUID> held = new HashMap<>();
+    rowRepository
+        .findDuplicateHolds(batch.getId())
+        .forEach(hold -> held.put(hold.getRowId(), hold.getTransactionId()));
+    Set<UUID> reserved = new HashSet<>(held.values());
     List<ParsedImportRow> recheck = new ArrayList<>();
     for (ImportRowRaw row : readable) {
-      if (held.contains(row.getId())) {
-        reserved.add(row.getDuplicateOfTransactionId());
-      } else {
+      if (!held.containsKey(row.getId())) {
         recheck.add(
             ParsedImportRow.parsed(
                 row.getRowNumber(),
@@ -132,21 +142,21 @@ public class ImportCommitService {
     Map<Integer, UUID> nowDuplicates =
         duplicateService.findDuplicates(account.getId(), batch.getSourceKind(), recheck, reserved);
 
-    // #287: a duplicate whose booking the ledger lost (a rollback, a removal) is checked again.
-    // Held as another row, it points there; gone, it is new and included, as it was only left out
-    // for being a duplicate (product owner, 2026-10-13).
+    // #287: a duplicate whose booking a correction or restore moved points at the row holding it
+    // now. One whose booking the ledger lost (a rollback, a removal) was checked again: held as
+    // another row, it points there; gone, it is new and included, as it was only left out for being
+    // a duplicate (product owner, 2026-10-13).
     Set<UUID> becameNew = new HashSet<>();
     List<UUID> repointed = new ArrayList<>();
     List<UUID> repointedTo = new ArrayList<>();
     List<ImportRowRaw> included = new ArrayList<>();
     for (ImportRowRaw row : readable) {
-      UUID now = nowDuplicates.get(row.getRowNumber());
-      boolean stale =
-          ImportBatchValues.ROW_DUPLICATE.equals(row.getParseStatus())
-              && !held.contains(row.getId());
-      if (stale && now == null) {
+      boolean wasDuplicate = ImportBatchValues.ROW_DUPLICATE.equals(row.getParseStatus());
+      UUID holder = held.get(row.getId());
+      UUID now = holder != null ? holder : nowDuplicates.get(row.getRowNumber());
+      if (wasDuplicate && now == null) {
         becameNew.add(row.getId());
-      } else if (stale && !now.equals(row.getDuplicateOfTransactionId())) {
+      } else if (wasDuplicate && !now.equals(row.getDuplicateOfTransactionId())) {
         repointed.add(row.getId());
         repointedTo.add(now);
       }

@@ -1,11 +1,14 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRollbackValues;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -23,8 +26,13 @@ public class ImportRollbackRepository {
   static final String ROLLBACK_SETTING = "app.import_rollback_batch_id";
 
   // The batch statuses before a commit, or instead of one: a duplicate pointer of such a batch only
-  // described its preview.
-  private static final String UNCOMMITTED_STATUSES = "('UPLOADED', 'PARSED', 'DISCARDED')";
+  // described its preview. Every other status - COMMITTED, and ROLLED_BACK/VOIDED, whose excluded
+  // rows stay as the record of what that commit left out - counts for REFERENCED. Both of its
+  // uses share it, so a pointer that does not count is always one deleteTransactions clears.
+  private static final String UNCOMMITTED_STATUSES =
+      Stream.of(ImportBatchValues.UPLOADED, ImportBatchValues.PARSED, ImportBatchValues.DISCARDED)
+          .map(status -> "'" + status + "'")
+          .collect(Collectors.joining(", ", "(", ")"));
 
   private static final String BATCH_ROWS =
       "SELECT t.id FROM transaction t WHERE t.import_batch_id = ?";

@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.ImportDuplicateHold;
 import com.trackmywealth.backend.entity.ImportRowRaw;
 import jakarta.persistence.QueryHint;
 import java.math.BigDecimal;
@@ -7,7 +8,6 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.hibernate.jpa.HibernateHints;
 import org.springframework.data.domain.Page;
@@ -39,18 +39,32 @@ public interface ImportRowRawRepository extends JpaRepository<ImportRowRaw, UUID
       UUID importBatchId, String parseStatus);
 
   /**
-   * The batch's {@code DUPLICATE} rows whose transaction is still in effect - neither voided nor
-   * soft-deleted - when the commit runs (#287). Any other duplicate row lost its booking since the
-   * preview: a rollback cleared its pointer, or the row it pointed at was removed.
+   * The batch's {@code DUPLICATE} rows whose booking the ledger still holds when the commit runs
+   * (#287), each with the row that holds it: the transaction the row points at while that is in
+   * effect - neither voided nor soft-deleted - or else what replaced it since, following a
+   * correction ({@code corrects_transaction_id}) or a restored void ({@code
+   * restores_transaction_id}) to the row in effect now. Each row has at most one successor ({@code
+   * uq_transaction_correction}; a corrected row cannot be restored, nor a voided one corrected).
+   * Any other duplicate row lost its booking since the preview: a rollback cleared its pointer, or
+   * the row it pointed at was removed for good.
    */
   @Query(
       value =
-          "SELECT r.id FROM import_row_raw r JOIN transaction t"
-              + " ON t.id = r.duplicate_of_transaction_id"
+          "WITH RECURSIVE chain (row_id, transaction_id) AS ("
+              + " SELECT r.id, r.duplicate_of_transaction_id FROM import_row_raw r"
               + " WHERE r.import_batch_id = :batchId AND r.parse_status = 'DUPLICATE'"
-              + " AND t.voided_at IS NULL AND t.deleted_at IS NULL",
+              + " AND r.duplicate_of_transaction_id IS NOT NULL"
+              + " UNION ALL"
+              + " SELECT c.row_id, n.id FROM chain c"
+              + " JOIN transaction p ON p.id = c.transaction_id"
+              + " JOIN transaction n"
+              + " ON n.corrects_transaction_id = p.id OR n.restores_transaction_id = p.id"
+              + " WHERE p.voided_at IS NOT NULL OR p.deleted_at IS NOT NULL)"
+              + " SELECT c.row_id AS rowId, c.transaction_id AS transactionId FROM chain c"
+              + " JOIN transaction t ON t.id = c.transaction_id"
+              + " WHERE t.voided_at IS NULL AND t.deleted_at IS NULL",
       nativeQuery = true)
-  Set<UUID> findDuplicateRowIdsInEffect(@Param("batchId") UUID batchId);
+  List<ImportDuplicateHold> findDuplicateHolds(@Param("batchId") UUID batchId);
 
   /**
    * The counts of each of {@code batchIds} that has rows, one array per batch: its id, then total,
