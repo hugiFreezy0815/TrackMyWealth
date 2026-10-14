@@ -611,7 +611,6 @@ class ImportBatchControllerTest {
     byte[] unreferenced =
         ("Date;Amount;Currency;Text;Reference;OriginalAmount;OriginalCurrency;Rate\\n"
                 + "2031-05-06;-55,00;CHF;Reference-free hotel;;-50,00;EUR;0,909091\\n")
-            .replace("\\\\n", "\\n")
             .getBytes(StandardCharsets.UTF_8);
     ImportBatchResponse first =
         upload(token, card, unreferenced, template.id())
