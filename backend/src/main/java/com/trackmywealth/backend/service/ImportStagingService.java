@@ -110,20 +110,26 @@ public class ImportStagingService {
 
     LocalDate today = LocalDate.now(clock);
     UUID settlementSource = rowCheckService.settlementSourceOf(account).orElse(null);
-    // A member with card EDIT permission need not have any access to its payment account.
-    if (settlementSource != null) {
-      Account source = accountRepository.findById(settlementSource).orElse(null);
-      UUID member = accessControlService.requireActingMember(actor);
-      if (source == null
-          || accessControlService
-              .accountsWithAccess(member, List.of(source), AccessLevelValues.BALANCE_ONLY)
-              .isEmpty()) {
-        settlementSource = null;
-      }
-    }
+    // A card can be shared without its payment account. Only an actively visible source can
+    // influence the preview; a missing/revoked one never reaches the payment query.
+    UUID visibleSource =
+        settlementSource == null
+            ? null
+            : accountRepository
+                .findById(settlementSource)
+                .filter(
+                    source ->
+                        !accessControlService
+                            .accountsWithAccess(
+                                accessControlService.requireActingMember(actor),
+                                List.of(source),
+                                AccessLevelValues.BALANCE_ONLY)
+                            .isEmpty())
+                .map(Account::getId)
+                .orElse(null);
     Set<Integer> matched =
         rowCheckService.matchedSettlementRows(
-            settlementSource, account.getNativeCurrency(), checked);
+            visibleSource, account.getNativeCurrency(), checked);
     List<StagedImportRow> staged = new ArrayList<>(checked.size());
     int duplicateCount = 0;
     int errorCount = 0;

@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -210,7 +211,7 @@ public class ImportRowCheckService {
             .map(row -> row.canonical().amount().negate().stripTrailingZeros())
             .distinct()
             .toList();
-    Map<BigDecimal, TreeSet<LocalDate>> datesByAmount = new HashMap<>();
+    Map<BigDecimal, NavigableSet<LocalDate>> datesByAmount = new HashMap<>();
     for (int i = 0; i < amounts.size(); i += PAYMENT_LOOKUP_BATCH_SIZE) {
       for (Object[] payment :
           transactions.findPairablePaymentDatesByAmounts(
@@ -229,7 +230,7 @@ public class ImportRowCheckService {
     Set<Integer> matched = new HashSet<>();
     for (ParsedImportRow row : credits) {
       LocalDate date = row.canonical().bookingDate();
-      TreeSet<LocalDate> dates =
+      NavigableSet<LocalDate> dates =
           datesByAmount.get(row.canonical().amount().negate().stripTrailingZeros());
       if (dates != null) {
         LocalDate first = dates.ceiling(date.minusDays(SettlementDetectionService.WINDOW_DAYS));

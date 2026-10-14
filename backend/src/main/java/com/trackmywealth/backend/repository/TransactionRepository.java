@@ -23,6 +23,7 @@ import org.springframework.stereotype.Repository;
 public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
   String ACCOUNT_ID = "accountId";
+  String CURRENCY = "currency";
   String ACCOUNT_IDS = "accountIds";
   String AS_OF = "asOf";
   String AFTER = "after";
@@ -388,7 +389,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + IN_LEDGER_ORDER)
   List<Transaction> findPairablePayments(
       @Param(ACCOUNT_ID) UUID accountId,
-      @Param("currency") String currency,
+      @Param(CURRENCY) String currency,
       @Param(TYPES) Collection<String> types,
       @Param("amount") BigDecimal amount,
       @Param(FROM) LocalDate from,
@@ -408,7 +409,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + " and m.cardTransaction is not null and m.paymentTransaction = t)")
   List<Object[]> findPairablePaymentDatesByAmounts(
       @Param(ACCOUNT_ID) UUID accountId,
-      @Param("currency") String currency,
+      @Param(CURRENCY) String currency,
       @Param(TYPES) Collection<String> types,
       @Param("amounts") Collection<BigDecimal> amounts,
       @Param(FROM) LocalDate from,
@@ -442,7 +443,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   List<Transaction> findPaymentsEqualToCardBalance(
       @Param("sourceAccountId") UUID sourceAccountId,
       @Param("cardAccountId") UUID cardAccountId,
-      @Param("currency") String currency,
+      @Param(CURRENCY) String currency,
       @Param(TYPES) Collection<String> types,
       @Param("since") LocalDate since);
 
@@ -457,7 +458,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + " and m.cardTransaction = t)"
           + IN_LEDGER_ORDER)
   List<Transaction> findUnmatchedCardCredits(
-      @Param(ACCOUNT_ID) UUID accountId, @Param("currency") String currency);
+      @Param(ACCOUNT_ID) UUID accountId, @Param(CURRENCY) String currency);
 
   /**
    * Signed sum per booking date and currency of {@code types} rows booked in [{@code from}, {@code
