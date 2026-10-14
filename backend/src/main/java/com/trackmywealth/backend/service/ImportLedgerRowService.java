@@ -75,19 +75,12 @@ public class ImportLedgerRowService {
    * and banks quote it either way round; it stays in the row's source data.
    */
   public CreateTransactionRequest request(CanonicalImportRow row) {
-    boolean originalPurchase =
-        "CREDIT_CARD_PURCHASE".equals(row.transactionType())
-            && row.amount().signum() != 0
-            && row.originalAmount() != null
-            && row.originalCurrency() != null
-            && !row.originalCurrency().equals(row.currency());
+    boolean originalPurchase = isOriginalCurrencyPurchase(row);
     return new CreateTransactionRequest(
         row.transactionType(),
         row.bookingDate(),
-        originalPurchase
-            ? row.originalAmount().abs().multiply(BigDecimal.valueOf(row.amount().signum()))
-            : row.amount(),
-        originalPurchase ? row.originalCurrency() : row.currency(),
+        ledgerAmount(row),
+        ledgerCurrency(row),
         merchantDescription(row),
         row.mcc(),
         row.notes(),
@@ -104,6 +97,25 @@ public class ImportLedgerRowService {
         null,
         null,
         null);
+  }
+
+  /** The ledger amount and currency, shared with duplicate matching for foreign card purchases. */
+  public static boolean isOriginalCurrencyPurchase(CanonicalImportRow row) {
+    return "CREDIT_CARD_PURCHASE".equals(row.transactionType())
+        && row.amount().signum() != 0
+        && row.originalAmount() != null
+        && row.originalCurrency() != null
+        && !row.originalCurrency().equals(row.currency());
+  }
+
+  public static BigDecimal ledgerAmount(CanonicalImportRow row) {
+    return isOriginalCurrencyPurchase(row)
+        ? row.originalAmount().abs().multiply(BigDecimal.valueOf(row.amount().signum()))
+        : row.amount();
+  }
+
+  public static String ledgerCurrency(CanonicalImportRow row) {
+    return isOriginalCurrencyPurchase(row) ? row.originalCurrency() : row.currency();
   }
 
   /** The text the row's ledger entry is described by, and the duplicate rule compares. */
@@ -132,6 +144,21 @@ public class ImportLedgerRowService {
     }
     if (row.iso20022BankTransactionCode() != null) {
       data.put(BANK_TRANSACTION_CODE_KEY, row.iso20022BankTransactionCode());
+    }
+    // The issuer's printed quote may be rounded or reciprocal. Preserve that exact
+    // value for audit; the ledger's effective conversion derives from the billed amount.
+    if (row.bankExchangeRate() != null) {
+      data.put("issuerQuotedFxRate", row.bankExchangeRate().toPlainString());
+    }
+    if (row.originalAmount() != null) {
+      data.put("issuerOriginalAmount", row.originalAmount().toPlainString());
+    }
+    if (row.originalCurrency() != null) {
+      data.put("issuerOriginalCurrency", row.originalCurrency());
+    }
+    if (isOriginalCurrencyPurchase(row)) {
+      data.put("issuerBilledAmount", row.amount().toPlainString());
+      data.put("issuerBilledCurrency", row.currency());
     }
     ObjectNode cells = data.putObject(CELLS_KEY);
     rawData.forEach(cells::put);

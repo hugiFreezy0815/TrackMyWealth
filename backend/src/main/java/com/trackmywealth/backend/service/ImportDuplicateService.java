@@ -170,8 +170,8 @@ public class ImportDuplicateService {
   private static String key(CanonicalImportRow row) {
     return key(
         row.bookingDate(),
-        row.amount().stripTrailingZeros().toPlainString(),
-        row.currency(),
+        ImportLedgerRowService.ledgerAmount(row).stripTrailingZeros().toPlainString(),
+        ImportLedgerRowService.ledgerCurrency(row),
         ImportLedgerRowService.merchantDescription(row));
   }
 
