@@ -946,6 +946,48 @@ class ImportRollbackControllerTest {
         .isNull();
   }
 
+
+  @Test
+  void excludingOneOfTwoNewRowsDoesNotConsumeItsOnlyLaterDuplicate() {
+    byte[] sameBooking =
+        csv("2019-01-05;-3.50;CHF;Coffee;", "2019-01-05;-3.50;CHF;Coffee;");
+    ImportBatchResponse preview = upload(sameBooking);
+    ImportBatchResponse excluded = include(preview, 1, false);
+    UUID existing = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+
+    List<ImportRowResponse> shown = previewRows(preview.id(), "");
+    assertThat(shown)
+        .extracting(
+            ImportRowResponse::status,
+            ImportRowResponse::included,
+            ImportRowResponse::duplicateOfTransactionId)
+        .containsExactly(
+            tuple("PARSED", false, null),
+            tuple("DUPLICATE", false, existing));
+    assertThat(summaryOf(preview.id()).counts().included()).isZero();
+    assertThat(commitAsPreviewed(excluded).counts().imported()).isZero();
+    assertThat(liveBookings()).isEqualTo(1);
+  }
+
+  @Test
+  void explicitlyIncludingAnExcludedRowNowHeldInLedgerSurvivesCommit() {
+    ImportBatchResponse preview = upload(csv("2019-01-05;-3.50;CHF;Coffee;"));
+    ImportBatchResponse excluded = include(preview, 1, false);
+    UUID existing = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+
+    ImportBatchResponse forced = include(excluded, 1, true);
+
+    assertThat(forced.counts().included()).isEqualTo(1);
+    assertThat(forced.counts().duplicates()).isEqualTo(1);
+    ImportRowResponse shown = previewRows(preview.id(), "").get(0);
+    assertThat(shown.status()).isEqualTo("DUPLICATE");
+    assertThat(shown.included()).isTrue();
+    assertThat(shown.duplicateOfTransactionId()).isEqualTo(existing);
+    assertThat(shown.recheck()).isNull();
+    assertThat(commitAsPreviewed(forced).counts().imported()).isEqualTo(1);
+    assertThat(liveBookings()).isEqualTo(2);
+  }
+
   @Test
   void includingARowAsThePreviewShowsItAlreadyChangesNothing() {
     ImportBatchResponse batch = importFile(THREE_ROWS);
