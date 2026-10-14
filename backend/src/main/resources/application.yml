@@ -119,6 +119,14 @@ app:
     # discarded. Each keeps its file (up to 5 MB) in the database until then; one more upload is a
     # 409 IMPORT_TOO_MANY_OPEN_BATCHES.
     max-open-batches-per-account: ${IMPORT_MAX_OPEN_BATCHES:20}
+    # US-07-10: the server key the account identifiers (IBAN, masked card number) are hashed
+    # under, per workspace (HMAC-SHA256); only the hash and a masked display value are stored.
+    # Base64 of at least 32 random bytes, e.g. `openssl rand -base64 32`; deployment configuration,
+    # never checked into source, and backed up with the database. Empty: identification is off
+    # (registering an identifier is a 503, imports are not matched). There is no placeholder: a
+    # public key would let anyone recompute the hash of every IBAN. Changing it invalidates every
+    # registered identifier: register them again. A malformed key fails the start.
+    account-identifier-key: ${IMPORT_ACCOUNT_IDENTIFIER_KEY:}
     # #276: OCR of scanned PDF statements (template file format PDF_OCR) runs a local Tesseract
     # process; the Docker image installs it with these language models. Off until #276 adds a
     # confidence threshold: a misread digit is still a valid amount, and nothing would flag it.

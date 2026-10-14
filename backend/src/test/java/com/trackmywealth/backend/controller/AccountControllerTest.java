@@ -427,7 +427,7 @@ class AccountControllerTest {
         .put()
         .uri("/api/v1/accounts/" + created.id())
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new UpdateAccountRequest("Missing Version", "CASH", "CHF", null, null, null, null))
+        .body(new UpdateAccountRequest("Missing Version", "CASH", "CHF", null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.PRECONDITION_REQUIRED)
@@ -447,7 +447,7 @@ class AccountControllerTest {
         updateAccount(
                 token,
                 readByBothClients.id(),
-                new UpdateAccountRequest("First Writer", "CASH", "CHF", null, null, null, null),
+                new UpdateAccountRequest("First Writer", "CASH", "CHF", null, null, null),
                 versionReadByBoth)
             .expectStatus()
             .isOk()
@@ -460,7 +460,7 @@ class AccountControllerTest {
     updateAccount(
             token,
             readByBothClients.id(),
-            new UpdateAccountRequest("Stale Writer", "CASH", "CHF", null, null, null, null),
+            new UpdateAccountRequest("Stale Writer", "CASH", "CHF", null, null, null),
             versionReadByBoth)
         .expectStatus()
         .isEqualTo(HttpStatus.PRECONDITION_FAILED)
@@ -484,7 +484,7 @@ class AccountControllerTest {
     updateAccount(
             token,
             created.id(),
-            new UpdateAccountRequest("Everyday Checking", "SAVINGS", "CHF", null, null, null, null))
+            new UpdateAccountRequest("Everyday Checking", "SAVINGS", "CHF", null, null, null))
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
@@ -505,7 +505,7 @@ class AccountControllerTest {
     updateAccount(
             token,
             created.id(),
-            new UpdateAccountRequest("Everyday Checking", "CASH", "EUR", null, null, null, null))
+            new UpdateAccountRequest("Everyday Checking", "CASH", "EUR", null, null, null))
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
@@ -526,13 +526,7 @@ class AccountControllerTest {
                 token,
                 created.id(),
                 new UpdateAccountRequest(
-                    "Renamed Checking",
-                    "CASH",
-                    "CHF",
-                    "**** 1234",
-                    "CH",
-                    LocalDate.of(2020, 1, 1),
-                    null))
+                    "Renamed Checking", "CASH", "CHF", "CH", LocalDate.of(2020, 1, 1), null))
             .expectStatus()
             .isOk()
             .expectBody(AccountSummaryResponse.class)
@@ -549,7 +543,9 @@ class AccountControllerTest {
       statement.setObject(1, created.id());
       try (ResultSet rs = statement.executeQuery()) {
         assertThat(rs.next()).isTrue();
-        assertThat(rs.getString("identifier_masked")).isEqualTo("**** 1234");
+        assertThat(rs.getString("identifier_masked"))
+            .as("US-07-10: only the identifier endpoint writes it, never as free text")
+            .isNull();
         assertThat(rs.getString("jurisdiction")).isEqualTo("CH");
         assertThat(rs.getObject("opened_at", LocalDate.class)).isEqualTo(LocalDate.of(2020, 1, 1));
       }
@@ -564,7 +560,7 @@ class AccountControllerTest {
         .put()
         .uri("/api/v1/accounts/" + UUID.randomUUID())
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new UpdateAccountRequest("Name", "CASH", "CHF", null, null, null, null))
+        .body(new UpdateAccountRequest("Name", "CASH", "CHF", null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);

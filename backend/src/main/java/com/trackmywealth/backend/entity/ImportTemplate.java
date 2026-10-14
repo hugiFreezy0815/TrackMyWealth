@@ -112,6 +112,10 @@ public class ImportTemplate {
   @Column(name = "row_filter", columnDefinition = JSONB, updatable = false)
   private String rowFilter;
 
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "account_identifier_rule", columnDefinition = JSONB, updatable = false)
+  private String accountIdentifierRule;
+
   @Column(name = "account_identification_strategy", nullable = false, updatable = false)
   private String accountIdentificationStrategy;
 
@@ -330,6 +334,14 @@ public class ImportTemplate {
 
   public void setRowFilter(String rowFilter) {
     this.rowFilter = rowFilter;
+  }
+
+  public String getAccountIdentifierRule() {
+    return accountIdentifierRule;
+  }
+
+  public void setAccountIdentifierRule(String accountIdentifierRule) {
+    this.accountIdentifierRule = accountIdentifierRule;
   }
 
   public String getAccountIdentificationStrategy() {

@@ -92,4 +92,24 @@ public final class ImportBatchValues {
   public static final String WARNING_BEFORE_OPENING_BALANCE = "IMPORT_ROW_BEFORE_OPENING_BALANCE";
 
   private ImportBatchValues() {}
+
+  // --- US-07-10: what the file says about its account (import_batch.account_identification) ---
+
+  /** The file names the batch's account. */
+  public static final String IDENTIFIED_MATCHED = "MATCHED";
+
+  /** The file's masked card number fits the batch's account; masked digits always need a yes. */
+  public static final String IDENTIFIED_MATCHED_MASKED = "MATCHED_MASKED";
+
+  /** The file names another account the member may import into: {@code proposedAccountId}. */
+  public static final String IDENTIFIED_OTHER_ACCOUNT = "OTHER_ACCOUNT";
+
+  /** The file names an account that is not registered, or not one the member may import into. */
+  public static final String IDENTIFIED_NO_MATCH = "NO_MATCH";
+
+  /** The file names no identifier the template's rule can read, or several different ones. */
+  public static final String IDENTIFIED_NOT_FOUND = "NOT_FOUND";
+
+  /** Account identification is not configured on this server. */
+  public static final String IDENTIFIED_UNAVAILABLE = "UNAVAILABLE";
 }

@@ -981,7 +981,7 @@ class SharingGrantControllerTest {
 
   private UpdateAccountRequest updateRequestBody(AccountSummaryResponse account) {
     return new UpdateAccountRequest(
-        account.name(), account.accountType(), account.nativeCurrency(), null, null, null, null);
+        account.name(), account.accountType(), account.nativeCurrency(), null, null, null);
   }
 
   private RestTestClient.ResponseSpec revokeWith(String token, UUID grantId, String ifMatch) {

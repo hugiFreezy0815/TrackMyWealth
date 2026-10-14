@@ -46,6 +46,18 @@ public class ImportBatch {
   @Column(name = "template_version_used")
   private String templateVersionUsed;
 
+  @Column(name = "account_identification")
+  private String accountIdentification;
+
+  @Column(name = "proposed_account_id")
+  private UUID proposedAccountId;
+
+  @Column(name = "account_confirmation_required", nullable = false)
+  private boolean accountConfirmationRequired;
+
+  @Column(name = "account_confirmed", nullable = false)
+  private boolean accountConfirmed;
+
   @Column(name = "source_file_name", updatable = false)
   private String sourceFileName;
 
@@ -139,6 +151,38 @@ public class ImportBatch {
 
   public void setTemplateVersionUsed(String templateVersionUsed) {
     this.templateVersionUsed = templateVersionUsed;
+  }
+
+  public String getAccountIdentification() {
+    return accountIdentification;
+  }
+
+  public void setAccountIdentification(String accountIdentification) {
+    this.accountIdentification = accountIdentification;
+  }
+
+  public UUID getProposedAccountId() {
+    return proposedAccountId;
+  }
+
+  public void setProposedAccountId(UUID proposedAccountId) {
+    this.proposedAccountId = proposedAccountId;
+  }
+
+  public boolean isAccountConfirmationRequired() {
+    return accountConfirmationRequired;
+  }
+
+  public void setAccountConfirmationRequired(boolean accountConfirmationRequired) {
+    this.accountConfirmationRequired = accountConfirmationRequired;
+  }
+
+  public boolean isAccountConfirmed() {
+    return accountConfirmed;
+  }
+
+  public void setAccountConfirmed(boolean accountConfirmed) {
+    this.accountConfirmed = accountConfirmed;
   }
 
   public String getSourceFileName() {

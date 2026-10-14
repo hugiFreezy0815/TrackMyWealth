@@ -242,7 +242,6 @@ public class AccountService {
     account.setName(request.name());
     account.setAccountType(request.accountType());
     account.setNativeCurrency(request.nativeCurrency());
-    account.setIdentifierMasked(request.identifierMasked());
     account.setJurisdiction(request.jurisdiction());
     account.setOpenedAt(request.openedAt());
     account.setClosedAt(request.closedAt());

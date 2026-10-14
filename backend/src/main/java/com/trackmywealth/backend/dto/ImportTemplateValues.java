@@ -51,6 +51,28 @@ public final class ImportTemplateValues {
 
   public static final String ACCOUNT_USER_SELECTED = "USER_SELECTED";
 
+  /** US-07-10: the account identifier is on a labelled line before the header row. */
+  public static final String ACCOUNT_PREAMBLE_LINE = "PREAMBLE_LINE";
+
+  /** US-07-10: the account identifier is in a mapped column of every booking row. */
+  public static final String ACCOUNT_COLUMN = "COLUMN";
+
+  /**
+   * The account identification strategies a template may use. {@code FILENAME} is not one: a file
+   * name is renamed too easily to identify an account.
+   */
+  public static final Set<String> ACCOUNT_STRATEGIES =
+      Set.of(ACCOUNT_USER_SELECTED, ACCOUNT_PREAMBLE_LINE, ACCOUNT_COLUMN);
+
+  /** An IBAN (US-07-10). */
+  public static final String IDENTIFIER_IBAN = "IBAN";
+
+  /** A card number masked except for at most its first 6 and its last 4 digits (US-07-10). */
+  public static final String IDENTIFIER_MASKED_CARD = "MASKED_CARD";
+
+  public static final Set<String> IDENTIFIER_KINDS =
+      Set.of(IDENTIFIER_IBAN, IDENTIFIER_MASKED_CARD);
+
   public static final String ENCODING_UTF_8 = "UTF-8";
   public static final String ENCODING_ISO_8859_1 = "ISO-8859-1";
   public static final String ENCODING_WINDOWS_1252 = "windows-1252";

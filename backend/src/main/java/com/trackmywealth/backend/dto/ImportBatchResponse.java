@@ -11,7 +11,9 @@ import java.util.UUID;
  * first, only in the answer to an upload that could not pick one by itself; it is empty otherwise.
  * {@code sameFileImportedIn} is set when this exact file was committed to the account before.
  * {@code rolledBackAt} and {@code rollbackReason} are set once the batch is {@code ROLLED_BACK} or
- * {@code VOIDED} (US-07-05). {@code version} is the batch's {@code If-Match} revision (ADR 0004).
+ * {@code VOIDED} (US-07-05). {@code accountIdentification} is what the file says about its account
+ * (US-07-10), {@code null} unless its template identifies accounts. {@code version} is the batch's
+ * {@code If-Match} revision (ADR 0004).
  */
 public record ImportBatchResponse(
     UUID id,
@@ -29,6 +31,7 @@ public record ImportBatchResponse(
     OffsetDateTime committedAt,
     OffsetDateTime rolledBackAt,
     String rollbackReason,
+    ImportIdentificationResponse accountIdentification,
     int version) {
 
   public ImportBatchResponse {

@@ -1,7 +1,9 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
+import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfBookingLine;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
@@ -39,6 +41,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -88,6 +91,9 @@ public class ImportFileParserService {
   private static final int MAX_RATE_INTEGER_DIGITS = 10;
   private static final int MAX_RATE_FRACTION_DIGITS = 10;
   private static final Pattern COLUMN_INDEX = Pattern.compile("\\d{1,4}");
+  private static final Pattern LINE_BREAK = Pattern.compile("\\r\\n|\\r|\\n");
+  // After a preamble label: a colon or other separator before the identifier.
+  private static final Pattern LABEL_SEPARATOR = Pattern.compile("^[\\s:;=-]+");
   private static final Pattern DIGITS = Pattern.compile("\\d+");
   private static final Pattern MCC = Pattern.compile("\\d{4}");
   private static final LocalDate DATE_PROBE = LocalDate.of(2024, 12, 31);
@@ -96,6 +102,10 @@ public class ImportFileParserService {
   private static final String ARG_COLUMN = "column";
   private static final String DESCRIPTION_TYPE_PATTERNS = "descriptionTypePatterns";
   private static final int MAX_ROW_FILTER_COLUMN_LENGTH = 200;
+  private static final int MAX_IDENTIFIER_LABEL_LENGTH = 100;
+  private static final String ACCOUNT_IDENTIFIER = "accountIdentifier";
+  private static final int IDENTIFIER_GROUPS = 1;
+  private static final String IDENTIFIER_COLUMN_FIELD = ACCOUNT_IDENTIFIER + ".column";
   private static final int MAX_ROW_FILTER_VALUE_LENGTH = 100;
   private static final String ARG_VALUE = "value";
   private static final String ARG_CURRENCY_COLUMN = "currencyColumn";
@@ -145,6 +155,8 @@ public class ImportFileParserService {
     List<List<String>> data;
     // #268: a PDF's booking lines, cut into the layout's named columns; null for a CSV file.
     List<ImportPdfBookingLine> bookingLines = null;
+    // US-07-10: a CSV file's lines before its header row, cells joined by a space.
+    List<String> preamble = List.of();
     if (template.isPdf()) {
       header = template.pdfLayout().cellNames();
       bookingLines = pdfReader.readBookingLines(content, template);
@@ -157,6 +169,7 @@ public class ImportFileParserService {
       header = headerOf(records, template);
       data = dataRecordsOf(records, template);
       requireDecodable(template.hasHeaderRow() ? header : data.get(0));
+      preamble = preambleLines(content, records, template);
     }
     Map<String, Integer> columns = resolveColumns(template, header);
     List<String> keys = rawDataKeys(header);
@@ -261,7 +274,11 @@ public class ImportFileParserService {
           rows.size(),
           rejected);
     }
-    return new ImportParseResult(header, fileFingerprint(template, header, bookingLines), rows);
+    return new ImportParseResult(
+        header,
+        fileFingerprint(template, header, bookingLines),
+        rows,
+        accountIdentifier(template, preamble, data, header));
   }
 
   // The fingerprint of the header the file holds: a CSV file's header row; for a PDF, its layout's
@@ -343,6 +360,12 @@ public class ImportFileParserService {
         && !missing.contains(template.rowFilter().column())) {
       missing.add(template.rowFilter().column());
     }
+    String identifierColumn = identifierColumn(template);
+    if (identifierColumn != null
+        && columnIndex(identifierColumn, header) < 0
+        && !missing.contains(identifierColumn)) {
+      missing.add(identifierColumn);
+    }
     return missing;
   }
 
@@ -401,9 +424,11 @@ public class ImportFileParserService {
     if (!ImportTemplateValues.CLASS_CASH_TRANSACTIONS.equals(template.templateClass())) {
       throw unsupported("Only cash transaction templates can be imported so far.");
     }
-    if (!ImportTemplateValues.ACCOUNT_USER_SELECTED.equals(
+    if (!ImportTemplateValues.ACCOUNT_STRATEGIES.contains(
         template.accountIdentificationStrategy())) {
-      throw unsupported("The account is selected at upload; other strategies are not supported.");
+      throw unsupported(
+          "The account is selected at upload, or identified by a preamble line or a column; a file"
+              + " name does not identify an account.");
     }
     if (!ImportTemplateValues.FILE_FORMATS.contains(template.fileFormat())) {
       throw invalid(
@@ -437,6 +462,8 @@ public class ImportFileParserService {
     validateTypeMapping(template.typeMapping());
     validateDescriptionPatterns(template);
     validateRowFilter(
+        template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
+    validateAccountIdentifier(
         template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
   }
 
@@ -674,6 +701,70 @@ public class ImportFileParserService {
     }
   }
 
+  // US-07-10: a PREAMBLE_LINE or COLUMN template says where its files name their account.
+  private static void validateAccountIdentifier(
+      ImportTemplateDefinition template, List<String> headerColumns) {
+    ImportAccountIdentifierRule rule = template.accountIdentifier();
+    String strategy = template.accountIdentificationStrategy();
+    if (ImportTemplateValues.ACCOUNT_USER_SELECTED.equals(strategy)) {
+      if (rule != null) {
+        throw invalid(ACCOUNT_IDENTIFIER, "Only a PREAMBLE_LINE or COLUMN template has this rule.");
+      }
+      return;
+    }
+    if (rule == null) {
+      throw invalid(ACCOUNT_IDENTIFIER, "Say where the file names its account.");
+    }
+    if (!ImportTemplateValues.IDENTIFIER_KINDS.contains(rule.kind())) {
+      throw invalid(ACCOUNT_IDENTIFIER + ".kind", "The identifier is an IBAN or a MASKED_CARD.");
+    }
+    if (ImportTemplateValues.ACCOUNT_PREAMBLE_LINE.equals(strategy)) {
+      if (template.isPdf()) {
+        throw invalid(
+            "accountIdentificationStrategy", "Only a CSV file has preamble lines to read.");
+      }
+      if (template.preambleRowCount() == 0 && template.headerRowIndex() <= 0) {
+        throw invalid(
+            "accountIdentificationStrategy",
+            "The template has no lines before its header row to find the identifier in.");
+      }
+      if (rule.label() == null
+          || rule.label().isBlank()
+          || rule.label().length() > MAX_IDENTIFIER_LABEL_LENGTH) {
+        throw invalid(
+            ACCOUNT_IDENTIFIER + ".label",
+            "Give the text the identifier's line starts with, at most "
+                + MAX_IDENTIFIER_LABEL_LENGTH
+                + " characters.");
+      }
+      if (rule.pattern() != null
+          && patternGroups(rule.pattern(), ACCOUNT_IDENTIFIER + ".pattern") != IDENTIFIER_GROUPS) {
+        throw invalid(
+            ACCOUNT_IDENTIFIER + ".pattern", "The pattern needs exactly one capture group.");
+      }
+      if (rule.column() != null) {
+        throw invalid(IDENTIFIER_COLUMN_FIELD, "A preamble line rule has no column.");
+      }
+      return;
+    }
+    String column = rule.column();
+    if (column == null || column.isBlank() || column.length() > MAX_ROW_FILTER_COLUMN_LENGTH) {
+      throw invalid(IDENTIFIER_COLUMN_FIELD, "Name the column holding the identifier.");
+    }
+    if (!template.hasHeaderRow() && !COLUMN_INDEX.matcher(column).matches()) {
+      throw invalid(IDENTIFIER_COLUMN_FIELD, "Without a header row, use a 0-based index.");
+    }
+    if (headerColumns != null
+        && template.hasHeaderRow()
+        && columnIndex(column, headerColumns) < 0) {
+      throw invalid(
+          IDENTIFIER_COLUMN_FIELD, "The header has no unique matching identifier column.");
+    }
+    if (rule.label() != null || rule.pattern() != null) {
+      throw invalid(ACCOUNT_IDENTIFIER, "A column rule has no label or pattern.");
+    }
+  }
+
   private static void validateRowFilter(
       ImportTemplateDefinition template, List<String> headerColumns) {
     ImportRowFilter filter = template.rowFilter();
@@ -906,6 +997,13 @@ public class ImportFileParserService {
         && !missing.contains(filter.column())) {
       missing.add(filter.column());
     }
+    // US-07-10: so is a COLUMN template's identifier column.
+    String identifierColumn = identifierColumn(template);
+    if (identifierColumn != null
+        && indexOf(template, identifierColumn, header) < 0
+        && !missing.contains(identifierColumn)) {
+      missing.add(identifierColumn);
+    }
     if (!missing.isEmpty()) {
       throw fileError(
               ApiErrorCode.IMPORT_TEMPLATE_MISMATCH,
@@ -920,6 +1018,99 @@ public class ImportFileParserService {
     return template.rowFilter() == null
         ? null
         : indexOf(template, template.rowFilter().column(), header);
+  }
+
+  // US-07-10: a COLUMN template's identifier column; null for any other.
+  private static String identifierColumn(ImportTemplateDefinition template) {
+    return ImportTemplateValues.ACCOUNT_COLUMN.equals(template.accountIdentificationStrategy())
+            && template.accountIdentifier() != null
+        ? template.accountIdentifier().column()
+        : null;
+  }
+
+  // US-07-10: the account identifier the file names, per the template's rule; null for a template
+  // whose account is selected at upload. Only ever matched against the accounts' keyed hashes.
+  private static ImportFileAccountIdentifier accountIdentifier(
+      ImportTemplateDefinition template,
+      List<String> preamble,
+      List<List<String>> data,
+      List<String> header) {
+    ImportAccountIdentifierRule rule = template.accountIdentifier();
+    if (rule == null) {
+      return null;
+    }
+    String value =
+        ImportTemplateValues.ACCOUNT_PREAMBLE_LINE.equals(template.accountIdentificationStrategy())
+            ? preambleIdentifier(rule, preamble)
+            : columnIdentifier(rule, data, indexOf(template, rule.column(), header));
+    return new ImportFileAccountIdentifier(rule.kind(), value);
+  }
+
+  // The first preamble line starting with the label; the rest of it, or the pattern's group in it.
+  private static String preambleIdentifier(
+      ImportAccountIdentifierRule rule, List<String> preamble) {
+    String label = rule.label().strip().toLowerCase(Locale.ROOT);
+    Optional<String> line =
+        preamble.stream()
+            .map(String::strip)
+            .filter(text -> text.toLowerCase(Locale.ROOT).startsWith(label))
+            .findFirst();
+    if (line.isEmpty()) {
+      return null;
+    }
+    String rest = LABEL_SEPARATOR.matcher(line.get().substring(label.length())).replaceFirst("");
+    if (rule.pattern() != null) {
+      com.google.re2j.Matcher matcher = Re2Patterns.compile(rule.pattern()).matcher(rest);
+      rest = matcher.find() && matcher.group(1) != null ? matcher.group(1) : "";
+    }
+    return AccountIdentifierService.normalize(rest, rule.kind()).orElse(null);
+  }
+
+  // Every filled cell of the column must name the same identifier; any other is none at all.
+  private static String columnIdentifier(
+      ImportAccountIdentifierRule rule, List<List<String>> data, int index) {
+    Set<String> found = new HashSet<>();
+    for (List<String> record : data) {
+      String cell = index < record.size() ? record.get(index).strip() : "";
+      if (cell.isEmpty()) {
+        continue;
+      }
+      Optional<String> normalized = AccountIdentifierService.normalize(cell, rule.kind());
+      if (normalized.isEmpty()) {
+        return null;
+      }
+      found.add(normalized.get());
+    }
+    return found.size() == 1 ? found.iterator().next() : null;
+  }
+
+  // A CSV file's lines before its header row: the skipped preamble lines and the records before the
+  // header row, each line's cells joined by a space.
+  private static List<String> preambleLines(
+      byte[] content, List<List<String>> records, ImportTemplateDefinition template) {
+    List<String> lines = new ArrayList<>();
+    String text = decode(content, template.encoding());
+    String[] raw = LINE_BREAK.split(text, template.preambleRowCount() + 1);
+    for (int i = 0; i < Math.min(template.preambleRowCount(), raw.length); i++) {
+      lines.add(String.join(" ", cellsOf(raw[i], template)));
+    }
+    int headerRow = template.hasHeaderRow() ? template.headerRowIndex() : 0;
+    for (int i = 0; i < Math.min(headerRow, records.size()); i++) {
+      lines.add(String.join(" ", records.get(i)));
+    }
+    return lines;
+  }
+
+  // One raw line's cells by the template's delimiter; the line as it is when it is no CSV record.
+  private static List<String> cellsOf(String line, ImportTemplateDefinition template) {
+    CSVFormat format =
+        CSVFormat.RFC4180.builder().setDelimiter(template.delimiter().charAt(0)).get();
+    try (CSVParser parser = CSVParser.parse(line, format)) {
+      List<CSVRecord> parsed = parser.getRecords();
+      return parsed.isEmpty() ? List.of() : parsed.get(0).toList();
+    } catch (IOException | UncheckedIOException e) {
+      return List.of(line);
+    }
   }
 
   // A column of the template: by header text or index, or by index in a headerless file.

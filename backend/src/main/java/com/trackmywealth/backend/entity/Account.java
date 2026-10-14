@@ -87,6 +87,9 @@ public class Account {
   @Column(name = "counts_as_saving", nullable = false)
   private boolean countsAsSaving;
 
+  @Column(name = "identifier_hash", length = 64)
+  private String identifierHash;
+
   @Column(name = "identifier_masked")
   private String identifierMasked;
 
@@ -249,6 +252,14 @@ public class Account {
 
   public void setArchivedAt(OffsetDateTime archivedAt) {
     this.archivedAt = archivedAt;
+  }
+
+  public String getIdentifierHash() {
+    return identifierHash;
+  }
+
+  public void setIdentifierHash(String identifierHash) {
+    this.identifierHash = identifierHash;
   }
 
   public String getIdentifierMasked() {
