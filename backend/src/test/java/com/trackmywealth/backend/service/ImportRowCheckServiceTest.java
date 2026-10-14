@@ -18,6 +18,7 @@ import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Workspace;
+import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -39,25 +40,20 @@ class ImportRowCheckServiceTest {
 
   private final TransactionService transactionService = mock(TransactionService.class);
   private final FxRateService fxRateService = mock(FxRateService.class);
+  private final AccountCreditCardRepository creditCards = mock(AccountCreditCardRepository.class);
+  private final TransactionRepository repository = mock(TransactionRepository.class);
   private final ImportRowCheckService service =
       new ImportRowCheckService(
           transactionService,
           fxRateService,
           new ImportLedgerRowService(JsonMapper.builder().build()),
-          SOURCE);
+          SOURCE,
+          creditCards,
+          repository);
   private final Account account = account();
 
   @Test
   void oneSourcePaymentCannotMatchTwoCardSettlements() {
-    TransactionRepository repository = mock(TransactionRepository.class);
-    ImportRowCheckService checker =
-        new ImportRowCheckService(
-            transactionService,
-            fxRateService,
-            new ImportLedgerRowService(JsonMapper.builder().build()),
-            SOURCE,
-            null,
-            repository);
     UUID source = UUID.randomUUID();
     when(repository.findPairablePaymentDatesByAmounts(
             eq(source), eq("EUR"), any(), any(), any(), any()))
@@ -82,20 +78,11 @@ class ImportRowCheckServiceTest {
                             null,
                             null)))
             .toList();
-    assertThat(checker.matchedSettlementRows(source, "EUR", rows)).containsExactly(1);
+    assertThat(service.matchedSettlementRows(source, "EUR", rows)).containsExactly(1);
   }
 
   @Test
   void twoPaymentsOnSameDateCanMatchTwoSettlements() {
-    TransactionRepository repository = mock(TransactionRepository.class);
-    ImportRowCheckService checker =
-        new ImportRowCheckService(
-            transactionService,
-            fxRateService,
-            new ImportLedgerRowService(JsonMapper.builder().build()),
-            SOURCE,
-            null,
-            repository);
     UUID source = UUID.randomUUID();
     when(repository.findPairablePaymentDatesByAmounts(
             eq(source), eq("EUR"), any(), any(), any(), any()))
@@ -123,20 +110,11 @@ class ImportRowCheckServiceTest {
                             null,
                             null)))
             .toList();
-    assertThat(checker.matchedSettlementRows(source, "EUR", rows)).containsExactly(1, 2);
+    assertThat(service.matchedSettlementRows(source, "EUR", rows)).containsExactly(1, 2);
   }
 
   @Test
   void settlementPreviewBatchesThousandsOfRowsInsteadOfQueryingOncePerRow() {
-    TransactionRepository repository = mock(TransactionRepository.class);
-    ImportRowCheckService withRepository =
-        new ImportRowCheckService(
-            transactionService,
-            fxRateService,
-            new ImportLedgerRowService(JsonMapper.builder().build()),
-            SOURCE,
-            null,
-            repository);
     List<ParsedImportRow> rows =
         java.util.stream.IntStream.range(0, 1200)
             .mapToObj(
@@ -159,22 +137,13 @@ class ImportRowCheckServiceTest {
             .toList();
     UUID source = UUID.randomUUID();
 
-    assertThat(withRepository.matchedSettlementRows(source, "EUR", rows)).isEmpty();
+    assertThat(service.matchedSettlementRows(source, "EUR", rows)).isEmpty();
     verify(repository, org.mockito.Mockito.times(3))
         .findPairablePaymentDatesByAmounts(eq(source), eq("EUR"), any(), any(), any(), any());
   }
 
   @Test
   void settlementPreviewWithNoVisibleSourceDoesNotQueryOtherAccountTransactions() {
-    TransactionRepository repository = mock(TransactionRepository.class);
-    ImportRowCheckService withRepository =
-        new ImportRowCheckService(
-            transactionService,
-            fxRateService,
-            new ImportLedgerRowService(JsonMapper.builder().build()),
-            SOURCE,
-            null,
-            repository);
     ParsedImportRow credit =
         ParsedImportRow.parsed(
             1,
@@ -192,7 +161,7 @@ class ImportRowCheckServiceTest {
                 null,
                 null));
 
-    assertThat(withRepository.matchedSettlementRows(null, "EUR", List.of(credit))).isEmpty();
+    assertThat(service.matchedSettlementRows(null, "EUR", List.of(credit))).isEmpty();
     verifyNoInteractions(repository);
   }
 

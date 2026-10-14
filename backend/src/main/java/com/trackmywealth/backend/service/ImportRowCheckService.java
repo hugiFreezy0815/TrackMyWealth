@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -53,7 +52,6 @@ public class ImportRowCheckService {
   private final AccountCreditCardRepository creditCards;
   private final TransactionRepository transactions;
 
-  @Autowired
   public ImportRowCheckService(
       TransactionService transactionService,
       FxRateService fxRateService,
@@ -67,15 +65,6 @@ public class ImportRowCheckService {
     this.fxDefaultSource = fxDefaultSource;
     this.creditCards = creditCards;
     this.transactions = transactions;
-  }
-
-  /** Simple constructor for isolated row-check unit tests without a persistence layer. */
-  ImportRowCheckService(
-      TransactionService transactionService,
-      FxRateService fxRateService,
-      ImportLedgerRowService ledgerRows,
-      String fxDefaultSource) {
-    this(transactionService, fxRateService, ledgerRows, fxDefaultSource, null, null);
   }
 
   /**
@@ -163,7 +152,7 @@ public class ImportRowCheckService {
    * set; read once per batch for {@link #warnings}.
    */
   public Optional<UUID> settlementSourceOf(Account account) {
-    if (!account.isHasStatementCycle() || creditCards == null) {
+    if (!account.isHasStatementCycle()) {
       return Optional.empty();
     }
     return creditCards
@@ -178,7 +167,7 @@ public class ImportRowCheckService {
    */
   public Set<Integer> matchedSettlementRows(
       UUID sourceId, String currency, List<ParsedImportRow> rows) {
-    if (sourceId == null || transactions == null) {
+    if (sourceId == null) {
       return Set.of();
     }
     List<ParsedImportRow> credits =
