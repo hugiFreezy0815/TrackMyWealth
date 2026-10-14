@@ -52,6 +52,44 @@ class ImportRowCheckServiceTest {
           repository);
   private final Account account = account();
 
+
+  @Test
+  void bookingBeforeOpeningBalanceIsWarnedButNotRejected() {
+    CanonicalImportRow before =
+        new CanonicalImportRow(
+            DAY.minusDays(1), null, new BigDecimal("-10"), "EUR", "EXPENSE",
+            "Test", null, null, null, null, null);
+    assertThat(
+            service.warnings(account, before, DAY.plusDays(30), DAY, false))
+        .containsExactly(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
+    assertThat(
+            ImportRowCheckService.warningArgs(
+                ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE, before, "EUR"))
+        .containsEntry("date", DAY.minusDays(1).toString());
+  }
+
+  @Test
+  void bookingsOnOrAfterOpeningDateAreNotWarned() {
+    for (LocalDate booking : List.of(DAY, DAY.plusDays(1))) {
+      CanonicalImportRow row =
+          new CanonicalImportRow(
+              booking, null, new BigDecimal("-10"), "EUR", "EXPENSE",
+              "Test", null, null, null, null, null);
+      assertThat(service.warnings(account, row, DAY.plusDays(30), DAY, false))
+          .doesNotContain(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
+    }
+  }
+
+  @Test
+  void accountWithoutOpeningBalanceHasNoOpeningDateWarning() {
+    CanonicalImportRow row =
+        new CanonicalImportRow(
+            DAY.minusDays(1), null, new BigDecimal("-10"), "EUR", "EXPENSE",
+            "Test", null, null, null, null, null);
+    assertThat(service.warnings(account, row, DAY.plusDays(30), null, false))
+        .doesNotContain(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
+  }
+
   @Test
   void oneSourcePaymentCannotMatchTwoCardSettlements() {
     UUID source = UUID.randomUUID();
