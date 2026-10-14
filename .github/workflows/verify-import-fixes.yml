@@ -1,4 +1,5 @@
 name: Verify Reviewed Import Fixes
+# Rerun after correcting the synthetic reference-free CSV fixture.
 on:
   push:
     branches: [feat/us-07-18-credit-card-statement-import]
