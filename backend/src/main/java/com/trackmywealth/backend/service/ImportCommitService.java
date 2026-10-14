@@ -3,27 +3,23 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
-import com.trackmywealth.backend.dto.ImportDuplicateHold;
 import com.trackmywealth.backend.dto.ImportLedgerRow;
-import com.trackmywealth.backend.dto.ParsedImportRow;
+import com.trackmywealth.backend.dto.ImportRecheck;
+import com.trackmywealth.backend.dto.ImportRowRecheck;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ImportRowRaw;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportRowRawBatchRepository;
-import com.trackmywealth.backend.repository.ImportRowRawRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -57,7 +53,9 @@ import org.springframework.transaction.annotation.Transactional;
  * duplicate) and is imported. As V69 says, a voided row is no duplicate; a soft-deleted row still
  * reserves its reference, so a row matching it by reference stays its duplicate. Removals,
  * corrections and restores take this commit's lock on every account they reach before anything else
- * ({@code TransactionRemovalService}), so none lands between the check and the commit's end.
+ * ({@code TransactionRemovalService}), so none lands between the check and the commit's end. The
+ * check is {@link ImportRecheckService}'s, the same one the preview's rows and counts report
+ * (#308), so the commit does what the member saw.
  */
 @Service
 public class ImportCommitService {
@@ -66,8 +64,8 @@ public class ImportCommitService {
 
   private final ImportBatchService batchService;
   private final ImportBatchRepository batchRepository;
-  private final ImportRowRawRepository rowRepository;
   private final ImportRowRawBatchRepository rowBatchRepository;
+  private final ImportRecheckService recheckService;
   private final ImportDuplicateService duplicateService;
   private final ImportLedgerRowService ledgerRows;
   private final TransactionService transactionService;
@@ -78,8 +76,8 @@ public class ImportCommitService {
   public ImportCommitService(
       ImportBatchService batchService,
       ImportBatchRepository batchRepository,
-      ImportRowRawRepository rowRepository,
       ImportRowRawBatchRepository rowBatchRepository,
+      ImportRecheckService recheckService,
       ImportDuplicateService duplicateService,
       ImportLedgerRowService ledgerRows,
       TransactionService transactionService,
@@ -88,8 +86,8 @@ public class ImportCommitService {
       Clock clock) {
     this.batchService = batchService;
     this.batchRepository = batchRepository;
-    this.rowRepository = rowRepository;
     this.rowBatchRepository = rowBatchRepository;
+    this.recheckService = recheckService;
     this.duplicateService = duplicateService;
     this.ledgerRows = ledgerRows;
     this.transactionService = transactionService;
@@ -115,53 +113,15 @@ public class ImportCommitService {
     versionPreconditionService.requireCurrent(
         expectedVersion, batch.getVersion(), ImportBatchService.VERSIONED_RESOURCE);
 
-    // Every readable row, in file order. A duplicate whose booking the ledger still holds keeps it,
-    // so an identical row after it stays new (the multiplicity rule); every other row is checked
-    // again against the rest of the ledger, which may have gained or lost the booking since the
-    // preview.
-    List<ImportRowRaw> readable =
-        rowRepository.findByImportBatchIdAndParseStatusInOrderByRowNumber(
-            batch.getId(), List.of(ImportBatchValues.ROW_PARSED, ImportBatchValues.ROW_DUPLICATE));
-    // At most one hold per row: a row has at most one successor, so its chain is a line. Should
-    // that ever break, toMap fails the commit rather than keep an arbitrary one.
-    Map<UUID, UUID> held =
-        rowRepository.findDuplicateHolds(batch.getId()).stream()
-            .collect(
-                Collectors.toMap(
-                    ImportDuplicateHold::getRowId, ImportDuplicateHold::getTransactionId));
-    Set<UUID> reserved = new HashSet<>(held.values());
-    List<ParsedImportRow> recheck = new ArrayList<>();
-    for (ImportRowRaw row : readable) {
-      if (!held.containsKey(row.getId())) {
-        recheck.add(
-            ParsedImportRow.parsed(
-                row.getRowNumber(),
-                batchService.stringMap(row.getRawData()),
-                batchService.canonical(row)));
-      }
-    }
-    Map<Integer, UUID> nowDuplicates =
-        duplicateService.findDuplicates(account.getId(), batch.getSourceKind(), recheck, reserved);
-
-    // #287: a duplicate whose booking a correction or restore moved points at the row holding it
-    // now. One whose booking the ledger lost (a rollback, a removal) was checked again: held as
-    // another row, it points there; gone, it is new and included, as it was only left out for being
-    // a duplicate (product owner, 2026-10-13).
-    Set<UUID> becameNew = new HashSet<>();
-    List<UUID> repointed = new ArrayList<>();
-    List<UUID> repointedTo = new ArrayList<>();
+    // Every readable row, in file order, and what the ledger makes of it now (#287): a duplicate
+    // whose booking moved points at the row holding it, one whose booking is gone is new and
+    // included, an included new row the ledger has gained is a duplicate.
+    List<ImportRowRaw> readable = recheckService.readableRows(batch);
+    ImportRecheck recheck = recheckService.recheck(batch, readable);
     List<ImportRowRaw> included = new ArrayList<>();
     for (ImportRowRaw row : readable) {
-      boolean wasDuplicate = ImportBatchValues.ROW_DUPLICATE.equals(row.getParseStatus());
-      UUID holder = held.get(row.getId());
-      UUID now = holder != null ? holder : nowDuplicates.get(row.getRowNumber());
-      if (wasDuplicate && now == null) {
-        becameNew.add(row.getId());
-      } else if (wasDuplicate && !now.equals(row.getDuplicateOfTransactionId())) {
-        repointed.add(row.getId());
-        repointedTo.add(now);
-      }
-      if (row.isIncluded() || becameNew.contains(row.getId())) {
+      ImportRowRecheck rechecked = recheck.of(row.getId());
+      if (rechecked == null ? row.isIncluded() : rechecked.included()) {
         included.add(row);
       }
     }
@@ -172,58 +132,33 @@ public class ImportCommitService {
             account.getId(),
             batch.getSourceKind(),
             included.stream()
-                .filter(row -> isDuplicate(row, becameNew))
+                .filter(row -> isDuplicate(row, recheck))
                 .map(row -> batchService.canonical(row).externalId())
                 .filter(Objects::nonNull)
                 .toList());
 
-    List<UUID> becameDuplicates = new ArrayList<>();
-    List<UUID> duplicateOf = new ArrayList<>();
-    List<ImportRowRaw> fresh = new ArrayList<>();
     List<ImportLedgerRow> ledger = new ArrayList<>();
     for (ImportRowRaw row : included) {
-      // A row new in the preview that the ledger has gained meanwhile; a row that just became new
-      // has no match by definition.
-      UUID duplicate =
-          ImportBatchValues.ROW_PARSED.equals(row.getParseStatus())
-              ? nowDuplicates.get(row.getRowNumber())
-              : null;
-      if (duplicate != null) {
-        becameDuplicates.add(row.getId());
-        duplicateOf.add(duplicate);
-        continue;
-      }
       CanonicalImportRow canonical = batchService.canonical(row);
-      if (isDuplicate(row, becameNew)
+      if (isDuplicate(row, recheck)
           && canonical.externalId() != null
           && takenReferences.contains(canonical.externalId())) {
         canonical = ImportLedgerRowService.withoutReference(canonical);
       }
       ledger.add(ledgerRows.toLedgerRow(canonical, batchService.stringMap(row.getRawData())));
-      fresh.add(row);
     }
-    if (!becameDuplicates.isEmpty()) {
-      rowBatchRepository.markDuplicates(becameDuplicates, duplicateOf);
-    }
-    if (!becameNew.isEmpty()) {
-      rowBatchRepository.markNew(List.copyOf(becameNew));
-    }
-    if (!repointed.isEmpty()) {
-      rowBatchRepository.repointDuplicates(repointed, repointedTo);
-    }
+    recheckService.apply(batch, recheck);
 
     List<Transaction> recorded =
         transactionService.recordImported(
             account, ledger, batch.getId(), batch.getSourceKind(), actor);
     rowBatchRepository.linkTransactions(
-        fresh.stream().map(ImportRowRaw::getId).toList(),
+        included.stream().map(ImportRowRaw::getId).toList(),
         recorded.stream().map(Transaction::getId).toList());
 
     batch.setStatus(ImportBatchValues.COMMITTED);
     batch.setCommittedAt(OffsetDateTime.now(clock));
     batch.setImportedRowCount(recorded.size());
-    batch.setDuplicateRowCount(
-        batch.getDuplicateRowCount() + becameDuplicates.size() - becameNew.size());
     batchRepository.saveAndFlush(batch);
     if (LOG.isInfoEnabled()) {
       LOG.info(
@@ -231,16 +166,21 @@ public class ImportCommitService {
               + " {} duplicates found new",
           batch.getId(),
           recorded.size(),
-          becameDuplicates.size(),
-          becameNew.size());
+          count(recheck, ImportBatchValues.RECHECK_DUPLICATE),
+          count(recheck, ImportBatchValues.RECHECK_NEW));
     }
     return batchService.summary(batch, account, List.of());
   }
 
-  // Whether the row goes into the commit as a duplicate (forced in or not): one the preview found,
-  // unless the commit found it new.
-  private static boolean isDuplicate(ImportRowRaw row, Set<UUID> becameNew) {
-    return ImportBatchValues.ROW_DUPLICATE.equals(row.getParseStatus())
-        && !becameNew.contains(row.getId());
+  // Whether the row goes into the commit as a duplicate (forced in, or repointed and forced in):
+  // the re-checked status, or else the stored one.
+  private static boolean isDuplicate(ImportRowRaw row, ImportRecheck recheck) {
+    ImportRowRecheck rechecked = recheck.of(row.getId());
+    String status = rechecked == null ? row.getParseStatus() : rechecked.status();
+    return ImportBatchValues.ROW_DUPLICATE.equals(status);
+  }
+
+  private static long count(ImportRecheck recheck, String outcome) {
+    return recheck.rows().values().stream().filter(row -> outcome.equals(row.recheck())).count();
   }
 }

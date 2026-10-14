@@ -13,11 +13,14 @@ import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportRollbackModifiedResponse;
 import com.trackmywealth.backend.dto.ImportRollbackRequest;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
 import com.trackmywealth.backend.dto.ImportRollbackValues;
+import com.trackmywealth.backend.dto.ImportRowInclusionRequest;
+import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
@@ -63,6 +66,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -581,7 +585,7 @@ class ImportRollbackControllerTest {
         .isZero();
 
     // Committed after the rollback, the preview imports what the rollback took out, once.
-    ImportBatchResponse committed = commit(preview);
+    ImportBatchResponse committed = commitAsPreviewed(preview);
 
     assertThat(committed.counts().imported()).isEqualTo(3);
     assertThat(committed.counts().duplicates()).isZero();
@@ -609,7 +613,7 @@ class ImportRollbackControllerTest {
                 batch.id());
     assertThat(remove(bakery).removal()).isEqualTo("VOID");
 
-    ImportBatchResponse committed = commit(preview);
+    ImportBatchResponse committed = commitAsPreviewed(preview);
 
     // Only the voided booking comes in again; the other two stay duplicates of the live rows.
     assertThat(committed.counts().imported()).isEqualTo(1);
@@ -641,7 +645,7 @@ class ImportRollbackControllerTest {
         .isEqualTo(batchRows(batch.id()).get(0));
     rollback(batch, REASON);
 
-    ImportBatchResponse committed = commit(preview);
+    ImportBatchResponse committed = commitAsPreviewed(preview);
 
     assertThat(committed.counts().imported()).isZero();
     assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
@@ -662,7 +666,7 @@ class ImportRollbackControllerTest {
     assertThat(preview.counts().duplicates()).isEqualTo(2);
     remove(first);
 
-    ImportBatchResponse committed = commit(preview);
+    ImportBatchResponse committed = commitAsPreviewed(preview);
 
     // The second row keeps the booking it found; the first finds no other and is new.
     assertThat(committed.counts().imported()).isEqualTo(1);
@@ -689,7 +693,7 @@ class ImportRollbackControllerTest {
     UUID replacement =
         (UUID) single("SELECT id FROM transaction WHERE corrects_transaction_id = ?", bakery);
 
-    ImportBatchResponse committed = commit(preview);
+    ImportBatchResponse committed = commitAsPreviewed(preview);
 
     // The member's correction carries the booking now, without the reference and at another
     // amount: the file's row must not come in again beside it.
@@ -710,7 +714,7 @@ class ImportRollbackControllerTest {
         (UUID) single("SELECT id FROM transaction WHERE corrects_transaction_id = ?", bakery);
     assertThat(single("SELECT account_id FROM transaction WHERE id = ?", moved)).isEqualTo(savings);
 
-    ImportBatchResponse committed = commit(preview);
+    ImportBatchResponse committed = commitAsPreviewed(preview);
 
     // The pointer never leaves the batch's account (product owner, 2026-10-13): the booking is
     // gone from this one, so the row is what a fresh import of the file would make of it.
@@ -743,7 +747,7 @@ class ImportRollbackControllerTest {
     UUID copy =
         (UUID) single("SELECT id FROM transaction WHERE restores_transaction_id = ?", bakery);
 
-    ImportBatchResponse committed = commit(preview);
+    ImportBatchResponse committed = commitAsPreviewed(preview);
 
     assertThat(committed.counts().imported()).isZero();
     assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
@@ -758,7 +762,7 @@ class ImportRollbackControllerTest {
     assertThat(preview.counts().duplicates()).isEqualTo(1);
     assertThat(remove(coffee).removal()).isEqualTo("SOFT_DELETE");
 
-    ImportBatchResponse committed = commit(preview);
+    ImportBatchResponse committed = commitAsPreviewed(preview);
 
     assertThat(committed.counts().imported()).isEqualTo(1);
     assertThat(rowStatus(preview.id(), 1)).isEqualTo("PARSED");
@@ -775,11 +779,276 @@ class ImportRollbackControllerTest {
     execute(
         "UPDATE transaction SET deleted_at = now(), deleted_by = created_by WHERE id = ?", bakery);
 
-    ImportBatchResponse committed = commit(preview);
+    ImportBatchResponse committed = commitAsPreviewed(preview);
 
     assertThat(committed.counts().imported()).isZero();
     assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
     assertThat(duplicateOf(preview.id(), 1)).isEqualTo(bakery);
+  }
+
+  // --- what the preview shows of the rolled-back rows before the commit (#308)
+  // -----------------------------------------------------------------------------
+
+  @Test
+  void aRolledBackBatchsRowsShowAsNewInAnOpenPreviewOfTheSameFile() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    assertThat(preview.counts().duplicates()).isEqualTo(3);
+    rollback(batch, REASON);
+
+    // Nothing was written to the preview; reading it shows what its commit will do.
+    assertThat(previewRows(preview.id(), ""))
+        .extracting(
+            ImportRowResponse::status,
+            ImportRowResponse::included,
+            ImportRowResponse::duplicateOfTransactionId,
+            ImportRowResponse::recheck)
+        .containsOnly(tuple("PARSED", true, null, ImportBatchValues.RECHECK_NEW))
+        .hasSize(3);
+    ImportBatchResponse shown = summaryOf(preview.id());
+    assertThat(shown.version()).isEqualTo(preview.version());
+    assertThat(shown.counts().newRows()).isEqualTo(3);
+    assertThat(shown.counts().duplicates()).isZero();
+    assertThat(shown.counts().included()).isEqualTo(3);
+    assertThat(listed(preview.id()).counts()).isEqualTo(shown.counts());
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
+
+    assertThat(commitAsPreviewed(preview).counts().imported()).isEqualTo(3);
+  }
+
+  @Test
+  void aPreviewRowWhoseBookingWasVoidedShowsThatItWillBeImported() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    remove(bookingOf(batch, "R1"));
+
+    assertThat(previewRows(preview.id(), ""))
+        .extracting(
+            ImportRowResponse::rowNumber,
+            ImportRowResponse::status,
+            ImportRowResponse::included,
+            ImportRowResponse::recheck)
+        .containsExactly(
+            tuple(1, "PARSED", true, ImportBatchValues.RECHECK_NEW),
+            tuple(2, "DUPLICATE", false, null),
+            tuple(3, "DUPLICATE", false, null));
+    // The filter goes by what the commit will do, not by what the parse stored.
+    assertThat(previewRows(preview.id(), "?status=PARSED"))
+        .extracting(ImportRowResponse::rowNumber)
+        .containsExactly(1);
+    assertThat(previewRows(preview.id(), "?status=DUPLICATE"))
+        .extracting(ImportRowResponse::rowNumber)
+        .containsExactly(2, 3);
+
+    assertThat(commitAsPreviewed(preview).counts().imported()).isEqualTo(1);
+  }
+
+  @Test
+  void aPreviewRowWhoseBookingWasCorrectedShowsAsADuplicateOfTheReplacement() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    UUID bakery = bookingOf(batch, "R1");
+    correct(bakery);
+    UUID replacement =
+        (UUID) single("SELECT id FROM transaction WHERE corrects_transaction_id = ?", bakery);
+
+    ImportRowResponse first = previewRows(preview.id(), "").get(0);
+
+    assertThat(first.status()).isEqualTo("DUPLICATE");
+    assertThat(first.included()).isFalse();
+    assertThat(first.recheck()).isEqualTo(ImportBatchValues.RECHECK_REPOINTED);
+    assertThat(first.duplicateOfTransactionId()).isEqualTo(replacement);
+    assertThat(first.duplicateOf()).isNotNull();
+    assertThat(first.duplicateOf().amount()).isEqualByComparingTo("-13.40");
+    assertThat(commitAsPreviewed(preview).counts().imported()).isZero();
+  }
+
+  @Test
+  void ofTwoIdenticalPreviewDuplicatesExactlyOneShowsAsNewOnceABookingIsRemoved() {
+    UUID first = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+    UUID second = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+    ImportBatchResponse preview =
+        upload(csv("2019-01-05;-3.50;CHF;Coffee;", "2019-01-05;-3.50;CHF;Coffee;"));
+    assertThat(preview.counts().duplicates()).isEqualTo(2);
+    remove(first);
+
+    assertThat(previewRows(preview.id(), ""))
+        .extracting(
+            ImportRowResponse::status,
+            ImportRowResponse::duplicateOfTransactionId,
+            ImportRowResponse::recheck)
+        .containsExactly(
+            tuple("PARSED", null, ImportBatchValues.RECHECK_NEW), tuple("DUPLICATE", second, null));
+    assertThat(summaryOf(preview.id()).counts().newRows()).isEqualTo(1);
+
+    assertThat(commitAsPreviewed(preview).counts().imported()).isEqualTo(1);
+  }
+
+  @Test
+  void aNewPreviewRowWhoseBookingTheLedgerHasGainedShowsAsAnExcludedDuplicate() {
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    assertThat(preview.counts().newRows()).isEqualTo(3);
+    ImportBatchResponse other = importFile(THREE_ROWS);
+
+    assertThat(previewRows(preview.id(), ""))
+        .extracting(
+            ImportRowResponse::status,
+            ImportRowResponse::included,
+            ImportRowResponse::duplicateOfTransactionId,
+            ImportRowResponse::recheck)
+        .containsExactly(
+            tuple("DUPLICATE", false, bookingOf(other, "R1"), ImportBatchValues.RECHECK_DUPLICATE),
+            tuple("DUPLICATE", false, bookingOf(other, "R2"), ImportBatchValues.RECHECK_DUPLICATE),
+            tuple("DUPLICATE", false, bookingOf(other, "R3"), ImportBatchValues.RECHECK_DUPLICATE));
+    assertThat(summaryOf(preview.id()).counts().included()).isZero();
+
+    assertThat(commitAsPreviewed(preview).counts().imported()).isZero();
+  }
+
+  @Test
+  void excludingARowThePreviewShowsAsNewKeepsItOutOfTheCommit() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    remove(bookingOf(batch, "R1"));
+
+    ImportBatchResponse excluded = include(preview, 1, false);
+
+    // The member decided on the row as it was shown: the commit does not re-check it back in.
+    assertThat(excluded.version()).isGreaterThan(preview.version());
+    assertThat(excluded.counts().included()).isZero();
+    assertThat(excluded.counts().newRows()).isEqualTo(1);
+    ImportRowResponse first = previewRows(preview.id(), "").get(0);
+    assertThat(first.status()).isEqualTo("PARSED");
+    assertThat(first.included()).isFalse();
+    assertThat(first.recheck()).isNull();
+    assertThat(commitAsPreviewed(excluded).counts().imported()).isZero();
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("PARSED");
+  }
+
+  @Test
+  void forcingInARowThePreviewShowsAsADuplicateImportsItAsASecondBooking() {
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    ImportBatchResponse other = importFile(THREE_ROWS);
+
+    ImportBatchResponse forced = include(preview, 1, true);
+
+    assertThat(forced.counts().included()).isEqualTo(1);
+    assertThat(forced.counts().duplicates()).isEqualTo(3);
+    ImportRowResponse first = previewRows(preview.id(), "").get(0);
+    assertThat(first.status()).isEqualTo("DUPLICATE");
+    assertThat(first.included()).isTrue();
+    assertThat(first.duplicateOfTransactionId()).isEqualTo(bookingOf(other, "R1"));
+    assertThat(first.recheck()).isNull();
+    assertThat(commitAsPreviewed(forced).counts().imported()).isEqualTo(1);
+    // Its reference is the other batch's already, so it went in without one.
+    assertThat(
+            single("SELECT external_id FROM transaction WHERE import_batch_id = ?", preview.id()))
+        .isNull();
+  }
+
+  @Test
+  void excludingOneOfTwoNewRowsDoesNotConsumeItsOnlyLaterDuplicate() {
+    byte[] sameBooking = csv("2019-01-05;-3.50;CHF;Coffee;", "2019-01-05;-3.50;CHF;Coffee;");
+    ImportBatchResponse preview = upload(sameBooking);
+    ImportBatchResponse excluded = include(preview, 1, false);
+    UUID existing = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+
+    List<ImportRowResponse> shown = previewRows(preview.id(), "");
+    assertThat(shown)
+        .extracting(
+            ImportRowResponse::status,
+            ImportRowResponse::included,
+            ImportRowResponse::duplicateOfTransactionId)
+        .containsExactly(tuple("PARSED", false, null), tuple("DUPLICATE", false, existing));
+    assertThat(summaryOf(preview.id()).counts().included()).isZero();
+    assertThat(commitAsPreviewed(excluded).counts().imported()).isZero();
+    assertThat(liveBookings()).isEqualTo(1);
+  }
+
+  @Test
+  void explicitlyIncludingAnExcludedRowNowHeldInLedgerSurvivesCommit() {
+    ImportBatchResponse preview = upload(csv("2019-01-05;-3.50;CHF;Coffee;"));
+    ImportBatchResponse excluded = include(preview, 1, false);
+    UUID existing = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+
+    ImportBatchResponse forced = include(excluded, 1, true);
+
+    assertThat(forced.counts().included()).isEqualTo(1);
+    assertThat(forced.counts().duplicates()).isEqualTo(1);
+    ImportRowResponse shown = previewRows(preview.id(), "").get(0);
+    assertThat(shown.status()).isEqualTo("DUPLICATE");
+    assertThat(shown.included()).isTrue();
+    assertThat(shown.duplicateOfTransactionId()).isEqualTo(existing);
+    assertThat(shown.recheck()).isNull();
+    assertThat(commitAsPreviewed(forced).counts().imported()).isEqualTo(1);
+    assertThat(liveBookings()).isEqualTo(2);
+  }
+
+  @Test
+  void includingAnExcludedRowKeepsTheBookingOfALaterRowThatTheLedgerHasGained() {
+    ImportBatchResponse preview =
+        upload(csv("2019-01-05;-3.50;CHF;Coffee;", "2019-01-05;-3.50;CHF;Coffee;"));
+    ImportBatchResponse excluded = include(preview, 1, false);
+    UUID existing = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+
+    // The booking is the later row's; the earlier one, included now, must not take it.
+    ImportBatchResponse included = include(excluded, 1, true);
+
+    List<ImportRowResponse> shown = previewRows(preview.id(), "");
+    assertThat(shown)
+        .extracting(
+            ImportRowResponse::status,
+            ImportRowResponse::included,
+            ImportRowResponse::duplicateOfTransactionId,
+            ImportRowResponse::recheck)
+        .containsExactly(
+            tuple("PARSED", true, null, null), tuple("DUPLICATE", false, existing, null));
+    assertThat(included.counts().included()).isEqualTo(1);
+    assertThat(included.counts().duplicates()).isEqualTo(1);
+    assertThat(summaryOf(preview.id()).counts()).isEqualTo(included.counts());
+    assertThat(commitAsPreviewed(included).counts().imported()).isEqualTo(1);
+    assertThat(liveBookings()).isEqualTo(2);
+  }
+
+  @Test
+  void theStatusFilterPagesTheRowsAsTheCommitWillTakeThem() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    rollback(batch, REASON);
+
+    PageOf<ImportRowResponse> second = previewPage(preview.id(), "?status=PARSED&size=2&page=1");
+    PageOf<ImportRowResponse> beyond = previewPage(preview.id(), "?status=PARSED&size=2&page=2");
+
+    assertThat(second.totalElements()).isEqualTo(3);
+    assertThat(second.content()).extracting(ImportRowResponse::rowNumber).containsExactly(3);
+    assertThat(beyond.content()).isEmpty();
+    assertThat(previewPage(preview.id(), "?status=DUPLICATE").totalElements()).isZero();
+  }
+
+  @Test
+  void includingARowAsThePreviewShowsItAlreadyChangesNothing() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    remove(bookingOf(batch, "R1"));
+
+    ImportBatchResponse unchanged = include(preview, 1, true);
+
+    assertThat(unchanged.version()).isEqualTo(preview.version());
+    assertThat(unchanged.counts().included()).isEqualTo(1);
+    assertThat(rowStatus(preview.id(), 1)).isEqualTo("DUPLICATE");
+  }
+
+  @Test
+  void aCommittedBatchsRowsShowAsStored() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse committed = commit(upload(THREE_ROWS));
+    rollback(batch, REASON);
+
+    // Only an open preview is re-checked: a committed batch's rows are the record of its commit.
+    assertThat(previewRows(committed.id(), ""))
+        .extracting(ImportRowResponse::status, ImportRowResponse::recheck)
+        .containsOnly(tuple("DUPLICATE", null));
+    assertThat(summaryOf(committed.id()).counts().duplicates()).isEqualTo(3);
   }
 
   // The ticket counts a COMMITTED batch's duplicate pointer; one rolled back since counts too, as
@@ -1224,6 +1493,109 @@ class ImportRollbackControllerTest {
         .returnResult()
         .getResponseBody();
   }
+
+  /**
+   * #308: commits {@code preview} as a member would after reading it, and checks that the commit
+   * did with every row what the read showed, and that its counts are the ones shown.
+   */
+  private ImportBatchResponse commitAsPreviewed(ImportBatchResponse preview) {
+    ImportBatchResponse shown = summaryOf(preview.id());
+    List<ImportRowResponse> rows = previewRows(preview.id(), "");
+    // Reading changes nothing: the version the member read is still the one to commit.
+    assertThat(shown.version()).isEqualTo(preview.version());
+
+    ImportBatchResponse committed = commit(shown);
+
+    assertThat(
+            rowsOf(
+                "SELECT row_number, parse_status, included, duplicate_of_transaction_id"
+                    + " FROM import_row_raw WHERE import_batch_id = ? ORDER BY row_number",
+                preview.id()))
+        .extracting(
+            row -> row.get("row_number"),
+            row -> row.get("parse_status"),
+            row -> row.get("included"),
+            row -> row.get("duplicate_of_transaction_id"))
+        .containsExactlyElementsOf(
+            rows.stream()
+                .map(
+                    row ->
+                        tuple(
+                            row.rowNumber(),
+                            row.status(),
+                            row.included(),
+                            row.duplicateOfTransactionId()))
+                .toList());
+    assertThat(committed.counts().newRows()).isEqualTo(shown.counts().newRows());
+    assertThat(committed.counts().duplicates()).isEqualTo(shown.counts().duplicates());
+    assertThat(committed.counts().included()).isEqualTo(shown.counts().included());
+    assertThat(committed.counts().imported()).isEqualTo(shown.counts().included());
+    return committed;
+  }
+
+  private ImportBatchResponse summaryOf(UUID batchId) {
+    return client()
+        .get()
+        .uri(imports() + "/" + batchId)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(ImportBatchResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  // The batch as the account's list of imports shows it.
+  private ImportBatchResponse listed(UUID batchId) {
+    return client()
+        .get()
+        .uri(imports())
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<PageOf<ImportBatchResponse>>() {})
+        .returnResult()
+        .getResponseBody()
+        .content()
+        .stream()
+        .filter(batch -> batch.id().equals(batchId))
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private List<ImportRowResponse> previewRows(UUID batchId, String query) {
+    return previewPage(batchId, query).content();
+  }
+
+  private PageOf<ImportRowResponse> previewPage(UUID batchId, String query) {
+    return client()
+        .get()
+        .uri(imports() + "/" + batchId + "/rows" + query)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private ImportBatchResponse include(ImportBatchResponse batch, int rowNumber, boolean included) {
+    EntityExchangeResult<ImportBatchResponse> result =
+        client()
+            .patch()
+            .uri(imports() + "/" + batch.id() + "/rows/" + rowNumber)
+            .header(HttpHeaders.IF_MATCH, etag(batch.version()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(new ImportRowInclusionRequest(included))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult();
+    return CurrentVersion.storedEtag(result, dataSource, "import_batch", batch.id());
+  }
+
+  record PageOf<T>(List<T> content, long totalElements) {}
 
   private ImportRollbackResponse rollback(ImportBatchResponse batch, String reason) {
     return rollbackResult(batch, reason).getResponseBody();

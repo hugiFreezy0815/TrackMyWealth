@@ -135,7 +135,8 @@ public class ImportBatchController {
   }
 
   /**
-   * The preview's rows in file order; {@code status} narrows them to PARSED, DUPLICATE or ERROR.
+   * The preview's rows in file order; {@code status} narrows them to PARSED, DUPLICATE, ERROR or
+   * SKIPPED. While the batch is PARSED, each row shows what the commit will do with it now (#308).
    */
   @GetMapping(BY_ID + "/rows")
   public Page<ImportRowResponse> rows(

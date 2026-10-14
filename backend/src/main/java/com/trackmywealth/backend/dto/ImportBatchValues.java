@@ -54,6 +54,27 @@ public final class ImportBatchValues {
   public static final Set<String> ROW_STATUSES =
       Set.of(ROW_PARSED, ROW_DUPLICATE, ROW_ERROR, ROW_SKIPPED);
 
+  /** The row statuses a commit checks against the ledger again, its readable rows (#287). */
+  public static final Set<String> ROW_RECHECKED = Set.of(ROW_PARSED, ROW_DUPLICATE);
+
+  /**
+   * Re-check {@code recheck} (#308): a duplicate whose booking the ledger lost since the preview;
+   * the commit imports it as a new, included row.
+   */
+  public static final String RECHECK_NEW = "NEW";
+
+  /**
+   * Re-check {@code recheck} (#308): a duplicate whose booking the ledger holds as another row now
+   * (a correction, a restored void); it stays a duplicate, of that row.
+   */
+  public static final String RECHECK_REPOINTED = "REPOINTED";
+
+  /**
+   * Re-check {@code recheck} (#308): a new, included row whose booking the ledger has gained since
+   * the preview; the commit leaves it out as a duplicate.
+   */
+  public static final String RECHECK_DUPLICATE = "DUPLICATE";
+
   /** Warning {@code date}: the booking date lies after today. The row stays included. */
   public static final String WARNING_FUTURE_DATE = "IMPORT_ROW_FUTURE_DATE";
 
