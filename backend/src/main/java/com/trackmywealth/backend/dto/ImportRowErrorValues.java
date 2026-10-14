@@ -35,6 +35,20 @@ public final class ImportRowErrorValues {
    */
   public static final String AMOUNT_OUT_OF_RANGE = "IMPORT_ROW_AMOUNT_OUT_OF_RANGE";
 
+  /**
+   * {@code column, currencyColumn}: the original amount and currency (US-07-18) do not go together:
+   * only one of the two cells is filled, the original amount is zero while the amount is not, or
+   * the two amounts have opposite signs.
+   */
+  public static final String ORIGINAL_AMOUNT_INCONSISTENT =
+      "IMPORT_ROW_ORIGINAL_AMOUNT_INCONSISTENT";
+
+  /**
+   * {@code column, value}: a bank exchange rate that is not greater than 0, or outside {@code
+   * NUMERIC(20,10)} - more than 10 digits before or after the decimal separator (US-07-18).
+   */
+  public static final String EXCHANGE_RATE_OUT_OF_RANGE = "IMPORT_ROW_EXCHANGE_RATE_OUT_OF_RANGE";
+
   /** {@code debitColumn, creditColumn}: both the debit and the credit cell are filled. */
   public static final String AMOUNT_BOTH_SIDES = "IMPORT_ROW_AMOUNT_BOTH_SIDES";
 
@@ -47,7 +61,10 @@ public final class ImportRowErrorValues {
    */
   public static final String TYPE_NOT_ALLOWED = "IMPORT_ROW_TYPE_NOT_ALLOWED";
 
-  /** Conflicting description type patterns on one row. */
+  /**
+   * {@code column}: the description patterns of more than one transaction type match the row's
+   * description (US-07-18); the template decides, never the order of its patterns.
+   */
   public static final String TYPE_AMBIGUOUS = "IMPORT_ROW_TYPE_AMBIGUOUS";
 
   /**

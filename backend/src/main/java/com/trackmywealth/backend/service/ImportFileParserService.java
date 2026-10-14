@@ -94,6 +94,7 @@ public class ImportFileParserService {
   private static final String ARG_COLUMN = "column";
   private static final String DESCRIPTION_TYPE_PATTERNS = "descriptionTypePatterns";
   private static final String ARG_VALUE = "value";
+  private static final String ARG_CURRENCY_COLUMN = "currencyColumn";
   private static final Logger LOG = LoggerFactory.getLogger(ImportFileParserService.class);
 
   /**
@@ -612,6 +613,13 @@ public class ImportFileParserService {
     if (ImportTemplateValues.CURRENCY_PER_ROW.equals(template.currencyMode())) {
       requireMapped(mapping.currency(), "currency");
     }
+    // A foreign amount says nothing without its currency, nor a currency without an amount.
+    Map<String, String> mapped = mapping.mappedColumns();
+    if (mapped.containsKey("originalAmount") != mapped.containsKey("originalCurrency")) {
+      throw invalid(
+          "columnMapping.originalCurrency",
+          "The original amount and the original currency are mapped together.");
+    }
 
     for (Map.Entry<String, String> entry : mapping.mappedColumns().entrySet()) {
       String field = "columnMapping." + entry.getKey();
@@ -929,12 +937,13 @@ public class ImportFileParserService {
         || (originalAmount != null
             && originalAmount.signum() != 0
             && originalAmount.signum() != amount.signum())) {
+      // Both columns are mapped (validateColumnMapping), so neither argument is null.
       throw rowError(
-          ImportRowErrorValues.AMOUNT_OUT_OF_RANGE,
+          ImportRowErrorValues.ORIGINAL_AMOUNT_INCONSISTENT,
           ARG_COLUMN,
           mapping.originalAmount(),
-          ARG_VALUE,
-          "inconsistent original amount/currency");
+          ARG_CURRENCY_COLUMN,
+          mapping.originalCurrency());
     }
     return new CanonicalImportRow(
         bookingDate,
@@ -989,10 +998,20 @@ public class ImportFileParserService {
     // The amount grammar (separators, grouping), within the ledger's NUMERIC(20,10) rate column.
     BigDecimal rate =
         parseDecimal(
-            value, column, template, false, MAX_RATE_INTEGER_DIGITS, MAX_RATE_FRACTION_DIGITS);
+            value,
+            column,
+            template,
+            false,
+            MAX_RATE_INTEGER_DIGITS,
+            MAX_RATE_FRACTION_DIGITS,
+            ImportRowErrorValues.EXCHANGE_RATE_OUT_OF_RANGE);
     if (rate.signum() <= 0) {
       throw rowError(
-          ImportRowErrorValues.AMOUNT_OUT_OF_RANGE, ARG_COLUMN, column, ARG_VALUE, value.strip());
+          ImportRowErrorValues.EXCHANGE_RATE_OUT_OF_RANGE,
+          ARG_COLUMN,
+          column,
+          ARG_VALUE,
+          value.strip());
     }
     return rate;
   }
@@ -1092,17 +1111,25 @@ public class ImportFileParserService {
   static BigDecimal parseAmount(
       String value, String column, ImportTemplateDefinition template, boolean parentheses) {
     return parseDecimal(
-        value, column, template, parentheses, MAX_INTEGER_DIGITS, MAX_FRACTION_DIGITS);
+        value,
+        column,
+        template,
+        parentheses,
+        MAX_INTEGER_DIGITS,
+        MAX_FRACTION_DIGITS,
+        ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
   }
 
-  // parseAmount's grammar with the digit limits of the column the value is stored in.
+  // parseAmount's grammar with the digit limits of the column the value is stored in, and the
+  // error code that names them.
   private static BigDecimal parseDecimal(
       String value,
       String column,
       ImportTemplateDefinition template,
       boolean parentheses,
       int maxIntegerDigits,
-      int maxFractionDigits) {
+      int maxFractionDigits,
+      String outOfRangeCode) {
     String text = value.strip();
     boolean negative = false;
     if (parentheses && text.length() > 2 && text.startsWith("(") && text.endsWith(")")) {
@@ -1131,8 +1158,7 @@ public class ImportFileParserService {
       fractionDigits = stripTrailingZeros(fractionDigits, maxFractionDigits);
     }
     if (integerDigits.length() > maxIntegerDigits || fractionDigits.length() > maxFractionDigits) {
-      throw rowError(
-          ImportRowErrorValues.AMOUNT_OUT_OF_RANGE, ARG_COLUMN, column, ARG_VALUE, value.strip());
+      throw rowError(outOfRangeCode, ARG_COLUMN, column, ARG_VALUE, value.strip());
     }
     BigDecimal amount =
         new BigDecimal(

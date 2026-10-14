@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.assertj.core.api.Assertions.entry;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.Mockito.mock;
 
@@ -181,8 +182,26 @@ class ImportFileParserServiceTest {
     assertThat(rows.subList(0, 4)).allMatch(ParsedImportRow::isError);
     assertThat(rows.subList(0, 4))
         .extracting(ParsedImportRow::errorCode)
-        .containsOnly(ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
+        .containsOnly(ImportRowErrorValues.ORIGINAL_AMOUNT_INCONSISTENT);
+    assertThat(rows.get(0).errorArgs())
+        .containsExactly(entry("column", "original"), entry("currencyColumn", "originalCurrency"));
     assertThat(rows.get(4).isParsed()).isTrue();
+  }
+
+  @Test
+  void anOriginalAmountOrCurrencyColumnIsMappedOnlyWithTheOther() {
+    for (MappingBuilder half :
+        List.of(
+            new MappingBuilder().bookingDate("date").amount("amount").originalAmount("original"),
+            new MappingBuilder()
+                .bookingDate("date")
+                .amount("amount")
+                .originalCurrency("originalCurrency"))) {
+      ImportTemplateDefinition template = new Template().mapping(half.build()).build();
+      assertThatThrownBy(() -> parser.validateTemplate(template, null))
+          .isInstanceOf(ApiException.class)
+          .hasMessageContaining("mapped together");
+    }
   }
 
   @Test
@@ -296,8 +315,10 @@ class ImportFileParserServiceTest {
 
     assertThat(rows.get(0).isParsed()).isTrue();
     assertThat(rows.get(0).canonical().bankExchangeRate()).isEqualByComparingTo("1450.12");
-    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
-    assertThat(rows.get(2).errorCode()).isEqualTo(ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.EXCHANGE_RATE_OUT_OF_RANGE);
+    assertThat(rows.get(2).errorCode()).isEqualTo(ImportRowErrorValues.EXCHANGE_RATE_OUT_OF_RANGE);
+    assertThat(rows.get(2).errorArgs())
+        .containsExactly(entry("column", "rate"), entry("value", "0,00"));
   }
 
   @Test
