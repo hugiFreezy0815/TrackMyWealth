@@ -395,6 +395,26 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param("to") LocalDate to);
 
   /**
+   * The payment amounts and dates matching one bounded list from a card statement preview.
+   * Return only two columns, to avoid hydrating thousands of transaction entities.
+   */
+  @Query(
+      "select t.amount, t.bookingDate from Transaction t"
+          + " where t.account.id = :accountId and t.amount in :amounts"
+          + BOOKED_BETWEEN
+          + NOT_VOIDED_OR_REVERSAL
+          + " and t.currency = :currency and t.transactionType in :types"
+          + " and not exists (select 1 from SettlementMatch m where m.status = 'CONFIRMED'"
+          + " and m.cardTransaction is not null and m.paymentTransaction = t)")
+  List<Object[]> findPairablePaymentDatesByAmounts(
+      @Param(ACCOUNT_ID) UUID accountId,
+      @Param("currency") String currency,
+      @Param(TYPES) Collection<String> types,
+      @Param("amounts") Collection<BigDecimal> amounts,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to);
+
+  /**
    * One-sided settlement candidates (US-09-02, FR-CF-005): payments booked on or after {@code
    * since} that equal exactly what the card owed on their booking date and have no match of any
    * status for this card yet. The balance comparison runs in the database - one query, not one per

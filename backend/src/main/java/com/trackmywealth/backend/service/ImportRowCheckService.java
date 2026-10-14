@@ -10,16 +10,19 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,6 +39,8 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class ImportRowCheckService {
+
+  private static final int PAYMENT_LOOKUP_BATCH_SIZE = 400;
 
   static final String ARG_REASON = "reason";
   static final String ARG_CURRENCY = "currency";
@@ -168,12 +173,75 @@ public class ImportRowCheckService {
   }
 
   /**
-   * The warnings of a row the ledger accepts; it stays included.
-   *
-   * @param settlementSource {@link #settlementSourceOf} the account, null when it has none
+   * Which positive card-settlement preview rows have a source-account payment candidate.
+   * Only call with a source account the actor may currently read. Amounts are chunked to
+   * cap SQL bind parameters, and payment dates are checked in memory (no N+1 query).
    */
+  public Set<Integer> matchedSettlementRows(
+      UUID sourceId, String currency, List<ParsedImportRow> rows) {
+    if (sourceId == null || transactions == null) {
+      return Set.of();
+    }
+    List<ParsedImportRow> credits =
+        rows.stream()
+            .filter(ParsedImportRow::isParsed)
+            .filter(
+                row ->
+                    "SETTLEMENT".equals(row.canonical().transactionType())
+                        && row.canonical().amount().signum() > 0)
+            .toList();
+    if (credits.isEmpty()) {
+      return Set.of();
+    }
+    LocalDate from =
+        credits.stream()
+            .map(row -> row.canonical().bookingDate())
+            .min(LocalDate::compareTo)
+            .orElseThrow()
+            .minusDays(SettlementDetectionService.WINDOW_DAYS);
+    LocalDate to =
+        credits.stream()
+            .map(row -> row.canonical().bookingDate())
+            .max(LocalDate::compareTo)
+            .orElseThrow()
+            .plusDays(SettlementDetectionService.WINDOW_DAYS);
+    List<BigDecimal> amounts =
+        credits.stream()
+            .map(row -> row.canonical().amount().negate().stripTrailingZeros())
+            .distinct()
+            .toList();
+    Map<BigDecimal, TreeSet<LocalDate>> datesByAmount = new HashMap<>();
+    for (int i = 0; i < amounts.size(); i += PAYMENT_LOOKUP_BATCH_SIZE) {
+      for (Object[] payment :
+          transactions.findPairablePaymentDatesByAmounts(
+              sourceId,
+              currency,
+              SettlementDetectionService.PAYMENT_TYPES,
+              amounts.subList(i, Math.min(i + PAYMENT_LOOKUP_BATCH_SIZE, amounts.size())),
+              from,
+              to)) {
+        BigDecimal amount = ((BigDecimal) payment[0]).stripTrailingZeros();
+        datesByAmount.computeIfAbsent(amount, ignored -> new TreeSet<>()).add((LocalDate) payment[1]);
+      }
+    }
+    Set<Integer> matched = new HashSet<>();
+    for (ParsedImportRow row : credits) {
+      LocalDate date = row.canonical().bookingDate();
+      TreeSet<LocalDate> dates =
+          datesByAmount.get(row.canonical().amount().negate().stripTrailingZeros());
+      if (dates != null) {
+        LocalDate first = dates.ceiling(date.minusDays(SettlementDetectionService.WINDOW_DAYS));
+        if (first != null && !first.isAfter(date.plusDays(SettlementDetectionService.WINDOW_DAYS))) {
+          matched.add(row.rowNumber());
+        }
+      }
+    }
+    return matched;
+  }
+
+  /** The warnings of a row the ledger accepts; it stays included. */
   public List<String> warnings(
-      Account account, CanonicalImportRow row, LocalDate today, UUID settlementSource) {
+      Account account, CanonicalImportRow row, LocalDate today, boolean hasMatchingPayment) {
     List<String> warnings = new ArrayList<>();
     if (row.bookingDate().isAfter(today)) {
       warnings.add(ImportBatchValues.WARNING_FUTURE_DATE);
@@ -187,19 +255,8 @@ public class ImportRowCheckService {
     if (account.isHasStatementCycle()
         && "SETTLEMENT".equals(row.transactionType())
         && row.amount().signum() > 0
-        && transactions != null) {
-      if (settlementSource == null
-          || transactions
-              .findPairablePayments(
-                  settlementSource,
-                  account.getNativeCurrency(),
-                  SettlementDetectionService.PAYMENT_TYPES,
-                  row.amount().negate(),
-                  row.bookingDate().minusDays(SettlementDetectionService.WINDOW_DAYS),
-                  row.bookingDate().plusDays(SettlementDetectionService.WINDOW_DAYS))
-              .isEmpty()) {
-        warnings.add(ImportBatchValues.WARNING_CARD_SETTLEMENT_UNMATCHED);
-      }
+        && !hasMatchingPayment) {
+      warnings.add(ImportBatchValues.WARNING_CARD_SETTLEMENT_UNMATCHED);
     }
     return warnings;
   }
