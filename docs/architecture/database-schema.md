@@ -1056,7 +1056,7 @@ duplicate whose booking is gone, imported), `REPOINTED` (a duplicate of the row 
 now) or `DUPLICATE` (an included new row the ledger has gained, left out). `?status=` filters by the
 effective status. Reading writes nothing and leaves the batch's `version` alone. A rollback, removal
 or correction therefore needs no hook into open previews, and a client that holds the version it
-read still commits what it showed. A member's earlier exclusion of a `DUPLICATE` row does not
+read still commits what it showed. An excluded `PARSED` row does not reserve a duplicate match ahead of an included row. If the member explicitly includes that row later, PATCH checks it against remaining ledger matches and preserves the choice as a forced duplicate where applicable. A member's earlier exclusion of a `DUPLICATE` row does not
 survive its booking going away (product owner, 2026-10-14, as decided on #287). Each read costs the
 holds query and one duplicate check of the batch's readable rows, the same work as the commit; an
 upload or re-parse answers with the counts just stored. `PATCH .../rows/{n}` decides on the row as
