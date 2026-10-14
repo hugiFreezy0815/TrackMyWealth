@@ -11,6 +11,7 @@ import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportRowRawBatchRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -24,7 +25,6 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 

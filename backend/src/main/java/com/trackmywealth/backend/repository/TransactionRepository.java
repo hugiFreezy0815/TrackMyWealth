@@ -395,8 +395,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param("to") LocalDate to);
 
   /**
-   * The payment amounts and dates matching one bounded list from a card statement preview.
-   * Return only two columns, to avoid hydrating thousands of transaction entities.
+   * The payment amounts and dates matching one bounded list from a card statement preview. Return
+   * only two columns, to avoid hydrating thousands of transaction entities.
    */
   @Query(
       "select t.amount, t.bookingDate from Transaction t"

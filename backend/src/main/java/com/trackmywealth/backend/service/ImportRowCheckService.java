@@ -173,9 +173,9 @@ public class ImportRowCheckService {
   }
 
   /**
-   * Which positive card-settlement preview rows have a source-account payment candidate.
-   * Only call with a source account the actor may currently read. Amounts are chunked to
-   * cap SQL bind parameters, and payment dates are checked in memory (no N+1 query).
+   * Which positive card-settlement preview rows have a source-account payment candidate. Only call
+   * with a source account the actor may currently read. Amounts are chunked to cap SQL bind
+   * parameters, and payment dates are checked in memory (no N+1 query).
    */
   public Set<Integer> matchedSettlementRows(
       UUID sourceId, String currency, List<ParsedImportRow> rows) {
@@ -221,7 +221,9 @@ public class ImportRowCheckService {
               from,
               to)) {
         BigDecimal amount = ((BigDecimal) payment[0]).stripTrailingZeros();
-        datesByAmount.computeIfAbsent(amount, ignored -> new TreeSet<>()).add((LocalDate) payment[1]);
+        datesByAmount
+            .computeIfAbsent(amount, ignored -> new TreeSet<>())
+            .add((LocalDate) payment[1]);
       }
     }
     Set<Integer> matched = new HashSet<>();
@@ -231,7 +233,8 @@ public class ImportRowCheckService {
           datesByAmount.get(row.canonical().amount().negate().stripTrailingZeros());
       if (dates != null) {
         LocalDate first = dates.ceiling(date.minusDays(SettlementDetectionService.WINDOW_DAYS));
-        if (first != null && !first.isAfter(date.plusDays(SettlementDetectionService.WINDOW_DAYS))) {
+        if (first != null
+            && !first.isAfter(date.plusDays(SettlementDetectionService.WINDOW_DAYS))) {
           matched.add(row.rowNumber());
         }
       }
