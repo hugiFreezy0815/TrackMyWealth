@@ -25,7 +25,12 @@ public record ImportRowRecheck(
 
   /** An included new row the ledger has gained since: an excluded duplicate of {@code match}. */
   public static ImportRowRecheck becameDuplicate(UUID match) {
-    return new ImportRowRecheck(ImportBatchValues.RECHECK_DUPLICATE, false, match, true);
+    return becameDuplicate(match, true);
+  }
+
+  /** For an explicit include PATCH, the original PARSED row may still be excluded. */
+  public static ImportRowRecheck becameDuplicate(UUID match, boolean wasIncluded) {
+    return new ImportRowRecheck(ImportBatchValues.RECHECK_DUPLICATE, false, match, wasIncluded);
   }
 
   /** The row status the commit treats it as. */
