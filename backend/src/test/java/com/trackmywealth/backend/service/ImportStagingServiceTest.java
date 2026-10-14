@@ -56,12 +56,12 @@ class ImportStagingServiceTest {
     when(rowChecks.settlementSourceOf(card)).thenReturn(Optional.of(sourceId));
     when(accounts.findById(sourceId)).thenReturn(Optional.of(source));
     when(access.requireActingMember(actor)).thenReturn(member);
-    when(access.accountsWithAccess(member, List.of(source), AccessLevelValues.BALANCE_ONLY))
+    when(access.accountsWithAccess(member, List.of(source), AccessLevelValues.READ))
         .thenReturn(List.of());
 
     staging.stage(batch, card, List.of(), Map.of(), actor);
 
-    verify(access).accountsWithAccess(member, List.of(source), AccessLevelValues.BALANCE_ONLY);
+    verify(access).accountsWithAccess(member, List.of(source), AccessLevelValues.READ);
     verify(rowChecks).matchedSettlementRows(isNull(), eq("CHF"), eq(List.of()));
   }
 
@@ -80,7 +80,7 @@ class ImportStagingServiceTest {
     when(rowChecks.settlementSourceOf(card)).thenReturn(Optional.of(sourceId));
     when(accounts.findById(sourceId)).thenReturn(Optional.of(source));
     when(access.requireActingMember(actor)).thenReturn(member);
-    when(access.accountsWithAccess(member, List.of(source), AccessLevelValues.BALANCE_ONLY))
+    when(access.accountsWithAccess(member, List.of(source), AccessLevelValues.READ))
         .thenReturn(List.of(source));
 
     staging.stage(batch, card, List.of(), Map.of(), actor);

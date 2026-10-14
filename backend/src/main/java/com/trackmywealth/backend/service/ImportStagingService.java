@@ -110,8 +110,10 @@ public class ImportStagingService {
 
     LocalDate today = LocalDate.now(clock);
     UUID settlementSource = rowCheckService.settlementSourceOf(account).orElse(null);
-    // A card can be shared without its payment account. Only an actively visible source can
-    // influence the preview; a missing/revoked one never reaches the payment query.
+    // A card can be shared without its payment account. Only a source whose transactions the
+    // member may read influences the preview: whether the warning shows tells whether a payment of
+    // that amount exists there, so BALANCE_ONLY is not enough. A missing or revoked source never
+    // reaches the payment query.
     UUID visibleSource =
         settlementSource == null
             ? null
@@ -123,7 +125,7 @@ public class ImportStagingService {
                             .accountsWithAccess(
                                 accessControlService.requireActingMember(actor),
                                 List.of(source),
-                                AccessLevelValues.BALANCE_ONLY)
+                                AccessLevelValues.READ)
                             .isEmpty())
                 .map(Account::getId)
                 .orElse(null);

@@ -1695,6 +1695,82 @@ class ImportBatchControllerTest {
         .id();
   }
 
+  // Whether the warning shows tells whether the payment account holds a payment of that amount:
+  // only a member who may read that account's transactions gets the lookup.
+  @Test
+  void theUnmatchedSettlementWarningDoesNotRevealABalanceOnlyPaymentAccount() throws Exception {
+    UUID card =
+        client()
+            .post()
+            .uri("/api/v1/accounts")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(AccountRequests.account("Synthetic shared card", "CREDIT_CARD", "CHF").build())
+            .exchange()
+            .expectStatus()
+            .isCreated()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody()
+            .id();
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + card + "/settlement-source")
+        .headers(CurrentVersion.ifMatchForCard(dataSource, card))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetSettlementSourceRequest(account))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    ImportTemplateResponse sourceTemplate =
+        createTemplate(simpleTemplate("Synthetic payment source", SIMPLE_COLUMNS));
+    ImportBatchResponse payment =
+        upload(token, sourceTemplate.id(), csv("2031-06-02;-30.00;CHF;Card payment;PAY-1;"));
+    assertThat(commit(account, payment.id(), payment.version()).counts().imported()).isEqualTo(1);
+    ImportTemplateResponse template = createTemplate(creditCardTemplate());
+    byte[] file =
+        ("Date;Amount;Currency;Text;Reference;OriginalAmount;OriginalCurrency;Rate\n"
+                + "2031-06-02;30,00;CHF;Monthly card payment;CARD-P;;;\n")
+            .getBytes(StandardCharsets.UTF_8);
+
+    UUID balanceOnlyId = createSecondMember("balance@example.com");
+    grantOnAccount(balanceOnlyId, card, AccessLevelValues.EDIT);
+    grantOnAccount(balanceOnlyId, account, AccessLevelValues.BALANCE_ONLY);
+    assertThat(settlementWarnings(login("balance@example.com"), card, file, template.id()))
+        .containsExactly("IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED");
+
+    UUID readerId = createSecondMember("payments-reader@example.com");
+    grantOnAccount(readerId, card, AccessLevelValues.EDIT);
+    grantOnAccount(readerId, account, AccessLevelValues.READ);
+    assertThat(settlementWarnings(login("payments-reader@example.com"), card, file, template.id()))
+        .isEmpty();
+  }
+
+  private List<String> settlementWarnings(String bearer, UUID card, byte[] file, UUID templateId) {
+    ImportBatchResponse batch =
+        upload(bearer, card, file, templateId)
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+    return client(bearer)
+        .get()
+        .uri("/api/v1/accounts/" + card + "/imports/" + batch.id() + "/rows")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .returnResult()
+        .getResponseBody()
+        .content()
+        .get(0)
+        .warnings()
+        .stream()
+        .map(warning -> warning.code())
+        .filter(code -> code.equals("IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED"))
+        .toList();
+  }
+
   private UUID createSecondMember(String email) throws SQLException {
     client()
         .post()
