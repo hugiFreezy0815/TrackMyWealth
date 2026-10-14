@@ -211,7 +211,7 @@ public class ImportRowCheckService {
             .map(row -> row.canonical().amount().negate().stripTrailingZeros())
             .distinct()
             .toList();
-    Map<BigDecimal, NavigableSet<LocalDate>> datesByAmount = new HashMap<>();
+    Map<BigDecimal, List<LocalDate>> datesByAmount = new HashMap<>();
     for (int i = 0; i < amounts.size(); i += PAYMENT_LOOKUP_BATCH_SIZE) {
       for (Object[] payment :
           transactions.findPairablePaymentDatesByAmounts(
@@ -223,22 +223,24 @@ public class ImportRowCheckService {
               to)) {
         BigDecimal amount = ((BigDecimal) payment[0]).stripTrailingZeros();
         datesByAmount
-            .computeIfAbsent(amount, ignored -> new TreeSet<>())
+            .computeIfAbsent(amount, ignored -> new ArrayList<>())
             .add((LocalDate) payment[1]);
       }
     }
     Set<Integer> matched = new HashSet<>();
     for (ParsedImportRow row : credits) {
       LocalDate date = row.canonical().bookingDate();
-      NavigableSet<LocalDate> dates =
+      List<LocalDate> dates =
           datesByAmount.get(row.canonical().amount().negate().stripTrailingZeros());
       if (dates != null) {
-        LocalDate first = dates.ceiling(date.minusDays(SettlementDetectionService.WINDOW_DAYS));
-        if (first != null
-            && !first.isAfter(date.plusDays(SettlementDetectionService.WINDOW_DAYS))) {
-          // Consume the date so one source payment cannot satisfy two preview settlements.
-          dates.remove(first);
-          matched.add(row.rowNumber());
+        for (int i = 0; i < dates.size(); i++) {
+          LocalDate candidate = dates.get(i);
+          if (!candidate.isBefore(date.minusDays(SettlementDetectionService.WINDOW_DAYS))
+              && !candidate.isAfter(date.plusDays(SettlementDetectionService.WINDOW_DAYS))) {
+            dates.remove(i);
+            matched.add(row.rowNumber());
+            break;
+          }
         }
       }
     }
