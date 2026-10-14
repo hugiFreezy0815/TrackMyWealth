@@ -157,6 +157,9 @@ public class ImportFileParserService {
     List<String> keys = rawDataKeys(header);
     DateTimeFormatter dateFormatter = dateFormatter(template.dateFormat());
     Map<String, String> typeMapping = normalizedTypeMapping(template.typeMapping());
+    Map<String, com.google.re2j.Pattern> descriptionPatterns = new LinkedHashMap<>();
+    template.descriptionTypePatterns().forEach(
+        (type, pattern) -> descriptionPatterns.put(type, Re2Patterns.compile("(?i)" + pattern)));
 
     // #268: the column of each booking's running balance, when the layout checks one; and the
     // balance the bookings so far lead to, null while unknown.
@@ -192,6 +195,7 @@ public class ImportFileParserService {
                 columns,
                 dateFormatter,
                 typeMapping,
+                descriptionPatterns,
                 accountCurrency,
                 creditCardAccount);
         if (checked) {
@@ -883,6 +887,7 @@ public class ImportFileParserService {
       Map<String, Integer> columns,
       DateTimeFormatter dateFormatter,
       Map<String, String> typeMapping,
+      Map<String, com.google.re2j.Pattern> descriptionPatterns,
       String accountCurrency,
       boolean creditCardAccount) {
     ImportColumnMapping mapping = template.columnMapping();
@@ -907,11 +912,21 @@ public class ImportFileParserService {
             amount,
             optionalCell(record, columns.get("description")),
             mapping.description(),
-            template.descriptionTypePatterns(),
+            descriptionPatterns,
             creditCardAccount);
     String mcc = optionalCell(record, columns.get("mcc"));
     if (mcc != null && !MCC.matcher(mcc).matches()) {
       throw rowError(ImportRowErrorValues.MCC_INVALID, ARG_COLUMN, mapping.mcc(), ARG_VALUE, mcc);
+    }
+    BigDecimal originalAmount = originalAmountOf(record, template, columns);
+    String originalCurrency = originalCurrencyOf(record, template, columns);
+    BigDecimal issuerRate = exchangeRateOf(record, template, columns);
+    if ((originalAmount == null) != (originalCurrency == null)
+        || (originalAmount != null && originalAmount.signum() == 0 && amount.signum() != 0)
+        || (originalAmount != null && originalAmount.signum() != 0
+            && originalAmount.signum() != amount.signum())) {
+      throw rowError(ImportRowErrorValues.AMOUNT_OUT_OF_RANGE, ARG_COLUMN,
+          mapping.originalAmount(), ARG_VALUE, "inconsistent original amount/currency");
     }
     return new CanonicalImportRow(
         bookingDate,
@@ -925,9 +940,9 @@ public class ImportFileParserService {
         mcc,
         optionalCell(record, columns.get("iso20022BankTransactionCode")),
         optionalCell(record, columns.get("notes")),
-        originalAmountOf(record, template, columns),
-        originalCurrencyOf(record, template, columns),
-        exchangeRateOf(record, template, columns));
+        originalAmount,
+        originalCurrency,
+        issuerRate);
   }
 
   private static BigDecimal originalAmountOf(
@@ -1186,8 +1201,8 @@ public class ImportFileParserService {
   private static String typeByDescription(
       String description, String column, Map<String, String> patterns) {
     String match = null;
-    for (Map.Entry<String, String> entry : patterns.entrySet()) {
-      if (Re2Patterns.compile("(?i)" + entry.getValue()).matcher(description).find()) {
+    for (Map.Entry<String, com.google.re2j.Pattern> entry : patterns.entrySet()) {
+      if (entry.getValue().matcher(description).find()) {
         if (match != null) {
           throw rowError(ImportRowErrorValues.TYPE_AMBIGUOUS, ARG_COLUMN, column);
         }
@@ -1206,7 +1221,7 @@ public class ImportFileParserService {
       BigDecimal amount,
       String description,
       String descriptionColumn,
-      Map<String, String> descriptionPatterns,
+      Map<String, com.google.re2j.Pattern> descriptionPatterns,
       boolean creditCardAccount) {
     if (value != null) {
       String mapped = typeMapping.get(normalize(value));
