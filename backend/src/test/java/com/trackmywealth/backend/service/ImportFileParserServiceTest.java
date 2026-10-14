@@ -77,6 +77,40 @@ class ImportFileParserServiceTest {
     assertThat(result.rows().get(3).errorCode()).isEqualTo(ImportRowErrorValues.ROW_FILTERED);
   }
 
+  /** Bank exports pad cells with non-breaking spaces; they are no part of the value either. */
+  @Test
+  void aFilterValuePaddedWithNonBreakingSpacesIsAccepted() {
+    ImportTemplateDefinition template =
+        new Template().rowFilter("Status", List.of("\u00A0Gebucht")).build();
+    String csv =
+        "date,amount,text,Status\n"
+            + "2031-01-02,-5.00,Booked,Gebucht\u00A0\n"
+            + "2031-01-03,-6.00,Booked,\u202FGEBUCHT\n"
+            + "2031-01-04,-7.00,Pending,\u00A0\n";
+
+    ImportParseResult result = parser.parse(utf8(csv), template, null);
+
+    assertThat(result.rows())
+        .extracting(ParsedImportRow::status)
+        .containsExactly("PARSED", "PARSED", "SKIPPED");
+  }
+
+  /** One answer names every column the file lacks: the mapped ones and the filter's. */
+  @Test
+  void aMismatchNamesTheMissingFilterColumnWithTheMissingMappedOnes() {
+    ImportTemplateDefinition template =
+        new Template().rowFilter("Status", List.of("Gebucht")).build();
+
+    ApiException error =
+        assertFileError(
+            utf8("date,amount\n2031-01-02,-5.00\n"),
+            template,
+            ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+
+    assertThat(error.getBody().getProperties())
+        .containsEntry("missingColumns", List.of("text", "Status"));
+  }
+
   /** Acceptance criterion 2: a file without the filter column names it as missing. */
   @Test
   void aHeaderLackingTheRowFilterColumnIsATemplateMismatch() {
@@ -171,6 +205,15 @@ class ImportFileParserServiceTest {
         Arguments.of(new ImportRowFilter("Status", tooMany), 0, "rowFilter.acceptedValues"),
         Arguments.of(
             new ImportRowFilter("Status", List.of("Gebucht", " GEBUCHT ")),
+            0,
+            "rowFilter.acceptedValues"),
+        // Only non-breaking spaces: blank as compared, so it would accept the blank cells.
+        Arguments.of(
+            new ImportRowFilter("Status", List.of("\u00A0\u202F", "Gebucht")),
+            0,
+            "rowFilter.acceptedValues"),
+        Arguments.of(
+            new ImportRowFilter("Status", List.of("Gebucht", "Gebucht\u00A0")),
             0,
             "rowFilter.acceptedValues"));
   }

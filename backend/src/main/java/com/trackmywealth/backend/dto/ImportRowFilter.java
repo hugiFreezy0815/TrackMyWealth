@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Size;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -17,7 +18,14 @@ public record ImportRowFilter(
     @Schema(description = "Source column name or 0-based column index, like other mappings.")
         String column,
     @Schema(description = "Accepted values, compared after trimming and ignoring case.")
+        @Size(max = ImportRowFilter.MAX_ACCEPTED_VALUES)
         List<String> acceptedValues) {
+
+  /**
+   * At most this many accepted values. A longer list is refused as the request is read (400), not
+   * only by the template rules (422) after all of it has been copied.
+   */
+  public static final int MAX_ACCEPTED_VALUES = 32;
 
   public ImportRowFilter {
     // Not List.copyOf: null elements must reach validateTemplate as a 422, not an NPE. A missing

@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.stream.IntStream;
 import javax.sql.DataSource;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -376,6 +377,23 @@ class ImportTemplateControllerTest {
         update(v2.id(), v2.version(), withRowFilter(statusFilterRequest(List.of("x")), null));
     assertThat(v3.templateVersion()).as("removing the filter").isEqualTo("3");
     assertThat(v3.rowFilter()).isNull();
+  }
+
+  /** More accepted values than allowed are refused as the request is read, before the rules. */
+  @Test
+  void tooManyAcceptedValuesAreA400NamingTheField() {
+    List<String> tooMany =
+        IntStream.rangeClosed(0, ImportRowFilter.MAX_ACCEPTED_VALUES)
+            .mapToObj(i -> "v" + i)
+            .toList();
+
+    postStatus(statusFilterRequest(tooMany))
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VALIDATION_FAILED")
+        .jsonPath("$.errors[0].field")
+        .isEqualTo("rowFilter.acceptedValues");
   }
 
   @Test

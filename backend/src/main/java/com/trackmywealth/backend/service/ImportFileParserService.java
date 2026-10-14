@@ -96,7 +96,6 @@ public class ImportFileParserService {
   private static final String ARG_COLUMN = "column";
   private static final String DESCRIPTION_TYPE_PATTERNS = "descriptionTypePatterns";
   private static final int MAX_ROW_FILTER_COLUMN_LENGTH = 200;
-  private static final int MAX_ROW_FILTER_VALUES = 32;
   private static final int MAX_ROW_FILTER_VALUE_LENGTH = 100;
   private static final String ARG_VALUE = "value";
   private static final String ARG_CURRENCY_COLUMN = "currencyColumn";
@@ -166,7 +165,7 @@ public class ImportFileParserService {
         template.rowFilter() == null
             ? Set.of()
             : template.rowFilter().acceptedValues().stream()
-                .map(ImportFileParserService::normalize)
+                .map(ImportFileParserService::filterValue)
                 .collect(Collectors.toUnmodifiableSet());
     DateTimeFormatter dateFormatter = dateFormatter(template.dateFormat());
     Map<String, String> typeMapping = normalizedTypeMapping(template.typeMapping());
@@ -695,18 +694,18 @@ public class ImportFileParserService {
     }
     List<String> values = filter.acceptedValues();
     if (values.isEmpty()
-        || values.size() > MAX_ROW_FILTER_VALUES
+        || values.size() > ImportRowFilter.MAX_ACCEPTED_VALUES
         || values.stream()
             .anyMatch(
                 value ->
                     value == null
-                        || value.isBlank()
+                        || filterValue(value).isEmpty()
                         || value.length() > MAX_ROW_FILTER_VALUE_LENGTH)) {
       throw invalid(
           "rowFilter.acceptedValues",
           "Give 1 to 32 non-blank accepted values of at most 100 characters each.");
     }
-    if (values.stream().map(ImportFileParserService::normalize).distinct().count()
+    if (values.stream().map(ImportFileParserService::filterValue).distinct().count()
         != values.size()) {
       throw invalid("rowFilter.acceptedValues", "Accepted values must be distinct.");
     }
@@ -891,8 +890,7 @@ public class ImportFileParserService {
     List<String> missing = new ArrayList<>();
     for (Map.Entry<String, String> entry : template.columnMapping().mappedColumns().entrySet()) {
       String column = entry.getValue();
-      int index =
-          template.hasHeaderRow() ? columnIndex(column, header) : Integer.parseInt(column.strip());
+      int index = indexOf(template, column, header);
       if (index < 0) {
         if (!missing.contains(column)) {
           missing.add(column);
@@ -901,28 +899,33 @@ public class ImportFileParserService {
         columns.put(entry.getKey(), index);
       }
     }
+    // US-07-09: the row filter's column is one the file must have too, named in the same answer.
+    ImportRowFilter filter = template.rowFilter();
+    if (filter != null
+        && indexOf(template, filter.column(), header) < 0
+        && !missing.contains(filter.column())) {
+      missing.add(filter.column());
+    }
     if (!missing.isEmpty()) {
       throw fileError(
               ApiErrorCode.IMPORT_TEMPLATE_MISMATCH,
-              "The file's header lacks columns this template maps: " + missing.size() + ".")
+              "The file's header lacks columns this template reads: " + missing.size() + ".")
           .withProperty("missingColumns", missing);
     }
     return columns;
   }
 
+  // The row filter's column; null without a filter. resolveColumns has made sure the file has it.
   private static Integer rowFilterIndex(ImportTemplateDefinition template, List<String> header) {
-    if (template.rowFilter() == null) {
-      return null;
-    }
-    String column = template.rowFilter().column();
-    int index =
-        template.hasHeaderRow() ? columnIndex(column, header) : Integer.parseInt(column.strip());
-    if (index < 0) {
-      throw fileError(
-              ApiErrorCode.IMPORT_TEMPLATE_MISMATCH, "The file's header lacks the filter column.")
-          .withProperty("missingColumns", List.of(column));
-    }
-    return index;
+    return template.rowFilter() == null
+        ? null
+        : indexOf(template, template.rowFilter().column(), header);
+  }
+
+  // A column of the template: by header text or index, or by index in a headerless file.
+  private static int indexOf(
+      ImportTemplateDefinition template, String column, List<String> header) {
+    return template.hasHeaderRow() ? columnIndex(column, header) : Integer.parseInt(column.strip());
   }
 
   // US-07-09: whether the template's row filter rejects the row. A row too short to hold the filter
@@ -935,7 +938,17 @@ public class ImportFileParserService {
     if (filterIndex >= record.size()) {
       throw rowError(ImportRowErrorValues.COLUMN_MISSING, ARG_COLUMN, filter.column());
     }
-    return !accepted.contains(normalize(record.get(filterIndex)));
+    return !accepted.contains(filterValue(record.get(filterIndex)));
+  }
+
+  // US-07-09: a filter value as compared - ignoring case and every space around it, also a
+  // non-breaking one, which String.strip keeps (bank exports pad cells with them).
+  private static String filterValue(String text) {
+    String value = text;
+    for (String space : SPACES) {
+      value = value.replace(space, " ");
+    }
+    return normalize(value);
   }
 
   // A column is named by header text (trimmed, ignoring case; it must occur exactly once) or by

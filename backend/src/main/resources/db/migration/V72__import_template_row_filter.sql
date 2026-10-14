@@ -5,7 +5,12 @@ ADD COLUMN row_filter JSONB;
 
 ALTER TABLE import_template
 ADD CONSTRAINT chk_import_template_row_filter CHECK (
-    row_filter IS NULL OR jsonb_typeof(row_filter) = 'object'
+    row_filter IS NULL
+    OR (
+        jsonb_typeof(row_filter) = 'object'
+        AND jsonb_typeof(row_filter -> 'column') = 'string'
+        AND jsonb_typeof(row_filter -> 'acceptedValues') = 'array'
+    )
 );
 
 COMMENT ON COLUMN import_template.row_filter IS

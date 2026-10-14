@@ -17,6 +17,7 @@ import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportParseRequest;
+import com.trackmywealth.backend.dto.ImportRowFilter;
 import com.trackmywealth.backend.dto.ImportRowInclusionRequest;
 import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
@@ -850,6 +851,44 @@ class ImportBatchControllerTest {
     assertThat(committed.counts().imported()).isEqualTo(2);
     assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(2);
     assertThat(count("SELECT count(*) FROM transaction WHERE amount = 0")).isZero();
+  }
+
+  /** US-07-09: a row the template's filter rejects is stored skipped, without a booking. */
+  @Test
+  void rowsTheTemplateFilterRejectsAreStoredSkippedWithoutABookingAndNeverCommitted() {
+    List<String> columns =
+        List.of("Date", "Amount", "Currency", "Text", "Reference", "MCC", "Status");
+    ImportTemplateResponse filtered = createTemplate(statusFilterTemplate(columns));
+    byte[] file =
+        (String.join(";", columns)
+                + "\n2031-05-02;-12.40;CHF;Coffee;F1;;Gebucht"
+                + "\n2031-05-03;-80.00;CHF;Groceries;F2;;Vorgemerkt\n")
+            .getBytes(StandardCharsets.UTF_8);
+
+    ImportBatchResponse batch = upload(token, filtered.id(), file);
+
+    assertThat(batch.counts().total()).isEqualTo(2);
+    assertThat(batch.counts().newRows()).isEqualTo(1);
+    assertThat(batch.counts().skipped()).isEqualTo(1);
+    assertThat(batch.counts().errors()).isZero();
+    assertThat(batch.counts().included()).isEqualTo(1);
+    ImportRowResponse pending = rows(batch.id(), "?status=SKIPPED").content().get(0);
+    assertThat(pending.rowNumber()).isEqualTo(2);
+    assertThat(pending.included()).isFalse();
+    assertThat(pending.canonical()).isNull();
+    assertThat(pending.rawData()).containsEntry("Status", "Vorgemerkt");
+    assertThat(pending.error().code()).isEqualTo("IMPORT_ROW_FILTERED");
+    assertThat(
+            count(
+                "SELECT count(*) FROM import_row_raw WHERE parse_status = 'SKIPPED'"
+                    + " AND amount IS NULL AND booking_date IS NULL AND currency IS NULL"))
+        .isEqualTo(1);
+
+    ImportBatchResponse committed = commit(account, batch.id(), batch.version());
+
+    assertThat(committed.counts().imported()).isEqualTo(1);
+    assertThat(committed.counts().skipped()).isEqualTo(1);
+    assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(1);
   }
 
   @Test
@@ -2003,6 +2042,34 @@ class ImportBatchControllerTest {
         headerColumns,
         null,
         null);
+  }
+
+  // As simpleTemplate, keeping only the rows whose Status is "Gebucht" (US-07-09).
+  private static ImportTemplateRequest statusFilterTemplate(List<String> headerColumns) {
+    ImportTemplateRequest simple = simpleTemplate("Booked only", headerColumns);
+    return new ImportTemplateRequest(
+        simple.name(),
+        simple.institutionCatalogueId(),
+        simple.templateClass(),
+        simple.delimiter(),
+        simple.encoding(),
+        simple.decimalSeparator(),
+        simple.thousandsSeparator(),
+        simple.dateFormat(),
+        simple.headerRowIndex(),
+        simple.preambleRowCount(),
+        simple.trailingSummaryRowCount(),
+        simple.amountRepresentation(),
+        simple.currencyMode(),
+        simple.fixedCurrency(),
+        simple.columnMapping(),
+        simple.typeMapping(),
+        simple.accountIdentificationStrategy(),
+        simple.headerColumns(),
+        simple.fileFormat(),
+        simple.pdfLayout(),
+        simple.descriptionTypePatterns(),
+        new ImportRowFilter("Status", List.of("Gebucht")));
   }
 
   // A bank export whose columns are date, amount, currency, text and an optional reference, in

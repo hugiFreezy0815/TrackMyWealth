@@ -803,18 +803,22 @@ An unmatched positive settlement receives the advisory
 the other values with `IMPORT_TEMPLATE_UNSUPPORTED`.
 
 **Optional row filters (V72, #269).** A versioned import template may define `row_filter`: a
-JSONB object (`chk_import_template_row_filter`) with a source `column` and 1 to 32 distinct
-`acceptedValues`. Values are compared case-insensitively after trimming whitespace. The column
-follows the column mapping's rules: an unambiguous header name or a 0-based index (required for a
-headerless file); a PDF template names one of its layout's cells. A row whose value is not
-accepted, or whose cell is blank, stays in the preview as `SKIPPED` with `IMPORT_ROW_FILTERED`, is
-no error and is never committed. Only rows read into cells are filtered: a PDF line the reader
-could not read keeps its own error, and a row too short to hold the filter column is
-`IMPORT_ROW_COLUMN_MISSING`. A filtered PDF line with a checked running balance carries on from
-the balance it states. A file whose header lacks the filter column fails as
-`IMPORT_TEMPLATE_MISMATCH` with `missingColumns` naming it, and template detection does not offer
-such a template. Changing the filter creates a new template version; existing templates have no
-filter and keep their previous behaviour.
+JSONB object with a string `column` and an array `acceptedValues` (`chk_import_template_row_filter`)
+of 1 to 32 distinct values; a request with more is a 400 as it is read, the other rules a 422
+`IMPORT_TEMPLATE_INVALID`. Values are compared ignoring case and the spaces around them, also
+non-breaking ones, which bank exports pad cells with. The column follows the column mapping's
+rules: an unambiguous header name or a 0-based index (required for a headerless file); a PDF
+template names one of its layout's cells. A row whose value is not accepted, or whose cell is
+blank, stays in the preview as `SKIPPED` with `IMPORT_ROW_FILTERED` and without booking values
+(`amount`, `booking_date` and `currency` are NULL), is no error and is never committed. Only rows
+read into cells are filtered: a PDF line the reader could not read keeps its own error, and a row
+too short to hold the filter column is `IMPORT_ROW_COLUMN_MISSING`. Under a checked running
+balance, a filtered PDF line carries on from the balance it states; one that states none pauses
+the check until a booking states one again, since a pending booking may or may not be in the
+balances below it. A file whose header lacks the filter column fails as `IMPORT_TEMPLATE_MISMATCH`,
+its `missingColumns` naming it with any mapped column the file lacks, and template detection does
+not offer such a template. Changing the filter creates a new template version; existing templates
+have no filter and keep their previous behaviour.
 
 **PDF statements (V66, #268).** `file_format` says how the file is read: `CSV`, `PDF_TEXT` (the
 PDF's text layer, PDFBox) or `PDF_OCR` (a scanned PDF, rendered and read by a local Tesseract
