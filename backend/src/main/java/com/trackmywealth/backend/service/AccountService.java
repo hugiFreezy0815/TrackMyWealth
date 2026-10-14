@@ -275,6 +275,11 @@ public class AccountService {
 
     account.setStatus(ARCHIVED);
     account.setArchivedAt(now());
+    // US-07-10: no import file is matched to an archived account, so it gives up its identifier
+    // (hash and masked value together, chk_account_identifier_masked): a successor account can
+    // register it. A restored account registers it again.
+    account.setIdentifierHash(null);
+    account.setIdentifierMasked(null);
     account = accountRepository.saveAndFlush(account);
 
     return toSummary(account, actor);

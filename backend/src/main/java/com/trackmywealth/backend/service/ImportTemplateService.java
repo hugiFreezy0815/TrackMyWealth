@@ -710,7 +710,8 @@ public class ImportTemplateService {
         errorRows,
         skippedRows,
         errorCounts,
-        rows);
+        rows,
+        result.accountIdentifier() == null ? null : result.accountIdentifier().found());
   }
 
   private ImportPreviewRowResponse previewRow(ParsedImportRow row, Locale locale) {

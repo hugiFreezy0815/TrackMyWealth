@@ -1147,7 +1147,12 @@ account's normalized identifier and its kind (`IBAN:...` or `MASKED_CARD:...`), 
 account's workspace. That key is itself the HMAC of the workspace id under the server key, so equal
 identifiers in two workspaces hash differently. A partial unique index makes an identifier unique
 per workspace (`uq_account_workspace_identifier_hash`; a violation is a 409
-`ACCOUNT_IDENTIFIER_IN_USE`). `identifier_masked` is the display value: an IBAN's last four
+`ACCOUNT_IDENTIFIER_IN_USE`). That 409 does not name the other account, but it does tell a member
+with EDIT access to one account that the workspace holds this identifier, possibly on an account
+the member cannot see. This is accepted: the identifier is one the member already knows, a
+workspace is one household, and any refusal of a duplicate would say the same. Archiving an account
+clears its identifier (no file is matched to it any more), so a successor account can register it;
+a restored account registers it again. `identifier_masked` is the display value: an IBAN's last four
 characters, or a card number masked except for at most its first 6 and last 4 digits (PCI DSS).
 `chk_account_identifier_masked` keeps both columns set or both empty. The plain number is never
 stored, logged or returned. Before V73, `identifier_masked` was free text the account update stored
@@ -1173,8 +1178,10 @@ first line before the header row that starts with the rule's `label`, its identi
 line or the single capture group of an optional RE2 `pattern`) or `COLUMN` (a mapped column of every
 row; every filled cell must hold the same identifier). `FILENAME` stays unsupported: a file name is
 renamed too easily. The rule (`account_identifier_rule`, JSONB object: `kind`, `label`, `pattern`,
-`column`) is part of the versioned definition, and a file lacking a `COLUMN` rule's column is
-`IMPORT_TEMPLATE_MISMATCH` naming it.
+`column`; `chk_import_template_account_identifier_rule` requires a known `kind`) is part of the
+versioned definition, and a file lacking a `COLUMN` rule's column is `IMPORT_TEMPLATE_MISMATCH`
+naming it. A template's dry run says whether the rule found exactly one valid identifier in the
+sample (`accountIdentifierFound`), never which, so a wrong label or column shows before any upload.
 
 **Batches.** Every parse (upload or re-parse) matches the file's identifier by its hash and records
 the outcome in `import_batch.account_identification`: `MATCHED` (the batch's account by its IBAN),

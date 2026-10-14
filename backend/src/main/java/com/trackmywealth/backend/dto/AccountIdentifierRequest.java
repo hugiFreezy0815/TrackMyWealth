@@ -15,4 +15,11 @@ public record AccountIdentifierRequest(
                     + " first 6 and the last 4 digits.")
         @NotBlank
         @Size(max = 64)
-        String identifier) {}
+        String identifier) {
+
+  // The plain account number must never reach a log line, should anything print the request.
+  @Override
+  public String toString() {
+    return "AccountIdentifierRequest[identifier=(hidden)]";
+  }
+}

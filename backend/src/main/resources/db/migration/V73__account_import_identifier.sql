@@ -32,7 +32,11 @@ ADD COLUMN account_identifier_rule JSONB;
 
 ALTER TABLE import_template
 ADD CONSTRAINT chk_import_template_account_identifier_rule CHECK (
-    account_identifier_rule IS NULL OR jsonb_typeof(account_identifier_rule) = 'object'
+    account_identifier_rule IS NULL
+    OR (
+        jsonb_typeof(account_identifier_rule) = 'object'
+        AND account_identifier_rule ->> 'kind' IN ('IBAN', 'MASKED_CARD')
+    )
 );
 
 -- What the parsed file says about its account, and whether the member confirmed importing it into

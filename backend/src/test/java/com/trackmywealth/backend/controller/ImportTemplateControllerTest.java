@@ -354,6 +354,53 @@ class ImportTemplateControllerTest {
   }
 
   /** US-07-10: the account identifier rule is stored, read back and versioned with the template. */
+  /**
+   * US-07-10: a dry run shows whether the rule finds the identifier, so a wrong rule shows early.
+   */
+  @Test
+  void aDryRunSaysWhetherTheAccountIdentifierRuleFindsOne() {
+    ImportTemplateResponse identifying =
+        create(
+            withAccountIdentifier(
+                withRowFilter(statusFilterRequest(List.of("Gebucht")), null),
+                "COLUMN",
+                new ImportAccountIdentifierRule("IBAN", null, null, "Status")));
+    byte[] named =
+        ("date,amount,text,Status\n2031-01-02,-5.00,Groceries,DE89 3704 0044 0532 0130 00\n")
+            .getBytes(StandardCharsets.UTF_8);
+
+    assertThat(dryRun(identifying.id(), named).accountIdentifierFound()).isTrue();
+    assertThat(dryRun(identifying.id(), STATUS_CSV).accountIdentifierFound())
+        .as("no valid IBAN in the column")
+        .isFalse();
+    ImportTemplateResponse selected = create(statusFilterRequest(List.of("Gebucht")));
+    assertThat(dryRun(selected.id(), STATUS_CSV).accountIdentifierFound())
+        .as("the account is selected at upload")
+        .isNull();
+  }
+
+  /** V73: the database refuses a stored rule of an unknown kind, whatever wrote it. */
+  @Test
+  void theDatabaseRefusesAnAccountIdentifierRuleOfAnUnknownKind() throws Exception {
+    ImportTemplateResponse created =
+        create(
+            withAccountIdentifier(
+                statusFilterRequest(List.of("Gebucht")),
+                "COLUMN",
+                new ImportAccountIdentifierRule("IBAN", null, null, "Status")));
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement update =
+            connection.prepareStatement(
+                "UPDATE import_template SET account_identifier_rule = ?::jsonb WHERE id = ?")) {
+      update.setString(1, "{\"kind\": \"PHONE\", \"column\": \"Status\"}");
+      update.setObject(2, created.id());
+      assertThatThrownBy(update::executeUpdate)
+          .isInstanceOf(SQLException.class)
+          .hasMessageContaining("chk_import_template_account_identifier_rule");
+    }
+  }
+
   @Test
   void theAccountIdentifierRuleIsStoredAndChangingItWritesANewVersion() throws Exception {
     ImportAccountIdentifierRule rule =
@@ -1432,6 +1479,15 @@ class ImportTemplateControllerTest {
         r.descriptionTypePatterns(),
         filter,
         r.accountIdentifier());
+  }
+
+  private ImportTemplateTestResponse dryRun(UUID templateId, byte[] content) {
+    return multipart(BASE + "/" + templateId + "/test", content, null)
+        .expectStatus()
+        .isOk()
+        .expectBody(ImportTemplateTestResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private static ImportTemplateRequest withAccountIdentifier(

@@ -70,6 +70,19 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  void aRacingDuplicateAccountIdentifierIsTheServicesOwnConflict() {
+    ProblemDetail problem =
+        handler.handleDataIntegrityViolation(
+            violationWithRootMessage(
+                "ERROR: duplicate key value violates unique constraint"
+                    + " \"uq_account_workspace_identifier_hash\""));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getProperties())
+        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.ACCOUNT_IDENTIFIER_IN_USE);
+  }
+
+  @Test
   void aRacingDuplicateCategoryCodeIsTranslatedToAConflictTellingTheCallerToRetry() {
     ProblemDetail problem =
         handler.handleDataIntegrityViolation(

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -151,5 +152,12 @@ class AccountIdentifierServiceTest {
     Optional<String> normalized = AccountIdentifierService.normalize(value, IBAN);
     assertThat(normalized).isPresent();
     return normalized.get();
+  }
+
+  @Test
+  void aRequestNeverPrintsThePlainIdentifier() {
+    assertThat(new AccountIdentifierRequest("DE89 3704 0044 0532 0130 00").toString())
+        .doesNotContain("0532")
+        .doesNotContain("DE89");
   }
 }

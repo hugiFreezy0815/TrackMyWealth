@@ -384,6 +384,43 @@ class ImportBatchControllerTest {
 
   /** A masked card number fits several cards: a match on it still needs a yes. */
   @Test
+  void confirmingTheAccountNeedsTheCurrentVersionAndAnOpenBatch() {
+    UUID template = createTemplate(preambleTemplate()).id();
+    ImportBatchResponse batch = upload(token, template, preambleFile(EXAMPLE_IBAN));
+    assertThat(batch.accountIdentification().confirmationRequired()).isTrue();
+
+    confirmAccountStatus(batch.id(), "\"" + (batch.version() + 1) + "\"")
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED);
+    confirmAccountStatus(batch.id(), null).isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
+
+    ImportBatchResponse confirmed = confirmAccount(batch.id(), batch.version());
+    ImportBatchResponse committed = commit(account, batch.id(), confirmed.version());
+    confirmAccountStatus(batch.id(), "\"" + committed.version() + "\"")
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo(ApiErrorCode.IMPORT_BATCH_STATE);
+  }
+
+  @Test
+  void archivingAnAccountFreesItsIdentifierForASuccessor() {
+    registerIdentifier(account, EXAMPLE_IBAN);
+
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + account + "/archive")
+        .header(HttpHeaders.IF_MATCH, "\"" + accountVersion(account) + "\"")
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    assertThat(single("SELECT identifier_hash FROM account WHERE id = ?", account)).isNull();
+    assertThat(single("SELECT identifier_masked FROM account WHERE id = ?", account)).isNull();
+    UUID successor = createAccount("Neues Privatkonto", "CHF");
+    registerIdentifier(successor, EXAMPLE_IBAN);
+  }
+
+  @Test
   void aMaskedCardMatchAlwaysNeedsAConfirmation() {
     UUID card = createAccount("Synthetic card", "CREDIT_CARD", "CHF");
     registerIdentifier(card, "1234 56XX XXXX 7890");
@@ -2020,6 +2057,15 @@ class ImportBatchControllerTest {
 
   private int accountVersion(UUID accountId) {
     return ((Number) single("SELECT version FROM account WHERE id = ?", accountId)).intValue();
+  }
+
+  private StatusAssertions confirmAccountStatus(UUID batchId, String ifMatch) {
+    RestTestClient.RequestBodySpec request =
+        client().post().uri(imports() + "/" + batchId + "/confirm-account");
+    if (ifMatch != null) {
+      request = request.header(HttpHeaders.IF_MATCH, ifMatch);
+    }
+    return request.exchange().expectStatus();
   }
 
   private ImportBatchResponse confirmAccount(UUID batchId, int version) {

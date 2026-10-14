@@ -209,7 +209,8 @@ public final class ApiErrorCode {
 
   /**
    * 409: another account of the workspace is already registered with this identifier (US-07-10). It
-   * is not named: the member may not be allowed to see it.
+   * is not named: the member may not be allowed to see it. That the workspace holds the identifier
+   * is not hidden (database-schema.md, "Account identification").
    */
   public static final String ACCOUNT_IDENTIFIER_IN_USE = "ACCOUNT_IDENTIFIER_IN_USE";
 
