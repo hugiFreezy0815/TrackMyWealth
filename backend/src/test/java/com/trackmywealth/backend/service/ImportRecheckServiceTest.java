@@ -133,6 +133,52 @@ class ImportRecheckServiceTest {
     assertThat(duplicate.included()).isFalse();
   }
 
+
+  @Test
+  void excludedNewRowsDoNotConsumeDuplicateMatches() {
+    ImportRowRaw excluded = row(1, ImportBatchValues.ROW_PARSED, false, null);
+    ImportRowRaw included = row(2, ImportBatchValues.ROW_PARSED, true, null);
+    holds();
+    UUID existing = UUID.randomUUID();
+    nowDuplicates(Map.of(2, existing));
+
+    ImportRecheck result = service.recheck(parsed(), List.of(excluded, included));
+
+    assertThat(result.of(excluded.getId())).isNull();
+    assertThat(result.of(included.getId()))
+        .isEqualTo(ImportRowRecheck.becameDuplicate(existing));
+    assertThat(rowsChecked(Set.of()).getValue())
+        .extracting(ParsedImportRow::rowNumber)
+        .containsExactly(2);
+  }
+
+  @Test
+  void explicitlyIncludingAnExcludedNewRowChecksRemainingMatches() {
+    ImportRowRaw alreadyIncluded = row(1, ImportBatchValues.ROW_PARSED, true, null);
+    ImportRowRaw excluded = row(2, ImportBatchValues.ROW_PARSED, false, null);
+    holds();
+    UUID taken = UUID.randomUUID();
+    UUID available = UUID.randomUUID();
+    when(duplicateService.findDuplicates(eq(ACCOUNT), eq("CSV"), anyList(), anySet()))
+        .thenAnswer(
+            invocation -> {
+              List<ParsedImportRow> rows = invocation.getArgument(2);
+              Set<UUID> reserved = invocation.getArgument(3);
+              if (rows.get(0).rowNumber() == 1) {
+                return Map.of(1, taken);
+              }
+              assertThat(reserved).contains(taken);
+              return Map.of(2, available);
+            });
+
+    ImportRecheck result =
+        service.recheckForInclusion(parsed(), List.of(alreadyIncluded, excluded), excluded.getId());
+
+    assertThat(result.of(excluded.getId()))
+        .isEqualTo(ImportRowRecheck.becameDuplicate(available, false));
+    assertThat(result.of(excluded.getId()).included()).isFalse();
+  }
+
   @Test
   void applyingStoresEveryOutcomeAndTheBatchsDuplicateCount() {
     UUID becameNew = UUID.randomUUID();
