@@ -13,7 +13,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: backend
@@ -28,7 +28,7 @@ jobs:
           cache: maven
 
       # Testcontainers (DatabaseBootstrapInitializerTest, TrackMyWealthApplicationStartupTest)
-      # needs a Docker daemon - already present on GitHub-hosted ubuntu-latest runners.
+      # needs a Docker daemon - already present on GitHub-hosted ubuntu-24.04 runners.
       # #194: the Maven Wrapper (committed executable, 100755), so CI builds with exactly the
       # Maven version every contributor gets from ./mvnw - not whatever the runner preinstalls.
       # setup-java's maven cache covers ~/.m2/repository; the wrapper's own Maven distribution
@@ -56,7 +56,7 @@ jobs:
     # docs/architecture/database-schema.md). See .sqlfluff for the project's SQL style and
     # .sqlfluffignore for V90 (vendored verbatim from the Quartz jar, not this project's style).
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
