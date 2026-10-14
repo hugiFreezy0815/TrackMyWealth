@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -18,6 +20,9 @@ import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Workspace;
+import com.trackmywealth.backend.repository.TransactionRepository;
+import java.util.Set;
+import java.util.UUID;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -44,6 +49,51 @@ class ImportRowCheckServiceTest {
           new ImportLedgerRowService(JsonMapper.builder().build()),
           SOURCE);
   private final Account account = account();
+
+  @Test
+  void settlementPreviewBatchesThousandsOfRowsInsteadOfQueryingOncePerRow() {
+    TransactionRepository repository = mock(TransactionRepository.class);
+    ImportRowCheckService withRepository =
+        new ImportRowCheckService(
+            transactionService, fxRateService,
+            new ImportLedgerRowService(JsonMapper.builder().build()),
+            SOURCE, null, repository);
+    List<ParsedImportRow> rows =
+        java.util.stream.IntStream.range(0, 1200)
+            .mapToObj(
+                n ->
+                    ParsedImportRow.parsed(
+                        n + 1, Map.of(),
+                        new CanonicalImportRow(
+                            DAY, null, BigDecimal.valueOf(n + 1), "EUR", "SETTLEMENT",
+                            "Payment", null, null, null, null, null)))
+            .toList();
+    UUID source = UUID.randomUUID();
+
+    assertThat(withRepository.matchedSettlementRows(source, "EUR", rows)).isEmpty();
+    verify(repository, org.mockito.Mockito.times(3))
+        .findPairablePaymentDatesByAmounts(
+            eq(source), eq("EUR"), any(), any(), any(), any());
+  }
+
+  @Test
+  void settlementPreviewWithNoVisibleSourceDoesNotQueryOtherAccountTransactions() {
+    TransactionRepository repository = mock(TransactionRepository.class);
+    ImportRowCheckService withRepository =
+        new ImportRowCheckService(
+            transactionService, fxRateService,
+            new ImportLedgerRowService(JsonMapper.builder().build()),
+            SOURCE, null, repository);
+    ParsedImportRow credit =
+        ParsedImportRow.parsed(
+            1, Map.of(),
+            new CanonicalImportRow(
+                DAY, null, new BigDecimal("30"), "EUR", "SETTLEMENT",
+                "Payment", null, null, null, null, null));
+
+    assertThat(withRepository.matchedSettlementRows(null, "EUR", List.of(credit))).isEmpty();
+    verifyNoInteractions(repository);
+  }
 
   @Test
   void aRowTheLedgerTakesIsUnchanged() {
