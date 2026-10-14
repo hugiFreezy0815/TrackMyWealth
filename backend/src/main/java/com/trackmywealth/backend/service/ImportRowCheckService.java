@@ -237,7 +237,20 @@ public class ImportRowCheckService {
   /** The warnings of a row the ledger accepts; it stays included. */
   public List<String> warnings(
       Account account, CanonicalImportRow row, LocalDate today, boolean hasMatchingPayment) {
+    return warnings(account, row, today, null, hasMatchingPayment);
+  }
+
+  /** Opening-balance date is fetched once for the batch, never per row. */
+  public List<String> warnings(
+      Account account,
+      CanonicalImportRow row,
+      LocalDate today,
+      LocalDate openingDate,
+      boolean hasMatchingPayment) {
     List<String> warnings = new ArrayList<>();
+    if (openingDate != null && row.bookingDate().isBefore(openingDate)) {
+      warnings.add(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
+    }
     if (row.bookingDate().isAfter(today)) {
       warnings.add(ImportBatchValues.WARNING_FUTURE_DATE);
     }
@@ -263,7 +276,9 @@ public class ImportRowCheckService {
   public static Map<String, String> warningArgs(
       String warning, CanonicalImportRow row, String accountCurrency) {
     Map<String, String> args = new LinkedHashMap<>();
-    if (ImportBatchValues.WARNING_FUTURE_DATE.equals(warning)) {
+    if (ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE.equals(warning)) {
+      args.put(ARG_DATE, row.bookingDate().toString());
+    } else if (ImportBatchValues.WARNING_FUTURE_DATE.equals(warning)) {
       args.put(ARG_DATE, row.bookingDate().toString());
     } else if (ImportBatchValues.WARNING_CURRENCY_DIFFERS.equals(warning)) {
       args.put(ARG_CURRENCY, row.currency());
