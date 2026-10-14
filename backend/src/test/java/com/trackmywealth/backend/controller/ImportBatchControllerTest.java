@@ -613,8 +613,8 @@ class ImportBatchControllerTest {
     // Fallback duplicate detection must compare EUR -50.00, not the booked CHF -55.00.
     // No external bank reference is provided on either import.
     byte[] unreferenced =
-        ("Date;Amount;Currency;Text;Reference;OriginalAmount;OriginalCurrency;Rate\\n"
-                + "2031-05-06;-55,00;CHF;Reference-free hotel;;-50,00;EUR;0,909091\\n")
+        ("Date;Amount;Currency;Text;Reference;OriginalAmount;OriginalCurrency;Rate\n"
+                + "2031-05-06;-55,00;CHF;Reference-free hotel;;-50,00;EUR;0,909091\n")
             .getBytes(StandardCharsets.UTF_8);
     ImportBatchResponse first =
         upload(token, card, unreferenced, template.id())
