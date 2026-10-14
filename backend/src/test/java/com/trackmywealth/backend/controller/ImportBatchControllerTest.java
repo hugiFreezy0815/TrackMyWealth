@@ -484,26 +484,21 @@ class ImportBatchControllerTest {
         .expectStatus()
         .isOk();
 
-    client()
-        .post()
-        .uri("/api/v1/accounts/" + account + "/transactions")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            TransactionRequests.cash(
-                "WITHDRAWAL",
-                LocalDate.of(2031, 5, 2),
-                new BigDecimal("-30.00"),
-                "CHF",
-                "Synthetic card payment",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null))
-        .exchange()
-        .expectStatus()
-        .isCreated();
+    // Import the source-account payment too: neither leg relies on manual ledger entry.
+    ImportTemplateResponse sourceTemplate =
+        createTemplate(simpleTemplate("Synthetic payment source", SIMPLE_COLUMNS));
+    ImportBatchResponse sourcePayment =
+        upload(
+                token, account,
+                csv("2031-05-02;-30.00;CHF;Synthetic card payment;CARD-PAY;"),
+                sourceTemplate.id())
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(commit(account, sourcePayment.id(), sourcePayment.version()).counts().imported())
+        .isEqualTo(1);
 
     ImportTemplateResponse template = createTemplate(creditCardTemplate());
     byte[] file =
@@ -582,6 +577,15 @@ class ImportBatchControllerTest {
                 card,
                 "CARD-A"))
         .isEqualTo(false);
+    // A rounded or reciprocal bank quote is retained exactly for audit, independently of the
+    // effective rate derived from the issuer's booked total.
+    assertThat(
+            single(
+                "SELECT raw_source_data ->> 'issuerQuotedFxRate' FROM transaction"
+                    + " WHERE account_id = ? AND external_id = ?",
+                card,
+                "CARD-A"))
+        .isEqualTo("0.909091");
     assertThat(count("SELECT count(*) FROM settlement_match WHERE status = 'CONFIRMED'"))
         .isEqualTo(1);
 
