@@ -433,6 +433,116 @@ class PdfStatementLayoutTest {
     assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.DATE_UNPARSEABLE);
   }
 
+  /**
+   * US-07-09: a booking the row filter skips is not imported, but the statement's running balance
+   * may include it. The next booking starts from the balance it states, so neither it nor the
+   * section's closing balance is reported as a mismatch.
+   */
+  @Test
+  void aFilteredBookingHandsOnTheBalanceItStates() throws IOException {
+    byte[] statement =
+        oneSection(
+            "100.00",
+            SyntheticStatements.booking(
+                0, "02.01.2031", "Lohn", "0000000001", null, "10.00", "110.00"),
+            SyntheticStatements.booking(
+                0, "03.01.2031", "Miete", "0000000002", "20.00", null, "90.00"),
+            SyntheticStatements.booking(
+                0, "04.01.2031", "Bonus", "0000000003", null, "5.00", "95.00"),
+            List.of(at(40, "Saldo per 31.01.2031"), endingAt(560, "95.00 CHF")));
+    ImportTemplateDefinition template =
+        new ImportFileParserServiceTest.Template()
+            .pdf("PDF_TEXT", SyntheticStatements.yuhLayout())
+            .mapping(SyntheticStatements.yuhMapping())
+            .amountRepresentation("SEPARATE_DEBIT_CREDIT")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .dateFormat("dd.MM.yyyy")
+            .decimal(".")
+            .thousands("'")
+            .rowFilter("INFORMATION", List.of("Lohn", "Bonus"))
+            .build();
+
+    List<ParsedImportRow> rows = parser.parse(statement, template, null).rows();
+
+    assertThat(rows)
+        .extracting(ParsedImportRow::status)
+        .containsExactly("PARSED", "SKIPPED", "PARSED");
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.ROW_FILTERED);
+  }
+
+  /**
+   * US-07-09: a line the reader could not cut into cells stays that row's error under a row filter;
+   * it must not disappear as a filtered SKIPPED row.
+   */
+  /**
+   * A filtered line that states no balance leaves nothing known to check the next booking against:
+   * the check pauses, so a pending booking left in or out of the balances below raises no false
+   * mismatch, and it resumes from the next balance a booking states.
+   */
+  @Test
+  void aFilteredBookingWithoutABalancePausesTheCheckUntilTheNextStatedOne() throws IOException {
+    byte[] statement =
+        oneSection(
+            "100.00",
+            SyntheticStatements.booking(
+                0, "02.01.2031", "Lohn", "0000000001", null, "10.00", "110.00"),
+            SyntheticStatements.booking(0, "03.01.2031", "Miete", "0000000002", "20.00", null, "-"),
+            SyntheticStatements.booking(
+                0, "04.01.2031", "Bonus", "0000000003", null, "5.00", "95.00"),
+            SyntheticStatements.booking(
+                0, "05.01.2031", "Bonus", "0000000004", null, "1.00", "99.00"),
+            List.of(at(40, "Saldo per 31.01.2031"), endingAt(560, "99.00 CHF")));
+    ImportTemplateDefinition template =
+        new ImportFileParserServiceTest.Template()
+            .pdf("PDF_TEXT", SyntheticStatements.yuhLayout())
+            .mapping(SyntheticStatements.yuhMapping())
+            .amountRepresentation("SEPARATE_DEBIT_CREDIT")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .dateFormat("dd.MM.yyyy")
+            .decimal(".")
+            .thousands("'")
+            .rowFilter("INFORMATION", List.of("Lohn", "Bonus"))
+            .build();
+
+    List<ParsedImportRow> rows = parser.parse(statement, template, null).rows();
+
+    assertThat(rows)
+        .extracting(ParsedImportRow::status, ParsedImportRow::errorCode)
+        .startsWith(
+            tuple("PARSED", null),
+            tuple("SKIPPED", ImportRowErrorValues.ROW_FILTERED),
+            tuple("PARSED", null),
+            tuple("ERROR", ImportRowErrorValues.BALANCE_MISMATCH));
+  }
+
+  @Test
+  void aLineTheRowPatternMissesStaysAnErrorUnderARowFilter() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, SPK_TITLE)),
+                    List.of(at(40, "02.01.2031Rate Januar"), endingAt(500, "250,00")),
+                    List.of(at(40, "03.01.2031 unreadable")))));
+    ImportTemplateDefinition filtered =
+        new ImportFileParserServiceTest.Template()
+            .pdf("PDF_TEXT", spkTemplate().pdfLayout())
+            .mapping(
+                ImportFileParserServiceTest.mapping("Datum", "Betrag").description("Text").build())
+            .dateFormat("dd.MM.yyyy")
+            .decimal(",")
+            .thousands(".")
+            .rowFilter("Text", List.of("Rate Januar"))
+            .build();
+
+    List<ParsedImportRow> rows = parser.parse(statement, filtered, null).rows();
+
+    assertThat(rows).extracting(ParsedImportRow::status).containsExactly("PARSED", "ERROR");
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.LINE_UNMATCHED);
+  }
+
   /** PR #281 review: a balance line whose value is no amount checks nothing. */
   @Test
   void aBalanceLineThatIsNoAmountChecksNothing() throws IOException {

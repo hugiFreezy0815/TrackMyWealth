@@ -41,7 +41,8 @@ public record ImportTemplateDefinition(
     String accountIdentificationStrategy,
     String fileFormat,
     ImportPdfLayout pdfLayout,
-    Map<String, String> descriptionTypePatterns) {
+    Map<String, String> descriptionTypePatterns,
+    ImportRowFilter rowFilter) {
 
   /** Existing templates have no regex-based type mapping. */
   public ImportTemplateDefinition(
@@ -81,6 +82,48 @@ public record ImportTemplateDefinition(
         fileFormat,
         pdfLayout,
         Map.of());
+  }
+
+  /** Existing saved and client templates omit the optional row filter. */
+  public ImportTemplateDefinition(
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      int headerRowIndex,
+      int preambleRowCount,
+      int trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      String fileFormat,
+      ImportPdfLayout pdfLayout,
+      Map<String, String> descriptionTypePatterns) {
+    this(
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        fileFormat,
+        pdfLayout,
+        descriptionTypePatterns,
+        null);
   }
 
   public ImportTemplateDefinition {

@@ -52,7 +52,8 @@ public record ImportTemplateRequest(
     @Size(max = MAX_HEADER_COLUMNS) List<String> headerColumns,
     @Pattern(regexp = "CSV|PDF_TEXT|PDF_OCR") String fileFormat,
     @Valid ImportPdfLayout pdfLayout,
-    @Size(max = MAX_DESCRIPTION_TYPE_PATTERNS) Map<String, String> descriptionTypePatterns) {
+    @Size(max = MAX_DESCRIPTION_TYPE_PATTERNS) Map<String, String> descriptionTypePatterns,
+    @Valid ImportRowFilter rowFilter) {
 
   /** Existing API callers omit regex-based type mapping. */
   public ImportTemplateRequest(
@@ -100,6 +101,54 @@ public record ImportTemplateRequest(
         Map.of());
   }
 
+  /** Existing callers can omit the row filter, as they omit the default versioned setting. */
+  public ImportTemplateRequest(
+      String name,
+      UUID institutionCatalogueId,
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      Integer headerRowIndex,
+      Integer preambleRowCount,
+      Integer trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      List<String> headerColumns,
+      String fileFormat,
+      ImportPdfLayout pdfLayout,
+      Map<String, String> descriptionTypePatterns) {
+    this(
+        name,
+        institutionCatalogueId,
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        headerColumns,
+        fileFormat,
+        pdfLayout,
+        descriptionTypePatterns,
+        null);
+  }
+
   public ImportTemplateRequest {
     // Copies that keep null entries: a client's null must reach validation as a 422, not an NPE.
     // A null headerColumns is kept as it is: on PUT it means "keep the stored ones".
@@ -143,7 +192,8 @@ public record ImportTemplateRequest(
         orDefault(accountIdentificationStrategy, ImportTemplateValues.ACCOUNT_USER_SELECTED),
         orDefault(fileFormat, ImportTemplateValues.FORMAT_CSV),
         pdfLayout,
-        descriptionTypePatterns);
+        descriptionTypePatterns,
+        rowFilter);
   }
 
   private static String orDefault(String value, String defaultValue) {

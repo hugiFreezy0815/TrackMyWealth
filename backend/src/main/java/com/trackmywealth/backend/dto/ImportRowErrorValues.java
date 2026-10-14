@@ -17,6 +17,9 @@ public final class ImportRowErrorValues {
   /** A zero-amount booking that changes no balance (US-07-19). */
   public static final String ZERO_AMOUNT = "IMPORT_ROW_ZERO_AMOUNT";
 
+  /** The template's row filter does not accept the row's value in its filter column (US-07-09). */
+  public static final String ROW_FILTERED = "IMPORT_ROW_FILTERED";
+
   /** {@code column}: the row has no cell at a mapped, required column (a short row). */
   public static final String COLUMN_MISSING = "IMPORT_ROW_COLUMN_MISSING";
 

@@ -108,6 +108,10 @@ public class ImportTemplate {
       updatable = false)
   private String descriptionTypePatterns = "{}";
 
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "row_filter", columnDefinition = JSONB, updatable = false)
+  private String rowFilter;
+
   @Column(name = "account_identification_strategy", nullable = false, updatable = false)
   private String accountIdentificationStrategy;
 
@@ -318,6 +322,14 @@ public class ImportTemplate {
 
   public void setDescriptionTypePatterns(String descriptionTypePatterns) {
     this.descriptionTypePatterns = descriptionTypePatterns;
+  }
+
+  public String getRowFilter() {
+    return rowFilter;
+  }
+
+  public void setRowFilter(String rowFilter) {
+    this.rowFilter = rowFilter;
   }
 
   public String getAccountIdentificationStrategy() {

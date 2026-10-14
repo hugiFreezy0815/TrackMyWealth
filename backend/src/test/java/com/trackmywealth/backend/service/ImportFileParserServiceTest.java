@@ -12,6 +12,7 @@ import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
+import com.trackmywealth.backend.dto.ImportRowFilter;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.error.ApiErrorCode;
@@ -29,9 +30,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -44,6 +49,200 @@ class ImportFileParserServiceTest {
   private final LocalOcrService ocr = mock(LocalOcrService.class);
   private final ImportFileParserService parser =
       new ImportFileParserService(new PdfImportReaderService(ocr), new PdfBalanceCheckService());
+
+  // --- row filter (US-07-09) ----------------------------------------------------------------
+
+  /** Acceptance criterion 1: only accepted values are parsed; the others are SKIPPED, unread. */
+  @Test
+  void rowFilterSkipsPendingAndTrimsCaseInsensitiveAcceptedValues() {
+    ImportTemplateDefinition template =
+        new Template().rowFilter("Status", List.of("  Gebucht  ")).build();
+    String csv =
+        "date,amount,text,Status\n"
+            + "2031-01-02,-5.00,Booked, GEBUCHT \n"
+            + "not-a-date,not-an-amount,Pending,Vorgemerkt\n"
+            + "2031-01-04,-8.00,Booked,gebucht\n"
+            + "2031-01-05,-9.00,Unknown,\n";
+
+    ImportParseResult result = parser.parse(utf8(csv), template, null);
+
+    assertThat(result.rows())
+        .extracting(ParsedImportRow::status)
+        .containsExactly("PARSED", "SKIPPED", "PARSED", "SKIPPED");
+    assertThat(result.rows()).extracting(ParsedImportRow::rowNumber).containsExactly(1, 2, 3, 4);
+    ParsedImportRow pending = result.rows().get(1);
+    assertThat(pending.errorCode()).isEqualTo(ImportRowErrorValues.ROW_FILTERED);
+    assertThat(pending.canonical()).isNull();
+    assertThat(pending.rawData()).containsEntry("Status", "Vorgemerkt");
+    assertThat(result.rows().get(3).errorCode()).isEqualTo(ImportRowErrorValues.ROW_FILTERED);
+  }
+
+  /** Bank exports pad cells with non-breaking spaces; they are no part of the value either. */
+  @Test
+  void aFilterValuePaddedWithNonBreakingSpacesIsAccepted() {
+    ImportTemplateDefinition template =
+        new Template().rowFilter("Status", List.of("\u00A0Gebucht")).build();
+    String csv =
+        "date,amount,text,Status\n"
+            + "2031-01-02,-5.00,Booked,Gebucht\u00A0\n"
+            + "2031-01-03,-6.00,Booked,\u202FGEBUCHT\n"
+            + "2031-01-04,-7.00,Pending,\u00A0\n";
+
+    ImportParseResult result = parser.parse(utf8(csv), template, null);
+
+    assertThat(result.rows())
+        .extracting(ParsedImportRow::status)
+        .containsExactly("PARSED", "PARSED", "SKIPPED");
+  }
+
+  /** One answer names every column the file lacks: the mapped ones and the filter's. */
+  @Test
+  void aMismatchNamesTheMissingFilterColumnWithTheMissingMappedOnes() {
+    ImportTemplateDefinition template =
+        new Template().rowFilter("Status", List.of("Gebucht")).build();
+
+    ApiException error =
+        assertFileError(
+            utf8("date,amount\n2031-01-02,-5.00\n"),
+            template,
+            ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+
+    assertThat(error.getBody().getProperties())
+        .containsEntry("missingColumns", List.of("text", "Status"));
+  }
+
+  /** Acceptance criterion 2: a file without the filter column names it as missing. */
+  @Test
+  void aHeaderLackingTheRowFilterColumnIsATemplateMismatch() {
+    ImportTemplateDefinition template =
+        new Template().rowFilter("Status", List.of("Gebucht")).build();
+
+    ApiException error =
+        assertFileError(
+            utf8("date,amount,text\n2031-01-02,-5.00,Booked\n"),
+            template,
+            ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+
+    assertThat(error.getBody().getProperties()).containsEntry("missingColumns", List.of("Status"));
+  }
+
+  /** Template detection does not offer a template whose filter column the file lacks. */
+  @Test
+  void missingColumnsIncludesTheRowFilterColumn() {
+    ImportTemplateDefinition template =
+        new Template().rowFilter("Status", List.of("Gebucht")).build();
+
+    assertThat(parser.missingColumns(template, List.of("date", "amount", "text", "status")))
+        .isEmpty();
+    assertThat(parser.missingColumns(template, List.of("date", "amount", "text")))
+        .containsExactly("Status");
+    assertThat(parser.missingColumns(template, List.of("date", "amount", "Status", "Status")))
+        .containsExactly("text", "Status");
+  }
+
+  /**
+   * A headerless file filters by index. A row too short to hold the filter column is that row's
+   * error, as for a mapped column, never a silent skip.
+   */
+  @Test
+  void aHeaderlessFileFiltersByIndexAndAShortRowIsAnError() {
+    ImportTemplateDefinition template =
+        new Template()
+            .headerRowIndex(-1)
+            .mapping(mapping("0", "1").description("2").build())
+            .rowFilter("3", List.of("Gebucht"))
+            .build();
+    String csv =
+        "2031-01-02,-5.00,Booked,Gebucht\n"
+            + "2031-01-03,-7.00,Pending,Vorgemerkt\n"
+            + "2031-01-04,-8.00,Short\n";
+
+    List<ParsedImportRow> rows = parser.parse(utf8(csv), template, null).rows();
+
+    assertThat(rows)
+        .extracting(ParsedImportRow::status)
+        .containsExactly("PARSED", "SKIPPED", "ERROR");
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.ROW_FILTERED);
+    assertThat(rows.get(2).errorCode()).isEqualTo(ImportRowErrorValues.COLUMN_MISSING);
+    assertThat(rows.get(2).errorArgs()).containsEntry("column", "3");
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidRowFilters")
+  void invalidRowFilterSettingsAreRejectedBeforeReading(
+      ImportRowFilter filter, int headerRowIndex, String field) {
+    ImportTemplateDefinition template =
+        new Template()
+            .headerRowIndex(headerRowIndex)
+            .mapping(
+                headerRowIndex < 0
+                    ? mapping("0", "1").description("2").build()
+                    : mapping("date", "amount").description("text").build())
+            .rowFilter(filter.column(), filter.acceptedValues())
+            .build();
+
+    assertTemplateInvalid(template, field);
+  }
+
+  static Stream<Arguments> invalidRowFilters() {
+    List<String> tooMany = IntStream.rangeClosed(0, 32).mapToObj(i -> "v" + i).toList();
+    return Stream.of(
+        Arguments.of(new ImportRowFilter(" ", List.of("Gebucht")), 0, "rowFilter.column"),
+        Arguments.of(new ImportRowFilter(null, List.of("Gebucht")), 0, "rowFilter.column"),
+        Arguments.of(
+            new ImportRowFilter("x".repeat(201), List.of("Gebucht")), 0, "rowFilter.column"),
+        Arguments.of(new ImportRowFilter("Status", List.of("Gebucht")), -1, "rowFilter.column"),
+        Arguments.of(new ImportRowFilter("Status", null), 0, "rowFilter.acceptedValues"),
+        Arguments.of(new ImportRowFilter("Status", List.of()), 0, "rowFilter.acceptedValues"),
+        Arguments.of(
+            new ImportRowFilter("Status", List.of(" ", "Gebucht")), 0, "rowFilter.acceptedValues"),
+        Arguments.of(
+            new ImportRowFilter("Status", Arrays.asList("Gebucht", null)),
+            0,
+            "rowFilter.acceptedValues"),
+        Arguments.of(
+            new ImportRowFilter("Status", List.of("x".repeat(101))), 0, "rowFilter.acceptedValues"),
+        Arguments.of(new ImportRowFilter("Status", tooMany), 0, "rowFilter.acceptedValues"),
+        Arguments.of(
+            new ImportRowFilter("Status", List.of("Gebucht", " GEBUCHT ")),
+            0,
+            "rowFilter.acceptedValues"),
+        // Only non-breaking spaces: blank as compared, so it would accept the blank cells.
+        Arguments.of(
+            new ImportRowFilter("Status", List.of("\u00A0\u202F", "Gebucht")),
+            0,
+            "rowFilter.acceptedValues"),
+        Arguments.of(
+            new ImportRowFilter("Status", List.of("Gebucht", "Gebucht\u00A0")),
+            0,
+            "rowFilter.acceptedValues"));
+  }
+
+  @Test
+  void theLimitsOfARowFilterAreAccepted() {
+    List<String> most = IntStream.range(0, 32).mapToObj(i -> "v" + i + "x".repeat(97)).toList();
+    ImportTemplateDefinition template = new Template().rowFilter("x".repeat(200), most).build();
+
+    parser.validateTemplate(template, null);
+  }
+
+  /** A sample header the filter column is not in, or not once, rejects the template. */
+  @Test
+  void theRowFilterColumnIsCheckedAgainstTheSampleHeader() {
+    ImportTemplateDefinition template =
+        new Template().rowFilter("Status", List.of("Gebucht")).build();
+
+    parser.validateTemplate(template, List.of("date", "amount", "text", "STATUS"));
+    for (List<String> header :
+        List.of(
+            List.of("date", "amount", "text"),
+            List.of("date", "amount", "text", "Status", "status"))) {
+      ApiException error =
+          catchThrowableOfType(ApiException.class, () -> parser.validateTemplate(template, header));
+      assertThat(error).as("header %s", header).isNotNull();
+      assertThat(error.getBody().getProperties()).containsEntry("field", "rowFilter.column");
+    }
+  }
 
   // --- golden fixtures --------------------------------------------------------------------
 
@@ -1164,6 +1363,7 @@ class ImportFileParserServiceTest {
         ImportFileParserServiceTest.mapping("date", "amount").description("text").build();
     private Map<String, String> typeMapping = Map.of();
     private Map<String, String> descriptionPatterns = Map.of();
+    private ImportRowFilter rowFilter;
     private String accountStrategy = "USER_SELECTED";
     private String fileFormat = "CSV";
     private ImportPdfLayout pdfLayout;
@@ -1243,6 +1443,11 @@ class ImportFileParserServiceTest {
       return this;
     }
 
+    Template rowFilter(String column, List<String> accepted) {
+      rowFilter = new ImportRowFilter(column, accepted);
+      return this;
+    }
+
     Template accountStrategy(String value) {
       accountStrategy = value;
       return this;
@@ -1273,7 +1478,8 @@ class ImportFileParserServiceTest {
           accountStrategy,
           fileFormat,
           pdfLayout,
-          descriptionPatterns);
+          descriptionPatterns,
+          rowFilter);
     }
   }
 
