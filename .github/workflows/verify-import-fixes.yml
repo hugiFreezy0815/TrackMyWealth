@@ -3,8 +3,6 @@ name: Verify Reviewed Import Fixes
 on:
   push:
     branches: [feat/us-07-18-credit-card-statement-import]
-    paths:
-      - ".github/workflows/verify-import-fixes.yml"
 permissions:
   contents: read
 jobs:
