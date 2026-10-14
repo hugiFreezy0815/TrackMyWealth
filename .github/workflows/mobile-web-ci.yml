@@ -32,7 +32,12 @@ jobs:
 
       # mobile/.npmrc turns off npm's peer-dependency check while Expo SDK 58 pins a React Native
       # release candidate, so validate every SDK-managed package against Expo's own version list.
+      # Offline: against the list the installed SDK ships with, not Expo's latest online list. The
+      # online list names a patch the day it is published, which mobile/.npmrc's 7-day
+      # min-release-age refuses to install, so every Expo release turned CI red with no commit.
       - name: Check Expo SDK versions
+        env:
+          EXPO_OFFLINE: "1"
         run: npx expo install --check
 
       # expo-env.d.ts (gitignored, machine-generated) is normally created the first time the
