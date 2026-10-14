@@ -946,11 +946,9 @@ class ImportRollbackControllerTest {
         .isNull();
   }
 
-
   @Test
   void excludingOneOfTwoNewRowsDoesNotConsumeItsOnlyLaterDuplicate() {
-    byte[] sameBooking =
-        csv("2019-01-05;-3.50;CHF;Coffee;", "2019-01-05;-3.50;CHF;Coffee;");
+    byte[] sameBooking = csv("2019-01-05;-3.50;CHF;Coffee;", "2019-01-05;-3.50;CHF;Coffee;");
     ImportBatchResponse preview = upload(sameBooking);
     ImportBatchResponse excluded = include(preview, 1, false);
     UUID existing = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
@@ -961,9 +959,7 @@ class ImportRollbackControllerTest {
             ImportRowResponse::status,
             ImportRowResponse::included,
             ImportRowResponse::duplicateOfTransactionId)
-        .containsExactly(
-            tuple("PARSED", false, null),
-            tuple("DUPLICATE", false, existing));
+        .containsExactly(tuple("PARSED", false, null), tuple("DUPLICATE", false, existing));
     assertThat(summaryOf(preview.id()).counts().included()).isZero();
     assertThat(commitAsPreviewed(excluded).counts().imported()).isZero();
     assertThat(liveBookings()).isEqualTo(1);
@@ -986,6 +982,47 @@ class ImportRollbackControllerTest {
     assertThat(shown.recheck()).isNull();
     assertThat(commitAsPreviewed(forced).counts().imported()).isEqualTo(1);
     assertThat(liveBookings()).isEqualTo(2);
+  }
+
+  @Test
+  void includingAnExcludedRowKeepsTheBookingOfALaterRowThatTheLedgerHasGained() {
+    ImportBatchResponse preview =
+        upload(csv("2019-01-05;-3.50;CHF;Coffee;", "2019-01-05;-3.50;CHF;Coffee;"));
+    ImportBatchResponse excluded = include(preview, 1, false);
+    UUID existing = recordManual(account, "EXPENSE", "-3.50", "Coffee").id();
+
+    // The booking is the later row's; the earlier one, included now, must not take it.
+    ImportBatchResponse included = include(excluded, 1, true);
+
+    List<ImportRowResponse> shown = previewRows(preview.id(), "");
+    assertThat(shown)
+        .extracting(
+            ImportRowResponse::status,
+            ImportRowResponse::included,
+            ImportRowResponse::duplicateOfTransactionId,
+            ImportRowResponse::recheck)
+        .containsExactly(
+            tuple("PARSED", true, null, null), tuple("DUPLICATE", false, existing, null));
+    assertThat(included.counts().included()).isEqualTo(1);
+    assertThat(included.counts().duplicates()).isEqualTo(1);
+    assertThat(summaryOf(preview.id()).counts()).isEqualTo(included.counts());
+    assertThat(commitAsPreviewed(included).counts().imported()).isEqualTo(1);
+    assertThat(liveBookings()).isEqualTo(2);
+  }
+
+  @Test
+  void theStatusFilterPagesTheRowsAsTheCommitWillTakeThem() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    rollback(batch, REASON);
+
+    PageOf<ImportRowResponse> second = previewPage(preview.id(), "?status=PARSED&size=2&page=1");
+    PageOf<ImportRowResponse> beyond = previewPage(preview.id(), "?status=PARSED&size=2&page=2");
+
+    assertThat(second.totalElements()).isEqualTo(3);
+    assertThat(second.content()).extracting(ImportRowResponse::rowNumber).containsExactly(3);
+    assertThat(beyond.content()).isEmpty();
+    assertThat(previewPage(preview.id(), "?status=DUPLICATE").totalElements()).isZero();
   }
 
   @Test
@@ -1527,6 +1564,10 @@ class ImportRollbackControllerTest {
   }
 
   private List<ImportRowResponse> previewRows(UUID batchId, String query) {
+    return previewPage(batchId, query).content();
+  }
+
+  private PageOf<ImportRowResponse> previewPage(UUID batchId, String query) {
     return client()
         .get()
         .uri(imports() + "/" + batchId + "/rows" + query)
@@ -1535,8 +1576,7 @@ class ImportRollbackControllerTest {
         .isOk()
         .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
         .returnResult()
-        .getResponseBody()
-        .content();
+        .getResponseBody();
   }
 
   private ImportBatchResponse include(ImportBatchResponse batch, int rowNumber, boolean included) {

@@ -23,12 +23,11 @@ public record ImportRowRecheck(
         ImportBatchValues.RECHECK_REPOINTED, wasIncluded, holder, wasIncluded);
   }
 
-  /** An included new row the ledger has gained since: an excluded duplicate of {@code match}. */
-  public static ImportRowRecheck becameDuplicate(UUID match) {
-    return becameDuplicate(match, true);
-  }
-
-  /** For an explicit include PATCH, the original PARSED row may still be excluded. */
+  /**
+   * A new row whose booking the ledger has gained since: an excluded duplicate of {@code match}.
+   * The row is included, or excluded and being included by the member ({@link
+   * com.trackmywealth.backend.service.ImportRecheckService#recheckForInclusion}).
+   */
   public static ImportRowRecheck becameDuplicate(UUID match, boolean wasIncluded) {
     return new ImportRowRecheck(ImportBatchValues.RECHECK_DUPLICATE, false, match, wasIncluded);
   }

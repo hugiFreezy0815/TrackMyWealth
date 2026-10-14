@@ -54,8 +54,8 @@ public final class ImportBatchValues {
   public static final Set<String> ROW_STATUSES =
       Set.of(ROW_PARSED, ROW_DUPLICATE, ROW_ERROR, ROW_SKIPPED);
 
-  /** The row statuses a commit checks against the ledger again (#287). */
-  public static final Set<String> ROW_READABLE = Set.of(ROW_PARSED, ROW_DUPLICATE);
+  /** The row statuses a commit checks against the ledger again, its readable rows (#287). */
+  public static final Set<String> ROW_RECHECKED = Set.of(ROW_PARSED, ROW_DUPLICATE);
 
   /**
    * Re-check {@code recheck} (#308): a duplicate whose booking the ledger lost since the preview;

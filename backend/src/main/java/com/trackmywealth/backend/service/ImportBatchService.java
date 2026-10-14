@@ -332,7 +332,7 @@ public class ImportBatchService {
             : List.of();
     ImportRecheck recheck = recheckService.recheck(batch, readable);
     Page<ImportRowRaw> rows;
-    if (status != null && !recheck.isEmpty() && ImportBatchValues.ROW_READABLE.contains(status)) {
+    if (status != null && !recheck.isEmpty() && ImportBatchValues.ROW_RECHECKED.contains(status)) {
       // A re-checked row may have moved between PARSED and DUPLICATE: filter what the commit sees.
       List<ImportRowRaw> matching =
           readable.stream().filter(row -> status.equals(statusOf(row, recheck))).toList();
@@ -370,9 +370,9 @@ public class ImportBatchService {
    * Forces a {@code DUPLICATE} row into the commit, or keeps a {@code PARSED} row out of it. An
    * {@code ERROR} or {@code SKIPPED} row cannot be included (422 {@code
    * IMPORT_ROW_NOT_INCLUDABLE}). The batch's version moves on, so a commit sent with the version
-   * read before this change is a 412. The member decides on the row as the preview shows it: a row
-   * the commit would re-check (#308) is stored as re-checked first, so that the commit keeps the
-   * choice instead of re-checking it away.
+   * read before this change is a 412. The member decides on the row as the preview shows it: the
+   * batch's re-check (#308) is stored first, so that neither a later read nor the commit re-checks
+   * the choice away.
    *
    * @return the batch's summary with its new counts and version
    */
@@ -412,9 +412,13 @@ public class ImportBatchService {
     if (current == included) {
       return summary(batch, account, List.of(), recheck);
     }
-    if (rechecked != null) {
-      recheckService.apply(batch, new ImportRecheck(Map.of(row.getId(), rechecked)));
-      entityManager.refresh(row);
+    if (!recheck.isEmpty()) {
+      // The whole re-check, not only this row's: a row that holds a booking only by the re-check
+      // would lose it to this one, once included, at the next read or the commit.
+      recheckService.apply(batch, recheck);
+      // Written in bulk: the managed rows are stale.
+      readable.forEach(entityManager::detach);
+      row = requireRow(batch, rowNumber);
     }
     row.setIncluded(included);
     rowRepository.saveAndFlush(row);

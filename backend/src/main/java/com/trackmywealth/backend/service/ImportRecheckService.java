@@ -65,7 +65,7 @@ public class ImportRecheckService {
   /** The batch's rows a commit can import ({@code PARSED}, {@code DUPLICATE}), in file order. */
   public List<ImportRowRaw> readableRows(ImportBatch batch) {
     return rowRepository.findByImportBatchIdAndParseStatusInOrderByRowNumber(
-        batch.getId(), ImportBatchValues.ROW_READABLE);
+        batch.getId(), ImportBatchValues.ROW_RECHECKED);
   }
 
   /**
@@ -77,11 +77,11 @@ public class ImportRecheckService {
   }
 
   /**
-   * Evaluate a PATCH that includes a formerly excluded PARSED row. Ordinary preview and commit
-   * reads do not allocate duplicate matches to excluded new rows. When a member explicitly opts
-   * one in, look for a matching booking only after the other active rows have reserved theirs.
-   * That lets the member force in the row as a duplicate instead of having a later recheck silently
-   * undo the inclusion.
+   * As {@link #recheck}, for a PATCH that includes the excluded {@code PARSED} row {@code rowId}. A
+   * read or a commit matches no booking to an excluded new row; this one is matched only to a
+   * booking the batch's other rows leave free. Matched, it is shown as a duplicate, and the member
+   * forces it in as one ({@link ImportBatchService#setIncluded} stores the whole re-check first),
+   * so no later re-check undoes the inclusion.
    */
   public ImportRecheck recheckForInclusion(
       ImportBatch batch, List<ImportRowRaw> readable, UUID rowId) {
@@ -152,8 +152,7 @@ public class ImportRecheckService {
           changed.put(row.getId(), ImportRowRecheck.repointed(now, row.isIncluded()));
         }
       } else if ((row.isIncluded() || row.getId().equals(rowToInclude)) && match != null) {
-        changed.put(
-            row.getId(), ImportRowRecheck.becameDuplicate(match, row.isIncluded()));
+        changed.put(row.getId(), ImportRowRecheck.becameDuplicate(match, row.isIncluded()));
       }
     }
     return new ImportRecheck(changed);

@@ -49,8 +49,8 @@ class ImportRecheckTest {
   void anIncludedNewRowThatBecameADuplicateIsAnExcludedDuplicate() {
     ImportRecheck recheck =
         of(
-            ImportRowRecheck.becameDuplicate(UUID.randomUUID()),
-            ImportRowRecheck.becameDuplicate(UUID.randomUUID()),
+            ImportRowRecheck.becameDuplicate(UUID.randomUUID(), true),
+            ImportRowRecheck.becameDuplicate(UUID.randomUUID(), true),
             ImportRowRecheck.becameNew(false));
 
     assertThat(recheck.applyTo(STORED))

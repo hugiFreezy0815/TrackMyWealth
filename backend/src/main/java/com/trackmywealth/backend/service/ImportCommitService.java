@@ -173,8 +173,7 @@ public class ImportCommitService {
   }
 
   // Whether the row goes into the commit as a duplicate (forced in, or repointed and forced in):
-  // the
-  // re-checked status, or else the stored one.
+  // the re-checked status, or else the stored one.
   private static boolean isDuplicate(ImportRowRaw row, ImportRecheck recheck) {
     ImportRowRecheck rechecked = recheck.of(row.getId());
     String status = rechecked == null ? row.getParseStatus() : rechecked.status();

@@ -1052,17 +1052,26 @@ batch reports it, so the member confirms what the commit will do. The rows read
 (`GET .../rows`), the summary (`GET .../{batchId}`) and the account's list of imports (`counts`) all
 report it. A row it would treat otherwise than stored is shown with the effective `status`,
 `included`, `duplicateOfTransactionId` and `duplicateOf`, plus `recheck` saying why: `NEW` (a
-duplicate whose booking is gone, imported), `REPOINTED` (a duplicate of the row that holds its booking
-now) or `DUPLICATE` (an included new row the ledger has gained, left out). `?status=` filters by the
-effective status. Reading writes nothing and leaves the batch's `version` alone. A rollback, removal
-or correction therefore needs no hook into open previews, and a client that holds the version it
-read still commits what it showed. An excluded `PARSED` row does not reserve a duplicate match ahead of an included row. If the member explicitly includes that row later, PATCH checks it against remaining ledger matches and preserves the choice as a forced duplicate where applicable. A member's earlier exclusion of a `DUPLICATE` row does not
-survive its booking going away (product owner, 2026-10-14, as decided on #287). Each read costs the
-holds query and one duplicate check of the batch's readable rows, the same work as the commit; an
-upload or re-parse answers with the counts just stored. `PATCH .../rows/{n}` decides on the row as
-the preview shows it: a re-checked row is first stored as re-checked (its batch's
-`duplicate_row_count` with it), then included or excluded, so the commit keeps that choice instead
-of checking it away again. A committed, discarded or rolled-back batch's rows are shown as stored.
+duplicate whose booking is gone, imported), `REPOINTED` (a duplicate of the row that holds its
+booking now) or `DUPLICATE` (an included new row the ledger has gained, left out). `?status=`
+filters by the effective status. Reading writes nothing and leaves the batch's `version` alone, so
+a rollback, removal or correction needs no hook into open previews. The commit checks again under
+the account's lock: what it does is what a read at that moment shows. The version, and so the
+`ETag` of `GET .../{batchId}`, names the stored preview, not the response: two reads of one version
+may differ as the ledger changes, so the API answers no `If-None-Match`. An excluded `PARSED` row
+does not reserve a duplicate match ahead of an included row. A member's earlier exclusion of a
+`DUPLICATE` row does not survive its booking going away (product owner, 2026-10-14, as decided on
+#287). Each read costs the holds query and one duplicate check of the batch's readable rows, the
+same work as the commit. With 20,000 rows (the most one file may hold), a read took 0.1 to 0.2 s
+whether the rows were all new, all still duplicates or all re-checked after a rollback, and the
+account's list about 0.4 s (measured 2026-10-14, Testcontainers PostgreSQL on a laptop). An upload or re-parse answers with the counts just stored.
+`PATCH .../rows/{n}` decides on the row as the preview shows it: the batch's whole re-check is
+stored first (its `duplicate_row_count` with it), then the row is included or excluded. Including
+an excluded `PARSED` row matches it only to a booking the other rows leave free; matched, it goes
+in as a forced duplicate. Storing every row's re-check, not only this one's, keeps a row that holds
+a booking only by the re-check from losing it to the newly included one. Neither a later read nor
+the commit checks the choice away again. A committed, discarded or rolled-back batch's rows are
+shown as stored.
 
 **Rollback (US-07-05, #231).** `POST .../imports/{batchId}/rollback` with `If-Match` and a
 `reason` (required, at most 500 characters) undoes a `COMMITTED` batch as a whole

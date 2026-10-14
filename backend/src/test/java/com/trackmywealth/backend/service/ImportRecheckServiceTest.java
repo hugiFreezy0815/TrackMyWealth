@@ -128,11 +128,10 @@ class ImportRecheckServiceTest {
 
     assertThat(recheck.rows()).containsOnlyKeys(included.getId());
     ImportRowRecheck duplicate = recheck.of(included.getId());
-    assertThat(duplicate).isEqualTo(ImportRowRecheck.becameDuplicate(gained));
+    assertThat(duplicate).isEqualTo(ImportRowRecheck.becameDuplicate(gained, true));
     assertThat(duplicate.status()).isEqualTo(ImportBatchValues.ROW_DUPLICATE);
     assertThat(duplicate.included()).isFalse();
   }
-
 
   @Test
   void excludedNewRowsDoNotConsumeDuplicateMatches() {
@@ -146,7 +145,7 @@ class ImportRecheckServiceTest {
 
     assertThat(result.of(excluded.getId())).isNull();
     assertThat(result.of(included.getId()))
-        .isEqualTo(ImportRowRecheck.becameDuplicate(existing));
+        .isEqualTo(ImportRowRecheck.becameDuplicate(existing, true));
     assertThat(rowsChecked(Set.of()).getValue())
         .extracting(ParsedImportRow::rowNumber)
         .containsExactly(2);
@@ -190,7 +189,7 @@ class ImportRecheckServiceTest {
     Map<UUID, ImportRowRecheck> rows = new LinkedHashMap<>();
     rows.put(becameNew, ImportRowRecheck.becameNew(false));
     rows.put(repointed, ImportRowRecheck.repointed(holder, true));
-    rows.put(becameDuplicate, ImportRowRecheck.becameDuplicate(match));
+    rows.put(becameDuplicate, ImportRowRecheck.becameDuplicate(match, true));
     rows.put(secondNew, ImportRowRecheck.becameNew(true));
     ImportBatch batch = parsed();
     batch.setDuplicateRowCount(5);
