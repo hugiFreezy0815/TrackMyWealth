@@ -158,8 +158,11 @@ public class ImportFileParserService {
     DateTimeFormatter dateFormatter = dateFormatter(template.dateFormat());
     Map<String, String> typeMapping = normalizedTypeMapping(template.typeMapping());
     Map<String, com.google.re2j.Pattern> descriptionPatterns = new LinkedHashMap<>();
-    template.descriptionTypePatterns().forEach(
-        (type, pattern) -> descriptionPatterns.put(type, Re2Patterns.compile("(?i)" + pattern)));
+    template
+        .descriptionTypePatterns()
+        .forEach(
+            (type, pattern) ->
+                descriptionPatterns.put(type, Re2Patterns.compile("(?i)" + pattern)));
 
     // #268: the column of each booking's running balance, when the layout checks one; and the
     // balance the bookings so far lead to, null while unknown.
@@ -923,10 +926,15 @@ public class ImportFileParserService {
     BigDecimal issuerRate = exchangeRateOf(record, template, columns);
     if ((originalAmount == null) != (originalCurrency == null)
         || (originalAmount != null && originalAmount.signum() == 0 && amount.signum() != 0)
-        || (originalAmount != null && originalAmount.signum() != 0
+        || (originalAmount != null
+            && originalAmount.signum() != 0
             && originalAmount.signum() != amount.signum())) {
-      throw rowError(ImportRowErrorValues.AMOUNT_OUT_OF_RANGE, ARG_COLUMN,
-          mapping.originalAmount(), ARG_VALUE, "inconsistent original amount/currency");
+      throw rowError(
+          ImportRowErrorValues.AMOUNT_OUT_OF_RANGE,
+          ARG_COLUMN,
+          mapping.originalAmount(),
+          ARG_VALUE,
+          "inconsistent original amount/currency");
     }
     return new CanonicalImportRow(
         bookingDate,
@@ -1199,7 +1207,7 @@ public class ImportFileParserService {
   // The one type whose description pattern matches, or null; two matching types are an error, never
   // a choice. Each type has one pattern (the map's key), so a second match is always another type.
   private static String typeByDescription(
-      String description, String column, Map<String, String> patterns) {
+      String description, String column, Map<String, com.google.re2j.Pattern> patterns) {
     String match = null;
     for (Map.Entry<String, com.google.re2j.Pattern> entry : patterns.entrySet()) {
       if (entry.getValue().matcher(description).find()) {

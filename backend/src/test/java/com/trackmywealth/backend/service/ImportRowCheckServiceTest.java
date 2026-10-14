@@ -47,7 +47,6 @@ class ImportRowCheckServiceTest {
           SOURCE);
   private final Account account = account();
 
-
   @Test
   void oneSourcePaymentCannotMatchTwoCardSettlements() {
     TransactionRepository repository = mock(TransactionRepository.class);
@@ -71,8 +70,17 @@ class ImportRowCheckServiceTest {
                         n,
                         Map.of(),
                         new CanonicalImportRow(
-                            DAY, null, new BigDecimal("30"), "EUR", "SETTLEMENT",
-                            "Payment", null, null, null, null, null)))
+                            DAY,
+                            null,
+                            new BigDecimal("30"),
+                            "EUR",
+                            "SETTLEMENT",
+                            "Payment",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null)))
             .toList();
     assertThat(checker.matchedSettlementRows(source, "EUR", rows)).containsExactly(1);
   }
@@ -91,18 +99,29 @@ class ImportRowCheckServiceTest {
     UUID source = UUID.randomUUID();
     when(repository.findPairablePaymentDatesByAmounts(
             eq(source), eq("EUR"), any(), any(), any(), any()))
-        .thenReturn(List.<Object[]>of(
-            new Object[] {new BigDecimal("-30"), DAY},
-            new Object[] {new BigDecimal("-30"), DAY}));
+        .thenReturn(
+            List.<Object[]>of(
+                new Object[] {new BigDecimal("-30"), DAY},
+                new Object[] {new BigDecimal("-30"), DAY}));
     List<ParsedImportRow> rows =
         java.util.stream.IntStream.rangeClosed(1, 2)
             .mapToObj(
                 n ->
                     ParsedImportRow.parsed(
-                        n, Map.of(),
+                        n,
+                        Map.of(),
                         new CanonicalImportRow(
-                            DAY, null, new BigDecimal("30"), "EUR", "SETTLEMENT",
-                            "Payment", null, null, null, null, null)))
+                            DAY,
+                            null,
+                            new BigDecimal("30"),
+                            "EUR",
+                            "SETTLEMENT",
+                            "Payment",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null)))
             .toList();
     assertThat(checker.matchedSettlementRows(source, "EUR", rows)).containsExactly(1, 2);
   }

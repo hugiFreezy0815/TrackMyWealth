@@ -128,8 +128,7 @@ public class ImportStagingService {
                 .map(Account::getId)
                 .orElse(null);
     Set<Integer> matched =
-        rowCheckService.matchedSettlementRows(
-            visibleSource, account.getNativeCurrency(), checked);
+        rowCheckService.matchedSettlementRows(visibleSource, account.getNativeCurrency(), checked);
     List<StagedImportRow> staged = new ArrayList<>(checked.size());
     int duplicateCount = 0;
     int errorCount = 0;

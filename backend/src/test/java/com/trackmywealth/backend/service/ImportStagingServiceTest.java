@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -33,8 +32,14 @@ class ImportStagingServiceTest {
   private final AccessControlService access = mock(AccessControlService.class);
   private final ImportStagingService staging =
       new ImportStagingService(
-          batches, rawRows, rowChecks, duplicates, JsonMapper.builder().build(),
-          Clock.systemUTC(), accounts, access);
+          batches,
+          rawRows,
+          rowChecks,
+          duplicates,
+          JsonMapper.builder().build(),
+          Clock.systemUTC(),
+          accounts,
+          access);
 
   @Test
   void revokedPaymentAccountAccessPreventsSettlementCandidateLookup() {

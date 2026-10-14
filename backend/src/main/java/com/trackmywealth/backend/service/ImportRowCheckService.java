@@ -172,9 +172,9 @@ public class ImportRowCheckService {
   }
 
   /**
-   * Which positive card-settlement preview rows have an available source-account payment candidate. Only call
-   * with a source account the actor may currently read. Amounts are chunked to cap SQL bind
-   * parameters, and payment dates are checked in memory (no N+1 query).
+   * Which positive card-settlement preview rows have an available source-account payment candidate.
+   * Only call with a source account the actor may currently read. Amounts are chunked to cap SQL
+   * bind parameters, and payment dates are checked in memory (no N+1 query).
    */
   public Set<Integer> matchedSettlementRows(
       UUID sourceId, String currency, List<ParsedImportRow> rows) {

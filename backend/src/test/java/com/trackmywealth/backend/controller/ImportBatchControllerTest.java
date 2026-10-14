@@ -578,7 +578,8 @@ class ImportBatchControllerTest {
         createTemplate(simpleTemplate("Synthetic payment source", SIMPLE_COLUMNS));
     ImportBatchResponse sourcePayment =
         upload(
-                token, account,
+                token,
+                account,
                 csv("2031-05-02;-30.00;CHF;Synthetic card payment;CARD-PAY;"),
                 sourceTemplate.id())
             .expectStatus()

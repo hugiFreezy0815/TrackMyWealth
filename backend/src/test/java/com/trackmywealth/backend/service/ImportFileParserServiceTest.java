@@ -151,7 +151,6 @@ class ImportFileParserServiceTest {
     assertThat(result.rows().get(2).canonical().amount()).isEqualByComparingTo("-5.00");
   }
 
-
   @Test
   void inconsistentOriginalCurrencyFieldsAreRowErrors() {
     ImportTemplateDefinition template =
@@ -166,7 +165,8 @@ class ImportFileParserServiceTest {
                     .build())
             .build();
     List<ParsedImportRow> rows =
-        parser.parse(
+        parser
+            .parse(
                 utf8(
                     "date,amount,text,original,originalCurrency\n"
                         + "2031-05-01,-10.00,Missing currency,-8.00,\n"
@@ -174,7 +174,9 @@ class ImportFileParserServiceTest {
                         + "2031-05-03,-10.00,Zero original,0.00,EUR\n"
                         + "2031-05-04,-10.00,Wrong sign,8.00,EUR\n"
                         + "2031-05-05,-10.00,Valid original,-8.00,EUR\n"),
-                template, "CHF", true)
+                template,
+                "CHF",
+                true)
             .rows();
     assertThat(rows.subList(0, 4)).allMatch(ParsedImportRow::isError);
     assertThat(rows.subList(0, 4))
