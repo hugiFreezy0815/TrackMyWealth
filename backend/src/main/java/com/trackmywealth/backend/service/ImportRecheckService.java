@@ -73,6 +73,23 @@ public class ImportRecheckService {
    * not take as stored; {@link ImportRecheck#NONE} unless the batch is {@code PARSED}.
    */
   public ImportRecheck recheck(ImportBatch batch, List<ImportRowRaw> readable) {
+    return recheckWithInclusion(batch, readable, null);
+  }
+
+  /**
+   * Evaluate a PATCH that includes a formerly excluded PARSED row. Ordinary preview and commit
+   * reads do not allocate duplicate matches to excluded new rows. When a member explicitly opts
+   * one in, look for a matching booking only after the other active rows have reserved theirs.
+   * That lets the member force in the row as a duplicate instead of having a later recheck silently
+   * undo the inclusion.
+   */
+  public ImportRecheck recheckForInclusion(
+      ImportBatch batch, List<ImportRowRaw> readable, UUID rowId) {
+    return recheckWithInclusion(batch, readable, rowId);
+  }
+
+  private ImportRecheck recheckWithInclusion(
+      ImportBatch batch, List<ImportRowRaw> readable, UUID rowToInclude) {
     if (!ImportBatchValues.PARSED.equals(batch.getStatus()) || readable.isEmpty()) {
       return ImportRecheck.NONE;
     }
@@ -85,16 +102,43 @@ public class ImportRecheckService {
                     ImportDuplicateHold::getRowId, ImportDuplicateHold::getTransactionId));
     Set<UUID> reserved = new HashSet<>(held.values());
     List<ParsedImportRow> unheld = new ArrayList<>();
+    ImportRowRaw optedIn = null;
     for (ImportRowRaw row : readable) {
-      if (!held.containsKey(row.getId())) {
+      if (held.containsKey(row.getId())) {
+        continue;
+      }
+      if (ImportBatchValues.ROW_DUPLICATE.equals(row.getParseStatus()) || row.isIncluded()) {
         unheld.add(
             ParsedImportRow.parsed(
                 row.getRowNumber(), rowJson.stringMap(row.getRawData()), rowJson.canonical(row)));
+      } else if (row.getId().equals(rowToInclude)
+          && ImportBatchValues.ROW_PARSED.equals(row.getParseStatus())) {
+        optedIn = row;
       }
     }
     Map<Integer, UUID> nowDuplicates =
-        duplicateService.findDuplicates(
-            batch.getAccountId(), batch.getSourceKind(), unheld, reserved);
+        new LinkedHashMap<>(
+            duplicateService.findDuplicates(
+                batch.getAccountId(), batch.getSourceKind(), unheld, reserved));
+    if (optedIn != null) {
+      // An excluded row must not take a matching ledger booking away from one already included.
+      Set<UUID> alreadyMatched = new HashSet<>(reserved);
+      alreadyMatched.addAll(nowDuplicates.values());
+      Map<Integer, UUID> matches =
+          duplicateService.findDuplicates(
+              batch.getAccountId(),
+              batch.getSourceKind(),
+              List.of(
+                  ParsedImportRow.parsed(
+                      optedIn.getRowNumber(),
+                      rowJson.stringMap(optedIn.getRawData()),
+                      rowJson.canonical(optedIn))),
+              alreadyMatched);
+      UUID match = matches.get(optedIn.getRowNumber());
+      if (match != null) {
+        nowDuplicates.put(optedIn.getRowNumber(), match);
+      }
+    }
 
     Map<UUID, ImportRowRecheck> changed = new LinkedHashMap<>();
     for (ImportRowRaw row : readable) {
@@ -107,8 +151,9 @@ public class ImportRecheckService {
         } else if (!now.equals(row.getDuplicateOfTransactionId())) {
           changed.put(row.getId(), ImportRowRecheck.repointed(now, row.isIncluded()));
         }
-      } else if (row.isIncluded() && match != null) {
-        changed.put(row.getId(), ImportRowRecheck.becameDuplicate(match));
+      } else if ((row.isIncluded() || row.getId().equals(rowToInclude)) && match != null) {
+        changed.put(
+            row.getId(), ImportRowRecheck.becameDuplicate(match, row.isIncluded()));
       }
     }
     return new ImportRecheck(changed);
