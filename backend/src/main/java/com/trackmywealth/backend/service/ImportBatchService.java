@@ -402,7 +402,11 @@ public class ImportBatchService {
           ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE,
           "Row " + rowNumber + " could not be read and cannot be imported.");
     }
-    ImportRecheck recheck = recheckService.recheck(batch, recheckService.readableRows(batch));
+    List<ImportRowRaw> readable = recheckService.readableRows(batch);
+    ImportRecheck recheck =
+        included && ImportBatchValues.ROW_PARSED.equals(row.getParseStatus()) && !row.isIncluded()
+            ? recheckService.recheckForInclusion(batch, readable, row.getId())
+            : recheckService.recheck(batch, readable);
     ImportRowRecheck rechecked = recheck.of(row.getId());
     boolean current = rechecked == null ? row.isIncluded() : rechecked.included();
     if (current == included) {
