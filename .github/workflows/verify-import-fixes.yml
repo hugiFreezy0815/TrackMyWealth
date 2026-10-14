@@ -20,6 +20,9 @@ jobs:
       - name: Apply mandated Google Java Format
         working-directory: backend
         run: ./mvnw -B spotless:apply
+      - name: Fast PMD preflight before the full PostgreSQL suite
+        working-directory: backend
+        run: ./mvnw -B pmd:check
       - name: Clean backend verification including PostgreSQL integration tests and quality gates
         working-directory: backend
         run: ./mvnw -B clean verify
