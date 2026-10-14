@@ -48,7 +48,7 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
     "build-web": ("Mobile Web CI", ("mobile/", ".github/workflows/mobile-web-ci.yml")),
     "android": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "ios": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
-    "scripts": ("Scripts CI", ("scripts/", ".github/workflows/scripts-ci.yml")),
+    "scripts": ("Scripts CI", ("scripts/", ".github/workflows/")),
 }
 
 PASSED = {"success", "skipped", "neutral"}

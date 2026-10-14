@@ -261,6 +261,11 @@ npm test                 # what CI runs
   changes their part of the repository - pinned to that head commit, never with `--admin`. When
   Backend CI, Semgrep or secret scanning is red on `main`, the "Main health" workflow keeps a
   `[CI] main is red: <workflow>` issue open until it is green again; fix `main` first.
+- **CI runners (#237)**: every workflow job names a fixed runner image (`ubuntu-24.04`, and
+  `macos-26` for the iOS build), never a floating label such as `ubuntu-latest`, which GitHub moves
+  to a new image on its own schedule and so changes CI underneath every open PR without a commit.
+  `scripts/tests/test_workflow_runners.py` enforces it in Scripts CI, which runs on any workflow
+  change. Moving to a newer image is a PR of its own, with CI showing the result.
 - **Secret scanning**: gitleaks runs on every push/PR (`.github/workflows/gitleaks.yml`). A
   finding blocks the PR — never silence it by editing history or excluding the path; rotate the
   credential and remove it from the diff instead.

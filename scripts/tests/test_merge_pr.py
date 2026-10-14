@@ -108,7 +108,7 @@ class ProblemsTest(unittest.TestCase):
         )
         self.assertEqual(
             required_checks([".github/workflows/mobile-web-ci.yml"]),
-            ["semgrep", "gitleaks", "build-web"],
+            ["semgrep", "gitleaks", "build-web", "scripts"],
         )
         self.assertEqual(
             required_checks(["mobile/package-lock.json"]),
@@ -120,6 +120,11 @@ class ProblemsTest(unittest.TestCase):
             "app code alone does not need the native builds",
         )
         self.assertEqual(required_checks(["scripts/merge_pr.py"]), ["semgrep", "gitleaks", "scripts"])
+        self.assertEqual(
+            required_checks([".github/workflows/main-health.yml"]),
+            ["semgrep", "gitleaks", "scripts"],
+            "#237: any workflow change runs the runner guard in Scripts CI",
+        )
         self.assertEqual(
             required_checks(["backendish.md"]), ["semgrep", "gitleaks"], "a prefix is a directory"
         )
