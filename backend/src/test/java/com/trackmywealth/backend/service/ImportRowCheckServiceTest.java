@@ -52,15 +52,22 @@ class ImportRowCheckServiceTest {
           repository);
   private final Account account = account();
 
-
   @Test
   void bookingBeforeOpeningBalanceIsWarnedButNotRejected() {
     CanonicalImportRow before =
         new CanonicalImportRow(
-            DAY.minusDays(1), null, new BigDecimal("-10"), "EUR", "EXPENSE",
-            "Test", null, null, null, null, null);
-    assertThat(
-            service.warnings(account, before, DAY.plusDays(30), DAY, false))
+            DAY.minusDays(1),
+            null,
+            new BigDecimal("-10"),
+            "EUR",
+            "EXPENSE",
+            "Test",
+            null,
+            null,
+            null,
+            null,
+            null);
+    assertThat(service.warnings(account, before, DAY.plusDays(30), DAY, false))
         .containsExactly(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
     assertThat(
             ImportRowCheckService.warningArgs(
@@ -73,8 +80,17 @@ class ImportRowCheckServiceTest {
     for (LocalDate booking : List.of(DAY, DAY.plusDays(1))) {
       CanonicalImportRow row =
           new CanonicalImportRow(
-              booking, null, new BigDecimal("-10"), "EUR", "EXPENSE",
-              "Test", null, null, null, null, null);
+              booking,
+              null,
+              new BigDecimal("-10"),
+              "EUR",
+              "EXPENSE",
+              "Test",
+              null,
+              null,
+              null,
+              null,
+              null);
       assertThat(service.warnings(account, row, DAY.plusDays(30), DAY, false))
           .doesNotContain(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
     }
@@ -84,8 +100,17 @@ class ImportRowCheckServiceTest {
   void accountWithoutOpeningBalanceHasNoOpeningDateWarning() {
     CanonicalImportRow row =
         new CanonicalImportRow(
-            DAY.minusDays(1), null, new BigDecimal("-10"), "EUR", "EXPENSE",
-            "Test", null, null, null, null, null);
+            DAY.minusDays(1),
+            null,
+            new BigDecimal("-10"),
+            "EUR",
+            "EXPENSE",
+            "Test",
+            null,
+            null,
+            null,
+            null,
+            null);
     assertThat(service.warnings(account, row, DAY.plusDays(30), null, false))
         .doesNotContain(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
   }

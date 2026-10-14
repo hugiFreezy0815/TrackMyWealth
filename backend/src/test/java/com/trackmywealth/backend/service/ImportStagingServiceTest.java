@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.repository.AccountRepository;
+import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportRowRawBatchRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -30,6 +31,7 @@ class ImportStagingServiceTest {
   private final ImportDuplicateService duplicates = mock(ImportDuplicateService.class);
   private final AccountRepository accounts = mock(AccountRepository.class);
   private final AccessControlService access = mock(AccessControlService.class);
+  private final AccountSnapshotRepository snapshots = mock(AccountSnapshotRepository.class);
   private final ImportStagingService staging =
       new ImportStagingService(
           batches,
@@ -39,7 +41,8 @@ class ImportStagingServiceTest {
           JsonMapper.builder().build(),
           Clock.systemUTC(),
           accounts,
-          access);
+          access,
+          snapshots);
 
   @Test
   void revokedPaymentAccountAccessPreventsSettlementCandidateLookup() {

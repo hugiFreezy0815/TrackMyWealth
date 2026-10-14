@@ -12,6 +12,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
+import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
@@ -25,6 +26,7 @@ import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
+import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
@@ -549,10 +551,10 @@ class ImportBatchControllerTest {
     assertThat(second.canonical()).isNotNull();
   }
 
-
   @Test
   void importWarnsOnlyForBookingsStrictlyBeforeOpeningBalanceAndStillCommits() {
-    ImportTemplateResponse template = createTemplate(simpleTemplate("Opening date test", SIMPLE_COLUMNS));
+    ImportTemplateResponse template =
+        createTemplate(simpleTemplate("Opening date test", SIMPLE_COLUMNS));
     client()
         .post()
         .uri("/api/v1/accounts/" + account + "/opening-balance")
@@ -582,7 +584,21 @@ class ImportBatchControllerTest {
         .extracting(warning -> warning.code())
         .doesNotContain(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
 
+    assertThat(batch.counts().warnings()).isEqualTo(1);
+
     assertThat(commit(account, batch.id(), batch.version()).counts().imported()).isEqualTo(3);
+    OpeningBalanceResponse opening =
+        client()
+            .get()
+            .uri("/api/v1/accounts/" + account + "/opening-balance")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(OpeningBalanceResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(opening.warnings())
+        .containsExactly(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
   }
 
   @Test

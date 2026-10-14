@@ -114,7 +114,8 @@ public class ImportStagingService {
 
     LocalDate today = LocalDate.now(clock);
     LocalDate openingDate =
-        accountSnapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId())
+        accountSnapshotRepository
+            .findByAccountIdAndOpeningBalanceTrue(account.getId())
             .map(snapshot -> snapshot.getSnapshotDate())
             .orElse(null);
     UUID settlementSource = rowCheckService.settlementSourceOf(account).orElse(null);
@@ -152,7 +153,8 @@ public class ImportStagingService {
       } else if (row.isSkipped()) {
         skippedCount++;
       }
-      staged.add(staged(row, duplicateOf, account, today, openingDate, matched.contains(row.rowNumber())));
+      staged.add(
+          staged(row, duplicateOf, account, today, openingDate, matched.contains(row.rowNumber())));
     }
     rowBatchRepository.deleteByBatch(batch.getId());
     rowBatchRepository.insertAll(batch.getId(), batch.getWorkspaceId(), staged);
