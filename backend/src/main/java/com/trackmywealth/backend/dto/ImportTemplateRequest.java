@@ -51,7 +51,54 @@ public record ImportTemplateRequest(
         String accountIdentificationStrategy,
     @Size(max = MAX_HEADER_COLUMNS) List<String> headerColumns,
     @Pattern(regexp = "CSV|PDF_TEXT|PDF_OCR") String fileFormat,
-    @Valid ImportPdfLayout pdfLayout) {
+    @Valid ImportPdfLayout pdfLayout,
+    @Size(max = MAX_DESCRIPTION_TYPE_PATTERNS) Map<String, String> descriptionTypePatterns) {
+
+  /** Existing API callers omit regex-based type mapping. */
+  public ImportTemplateRequest(
+      String name,
+      UUID institutionCatalogueId,
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      Integer headerRowIndex,
+      Integer preambleRowCount,
+      Integer trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      List<String> headerColumns,
+      String fileFormat,
+      ImportPdfLayout pdfLayout) {
+    this(
+        name,
+        institutionCatalogueId,
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        headerColumns,
+        fileFormat,
+        pdfLayout,
+        Map.of());
+  }
 
   public ImportTemplateRequest {
     // Copies that keep null entries: a client's null must reach validation as a 422, not an NPE.
@@ -59,6 +106,11 @@ public record ImportTemplateRequest(
     typeMapping =
         Collections.unmodifiableMap(
             typeMapping == null ? new LinkedHashMap<>() : new LinkedHashMap<>(typeMapping));
+    descriptionTypePatterns =
+        Collections.unmodifiableMap(
+            descriptionTypePatterns == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(descriptionTypePatterns));
     if (headerColumns != null) {
       headerColumns = Collections.unmodifiableList(new ArrayList<>(headerColumns));
     }
@@ -68,6 +120,7 @@ public record ImportTemplateRequest(
   // SMALLINT columns; no real export has more than a handful of preamble or summary lines.
   public static final int MAX_SKIPPED_ROWS = 100;
   public static final int MAX_TYPE_MAPPINGS = 500;
+  public static final int MAX_DESCRIPTION_TYPE_PATTERNS = 8;
   public static final int MAX_HEADER_COLUMNS = 500;
 
   /** The parse-relevant part, with the schema defaults (V15) for every field left out. */
@@ -89,7 +142,8 @@ public record ImportTemplateRequest(
         typeMapping,
         orDefault(accountIdentificationStrategy, ImportTemplateValues.ACCOUNT_USER_SELECTED),
         orDefault(fileFormat, ImportTemplateValues.FORMAT_CSV),
-        pdfLayout);
+        pdfLayout,
+        descriptionTypePatterns);
   }
 
   private static String orDefault(String value, String defaultValue) {

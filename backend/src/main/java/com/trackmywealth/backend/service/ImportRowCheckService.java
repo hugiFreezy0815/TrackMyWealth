@@ -1,21 +1,28 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.AccountCreditCard;
+import com.trackmywealth.backend.repository.AccountCreditCardRepository;
+import com.trackmywealth.backend.repository.TransactionRepository;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -31,6 +38,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ImportRowCheckService {
 
+  private static final int PAYMENT_LOOKUP_BATCH_SIZE = 400;
+
   static final String ARG_REASON = "reason";
   static final String ARG_CURRENCY = "currency";
   static final String ARG_ACCOUNT_CURRENCY = "accountCurrency";
@@ -40,16 +49,22 @@ public class ImportRowCheckService {
   private final FxRateService fxRateService;
   private final ImportLedgerRowService ledgerRows;
   private final String fxDefaultSource;
+  private final AccountCreditCardRepository creditCards;
+  private final TransactionRepository transactions;
 
   public ImportRowCheckService(
       TransactionService transactionService,
       FxRateService fxRateService,
       ImportLedgerRowService ledgerRows,
-      @Value("${app.fx.default-source}") String fxDefaultSource) {
+      @Value("${app.fx.default-source}") String fxDefaultSource,
+      AccountCreditCardRepository creditCards,
+      TransactionRepository transactions) {
     this.transactionService = transactionService;
     this.fxRateService = fxRateService;
     this.ledgerRows = ledgerRows;
     this.fxDefaultSource = fxDefaultSource;
+    this.creditCards = creditCards;
+    this.transactions = transactions;
   }
 
   /**
@@ -65,22 +80,25 @@ public class ImportRowCheckService {
   public ParsedImportRow checkRecordable(
       Account account, ParsedImportRow row, Map<String, Boolean> rates) {
     CanonicalImportRow canonical = row.canonical();
+    CreateTransactionRequest request = ledgerRows.request(canonical);
     Optional<String> convertsInto;
     try {
-      convertsInto = transactionService.requireRecordable(account, ledgerRows.request(canonical));
+      convertsInto = transactionService.requireRecordable(account, request);
     } catch (ResponseStatusException e) {
       Map<String, String> args = new LinkedHashMap<>();
       args.put(ARG_REASON, e.getReason());
       return error(row, ImportRowErrorValues.LEDGER_REJECTED, args);
     }
+    // A billed amount carries its own rate (US-07-18): no provider rate is needed.
     if (convertsInto.isEmpty()
+        || request.billedAmount() != null
         || hasRate(
-            new ImportRateNeed(canonical.currency(), convertsInto.get(), canonical.bookingDate()),
+            new ImportRateNeed(request.currency(), convertsInto.get(), canonical.bookingDate()),
             rates)) {
       return row;
     }
     Map<String, String> args = new LinkedHashMap<>();
-    args.put(ARG_CURRENCY, canonical.currency());
+    args.put(ARG_CURRENCY, request.currency());
     args.put(ARG_ACCOUNT_CURRENCY, convertsInto.get());
     args.put(ARG_DATE, canonical.bookingDate().toString());
     return error(row, ImportRowErrorValues.FX_RATE_UNAVAILABLE, args);
@@ -99,15 +117,18 @@ public class ImportRowCheckService {
         continue;
       }
       CanonicalImportRow canonical = row.canonical();
+      CreateTransactionRequest request = ledgerRows.request(canonical);
       Optional<String> convertsInto;
       try {
-        convertsInto = transactionService.requireRecordable(account, ledgerRows.request(canonical));
+        convertsInto = transactionService.requireRecordable(account, request);
       } catch (ResponseStatusException e) {
         continue;
       }
-      convertsInto.ifPresent(
-          into ->
-              needed.add(new ImportRateNeed(canonical.currency(), into, canonical.bookingDate())));
+      if (request.billedAmount() == null) {
+        convertsInto.ifPresent(
+            into ->
+                needed.add(new ImportRateNeed(request.currency(), into, canonical.bookingDate())));
+      }
     }
     return needed;
   }
@@ -126,14 +147,111 @@ public class ImportRowCheckService {
     return rates;
   }
 
+  /**
+   * The account card payments into {@code account} come from, when it is a credit card with one
+   * set; read once per batch for {@link #warnings}.
+   */
+  public Optional<UUID> settlementSourceOf(Account account) {
+    if (!account.isHasStatementCycle()) {
+      return Optional.empty();
+    }
+    return creditCards
+        .findById(account.getId())
+        .map(AccountCreditCard::getSettlementSourceAccountId);
+  }
+
+  /**
+   * Which positive card-settlement preview rows have an available source-account payment candidate.
+   * Only call with a source account the actor may currently read. Amounts are chunked to cap SQL
+   * bind parameters, and payment dates are checked in memory (no N+1 query).
+   */
+  public Set<Integer> matchedSettlementRows(
+      UUID sourceId, String currency, List<ParsedImportRow> rows) {
+    if (sourceId == null) {
+      return Set.of();
+    }
+    List<ParsedImportRow> credits =
+        rows.stream()
+            .filter(ParsedImportRow::isParsed)
+            .filter(
+                row ->
+                    "SETTLEMENT".equals(row.canonical().transactionType())
+                        && row.canonical().amount().signum() > 0)
+            .toList();
+    if (credits.isEmpty()) {
+      return Set.of();
+    }
+    LocalDate from =
+        credits.stream()
+            .map(row -> row.canonical().bookingDate())
+            .min(LocalDate::compareTo)
+            .orElseThrow()
+            .minusDays(SettlementDetectionService.WINDOW_DAYS);
+    LocalDate to =
+        credits.stream()
+            .map(row -> row.canonical().bookingDate())
+            .max(LocalDate::compareTo)
+            .orElseThrow()
+            .plusDays(SettlementDetectionService.WINDOW_DAYS);
+    List<BigDecimal> amounts =
+        credits.stream()
+            .map(row -> row.canonical().amount().negate().stripTrailingZeros())
+            .distinct()
+            .toList();
+    Map<BigDecimal, List<LocalDate>> datesByAmount = new HashMap<>();
+    for (int i = 0; i < amounts.size(); i += PAYMENT_LOOKUP_BATCH_SIZE) {
+      for (Object[] payment :
+          transactions.findPairablePaymentDatesByAmounts(
+              sourceId,
+              currency,
+              SettlementDetectionService.PAYMENT_TYPES,
+              amounts.subList(i, Math.min(i + PAYMENT_LOOKUP_BATCH_SIZE, amounts.size())),
+              from,
+              to)) {
+        BigDecimal amount = ((BigDecimal) payment[0]).stripTrailingZeros();
+        datesByAmount
+            .computeIfAbsent(amount, ignored -> new ArrayList<>())
+            .add((LocalDate) payment[1]);
+      }
+    }
+    Set<Integer> matched = new HashSet<>();
+    for (ParsedImportRow row : credits) {
+      LocalDate date = row.canonical().bookingDate();
+      List<LocalDate> dates =
+          datesByAmount.get(row.canonical().amount().negate().stripTrailingZeros());
+      if (dates != null) {
+        for (int i = 0; i < dates.size(); i++) {
+          LocalDate candidate = dates.get(i);
+          if (!candidate.isBefore(date.minusDays(SettlementDetectionService.WINDOW_DAYS))
+              && !candidate.isAfter(date.plusDays(SettlementDetectionService.WINDOW_DAYS))) {
+            dates.remove(i);
+            matched.add(row.rowNumber());
+            break;
+          }
+        }
+      }
+    }
+    return matched;
+  }
+
   /** The warnings of a row the ledger accepts; it stays included. */
-  public List<String> warnings(Account account, CanonicalImportRow row, LocalDate today) {
+  public List<String> warnings(
+      Account account, CanonicalImportRow row, LocalDate today, boolean hasMatchingPayment) {
     List<String> warnings = new ArrayList<>();
     if (row.bookingDate().isAfter(today)) {
       warnings.add(ImportBatchValues.WARNING_FUTURE_DATE);
     }
     if (!account.getNativeCurrency().equals(row.currency())) {
       warnings.add(ImportBatchValues.WARNING_CURRENCY_DIFFERS);
+    }
+    // A positive card booking is a payment by default, not a refund. Highlight an
+    // unmatched payment so the member can correct its template instead of silently misclassifying
+    // a refund. This is advisory; settlement matching still decides after commit.
+    if (account.isHasStatementCycle()
+        && "SETTLEMENT".equals(row.transactionType())
+        && row.amount().signum() > 0
+        && !hasMatchingPayment) {
+      warnings.add(ImportBatchValues.WARNING_CARD_SETTLEMENT_UNMATCHED);
     }
     return warnings;
   }

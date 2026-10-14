@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
@@ -7,8 +8,10 @@ import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.dto.StagedImportRow;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
+import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportRowRawBatchRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -17,6 +20,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +55,8 @@ public class ImportStagingService {
   private final ImportDuplicateService duplicateService;
   private final ObjectMapper objectMapper;
   private final Clock clock;
+  private final AccountRepository accountRepository;
+  private final AccessControlService accessControlService;
 
   public ImportStagingService(
       ImportBatchRepository batchRepository,
@@ -58,13 +64,17 @@ public class ImportStagingService {
       ImportRowCheckService rowCheckService,
       ImportDuplicateService duplicateService,
       ObjectMapper objectMapper,
-      Clock clock) {
+      Clock clock,
+      AccountRepository accountRepository,
+      AccessControlService accessControlService) {
     this.batchRepository = batchRepository;
     this.rowBatchRepository = rowBatchRepository;
     this.rowCheckService = rowCheckService;
     this.duplicateService = duplicateService;
     this.objectMapper = objectMapper;
     this.clock = clock;
+    this.accountRepository = accountRepository;
+    this.accessControlService = accessControlService;
   }
 
   /**
@@ -78,7 +88,11 @@ public class ImportStagingService {
    */
   @Transactional
   public void stage(
-      ImportBatch batch, Account account, List<ParsedImportRow> rows, Map<String, Boolean> rates) {
+      ImportBatch batch,
+      Account account,
+      List<ParsedImportRow> rows,
+      Map<String, Boolean> rates,
+      AuthenticatedUserPrincipal actor) {
     List<ParsedImportRow> checked = rejectRepeatedReferences(rows);
     List<ParsedImportRow> recordable = new ArrayList<>();
     for (int i = 0; i < checked.size(); i++) {
@@ -95,6 +109,28 @@ public class ImportStagingService {
         duplicateService.findDuplicates(account.getId(), batch.getSourceKind(), recordable);
 
     LocalDate today = LocalDate.now(clock);
+    UUID settlementSource = rowCheckService.settlementSourceOf(account).orElse(null);
+    // A card can be shared without its payment account. Only a source whose transactions the
+    // member may read influences the preview: whether the warning shows tells whether a payment of
+    // that amount exists there, so BALANCE_ONLY is not enough. A missing or revoked source never
+    // reaches the payment query.
+    UUID visibleSource =
+        settlementSource == null
+            ? null
+            : accountRepository
+                .findById(settlementSource)
+                .filter(
+                    source ->
+                        !accessControlService
+                            .accountsWithAccess(
+                                accessControlService.requireActingMember(actor),
+                                List.of(source),
+                                AccessLevelValues.READ)
+                            .isEmpty())
+                .map(Account::getId)
+                .orElse(null);
+    Set<Integer> matched =
+        rowCheckService.matchedSettlementRows(visibleSource, account.getNativeCurrency(), checked);
     List<StagedImportRow> staged = new ArrayList<>(checked.size());
     int duplicateCount = 0;
     int errorCount = 0;
@@ -108,7 +144,7 @@ public class ImportStagingService {
       } else if (row.isSkipped()) {
         skippedCount++;
       }
-      staged.add(staged(row, duplicateOf, account, today));
+      staged.add(staged(row, duplicateOf, account, today, matched.contains(row.rowNumber())));
     }
     rowBatchRepository.deleteByBatch(batch.getId());
     rowBatchRepository.insertAll(batch.getId(), batch.getWorkspaceId(), staged);
@@ -160,7 +196,11 @@ public class ImportStagingService {
   }
 
   private StagedImportRow staged(
-      ParsedImportRow row, UUID duplicateOf, Account account, LocalDate today) {
+      ParsedImportRow row,
+      UUID duplicateOf,
+      Account account,
+      LocalDate today,
+      boolean matchingPayment) {
     CanonicalImportRow canonical = row.canonical();
     String status;
     if (row.isSkipped()) {
@@ -173,7 +213,9 @@ public class ImportStagingService {
       status = ImportBatchValues.ROW_PARSED;
     }
     List<String> warnings =
-        row.isParsed() ? rowCheckService.warnings(account, canonical, today) : List.of();
+        row.isParsed()
+            ? rowCheckService.warnings(account, canonical, today, matchingPayment)
+            : List.of();
     return new StagedImportRow(
         UUID.randomUUID(),
         row.rowNumber(),

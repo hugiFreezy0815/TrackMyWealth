@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.AccessLevelValues;
+import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
@@ -13,6 +15,7 @@ import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
+import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportTemplate;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
@@ -85,6 +88,7 @@ public class ImportTemplateService {
   // file after it: an OCR run can take minutes and must not hold a pooled connection meanwhile.
   private final TransactionTemplate readOnlyTransaction;
   private final AccessControlService accessControlService;
+  private final AccountLookupService accountLookupService;
   private final VersionPreconditionService versionPreconditionService;
   private final BusinessDateService businessDateService;
   private final MessageSource messageSource;
@@ -101,6 +105,7 @@ public class ImportTemplateService {
       LocalOcrService ocr,
       PlatformTransactionManager transactionManager,
       AccessControlService accessControlService,
+      AccountLookupService accountLookupService,
       VersionPreconditionService versionPreconditionService,
       BusinessDateService businessDateService,
       MessageSource messageSource,
@@ -113,6 +118,7 @@ public class ImportTemplateService {
     this.readOnlyTransaction = new TransactionTemplate(transactionManager);
     this.readOnlyTransaction.setReadOnly(true);
     this.accessControlService = accessControlService;
+    this.accountLookupService = accountLookupService;
     this.versionPreconditionService = versionPreconditionService;
     this.businessDateService = businessDateService;
     this.messageSource = messageSource;
@@ -295,23 +301,56 @@ public class ImportTemplateService {
     return candidates;
   }
 
-  /** Dry run of a saved template version on {@code content}; nothing is stored. */
+  /**
+   * Dry run of a saved template version on {@code content}; nothing is stored.
+   *
+   * @param accountId the account the file is meant for, or null: with it, rows read as they would
+   *     be imported there (a card's purchase and settlement types, its currency); without it, as
+   *     into an ordinary account (US-07-18)
+   */
   public ImportTemplateTestResponse test(
-      UUID id, byte[] content, AuthenticatedUserPrincipal actor) {
+      UUID id, byte[] content, UUID accountId, AuthenticatedUserPrincipal actor) {
     ImportTemplateDefinition definition =
         readOnlyTransaction.execute(
             status -> {
               accessControlService.requireActingMember(actor);
               return definitionOf(requireVisible(id, actor));
             });
-    return preview(parser.parse(content, definition, null));
+    return preview(parseFor(content, definition, accountId, actor));
   }
 
-  /** Dry run of a template that is not saved yet (the mapping screen's live preview). */
+  /**
+   * Dry run of a template that is not saved yet (the mapping screen's live preview).
+   *
+   * @param accountId as for the saved template's dry run
+   */
   public ImportTemplateTestResponse test(
-      ImportTemplateRequest template, byte[] content, AuthenticatedUserPrincipal actor) {
+      ImportTemplateRequest template,
+      byte[] content,
+      UUID accountId,
+      AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
-    return preview(parser.parse(content, definitionOf(template), null));
+    return preview(parseFor(content, definitionOf(template), accountId, actor));
+  }
+
+  // The same access as the import itself: the preview is what importing there would stage.
+  private ImportParseResult parseFor(
+      byte[] content,
+      ImportTemplateDefinition definition,
+      UUID accountId,
+      AuthenticatedUserPrincipal actor) {
+    if (accountId == null) {
+      return parser.parse(content, definition, null);
+    }
+    ImportAccountContext context =
+        readOnlyTransaction.execute(
+            status -> {
+              Account account = accountLookupService.findAccountOrThrow(accountId, actor);
+              accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+              return new ImportAccountContext(
+                  account.getNativeCurrency(), account.isHasStatementCycle());
+            });
+    return parser.parse(content, definition, context.currency(), context.creditCard());
   }
 
   // --- rules ---------------------------------------------------------------------------------
@@ -516,7 +555,8 @@ public class ImportTemplateService {
         definition.typeMapping(),
         definition.accountIdentificationStrategy(),
         definition.fileFormat(),
-        definition.pdfLayout());
+        definition.pdfLayout(),
+        definition.descriptionTypePatterns());
   }
 
   private ImportTemplateDefinition definitionOf(ImportTemplate template) {
@@ -539,7 +579,8 @@ public class ImportTemplateService {
         template.getFileFormat(),
         template.getPdfLayout() == null
             ? null
-            : objectMapper.readValue(template.getPdfLayout(), ImportPdfLayout.class));
+            : objectMapper.readValue(template.getPdfLayout(), ImportPdfLayout.class),
+        objectMapper.readValue(template.getDescriptionTypePatterns(), stringMap));
   }
 
   private void apply(
@@ -564,6 +605,8 @@ public class ImportTemplateService {
     template.setFixedCurrency(definition.fixedCurrency());
     template.setColumnMapping(objectMapper.writeValueAsString(definition.columnMapping()));
     template.setTypeMapping(objectMapper.writeValueAsString(definition.typeMapping()));
+    template.setDescriptionTypePatterns(
+        objectMapper.writeValueAsString(definition.descriptionTypePatterns()));
     template.setAccountIdentificationStrategy(definition.accountIdentificationStrategy());
     template.setFileFormat(definition.fileFormat());
     if (definition.pdfLayout() != null) {
@@ -614,7 +657,8 @@ public class ImportTemplateService {
         template.getHeaderFingerprint(),
         definition.fileFormat(),
         definition.pdfLayout(),
-        VersionPreconditionService.persistedVersion(template.getVersion(), VERSIONED_RESOURCE));
+        VersionPreconditionService.persistedVersion(template.getVersion(), VERSIONED_RESOURCE),
+        definition.descriptionTypePatterns());
   }
 
   private ImportTemplateTestResponse preview(ImportParseResult result) {

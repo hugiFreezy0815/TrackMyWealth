@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportBatchCountsResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
@@ -167,12 +168,13 @@ public class ImportBatchService {
       byte[] content,
       UUID templateId,
       AuthenticatedUserPrincipal actor) {
-    String accountCurrency =
+    ImportAccountContext accountContext =
         readOnlyTransaction.execute(
             status -> {
               Account account = requireImportableAccount(accountId, actor);
               requireRoomForAnotherBatch(account);
-              return account.getNativeCurrency();
+              return new ImportAccountContext(
+                  account.getNativeCurrency(), account.isHasStatementCycle());
             });
     if (content.length == 0) {
       throw new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_EMPTY, "The file is empty.");
@@ -186,7 +188,13 @@ public class ImportBatchService {
     ResolvedImportTemplate template =
         chosen == null ? null : importTemplateService.resolveForImport(chosen, actor);
     ImportParseResult parsed =
-        template == null ? null : parser.parse(content, template.definition(), accountCurrency);
+        template == null
+            ? null
+            : parser.parse(
+                content,
+                template.definition(),
+                accountContext.currency(),
+                accountContext.creditCard());
     List<ImportTemplateCandidateResponse> offered = template == null ? candidates : List.of();
     Map<String, Boolean> rates =
         parsed == null ? new HashMap<>() : lookUpRates(accountId, parsed.rows(), actor);
@@ -217,7 +225,7 @@ public class ImportBatchService {
 
           if (parsed != null) {
             useTemplate(batch, template);
-            stagingService.stage(batch, account, parsed.rows(), rates);
+            stagingService.stage(batch, account, parsed.rows(), rates, actor);
           }
           return summary(batch, account, offered);
         });
@@ -233,12 +241,13 @@ public class ImportBatchService {
       UUID templateId,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    String accountCurrency =
+    ImportAccountContext accountContext =
         readOnlyTransaction.execute(
             status -> {
               Account account = requireImportableAccount(accountId, actor);
               requireParseable(requireBatch(account, batchId, actor), expectedVersion);
-              return account.getNativeCurrency();
+              return new ImportAccountContext(
+                  account.getNativeCurrency(), account.isHasStatementCycle());
             });
     // Every parseable batch has its file: only a discard (no longer parseable) deletes it.
     byte[] content =
@@ -249,7 +258,9 @@ public class ImportBatchService {
                     .map(ImportFile::getContent)
                     .orElseThrow(() -> new IllegalStateException("Batch has no stored file.")));
     ResolvedImportTemplate template = importTemplateService.resolveForImport(templateId, actor);
-    ImportParseResult parsed = parser.parse(content, template.definition(), accountCurrency);
+    ImportParseResult parsed =
+        parser.parse(
+            content, template.definition(), accountContext.currency(), accountContext.creditCard());
     Map<String, Boolean> rates = lookUpRates(accountId, parsed.rows(), actor);
 
     return writeTransaction.execute(
@@ -259,7 +270,7 @@ public class ImportBatchService {
           // Checked again under the lock: another parse, a discard or a commit may have come first.
           requireParseable(batch, expectedVersion);
           useTemplate(batch, template);
-          stagingService.stage(batch, account, parsed.rows(), rates);
+          stagingService.stage(batch, account, parsed.rows(), rates, actor);
           return summary(batch, account, List.of());
         });
   }

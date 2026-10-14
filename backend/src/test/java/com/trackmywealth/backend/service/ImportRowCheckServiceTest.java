@@ -18,12 +18,15 @@ import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Workspace;
+import com.trackmywealth.backend.repository.AccountCreditCardRepository;
+import com.trackmywealth.backend.repository.TransactionRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -37,13 +40,130 @@ class ImportRowCheckServiceTest {
 
   private final TransactionService transactionService = mock(TransactionService.class);
   private final FxRateService fxRateService = mock(FxRateService.class);
+  private final AccountCreditCardRepository creditCards = mock(AccountCreditCardRepository.class);
+  private final TransactionRepository repository = mock(TransactionRepository.class);
   private final ImportRowCheckService service =
       new ImportRowCheckService(
           transactionService,
           fxRateService,
           new ImportLedgerRowService(JsonMapper.builder().build()),
-          SOURCE);
+          SOURCE,
+          creditCards,
+          repository);
   private final Account account = account();
+
+  @Test
+  void oneSourcePaymentCannotMatchTwoCardSettlements() {
+    UUID source = UUID.randomUUID();
+    when(repository.findPairablePaymentDatesByAmounts(
+            eq(source), eq("EUR"), any(), any(), any(), any()))
+        .thenReturn(List.<Object[]>of(new Object[] {new BigDecimal("-30"), DAY}));
+    List<ParsedImportRow> rows =
+        java.util.stream.IntStream.rangeClosed(1, 2)
+            .mapToObj(
+                n ->
+                    ParsedImportRow.parsed(
+                        n,
+                        Map.of(),
+                        new CanonicalImportRow(
+                            DAY,
+                            null,
+                            new BigDecimal("30"),
+                            "EUR",
+                            "SETTLEMENT",
+                            "Payment",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null)))
+            .toList();
+    assertThat(service.matchedSettlementRows(source, "EUR", rows)).containsExactly(1);
+  }
+
+  @Test
+  void twoPaymentsOnSameDateCanMatchTwoSettlements() {
+    UUID source = UUID.randomUUID();
+    when(repository.findPairablePaymentDatesByAmounts(
+            eq(source), eq("EUR"), any(), any(), any(), any()))
+        .thenReturn(
+            List.<Object[]>of(
+                new Object[] {new BigDecimal("-30"), DAY},
+                new Object[] {new BigDecimal("-30"), DAY}));
+    List<ParsedImportRow> rows =
+        java.util.stream.IntStream.rangeClosed(1, 2)
+            .mapToObj(
+                n ->
+                    ParsedImportRow.parsed(
+                        n,
+                        Map.of(),
+                        new CanonicalImportRow(
+                            DAY,
+                            null,
+                            new BigDecimal("30"),
+                            "EUR",
+                            "SETTLEMENT",
+                            "Payment",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null)))
+            .toList();
+    assertThat(service.matchedSettlementRows(source, "EUR", rows)).containsExactly(1, 2);
+  }
+
+  @Test
+  void settlementPreviewBatchesThousandsOfRowsInsteadOfQueryingOncePerRow() {
+    List<ParsedImportRow> rows =
+        java.util.stream.IntStream.range(0, 1200)
+            .mapToObj(
+                n ->
+                    ParsedImportRow.parsed(
+                        n + 1,
+                        Map.of(),
+                        new CanonicalImportRow(
+                            DAY,
+                            null,
+                            BigDecimal.valueOf(n + 1),
+                            "EUR",
+                            "SETTLEMENT",
+                            "Payment",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null)))
+            .toList();
+    UUID source = UUID.randomUUID();
+
+    assertThat(service.matchedSettlementRows(source, "EUR", rows)).isEmpty();
+    verify(repository, org.mockito.Mockito.times(3))
+        .findPairablePaymentDatesByAmounts(eq(source), eq("EUR"), any(), any(), any(), any());
+  }
+
+  @Test
+  void settlementPreviewWithNoVisibleSourceDoesNotQueryOtherAccountTransactions() {
+    ParsedImportRow credit =
+        ParsedImportRow.parsed(
+            1,
+            Map.of(),
+            new CanonicalImportRow(
+                DAY,
+                null,
+                new BigDecimal("30"),
+                "EUR",
+                "SETTLEMENT",
+                "Payment",
+                null,
+                null,
+                null,
+                null,
+                null));
+
+    assertThat(service.matchedSettlementRows(null, "EUR", List.of(credit))).isEmpty();
+    verifyNoInteractions(repository);
+  }
 
   @Test
   void aRowTheLedgerTakesIsUnchanged() {
@@ -149,13 +269,39 @@ class ImportRowCheckServiceTest {
   }
 
   @Test
+  void issuerProvidedCardFxDoesNotLookUpAGenericRate() {
+    CanonicalImportRow purchase =
+        new CanonicalImportRow(
+            DAY,
+            null,
+            new BigDecimal("-55.00"),
+            "CHF",
+            "CREDIT_CARD_PURCHASE",
+            "Foreign merchant",
+            null,
+            "BANK-1",
+            null,
+            null,
+            null,
+            new BigDecimal("-50.00"),
+            "EUR",
+            new BigDecimal("1.100000"));
+    ParsedImportRow parsed = ParsedImportRow.parsed(1, Map.of(), purchase);
+    when(transactionService.requireRecordable(eq(account), any())).thenReturn(Optional.of("CHF"));
+
+    assertThat(service.ratesNeeded(account, List.of(parsed))).isEmpty();
+    assertThat(service.checkRecordable(account, parsed, new HashMap<>())).isSameAs(parsed);
+    verifyNoInteractions(fxRateService);
+  }
+
+  @Test
   void aFutureDateAndAnotherCurrencyAreWarnings() {
     CanonicalImportRow future = row("USD", DAY.plusDays(1)).canonical();
 
-    assertThat(service.warnings(account, future, DAY))
+    assertThat(service.warnings(account, future, DAY, false))
         .containsExactly(
             ImportBatchValues.WARNING_FUTURE_DATE, ImportBatchValues.WARNING_CURRENCY_DIFFERS);
-    assertThat(service.warnings(account, row("EUR", DAY).canonical(), DAY)).isEmpty();
+    assertThat(service.warnings(account, row("EUR", DAY).canonical(), DAY, false)).isEmpty();
     assertThat(
             ImportRowCheckService.warningArgs(
                 ImportBatchValues.WARNING_CURRENCY_DIFFERS, future, "EUR"))

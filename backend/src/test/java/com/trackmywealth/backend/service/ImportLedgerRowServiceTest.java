@@ -38,6 +38,35 @@ class ImportLedgerRowServiceTest {
   }
 
   @Test
+  void aForeignCardPurchaseKeepsItsOriginalAmountAndTheBilledAmountNotThePrintedRate() {
+    // The bank prints USD per EUR; the ledger's rate is EUR per USD. Only the billed amount is
+    // exact either way.
+    CanonicalImportRow purchase =
+        new CanonicalImportRow(
+            LocalDate.of(2019, 1, 2),
+            null,
+            new BigDecimal("-92.17"),
+            "EUR",
+            "CREDIT_CARD_PURCHASE",
+            "Hotel",
+            null,
+            null,
+            null,
+            null,
+            null,
+            new BigDecimal("-100.00"),
+            "USD",
+            new BigDecimal("1.0850"));
+
+    CreateTransactionRequest request = service.request(purchase);
+
+    assertThat(request.amount()).isEqualByComparingTo("-100.00");
+    assertThat(request.currency()).isEqualTo("USD");
+    assertThat(request.billedAmount()).isEqualByComparingTo("-92.17");
+    assertThat(request.fxRateToAccountCurrency()).isNull();
+  }
+
+  @Test
   void withoutADescriptionTheCounterpartyDescribesTheRow() {
     assertThat(service.request(row(null, "Stadtwerke")).merchantDescription())
         .isEqualTo("Stadtwerke");

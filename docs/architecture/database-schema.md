@@ -72,6 +72,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V66` | `import_template.file_format` (`CSV`, `PDF_TEXT`, `PDF_OCR`) and `pdf_layout` (required exactly for PDF) (#268, #276) |
 | `V67` | Import batches (US-07-04, #230): `import_file` (the original file, own RLS policy), `import_batch.version` + `import_batch_bump_version`, `file_sha256`, `source_kind`; `import_row_raw.workspace_id` + RLS policy, `included`, `duplicate_of_transaction_id`, `warning_codes`, `error_code`/`error_args`, the canonical values (`canonical_data`, `booking_date`, `amount`, `currency`), and `raw_data` as `JSON` so the cells keep their order |
 | `V68` | Import batch rollback (US-07-05, #231): `import_batch.rolled_back_by` + `rollback_reason` (`chk_import_batch_rollback_recorded`: set exactly when `ROLLED_BACK`/`VOIDED`, with `rolled_back_at`), `trg_transaction_no_hard_delete`, which refuses every `DELETE` of a transaction except its own batch's rollback, `trg_transaction_no_truncate`, and indexes on the columns referencing a transaction that had none |
+| `V71` | Credit-card statement imports: versioned RE2 description patterns for classification, notably refunds (US-07-18, #284) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -781,7 +782,20 @@ false`), which hides it from detection and from the default list.
 
 `column_mapping` maps canonical fields (`bookingDate`, `amount` or `debitAmount` + `creditAmount`,
 `currency`, `description`, ...) to a header cell's text or a 0-based column index;
-`type_mapping` maps source type texts to cash `transaction_type`s. Sprint 5 imports only
+`type_mapping` maps source type texts to cash `transaction_type`s. A credit-card template
+may also map `originalAmount`, `originalCurrency` and `exchangeRate`. A foreign purchase is
+recorded in its original amount and currency with the statement's billed amount as `billedAmount`,
+so the ledger derives the exact rate and no estimated daily FX rate is used; the printed
+`exchangeRate` (rounded, and quoted either way round by different banks) stays in the row's source
+data only. Card accounts
+(`has_statement_cycle`) infer `CREDIT_CARD_PURCHASE` for negative rows and `SETTLEMENT` for
+positive rows only when neither a type-column mapping nor a description pattern applies.
+A refund is explicitly `REFUND` via the type column or versioned
+`description_type_patterns` (V71): one bounded RE2 expression per target type, matched
+case-insensitively anywhere within the mapped description. A conflict is an error, not an
+arbitrary choice. Refunds reduce spending and do not enter settlement matching.
+An unmatched positive settlement receives the advisory
+`IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED` warning. Sprint 5 imports only
 `CASH_TRANSACTIONS` with `account_identification_strategy = USER_SELECTED`; the parser refuses
 the other values with `IMPORT_TEMPLATE_UNSUPPORTED`.
 
@@ -972,7 +986,8 @@ stored English text. A parsed row the ledger would refuse as a manual entry
 a type the account does not take) is the error `IMPORT_ROW_LEDGER_REJECTED`, one in another
 currency without a rate `IMPORT_ROW_FX_RATE_UNAVAILABLE`, a second row with an already used bank
 reference `IMPORT_ROW_EXTERNAL_ID_REPEATED`. Warnings (`IMPORT_ROW_FUTURE_DATE`,
-`IMPORT_ROW_CURRENCY_DIFFERS_FROM_ACCOUNT`) leave the row included. `raw_data` and `error_args` are
+`IMPORT_ROW_CURRENCY_DIFFERS_FROM_ACCOUNT`,
+`IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED`) leave the row included. `raw_data` and `error_args` are
 `JSON`, not `JSONB`, which would sort their keys: cells keep the file's column order and arguments
 fill `{0}`, `{1}`, ... in order. The canonical values stay on error rows that have them, for the
 reconciliation's `MISSING_TRANSACTION`. `GET .../errors.csv` exports the error rows in the source's

@@ -20,11 +20,13 @@ import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
+import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
+import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
@@ -148,6 +150,7 @@ class ImportBatchControllerTest {
               "DELETE FROM account_snapshot",
               "DELETE FROM sharing_grant",
               "DELETE FROM account_ownership",
+              "DELETE FROM account_credit_card",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
               "DELETE FROM user_session",
@@ -543,6 +546,184 @@ class ImportBatchControllerTest {
     assertThat(second.error().message())
         .isEqualTo("Row 1 already has the bank reference \"R1\"; only that row is imported.");
     assertThat(second.canonical()).isNotNull();
+  }
+
+  @Test
+  void creditCardStatementImportsPurchasesSettlementsRefundsAndIssuerFx() throws Exception {
+    UUID card =
+        client()
+            .post()
+            .uri("/api/v1/accounts")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(AccountRequests.account("Synthetic card", "CREDIT_CARD", "CHF").build())
+            .exchange()
+            .expectStatus()
+            .isCreated()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody()
+            .id();
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + card + "/settlement-source")
+        .headers(CurrentVersion.ifMatchForCard(dataSource, card))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetSettlementSourceRequest(account))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    // Import the source-account payment too: neither leg relies on manual ledger entry.
+    ImportTemplateResponse sourceTemplate =
+        createTemplate(simpleTemplate("Synthetic payment source", SIMPLE_COLUMNS));
+    ImportBatchResponse sourcePayment =
+        upload(
+                token,
+                account,
+                csv("2031-05-02;-30.00;CHF;Synthetic card payment;CARD-PAY;"),
+                sourceTemplate.id())
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(commit(account, sourcePayment.id(), sourcePayment.version()).counts().imported())
+        .isEqualTo(1);
+
+    ImportTemplateResponse template = createTemplate(creditCardTemplate());
+    byte[] file =
+        ("Date;Amount;Currency;Text;Reference;OriginalAmount;OriginalCurrency;Rate\n"
+                + "2031-05-01;-55,00;CHF;Overseas purchase;CARD-A;-50,00;EUR;0,909091\n"
+                + "2031-05-02;30,00;CHF;Monthly card payment;CARD-B;;;\n"
+                + "2031-05-03;8,00;CHF;SHOP rEfUnD;CARD-C;;;\n"
+                + "2031-05-04;4,00;CHF;Other credit;CARD-D;;;\n")
+            .getBytes(StandardCharsets.UTF_8);
+    // The template's dry run for the card types rows as the import into it will.
+    assertThat(templatePreview(template.id(), card, file).rows())
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("CREDIT_CARD_PURCHASE", "SETTLEMENT", "REFUND", "SETTLEMENT");
+    assertThat(templatePreview(template.id(), null, file).rows())
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("EXPENSE", "INCOME", "REFUND", "INCOME");
+    ImportBatchResponse batch =
+        upload(token, card, file, template.id())
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(batch.counts().total()).isEqualTo(4);
+    assertThat(batch.counts().newRows()).isEqualTo(4);
+    assertThat(batch.counts().errors()).isZero();
+    List<ImportRowResponse> preview =
+        client()
+            .get()
+            .uri("/api/v1/accounts/" + card + "/imports/" + batch.id() + "/rows")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+            .returnResult()
+            .getResponseBody()
+            .content();
+    assertThat(preview)
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("CREDIT_CARD_PURCHASE", "SETTLEMENT", "REFUND", "SETTLEMENT");
+    assertThat(preview.get(0).canonical().originalCurrency()).isEqualTo("EUR");
+    assertThat(preview.get(3).warnings())
+        .extracting(warning -> warning.code())
+        .contains("IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED");
+    assertThat(preview.get(1).warnings())
+        .extracting(warning -> warning.code())
+        .doesNotContain("IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED");
+
+    ImportBatchResponse committed = commit(card, batch.id(), batch.version());
+    assertThat(committed.counts().imported()).isEqualTo(4);
+    assertThat(count("SELECT count(*) FROM transaction WHERE account_id = ?", card)).isEqualTo(4);
+    assertThat(
+            single(
+                "SELECT currency FROM transaction WHERE account_id = ? AND external_id = ?",
+                card,
+                "CARD-A"))
+        .isEqualTo("EUR");
+    assertThat(
+            (BigDecimal)
+                single(
+                    "SELECT amount FROM transaction WHERE account_id = ? AND external_id = ?",
+                    card,
+                    "CARD-A"))
+        .isEqualByComparingTo("-50.00");
+    assertThat(
+            (BigDecimal)
+                single(
+                    "SELECT fx_rate_to_account_currency FROM transaction WHERE account_id = ? AND external_id = ?",
+                    card,
+                    "CARD-A"))
+        .isEqualByComparingTo("1.100000");
+    assertThat(
+            single(
+                "SELECT fx_rate_estimated FROM transaction WHERE account_id = ? AND external_id = ?",
+                card,
+                "CARD-A"))
+        .isEqualTo(false);
+    // A rounded or reciprocal bank quote is retained exactly for audit, independently of the
+    // effective rate derived from the issuer's booked total.
+    assertThat(
+            single(
+                "SELECT raw_source_data ->> 'issuerQuotedFxRate' FROM transaction"
+                    + " WHERE account_id = ? AND external_id = ?",
+                card,
+                "CARD-A"))
+        .isEqualTo("0.909091");
+    assertThat(count("SELECT count(*) FROM settlement_match WHERE status = 'CONFIRMED'"))
+        .isEqualTo(1);
+
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + card + "/transactions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            TransactionRequests.cash(
+                "REFUND",
+                LocalDate.of(2031, 5, 5),
+                new BigDecimal("3.00"),
+                "CHF",
+                "Manual card refund",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+
+    // Fallback duplicate detection must compare EUR -50.00, not the booked CHF -55.00.
+    // No external bank reference is provided on either import.
+    byte[] unreferenced =
+        ("Date;Amount;Currency;Text;Reference;OriginalAmount;OriginalCurrency;Rate\n"
+                + "2031-05-06;-55,00;CHF;Reference-free hotel;;-50,00;EUR;0,909091\n")
+            .getBytes(StandardCharsets.UTF_8);
+    ImportBatchResponse first =
+        upload(token, card, unreferenced, template.id())
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(commit(card, first.id(), first.version()).counts().imported()).isEqualTo(1);
+
+    ImportBatchResponse repeated =
+        upload(token, card, unreferenced, template.id())
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(repeated.counts().duplicates()).isEqualTo(1);
+    assertThat(repeated.counts().included()).isZero();
   }
 
   // --- errors and warnings
@@ -1337,6 +1518,30 @@ class ImportBatchControllerTest {
         .exchange();
   }
 
+  private ImportTemplateTestResponse templatePreview(
+      UUID templateId, UUID accountId, byte[] content) {
+    HttpHeaders fileHeaders = new HttpHeaders();
+    fileHeaders.setContentType(MediaType.parseMediaType("text/csv"));
+    fileHeaders.setContentDispositionFormData("file", "statement.csv");
+    MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+    body.add("file", new HttpEntity<>(new ByteArrayResource(content), fileHeaders));
+    return client()
+        .post()
+        .uri(
+            "/api/v1/import-templates/"
+                + templateId
+                + "/test"
+                + (accountId == null ? "" : "?accountId=" + accountId))
+        .contentType(MediaType.MULTIPART_FORM_DATA)
+        .body(body)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(ImportTemplateTestResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
   private ImportBatchResponse parse(UUID batchId, int version, UUID templateId) {
     return client()
         .post()
@@ -1490,6 +1695,82 @@ class ImportBatchControllerTest {
         .id();
   }
 
+  // Whether the warning shows tells whether the payment account holds a payment of that amount:
+  // only a member who may read that account's transactions gets the lookup.
+  @Test
+  void theUnmatchedSettlementWarningDoesNotRevealABalanceOnlyPaymentAccount() throws Exception {
+    UUID card =
+        client()
+            .post()
+            .uri("/api/v1/accounts")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(AccountRequests.account("Synthetic shared card", "CREDIT_CARD", "CHF").build())
+            .exchange()
+            .expectStatus()
+            .isCreated()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody()
+            .id();
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + card + "/settlement-source")
+        .headers(CurrentVersion.ifMatchForCard(dataSource, card))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetSettlementSourceRequest(account))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    ImportTemplateResponse sourceTemplate =
+        createTemplate(simpleTemplate("Synthetic payment source", SIMPLE_COLUMNS));
+    ImportBatchResponse payment =
+        upload(token, sourceTemplate.id(), csv("2031-06-02;-30.00;CHF;Card payment;PAY-1;"));
+    assertThat(commit(account, payment.id(), payment.version()).counts().imported()).isEqualTo(1);
+    ImportTemplateResponse template = createTemplate(creditCardTemplate());
+    byte[] file =
+        ("Date;Amount;Currency;Text;Reference;OriginalAmount;OriginalCurrency;Rate\n"
+                + "2031-06-02;30,00;CHF;Monthly card payment;CARD-P;;;\n")
+            .getBytes(StandardCharsets.UTF_8);
+
+    UUID balanceOnlyId = createSecondMember("balance@example.com");
+    grantOnAccount(balanceOnlyId, card, AccessLevelValues.EDIT);
+    grantOnAccount(balanceOnlyId, account, AccessLevelValues.BALANCE_ONLY);
+    assertThat(settlementWarnings(login("balance@example.com"), card, file, template.id()))
+        .containsExactly("IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED");
+
+    UUID readerId = createSecondMember("payments-reader@example.com");
+    grantOnAccount(readerId, card, AccessLevelValues.EDIT);
+    grantOnAccount(readerId, account, AccessLevelValues.READ);
+    assertThat(settlementWarnings(login("payments-reader@example.com"), card, file, template.id()))
+        .isEmpty();
+  }
+
+  private List<String> settlementWarnings(String bearer, UUID card, byte[] file, UUID templateId) {
+    ImportBatchResponse batch =
+        upload(bearer, card, file, templateId)
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+    return client(bearer)
+        .get()
+        .uri("/api/v1/accounts/" + card + "/imports/" + batch.id() + "/rows")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .returnResult()
+        .getResponseBody()
+        .content()
+        .get(0)
+        .warnings()
+        .stream()
+        .map(warning -> warning.code())
+        .filter(code -> code.equals("IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED"))
+        .toList();
+  }
+
   private UUID createSecondMember(String email) throws SQLException {
     client()
         .post()
@@ -1581,6 +1862,57 @@ class ImportBatchControllerTest {
         ImportBatchControllerTest.class.getResourceAsStream("/import/" + name)) {
       return stream.readAllBytes();
     }
+  }
+
+  private static ImportTemplateRequest creditCardTemplate() {
+    List<String> headers =
+        List.of(
+            "Date",
+            "Amount",
+            "Currency",
+            "Text",
+            "Reference",
+            "OriginalAmount",
+            "OriginalCurrency",
+            "Rate");
+    return new ImportTemplateRequest(
+        "Synthetic credit-card statement",
+        null,
+        "CASH_TRANSACTIONS",
+        ";",
+        "UTF-8",
+        ",",
+        null,
+        "yyyy-MM-dd",
+        0,
+        0,
+        0,
+        "SINGLE_SIGNED_COLUMN",
+        "PER_ROW",
+        null,
+        new ImportColumnMapping(
+            "Date",
+            null,
+            "Amount",
+            null,
+            null,
+            "Currency",
+            "Text",
+            null,
+            "Reference",
+            null,
+            null,
+            null,
+            null,
+            "OriginalAmount",
+            "OriginalCurrency",
+            "Rate"),
+        Map.of(),
+        null,
+        headers,
+        null,
+        null,
+        Map.of("REFUND", "refund"));
   }
 
   private static ImportTemplateRequest simpleTemplate(String name, List<String> headerColumns) {

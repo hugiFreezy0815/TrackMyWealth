@@ -266,7 +266,11 @@ public class ImportDuplicateService {
   }
 
   private static String key(CanonicalImportRow row) {
-    return key(row.bookingDate(), row.amount(), row.currency());
+    // A foreign card purchase is booked in its original amount and currency (US-07-18).
+    return key(
+        row.bookingDate(),
+        ImportLedgerRowService.ledgerAmount(row),
+        ImportLedgerRowService.ledgerCurrency(row));
   }
 
   private static String key(ImportDuplicateCandidate candidate) {

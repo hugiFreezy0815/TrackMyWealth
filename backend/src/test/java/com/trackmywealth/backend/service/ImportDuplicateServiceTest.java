@@ -48,6 +48,32 @@ class ImportDuplicateServiceTest {
   }
 
   @Test
+  void aForeignCardPurchaseWithoutAReferenceUsesTheLedgerCurrencyForDuplicateMatching() {
+    UUID existing = UUID.randomUUID();
+    ledger(candidate(existing, "-50.00", "Hotel", CSV, null));
+    CanonicalImportRow purchase =
+        new CanonicalImportRow(
+            DAY,
+            null,
+            new BigDecimal("-55.00"),
+            "CHF",
+            "CREDIT_CARD_PURCHASE",
+            "Hotel",
+            null,
+            null,
+            null,
+            null,
+            null,
+            new BigDecimal("-50.00"),
+            "EUR",
+            new BigDecimal("0.909091"));
+    ParsedImportRow row = ParsedImportRow.parsed(1, Map.of(), purchase);
+
+    assertThat(service.findDuplicates(ACCOUNT, CSV, List.of(row)))
+        .containsExactly(Map.entry(1, existing));
+  }
+
+  @Test
   void theExactFallbackFindsAManualEntryWhateverItsCaseAndBlanks() {
     UUID manual = UUID.randomUUID();
     ledger(candidate(manual, "-12.4", "  bakery\u00a0 MUSTERHAUSEN ", "MANUAL", null));

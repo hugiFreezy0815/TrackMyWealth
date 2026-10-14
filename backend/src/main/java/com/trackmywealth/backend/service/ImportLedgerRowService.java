@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.ImportLedgerRow;
+import java.math.BigDecimal;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -60,22 +61,32 @@ public class ImportLedgerRowService {
         null,
         row.mcc(),
         row.iso20022BankTransactionCode(),
-        row.notes());
+        row.notes(),
+        row.originalAmount(),
+        row.originalCurrency(),
+        row.bankExchangeRate());
   }
 
-  /** The manual entry this row amounts to; nothing a file cannot state is set. */
+  /**
+   * The manual entry this row amounts to; nothing a file cannot state is set. A card purchase in
+   * another currency (US-07-18) is recorded in its original amount and currency with the billed
+   * amount as {@code billedAmount}: the ledger derives the rate from the two, so the booking keeps
+   * exactly the amount the statement charged. The bank's printed rate is not used: it is rounded,
+   * and banks quote it either way round; it stays in the row's source data.
+   */
   public CreateTransactionRequest request(CanonicalImportRow row) {
+    boolean originalPurchase = isOriginalCurrencyPurchase(row);
     return new CreateTransactionRequest(
         row.transactionType(),
         row.bookingDate(),
-        row.amount(),
-        row.currency(),
+        ledgerAmount(row),
+        ledgerCurrency(row),
         merchantDescription(row),
         row.mcc(),
         row.notes(),
         row.externalId(),
         null,
-        null,
+        originalPurchase ? row.amount() : null,
         null,
         null,
         null,
@@ -86,6 +97,25 @@ public class ImportLedgerRowService {
         null,
         null,
         null);
+  }
+
+  /** The ledger amount and currency, shared with duplicate matching for foreign card purchases. */
+  public static boolean isOriginalCurrencyPurchase(CanonicalImportRow row) {
+    return "CREDIT_CARD_PURCHASE".equals(row.transactionType())
+        && row.amount().signum() != 0
+        && row.originalAmount() != null
+        && row.originalCurrency() != null
+        && !row.originalCurrency().equals(row.currency());
+  }
+
+  public static BigDecimal ledgerAmount(CanonicalImportRow row) {
+    return isOriginalCurrencyPurchase(row)
+        ? row.originalAmount().abs().multiply(BigDecimal.valueOf(row.amount().signum()))
+        : row.amount();
+  }
+
+  public static String ledgerCurrency(CanonicalImportRow row) {
+    return isOriginalCurrencyPurchase(row) ? row.originalCurrency() : row.currency();
   }
 
   /**
@@ -117,6 +147,21 @@ public class ImportLedgerRowService {
     }
     if (row.iso20022BankTransactionCode() != null) {
       data.put(BANK_TRANSACTION_CODE_KEY, row.iso20022BankTransactionCode());
+    }
+    // The issuer's printed quote may be rounded or reciprocal. Preserve that exact
+    // value for audit; the ledger's effective conversion derives from the billed amount.
+    if (row.bankExchangeRate() != null) {
+      data.put("issuerQuotedFxRate", row.bankExchangeRate().toPlainString());
+    }
+    if (row.originalAmount() != null) {
+      data.put("issuerOriginalAmount", row.originalAmount().toPlainString());
+    }
+    if (row.originalCurrency() != null) {
+      data.put("issuerOriginalCurrency", row.originalCurrency());
+    }
+    if (isOriginalCurrencyPurchase(row)) {
+      data.put("issuerBilledAmount", row.amount().toPlainString());
+      data.put("issuerBilledCurrency", row.currency());
     }
     ObjectNode cells = data.putObject(CELLS_KEY);
     rawData.forEach(cells::put);

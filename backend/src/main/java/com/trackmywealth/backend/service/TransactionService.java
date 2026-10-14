@@ -127,8 +127,9 @@ public class TransactionService {
   // trades and dividends are the investment types below.
   private static final Set<String> CUSTODY_CASH_TYPES =
       Set.of("DEPOSIT", WITHDRAWAL, "INTEREST", FEE, "TAX");
-  // A credit card is only ever charged (purchase, incl. its own FEE row) or paid down (settlement).
-  private static final Set<String> CARD_TYPES = Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT);
+  // A credit card is only ever charged (purchase, incl. its own FEE row), paid down (settlement) or
+  // credited back by a merchant (refund, US-07-18).
+  private static final Set<String> CARD_TYPES = Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT, "REFUND");
   private static final String BUY = "BUY";
   private static final String SELL = "SELL";
   private static final String DIVIDEND = "DIVIDEND";
@@ -876,8 +877,7 @@ public class TransactionService {
           "Cannot record a transaction on an archived account.");
     }
     // A SETTLEMENT is not a cash type: it stays acceptable on an ordinary account as the payment
-    // leg
-    // of a card payment (US-09-02), whatever that account's kind.
+    // leg of a card payment (US-09-02), whatever that account's kind.
     if (CASH_TYPES.contains(type) && !cashTypesAllowedOn(account).contains(type)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,

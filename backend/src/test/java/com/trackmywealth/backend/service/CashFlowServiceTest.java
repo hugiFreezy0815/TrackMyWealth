@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -94,6 +95,20 @@ class CashFlowServiceTest {
         .containsExactly(new CurrencyAmount("CHF", new BigDecimal("7")));
     assertThat(response.complete()).isFalse();
     verifyNoInteractions(fxRateService);
+  }
+
+  @Test
+  void refundOffsetsSpendingInsteadOfBeingCountedAsIncome() {
+    // The query sums signed entries: a CHF 12 purchase and CHF 8 refund net to CHF 4 spent.
+    spending(row(DAY_1, "CHF", "-4"));
+
+    CashFlowResponse response = service.getCashFlow(MONTH, ACTOR, null);
+
+    assertThat(response.spending()).containsExactly(new CurrencyAmount("CHF", new BigDecimal("4")));
+    assertThat(response.income()).isEmpty();
+    verify(transactionRepository)
+        .sumSpendingByDateAndCurrency(
+            anyCollection(), argThat(types -> types.contains("REFUND")), any(), any());
   }
 
   @Test

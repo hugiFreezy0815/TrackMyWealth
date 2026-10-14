@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.assertj.core.api.Assertions.entry;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.Mockito.mock;
 
@@ -149,6 +150,203 @@ class ImportFileParserServiceTest {
     }
     assertThat(result.rows().get(2).isParsed()).isTrue();
     assertThat(result.rows().get(2).canonical().amount()).isEqualByComparingTo("-5.00");
+  }
+
+  @Test
+  void inconsistentOriginalCurrencyFieldsAreRowErrors() {
+    ImportTemplateDefinition template =
+        new Template()
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .description("text")
+                    .originalAmount("original")
+                    .originalCurrency("originalCurrency")
+                    .build())
+            .build();
+    List<ParsedImportRow> rows =
+        parser
+            .parse(
+                utf8(
+                    "date,amount,text,original,originalCurrency\n"
+                        + "2031-05-01,-10.00,Missing currency,-8.00,\n"
+                        + "2031-05-02,-10.00,Missing amount,,EUR\n"
+                        + "2031-05-03,-10.00,Zero original,0.00,EUR\n"
+                        + "2031-05-04,-10.00,Wrong sign,8.00,EUR\n"
+                        + "2031-05-05,-10.00,Valid original,-8.00,EUR\n"),
+                template,
+                "CHF",
+                true)
+            .rows();
+    assertThat(rows.subList(0, 4)).allMatch(ParsedImportRow::isError);
+    assertThat(rows.subList(0, 4))
+        .extracting(ParsedImportRow::errorCode)
+        .containsOnly(ImportRowErrorValues.ORIGINAL_AMOUNT_INCONSISTENT);
+    assertThat(rows.get(0).errorArgs())
+        .containsExactly(entry("column", "original"), entry("currencyColumn", "originalCurrency"));
+    assertThat(rows.get(4).isParsed()).isTrue();
+  }
+
+  @Test
+  void anOriginalAmountOrCurrencyColumnIsMappedOnlyWithTheOther() {
+    for (MappingBuilder half :
+        List.of(
+            new MappingBuilder().bookingDate("date").amount("amount").originalAmount("original"),
+            new MappingBuilder()
+                .bookingDate("date")
+                .amount("amount")
+                .originalCurrency("originalCurrency"))) {
+      ImportTemplateDefinition template = new Template().mapping(half.build()).build();
+      assertThatThrownBy(() -> parser.validateTemplate(template, null))
+          .isInstanceOf(ApiException.class)
+          .hasMessageContaining("mapped together");
+    }
+  }
+
+  @Test
+  void cardStatementUsesSafeTypeFallbackAndRefundDescriptionPatterns() {
+    ImportTemplateDefinition template =
+        new Template()
+            .delimiter(";")
+            .decimal(",")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .currency("currency")
+                    .description("description")
+                    .transactionType("type")
+                    .originalAmount("original")
+                    .originalCurrency("originalCurrency")
+                    .exchangeRate("rate")
+                    .build())
+            .descriptionPatterns(Map.of("REFUND", "refund"))
+            .build();
+
+    byte[] statement =
+        utf8(
+            "date;amount;currency;description;type;original;originalCurrency;rate\n"
+                + "2031-05-01;-55,00;CHF;Hotel charge;;-50,00;EUR;1,100000\n"
+                + "2031-05-02;30,00;CHF;Monthly card payment;;;;\n"
+                + "2031-05-03;8,00;CHF;SHOP ReFuNd;;;;\n"
+                + "2031-05-04;4,00;CHF;Refund but explicitly paid;payment;;;\n");
+
+    // The last row has an explicit type mapping, which wins over the description pattern.
+    ImportTemplateDefinition mapped =
+        new Template()
+            .delimiter(";")
+            .decimal(",")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .mapping(template.columnMapping())
+            .typeMapping(Map.of("payment", "SETTLEMENT"))
+            .descriptionPatterns(template.descriptionTypePatterns())
+            .build();
+    List<ParsedImportRow> card = parser.parse(statement, mapped, "CHF", true).rows();
+
+    assertThat(card).allMatch(ParsedImportRow::isParsed).hasSize(4);
+    assertThat(card)
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("CREDIT_CARD_PURCHASE", "SETTLEMENT", "REFUND", "SETTLEMENT");
+    assertThat(card.get(0).canonical().originalAmount()).isEqualByComparingTo("-50.00");
+    assertThat(card.get(0).canonical().originalCurrency()).isEqualTo("EUR");
+    assertThat(card.get(0).canonical().bankExchangeRate()).isEqualByComparingTo("1.100000");
+
+    assertThat(parser.parse(statement, mapped, "CHF").rows().get(0).canonical().transactionType())
+        .isEqualTo("EXPENSE");
+  }
+
+  @Test
+  void ambiguousCardDescriptionPatternsAreErrorsAndInvalidPatternsAreRejected() {
+    ImportTemplateDefinition template =
+        new Template().descriptionPatterns(Map.of("REFUND", "refund", "SETTLEMENT", "ref")).build();
+    List<ParsedImportRow> rows =
+        parser
+            .parse(
+                utf8("date,amount,text\n2031-05-01,8.00,Refund received\n"), template, "CHF", true)
+            .rows();
+
+    assertThat(rows).hasSize(1);
+    assertThat(rows.get(0).isError()).isTrue();
+    assertThat(rows.get(0).errorCode()).isEqualTo(ImportRowErrorValues.TYPE_AMBIGUOUS);
+
+    ImportTemplateDefinition invalid =
+        new Template().descriptionPatterns(Map.of("REFUND", "(invalid")).build();
+    assertThatThrownBy(() -> parser.validateTemplate(invalid, null))
+        .isInstanceOf(ApiException.class)
+        .hasMessageContaining("pattern");
+  }
+
+  @Test
+  void anExchangeRateReadsWithTheTemplatesSeparatorsAndALongCellIsARowError() {
+    ImportTemplateDefinition template =
+        new Template()
+            .delimiter(";")
+            .decimal(",")
+            .thousands(".")
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .description("text")
+                    .originalAmount("original")
+                    .originalCurrency("originalCurrency")
+                    .exchangeRate("rate")
+                    .build())
+            .build();
+
+    List<ParsedImportRow> rows =
+        parser
+            .parse(
+                utf8(
+                    "date;amount;text;original;originalCurrency;rate\n"
+                        + "2031-05-01;-10,00;Seoul;-14.501,20;KRW;1.450,12\n"
+                        + "2031-05-02;-10,00;Long;-11,00;USD;"
+                        + "1".repeat(60)
+                        + "\n"
+                        + "2031-05-03;-10,00;Zero;-11,00;USD;0,00\n"),
+                template,
+                "CHF",
+                true)
+            .rows();
+
+    assertThat(rows.get(0).isParsed()).isTrue();
+    assertThat(rows.get(0).canonical().bankExchangeRate()).isEqualByComparingTo("1450.12");
+    assertThat(rows.get(1).errorCode()).isEqualTo(ImportRowErrorValues.EXCHANGE_RATE_OUT_OF_RANGE);
+    assertThat(rows.get(2).errorCode()).isEqualTo(ImportRowErrorValues.EXCHANGE_RATE_OUT_OF_RANGE);
+    assertThat(rows.get(2).errorArgs())
+        .containsExactly(entry("column", "rate"), entry("value", "0,00"));
+  }
+
+  @Test
+  void anAmbiguousDescriptionNamesTheDescriptionColumnNotTheTypeColumn() {
+    ImportTemplateDefinition template =
+        new Template()
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .description("text")
+                    .transactionType("kind")
+                    .build())
+            .descriptionPatterns(Map.of("REFUND", "refund", "SETTLEMENT", "ref"))
+            .build();
+
+    ParsedImportRow row =
+        parser
+            .parse(
+                utf8("date,amount,text,kind\n2031-05-01,8.00,Refund received,\n"),
+                template,
+                "CHF",
+                true)
+            .rows()
+            .get(0);
+
+    assertThat(row.errorCode()).isEqualTo(ImportRowErrorValues.TYPE_AMBIGUOUS);
+    assertThat(row.errorArgs()).containsEntry("column", "text");
   }
 
   // --- separators, quoting, encodings ------------------------------------------------------
@@ -965,6 +1163,7 @@ class ImportFileParserServiceTest {
     private ImportColumnMapping mapping =
         ImportFileParserServiceTest.mapping("date", "amount").description("text").build();
     private Map<String, String> typeMapping = Map.of();
+    private Map<String, String> descriptionPatterns = Map.of();
     private String accountStrategy = "USER_SELECTED";
     private String fileFormat = "CSV";
     private ImportPdfLayout pdfLayout;
@@ -1039,6 +1238,11 @@ class ImportFileParserServiceTest {
       return this;
     }
 
+    Template descriptionPatterns(Map<String, String> value) {
+      descriptionPatterns = value;
+      return this;
+    }
+
     Template accountStrategy(String value) {
       accountStrategy = value;
       return this;
@@ -1068,7 +1272,8 @@ class ImportFileParserServiceTest {
           typeMapping,
           accountStrategy,
           fileFormat,
-          pdfLayout);
+          pdfLayout,
+          descriptionPatterns);
     }
   }
 
@@ -1120,6 +1325,21 @@ class ImportFileParserServiceTest {
       return this;
     }
 
+    MappingBuilder originalAmount(String column) {
+      fields.put("originalAmount", column);
+      return this;
+    }
+
+    MappingBuilder originalCurrency(String column) {
+      fields.put("originalCurrency", column);
+      return this;
+    }
+
+    MappingBuilder exchangeRate(String column) {
+      fields.put("exchangeRate", column);
+      return this;
+    }
+
     MappingBuilder mcc(String column) {
       fields.put("mcc", column);
       return this;
@@ -1144,7 +1364,10 @@ class ImportFileParserServiceTest {
           fields.get("transactionType"),
           fields.get("mcc"),
           fields.get("iso20022BankTransactionCode"),
-          fields.get("notes"));
+          fields.get("notes"),
+          fields.get("originalAmount"),
+          fields.get("originalCurrency"),
+          fields.get("exchangeRate"));
     }
   }
 }
