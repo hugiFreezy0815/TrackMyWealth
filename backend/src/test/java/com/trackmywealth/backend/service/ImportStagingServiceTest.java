@@ -75,6 +75,7 @@ class ImportStagingServiceTest {
     AuthenticatedUserPrincipal actor = mock(AuthenticatedUserPrincipal.class);
     when(card.getId()).thenReturn(UUID.randomUUID());
     when(card.getNativeCurrency()).thenReturn("CHF");
+    when(source.getId()).thenReturn(sourceId);
     when(batch.getSourceKind()).thenReturn("CSV");
     when(rowChecks.settlementSourceOf(card)).thenReturn(Optional.of(sourceId));
     when(accounts.findById(sourceId)).thenReturn(Optional.of(source));
