@@ -12,7 +12,9 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
+import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportParseRequest;
 import com.trackmywealth.backend.dto.ImportRowInclusionRequest;
@@ -24,6 +26,7 @@ import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
+import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
@@ -546,6 +549,56 @@ class ImportBatchControllerTest {
     assertThat(second.error().message())
         .isEqualTo("Row 1 already has the bank reference \"R1\"; only that row is imported.");
     assertThat(second.canonical()).isNotNull();
+  }
+
+  @Test
+  void importWarnsOnlyForBookingsStrictlyBeforeOpeningBalanceAndStillCommits() {
+    ImportTemplateResponse template =
+        createTemplate(simpleTemplate("Opening date test", SIMPLE_COLUMNS));
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + account + "/opening-balance")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new OpeningBalanceRequest(DAY, new BigDecimal("1000.00"), "CHF", null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+
+    ImportBatchResponse batch =
+        upload(
+            token,
+            template.id(),
+            csv(
+                "2019-01-04;-10.00;CHF;Prior booking;OB-1;",
+                "2019-01-05;-20.00;CHF;Opening day;OB-2;",
+                "2019-01-06;-30.00;CHF;Later booking;OB-3;"));
+    List<ImportRowResponse> preview = rows(batch.id(), "").content();
+    assertThat(preview).hasSize(3);
+    assertThat(preview.get(0).warnings())
+        .extracting(warning -> warning.code())
+        .contains(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
+    assertThat(preview.get(1).warnings())
+        .extracting(warning -> warning.code())
+        .doesNotContain(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
+    assertThat(preview.get(2).warnings())
+        .extracting(warning -> warning.code())
+        .doesNotContain(ImportBatchValues.WARNING_BEFORE_OPENING_BALANCE);
+
+    assertThat(batch.counts().warnings()).isEqualTo(1);
+
+    assertThat(commit(account, batch.id(), batch.version()).counts().imported()).isEqualTo(3);
+    OpeningBalanceResponse opening =
+        client()
+            .get()
+            .uri("/api/v1/accounts/" + account + "/opening-balance")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(OpeningBalanceResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(opening.warnings())
+        .containsExactly(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
   }
 
   @Test

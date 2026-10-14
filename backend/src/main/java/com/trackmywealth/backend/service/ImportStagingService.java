@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.StagedImportRow;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.repository.AccountRepository;
+import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportRowRawBatchRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -57,6 +58,7 @@ public class ImportStagingService {
   private final Clock clock;
   private final AccountRepository accountRepository;
   private final AccessControlService accessControlService;
+  private final AccountSnapshotRepository accountSnapshotRepository;
 
   public ImportStagingService(
       ImportBatchRepository batchRepository,
@@ -66,7 +68,8 @@ public class ImportStagingService {
       ObjectMapper objectMapper,
       Clock clock,
       AccountRepository accountRepository,
-      AccessControlService accessControlService) {
+      AccessControlService accessControlService,
+      AccountSnapshotRepository accountSnapshotRepository) {
     this.batchRepository = batchRepository;
     this.rowBatchRepository = rowBatchRepository;
     this.rowCheckService = rowCheckService;
@@ -75,6 +78,7 @@ public class ImportStagingService {
     this.clock = clock;
     this.accountRepository = accountRepository;
     this.accessControlService = accessControlService;
+    this.accountSnapshotRepository = accountSnapshotRepository;
   }
 
   /**
@@ -109,6 +113,11 @@ public class ImportStagingService {
         duplicateService.findDuplicates(account.getId(), batch.getSourceKind(), recordable);
 
     LocalDate today = LocalDate.now(clock);
+    LocalDate openingDate =
+        accountSnapshotRepository
+            .findByAccountIdAndOpeningBalanceTrue(account.getId())
+            .map(snapshot -> snapshot.getSnapshotDate())
+            .orElse(null);
     UUID settlementSource = rowCheckService.settlementSourceOf(account).orElse(null);
     // A card can be shared without its payment account. Only a source whose transactions the
     // member may read influences the preview: whether the warning shows tells whether a payment of
@@ -144,7 +153,8 @@ public class ImportStagingService {
       } else if (row.isSkipped()) {
         skippedCount++;
       }
-      staged.add(staged(row, duplicateOf, account, today, matched.contains(row.rowNumber())));
+      staged.add(
+          staged(row, duplicateOf, account, today, openingDate, matched.contains(row.rowNumber())));
     }
     rowBatchRepository.deleteByBatch(batch.getId());
     rowBatchRepository.insertAll(batch.getId(), batch.getWorkspaceId(), staged);
@@ -200,6 +210,7 @@ public class ImportStagingService {
       UUID duplicateOf,
       Account account,
       LocalDate today,
+      LocalDate openingDate,
       boolean matchingPayment) {
     CanonicalImportRow canonical = row.canonical();
     String status;
@@ -214,7 +225,7 @@ public class ImportStagingService {
     }
     List<String> warnings =
         row.isParsed()
-            ? rowCheckService.warnings(account, canonical, today, matchingPayment)
+            ? rowCheckService.warnings(account, canonical, today, openingDate, matchingPayment)
             : List.of();
     return new StagedImportRow(
         UUID.randomUUID(),

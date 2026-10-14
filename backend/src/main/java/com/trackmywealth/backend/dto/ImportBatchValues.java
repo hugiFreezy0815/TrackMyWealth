@@ -67,5 +67,8 @@ public final class ImportBatchValues {
   public static final String WARNING_CARD_SETTLEMENT_UNMATCHED =
       "IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED";
 
+  /** Booking is strictly before the account opening balance; importing remains allowed. */
+  public static final String WARNING_BEFORE_OPENING_BALANCE = "IMPORT_ROW_BEFORE_OPENING_BALANCE";
+
   private ImportBatchValues() {}
 }
