@@ -219,7 +219,7 @@ public class ImportBatchService {
 
           if (parsed != null) {
             useTemplate(batch, template);
-            stagingService.stage(batch, account, parsed.rows(), rates);
+            stagingService.stage(batch, account, parsed.rows(), rates, actor);
           }
           return summary(batch, account, offered);
         });
@@ -264,7 +264,7 @@ public class ImportBatchService {
           // Checked again under the lock: another parse, a discard or a commit may have come first.
           requireParseable(batch, expectedVersion);
           useTemplate(batch, template);
-          stagingService.stage(batch, account, parsed.rows(), rates);
+          stagingService.stage(batch, account, parsed.rows(), rates, actor);
           return summary(batch, account, List.of());
         });
   }
