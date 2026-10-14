@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfBookingLine;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
+import com.trackmywealth.backend.dto.ImportRowFilter;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
@@ -40,6 +41,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
@@ -93,6 +95,9 @@ public class ImportFileParserService {
   private static final Set<String> SPACES = Set.of(" ", "\u00A0", "\u202F");
   private static final String ARG_COLUMN = "column";
   private static final String DESCRIPTION_TYPE_PATTERNS = "descriptionTypePatterns";
+  private static final int MAX_ROW_FILTER_COLUMN_LENGTH = 200;
+  private static final int MAX_ROW_FILTER_VALUES = 32;
+  private static final int MAX_ROW_FILTER_VALUE_LENGTH = 100;
   private static final String ARG_VALUE = "value";
   private static final String ARG_CURRENCY_COLUMN = "currencyColumn";
   private static final Logger LOG = LoggerFactory.getLogger(ImportFileParserService.class);
@@ -156,6 +161,13 @@ public class ImportFileParserService {
     }
     Map<String, Integer> columns = resolveColumns(template, header);
     List<String> keys = rawDataKeys(header);
+    Integer filterIndex = rowFilterIndex(template, header);
+    Set<String> accepted =
+        template.rowFilter() == null
+            ? Set.of()
+            : template.rowFilter().acceptedValues().stream()
+                .map(ImportFileParserService::normalize)
+                .collect(Collectors.toUnmodifiableSet());
     DateTimeFormatter dateFormatter = dateFormatter(template.dateFormat());
     Map<String, String> typeMapping = normalizedTypeMapping(template.typeMapping());
     Map<String, com.google.re2j.Pattern> descriptionPatterns = new LinkedHashMap<>();
@@ -192,25 +204,37 @@ public class ImportFileParserService {
         if (booking != null) {
           requireBooking(booking);
         }
-        CanonicalImportRow canonical =
-            canonicalRow(
-                record,
-                template,
-                columns,
-                dateFormatter,
-                typeMapping,
-                descriptionPatterns,
-                accountCurrency,
-                creditCardAccount);
-        if (checked) {
-          running =
-              balances.balanceAfter(
-                  running, canonical.amount(), optionalCell(record, balanceColumn), template);
+        // US-07-09: only a row read into cells is filtered; a PDF line the reader could not read
+        // stays that row's error rather than disappearing as SKIPPED.
+        if (filteredOut(record, filterIndex, template.rowFilter(), accepted)) {
+          rows.add(
+              ParsedImportRow.skipped(rows.size() + 1, rawData, ImportRowErrorValues.ROW_FILTERED));
+          if (checked) {
+            // Its amount is not imported, but the statement's balance may include it: only the
+            // balance it states, if any, carries on.
+            running = balances.read(optionalCell(record, balanceColumn), template);
+          }
+        } else {
+          CanonicalImportRow canonical =
+              canonicalRow(
+                  record,
+                  template,
+                  columns,
+                  dateFormatter,
+                  typeMapping,
+                  descriptionPatterns,
+                  accountCurrency,
+                  creditCardAccount);
+          if (checked) {
+            running =
+                balances.balanceAfter(
+                    running, canonical.amount(), optionalCell(record, balanceColumn), template);
+          }
+          rows.add(
+              canonical.amount().signum() == 0
+                  ? ParsedImportRow.skipped(rows.size() + 1, rawData, canonical)
+                  : ParsedImportRow.parsed(rows.size() + 1, rawData, canonical));
         }
-        rows.add(
-            canonical.amount().signum() == 0
-                ? ParsedImportRow.skipped(rows.size() + 1, rawData, canonical)
-                : ParsedImportRow.parsed(rows.size() + 1, rawData, canonical));
       } catch (ImportRowRejectedException e) {
         rejected++;
         rows.add(ParsedImportRow.error(rows.size() + 1, rawData, e.getCode(), e.getArgs()));
@@ -312,6 +336,17 @@ public class ImportFileParserService {
     return missing;
   }
 
+  /** Missing columns from both ordinary mappings and the optional row filter. */
+  public List<String> missingColumns(ImportTemplateDefinition template, List<String> header) {
+    List<String> missing = missingColumns(template.columnMapping(), header);
+    if (template.rowFilter() != null
+        && columnIndex(template.rowFilter().column(), header) < 0
+        && !missing.contains(template.rowFilter().column())) {
+      missing.add(template.rowFilter().column());
+    }
+    return missing;
+  }
+
   /**
    * Whether the template's header row identifies its files (FR-IMP-022): a CSV file's, or a PDF
    * statement's booking table header (its layout's header labels, #268). A PDF layout's other
@@ -402,6 +437,8 @@ public class ImportFileParserService {
         template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
     validateTypeMapping(template.typeMapping());
     validateDescriptionPatterns(template);
+    validateRowFilter(
+        template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
   }
 
   // --- template rules ----------------------------------------------------------------------
@@ -638,6 +675,43 @@ public class ImportFileParserService {
     }
   }
 
+  private static void validateRowFilter(
+      ImportTemplateDefinition template, List<String> headerColumns) {
+    ImportRowFilter filter = template.rowFilter();
+    if (filter == null) {
+      return;
+    }
+    String column = filter.column();
+    if (column == null || column.isBlank() || column.length() > MAX_ROW_FILTER_COLUMN_LENGTH) {
+      throw invalid("rowFilter.column", "Name one source column to filter.");
+    }
+    if (!template.hasHeaderRow() && !COLUMN_INDEX.matcher(column).matches()) {
+      throw invalid("rowFilter.column", "Without a header row, use a 0-based index.");
+    }
+    if (headerColumns != null
+        && template.hasHeaderRow()
+        && columnIndex(column, headerColumns) < 0) {
+      throw invalid("rowFilter.column", "The header has no unique matching filter column.");
+    }
+    List<String> values = filter.acceptedValues();
+    if (values.isEmpty()
+        || values.size() > MAX_ROW_FILTER_VALUES
+        || values.stream()
+            .anyMatch(
+                value ->
+                    value == null
+                        || value.isBlank()
+                        || value.length() > MAX_ROW_FILTER_VALUE_LENGTH)) {
+      throw invalid(
+          "rowFilter.acceptedValues",
+          "Give 1 to 32 non-blank accepted values of at most 100 characters each.");
+    }
+    if (values.stream().map(ImportFileParserService::normalize).distinct().count()
+        != values.size()) {
+      throw invalid("rowFilter.acceptedValues", "Accepted values must be distinct.");
+    }
+  }
+
   private static void requireMapped(String column, String field) {
     if (column == null || column.isBlank()) {
       throw invalid("columnMapping." + field, "This template must map " + field + ".");
@@ -834,6 +908,34 @@ public class ImportFileParserService {
           .withProperty("missingColumns", missing);
     }
     return columns;
+  }
+
+  private static Integer rowFilterIndex(ImportTemplateDefinition template, List<String> header) {
+    if (template.rowFilter() == null) {
+      return null;
+    }
+    String column = template.rowFilter().column();
+    int index =
+        template.hasHeaderRow() ? columnIndex(column, header) : Integer.parseInt(column.strip());
+    if (index < 0) {
+      throw fileError(
+              ApiErrorCode.IMPORT_TEMPLATE_MISMATCH, "The file's header lacks the filter column.")
+          .withProperty("missingColumns", List.of(column));
+    }
+    return index;
+  }
+
+  // US-07-09: whether the template's row filter rejects the row. A row too short to hold the filter
+  // column is that row's error, as it is for a mapped column; a blank cell is no accepted value.
+  private static boolean filteredOut(
+      List<String> record, Integer filterIndex, ImportRowFilter filter, Set<String> accepted) {
+    if (filterIndex == null) {
+      return false;
+    }
+    if (filterIndex >= record.size()) {
+      throw rowError(ImportRowErrorValues.COLUMN_MISSING, ARG_COLUMN, filter.column());
+    }
+    return !accepted.contains(normalize(record.get(filterIndex)));
   }
 
   // A column is named by header text (trimmed, ignoring case; it must occur exactly once) or by

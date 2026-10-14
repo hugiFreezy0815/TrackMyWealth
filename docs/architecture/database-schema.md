@@ -802,6 +802,20 @@ An unmatched positive settlement receives the advisory
 `CASH_TRANSACTIONS` with `account_identification_strategy = USER_SELECTED`; the parser refuses
 the other values with `IMPORT_TEMPLATE_UNSUPPORTED`.
 
+**Optional row filters (V72, #269).** A versioned import template may define `row_filter`: a
+JSONB object (`chk_import_template_row_filter`) with a source `column` and 1 to 32 distinct
+`acceptedValues`. Values are compared case-insensitively after trimming whitespace. The column
+follows the column mapping's rules: an unambiguous header name or a 0-based index (required for a
+headerless file); a PDF template names one of its layout's cells. A row whose value is not
+accepted, or whose cell is blank, stays in the preview as `SKIPPED` with `IMPORT_ROW_FILTERED`, is
+no error and is never committed. Only rows read into cells are filtered: a PDF line the reader
+could not read keeps its own error, and a row too short to hold the filter column is
+`IMPORT_ROW_COLUMN_MISSING`. A filtered PDF line with a checked running balance carries on from
+the balance it states. A file whose header lacks the filter column fails as
+`IMPORT_TEMPLATE_MISMATCH` with `missingColumns` naming it, and template detection does not offer
+such a template. Changing the filter creates a new template version; existing templates have no
+filter and keep their previous behaviour.
+
 **PDF statements (V66, #268).** `file_format` says how the file is read: `CSV`, `PDF_TEXT` (the
 PDF's text layer, PDFBox) or `PDF_OCR` (a scanned PDF, rendered and read by a local Tesseract
 process; nothing leaves the server). OCR is switched off unless `app.import.ocr.enabled`

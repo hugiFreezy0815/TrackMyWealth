@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
+import com.trackmywealth.backend.dto.ImportRowFilter;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
@@ -85,6 +86,12 @@ class ImportTemplateControllerTest {
   private static final String BASE = "/api/v1/import-templates";
   private static final String SWISS = "swiss-cash-iso-8859-1.csv";
   private static final String GERMAN = "german-cash-utf8-bom.csv";
+  // US-07-09: a synthetic DKB-like export, one booked and one pending row (invented values).
+  private static final byte[] STATUS_CSV =
+      ("date,amount,text,Status\n"
+              + "2031-01-02,-5.00,Groceries,Gebucht\n"
+              + "2031-01-03,-7.00,Pending,Vorgemerkt\n")
+          .getBytes(StandardCharsets.UTF_8);
   // Bound by RLS, unlike the application's own role in these tests (see RowLevelSecurityRole).
   private static final String RLS_ROLE = "import_template_rls_role";
   private static final ParameterizedTypeReference<List<ImportTemplateResponse>> TEMPLATE_LIST =
@@ -295,6 +302,100 @@ class ImportTemplateControllerTest {
   }
 
   // --- acceptance criteria 5 and 6: dry runs ---------------------------------------------------
+
+  /** US-07-09 acceptance criterion 1, end to end: pending rows are counted as skipped. */
+  @Test
+  void aDryRunCountsRowsTheFilterRejectsAsSkipped() {
+    ImportTemplateResponse created = create(statusFilterRequest(List.of("Gebucht")));
+    assertThat(created.rowFilter()).isEqualTo(new ImportRowFilter("Status", List.of("Gebucht")));
+
+    ImportTemplateTestResponse result =
+        multipart(BASE + "/" + created.id() + "/test", STATUS_CSV, null)
+            .expectStatus()
+            .isOk()
+            .expectBody(ImportTemplateTestResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(result.rowCount()).isEqualTo(2);
+    assertThat(result.parsedRowCount()).isEqualTo(1);
+    assertThat(result.skippedRowCount()).isEqualTo(1);
+    assertThat(result.errorRowCount()).isZero();
+    assertThat(result.rows())
+        .extracting(ImportPreviewRowResponse::status)
+        .containsExactly("PARSED", "SKIPPED");
+    assertThat(result.rows().get(1).error().code()).isEqualTo(ImportRowErrorValues.ROW_FILTERED);
+    assertThat(result.rows().get(1).error().message()).isNotBlank();
+    assertThat(get(created.id()).rowFilter())
+        .as("stored and read back")
+        .isEqualTo(created.rowFilter());
+  }
+
+  /** US-07-09 acceptance criterion 2, end to end: the dry run names the missing filter column. */
+  @Test
+  void aFileLackingTheFilterColumnIsAMismatchNamingIt() {
+    ImportTemplateResponse created = create(statusFilterRequest(List.of("Gebucht")));
+    byte[] csv = "date,amount,text\n2031-01-02,-5.00,Groceries\n".getBytes(StandardCharsets.UTF_8);
+
+    multipart(BASE + "/" + created.id() + "/test", csv, null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("IMPORT_TEMPLATE_MISMATCH")
+        .jsonPath("$.missingColumns[0]")
+        .isEqualTo("Status");
+    assertThat(detect(csv))
+        .as("not offered for a file without its filter column")
+        .extracting(c -> c.template().id())
+        .doesNotContain(created.id());
+  }
+
+  /** The filter is parse-relevant: changing it writes a new version; resending it does not. */
+  @Test
+  void changingTheRowFilterWritesANewVersion() throws Exception {
+    ImportTemplateResponse v1 = create(statusFilterRequest(List.of("Gebucht")));
+
+    ImportTemplateResponse renamed =
+        update(v1.id(), v1.version(), withName(statusFilterRequest(List.of("Gebucht")), "Renamed"));
+    assertThat(renamed.id()).as("same filter: changed in place").isEqualTo(v1.id());
+    assertThat(renamed.templateVersion()).isEqualTo("1");
+
+    ImportTemplateResponse v2 =
+        update(
+            renamed.id(), renamed.version(), statusFilterRequest(List.of("Gebucht", "Valutiert")));
+    assertThat(v2.id()).isNotEqualTo(v1.id());
+    assertThat(v2.familyId()).isEqualTo(v1.familyId());
+    assertThat(v2.templateVersion()).isEqualTo("2");
+    assertThat(v2.rowFilter().acceptedValues()).containsExactly("Gebucht", "Valutiert");
+    assertThat(get(v1.id()).rowFilter().acceptedValues())
+        .as("the old version keeps its filter")
+        .containsExactly("Gebucht");
+
+    ImportTemplateResponse v3 =
+        update(v2.id(), v2.version(), withRowFilter(statusFilterRequest(List.of("x")), null));
+    assertThat(v3.templateVersion()).as("removing the filter").isEqualTo("3");
+    assertThat(v3.rowFilter()).isNull();
+  }
+
+  @Test
+  void anInvalidRowFilterIs422NamingItsField() {
+    postStatus(statusFilterRequest(List.of("Gebucht", " gebucht")))
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("IMPORT_TEMPLATE_INVALID")
+        .jsonPath("$.field")
+        .isEqualTo("rowFilter.acceptedValues");
+    postStatus(
+            withRowFilter(
+                statusFilterRequest(List.of("Gebucht")),
+                new ImportRowFilter("Zustand", List.of("Gebucht"))))
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.field")
+        .isEqualTo("rowFilter.column");
+  }
 
   @Test
   void aFileLackingAMappedColumnIsAFileLevelMismatch() throws Exception {
@@ -1058,7 +1159,9 @@ class ImportTemplateControllerTest {
         r.accountIdentificationStrategy(),
         r.headerColumns(),
         format,
-        layout);
+        layout,
+        r.descriptionTypePatterns(),
+        r.rowFilter());
   }
 
   // A one-page PDF with these text lines (invented values only).
@@ -1084,6 +1187,35 @@ class ImportTemplateControllerTest {
   }
 
   // --- requests --------------------------------------------------------------------------------
+
+  // A synthetic DKB-like template: a Status column filtered to the given values (US-07-09).
+  private static ImportTemplateRequest statusFilterRequest(List<String> accepted) {
+    return new ImportTemplateRequest(
+        "Synthetic DKB filter",
+        null,
+        null,
+        ",",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "CHF",
+        new ImportColumnMapping(
+            "date", null, "amount", null, null, null, "text", null, null, null, null, null, null,
+            null, null, null),
+        Map.of(),
+        null,
+        List.of("date", "amount", "text", "Status"),
+        "CSV",
+        null,
+        Map.of(),
+        new ImportRowFilter("Status", accepted));
+  }
 
   private static ImportTemplateRequest swissRequest(List<String> headerColumns) {
     return new ImportTemplateRequest(
@@ -1213,7 +1345,36 @@ class ImportTemplateControllerTest {
         r.accountIdentificationStrategy(),
         r.headerColumns(),
         r.fileFormat(),
-        r.pdfLayout());
+        r.pdfLayout(),
+        r.descriptionTypePatterns(),
+        r.rowFilter());
+  }
+
+  private static ImportTemplateRequest withRowFilter(
+      ImportTemplateRequest r, ImportRowFilter filter) {
+    return new ImportTemplateRequest(
+        r.name(),
+        r.institutionCatalogueId(),
+        r.templateClass(),
+        r.delimiter(),
+        r.encoding(),
+        r.decimalSeparator(),
+        r.thousandsSeparator(),
+        r.dateFormat(),
+        r.headerRowIndex(),
+        r.preambleRowCount(),
+        r.trailingSummaryRowCount(),
+        r.amountRepresentation(),
+        r.currencyMode(),
+        r.fixedCurrency(),
+        r.columnMapping(),
+        r.typeMapping(),
+        r.accountIdentificationStrategy(),
+        r.headerColumns(),
+        r.fileFormat(),
+        r.pdfLayout(),
+        r.descriptionTypePatterns(),
+        filter);
   }
 
   private static ImportTemplateRequest withName(ImportTemplateRequest r, String name) {
@@ -1237,7 +1398,9 @@ class ImportTemplateControllerTest {
         r.accountIdentificationStrategy(),
         r.headerColumns(),
         r.fileFormat(),
-        r.pdfLayout());
+        r.pdfLayout(),
+        r.descriptionTypePatterns(),
+        r.rowFilter());
   }
 
   private static ImportTemplateRequest withInstitution(ImportTemplateRequest r, UUID institution) {
@@ -1261,7 +1424,9 @@ class ImportTemplateControllerTest {
         r.accountIdentificationStrategy(),
         r.headerColumns(),
         r.fileFormat(),
-        r.pdfLayout());
+        r.pdfLayout(),
+        r.descriptionTypePatterns(),
+        r.rowFilter());
   }
 
   private static ImportTemplateRequest withClassAndStrategy(
@@ -1286,7 +1451,9 @@ class ImportTemplateControllerTest {
         strategy,
         r.headerColumns(),
         r.fileFormat(),
-        r.pdfLayout());
+        r.pdfLayout(),
+        r.descriptionTypePatterns(),
+        r.rowFilter());
   }
 
   private static ImportTemplateRequest withRowCounts(
@@ -1311,7 +1478,9 @@ class ImportTemplateControllerTest {
         r.accountIdentificationStrategy(),
         r.headerColumns(),
         r.fileFormat(),
-        r.pdfLayout());
+        r.pdfLayout(),
+        r.descriptionTypePatterns(),
+        r.rowFilter());
   }
 
   // --- HTTP helpers ------------------------------------------------------------------------------

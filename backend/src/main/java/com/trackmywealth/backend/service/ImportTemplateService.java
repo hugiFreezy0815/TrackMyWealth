@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
+import com.trackmywealth.backend.dto.ImportRowFilter;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
@@ -519,7 +520,7 @@ public class ImportTemplateService {
     if (ImportFileParserService.fingerprint(header).equals(template.getHeaderFingerprint())) {
       return ImportTemplateCandidateResponse.EXACT_HEADER;
     }
-    return parser.missingColumns(definition.columnMapping(), header).isEmpty()
+    return parser.missingColumns(definition, header).isEmpty()
         ? ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT
         : null;
   }
@@ -556,7 +557,8 @@ public class ImportTemplateService {
         definition.accountIdentificationStrategy(),
         definition.fileFormat(),
         definition.pdfLayout(),
-        definition.descriptionTypePatterns());
+        definition.descriptionTypePatterns(),
+        definition.rowFilter());
   }
 
   private ImportTemplateDefinition definitionOf(ImportTemplate template) {
@@ -580,7 +582,10 @@ public class ImportTemplateService {
         template.getPdfLayout() == null
             ? null
             : objectMapper.readValue(template.getPdfLayout(), ImportPdfLayout.class),
-        objectMapper.readValue(template.getDescriptionTypePatterns(), stringMap));
+        objectMapper.readValue(template.getDescriptionTypePatterns(), stringMap),
+        template.getRowFilter() == null
+            ? null
+            : objectMapper.readValue(template.getRowFilter(), ImportRowFilter.class));
   }
 
   private void apply(
@@ -607,6 +612,10 @@ public class ImportTemplateService {
     template.setTypeMapping(objectMapper.writeValueAsString(definition.typeMapping()));
     template.setDescriptionTypePatterns(
         objectMapper.writeValueAsString(definition.descriptionTypePatterns()));
+    template.setRowFilter(
+        definition.rowFilter() == null
+            ? null
+            : objectMapper.writeValueAsString(definition.rowFilter()));
     template.setAccountIdentificationStrategy(definition.accountIdentificationStrategy());
     template.setFileFormat(definition.fileFormat());
     if (definition.pdfLayout() != null) {
@@ -658,7 +667,8 @@ public class ImportTemplateService {
         definition.fileFormat(),
         definition.pdfLayout(),
         VersionPreconditionService.persistedVersion(template.getVersion(), VERSIONED_RESOURCE),
-        definition.descriptionTypePatterns());
+        definition.descriptionTypePatterns(),
+        definition.rowFilter());
   }
 
   private ImportTemplateTestResponse preview(ImportParseResult result) {

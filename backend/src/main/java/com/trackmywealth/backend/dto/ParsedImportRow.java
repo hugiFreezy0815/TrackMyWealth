@@ -54,6 +54,12 @@ public record ParsedImportRow(
         canonical);
   }
 
+  /** A row ignored by the template's source-column filter; it has no canonical booking. */
+  public static ParsedImportRow skipped(int rowNumber, Map<String, String> rawData, String code) {
+    return new ParsedImportRow(
+        rowNumber, rawData, ImportRowErrorValues.STATUS_SKIPPED, code, Map.of(), null);
+  }
+
   public static ParsedImportRow error(
       int rowNumber, Map<String, String> rawData, String errorCode, Map<String, String> errorArgs) {
     return new ParsedImportRow(
