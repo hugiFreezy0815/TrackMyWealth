@@ -174,7 +174,7 @@ public class ImportRowCheckService {
   }
 
   /**
-   * Which positive card-settlement preview rows have a source-account payment candidate. Only call
+   * Which positive card-settlement preview rows have an available source-account payment candidate. Only call
    * with a source account the actor may currently read. Amounts are chunked to cap SQL bind
    * parameters, and payment dates are checked in memory (no N+1 query).
    */
@@ -236,6 +236,8 @@ public class ImportRowCheckService {
         LocalDate first = dates.ceiling(date.minusDays(SettlementDetectionService.WINDOW_DAYS));
         if (first != null
             && !first.isAfter(date.plusDays(SettlementDetectionService.WINDOW_DAYS))) {
+          // Consume the date so one source payment cannot satisfy two preview settlements.
+          dates.remove(first);
           matched.add(row.rowNumber());
         }
       }
