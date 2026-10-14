@@ -250,10 +250,10 @@ class ImportRowCheckServiceTest {
   void aFutureDateAndAnotherCurrencyAreWarnings() {
     CanonicalImportRow future = row("USD", DAY.plusDays(1)).canonical();
 
-    assertThat(service.warnings(account, future, DAY, null))
+    assertThat(service.warnings(account, future, DAY, false))
         .containsExactly(
             ImportBatchValues.WARNING_FUTURE_DATE, ImportBatchValues.WARNING_CURRENCY_DIFFERS);
-    assertThat(service.warnings(account, row("EUR", DAY).canonical(), DAY, null)).isEmpty();
+    assertThat(service.warnings(account, row("EUR", DAY).canonical(), DAY, false)).isEmpty();
     assertThat(
             ImportRowCheckService.warningArgs(
                 ImportBatchValues.WARNING_CURRENCY_DIFFERS, future, "EUR"))
