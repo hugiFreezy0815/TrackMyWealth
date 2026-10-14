@@ -794,6 +794,9 @@ A refund is explicitly `REFUND` via the type column or versioned
 `description_type_patterns` (V71): one bounded RE2 expression per target type, matched
 case-insensitively anywhere within the mapped description. A conflict is an error, not an
 arbitrary choice. Refunds reduce spending and do not enter settlement matching.
+A parsed booking strictly before the account's dated opening balance receives advisory
+`IMPORT_ROW_BEFORE_OPENING_BALANCE`; it remains importable but is excluded from the
+ledger-derived balance under US-25-04. Bookings on the opening date are not warned.
 An unmatched positive settlement receives the advisory
 `IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED` warning. Sprint 5 imports only
 `CASH_TRANSACTIONS` with `account_identification_strategy = USER_SELECTED`; the parser refuses
@@ -985,7 +988,7 @@ stored English text. A parsed row the ledger would refuse as a manual entry
 (`TransactionService#requireRecordable`, e.g.
 a type the account does not take) is the error `IMPORT_ROW_LEDGER_REJECTED`, one in another
 currency without a rate `IMPORT_ROW_FX_RATE_UNAVAILABLE`, a second row with an already used bank
-reference `IMPORT_ROW_EXTERNAL_ID_REPEATED`. Warnings (`IMPORT_ROW_FUTURE_DATE`,
+reference `IMPORT_ROW_EXTERNAL_ID_REPEATED`. Warnings (`IMPORT_ROW_BEFORE_OPENING_BALANCE`, `IMPORT_ROW_FUTURE_DATE`,
 `IMPORT_ROW_CURRENCY_DIFFERS_FROM_ACCOUNT`,
 `IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED`) leave the row included. `raw_data` and `error_args` are
 `JSON`, not `JSONB`, which would sort their keys: cells keep the file's column order and arguments
