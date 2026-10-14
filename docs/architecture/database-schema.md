@@ -1046,6 +1046,24 @@ the reference and the raw cells in `raw_source_data`. Settlement and transfer de
 reconciliation run once for the batch, after the inserts, taking the same locks as a manual write.
 A row the ledger refuses fails the whole commit; the batch stays `PARSED`.
 
+**The preview shows what the commit will do (#308).** The commit's check above is one
+implementation, `ImportRecheckService`. The commit applies its result, and every read of a `PARSED`
+batch reports it, so the member confirms what the commit will do. The rows read
+(`GET .../rows`), the summary (`GET .../{batchId}`) and the account's list of imports (`counts`) all
+report it. A row it would treat otherwise than stored is shown with the effective `status`,
+`included`, `duplicateOfTransactionId` and `duplicateOf`, plus `recheck` saying why: `NEW` (a
+duplicate whose booking is gone, imported), `REPOINTED` (a duplicate of the row that holds its booking
+now) or `DUPLICATE` (an included new row the ledger has gained, left out). `?status=` filters by the
+effective status. Reading writes nothing and leaves the batch's `version` alone. A rollback, removal
+or correction therefore needs no hook into open previews, and a client that holds the version it
+read still commits what it showed. A member's earlier exclusion of a `DUPLICATE` row does not
+survive its booking going away (product owner, 2026-10-14, as decided on #287). Each read costs the
+holds query and one duplicate check of the batch's readable rows, the same work as the commit; an
+upload or re-parse answers with the counts just stored. `PATCH .../rows/{n}` decides on the row as
+the preview shows it: a re-checked row is first stored as re-checked (its batch's
+`duplicate_row_count` with it), then included or excluded, so the commit keeps that choice instead
+of checking it away again. A committed, discarded or rolled-back batch's rows are shown as stored.
+
 **Rollback (US-07-05, #231).** `POST .../imports/{batchId}/rollback` with `If-Match` and a
 `reason` (required, at most 500 characters) undoes a `COMMITTED` batch as a whole
 (`ImportRollbackService`); the system decides how, never the member. Anything else is a 409

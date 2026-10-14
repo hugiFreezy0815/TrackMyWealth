@@ -9,7 +9,9 @@ import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportDuplicateOfResponse;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportRateNeed;
+import com.trackmywealth.backend.dto.ImportRecheck;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
+import com.trackmywealth.backend.dto.ImportRowRecheck;
 import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.ImportSameFileResponse;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
@@ -34,7 +36,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,6 +48,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -56,8 +58,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
-import tools.jackson.databind.JavaType;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * US-07-04: a member uploads a bank file for one of their accounts, previews what its import would
@@ -99,13 +99,14 @@ public class ImportBatchService {
   private final ImportStagingService stagingService;
   private final ImportRowCheckService rowCheckService;
   private final ImportDuplicateService duplicateService;
+  private final ImportRecheckService recheckService;
+  private final ImportRowJsonService rowJson;
   private final ImportBatchRepository batchRepository;
   private final ImportFileRepository fileRepository;
   private final ImportRowRawRepository rowRepository;
   private final VersionPreconditionService versionPreconditionService;
   private final WorkspaceRepository workspaceRepository;
   private final MessageSource messageSource;
-  private final ObjectMapper objectMapper;
   private final EntityManager entityManager;
   private final TransactionTemplate readOnlyTransaction;
   private final TransactionTemplate writeTransaction;
@@ -119,13 +120,14 @@ public class ImportBatchService {
       ImportStagingService stagingService,
       ImportRowCheckService rowCheckService,
       ImportDuplicateService duplicateService,
+      ImportRecheckService recheckService,
+      ImportRowJsonService rowJson,
       ImportBatchRepository batchRepository,
       ImportFileRepository fileRepository,
       ImportRowRawRepository rowRepository,
       VersionPreconditionService versionPreconditionService,
       WorkspaceRepository workspaceRepository,
       MessageSource messageSource,
-      ObjectMapper objectMapper,
       EntityManager entityManager,
       PlatformTransactionManager transactionManager,
       @Value("${app.import.max-open-batches-per-account}") int maxOpenBatches) {
@@ -136,13 +138,14 @@ public class ImportBatchService {
     this.stagingService = stagingService;
     this.rowCheckService = rowCheckService;
     this.duplicateService = duplicateService;
+    this.recheckService = recheckService;
+    this.rowJson = rowJson;
     this.batchRepository = batchRepository;
     this.fileRepository = fileRepository;
     this.rowRepository = rowRepository;
     this.versionPreconditionService = versionPreconditionService;
     this.workspaceRepository = workspaceRepository;
     this.messageSource = messageSource;
-    this.objectMapper = objectMapper;
     this.entityManager = entityManager;
     this.readOnlyTransaction = new TransactionTemplate(transactionManager);
     this.readOnlyTransaction.setReadOnly(true);
@@ -284,21 +287,27 @@ public class ImportBatchService {
     Page<ImportBatch> page =
         batchRepository.findByAccountId(
             account.getId(), PageRequest.of(pageable.getPageNumber(), size, NEWEST_FIRST));
-    Map<UUID, ImportBatchCountsResponse> counts = counts(page.getContent());
+    Map<UUID, ImportBatchCountsResponse> counts = recheckedCounts(page.getContent());
     Map<UUID, ImportSameFileResponse> sameFiles = sameFilesImportedIn(page.getContent());
     return page.map(batch -> summary(batch, account, List.of(), counts, sameFiles));
   }
 
-  /** The batch's summary: status, template version, counts and the same-file warning. */
+  /**
+   * The batch's summary: status, template version, counts and the same-file warning. A {@code
+   * PARSED} batch's counts are what its commit would make of the rows now (#308).
+   */
   @Transactional(readOnly = true)
   public ImportBatchResponse get(UUID accountId, UUID batchId, AuthenticatedUserPrincipal actor) {
     Account account = requireEditableAccount(accountId, actor);
-    return summary(requireBatch(account, batchId, actor), account, List.of());
+    return recheckedSummary(requireBatch(account, batchId, actor), account);
   }
 
   /**
    * The batch's rows in file order, optionally only those of one {@code status} ({@code PARSED},
-   * {@code DUPLICATE}, {@code ERROR}, {@code SKIPPED}); messages in the caller's language.
+   * {@code DUPLICATE}, {@code ERROR}, {@code SKIPPED}); messages in the caller's language. A {@code
+   * PARSED} batch's rows are shown as its commit would take them now ({@link ImportRecheckService},
+   * #308): a row it would treat otherwise than stored has its {@code recheck} set, and {@code
+   * status} filters by what the commit would do.
    */
   @Transactional(readOnly = true)
   public Page<ImportRowResponse> rows(
@@ -317,14 +326,29 @@ public class ImportBatchService {
     }
     int size = Math.min(Math.max(pageable.getPageSize(), 1), MAX_PAGE_SIZE);
     PageRequest page = PageRequest.of(pageable.getPageNumber(), size);
-    Page<ImportRowRaw> rows =
-        status == null
-            ? rowRepository.findByImportBatchIdOrderByRowNumber(batch.getId(), page)
-            : rowRepository.findByImportBatchIdAndParseStatusOrderByRowNumber(
-                batch.getId(), status, page);
+    List<ImportRowRaw> readable =
+        ImportBatchValues.PARSED.equals(batch.getStatus())
+            ? recheckService.readableRows(batch)
+            : List.of();
+    ImportRecheck recheck = recheckService.recheck(batch, readable);
+    Page<ImportRowRaw> rows;
+    if (status != null && !recheck.isEmpty() && ImportBatchValues.ROW_READABLE.contains(status)) {
+      // A re-checked row may have moved between PARSED and DUPLICATE: filter what the commit sees.
+      List<ImportRowRaw> matching =
+          readable.stream().filter(row -> status.equals(statusOf(row, recheck))).toList();
+      int from = (int) Math.min(page.getOffset(), matching.size());
+      int to = Math.min(from + size, matching.size());
+      rows = new PageImpl<>(matching.subList(from, to), page, matching.size());
+    } else if (status == null) {
+      rows = rowRepository.findByImportBatchIdOrderByRowNumber(batch.getId(), page);
+    } else {
+      rows =
+          rowRepository.findByImportBatchIdAndParseStatusOrderByRowNumber(
+              batch.getId(), status, page);
+    }
     Set<UUID> duplicateIds =
         rows.stream()
-            .map(ImportRowRaw::getDuplicateOfTransactionId)
+            .map(row -> duplicateOfId(row, recheck))
             .filter(Objects::nonNull)
             .collect(Collectors.toSet());
     Map<UUID, ImportDuplicateOfResponse> duplicateOf =
@@ -334,14 +358,21 @@ public class ImportBatchService {
     Locale locale = LocaleContextHolder.getLocale();
     return rows.map(
         row ->
-            rowResponse(row, account, duplicateOf.get(row.getDuplicateOfTransactionId()), locale));
+            rowResponse(
+                row,
+                recheck.of(row.getId()),
+                account,
+                duplicateOf.get(duplicateOfId(row, recheck)),
+                locale));
   }
 
   /**
    * Forces a {@code DUPLICATE} row into the commit, or keeps a {@code PARSED} row out of it. An
    * {@code ERROR} or {@code SKIPPED} row cannot be included (422 {@code
    * IMPORT_ROW_NOT_INCLUDABLE}). The batch's version moves on, so a commit sent with the version
-   * read before this change is a 412.
+   * read before this change is a 412. The member decides on the row as the preview shows it: a row
+   * the commit would re-check (#308) is stored as re-checked first, so that the commit keeps the
+   * choice instead of re-checking it away.
    *
    * @return the batch's summary with its new counts and version
    */
@@ -371,14 +402,23 @@ public class ImportBatchService {
           ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE,
           "Row " + rowNumber + " could not be read and cannot be imported.");
     }
-    if (row.isIncluded() != included) {
-      row.setIncluded(included);
-      rowRepository.saveAndFlush(row);
-      // The rows are part of what a commit confirms: changing one is a change of the batch.
-      batchRepository.touch(batch.getId());
-      entityManager.refresh(batch);
+    ImportRecheck recheck = recheckService.recheck(batch, recheckService.readableRows(batch));
+    ImportRowRecheck rechecked = recheck.of(row.getId());
+    boolean current = rechecked == null ? row.isIncluded() : rechecked.included();
+    if (current == included) {
+      return summary(batch, account, List.of(), recheck);
     }
-    return summary(batch, account, List.of());
+    if (rechecked != null) {
+      recheckService.apply(batch, new ImportRecheck(Map.of(row.getId(), rechecked)));
+      entityManager.refresh(row);
+    }
+    row.setIncluded(included);
+    rowRepository.saveAndFlush(row);
+    // The rows are part of what a commit confirms: changing one is a change of the batch. The
+    // flush before it stores the batch's duplicate count of a re-checked row.
+    batchRepository.touch(batch.getId());
+    entityManager.refresh(batch);
+    return recheckedSummary(batch, account);
   }
 
   /**
@@ -458,10 +498,30 @@ public class ImportBatchService {
     return conflict;
   }
 
+  /**
+   * The batch's summary with the counts of its rows as stored: for a batch whose rows were just
+   * written (staged, committed) or that is no longer {@code PARSED}. Otherwise see {@link
+   * #recheckedSummary}.
+   */
   ImportBatchResponse summary(
       ImportBatch batch, Account account, List<ImportTemplateCandidateResponse> candidates) {
+    return summary(batch, account, candidates, ImportRecheck.NONE);
+  }
+
+  // The summary of a PARSED batch whose rows the ledger may have overtaken since (#308).
+  private ImportBatchResponse recheckedSummary(ImportBatch batch, Account account) {
+    return summary(batch, account, List.of(), recheck(batch));
+  }
+
+  private ImportBatchResponse summary(
+      ImportBatch batch,
+      Account account,
+      List<ImportTemplateCandidateResponse> candidates,
+      ImportRecheck recheck) {
     List<ImportBatch> one = List.of(batch);
-    return summary(batch, account, candidates, counts(one), sameFilesImportedIn(one));
+    Map<UUID, ImportBatchCountsResponse> counts = counts(one);
+    counts.computeIfPresent(batch.getId(), (id, stored) -> recheck.applyTo(stored));
+    return summary(batch, account, candidates, counts, sameFilesImportedIn(one));
   }
 
   private static ImportBatchResponse summary(
@@ -491,21 +551,12 @@ public class ImportBatchService {
 
   /** The canonical values a row was stored with, or {@code null} for a row that was unreadable. */
   CanonicalImportRow canonical(ImportRowRaw row) {
-    return row.getCanonicalData() == null
-        ? null
-        : objectMapper.readValue(row.getCanonicalData(), CanonicalImportRow.class);
+    return rowJson.canonical(row);
   }
 
   /** A JSON object of strings, in its stored order (raw cells, message arguments). */
   Map<String, String> stringMap(String json) {
-    if (json == null) {
-      return new LinkedHashMap<>();
-    }
-    JavaType type =
-        objectMapper
-            .getTypeFactory()
-            .constructMapType(LinkedHashMap.class, String.class, String.class);
-    return objectMapper.readValue(json, type);
+    return rowJson.stringMap(json);
   }
 
   /** The localized message of a row error or warning {@code code}, arguments in order. */
@@ -578,6 +629,25 @@ public class ImportBatchService {
     return ((Number) value).intValue();
   }
 
+  // As counts, with each PARSED batch's counts as its commit would leave them now (#308).
+  private Map<UUID, ImportBatchCountsResponse> recheckedCounts(List<ImportBatch> batches) {
+    Map<UUID, ImportBatchCountsResponse> counts = counts(batches);
+    for (ImportBatch batch : batches) {
+      if (ImportBatchValues.PARSED.equals(batch.getStatus())) {
+        ImportRecheck recheck = recheck(batch);
+        counts.computeIfPresent(batch.getId(), (id, stored) -> recheck.applyTo(stored));
+      }
+    }
+    return counts;
+  }
+
+  // What a commit would do now with the batch's rows; nothing unless it is PARSED.
+  private ImportRecheck recheck(ImportBatch batch) {
+    return ImportBatchValues.PARSED.equals(batch.getStatus())
+        ? recheckService.recheck(batch, recheckService.readableRows(batch))
+        : ImportRecheck.NONE;
+  }
+
   // Per batch of one account, the latest other committed batch of the same file (the same-file
   // warning), in one query however many batches a page holds; a batch without one is absent.
   private Map<UUID, ImportSameFileResponse> sameFilesImportedIn(List<ImportBatch> batches) {
@@ -639,7 +709,11 @@ public class ImportBatchService {
   }
 
   private ImportRowResponse rowResponse(
-      ImportRowRaw row, Account account, ImportDuplicateOfResponse duplicateOf, Locale locale) {
+      ImportRowRaw row,
+      ImportRowRecheck rechecked,
+      Account account,
+      ImportDuplicateOfResponse duplicateOf,
+      Locale locale) {
     CanonicalImportRow canonical = canonical(row);
     ImportRowErrorResponse error =
         row.getErrorCode() == null
@@ -655,15 +729,32 @@ public class ImportBatchService {
     }
     return new ImportRowResponse(
         row.getRowNumber(),
-        row.getParseStatus(),
-        row.isIncluded(),
+        rechecked == null ? row.getParseStatus() : rechecked.status(),
+        rechecked == null ? row.isIncluded() : rechecked.included(),
         stringMap(row.getRawData()),
         canonical,
-        row.getDuplicateOfTransactionId(),
+        rechecked == null
+            ? row.getDuplicateOfTransactionId()
+            : rechecked.duplicateOfTransactionId(),
         duplicateOf,
         error,
         warnings,
-        row.getResultingTransactionId());
+        row.getResultingTransactionId(),
+        rechecked == null ? null : rechecked.recheck());
+  }
+
+  // The row's status as the commit would take it.
+  private static String statusOf(ImportRowRaw row, ImportRecheck recheck) {
+    ImportRowRecheck rechecked = recheck.of(row.getId());
+    return rechecked == null ? row.getParseStatus() : rechecked.status();
+  }
+
+  // The ledger row the row duplicates as the commit would take it, or null for a new row.
+  private static UUID duplicateOfId(ImportRowRaw row, ImportRecheck recheck) {
+    ImportRowRecheck rechecked = recheck.of(row.getId());
+    return rechecked == null
+        ? row.getDuplicateOfTransactionId()
+        : rechecked.duplicateOfTransactionId();
   }
 
   // Exactly one template whose header fingerprint is the file's: unambiguous enough to parse with.
