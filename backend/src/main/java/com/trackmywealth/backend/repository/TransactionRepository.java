@@ -600,8 +600,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /**
    * US-25-02: a duplicate-entry signature in the reconciliation period. One live row must have an
    * account-currency amount equal to {@code amount}, and another live row must match its booking
-   * date, original amount/currency and normalized description exactly. A reconciliation adjustment
-   * (US-25-03) is neither: it is the member's documented correction, not an entry.
+   * date and original amount/currency exactly. The description is not compared, as in the import's
+   * duplicate rule (US-07-17): the same booking arrives worded differently by two export formats. A
+   * reconciliation adjustment (US-25-03) is neither: it is the member's documented correction, not
+   * an entry.
    */
   @Query(
       value =
@@ -609,8 +611,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               + " ON t2.account_id = t1.account_id AND t2.id <> t1.id"
               + " AND t2.booking_date = t1.booking_date AND t2.amount = t1.amount"
               + " AND t2.currency = t1.currency"
-              + " AND COALESCE(lower(regexp_replace(trim(t2.merchant_description), '\\s+', ' ', 'g')), '')"
-              + " = COALESCE(lower(regexp_replace(trim(t1.merchant_description), '\\s+', ' ', 'g')), '')"
               + " WHERE t1.account_id = :accountId AND t1.booking_date > :after"
               + " AND t1.booking_date <= :asOf"
               + " AND t1.amount * COALESCE(t1.fx_rate_to_account_currency, 1) = :amount"
@@ -643,6 +643,21 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param(ACCOUNT_ID) UUID accountId,
       @Param("source") String source,
       @Param("externalIds") Collection<String> externalIds);
+
+  /**
+   * US-07-17: the account's rows of {@code ids} that import rows point at as their duplicates, for
+   * the preview to show next to them. Soft-deleted and voided rows included: a pointer shows what
+   * it points at.
+   */
+  @Query(
+      value =
+          "SELECT t.id AS id, t.booking_date AS bookingDate, t.amount AS amount,"
+              + " t.currency AS currency, t.merchant_description AS merchantDescription,"
+              + " t.source AS source, t.external_id AS externalId"
+              + " FROM transaction t WHERE t.account_id = :accountId AND t.id IN (:ids)",
+      nativeQuery = true)
+  List<ImportDuplicateCandidate> findDuplicateTargets(
+      @Param(ACCOUNT_ID) UUID accountId, @Param("ids") Collection<UUID> ids);
 
   /**
    * US-07-04 duplicate rule 2: the account's live rows booked from {@code from} to {@code to} -

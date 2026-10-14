@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportBatchCountsResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
+import com.trackmywealth.backend.dto.ImportDuplicateOfResponse;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
@@ -30,6 +31,7 @@ import jakarta.persistence.EntityManager;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -40,6 +42,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -95,6 +98,7 @@ public class ImportBatchService {
   private final ImportFileParserService parser;
   private final ImportStagingService stagingService;
   private final ImportRowCheckService rowCheckService;
+  private final ImportDuplicateService duplicateService;
   private final ImportBatchRepository batchRepository;
   private final ImportFileRepository fileRepository;
   private final ImportRowRawRepository rowRepository;
@@ -114,6 +118,7 @@ public class ImportBatchService {
       ImportFileParserService parser,
       ImportStagingService stagingService,
       ImportRowCheckService rowCheckService,
+      ImportDuplicateService duplicateService,
       ImportBatchRepository batchRepository,
       ImportFileRepository fileRepository,
       ImportRowRawRepository rowRepository,
@@ -130,6 +135,7 @@ public class ImportBatchService {
     this.parser = parser;
     this.stagingService = stagingService;
     this.rowCheckService = rowCheckService;
+    this.duplicateService = duplicateService;
     this.batchRepository = batchRepository;
     this.fileRepository = fileRepository;
     this.rowRepository = rowRepository;
@@ -316,8 +322,19 @@ public class ImportBatchService {
             ? rowRepository.findByImportBatchIdOrderByRowNumber(batch.getId(), page)
             : rowRepository.findByImportBatchIdAndParseStatusOrderByRowNumber(
                 batch.getId(), status, page);
+    Set<UUID> duplicateIds =
+        rows.stream()
+            .map(ImportRowRaw::getDuplicateOfTransactionId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+    Map<UUID, ImportDuplicateOfResponse> duplicateOf =
+        duplicateIds.isEmpty()
+            ? Collections.emptyMap()
+            : duplicateService.duplicateTargets(account.getId(), duplicateIds);
     Locale locale = LocaleContextHolder.getLocale();
-    return rows.map(row -> rowResponse(row, account, locale));
+    return rows.map(
+        row ->
+            rowResponse(row, account, duplicateOf.get(row.getDuplicateOfTransactionId()), locale));
   }
 
   /**
@@ -621,7 +638,8 @@ public class ImportBatchService {
     }
   }
 
-  private ImportRowResponse rowResponse(ImportRowRaw row, Account account, Locale locale) {
+  private ImportRowResponse rowResponse(
+      ImportRowRaw row, Account account, ImportDuplicateOfResponse duplicateOf, Locale locale) {
     CanonicalImportRow canonical = canonical(row);
     ImportRowErrorResponse error =
         row.getErrorCode() == null
@@ -642,6 +660,7 @@ public class ImportBatchService {
         stringMap(row.getRawData()),
         canonical,
         row.getDuplicateOfTransactionId(),
+        duplicateOf,
         error,
         warnings,
         row.getResultingTransactionId());

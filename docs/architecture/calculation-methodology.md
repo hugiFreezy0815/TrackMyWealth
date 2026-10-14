@@ -330,17 +330,19 @@ whose booking would close the gap: the difference itself on an asset, its negati
 -15.00 row). Within the period since the previous snapshot (or the opening balance for the first
 one), evidence is evaluated in this order:
 
-1. `DUPLICATE_ENTRY`: a live row whose account-currency amount equals the opposite of the missing
-   amount (the row counted once too often) has another live row with the same booking date,
-   original amount/currency, and normalized description.
-2. `MISSING_TRANSACTION` (#230): an import of the account holds a row of exactly the missing amount,
+1. `MISSING_TRANSACTION` (#230): an import of the account holds a row of exactly the missing amount,
    in the account's currency and booked in the period, that did not reach the ledger - its batch
    was discarded, it is an error row with a readable amount, or it was left out of a committed
    batch (a duplicate not forced in, or a row the member excluded) - and the ledger holds no live
    row of that date, amount and currency anyway (read as the import's duplicate rule reads it). A
    discarded file that was uploaded again and committed, or a duplicate left out because the ledger
    had it, is therefore no evidence. The import is the evidence; without one, no missing bank row
-   is inferred.
+   is inferred. It comes first because it names a concrete row of the bank's file.
+2. `DUPLICATE_ENTRY`: a live row whose account-currency amount equals the opposite of the missing
+   amount (the row counted once too often) has another live row with the same booking date and
+   original amount/currency. The description is not compared (US-07-17, as in the import's
+   duplicate rule): two export formats of one account word the same booking differently. Two real
+   bookings of equal date and amount meet this too, so it yields to the import evidence above.
 3. `FX_ROUNDING`: the absolute missing amount is at most 0.05 and the period contains a converted
    ledger row.
 4. `UNRECORDED_FEE`: the missing amount is a debit of at most 50.00 with at most two decimals

@@ -408,6 +408,16 @@ class ImportBatchControllerTest {
     assertThat(duplicates.get(1).duplicateOfTransactionId()).isEqualTo(manual.id());
     assertThat(duplicates.get(0).duplicateOfTransactionId())
         .isEqualTo(single("SELECT id FROM transaction WHERE external_id = 'R1'"));
+    // The preview shows the ledger row next to the import row (US-07-17).
+    assertThat(duplicates.get(1).duplicateOfTransactionId()).isEqualTo(manual.id());
+    assertThat(duplicates.get(1).duplicateOf().merchantDescription()).isEqualTo("Pharmacy");
+    assertThat(duplicates.get(1).duplicateOf().bookingDate()).isEqualTo(DAY);
+    assertThat(duplicates.get(1).duplicateOf().amount()).isEqualByComparingTo("-20.00");
+    assertThat(duplicates.get(1).duplicateOf().currency()).isEqualTo("CHF");
+    assertThat(duplicates.get(0).duplicateOf().merchantDescription()).isEqualTo("Bakery");
+    assertThat(rows(batch.id(), "?status=PARSED").content())
+        .singleElement()
+        .satisfies(row -> assertThat(row.duplicateOf()).isNull());
 
     // Forcing both in: the reference one goes in without its taken reference.
     ImportBatchResponse forced = include(batch.id(), batch.version(), 1, true);
@@ -439,6 +449,85 @@ class ImportBatchControllerTest {
     assertThat(batch.counts().newRows()).isEqualTo(1);
     commit(account, batch.id(), batch.version());
     assertThat(count("SELECT count(*) FROM transaction WHERE amount = -3.50")).isEqualTo(2);
+  }
+
+  @Test
+  void theSameStatementInTheBanksOtherExportFormatIsAllDuplicatesAndAddsNothing() {
+    // US-07-17: two export formats of one account hold the same bookings, worded differently;
+    // only the first carries a reference, on one booking. An invented statement, dated 2031.
+    account = createAccount("Girokonto", "EUR");
+    ImportTemplateResponse camt =
+        createTemplate(
+            exportTemplate(
+                "CAMT-style export",
+                List.of("Buchungstag", "Betrag", "Waehrung", "Verwendungszweck", "Referenz")));
+    ImportTemplateResponse mt940 =
+        createTemplate(
+            exportTemplate(
+                "MT940-style export", List.of("Datum", "Umsatz", "Waehrung", "Buchungstext")));
+    ImportBatchResponse first =
+        upload(
+            token,
+            camt.id(),
+            ("Buchungstag;Betrag;Waehrung;Verwendungszweck;Referenz\n"
+                    + "2031-03-03;2500.00;EUR;Lohn Maerz 2031 Arbeitgeber AG;E2E-2031-03-1\n"
+                    + "2031-03-14;-47.35;EUR;Shop A;\n"
+                    + "2031-03-14;-47.35;EUR;Shop A;\n"
+                    + "2031-03-20;-120.00;EUR;Stadtwerke Abschlag;\n")
+                .getBytes(StandardCharsets.UTF_8));
+    commit(account, first.id(), first.version());
+
+    ImportBatchResponse second =
+        upload(
+            token,
+            mt940.id(),
+            ("Datum;Umsatz;Waehrung;Buchungstext\n"
+                    + "2031-03-03;2500.00;EUR;GUTSCHRIFT ARBEITGEBER AG LOHN 03/2031\n"
+                    + "2031-03-14;-47.35;EUR;KARTENZAHLUNG SHOP A FILIALE 12\n"
+                    + "2031-03-14;-47.35;EUR;KARTENZAHLUNG SHOP A FILIALE 12\n"
+                    + "2031-03-20;-120.00;EUR;LASTSCHRIFT STADTWERKE\n")
+                .getBytes(StandardCharsets.UTF_8));
+
+    assertThat(second.counts().total()).isEqualTo(4);
+    assertThat(second.counts().duplicates()).isEqualTo(4);
+    assertThat(second.counts().newRows()).isZero();
+    assertThat(second.counts().included()).isZero();
+    List<ImportRowResponse> rows = rows(second.id(), "").content();
+    // Each ledger row is the duplicate of one row: the two equal purchases point at both bookings.
+    assertThat(rows)
+        .extracting(ImportRowResponse::duplicateOfTransactionId)
+        .doesNotContainNull()
+        .doesNotHaveDuplicates();
+    ImportRowResponse shop = rows.get(1);
+    assertThat(shop.status()).isEqualTo("DUPLICATE");
+    assertThat(shop.included()).isFalse();
+    assertThat(shop.canonical().description()).isEqualTo("KARTENZAHLUNG SHOP A FILIALE 12");
+    assertThat(shop.duplicateOf().merchantDescription()).isEqualTo("Shop A");
+    assertThat(shop.duplicateOf().bookingDate()).isEqualTo(LocalDate.of(2031, 3, 14));
+    assertThat(shop.duplicateOf().amount()).isEqualByComparingTo("-47.35");
+    assertThat(shop.duplicateOf().currency()).isEqualTo("EUR");
+
+    ImportBatchResponse committed = commit(account, second.id(), second.version());
+    assertThat(committed.counts().imported()).isZero();
+    assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(4);
+  }
+
+  @Test
+  void aRowOfTheSameBookingWithOtherWordingCanStillBeForcedIn() {
+    // US-07-17's accepted trade-off: two real purchases of equal date, amount and currency.
+    ImportTemplateResponse simple = createTemplate(simpleTemplate("Simple", SIMPLE_COLUMNS));
+    TransactionResponse coffee = recordManual(account, "EXPENSE", "-4.20", "CHF", "Cafe Central");
+
+    ImportBatchResponse batch =
+        upload(token, simple.id(), csv("2019-01-05;-4.20;CHF;Baeckerei Kunz;;"));
+
+    ImportRowResponse row = rows(batch.id(), "").content().get(0);
+    assertThat(row.status()).isEqualTo("DUPLICATE");
+    assertThat(row.duplicateOfTransactionId()).isEqualTo(coffee.id());
+    assertThat(row.duplicateOf().merchantDescription()).isEqualTo("Cafe Central");
+    ImportBatchResponse forced = include(batch.id(), batch.version(), 1, true);
+    commit(account, batch.id(), forced.version());
+    assertThat(count("SELECT count(*) FROM transaction WHERE amount = -4.20")).isEqualTo(2);
   }
 
   @Test
@@ -1777,6 +1866,45 @@ class ImportBatchControllerTest {
             "Reference",
             null,
             "MCC",
+            null,
+            null),
+        Map.of(),
+        null,
+        headerColumns,
+        null,
+        null);
+  }
+
+  // A bank export whose columns are date, amount, currency, text and an optional reference, in
+  // this order, under the names in headerColumns.
+  private static ImportTemplateRequest exportTemplate(String name, List<String> headerColumns) {
+    return new ImportTemplateRequest(
+        name,
+        null,
+        null,
+        ";",
+        "UTF-8",
+        ".",
+        null,
+        "yyyy-MM-dd",
+        0,
+        0,
+        0,
+        "SINGLE_SIGNED_COLUMN",
+        "PER_ROW",
+        null,
+        new ImportColumnMapping(
+            headerColumns.get(0),
+            null,
+            headerColumns.get(1),
+            null,
+            null,
+            headerColumns.get(2),
+            headerColumns.get(3),
+            null,
+            headerColumns.size() > 4 ? headerColumns.get(4) : null,
+            null,
+            null,
             null,
             null),
         Map.of(),
