@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, StyleSheet, TextInput, type TextInputProps, View } from 'react-native';
 
-import { getApiBaseUrl } from '@/api/client';
+import { getApiBaseUrl, NetworkError } from '@/api/client';
 import { InvalidServerUrlError, saveServerUrl } from '@/api/server-url';
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
@@ -26,13 +26,11 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
         // FR-CLI-007: the server is chosen before any credential is sent to it.
         setServer(await saveServerUrl(server));
         await signIn(email.trim(), password);
+        // Sent and accepted: not kept in memory through the MFA step.
+        setPassword('');
       }
     } catch (failure) {
-      setError(
-        failure instanceof InvalidServerUrlError
-          ? failure.message
-          : 'Could not sign in. Check your credentials or verification code.',
-      );
+      setError(errorMessage(failure));
     } finally {
       setCode('');
       setBusy(false);
@@ -90,6 +88,15 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
       {mfaRequired && <Button title="Start over" onPress={startOver} disabled={busy} />}
     </View>
   );
+}
+
+function errorMessage(failure: unknown): string {
+  if (failure instanceof InvalidServerUrlError) return failure.message;
+  // Not the credentials' fault: saying so would send the user hunting for a typo.
+  if (failure instanceof NetworkError) {
+    return 'Could not reach the server. Check the server address and your connection.';
+  }
+  return 'Could not sign in. Check your credentials or verification code.';
 }
 
 /** A visible label above the input; the same text is its accessible name. */

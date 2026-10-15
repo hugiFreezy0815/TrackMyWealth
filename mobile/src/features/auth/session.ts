@@ -9,7 +9,9 @@ export type Tokens = {
   tokenType: string;
   expiresInSeconds: number;
 };
-export type Identity = { userId: string; role: string; language: string };
+// FR-USR-004: the roles app_user.role allows (V2's CHECK constraint).
+export type Role = 'SYSTEM_ADMINISTRATOR' | 'STANDARD_USER';
+export type Identity = { userId: string; role: Role; language: string; sessionId: string };
 export type LoginResult = {
   mfaRequired: boolean;
   mfaChallengeToken: string | null;
@@ -59,6 +61,17 @@ async function persist(token: string | null): Promise<void> {
   else await SecureStore.deleteItemAsync(STORAGE_KEY, STORAGE_OPTIONS);
 }
 
+// Only the server saying no ends a session: an expired, reused or revoked refresh token is a 401
+// (a malformed one a 400). Offline, a timeout or a 5xx keeps the stored token for the next try.
+function rejectedByServer(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 400 || error.status === 401);
+}
+
+/**
+ * Takes over freshly issued tokens and verifies who they belong to. Throws when the server rejects
+ * the token it has just issued: such a session is unusable, so it ends here and the caller (sign-in
+ * or rotation) fails instead of announcing it.
+ */
 async function accept(tokens: Tokens): Promise<void> {
   const current = ++generation;
   // On native, do not announce the new session until the rotated refresh token is durable.
@@ -68,14 +81,23 @@ async function accept(tokens: Tokens): Promise<void> {
   access = tokens.accessToken;
   setAccessToken(access);
   changed();
+  let verified: Identity;
   try {
-    const verified = await api.get<Identity>('/api/v1/users/me');
-    if (current === generation) {
-      identity = verified;
-      changed();
+    // Never through the refresh handler: this can run inside a rotation, which would then wait for
+    // itself. A 401 here is final - renewing a token the server has only just issued cannot help.
+    verified = await api.get<Identity>('/api/v1/users/me', { renewSession: false });
+  } catch (error) {
+    if (current === generation && rejectedByServer(error)) {
+      await clearSession();
+      throw error;
     }
-  } catch {
-    // The session still exists: without a verified identity no admin controls are shown.
+    // Unreachable: the session still exists, and without a verified identity no admin controls
+    // are shown. The next rotation verifies it again.
+    return;
+  }
+  if (current === generation) {
+    identity = verified;
+    changed();
   }
 }
 
@@ -113,23 +135,19 @@ export function cancelMfa(): void {
   changed();
 }
 
-// Only the server saying no ends a session: an expired, reused or revoked refresh token is a 401
-// (a malformed one a 400). Offline, a timeout or a 5xx keeps the stored token for the next try.
-function rejectedByServer(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 400 || error.status === 401);
-}
-
 async function rotate(): Promise<string | null> {
   if (!refresh) return null;
   const before = generation;
   try {
     const tokens = await api.post<Tokens>('/api/v1/auth/refresh', { refreshToken: refresh });
-    if (before !== generation) return null;
+    // A sign-in or sign-out replaced this session meanwhile: the waiting request uses whatever
+    // holds now (null after a sign-out), never the tokens of the session that was replaced.
+    if (before !== generation) return access;
     await accept(tokens);
     return access;
   } catch (error) {
     if (before === generation && rejectedByServer(error)) await clearSession();
-    return null;
+    return before === generation ? null : access;
   }
 }
 
@@ -142,9 +160,12 @@ export function refreshSession(): Promise<string | null> {
   return pendingRefresh;
 }
 
-setRefreshHandler(refreshSession);
-
+/**
+ * Call once when the app starts, also on web: from here on a 401 renews the session, and on native
+ * a session stored by an earlier start is restored by rotating its refresh token.
+ */
 export async function restoreSession(): Promise<void> {
+  setRefreshHandler(refreshSession);
   if (Platform.OS === 'web') return;
   const stored = await SecureStore.getItemAsync(STORAGE_KEY, STORAGE_OPTIONS);
   if (!stored || refresh) return;
@@ -173,9 +194,12 @@ export async function signOut(): Promise<void> {
   // Revoke this session on the server first, while its token still works. If that fails (e.g.
   // offline), the local credentials are still removed and the server session simply expires.
   try {
-    const sessions = await api.get<{ id: string; current: boolean }[]>('/api/v1/sessions');
-    const current = sessions.find((entry) => entry.current);
-    if (current) await api.post(`/api/v1/sessions/${current.id}/revoke`);
+    if (refresh) {
+      // Started offline, the identity (and with it the session id) is not verified yet.
+      const sessionId =
+        identity?.sessionId ?? (await api.get<Identity>('/api/v1/users/me')).sessionId;
+      await api.post(`/api/v1/sessions/${encodeURIComponent(sessionId)}/revoke`);
+    }
   } catch {
     // Nothing to tell the user: they are signed out on this device either way.
   } finally {

@@ -10,6 +10,11 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 const secureStore = jest.mocked(SecureStore);
+
+// __DEV__ is a constant to the app; tests switch it to see what a release build accepts.
+function setDevBuild(value: boolean) {
+  (globalThis as unknown as { __DEV__: boolean }).__DEV__ = value;
+}
 const DEFAULT_URL = getApiBaseUrl();
 
 describe('configurable server address (FR-CLI-007)', () => {
@@ -23,7 +28,6 @@ describe('configurable server address (FR-CLI-007)', () => {
     ['https://wealth.example.com', 'https://wealth.example.com'],
     ['  HTTPS://Wealth.Example.com:8443/api/ ', 'https://wealth.example.com:8443/api'],
     ['http://localhost:8080', 'http://localhost:8080'],
-    ['http://10.0.2.2:8080', 'http://10.0.2.2:8080'],
     ['http://[::1]:8080', 'http://[::1]:8080'],
   ])('accepts %p', (input, expected) => {
     expect(normalizeServerUrl(input)).toBe(expected);
@@ -32,6 +36,8 @@ describe('configurable server address (FR-CLI-007)', () => {
   it.each([
     'http://wealth.example.com',
     'http://192.168.1.20:8080',
+    // Not the emulator's host outside Android: an ordinary address in 10.0.0.0/8.
+    'http://10.0.2.2:8080',
     'wealth.example.com',
     'ftp://wealth.example.com',
     'https://user:secret@wealth.example.com',
@@ -40,6 +46,27 @@ describe('configurable server address (FR-CLI-007)', () => {
     '',
   ])('rejects %p', (input) => {
     expect(() => normalizeServerUrl(input)).toThrow();
+  });
+
+  describe('the Android emulator host over plain HTTP', () => {
+    const devBuild = __DEV__;
+    afterEach(() => {
+      setDevBuild(devBuild);
+    });
+
+    it('is accepted in an Android development build', () => {
+      Platform.OS = 'android';
+      setDevBuild(true);
+
+      expect(normalizeServerUrl('http://10.0.2.2:8080')).toBe('http://10.0.2.2:8080');
+    });
+
+    it('is rejected in a release build, where it may be a real network address', () => {
+      Platform.OS = 'android';
+      setDevBuild(false);
+
+      expect(() => normalizeServerUrl('http://10.0.2.2:8080')).toThrow('https://');
+    });
   });
 
   it('uses and remembers a saved address on native', async () => {

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
+import { NetworkError } from '@/api/client';
 import { saveServerUrl } from '@/api/server-url';
 
 import { AuthScreen } from './auth-screen';
@@ -63,6 +64,36 @@ describe('AuthScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/Could not sign in/);
+  });
+
+  it('says when the server could not be reached instead of blaming the credentials', async () => {
+    jest.mocked(signIn).mockRejectedValueOnce(new NetworkError('could not reach the server'));
+    await render(<AuthScreen mfaRequired={false} />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Could not reach the server/);
+  });
+
+  it('forgets the password once the server accepted it', async () => {
+    await render(<AuthScreen mfaRequired={false} />);
+
+    await fireEvent.changeText(screen.getByLabelText('Email'), 'demo@example.com');
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'secret');
+    await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Password').props.value).toBe(''));
+  });
+
+  it('keeps the password for another try when sign-in failed', async () => {
+    jest.mocked(signIn).mockRejectedValueOnce(new Error('401'));
+    await render(<AuthScreen mfaRequired={false} />);
+
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'secret');
+    await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText('Password').props.value).toBe('secret');
   });
 
   it('asks only for the authenticator code during MFA and can start over', async () => {

@@ -1,4 +1,12 @@
-import { api, ApiError, DecimalString, setAccessToken, setRefreshHandler } from './client';
+import {
+  api,
+  ApiError,
+  DecimalString,
+  NetworkError,
+  REQUEST_TIMEOUT_MS,
+  setAccessToken,
+  setRefreshHandler,
+} from './client';
 
 function mockFetchOnce(response: Partial<Response> & { json?: () => Promise<unknown> }) {
   const fetchMock = jest.fn().mockResolvedValue({
@@ -199,6 +207,54 @@ describe('api client', () => {
 
     await expect(api.post('/api/v1/auth/login', {})).rejects.toMatchObject({ status: 401 });
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('never renews the session for a request that opts out', async () => {
+    const refresh = jest.fn(async () => 'new-token');
+    setRefreshHandler(refresh);
+    mockFetchOnce({ ok: false, status: 401, json: async () => ({}) });
+
+    await expect(api.get('/api/v1/users/me', { renewSession: false })).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('reports an unreachable server as a network error, not an HTTP status', async () => {
+    globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('Network request failed'));
+
+    await expect(api.get('/api/v1/accounts')).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it('gives up on a server that does not answer in time', async () => {
+    jest.useFakeTimers();
+    try {
+      globalThis.fetch = jest.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) =>
+            init.signal?.addEventListener('abort', () =>
+              reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })),
+            ),
+          ),
+      ) as unknown as typeof fetch;
+
+      const pending = api.get('/api/v1/accounts');
+      jest.advanceTimersByTime(REQUEST_TIMEOUT_MS);
+
+      await expect(pending).rejects.toThrow(/timed out/);
+      await expect(pending).rejects.toBeInstanceOf(NetworkError);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("keeps a caller's own abort as it is", async () => {
+    const caller = new AbortController();
+    caller.abort();
+    const aborted = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+    globalThis.fetch = jest.fn().mockRejectedValue(aborted);
+
+    await expect(api.get('/api/v1/accounts', { signal: caller.signal })).rejects.toBe(aborted);
   });
 
   it('returns undefined for a 204 No Content response without parsing a body', async () => {

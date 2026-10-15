@@ -7,7 +7,18 @@ const STORAGE_KEY = 'trackmywealth.server.url';
 
 // Plain HTTP only reaches this device or the Android emulator's host: credentials and tokens
 // must never cross a network unencrypted, so every other server needs HTTPS (NFR-SEC-*).
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '10.0.2.2']);
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+// The emulator's alias for its host machine. Anywhere else it is an ordinary address in 10.0.0.0/8,
+// so a real phone on such a network would send the password across it in the clear: only Android
+// development builds accept it.
+const ANDROID_EMULATOR_HOST = '10.0.2.2';
+
+function isLocalHost(hostname: string): boolean {
+  return (
+    LOOPBACK_HOSTS.has(hostname) ||
+    (hostname === ANDROID_EMULATOR_HOST && Platform.OS === 'android' && __DEV__)
+  );
+}
 
 // Parsed by hand: React Native's URL implementation does not support every getter on all
 // platforms. Credentials, query and fragment are rejected rather than silently dropped.
@@ -29,7 +40,7 @@ export function normalizeServerUrl(input: string): string {
   const [, scheme, host, port = '', path = ''] = match;
   const protocol = scheme.toLowerCase();
   const hostname = host.toLowerCase();
-  if (protocol === 'http' && !LOOPBACK_HOSTS.has(hostname)) {
+  if (protocol === 'http' && !isLocalHost(hostname)) {
     throw new InvalidServerUrlError('The server must use https://');
   }
   return `${protocol}://${hostname}${port}${path.replace(/\/+$/, '')}`;

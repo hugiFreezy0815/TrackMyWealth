@@ -20,6 +20,18 @@ export class ApiError extends Error {
   }
 }
 
+/** The server could not be reached or did not answer in time, so there is no HTTP status. */
+export class NetworkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NetworkError';
+  }
+}
+
+// Without a deadline, a network that silently drops packets keeps sign-in or session restore
+// waiting for the platform's own timeout - a minute or more - with nothing the user can do.
+export const REQUEST_TIMEOUT_MS = 15_000;
+
 /**
  * An exact API decimal - money, quantity, unit price, FX rate, percentage - exactly as the backend
  * sends it: a plain decimal string such as "12345678.1234567891" (#176). Declare such fields with
@@ -28,7 +40,12 @@ export class ApiError extends Error {
  */
 export type DecimalString = string;
 
-type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown };
+type RequestOptions = Omit<RequestInit, 'body'> & {
+  body?: unknown;
+  // false: a 401 is final and never goes through the refresh handler (see session.ts, which
+  // verifies a token the server has only just issued).
+  renewSession?: boolean;
+};
 
 function withIfMatch(version: number, options: RequestOptions = {}): RequestOptions {
   return {
@@ -55,11 +72,29 @@ export function setRefreshHandler(handler: (() => Promise<string | null>) | null
   refreshHandler = handler;
 }
 
+async function send(url: string, init: RequestInit): Promise<Response> {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: init.signal ?? timeout.signal });
+  } catch (failure) {
+    // A caller's own abort stays what it is; everything else means the server was not reached.
+    if (init.signal?.aborted) throw failure;
+    throw new NetworkError(
+      timeout.signal.aborted
+        ? `${init.method ?? 'GET'} ${url} timed out`
+        : `${init.method ?? 'GET'} ${url} could not reach the server`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function request<T>(path: string, options: RequestOptions = {}, retried = false): Promise<T> {
-  const { body, headers, ...rest } = options;
+  const { body, headers, renewSession = true, ...rest } = options;
   const sentToken = accessToken;
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await send(`${apiBaseUrl}${path}`, {
     ...rest,
     headers: {
       'Content-Type': 'application/json',
@@ -69,7 +104,13 @@ async function request<T>(path: string, options: RequestOptions = {}, retried = 
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  if (response.status === 401 && !retried && refreshHandler && !path.startsWith('/api/v1/auth/')) {
+  if (
+    response.status === 401 &&
+    renewSession &&
+    !retried &&
+    refreshHandler &&
+    !path.startsWith('/api/v1/auth/')
+  ) {
     // Another request already rotated the token while this one was in flight: just resend.
     const renewed = accessToken && accessToken !== sentToken ? accessToken : await refreshHandler();
     if (renewed) return request<T>(path, options, true);
