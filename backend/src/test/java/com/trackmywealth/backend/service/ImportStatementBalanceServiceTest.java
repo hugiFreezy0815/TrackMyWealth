@@ -54,6 +54,7 @@ class ImportStatementBalanceServiceTest {
   private final ReconciliationResultRepository results = mock(ReconciliationResultRepository.class);
   private final ReconciliationService reconciliation = mock(ReconciliationService.class);
   private final AccountCurrencyService currencies = mock(AccountCurrencyService.class);
+  private final BusinessDateService businessDates = mock(BusinessDateService.class);
   private final ImportStatementBalanceService service =
       new ImportStatementBalanceService(
           snapshots,
@@ -61,6 +62,7 @@ class ImportStatementBalanceServiceTest {
           results,
           reconciliation,
           currencies,
+          businessDates,
           Clock.fixed(Instant.parse("2031-02-01T08:00:00Z"), ZoneOffset.UTC));
 
   private final Account account = mock(Account.class);
@@ -71,6 +73,7 @@ class ImportStatementBalanceServiceTest {
     when(account.getId()).thenReturn(UUID.randomUUID());
     when(account.getNature()).thenReturn("ASSET");
     when(currencies.ownCurrency(account)).thenReturn("CHF");
+    when(businessDates.today()).thenReturn(LocalDate.of(2031, 2, 1));
     batch = new ImportBatch();
     ReflectionTestUtils.setField(batch, "id", UUID.randomUUID());
     batch.setAccountId(account.getId());
@@ -159,6 +162,58 @@ class ImportStatementBalanceServiceTest {
 
     assertThat(batch.getStatementBalanceOutcome()).isNull();
     assertThat(service.response(batch)).isNull();
+  }
+
+
+  @Test
+  void unreadableClosingLineDoesNotTurnOpeningIntoDocumentSnapshot() {
+    service.record(batch, account,
+        new ImportStatementBalances(List.of(balance(START, "100.00", "CHF")), 1));
+    assertThat(batch.getStatementBalanceOutcome()).isEqualTo(ImportBatchValues.BALANCE_UNREADABLE);
+    service.commit(batch, account, MEMBER);
+    verify(snapshots, never()).saveAndFlush(any());
+  }
+
+  @Test
+  void pdfUsesLastStatedBalanceEvenForTwoDifferentSameDayAmounts() {
+    service.record(batch, account,
+        new ImportStatementBalances(
+            List.of(balance(END, "100.00", "CHF"), balance(END, "120.00", "CHF")), 0, true));
+    assertThat(batch.getStatementBalanceOutcome()).isEqualTo(ImportBatchValues.BALANCE_FOUND);
+    assertThat(batch.getStatementBalance()).isEqualByComparingTo("120.00");
+  }
+
+  @Test
+  void importedBalanceMustRespectAccountDateBounds() {
+    found("100.00");
+    when(businessDates.today()).thenReturn(END.minusDays(1));
+    assertThatThrownBy(() -> service.commit(batch, account, MEMBER))
+        .isInstanceOf(ApiException.class);
+    when(businessDates.today()).thenReturn(END.plusDays(1));
+    when(account.getOpenedAt()).thenReturn(END.plusDays(1));
+    assertThatThrownBy(() -> service.commit(batch, account, MEMBER))
+        .isInstanceOf(ApiException.class);
+    when(account.getOpenedAt()).thenReturn(null);
+    when(account.getClosedAt()).thenReturn(END.minusDays(1));
+    assertThatThrownBy(() -> service.commit(batch, account, MEMBER))
+        .isInstanceOf(ApiException.class);
+  }
+
+  @Test
+  void historicalAcceptedDecisionWithdrawsSnapshotWithoutReopeningFinalizedHistory() {
+    AccountSnapshot historical = recordedSnapshot();
+    AccountSnapshot latest = new AccountSnapshot();
+    ReflectionTestUtils.setField(latest, "id", UUID.randomUUID());
+    when(snapshots
+            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(account.getId()))
+        .thenReturn(Optional.of(latest));
+    ReconciliationResult accepted = result(ReconciliationResultValues.ACCEPTED);
+    when(results.findBySnapshotId(historical.getId())).thenReturn(List.of(accepted));
+    assertThat(service.rollBack(batch, account, MEMBER)).isTrue();
+    assertThat(historical.getWithdrawnAt()).isNotNull();
+    assertThat(accepted.getStatus()).isEqualTo(ReconciliationResultValues.ACCEPTED);
+    assertThat(batch.getStatementBalanceSnapshot()).isEqualTo(ImportBatchValues.SNAPSHOT_WITHDRAWN);
+    verify(results, never()).deleteAll(any());
   }
 
   // --- preview ----------------------------------------------------------------------------------
