@@ -81,6 +81,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V78` | Shipped import template Yuh account statement PDF (US-07-15, #275) |
 | `V79` | `LBS Süd` in `institution_catalogue`, and its shipped building-savings statement PDF template (US-07-15, #275) |
 | `V80` | Reference-data baseline `1.2.0-baseline` (current; `1.1.0-baseline` stays as history): the shipped import templates of V75-V79 and `LBS Süd` (US-07-15, #275) |
+| `V81` | Authentication under a hardened runtime role (#321): `SECURITY DEFINER` functions `auth_user_snapshot(user, session)` and `auth_workspace_member_status(user)`, `EXECUTE` revoked from `PUBLIC` and granted to `trackmywealth_runtime` only (see "Authentication lookup with a hardened runtime role") |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -181,6 +182,53 @@ bottom of `V20__tenancy_row_level_security.sql` is the starting point. The autom
 suite `FR-TEN-010` requires (`CrossTenantIsolationTest`, US-28-04) already runs as such a role -
 `NOSUPERUSER NOBYPASSRLS` - because a superuser bypasses RLS unconditionally and the suite would
 pass for the wrong reason; keep any new isolation test on that role, not the migration role.
+
+### Authentication lookup with a hardened runtime role (#321)
+
+Authentication happens **before** the workspace principal exists: the JWT filter builds the
+principal that `WorkspaceContextTransactionExecutionListener` takes `app.current_workspace_id`
+from, and login, MFA verification and refresh have no principal at all. Under FORCE RLS a
+`NOSUPERUSER NOBYPASSRLS` runtime role therefore cannot read `workspace_member` or `workspace`
+for them. `V81` adds the only two exceptions, each returning the least its caller needs:
+
+- `auth_user_snapshot(user_id, session_id)` (`JwtAuthenticationFilter`, per request): the user's
+  id, role, status, token version and language, the member's workspace id and status, and the
+  presented session's status - only when that session exists and belongs to that user; no row
+  otherwise, which the filter treats as unauthenticated.
+- `auth_workspace_member_status(user_id)` (`AuthenticationEligibilityService`: login, MFA
+  verification, refresh): the linked member's status only, `NULL` without a membership.
+
+Neither returns financial data, member display data or another user's rows. Every later query
+of the request runs under ordinary FORCE RLS with the authenticated workspace context.
+`AuthenticationSnapshotRlsTest` pins both functions under a real non-bypass role (including that
+a role without the grant is refused), and `HardenedRuntimeAuthenticationHttpTest` runs the whole
+HTTP path - filter, listener, services - as `trackmywealth_runtime`.
+
+**Mandatory production provisioning.** `SECURITY DEFINER` alone does not bypass FORCE RLS: the
+functions' owner must bypass it. Own them by a dedicated `NOLOGIN BYPASSRLS` role that can read
+the three tables and nothing else; the application connects as `NOSUPERUSER NOBYPASSRLS` and gets
+`EXECUTE` on these two functions only, never `BYPASSRLS` or `CREATE`. `V81` creates the functions
+as the migration user (a superuser today); with the role split, hand them over once per database:
+
+```sql
+-- Run as a privileged migration administrator, once per database.
+CREATE ROLE trackmywealth_auth_reader NOLOGIN BYPASSRLS;
+GRANT USAGE ON SCHEMA public TO trackmywealth_auth_reader;
+GRANT SELECT ON public.app_user, public.workspace_member, public.user_session
+    TO trackmywealth_auth_reader;
+ALTER FUNCTION public.auth_user_snapshot(UUID, UUID) OWNER TO trackmywealth_auth_reader;
+ALTER FUNCTION public.auth_workspace_member_status(UUID) OWNER TO trackmywealth_auth_reader;
+GRANT USAGE ON SCHEMA public TO trackmywealth_runtime;
+GRANT EXECUTE ON FUNCTION public.auth_user_snapshot(UUID, UUID) TO trackmywealth_runtime;
+GRANT EXECUTE ON FUNCTION public.auth_workspace_member_status(UUID) TO trackmywealth_runtime;
+```
+
+`V81` grants `EXECUTE` itself when `trackmywealth_runtime` exists before Flyway runs; a runtime
+role created later needs the two grants above. `V81` revokes PostgreSQL's default `PUBLIC`
+`EXECUTE`. A later migration that replaces a function must restore its owner and grants. Both
+functions pin `search_path`, qualify their tables and set `row_security = off`, so a wrongly
+provisioned owner fails with an error instead of silently reading no membership. They are
+narrowly privileged identity lookups, **not** a general way around tenant isolation.
 
 ### Object-level denial audit lifecycle (US-28-02, #205)
 
