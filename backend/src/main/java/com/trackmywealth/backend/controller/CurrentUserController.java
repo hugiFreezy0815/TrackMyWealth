@@ -20,6 +20,7 @@ public class CurrentUserController {
   public ResponseEntity<CurrentUserResponse> currentUser(
       @AuthenticationPrincipal AuthenticatedUserPrincipal principal) {
     return ResponseEntity.ok(
-        new CurrentUserResponse(principal.userId(), principal.role(), principal.language()));
+        new CurrentUserResponse(
+            principal.userId(), principal.role(), principal.language(), principal.sessionId()));
   }
 }

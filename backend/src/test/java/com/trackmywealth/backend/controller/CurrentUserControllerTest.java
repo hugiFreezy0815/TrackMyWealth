@@ -7,17 +7,21 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.CurrentUserResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.SessionSummaryResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.sql.Connection;
 import java.sql.Statement;
+import java.util.List;
+import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -76,6 +80,7 @@ class CurrentUserControllerTest {
     assertThat(me.userId()).isNotNull();
     assertThat(me.role()).isEqualTo("SYSTEM_ADMINISTRATOR");
     assertThat(me.language()).isEqualTo("EN");
+    assertThat(me.sessionId()).isEqualTo(currentSessionId(adminToken));
   }
 
   @Test
@@ -89,6 +94,29 @@ class CurrentUserControllerTest {
     assertThat(me.role()).isEqualTo("STANDARD_USER");
     assertThat(me.language()).isEqualTo("DE");
     assertThat(me.userId()).isNotEqualTo(admin.userId());
+  }
+
+  // The app signs out by revoking the sessionId it got here; afterwards that token is a plain 401.
+  @Test
+  void aRevokedSessionsTokenIsAPlain401() {
+    String adminToken = bootstrapAdministrator();
+    CurrentUserResponse me = currentUser(adminToken);
+
+    client()
+        .post()
+        .uri("/api/v1/sessions/" + me.sessionId() + "/revoke")
+        .header("Authorization", "Bearer " + adminToken)
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    client()
+        .get()
+        .uri("/api/v1/users/me")
+        .header("Authorization", "Bearer " + adminToken)
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
   }
 
   @Test
@@ -123,6 +151,21 @@ class CurrentUserControllerTest {
         .expectBody(CurrentUserResponse.class)
         .returnResult()
         .getResponseBody();
+  }
+
+  private UUID currentSessionId(String accessToken) {
+    List<SessionSummaryResponse> sessions =
+        client()
+            .get()
+            .uri("/api/v1/sessions")
+            .header("Authorization", "Bearer " + accessToken)
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<List<SessionSummaryResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+    return sessions.stream().filter(SessionSummaryResponse::current).findFirst().orElseThrow().id();
   }
 
   private AuthTokensResponse login(String email) {
