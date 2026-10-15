@@ -11,8 +11,14 @@ import java.util.List;
  * @param balances each line the rule's pattern matched and whose date and amount could be read
  * @param unreadable how many lines the pattern matched whose date, amount or currency could not be
  *     read
+ * @param pdf whether file-order, rather than chronological, closing-balance selection applies
  */
-public record ImportStatementBalances(List<Stated> balances, int unreadable) {
+public record ImportStatementBalances(List<Stated> balances, int unreadable, boolean pdf) {
+
+  /** CSV and existing programmatic callers use dated closing-balance selection. */
+  public ImportStatementBalances(List<Stated> balances, int unreadable) {
+    this(balances, unreadable, false);
+  }
 
   public ImportStatementBalances {
     balances = List.copyOf(balances);
