@@ -46,13 +46,17 @@ class TokenRotationServiceTest {
   private final JwtProperties jwtProperties =
       new JwtProperties("trackmywealth", 15, 30, "test-secret-that-is-at-least-32-bytes-long");
 
+  private final AuthenticationEligibilityService authenticationEligibilityService =
+      mock(AuthenticationEligibilityService.class);
+
   private final TokenRotationService service =
       new TokenRotationService(
           refreshTokenRepository,
           userSessionRepository,
           jwtService,
           jwtProperties,
-          tokenHashingService);
+          tokenHashingService,
+          authenticationEligibilityService);
 
   @Test
   void reuseOfRevokedRefreshTokenRevokesTokenFamilyAndAccessSessionBeforeRejectingRequest() {
@@ -114,6 +118,22 @@ class TokenRotationServiceTest {
     verify(userSessionRepository, never()).revokeActiveSessionsByRefreshTokenFamilyId(any(), any());
   }
 
+  @Test
+  void aUserWhoMayNoLongerAuthenticateIsRejectedWithoutRotatingOrSuspectingTheft() {
+    RefreshToken token = presentedToken();
+    // e.g. an inactive workspace member (US-02-06): the filter would reject any new access token.
+    when(authenticationEligibilityService.mayAuthenticate(token.getUser())).thenReturn(false);
+
+    assertThatThrownBy(() -> service.rotate(PLAINTEXT_TOKEN))
+        .isInstanceOfSatisfying(
+            ResponseStatusException.class,
+            exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED));
+
+    verify(refreshTokenRepository, never()).save(any());
+    verify(refreshTokenRepository, never()).markFamilyAsTheftSuspected(any(), any());
+    verify(jwtService, never()).issueAccessToken(any(), anyInt(), any());
+  }
+
   private RefreshToken presentedToken() {
     AppUser activeUser = new AppUser();
     activeUser.setStatus("ACTIVE");
@@ -125,6 +145,7 @@ class TokenRotationServiceTest {
 
     when(tokenHashingService.sha256Hex(PLAINTEXT_TOKEN)).thenReturn(TOKEN_HASH);
     when(refreshTokenRepository.findByTokenHash(TOKEN_HASH)).thenReturn(Optional.of(token));
+    when(authenticationEligibilityService.mayAuthenticate(activeUser)).thenReturn(true);
     return token;
   }
 

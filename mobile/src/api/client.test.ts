@@ -1,4 +1,12 @@
-import { api, ApiError, DecimalString, setAccessToken } from './client';
+import {
+  api,
+  ApiError,
+  DecimalString,
+  NetworkError,
+  REQUEST_TIMEOUT_MS,
+  setAccessToken,
+  setRefreshHandler,
+} from './client';
 
 function mockFetchOnce(response: Partial<Response> & { json?: () => Promise<unknown> }) {
   const fetchMock = jest.fn().mockResolvedValue({
@@ -14,6 +22,7 @@ function mockFetchOnce(response: Partial<Response> & { json?: () => Promise<unkn
 describe('api client', () => {
   afterEach(() => {
     setAccessToken(null);
+    setRefreshHandler(null);
     jest.resetAllMocks();
   });
 
@@ -136,6 +145,116 @@ describe('api client', () => {
       status: 404,
       body: { message: 'not found' },
     } satisfies Partial<ApiError>);
+  });
+
+  it('retries a protected request only once after a successful refresh', async () => {
+    const refresh = jest.fn(async () => {
+      setAccessToken('rotated-token');
+      return 'rotated-token';
+    });
+    setAccessToken('expired-token');
+    setRefreshHandler(refresh);
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 'ok' }) });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(api.get('/api/v1/accounts/one')).resolves.toEqual({ id: 'ok' });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer rotated-token');
+  });
+
+  it('does not retry endlessly when the refreshed access token is also rejected', async () => {
+    const refresh = jest.fn(async () => 'new-token');
+    setRefreshHandler(refresh);
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ code: 'UNAUTHORIZED' }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(api.get('/api/v1/accounts')).rejects.toMatchObject({ status: 401 });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('resends without another rotation when the token was already rotated while in flight', async () => {
+    const refresh = jest.fn(async () => 'unused');
+    setAccessToken('old-token');
+    setRefreshHandler(refresh);
+    const fetchMock = jest
+      .fn()
+      .mockImplementationOnce(async () => {
+        // A concurrent request's refresh completes before this 401 arrives.
+        setAccessToken('rotated-token');
+        return { ok: false, status: 401, json: async () => ({}) };
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 'ok' }) });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(api.get('/api/v1/accounts/one')).resolves.toEqual({ id: 'ok' });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer rotated-token');
+  });
+
+  it('never invokes refresh for the authentication endpoints themselves', async () => {
+    const refresh = jest.fn(async () => 'new-token');
+    setRefreshHandler(refresh);
+    mockFetchOnce({ ok: false, status: 401, json: async () => ({}) });
+
+    await expect(api.post('/api/v1/auth/login', {})).rejects.toMatchObject({ status: 401 });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('never renews the session for a request that opts out', async () => {
+    const refresh = jest.fn(async () => 'new-token');
+    setRefreshHandler(refresh);
+    mockFetchOnce({ ok: false, status: 401, json: async () => ({}) });
+
+    await expect(api.get('/api/v1/users/me', { renewSession: false })).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('reports an unreachable server as a network error, not an HTTP status', async () => {
+    globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('Network request failed'));
+
+    await expect(api.get('/api/v1/accounts')).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it('gives up on a server that does not answer in time', async () => {
+    jest.useFakeTimers();
+    try {
+      globalThis.fetch = jest.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) =>
+            init.signal?.addEventListener('abort', () =>
+              reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })),
+            ),
+          ),
+      ) as unknown as typeof fetch;
+
+      const pending = api.get('/api/v1/accounts');
+      jest.advanceTimersByTime(REQUEST_TIMEOUT_MS);
+
+      await expect(pending).rejects.toThrow(/timed out/);
+      await expect(pending).rejects.toBeInstanceOf(NetworkError);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("keeps a caller's own abort as it is", async () => {
+    const caller = new AbortController();
+    caller.abort();
+    const aborted = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+    globalThis.fetch = jest.fn().mockRejectedValue(aborted);
+
+    await expect(api.get('/api/v1/accounts', { signal: caller.signal })).rejects.toBe(aborted);
   });
 
   it('returns undefined for a 204 No Content response without parsing a body', async () => {

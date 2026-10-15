@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
@@ -200,6 +201,39 @@ class WorkspaceMemberControllerTest {
     assertThat(memberStatus(adminMemberId)).isEqualTo("ACTIVE");
   }
 
+  // US-02-06: a deactivated member's access tokens already fail JwtAuthenticationFilter, so login
+  // and refresh must not issue new ones either. Otherwise a client is handed a token that is
+  // rejected on first use and cannot tell "renew the session" from "sign in again".
+  @Test
+  void aDeactivatedMemberCanNeitherSignInAgainNorRefresh() {
+    bootstrapAdministrator();
+    UUID partnerMemberId = createSecondMember("partner@example.com");
+    AuthTokensResponse partner = loginTokens("partner@example.com", SECOND_MEMBER_PASSWORD);
+    deactivateWith(
+            partner.accessToken(),
+            partnerMemberId,
+            memberEtag(partner.accessToken(), partnerMemberId))
+        .expectStatus()
+        .isOk();
+
+    anonymousClient()
+        .post()
+        .uri("/api/v1/auth/refresh")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new RefreshTokenRequest(partner.refreshToken()))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+    anonymousClient()
+        .post()
+        .uri("/api/v1/auth/login")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new LoginRequest("partner@example.com", SECOND_MEMBER_PASSWORD))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
   // #207 review M2/M3: the GET added for refreshing a member's ETag is self-only like deactivation.
   // Another member's row is the audited generic 404 - and so is deactivating it without If-Match,
   // never the 428 that would confirm it exists.
@@ -370,9 +404,11 @@ class WorkspaceMemberControllerTest {
   }
 
   private String login(String email, String password) {
-    return RestTestClient.bindToServer()
-        .baseUrl("http://localhost:%d".formatted(port))
-        .build()
+    return loginTokens(email, password).accessToken();
+  }
+
+  private AuthTokensResponse loginTokens(String email, String password) {
+    return anonymousClient()
         .post()
         .uri("/api/v1/auth/login")
         .contentType(MediaType.APPLICATION_JSON)
@@ -383,8 +419,11 @@ class WorkspaceMemberControllerTest {
         .expectBody(LoginResponse.class)
         .returnResult()
         .getResponseBody()
-        .tokens()
-        .accessToken();
+        .tokens();
+  }
+
+  private RestTestClient anonymousClient() {
+    return RestTestClient.bindToServer().baseUrl("http://localhost:%d".formatted(port)).build();
   }
 
   private String bootstrapAdministrator() {

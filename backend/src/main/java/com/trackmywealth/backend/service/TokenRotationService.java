@@ -27,25 +27,27 @@ import org.springframework.web.server.ResponseStatusException;
 public class TokenRotationService {
 
   private static final Logger LOG = LoggerFactory.getLogger(TokenRotationService.class);
-  private static final String ACTIVE = "ACTIVE";
 
   private final RefreshTokenRepository refreshTokenRepository;
   private final UserSessionRepository userSessionRepository;
   private final JwtService jwtService;
   private final JwtProperties jwtProperties;
   private final TokenHashingService tokenHashingService;
+  private final AuthenticationEligibilityService authenticationEligibilityService;
 
   public TokenRotationService(
       RefreshTokenRepository refreshTokenRepository,
       UserSessionRepository userSessionRepository,
       JwtService jwtService,
       JwtProperties jwtProperties,
-      TokenHashingService tokenHashingService) {
+      TokenHashingService tokenHashingService,
+      AuthenticationEligibilityService authenticationEligibilityService) {
     this.refreshTokenRepository = refreshTokenRepository;
     this.userSessionRepository = userSessionRepository;
     this.jwtService = jwtService;
     this.jwtProperties = jwtProperties;
     this.tokenHashingService = tokenHashingService;
+    this.authenticationEligibilityService = authenticationEligibilityService;
   }
 
   // noRollbackFor: the theft-detection branch's whole point is to persist
@@ -61,10 +63,12 @@ public class TokenRotationService {
             .orElseThrow(this::invalidRefreshToken);
 
     AppUser user = current.getUser();
-    if (!ACTIVE.equals(user.getStatus())) {
+    if (!authenticationEligibilityService.mayAuthenticate(user)) {
       // Covers a disabled/reactivated-elsewhere account without treating it as theft - US-02-01's
       // disable already revokes every active refresh token for the user, so this branch mainly
-      // guards against that revocation racing this rotation, not a fresh attack.
+      // guards against that revocation racing this rotation, not a fresh attack. Also an inactive
+      // workspace member (US-04-01), whose refresh tokens deactivation leaves alone: a new access
+      // token would only fail JwtAuthenticationFilter, so a client must go back to sign-in.
       throw invalidRefreshToken();
     }
 

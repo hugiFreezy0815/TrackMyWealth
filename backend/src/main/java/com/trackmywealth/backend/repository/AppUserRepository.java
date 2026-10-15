@@ -37,6 +37,13 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   @Query("SELECT u.workspaceMember.id FROM AppUser u WHERE u.id = :userId")
   Optional<UUID> findWorkspaceMemberId(@Param(USER_ID) UUID userId);
 
+  // US-02-06: the linked workspace_member's status, empty without a membership. A query, not
+  // user.getWorkspaceMember().getStatus(): outside a workspace context RLS hides the member row,
+  // and a lazy proxy would then fail instead of degrading the way findAuthSnapshot's LEFT JOIN
+  // does.
+  @Query("SELECT wm.status FROM AppUser u JOIN u.workspaceMember wm WHERE u.id = :userId")
+  Optional<String> findWorkspaceMemberStatus(@Param(USER_ID) UUID userId);
+
   // US-02-02 login: same citext/JDBC parameter-binding caveat as existsByEmail above applies
   // here too - the explicit cast is what actually makes this case-insensitive.
   @Query(value = "SELECT * FROM app_user WHERE email = CAST(:email AS citext)", nativeQuery = true)

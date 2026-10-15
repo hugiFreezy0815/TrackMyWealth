@@ -22,14 +22,13 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class LoginService {
 
-  private static final String ACTIVE = "ACTIVE";
-
   private final AppUserRepository appUserRepository;
   private final PasswordEncoder passwordEncoder;
   private final TokenIssuanceService tokenIssuanceService;
   private final MfaChallengeTokenService mfaChallengeTokenService;
   private final MfaService mfaService;
   private final LoginAttemptService loginAttemptService;
+  private final AuthenticationEligibilityService authenticationEligibilityService;
 
   // A password nobody can ever have chosen, hashed once at startup so a login attempt against a
   // nonexistent email still pays the same Argon2 cost as one that finds a real account - otherwise
@@ -43,13 +42,15 @@ public class LoginService {
       TokenIssuanceService tokenIssuanceService,
       MfaChallengeTokenService mfaChallengeTokenService,
       MfaService mfaService,
-      LoginAttemptService loginAttemptService) {
+      LoginAttemptService loginAttemptService,
+      AuthenticationEligibilityService authenticationEligibilityService) {
     this.appUserRepository = appUserRepository;
     this.passwordEncoder = passwordEncoder;
     this.tokenIssuanceService = tokenIssuanceService;
     this.mfaChallengeTokenService = mfaChallengeTokenService;
     this.mfaService = mfaService;
     this.loginAttemptService = loginAttemptService;
+    this.authenticationEligibilityService = authenticationEligibilityService;
     this.dummyPasswordHash = passwordEncoder.encode(UUID.randomUUID().toString());
   }
 
@@ -72,8 +73,9 @@ public class LoginService {
     // the lockout/password checks below: a disabled account must never become a password-validity
     // oracle. Reaching a status-specific error only after the real hash comparison would let a
     // caller who already has (or is brute-forcing) the password confirm it was correct purely
-    // from the response differing for a disabled account.
-    if (!ACTIVE.equals(user.getStatus())) {
+    // from the response differing for a disabled account. An inactive workspace member is treated
+    // the same way (US-02-06): every token issued to them would be rejected on first use anyway.
+    if (!authenticationEligibilityService.mayAuthenticate(user)) {
       passwordEncoder.matches(request.password(), dummyPasswordHash);
       throw invalidCredentials();
     }
@@ -115,7 +117,7 @@ public class LoginService {
             .orElseThrow(this::invalidChallenge);
     AppUser user = appUserRepository.findById(userId).orElseThrow(this::invalidChallenge);
 
-    if (!ACTIVE.equals(user.getStatus())) {
+    if (!authenticationEligibilityService.mayAuthenticate(user)) {
       throw invalidChallenge();
     }
     // Reserved BEFORE the code is checked, atomically (see LoginAttemptService.reserveAttempt):
