@@ -1,0 +1,4 @@
+"Umsatz getätigt von";"Belegdatum";"Buchungsdatum";"Originalbetrag";"Originalwährung";"Umrechnungskurs";"Buchungsbetrag";"Buchungswährung";"Transaktionsbeschreibung";"Transaktionsbeschreibung Zusatz";"Buchungsreferenz";"Gebührenschlüssel";"Länderkennzeichen";"BAR-Entgelt+Buchungsreferenz";"AEE+Buchungsreferenz";"Abrechnungskennzeichen"
+"1234 **** **** 5678";"27.01.31";"29.01.31";"37,00";"CZK";"0,04";"-1,49";"EUR";"Muster Online Shop";"Beispielstadt";"1";"0000";"";"";"";""
+"1234 **** **** 5678";"28.01.31";"30.01.31";"0,00";"";"0,00";"-23,75";"EUR";"Café Beispiel";"Musterhausen";"2";"0000";"";"";"";""
+"1234 **** **** 5678";"31.01.31";"31.01.31";"0,00";"";"0,00";"263,17";"EUR";"Lastschrift";"";"3";"";"";"";"";""

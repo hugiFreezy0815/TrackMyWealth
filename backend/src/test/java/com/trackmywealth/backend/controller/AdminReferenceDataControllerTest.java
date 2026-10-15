@@ -103,15 +103,15 @@ class AdminReferenceDataControllerTest {
             .returnResult()
             .getResponseBody();
 
-    assertThat(current.packageVersion()).isEqualTo("1.1.0-baseline");
-    assertThat(current.publicationDate()).isEqualTo(LocalDate.of(2026, 9, 28));
+    assertThat(current.packageVersion()).isEqualTo("1.2.0-baseline");
+    assertThat(current.publicationDate()).isEqualTo(LocalDate.of(2026, 10, 15));
     assertThat(current.importedAt()).isNotNull();
     assertThat(current.importedBy()).isNull(); // shipped with the application
     // Pins the shipped content on purpose (V19 plus V37: 10 + 7 default categories, 43 source-code
-    // mappings): a migration that changes the baseline must update these counts - and should ship
-    // as a new baseline version, as V43 does.
+    // mappings; V79: a sixth institution): a migration that changes the baseline must update these
+    // counts - and should ship as a new baseline version, as V43 and V80 do.
     assertThat(current.contents())
-        .isEqualTo(new ReferenceDataResponse.Contents(5, 17, 43, 12, "2023-03"));
+        .isEqualTo(new ReferenceDataResponse.Contents(6, 17, 43, 12, "2023-03"));
     // FR-REF-011: no staleness warning for the baseline's mere age.
     assertThat(current.stalenessWarnings()).isEmpty();
   }
