@@ -8,10 +8,9 @@ import java.util.UUID;
  * {@code AppUser.workspaceMember.workspace} lazily on a since-detached entity outside any
  * transaction. {@code workspaceId} is {@code null} when there is no linked {@code workspace_member}
  * at all. {@code sessionStatus} is the {@code user_session} row named by the presented token's
- * {@code sessionId} claim - {@code null} if that session no longer exists at all (US-02-03: a
- * revoked session isn't deleted, so in practice this is either {@code "ACTIVE"} or {@code
- * "REVOKED"}, but the join is a plain {@code LEFT JOIN} so a missing row degrades safely to "not
- * authenticated" rather than a query failure).
+ * {@code sessionId} claim: {@code "ACTIVE"} or {@code "REVOKED"} (US-02-03: a revoked session isn't
+ * deleted). A session that no longer exists, or belongs to another user, yields no snapshot at all
+ * (V81, #321), which degrades the same way to "not authenticated".
  *
  * <p>{@code language} is the stored EN/DE preference used by the request locale resolver. Carrying
  * it in this already-per-request snapshot avoids a second user lookup solely for localization.

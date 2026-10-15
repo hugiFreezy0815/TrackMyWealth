@@ -2,6 +2,7 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.security.AppUserAuthSnapshot;
+import com.trackmywealth.backend.security.AppUserAuthSnapshotRow;
 import jakarta.persistence.LockModeType;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -37,20 +38,28 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   @Query("SELECT u.workspaceMember.id FROM AppUser u WHERE u.id = :userId")
   Optional<UUID> findWorkspaceMemberId(@Param(USER_ID) UUID userId);
 
-  // The membership is RLS-protected and is needed before the principal can supply a workspace
-  // context. Resolve it through the tightly scoped SECURITY DEFINER lookup from V81.
-  default Optional<String> findWorkspaceMemberStatus(UUID userId) {
-    return findAuthSnapshotRow(userId, null)
-        .map(AuthSnapshotRow::getWorkspaceMemberStatus);
-  }
+  // US-02-06: the linked workspace_member's status, empty without a membership - for login, MFA
+  // verification and refresh, which run before any workspace context exists. #321: RLS hides the
+  // member row from a NOSUPERUSER NOBYPASSRLS runtime role at that point, so the status comes from
+  // V81's SECURITY DEFINER function, which returns this one value and nothing else of the member.
+  @Query(
+      value = "SELECT public.auth_workspace_member_status(CAST(:userId AS UUID))",
+      nativeQuery = true)
+  Optional<String> findWorkspaceMemberStatus(@Param(USER_ID) UUID userId);
 
   // US-02-02 login: same citext/JDBC parameter-binding caveat as existsByEmail above applies
   // here too - the explicit cast is what actually makes this case-insensitive.
   @Query(value = "SELECT * FROM app_user WHERE email = CAST(:email AS citext)", nativeQuery = true)
   Optional<AppUser> findByEmail(@Param("email") String email);
 
-  // A session id is mandatory for token authentication. The function additionally verifies that
-  // the requested session belongs to this user; no member is exposed through ordinary RLS joins.
+  // US-02-03: the user together with the one user_session named by the presented token's
+  // sessionId claim (not every session the user has), so JwtAuthenticationFilter checks that
+  // specific session in the same single query. #321: the membership and workspace come from V81's
+  // SECURITY DEFINER function, since the filter runs before any workspace context exists and RLS
+  // would hide them from the runtime role. The function returns no row for a session that is gone
+  // or belongs to another user; the filter treats that as unauthenticated, as it does a session
+  // that is no longer ACTIVE. A token without a sessionId claim never authenticates: it is not
+  // even looked up.
   default Optional<AppUserAuthSnapshot> findAuthSnapshot(UUID userId, UUID sessionId) {
     if (sessionId == null) {
       return Optional.empty();
@@ -69,29 +78,15 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
                     row.getUserLanguage()));
   }
 
+  // The raw row behind findAuthSnapshot; call that instead. Both parameters are cast, so a JDBC
+  // null still binds as a UUID.
   @Query(
-      value = "SELECT * FROM public.auth_user_snapshot(CAST(:userId AS UUID), CAST(:sessionId AS UUID))",
+      value =
+          "SELECT * FROM public.auth_user_snapshot(CAST(:userId AS UUID),"
+              + " CAST(:sessionId AS UUID))",
       nativeQuery = true)
-  Optional<AuthSnapshotRow> findAuthSnapshotRow(
+  Optional<AppUserAuthSnapshotRow> findAuthSnapshotRow(
       @Param(USER_ID) UUID userId, @Param("sessionId") UUID sessionId);
-
-  interface AuthSnapshotRow {
-    UUID getUserId();
-
-    String getUserRole();
-
-    String getUserStatus();
-
-    Integer getUserTokenVersion();
-
-    UUID getWorkspaceId();
-
-    String getWorkspaceMemberStatus();
-
-    String getSessionStatus();
-
-    String getUserLanguage();
-  }
 
   // US-02-01's last-active-administrator guard (FR-USR-005): a row-level lock over every
   // currently active administrator, not a DB constraint - see the comment on this rule in V2 and

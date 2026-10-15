@@ -1,4 +1,5 @@
--- The Testcontainers bootstrap user owns migrations; the application connects only as this role.
+-- #321: run over JDBC by HardenedRuntimeAuthenticationHttpTest before Flyway. The Testcontainers
+-- bootstrap user owns the migrations; the application connects only as this role.
 CREATE ROLE trackmywealth_runtime LOGIN PASSWORD 'runtime-integration-password'
     NOSUPERUSER NOBYPASSRLS;
 GRANT USAGE ON SCHEMA public TO trackmywealth_runtime;
