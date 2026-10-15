@@ -136,9 +136,11 @@ public class ImportStatementBalanceService {
     // The earliest balance before the closing date, the first the file states on that date.
     final LocalDate chosenClosingDate = closingDate;
     Optional<ImportStatementBalances.Stated> opening =
-        inCurrency.stream()
-            .filter(balance -> balance.date().isBefore(chosenClosingDate))
-            .min(Comparator.comparing(ImportStatementBalances.Stated::date));
+        stated.pdf()
+            ? inCurrency.subList(0, inCurrency.size() - 1).stream().findFirst()
+            : inCurrency.stream()
+                .filter(balance -> balance.date().isBefore(chosenClosingDate))
+                .min(Comparator.comparing(ImportStatementBalances.Stated::date));
     boolean liability = LIABILITY.equals(account.getNature());
     batch.recordStatementBalance(
         ImportBatchValues.BALANCE_FOUND,
