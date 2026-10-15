@@ -164,11 +164,10 @@ class ImportStatementBalanceServiceTest {
     assertThat(service.response(batch)).isNull();
   }
 
-
   @Test
   void unreadableClosingLineDoesNotTurnOpeningIntoDocumentSnapshot() {
-    service.record(batch, account,
-        new ImportStatementBalances(List.of(balance(START, "100.00", "CHF")), 1));
+    service.record(
+        batch, account, new ImportStatementBalances(List.of(balance(START, "100.00", "CHF")), 1));
     assertThat(batch.getStatementBalanceOutcome()).isEqualTo(ImportBatchValues.BALANCE_UNREADABLE);
     service.commit(batch, account, MEMBER);
     verify(snapshots, never()).saveAndFlush(any());
@@ -176,7 +175,9 @@ class ImportStatementBalanceServiceTest {
 
   @Test
   void pdfUsesLastStatedBalanceEvenForTwoDifferentSameDayAmounts() {
-    service.record(batch, account,
+    service.record(
+        batch,
+        account,
         new ImportStatementBalances(
             List.of(balance(END, "100.00", "CHF"), balance(END, "120.00", "CHF")), 0, true));
     assertThat(batch.getStatementBalanceOutcome()).isEqualTo(ImportBatchValues.BALANCE_FOUND);
@@ -207,7 +208,8 @@ class ImportStatementBalanceServiceTest {
     AccountSnapshot latest = new AccountSnapshot();
     ReflectionTestUtils.setField(latest, "id", UUID.randomUUID());
     when(snapshots
-            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(account.getId()))
+            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
+                account.getId()))
         .thenReturn(Optional.of(latest));
     ReconciliationResult accepted = result(ReconciliationResultValues.ACCEPTED);
     when(results.findBySnapshotId(historical.getId())).thenReturn(List.of(accepted));
