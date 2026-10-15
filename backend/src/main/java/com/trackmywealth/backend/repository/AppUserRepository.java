@@ -37,30 +37,61 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   @Query("SELECT u.workspaceMember.id FROM AppUser u WHERE u.id = :userId")
   Optional<UUID> findWorkspaceMemberId(@Param(USER_ID) UUID userId);
 
-  // US-02-06: the linked workspace_member's status, empty without a membership. A query, not
-  // user.getWorkspaceMember().getStatus(): outside a workspace context RLS hides the member row,
-  // and a lazy proxy would then fail instead of degrading the way findAuthSnapshot's LEFT JOIN
-  // does.
-  @Query("SELECT wm.status FROM AppUser u JOIN u.workspaceMember wm WHERE u.id = :userId")
-  Optional<String> findWorkspaceMemberStatus(@Param(USER_ID) UUID userId);
+  // The membership is RLS-protected and is needed before the principal can supply a workspace
+  // context. Resolve it through the tightly scoped SECURITY DEFINER lookup from V81.
+  default Optional<String> findWorkspaceMemberStatus(UUID userId) {
+    return findAuthSnapshotRow(userId, null)
+        .map(AuthSnapshotRow::getWorkspaceMemberStatus);
+  }
 
   // US-02-02 login: same citext/JDBC parameter-binding caveat as existsByEmail above applies
   // here too - the explicit cast is what actually makes this case-insensitive.
   @Query(value = "SELECT * FROM app_user WHERE email = CAST(:email AS citext)", nativeQuery = true)
   Optional<AppUser> findByEmail(@Param("email") String email);
 
-  // US-02-03: joined to the one user_session named by the presented token's sessionId claim (not
-  // to every session the user has) so JwtAuthenticationFilter can check that specific session is
-  // still ACTIVE in the same single query - a LEFT JOIN, since a since-deleted session must
-  // degrade to sessionStatus == null (treated as "not authenticated"), not a query failure.
+  // A session id is mandatory for token authentication. The function additionally verifies that
+  // the requested session belongs to this user; no member is exposed through ordinary RLS joins.
+  default Optional<AppUserAuthSnapshot> findAuthSnapshot(UUID userId, UUID sessionId) {
+    if (sessionId == null) {
+      return Optional.empty();
+    }
+    return findAuthSnapshotRow(userId, sessionId)
+        .map(
+            row ->
+                new AppUserAuthSnapshot(
+                    row.getUserId(),
+                    row.getUserRole(),
+                    row.getUserStatus(),
+                    row.getUserTokenVersion(),
+                    row.getWorkspaceId(),
+                    row.getWorkspaceMemberStatus(),
+                    row.getSessionStatus(),
+                    row.getUserLanguage()));
+  }
+
   @Query(
-      "SELECT new com.trackmywealth.backend.security.AppUserAuthSnapshot("
-          + "u.id, u.role, u.status, u.tokenVersion, w.id, wm.status, s.status, u.language) "
-          + "FROM AppUser u LEFT JOIN u.workspaceMember wm LEFT JOIN wm.workspace w "
-          + "LEFT JOIN UserSession s ON s.user = u AND s.id = :sessionId "
-          + "WHERE u.id = :userId")
-  Optional<AppUserAuthSnapshot> findAuthSnapshot(
+      value = "SELECT * FROM public.auth_user_snapshot(:userId, :sessionId)",
+      nativeQuery = true)
+  Optional<AuthSnapshotRow> findAuthSnapshotRow(
       @Param(USER_ID) UUID userId, @Param("sessionId") UUID sessionId);
+
+  interface AuthSnapshotRow {
+    UUID getUserId();
+
+    String getUserRole();
+
+    String getUserStatus();
+
+    Integer getUserTokenVersion();
+
+    UUID getWorkspaceId();
+
+    String getWorkspaceMemberStatus();
+
+    String getSessionStatus();
+
+    String getUserLanguage();
+  }
 
   // US-02-01's last-active-administrator guard (FR-USR-005): a row-level lock over every
   // currently active administrator, not a DB constraint - see the comment on this rule in V2 and
