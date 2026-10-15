@@ -12,8 +12,10 @@ import java.util.UUID;
  * {@code sameFileImportedIn} is set when this exact file was committed to the account before.
  * {@code rolledBackAt} and {@code rollbackReason} are set once the batch is {@code ROLLED_BACK} or
  * {@code VOIDED} (US-07-05). {@code accountIdentification} is what the file says about its account
- * (US-07-10), {@code null} unless its template identifies accounts. {@code version} is the batch's
- * {@code If-Match} revision (ADR 0004).
+ * (US-07-10), {@code null} unless its template identifies accounts. {@code statementBalance} is the
+ * balance the file states and what its commit makes of it (US-07-12), {@code null} unless its
+ * template has a statement balance rule. {@code version} is the batch's {@code If-Match} revision
+ * (ADR 0004).
  */
 public record ImportBatchResponse(
     UUID id,
@@ -32,6 +34,7 @@ public record ImportBatchResponse(
     OffsetDateTime rolledBackAt,
     String rollbackReason,
     ImportIdentificationResponse accountIdentification,
+    ImportStatementBalanceResponse statementBalance,
     int version) {
 
   public ImportBatchResponse {

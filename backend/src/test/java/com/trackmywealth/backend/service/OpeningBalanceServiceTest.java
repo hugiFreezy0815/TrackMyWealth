@@ -85,7 +85,8 @@ class OpeningBalanceServiceTest {
     when(databaseClock.now()).thenReturn(DATABASE_NOW);
     when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(any()))
         .thenReturn(Optional.empty());
-    when(snapshotRepository.findByAccountIdAndSnapshotDateAndSource(any(), any(), any()))
+    when(snapshotRepository.findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
+            any(), any(), any()))
         .thenReturn(Optional.empty());
     when(transactionRepository.findEarliestLiveBookingDate(any())).thenReturn(Optional.empty());
     when(snapshotRepository.saveAndFlush(any(AccountSnapshot.class)))
@@ -234,7 +235,7 @@ class OpeningBalanceServiceTest {
     when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId()))
         .thenReturn(Optional.of(existing));
     // Its own row is the MANUAL snapshot on that date - not a conflict with itself.
-    when(snapshotRepository.findByAccountIdAndSnapshotDateAndSource(
+    when(snapshotRepository.findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
             account.getId(), OPENING_DATE, "MANUAL"))
         .thenReturn(Optional.of(existing));
 
@@ -259,7 +260,7 @@ class OpeningBalanceServiceTest {
   void aRegularSnapshotOnTheDateIsAConflictNamingIt() {
     AccountSnapshot regular = new AccountSnapshot();
     ReflectionTestUtils.setField(regular, "id", UUID.randomUUID());
-    when(snapshotRepository.findByAccountIdAndSnapshotDateAndSource(
+    when(snapshotRepository.findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
             account.getId(), OPENING_DATE, "MANUAL"))
         .thenReturn(Optional.of(regular));
 

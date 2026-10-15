@@ -14,7 +14,10 @@ import java.util.Map;
  * rejected rows per error code; skipped rows are not in it. {@code headerColumns} are what a new
  * template sends back as its own when it is saved. {@code accountIdentifierFound} says whether the
  * template's account identifier rule found exactly one valid identifier in the file (US-07-10),
- * never which; {@code null} for a template whose account is selected at upload.
+ * never which; {@code null} for a template whose account is selected at upload. {@code
+ * statementBalanceCount} is how many balances the template's statement balance rule read in the
+ * file, {@code statementBalanceUnreadableCount} how many lines it matched but could not read
+ * (US-07-12); both {@code null} for a template without that rule.
  */
 public record ImportTemplateTestResponse(
     List<String> headerColumns,
@@ -25,7 +28,9 @@ public record ImportTemplateTestResponse(
     int skippedRowCount,
     Map<String, Integer> errorCounts,
     List<ImportPreviewRowResponse> rows,
-    Boolean accountIdentifierFound) {
+    Boolean accountIdentifierFound,
+    Integer statementBalanceCount,
+    Integer statementBalanceUnreadableCount) {
 
   public ImportTemplateTestResponse {
     headerColumns = List.copyOf(headerColumns);

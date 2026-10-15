@@ -55,6 +55,11 @@ import org.springframework.transaction.annotation.Transactional;
  * stay, the batch records who rolled it back, when and why, and every affected account is
  * reconciled again (US-25-02, T3).
  *
+ * <p><b>Statement balance (US-07-12).</b> The snapshot the batch's commit recorded is deleted, or
+ * withdrawn when an accepted reconciliation's adjusting entry still points at it; while the
+ * member's decision on its reconciliation stands, the rollback is refused ({@link
+ * ImportStatementBalanceService#rollBack}). The batch summary says which happened.
+ *
  * <p><b>Locks.</b> The account's import advisory lock first, as a commit takes it, then the batch
  * row: a rollback and a commit of the same account queue behind each other instead of deadlocking,
  * and a second rollback of the batch finds it no longer {@code COMMITTED} (409). Then, as a single
@@ -76,6 +81,7 @@ public class ImportRollbackService {
   private final ReconciliationService reconciliationService;
   private final VersionPreconditionService versionPreconditionService;
   private final ImportLockService importLockService;
+  private final ImportStatementBalanceService statementBalanceService;
   private final EntityManager entityManager;
   private final Clock clock;
 
@@ -90,6 +96,7 @@ public class ImportRollbackService {
       ReconciliationService reconciliationService,
       VersionPreconditionService versionPreconditionService,
       ImportLockService importLockService,
+      ImportStatementBalanceService statementBalanceService,
       EntityManager entityManager,
       Clock clock) {
     this.batchService = batchService;
@@ -102,6 +109,7 @@ public class ImportRollbackService {
     this.reconciliationService = reconciliationService;
     this.versionPreconditionService = versionPreconditionService;
     this.importLockService = importLockService;
+    this.statementBalanceService = statementBalanceService;
     this.entityManager = entityManager;
     this.clock = clock;
   }
@@ -136,11 +144,21 @@ public class ImportRollbackService {
     Map<UUID, List<String>> modified =
         modifiedInBatchOrder(rollbackRepository.findModified(batch.getId()), transactionIds);
 
+    // US-07-12: the statement's balance goes first (or the rollback is refused before anything is
+    // changed), so the ledger's own reconciliation below no longer compares against it.
+    boolean balanceRemoved = statementBalanceService.rollBack(batch, account, actor.userId());
     String why = reason.strip();
     ImportRollbackResponse response =
         modified.isEmpty()
             ? delete(account, batch, transactionIds, why, actor)
             : voidAll(account, batch, transactionIds, modified, why, actor);
+    if (balanceRemoved) {
+      // The account's newest observed balance is now an older one, which may have been superseded
+      // by the removed one: compare against it afresh. The ledger's own reconciliation above does
+      // not cover it: it re-checks the latest balance only when the change is dated on or before
+      // it, and a statement's bookings mostly come after its older balance.
+      reconciliationService.reconcileLatest(account, actor.userId());
+    }
     if (LOG.isInfoEnabled()) {
       LOG.info(
           "Rolled back import batch {} by {}: {} transactions deleted, {} voided ({} modified)",

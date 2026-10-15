@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
 import com.trackmywealth.backend.dto.ImportRowFilter;
+import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ImportTemplateParse;
@@ -582,7 +583,8 @@ public class ImportTemplateService {
         definition.pdfLayout(),
         definition.descriptionTypePatterns(),
         definition.rowFilter(),
-        definition.accountIdentifier());
+        definition.accountIdentifier(),
+        definition.statementBalance());
   }
 
   private ImportTemplateDefinition definitionOf(ImportTemplate template) {
@@ -613,7 +615,11 @@ public class ImportTemplateService {
         template.getAccountIdentifierRule() == null
             ? null
             : objectMapper.readValue(
-                template.getAccountIdentifierRule(), ImportAccountIdentifierRule.class));
+                template.getAccountIdentifierRule(), ImportAccountIdentifierRule.class),
+        template.getStatementBalanceRule() == null
+            ? null
+            : objectMapper.readValue(
+                template.getStatementBalanceRule(), ImportStatementBalanceRule.class));
   }
 
   private void apply(
@@ -648,6 +654,10 @@ public class ImportTemplateService {
         definition.accountIdentifier() == null
             ? null
             : objectMapper.writeValueAsString(definition.accountIdentifier()));
+    template.setStatementBalanceRule(
+        definition.statementBalance() == null
+            ? null
+            : objectMapper.writeValueAsString(definition.statementBalance()));
     template.setAccountIdentificationStrategy(definition.accountIdentificationStrategy());
     template.setFileFormat(definition.fileFormat());
     if (definition.pdfLayout() != null) {
@@ -701,7 +711,8 @@ public class ImportTemplateService {
         VersionPreconditionService.persistedVersion(template.getVersion(), VERSIONED_RESOURCE),
         definition.descriptionTypePatterns(),
         definition.rowFilter(),
-        definition.accountIdentifier());
+        definition.accountIdentifier(),
+        definition.statementBalance());
   }
 
   private ImportTemplateTestResponse preview(ImportParseResult result) {
@@ -733,7 +744,9 @@ public class ImportTemplateService {
         skippedRows,
         errorCounts,
         rows,
-        result.accountIdentifier() == null ? null : result.accountIdentifier().found());
+        result.accountIdentifier() == null ? null : result.accountIdentifier().found(),
+        result.statementBalances() == null ? null : result.statementBalances().balances().size(),
+        result.statementBalances() == null ? null : result.statementBalances().unreadable());
   }
 
   private ImportPreviewRowResponse previewRow(ParsedImportRow row, Locale locale) {

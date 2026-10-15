@@ -37,7 +37,9 @@ class ImportAccountProposalServiceTest {
 
   private final ImportFileParserService parser =
       new ImportFileParserService(
-          new PdfImportReaderService(mock(LocalOcrService.class)), new PdfBalanceCheckService());
+          new PdfImportReaderService(mock(LocalOcrService.class)),
+          new PdfBalanceCheckService(),
+          new ImportStatementBalanceReaderService());
 
   @Test
   void aMaskedCardRuleOrACardOnlyTypeMakesACreditCardAndARefundDoesNot() {

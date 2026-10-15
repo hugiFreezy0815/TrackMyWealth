@@ -324,8 +324,7 @@ public class AccountValuationService {
       return Optional.empty();
     }
     return accountSnapshotRepository
-        .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
-            account.getId(), asOf)
+        .findLatestWithBalance(account.getId(), asOf)
         .map(
             snapshot ->
                 new NativeAccountValue(

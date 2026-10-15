@@ -74,6 +74,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V68` | Import batch rollback (US-07-05, #231): `import_batch.rolled_back_by` + `rollback_reason` (`chk_import_batch_rollback_recorded`: set exactly when `ROLLED_BACK`/`VOIDED`, with `rolled_back_at`), `trg_transaction_no_hard_delete`, which refuses every `DELETE` of a transaction except its own batch's rollback, `trg_transaction_no_truncate`, and indexes on the columns referencing a transaction that had none |
 | `V71` | Credit-card statement imports: versioned RE2 description patterns for classification, notably refunds (US-07-18, #284) |
 | `V73` | Account identification (US-07-10, #270): `account.identifier_hash` (keyed HMAC, unique per workspace), `identifier_masked` cleared and tied to it, `import_template.account_identifier_rule`, and the batch's `account_identification`, `proposed_account_id` and confirmation flags |
+| `V74` | Statement balances (US-07-12, #272): `import_template.statement_balance_rule`, the batch's read balance (`statement_balance_outcome`, `_date`, `statement_balance`, `_currency`, `opening_balance_date`, `opening_balance`) and `statement_balance_snapshot`, `account_snapshot.import_batch_id` (`DOCUMENT` only, one per batch) and `withdrawn_at`/`withdrawn_by`; V11's `(account, date, source)` uniqueness becomes a partial unique index of the same name that ignores withdrawn snapshots |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -1213,6 +1214,71 @@ so the member does not type it and it never travels; a file naming none, or one 
 than the account takes (an IBAN for a credit card), is a 422 `ACCOUNT_IDENTIFIER_NOT_IN_FILE`.
 Uploading the file into the new account then matches it. A statement never tells holders,
 ownership shares or loan terms; the account form asks for them.
+
+### Statement balances (US-07-12)
+
+The balance a statement prints becomes an account snapshot when its import is committed
+(FR-REC-002/007), so reconciliation (US-25-02) compares the ledger with what the bank says.
+
+**Templates (V74).** `statement_balance_rule` (JSONB object: `pattern`, `dateFormat`;
+`chk_import_template_statement_balance_rule` requires a string `pattern`) is part of the versioned
+definition. The pattern is RE2 with the named groups `date` and `amount`, optionally `currency`,
+and no others; `dateFormat` defaults to the template's own. It is searched in a CSV file's lines
+before its header row and its trailing summary rows (cells joined by a space), or in every text line
+of a PDF, from the same read as the bookings. Amounts are read with the template's separators and
+signed as the account holder sees them (negative: overdrawn or owed). A CSV template needs such
+lines (a preamble, a header row index above 0, or trailing summary rows). A dry run reports how
+many balances the rule read (`statementBalanceCount`) and how many matched lines it could not
+(`statementBalanceUnreadableCount`). A statement with sections in several currencies (a
+multi-currency PDF) needs the `currency` group: without it, every balance line is taken to be in the
+account's currency, and the last one of the whole file would close the account's balance.
+
+**Batches.** Every parse records what the file states. Only balances in the account's own currency
+count (a card's `billing_currency`; a balance without a currency group is taken to be in it). The
+latest dated one is the closing balance: `statement_balance_outcome` `FOUND` with
+`statement_balance_date`, `statement_balance` and `_currency`, or `AMBIGUOUS` (different amounts on
+that date), `NOT_FOUND`, `UNREADABLE` (a matched line that may be in the account's currency, one
+naming it or no readable currency, could not be read: it might be the actual closing balance, so no
+other balance is promoted in its place; an unreadable line naming another currency hides nothing),
+or `OUT_OF_RANGE` (read, but dated in the future, before the account's `opened_at` or after its
+`closed_at`, as a hand-recorded snapshot may not be: shown with its date and amount, and the commit
+imports the rows without a snapshot; the preview and the commit check the dates again, so a change
+to the account's dates after the parse is seen). The earliest other balance is stored as `opening_balance_date`/`opening_balance` and shown in
+the preview only: making it the account's opening balance (US-25-04, `MANUAL` only under V58) stays
+the member's step. Balances follow the snapshot's sign convention: a liability's is the positive
+amount owed, so a file's negative balance is negated for a `LIABILITY` account. The batch keeps
+these values itself, although a committed snapshot holds the closing balance too: the preview needs
+them before any snapshot exists, and they stay the record of what the file said after a rollback.
+
+**Commit.** After the rows, the closing balance becomes a `DOCUMENT` snapshot of its date with
+`import_batch_id` set (`chk_account_snapshot_import_batch`: only `DOCUMENT` snapshots carry one,
+`uq_account_snapshot_import_batch`: one per batch), and the account is reconciled against its
+newest snapshot. An imported snapshot of that date in effect already is never replaced:
+`statement_balance_snapshot` records `ALREADY_RECORDED` (same balance) or `CONFLICTING` (another),
+and the preview says beforehand which it will be, or `NEW`. A `MANUAL` snapshot of the same date
+does not stop it: the two sources are kept apart, as before.
+
+**Rollback.** The batch's snapshot is removed before its transactions, under the snapshot's row lock
+that reconciliation decisions take:
+
+- While a reconciliation of it is `ACCEPTED` or `DISMISSED` (a member's decision) and it is the
+  account's latest observed balance, the rollback is a 409 `IMPORT_ROLLBACK_RECONCILIATION_DECIDED`
+  naming the result, and nothing changes. Reopen it first. `RESOLVED` is the engine's own and does
+  not block.
+- A decision on an older balance (a newer snapshot exists) is final and cannot be reopened, so it
+  does not block: the snapshot is withdrawn as below, keeping the decision as history (product
+  owner, 2026-10-15, #272).
+- When a result of it ever had an accepted adjusting entry, that entry stays in the append-only
+  ledger (V63's `reconciliation_result_id`, soft-deleted on reopen; V68 forbids deleting it), so the
+  result and the snapshot cannot be deleted. The snapshot is **withdrawn** instead (`withdrawn_at`,
+  `withdrawn_by`; `chk_account_snapshot_withdrawn`: imported snapshots only), its `OPEN` result
+  becomes `SUPERSEDED`, and the batch records `WITHDRAWN`. A withdrawn snapshot is history only:
+  the snapshot list, the latest-balance, valuation and reconciliation lookups and the
+  `(account, date, source)` uniqueness all leave it out, so the statement can be imported again;
+  the reconciliation history still shows its result.
+- Otherwise the snapshot and its results are deleted, and the batch records `DELETED`.
+
+Either way the account is then reconciled against its new newest snapshot.
 
 ## 5. Time-series data and partitioning
 

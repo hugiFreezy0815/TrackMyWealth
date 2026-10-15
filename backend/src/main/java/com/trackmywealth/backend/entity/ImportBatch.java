@@ -8,6 +8,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.hibernate.annotations.Generated;
@@ -111,6 +113,29 @@ public class ImportBatch {
 
   @Column(name = "rollback_reason")
   private String rollbackReason;
+
+  // US-07-12: the balance the file states, as its parse read it, and what became of it.
+  @Column(name = "statement_balance_outcome")
+  private String statementBalanceOutcome;
+
+  @Column(name = "statement_balance_date")
+  private LocalDate statementBalanceDate;
+
+  @Column(name = "statement_balance")
+  private BigDecimal statementBalance;
+
+  @JdbcTypeCode(SqlTypes.CHAR)
+  @Column(name = "statement_balance_currency", length = 3)
+  private String statementBalanceCurrency;
+
+  @Column(name = "opening_balance_date")
+  private LocalDate openingBalanceDate;
+
+  @Column(name = "opening_balance")
+  private BigDecimal openingBalance;
+
+  @Column(name = "statement_balance_snapshot")
+  private String statementBalanceSnapshot;
 
   @Version
   @Generated(event = {EventType.INSERT, EventType.UPDATE})
@@ -310,6 +335,67 @@ public class ImportBatch {
     this.rolledBackAt = at;
     this.rolledBackBy = by;
     this.rollbackReason = reason;
+  }
+
+  /**
+   * US-07-12: what a parse read as the file's balance; every value but {@code outcome} is {@code
+   * null} unless it is {@code FOUND} or {@code OUT_OF_RANGE}, the opening balance also when the
+   * file states only one. Only a batch before its commit is parsed, so no snapshot outcome is
+   * recorded yet.
+   */
+  public void recordStatementBalance(
+      String outcome,
+      LocalDate date,
+      BigDecimal balance,
+      String currency,
+      LocalDate openingDate,
+      BigDecimal opening) {
+    this.statementBalanceOutcome = outcome;
+    this.statementBalanceDate = date;
+    this.statementBalance = balance;
+    this.statementBalanceCurrency = currency;
+    this.openingBalanceDate = openingDate;
+    this.openingBalance = opening;
+  }
+
+  /**
+   * US-07-12: the balance's date is no longer one the account admits (its dates changed since the
+   * parse); the commit records no snapshot. The balance read stays, for the batch's summary.
+   */
+  public void markStatementBalanceOutOfRange() {
+    this.statementBalanceOutcome = ImportBatchValues.BALANCE_OUT_OF_RANGE;
+  }
+
+  public String getStatementBalanceOutcome() {
+    return statementBalanceOutcome;
+  }
+
+  public LocalDate getStatementBalanceDate() {
+    return statementBalanceDate;
+  }
+
+  public BigDecimal getStatementBalance() {
+    return statementBalance;
+  }
+
+  public String getStatementBalanceCurrency() {
+    return statementBalanceCurrency;
+  }
+
+  public LocalDate getOpeningBalanceDate() {
+    return openingBalanceDate;
+  }
+
+  public BigDecimal getOpeningBalance() {
+    return openingBalance;
+  }
+
+  public String getStatementBalanceSnapshot() {
+    return statementBalanceSnapshot;
+  }
+
+  public void setStatementBalanceSnapshot(String statementBalanceSnapshot) {
+    this.statementBalanceSnapshot = statementBalanceSnapshot;
   }
 
   public Integer getVersion() {

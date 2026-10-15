@@ -56,6 +56,10 @@ import org.springframework.transaction.annotation.Transactional;
  * ({@code TransactionRemovalService}), so none lands between the check and the commit's end. The
  * check is {@link ImportRecheckService}'s, the same one the preview's rows and counts report
  * (#308), so the commit does what the member saw.
+ *
+ * <p><b>Statement balance (US-07-12).</b> After the rows, the balance the file states becomes a
+ * {@code DOCUMENT} snapshot of the batch and the account is reconciled against it ({@link
+ * ImportStatementBalanceService}).
  */
 @Service
 public class ImportCommitService {
@@ -72,6 +76,7 @@ public class ImportCommitService {
   private final VersionPreconditionService versionPreconditionService;
   private final ImportLockService importLockService;
   private final ImportAccountIdentificationService identificationService;
+  private final ImportStatementBalanceService statementBalanceService;
   private final Clock clock;
 
   public ImportCommitService(
@@ -85,6 +90,7 @@ public class ImportCommitService {
       VersionPreconditionService versionPreconditionService,
       ImportLockService importLockService,
       ImportAccountIdentificationService identificationService,
+      ImportStatementBalanceService statementBalanceService,
       Clock clock) {
     this.batchService = batchService;
     this.batchRepository = batchRepository;
@@ -96,6 +102,7 @@ public class ImportCommitService {
     this.versionPreconditionService = versionPreconditionService;
     this.importLockService = importLockService;
     this.identificationService = identificationService;
+    this.statementBalanceService = statementBalanceService;
     this.clock = clock;
   }
 
@@ -162,6 +169,8 @@ public class ImportCommitService {
     rowBatchRepository.linkTransactions(
         included.stream().map(ImportRowRaw::getId).toList(),
         recorded.stream().map(Transaction::getId).toList());
+    // US-07-12: the statement's balance, once the rows it closes are in the ledger.
+    statementBalanceService.commit(batch, account, actor.userId());
 
     batch.setStatus(ImportBatchValues.COMMITTED);
     batch.setCommittedAt(OffsetDateTime.now(clock));

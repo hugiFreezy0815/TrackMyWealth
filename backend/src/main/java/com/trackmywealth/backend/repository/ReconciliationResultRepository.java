@@ -17,6 +17,21 @@ public interface ReconciliationResultRepository extends JpaRepository<Reconcilia
 
   Optional<ReconciliationResult> findBySnapshotIdAndAffectedSecurityIdIsNull(UUID snapshotId);
 
+  /** Every result compared against the snapshot, any scope (US-07-12, a batch's rollback). */
+  List<ReconciliationResult> findBySnapshotId(UUID snapshotId);
+
+  /**
+   * Whether any transaction, soft-deleted ones included, is the adjusting entry of one of {@code
+   * resultIds} (V63): such a result can never be deleted, as the ledger is append-only. Native SQL,
+   * because the transaction entity's restriction hides a withdrawn (soft-deleted) adjustment.
+   */
+  @Query(
+      value =
+          "SELECT EXISTS (SELECT 1 FROM transaction"
+              + " WHERE reconciliation_result_id IN (:resultIds))",
+      nativeQuery = true)
+  boolean existsAdjustmentOf(@Param("resultIds") Collection<UUID> resultIds);
+
   List<ReconciliationResult> findByAccountIdAndStatusAndAffectedSecurityIdIsNull(
       UUID accountId, String status);
 

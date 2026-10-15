@@ -20,7 +20,7 @@ import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Maps {@code account_snapshot} (V11, V33): an institution-reported <em>observation</em> of an
+ * Maps {@code account_snapshot} (V11, V33, V74): an institution-reported <em>observation</em> of an
  * account's state on a date, never derived from the ledger (RULE-025, FR-REC-001). One row per
  * {@code (account, snapshotDate, source)}.
  *
@@ -80,6 +80,18 @@ public class AccountSnapshot {
 
   @Column(name = "updated_by", columnDefinition = UUID_COLUMN)
   private UUID updatedBy;
+
+  // US-07-12: the import batch whose commit recorded this DOCUMENT snapshot; a rollback removes it.
+  @Column(name = "import_batch_id", columnDefinition = UUID_COLUMN, updatable = false)
+  private UUID importBatchId;
+
+  // US-07-12: set when a rollback could not delete the snapshot (see V74). A withdrawn snapshot is
+  // history only: every lookup of an observed balance leaves it out.
+  @Column(name = "withdrawn_at")
+  private OffsetDateTime withdrawnAt;
+
+  @Column(name = "withdrawn_by", columnDefinition = UUID_COLUMN)
+  private UUID withdrawnBy;
 
   @Version
   @Generated(event = {EventType.INSERT, EventType.UPDATE})
@@ -174,6 +186,28 @@ public class AccountSnapshot {
    */
   public OffsetDateTime getStatedAt() {
     return updatedAt != null ? updatedAt : createdAt;
+  }
+
+  public UUID getImportBatchId() {
+    return importBatchId;
+  }
+
+  public void setImportBatchId(UUID importBatchId) {
+    this.importBatchId = importBatchId;
+  }
+
+  public OffsetDateTime getWithdrawnAt() {
+    return withdrawnAt;
+  }
+
+  public UUID getWithdrawnBy() {
+    return withdrawnBy;
+  }
+
+  /** US-07-12: retires the snapshot as history (see {@code withdrawnAt}). */
+  public void withdraw(OffsetDateTime at, UUID by) {
+    this.withdrawnAt = at;
+    this.withdrawnBy = by;
   }
 
   public Integer getVersion() {

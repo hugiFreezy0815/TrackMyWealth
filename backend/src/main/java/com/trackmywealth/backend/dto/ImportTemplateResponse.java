@@ -50,7 +50,8 @@ public record ImportTemplateResponse(
     int version,
     Map<String, String> descriptionTypePatterns,
     ImportRowFilter rowFilter,
-    ImportAccountIdentifierRule accountIdentifier) {
+    ImportAccountIdentifierRule accountIdentifier,
+    ImportStatementBalanceRule statementBalance) {
 
   public ImportTemplateResponse {
     typeMapping = Collections.unmodifiableMap(new LinkedHashMap<>(typeMapping));

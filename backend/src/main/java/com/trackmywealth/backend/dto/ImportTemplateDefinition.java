@@ -43,7 +43,54 @@ public record ImportTemplateDefinition(
     ImportPdfLayout pdfLayout,
     Map<String, String> descriptionTypePatterns,
     ImportRowFilter rowFilter,
-    ImportAccountIdentifierRule accountIdentifier) {
+    ImportAccountIdentifierRule accountIdentifier,
+    ImportStatementBalanceRule statementBalance) {
+
+  /** Existing saved and client templates omit the optional statement balance rule (US-07-12). */
+  public ImportTemplateDefinition(
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      int headerRowIndex,
+      int preambleRowCount,
+      int trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      String fileFormat,
+      ImportPdfLayout pdfLayout,
+      Map<String, String> descriptionTypePatterns,
+      ImportRowFilter rowFilter,
+      ImportAccountIdentifierRule accountIdentifier) {
+    this(
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        fileFormat,
+        pdfLayout,
+        descriptionTypePatterns,
+        rowFilter,
+        accountIdentifier,
+        null);
+  }
 
   /** Existing templates have no regex-based type mapping. */
   public ImportTemplateDefinition(

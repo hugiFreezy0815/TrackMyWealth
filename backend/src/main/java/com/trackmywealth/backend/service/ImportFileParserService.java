@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfBookingLine;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
+import com.trackmywealth.backend.dto.ImportPdfStatement;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportRowFilter;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
@@ -119,11 +120,15 @@ public class ImportFileParserService {
 
   private final PdfImportReaderService pdfReader;
   private final PdfBalanceCheckService balances;
+  private final ImportStatementBalanceReaderService statementBalances;
 
   public ImportFileParserService(
-      PdfImportReaderService pdfReader, PdfBalanceCheckService balances) {
+      PdfImportReaderService pdfReader,
+      PdfBalanceCheckService balances,
+      ImportStatementBalanceReaderService statementBalances) {
     this.pdfReader = pdfReader;
     this.balances = balances;
+    this.statementBalances = statementBalances;
   }
 
   /**
@@ -157,9 +162,14 @@ public class ImportFileParserService {
     List<ImportPdfBookingLine> bookingLines = null;
     // US-07-10: a CSV file's lines before its header row, cells joined by a space.
     List<String> preamble = List.of();
+    // US-07-12: the lines a statement balance is searched in: a CSV file's preamble and trailing
+    // summary rows, every text line of a PDF.
+    List<String> balanceLines;
     if (template.isPdf()) {
       header = template.pdfLayout().cellNames();
-      bookingLines = pdfReader.readBookingLines(content, template);
+      ImportPdfStatement statement = pdfReader.readStatement(content, template);
+      bookingLines = statement.bookingLines();
+      balanceLines = statement.lines();
       if (bookingLines.size() > MAX_DATA_ROWS) {
         throw tooManyRows();
       }
@@ -170,6 +180,11 @@ public class ImportFileParserService {
       data = dataRecordsOf(records, template);
       requireDecodable(template.hasHeaderRow() ? header : data.get(0));
       preamble = preambleLines(content, records, template);
+      balanceLines = new ArrayList<>(preamble);
+      for (List<String> trailing :
+          records.subList(records.size() - template.trailingSummaryRowCount(), records.size())) {
+        balanceLines.add(String.join(" ", trailing));
+      }
     }
     Map<String, Integer> columns = resolveColumns(template, header);
     List<String> keys = rawDataKeys(header);
@@ -278,7 +293,8 @@ public class ImportFileParserService {
         header,
         fileFingerprint(template, header, bookingLines),
         rows,
-        accountIdentifier(template, preamble, data, header));
+        accountIdentifier(template, preamble, data, header),
+        statementBalances.read(balanceLines, template));
   }
 
   // The fingerprint of the header the file holds: a CSV file's header row; for a PDF, its layout's
@@ -465,6 +481,7 @@ public class ImportFileParserService {
         template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
     validateAccountIdentifier(
         template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
+    statementBalances.validate(template);
   }
 
   // --- template rules ----------------------------------------------------------------------
@@ -853,7 +870,7 @@ public class ImportFileParserService {
     }
   }
 
-  private static boolean isValidDateFormat(String pattern) {
+  static boolean isValidDateFormat(String pattern) {
     if (pattern == null || pattern.isBlank()) {
       return false;
     }
@@ -1595,7 +1612,7 @@ public class ImportFileParserService {
 
   // java.time's 'y' is the year of era, which STRICT resolution cannot use without an era; banks'
   // patterns are written with it, so it is read as 'u' (the proleptic year) outside quoted text.
-  private static DateTimeFormatter dateFormatter(String pattern) {
+  static DateTimeFormatter dateFormatter(String pattern) {
     StringBuilder converted = new StringBuilder(pattern.length());
     boolean quoted = false;
     for (char character : pattern.toCharArray()) {

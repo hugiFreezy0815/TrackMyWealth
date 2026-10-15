@@ -116,6 +116,10 @@ public class ImportTemplate {
   @Column(name = "account_identifier_rule", columnDefinition = JSONB, updatable = false)
   private String accountIdentifierRule;
 
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "statement_balance_rule", columnDefinition = JSONB, updatable = false)
+  private String statementBalanceRule;
+
   @Column(name = "account_identification_strategy", nullable = false, updatable = false)
   private String accountIdentificationStrategy;
 
@@ -342,6 +346,14 @@ public class ImportTemplate {
 
   public void setAccountIdentifierRule(String accountIdentifierRule) {
     this.accountIdentifierRule = accountIdentifierRule;
+  }
+
+  public String getStatementBalanceRule() {
+    return statementBalanceRule;
+  }
+
+  public void setStatementBalanceRule(String statementBalanceRule) {
+    this.statementBalanceRule = statementBalanceRule;
   }
 
   public String getAccountIdentificationStrategy() {

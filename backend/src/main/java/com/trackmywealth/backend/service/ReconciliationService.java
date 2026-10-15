@@ -343,8 +343,7 @@ public class ReconciliationService {
       Account account, AccountSnapshot opening, AccountSnapshot snapshot, BigDecimal difference) {
     LocalDate periodStart =
         snapshotRepository
-            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndSnapshotDateLessThanOrderBySnapshotDateDescCreatedAtDesc(
-                account.getId(), snapshot.getSnapshotDate())
+            .findObservedBefore(account.getId(), snapshot.getSnapshotDate())
             .map(AccountSnapshot::getSnapshotDate)
             .orElse(opening.getSnapshotDate());
     // The heuristics reason about ledger rows, so they work on the ledger amount that would close
@@ -425,9 +424,7 @@ public class ReconciliationService {
   }
 
   private Optional<AccountSnapshot> latestSnapshot(UUID accountId) {
-    return snapshotRepository
-        .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
-            accountId);
+    return snapshotRepository.findLatestObserved(accountId);
   }
 
   private ReconciliationStatusResponse statusResponse(
