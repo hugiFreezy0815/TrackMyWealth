@@ -181,6 +181,8 @@ class ImportStatementBalanceServiceTest {
             List.of(balance(END, "100.00", "CHF"), balance(END, "120.00", "CHF")), 0, true));
     assertThat(batch.getStatementBalanceOutcome()).isEqualTo(ImportBatchValues.BALANCE_FOUND);
     assertThat(batch.getStatementBalance()).isEqualByComparingTo("120.00");
+    assertThat(batch.getOpeningBalanceDate()).isEqualTo(END);
+    assertThat(batch.getOpeningBalance()).isEqualByComparingTo("100.00");
   }
 
   @Test
