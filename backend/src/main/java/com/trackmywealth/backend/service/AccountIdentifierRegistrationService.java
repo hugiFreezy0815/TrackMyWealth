@@ -1,8 +1,10 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
+import com.trackmywealth.backend.dto.AccountIdentifierFromImportRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierResponse;
+import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.error.ApiErrorCode;
@@ -28,18 +30,21 @@ public class AccountIdentifierRegistrationService {
   private final AccountIdentifierService identifiers;
   private final AccountRepository accounts;
   private final VersionPreconditionService versions;
+  private final ImportAccountProposalService proposals;
 
   public AccountIdentifierRegistrationService(
       AccountLookupService lookup,
       AccessControlService access,
       AccountIdentifierService identifiers,
       AccountRepository accounts,
-      VersionPreconditionService versions) {
+      VersionPreconditionService versions,
+      ImportAccountProposalService proposals) {
     this.lookup = lookup;
     this.access = access;
     this.identifiers = identifiers;
     this.accounts = accounts;
     this.versions = versions;
+    this.proposals = proposals;
   }
 
   @Transactional(readOnly = true)
@@ -66,6 +71,47 @@ public class AccountIdentifierRegistrationService {
     String normalized =
         AccountIdentifierService.normalize(request.identifier(), kind)
             .orElseThrow(() -> invalid(kind));
+    return register(account, normalized, kind);
+  }
+
+  /**
+   * US-07-11: registers the identifier the file of an open import batch names (typically one that
+   * matched no account), so the member does not type it again after creating the account from the
+   * file. The plain identifier stays on the server. Needs EDIT access to both accounts.
+   *
+   * @throws ApiException 422 {@code ACCOUNT_IDENTIFIER_NOT_IN_FILE} when the file names none the
+   *     template's rule reads, or one of another kind than this account takes; otherwise as {@link
+   *     #set}
+   */
+  @Transactional
+  public AccountIdentifierResponse setFromImport(
+      UUID accountId,
+      AccountIdentifierFromImportRequest request,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
+    Account account = requireEditable(accountId, actor);
+    versions.requireCurrent(expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
+    String kind = AccountIdentifierService.kindOf(account);
+    ImportFileAccountIdentifier named =
+        proposals.identifierOf(request.importAccountId(), request.batchId(), actor);
+    if (named == null || !named.found() || !kind.equals(named.kind())) {
+      ApiException exception =
+          new ApiException(
+              HttpStatus.UNPROCESSABLE_CONTENT,
+              ApiErrorCode.ACCOUNT_IDENTIFIER_NOT_IN_FILE,
+              "The import file names no "
+                  + (ImportTemplateValues.IDENTIFIER_MASKED_CARD.equals(kind)
+                      ? "card number"
+                      : "IBAN")
+                  + " this account could be registered with.");
+      exception.getBody().setProperty("field", "batchId");
+      throw exception;
+    }
+    return register(account, named.value(), kind);
+  }
+
+  // Stores the keyed hash and the display value of a normalized identifier of the account's kind.
+  private AccountIdentifierResponse register(Account account, String normalized, String kind) {
     UUID workspaceId = account.getWorkspace().getId();
     String hash = identifiers.hash(workspaceId, normalized, kind);
     // Checked here for a clear answer; the unique index decides a race (GlobalExceptionHandler).
