@@ -61,7 +61,11 @@ public final class RoleSplitScripts {
       statement.execute(
           exists
               ? "ALTER DATABASE \"" + database + "\" OWNER TO " + MIGRATION_ROLE
-              : "CREATE DATABASE \"" + database + "\" OWNER " + MIGRATION_ROLE);
+              : "CREATE DATABASE \""
+                  + database
+                  + "\" OWNER "
+                  + MIGRATION_ROLE
+                  + " ENCODING 'UTF8'");
     }
     try (Connection admin =
             DriverManager.getConnection(

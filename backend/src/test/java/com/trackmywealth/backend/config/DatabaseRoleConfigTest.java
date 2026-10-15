@@ -6,13 +6,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.config.DatabaseRoleConfig.RuntimeRole;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
-import org.flywaydb.core.internal.jdbc.DriverDataSource;
 import org.junit.jupiter.api.Test;
 
 /**
  * US-28-05 (#331): Flyway's role switch and the runtime role check, without a database. With a real
- * one: {@code HardenedRuntimeAuthenticationHttpTest} (the split, strict) and every other Spring
- * test (a superuser, which only warns).
+ * one: {@code DatabaseRoleCheckTest} (the check's query and when it runs), {@code
+ * HardenedRuntimeAuthenticationHttpTest} (the split, strict) and every other Spring test (a
+ * superuser, which only warns).
  */
 class DatabaseRoleConfigTest {
 
@@ -28,10 +28,9 @@ class DatabaseRoleConfigTest {
             new DatabaseRoleProperties("trackmywealth_migration", "secret", false), URL)
         .customize(flyway);
 
-    DriverDataSource dataSource = (DriverDataSource) flyway.getDataSource();
-    assertThat(dataSource.getUrl()).isEqualTo(URL);
-    assertThat(dataSource.getUser()).isEqualTo("trackmywealth_migration");
-    assertThat(dataSource.getPassword()).isEqualTo("secret");
+    assertThat(flyway.getUrl()).isEqualTo(URL);
+    assertThat(flyway.getUser()).isEqualTo("trackmywealth_migration");
+    assertThat(flyway.getPassword()).isEqualTo("secret");
   }
 
   @Test
@@ -57,24 +56,44 @@ class DatabaseRoleConfigTest {
   }
 
   @Test
-  void aRoleThatBypassesRlsIsOnlyAWarningByDefault() {
-    assertThatCode(
-            () -> DatabaseRoleConfig.check(new RuntimeRole("trackmywealth", true, false), false))
-        .doesNotThrowAnyException();
+  void aRoleThatIsNotRlsBoundIsOnlyAWarningByDefault() {
+    for (RuntimeRole role :
+        new RuntimeRole[] {
+          new RuntimeRole("trackmywealth", true, true), new RuntimeRole("owner", false, true)
+        }) {
+      assertThatCode(() -> DatabaseRoleConfig.check(role, false))
+          .as(role.name())
+          .doesNotThrowAnyException();
+    }
   }
 
   @Test
-  void strictModeRefusesASuperuserAndABypassRlsRole() {
-    for (RuntimeRole role :
-        new RuntimeRole[] {
-          new RuntimeRole("postgres", true, false), new RuntimeRole("bypassing", false, true)
-        }) {
-      assertThatThrownBy(() -> DatabaseRoleConfig.check(role, true))
-          .as(role.name())
-          .isInstanceOf(IllegalStateException.class)
-          .hasMessageContaining("'" + role.name() + "'")
-          .hasMessageContaining("app.database.require-rls-bound-role");
-    }
+  void strictModeRefusesARoleThatBypassesRls() {
+    assertThatThrownBy(
+            () -> DatabaseRoleConfig.check(new RuntimeRole("bypassing", true, false), true))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("'bypassing'")
+        .hasMessageContaining("superuser or BYPASSRLS")
+        .hasMessageNotContaining("owns")
+        .hasMessageContaining("app.database.require-rls-bound-role");
+  }
+
+  @Test
+  void strictModeRefusesTheSchemaOwnerThoughForceRlsBindsIt() {
+    // FORCE ROW LEVEL SECURITY binds the owner too - until the owner switches it off.
+    assertThatThrownBy(() -> DatabaseRoleConfig.check(new RuntimeRole("owner", false, true), true))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("'owner'")
+        .hasMessageContaining("may switch RLS off")
+        .hasMessageNotContaining("BYPASSRLS role");
+  }
+
+  @Test
+  void strictModeNamesBothReasonsForASuperuser() {
+    assertThatThrownBy(
+            () -> DatabaseRoleConfig.check(new RuntimeRole("postgres", true, true), true))
+        .hasMessageContaining("superuser or BYPASSRLS")
+        .hasMessageContaining("may switch RLS off");
   }
 
   @Test

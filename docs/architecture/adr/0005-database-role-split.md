@@ -36,8 +36,12 @@ credentials, which defeats the point.
 
 **Rollout (decision 2): opt-in, with a startup check.** Without `DB_MIGRATION_USERNAME` nothing
 changes: one role does both, as before. At startup `DatabaseRoleConfig` warns when the runtime
-role is a superuser or `BYPASSRLS`, and refuses to start with `DB_REQUIRE_RLS_BOUND_ROLE=true` or
-`app.deployment.topology=hosted` (as a missing MFA key already does there). Rejected: enforcing
+role is not bound by RLS, and refuses to start with `DB_REQUIRE_RLS_BOUND_ROLE=true` or
+`app.deployment.topology=hosted` (as a missing MFA key already does there). Not bound means: it,
+or any role it may act as (`pg_has_role(..., 'MEMBER')`), is a superuser or `BYPASSRLS`, or owns
+schema public or one of its tables - `FORCE ROW LEVEL SECURITY` binds an owner only until the
+owner switches it off. The check runs once every bean exists, after Flyway and before the web
+server and the Quartz scheduler start, so a refused start serves nothing. Rejected: enforcing
 the split everywhere - every existing installation would have had to migrate before upgrading.
 
 **Function owner (decision 3): the migration role.** It needs `BYPASSRLS` anyway - V37 runs with
@@ -58,8 +62,17 @@ deciding to.
 
 ## Consequences
 
-- With the split, a missing workspace filter or an injection in the application can no longer
-  read or change another workspace's rows; the database refuses them.
+- With the split, a query that misses its workspace filter can no longer read or change another
+  workspace's rows, and the application's connection can neither switch RLS off nor change the
+  schema; the database refuses them.
+- **Residual risk: SQL injection.** The policies read the current workspace from the session
+  setting `app.current_workspace_id`, which the runtime role sets itself and so may set to any
+  value. Workspace ids are UUIDs, but they are not secret to the database: `workspace_id` is
+  readable outside RLS in `transfer_detection_fx_pending` (`SchemaConventionsTest`'s
+  `WORKSPACE_TABLES_OUTSIDE_RLS`), and an injection can call `set_config` itself. The split
+  narrows an injection's reach; parameterized queries remain the defense against it. Closing
+  this would need a context the runtime role cannot forge (e.g. a `SECURITY DEFINER` setter that
+  checks a signed token) - not in scope here.
 - The runtime role cannot change the schema, truncate tables or rewrite Flyway's history.
 - The two role names are fixed: V81 and V86 grant to `trackmywealth_runtime` by name.
 - A migration that needs more than `BYPASSRLS` and ownership (an untrusted extension, a new role)
@@ -67,5 +80,8 @@ deciding to.
 - New grants follow the default privileges set by `role-split-database.sql`: a later migration's
   tables and sequences are usable by the runtime role without a grant of its own; a new
   `SECURITY DEFINER` function needs its `EXECUTE` grant written explicitly, as V81 does.
-- Tests: `RoleSplitScriptsTest` (existing and fresh databases), `HardenedRuntimeAuthenticationHttpTest`
-  (the application on the split, strict), `DatabaseRoleConfigTest`.
+- Tests: `RoleSplitScriptsTest` (the scripts on existing and fresh databases),
+  `HardenedRuntimeAuthenticationHttpTest` and `UpgradedRoleSplitAuthenticationHttpTest` (the
+  application's HTTP path on a fresh and on an upgraded split, strict), `DatabaseRoleCheckTest`
+  (the startup check against real roles, and that a refused start starts no lifecycle bean),
+  `DatabaseRoleConfigTest`.

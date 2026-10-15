@@ -164,14 +164,25 @@ ADR 0005). The compose stack supports two roles:
 - `trackmywealth_runtime` is what the running backend uses: it reads and writes rows under RLS and
   can change nothing else.
 
-The backend logs a warning at every start while it connects as a role that bypasses RLS (the
-single-role setup, which uses the PostgreSQL superuser). Set `DB_REQUIRE_RLS_BOUND_ROLE=true` to
-make that a refused start instead; `DEPLOYMENT_TOPOLOGY=hosted` always does.
+The backend logs a warning at every start while its role is not bound by RLS: a superuser or
+`BYPASSRLS` role, a member of one, or the owner of the schema or its tables (the single-role setup,
+which uses the PostgreSQL superuser, is all of these). Set `DB_REQUIRE_RLS_BOUND_ROLE=true` to make
+that a refused start instead, before the backend serves anything; `DEPLOYMENT_TOPOLOGY=hosted`
+always does.
 
-**New installation:** `.env.example` already sets the four `DB_*` variables. On the first
-`docker compose up` (empty data volume) the postgres container creates both roles and hands them
-the database; the backend then migrates as `trackmywealth_migration` and runs as
-`trackmywealth_runtime`. Nothing else to do.
+What the split protects against: a query that forgets its workspace filter, and any attempt by
+the backend's connection to switch RLS off or change the schema. What it does not: RLS reads the
+current workspace from a session setting the backend itself sets, so SQL injected into the
+backend's own connection could set that too. The split narrows what an injection reaches; it does
+not replace parameterized queries.
+
+**New installation:** `.env.example` already sets the `DB_*` variables; give each password its own
+value of at least 16 characters (the script refuses `CHANGE-ME`, shorter ones, or one password for
+both roles). On the first `docker compose up` (empty data volume) the postgres container creates
+both roles and hands them the database; the backend then migrates as `trackmywealth_migration` and
+runs as `trackmywealth_runtime`. Nothing else to do. If the postgres log shows the passwords were
+refused, the volume was still created, as a single-role one: fix `.env` and continue with steps 3
+to 5 below.
 
 **Existing installation** (data already in the volume) - nothing changes until you do this once:
 
@@ -186,11 +197,13 @@ the database; the backend then migrates as `trackmywealth_migration` and runs as
    DB_MIGRATION_PASSWORD=<migration password>
    DB_REQUIRE_RLS_BOUND_ROLE=true
    ```
-3. Recreate only the database container, so it gets the scripts and the passwords (the data
-   volume is kept): `docker compose up -d postgres`
+3. Stop the backend, then recreate only the database container, so it gets the scripts and the
+   passwords (the data volume is kept): `docker compose stop backend` and
+   `docker compose up -d postgres`
 4. Split the roles: `docker compose exec postgres bash /trackmywealth/role-split.sh`
-   It hands every database object to the migration role and grants the runtime role, all or
-   nothing, and can safely be run again (e.g. to change the passwords).
+   It creates the two roles, then hands every database object to the migration role and grants
+   the runtime role; that hand-over is one transaction, which completes or changes nothing. It can
+   safely be run again, e.g. after a failure or to change the passwords.
 5. Start the backend: `docker compose up -d`
 
 To go back, remove the `DB_*` lines from `.env` and `docker compose up -d`: the backend then

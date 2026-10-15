@@ -16,6 +16,25 @@ set -euo pipefail
 
 : "${TMW_MIGRATION_PASSWORD:?TMW_MIGRATION_PASSWORD is not set (DB_MIGRATION_PASSWORD in .env)}"
 : "${TMW_RUNTIME_PASSWORD:?TMW_RUNTIME_PASSWORD is not set (DB_PASSWORD in .env)}"
+
+# The migration role owns every workspace's data; never create it, or the runtime role, with the
+# template's CHANGE-ME, a short password or one shared by both roles. (nocasematch, not ${x^^}:
+# macOS still ships bash 3.)
+shopt -s nocasematch
+for name in TMW_MIGRATION_PASSWORD TMW_RUNTIME_PASSWORD; do
+  value="${!name}"
+  if [[ "$value" == *CHANGE-ME* ]] || [ "${#value}" -lt 16 ]; then
+    echo "$name must be a real password of at least 16 characters, not CHANGE-ME" \
+      "(e.g. openssl rand -base64 32)." >&2
+    exit 1
+  fi
+done
+shopt -u nocasematch
+if [ "$TMW_MIGRATION_PASSWORD" = "$TMW_RUNTIME_PASSWORD" ]; then
+  echo "The migration and runtime roles need different passwords." >&2
+  exit 1
+fi
+
 database="${TMW_DATABASE:-trackmywealth}"
 admin="${POSTGRES_USER:-postgres}"
 here="$(cd "$(dirname "$0")" && pwd)"

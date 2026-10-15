@@ -32,7 +32,10 @@ services:
       TMW_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:-}
       TMW_RUNTIME_PASSWORD: ${DB_PASSWORD:-}
     ports:
-      - "5432:5432"
+      # Published on this host's loopback only: PostgreSQL holds every workspace's data, and the
+      # backend reaches it over the compose network anyway. Set POSTGRES_PUBLISH_ADDRESS=0.0.0.0 in
+      # .env only if another machine must connect directly (e.g. a database tool on your LAN).
+      - "${POSTGRES_PUBLISH_ADDRESS:-127.0.0.1}:5432:5432"
     volumes:
       - trackmywealth_pgdata:/var/lib/postgresql/data
       # The role split's scripts; the image runs initdb/ once, on an empty data volume only.
@@ -60,7 +63,8 @@ services:
       # DB_USERNAME=trackmywealth_runtime and DB_MIGRATION_USERNAME=trackmywealth_migration - see
       # .env.example and the root README, "Database roles".
       DB_USERNAME: ${DB_USERNAME:-trackmywealth}
-      DB_PASSWORD: ${DB_PASSWORD:-trackmywealth}
+      # Single-role: the superuser's own password, POSTGRES_PASSWORD, when .env changed it.
+      DB_PASSWORD: ${DB_PASSWORD:-${POSTGRES_PASSWORD:-trackmywealth}}
       DB_MIGRATION_USERNAME: ${DB_MIGRATION_USERNAME:-}
       DB_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:-}
       # true: refuse to start while connected as a role that bypasses row-level security.

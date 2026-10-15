@@ -191,11 +191,15 @@ hand - README, "Database roles"):
   V86 refer to it.
 
 The split is opt-in: an installation without `DB_MIGRATION_USERNAME` keeps one role for both, as
-before. At startup `DatabaseRoleConfig` warns when the runtime role is a superuser or
-`BYPASSRLS`, and refuses to start with `DB_REQUIRE_RLS_BOUND_ROLE=true` or
-`app.deployment.topology=hosted`. `RoleSplitScriptsTest` runs the shipped scripts on an existing
+before. At startup, before the web server and the scheduler start, `DatabaseRoleConfig` warns
+when the runtime role is not bound by RLS - it, or a role it may act as, is a superuser or
+`BYPASSRLS`, or owns schema public or one of its tables - and refuses to start with
+`DB_REQUIRE_RLS_BOUND_ROLE=true` or `app.deployment.topology=hosted`. RLS reads the workspace from
+a session setting the runtime role sets itself, so the split does not stop an SQL injection from
+choosing another workspace (ADR 0005, *Consequences*). `RoleSplitScriptsTest` runs the shipped scripts on an existing
 single-role database (ownership handed over, data kept, idempotent) and on a fresh one migrated by
-the migration role; `HardenedRuntimeAuthenticationHttpTest` runs the application on the split. The
+the migration role; `HardenedRuntimeAuthenticationHttpTest` and
+`UpgradedRoleSplitAuthenticationHttpTest` run the application on a fresh and an upgraded split. The
 automated cross-tenant suite `FR-TEN-010` requires (`CrossTenantIsolationTest`, US-28-04) runs as
 a `NOSUPERUSER NOBYPASSRLS` role too, because a superuser bypasses RLS unconditionally and the
 suite would pass for the wrong reason; keep any new isolation test on such a role.

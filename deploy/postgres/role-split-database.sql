@@ -1,7 +1,8 @@
 -- US-28-05 (#331, ADR 0005): hands the TrackMyWealth database to the migration role and grants the
 -- runtime role what the running application needs. Run by role-split.sh as the PostgreSQL
 -- superuser, connected to the TrackMyWealth database, after role-split-cluster.sql and after the
--- database itself was given to trackmywealth_migration. Idempotent, and all or nothing.
+-- database itself was given to trackmywealth_migration. Idempotent, and all or nothing (one
+-- transaction); the roles and the database's owner, set before it, are rerun safely.
 --
 -- On a fresh database there is nothing to hand over yet; on an existing single-role installation
 -- every object of schema public still belongs to the old role. REASSIGN OWNED cannot be used: that
