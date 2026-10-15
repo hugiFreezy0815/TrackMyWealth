@@ -70,7 +70,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   }
 
   @Query(
-      value = "SELECT * FROM public.auth_user_snapshot(:userId, :sessionId)",
+      value = "SELECT * FROM public.auth_user_snapshot(CAST(:userId AS UUID), CAST(:sessionId AS UUID))",
       nativeQuery = true)
   Optional<AuthSnapshotRow> findAuthSnapshotRow(
       @Param(USER_ID) UUID userId, @Param("sessionId") UUID sessionId);
