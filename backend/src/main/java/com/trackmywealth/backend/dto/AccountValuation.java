@@ -43,8 +43,9 @@ import java.util.UUID;
  *     from any total rather than counted as zero (PR-011)
  * @param valueBasis where {@code value} came from ({@link ValueBasisValues}) - {@code null} when
  *     {@code valueKnown} is {@code false}. A known value is not necessarily an exact one: {@code
- *     LEDGER_EMPTY} (an assumed zero) and {@code ORIGINAL_PRINCIPAL} (not the current outstanding
- *     balance) are approximations a client should surface as such, see {@link
+ *     LEDGER_EMPTY} (an assumed zero), {@code ORIGINAL_PRINCIPAL} (not the current outstanding
+ *     balance) and {@code ORIGINAL_PRINCIPAL_LESS_REPAYMENTS} (repayments before tracking began are
+ *     missing) are approximations a client should surface as such, see {@link
  *     ValueBasisValues#isApproximate}
  * @param valueSourceDate the date of the observation {@code value} rests on - the snapshot's date
  *     for {@code LATEST_SNAPSHOT}, the valuation's date for {@code MANUAL_VALUATION} - so a client

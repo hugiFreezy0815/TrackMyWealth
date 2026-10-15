@@ -457,6 +457,7 @@ class CategoryControllerTest {
             "LEISURE",
             "DINING", // V37: "Dining Out" under Leisure
             "TRAVEL",
+            "LOAN_INTEREST",
             "OTHER",
             "SAVINGS_INVEST",
             "SHOPPING",

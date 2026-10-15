@@ -82,6 +82,8 @@ class CrossTenantIsolationTest {
           "settlement_match",
           "account_snapshot",
           "reconciliation_result",
+          "loan_payment",
+          "savings_rate_methodology",
           "category",
           "workspace_category_override",
           "categorization_rule",
@@ -314,6 +316,76 @@ class CrossTenantIsolationTest {
 
   // US-25-04: an opening balance is an account_snapshot row like any other, under the same policy -
   // what keeps another workspace from reading or valuing from it.
+  // US-10-02: a loan payment's split is financial data and carries workspace RLS of its own (V83).
+  @Test
+  void loanPaymentRowIsInvisibleAcrossWorkspaces() throws Exception {
+    UUID userId = UUID.randomUUID();
+    try (Connection admin = adminConnection();
+        PreparedStatement statement =
+            admin.prepareStatement(
+                "INSERT INTO app_user (id, email, password_hash) VALUES (?, ?, 'x')")) {
+      statement.setObject(1, userId);
+      statement.setString(2, "loan-" + userId + "@example.com");
+      statement.executeUpdate();
+    }
+    UUID loanId = UUID.randomUUID();
+    rowsCommittedUnderContext(
+        workspaceAId,
+        "INSERT INTO account (id, workspace_id, financial_institution_id, account_type, name,"
+            + " native_currency) VALUES (?, ?, ?, 'CASH', 'Loan A', 'CHF')",
+        loanId,
+        workspaceAId,
+        institutionAId);
+    UUID paymentId = UUID.randomUUID();
+    rowsCommittedUnderContext(
+        workspaceAId,
+        "INSERT INTO loan_payment (id, workspace_id, loan_account_id, paying_account_id,"
+            + " booking_date, currency, total_amount, interest_amount, principal_amount,"
+            + " split_source, split_estimated, interest_transaction_id, created_by)"
+            + " VALUES (?, ?, ?, ?, CURRENT_DATE, 'CHF', 1.00, 1.00, 0, 'STATED', FALSE, ?, ?)",
+        paymentId,
+        workspaceAId,
+        loanId,
+        accountAId,
+        transactionAId,
+        userId);
+
+    assertThat(rowVisibleUnderContext(workspaceAId, "loan_payment", paymentId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "loan_payment", paymentId)).isFalse();
+  }
+
+  // US-10-02 reads savings_rate_methodology (RLS since V55): one workspace's savings-rate settings
+  // must not decide another's. Keyed by workspace_id, not by an id column.
+  @Test
+  void savingsRateMethodologyRowIsInvisibleAcrossWorkspaces() throws Exception {
+    rowsCommittedUnderContext(
+        workspaceAId,
+        "INSERT INTO savings_rate_methodology (workspace_id, include_mortgage_principal)"
+            + " VALUES (?, FALSE)",
+        workspaceAId);
+
+    assertThat(methodologyVisibleUnderContext(workspaceAId, workspaceAId)).isTrue();
+    assertThat(methodologyVisibleUnderContext(workspaceBId, workspaceAId)).isFalse();
+  }
+
+  private boolean methodologyVisibleUnderContext(UUID contextWorkspaceId, UUID ownerWorkspaceId)
+      throws Exception {
+    try (Connection connection = testRoleConnection()) {
+      connection.setAutoCommit(false);
+      setWorkspaceContext(connection, contextWorkspaceId);
+      try (PreparedStatement statement =
+          connection.prepareStatement(
+              "SELECT 1 FROM savings_rate_methodology WHERE workspace_id = ?")) {
+        statement.setObject(1, ownerWorkspaceId);
+        try (ResultSet resultSet = statement.executeQuery()) {
+          boolean visible = resultSet.next();
+          connection.rollback();
+          return visible;
+        }
+      }
+    }
+  }
+
   @Test
   void openingBalanceRowIsInvisibleAcrossWorkspaces() throws Exception {
     UUID openingBalanceAId = insertOpeningBalance(workspaceAId, accountAId);

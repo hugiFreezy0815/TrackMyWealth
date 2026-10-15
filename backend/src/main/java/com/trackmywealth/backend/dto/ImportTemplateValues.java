@@ -106,7 +106,12 @@ public final class ImportTemplateValues {
           "VALUATION_ADJUSTMENT",
           "CORPORATE_ACTION");
 
-  /** The transaction types a {@link #CLASS_CASH_TRANSACTIONS} template may produce. */
+  /**
+   * The transaction types a {@link #CLASS_CASH_TRANSACTIONS} template may produce. Not {@code
+   * DEBT_REPAYMENT}: a loan payment is split into interest and principal and recorded through
+   * {@code LoanRepaymentService} (US-10-02), never as one ledger row - importing loan statements
+   * comes with #324.
+   */
   public static final Set<String> CASH_TRANSACTION_TYPES =
       Set.of(
           "INCOME",
@@ -118,7 +123,6 @@ public final class ImportTemplateValues {
           "FEE",
           "TAX",
           "REFUND",
-          "DEBT_REPAYMENT",
           "PENSION_CONTRIBUTION",
           "CREDIT_CARD_PURCHASE",
           "SETTLEMENT");

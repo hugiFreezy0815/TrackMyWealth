@@ -25,6 +25,7 @@ final class CurrentVersion {
       Set.of(
           "account",
           "account_snapshot",
+          "amortisation_schedule_entry",
           "app_user",
           "categorization_rule",
           "fx_import_setting",

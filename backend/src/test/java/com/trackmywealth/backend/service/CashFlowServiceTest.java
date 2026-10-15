@@ -16,7 +16,9 @@ import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.SavingsRateMethodology;
 import com.trackmywealth.backend.repository.AccountRepository;
+import com.trackmywealth.backend.repository.SavingsRateMethodologyRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
@@ -51,9 +53,16 @@ class CashFlowServiceTest {
   private final AccountRepository accountRepository = mock(AccountRepository.class);
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
   private final FxRateService fxRateService = mock(FxRateService.class);
+  private final SavingsRateMethodologyRepository methodologyRepository =
+      mock(SavingsRateMethodologyRepository.class);
   private final CashFlowService service =
       new CashFlowService(
-          accessControlService, accountRepository, transactionRepository, fxRateService, SOURCE);
+          accessControlService,
+          accountRepository,
+          transactionRepository,
+          fxRateService,
+          methodologyRepository,
+          SOURCE);
 
   @BeforeEach
   void setUp() {
@@ -168,6 +177,37 @@ class CashFlowServiceTest {
     assertThat(response.complete()).isFalse();
   }
 
+  // US-10-02: with the default methodology the loan counts as saving, so principal paid from a
+  // non-saving account is saving - asked for with fromSaving = false.
+  @Test
+  void byDefaultPrincipalRepaidFromANonSavingAccountIsSaving() {
+    repaidPrincipal(false, row(DAY_1, "CHF", "1200"));
+
+    CashFlowResponse response = service.getCashFlow(MONTH, ACTOR, null);
+
+    assertThat(response.saving())
+        .containsExactly(new CurrencyAmount("CHF", new BigDecimal("1200")));
+    assertThat(response.spending()).isEmpty();
+    assertThat(response.complete()).isTrue();
+  }
+
+  // US-10-02: without mortgage principal the loan is no saving account, so principal paid out of a
+  // saving account leaves saving - asked for with fromSaving = true, and negated.
+  @Test
+  void withoutMortgagePrincipalPrincipalRepaidFromSavingsIsTakenOutOfSaving() {
+    SavingsRateMethodology methodology = mock(SavingsRateMethodology.class);
+    when(methodology.isIncludeMortgagePrincipal()).thenReturn(false);
+    when(methodologyRepository.findById(WORKSPACE)).thenReturn(Optional.of(methodology));
+    repaidPrincipal(true, row(DAY_1, "CHF", "1200"));
+
+    CashFlowResponse response = service.getCashFlow(MONTH, ACTOR, null);
+
+    assertThat(response.saving())
+        .containsExactly(new CurrencyAmount("CHF", new BigDecimal("-1200")));
+    verify(transactionRepository, times(0))
+        .sumRepaidPrincipalByDateAndCurrency(anyCollection(), eq(false), any(), any());
+  }
+
   private void rate(
       String base, LocalDate date, String rate, boolean carriedForward, boolean stale) {
     when(fxRateService.tryGetConversionRate(base, "CHF", date, SOURCE))
@@ -196,6 +236,12 @@ class CashFlowServiceTest {
   private void savingOutOf(Object[]... rows) {
     when(transactionRepository.sumSavingMovementsByDateAndCurrency(
             anyCollection(), eq(false), any(), any()))
+        .thenReturn(List.of(rows));
+  }
+
+  private void repaidPrincipal(boolean fromSaving, Object[]... rows) {
+    when(transactionRepository.sumRepaidPrincipalByDateAndCurrency(
+            anyCollection(), eq(fromSaving), any(), any()))
         .thenReturn(List.of(rows));
   }
 

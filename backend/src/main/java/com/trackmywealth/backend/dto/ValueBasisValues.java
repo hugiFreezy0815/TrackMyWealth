@@ -40,14 +40,24 @@ public final class ValueBasisValues {
   public static final String MANUAL_VALUATION = "MANUAL_VALUATION";
 
   /**
-   * The loan's or mortgage's original principal, <b>not</b> its current outstanding balance - no
-   * amortisation tracking exists yet (EPIC 10), so this overstates what is still owed once
-   * repayments have been made - an approximation.
+   * The loan's or mortgage's original principal, <b>not</b> its current outstanding balance: no
+   * repayment has been recorded on it, so this overstates what is still owed once repayments have
+   * been made - an approximation.
    */
   public static final String ORIGINAL_PRINCIPAL = "ORIGINAL_PRINCIPAL";
 
+  /**
+   * US-10-02: the loan's or mortgage's original principal less the principal repaid on its ledger
+   * up to the as-of date (the incoming legs of its loan payments). Still an approximation:
+   * repayments made before tracking began are not on the ledger, so it can overstate what is owed.
+   */
+  public static final String ORIGINAL_PRINCIPAL_LESS_REPAYMENTS =
+      "ORIGINAL_PRINCIPAL_LESS_REPAYMENTS";
+
   /** {@code true} for a basis that is an approximation or assumption, not a measured figure. */
   public static boolean isApproximate(String valueBasis) {
-    return LEDGER_EMPTY.equals(valueBasis) || ORIGINAL_PRINCIPAL.equals(valueBasis);
+    return LEDGER_EMPTY.equals(valueBasis)
+        || ORIGINAL_PRINCIPAL.equals(valueBasis)
+        || ORIGINAL_PRINCIPAL_LESS_REPAYMENTS.equals(valueBasis);
   }
 }

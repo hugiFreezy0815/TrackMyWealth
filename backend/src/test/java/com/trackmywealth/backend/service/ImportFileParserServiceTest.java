@@ -1395,12 +1395,12 @@ class ImportFileParserServiceTest {
     ImportTemplateDefinition template =
         new Template()
             .mapping(mapping("date", "amount").transactionType("type").build())
-            .typeMapping(Map.of("LASTSCHRIFT", "DEBT_REPAYMENT"))
+            .typeMapping(Map.of("LASTSCHRIFT", "EXPENSE"))
             .build();
 
     List<ParsedImportRow> rows = parser.parse(utf8(csv), template, null).rows();
 
-    assertThat(rows.get(0).canonical().transactionType()).isEqualTo("DEBT_REPAYMENT");
+    assertThat(rows.get(0).canonical().transactionType()).isEqualTo("EXPENSE");
     assertThat(rows.get(1).canonical().transactionType()).isEqualTo("FEE");
     assertThat(rows.get(2).errorCode()).isEqualTo(ImportRowErrorValues.TYPE_NOT_ALLOWED);
     assertThat(rows.get(2).errorArgs())
@@ -1494,6 +1494,9 @@ class ImportFileParserServiceTest {
     assertTemplateInvalid(new Template().trailing(-5).build(), "trailingSummaryRowCount");
     assertTemplateInvalid(new Template().trailing(101).build(), "trailingSummaryRowCount");
     assertTemplateInvalid(new Template().typeMapping(Map.of("Kauf", "BUY")).build(), "typeMapping");
+    // US-10-02: a loan payment is split, never imported as one DEBT_REPAYMENT row (#324).
+    assertTemplateInvalid(
+        new Template().typeMapping(Map.of("Rate", "DEBT_REPAYMENT")).build(), "typeMapping");
     assertTemplateInvalid(new Template().typeMapping(Map.of(" ", "FEE")).build(), "typeMapping");
     Map<String, String> clash = new HashMap<>();
     clash.put("Geb\u00fchr", "FEE");

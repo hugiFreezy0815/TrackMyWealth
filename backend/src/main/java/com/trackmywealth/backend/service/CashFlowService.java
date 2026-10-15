@@ -5,7 +5,9 @@ import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.SavingsRateMethodology;
 import com.trackmywealth.backend.repository.AccountRepository;
+import com.trackmywealth.backend.repository.SavingsRateMethodologyRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.validation.CurrencyCodes;
@@ -37,15 +39,22 @@ import org.springframework.transaction.annotation.Transactional;
  *       alike accounts is in no figure at all, and neither is a trade. The flag is read as it is
  *       now, not as it was when the money moved: changing an account's flag restates every month,
  *       like re-classifying the account. An endpoint that changes the flag must keep it so, or
- *       record the flag per transfer instead;
+ *       record the flag per transfer instead. US-10-02: a loan's repaid principal is saving when
+ *       the workspace's methodology includes mortgage principal ({@code
+ *       include_mortgage_principal}, the default) - the loan then counts as a saving account,
+ *       whatever its own flag, so a payment from a current account adds the principal and one from
+ *       a savings account moves money between two saving accounts; without it, the loan counts as
+ *       no saving account, and a payment from savings takes the principal out of saving. The
+ *       interest is an {@code EXPENSE}, so it is spending;
  *   <li><b>pendingReview</b> - what awaits a member's decision before it can count anywhere: an
- *       unresolved card settlement, a proposed transfer pair, an unlinked transfer leg.
+ *       unresolved card settlement, a proposed transfer pair, an unlinked transfer leg, a loan
+ *       payment whose interest/principal split is unknown (US-10-02).
  * </ul>
  *
  * <p>Left out entirely: any row flagged an internal transfer (a card settlement or own-account
  * transfer, DM-05) except as saving; a voided row with its reversal (US-07-02); a soft-deleted row.
  * {@code complete} is {@code false} while anything is pending review, or while a converted figure
- * is unknown. The savings rate is US-10-05.
+ * is unknown. The savings rate itself is US-10-05.
  *
  * <p>US-06-05: without a {@code currency}, each figure is given per original transaction currency.
  * With one, each figure is a single amount in that currency, every booking date converted at its
@@ -78,6 +87,7 @@ public class CashFlowService {
   private final AccountRepository accountRepository;
   private final TransactionRepository transactionRepository;
   private final FxRateService fxRateService;
+  private final SavingsRateMethodologyRepository savingsRateMethodologyRepository;
   private final String fxDefaultSource;
 
   public CashFlowService(
@@ -85,11 +95,13 @@ public class CashFlowService {
       AccountRepository accountRepository,
       TransactionRepository transactionRepository,
       FxRateService fxRateService,
+      SavingsRateMethodologyRepository savingsRateMethodologyRepository,
       @Value("${app.fx.default-source}") String fxDefaultSource) {
     this.accessControlService = accessControlService;
     this.accountRepository = accountRepository;
     this.transactionRepository = transactionRepository;
     this.fxRateService = fxRateService;
+    this.savingsRateMethodologyRepository = savingsRateMethodologyRepository;
     this.fxDefaultSource = fxDefaultSource;
   }
 
@@ -129,14 +141,14 @@ public class CashFlowService {
             transactionRepository.sumSpendingByDateAndCurrency(
                 accountIds, SPENDING_TYPES, from, to));
     List<Object[]> saving =
-        Stream.concat(
-                transactionRepository
-                    .sumSavingMovementsByDateAndCurrency(accountIds, true, from, to)
-                    .stream(),
+        Stream.of(
+                transactionRepository.sumSavingMovementsByDateAndCurrency(
+                    accountIds, true, from, to),
                 negated(
                     transactionRepository.sumSavingMovementsByDateAndCurrency(
-                        accountIds, false, from, to))
-                    .stream())
+                        accountIds, false, from, to)),
+                repaidPrincipalSaving(actor.workspaceId(), accountIds, from, to))
+            .flatMap(List::stream)
             .toList();
     List<Object[]> pending =
         transactionRepository.sumPendingReviewByDateAndCurrency(accountIds, from, to);
@@ -169,6 +181,22 @@ public class CashFlowService {
         convertedSaving,
         convertedPending,
         pending.isEmpty() && allKnown);
+  }
+
+  // US-10-02: with mortgage principal included, the loan is a saving account, so principal paid
+  // from a non-saving account is saving; without it, principal paid out of a saving account is
+  // money taken out of saving. Either way a payment between two alike accounts moves nothing.
+  private List<Object[]> repaidPrincipalSaving(
+      UUID workspaceId, List<UUID> accountIds, LocalDate from, LocalDate to) {
+    boolean includePrincipal =
+        savingsRateMethodologyRepository
+            .findById(workspaceId)
+            .map(SavingsRateMethodology::isIncludeMortgagePrincipal)
+            .orElse(SavingsRateMethodology.DEFAULT_INCLUDE_MORTGAGE_PRINCIPAL);
+    List<Object[]> principal =
+        transactionRepository.sumRepaidPrincipalByDateAndCurrency(
+            accountIds, !includePrincipal, from, to);
+    return includePrincipal ? principal : negated(principal);
   }
 
   // (booking date, currency, amount) rows summed per currency, in currency order; a currency that
