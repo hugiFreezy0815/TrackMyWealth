@@ -127,6 +127,12 @@ public final class ImportBatchValues {
   /** The file states different balances for its latest date. */
   public static final String BALANCE_AMBIGUOUS = "AMBIGUOUS";
 
+  /**
+   * The closing balance was read, but its date lies in the future, before the account was opened or
+   * after it was closed: the commit imports the rows and records no snapshot.
+   */
+  public static final String BALANCE_OUT_OF_RANGE = "OUT_OF_RANGE";
+
   // --- US-07-12: what became of the balance (import_batch.statement_balance_snapshot) ---
 
   /** Before the commit: no imported snapshot of that date exists, so the commit records one. */

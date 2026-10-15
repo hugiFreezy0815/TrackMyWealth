@@ -73,15 +73,10 @@ class ReconciliationServiceTest {
     account = account();
     opening = snapshot(OPENING_DATE, "10000.00", true);
     snapshot = snapshot(SNAPSHOT_DATE, "12345.67", false);
-    when(snapshotRepository
-            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
-                account.getId()))
-        .thenReturn(Optional.of(snapshot));
+    when(snapshotRepository.findLatestObserved(account.getId())).thenReturn(Optional.of(snapshot));
     when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId()))
         .thenReturn(Optional.of(opening));
-    when(snapshotRepository
-            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullAndSnapshotDateLessThanOrderBySnapshotDateDescCreatedAtDesc(
-                account.getId(), SNAPSHOT_DATE))
+    when(snapshotRepository.findObservedBefore(account.getId(), SNAPSHOT_DATE))
         .thenReturn(Optional.empty());
     when(resultRepository.findBySnapshotIdAndAffectedSecurityIdIsNull(snapshot.getId()))
         .thenReturn(Optional.empty());

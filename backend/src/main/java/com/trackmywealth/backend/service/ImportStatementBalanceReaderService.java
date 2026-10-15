@@ -119,21 +119,30 @@ public class ImportStatementBalanceReaderService {
     boolean parentheses =
         ImportTemplateValues.AMOUNT_NEGATIVE_IN_PARENTHESES.equals(template.amountRepresentation());
     List<ImportStatementBalances.Stated> balances = new ArrayList<>();
-    int unreadable = 0;
+    List<String> unreadableCurrencies = new ArrayList<>();
     for (String line : lines) {
       Matcher matcher = pattern.matcher(line.strip());
       if (!matcher.find()) {
         continue;
       }
+      String currency = hasCurrency ? currencyOf(matcher) : null;
       ImportStatementBalances.Stated stated =
           stated(matcher, hasCurrency, formatter, template, parentheses);
       if (stated == null) {
-        unreadable++;
+        unreadableCurrencies.add(currency);
       } else {
         balances.add(stated);
       }
     }
-    return new ImportStatementBalances(balances, unreadable, template.isPdf());
+    return new ImportStatementBalances(balances, unreadableCurrencies, template.isPdf());
+  }
+
+  // The line's currency when it can be read, else null: an unreadable line is then attributed to
+  // it.
+  private static String currencyOf(Matcher matcher) {
+    String group = matcher.group(ImportStatementBalanceRule.CURRENCY_GROUP);
+    String currency = group == null ? null : group.strip().toUpperCase(Locale.ROOT);
+    return currency != null && isCurrencyCode(currency) ? currency : null;
   }
 
   // The balance one matched line states, or null when its date, amount or currency is unreadable.

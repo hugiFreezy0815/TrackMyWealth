@@ -189,6 +189,25 @@ class ImportStatementBalanceControllerTest {
         .isEqualTo(ImportBatchValues.SNAPSHOT_RECORDED);
   }
 
+  /** A balance the account's dates do not admit is shown; the rows still go in, without it. */
+  @Test
+  void aBalanceBeforeTheAccountWasOpenedNeverBlocksTheRowsCommit() {
+    ImportBatchResponse preview = upload(statement("2.507,60"));
+    assertThat(preview.statementBalance().outcome()).isEqualTo(ImportBatchValues.BALANCE_FOUND);
+    execute("UPDATE account SET opened_at = ? WHERE id = ?", STATEMENT_DATE.plusDays(1), account);
+
+    assertThat(get(preview.id()).statementBalance().outcome())
+        .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
+    ImportBatchResponse committed = commit(get(preview.id()));
+
+    assertThat(committed.status()).isEqualTo("COMMITTED");
+    assertThat(committed.counts().imported()).isPositive();
+    assertThat(committed.statementBalance().outcome())
+        .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
+    assertThat(committed.statementBalance().snapshot()).isNull();
+    assertThat(count("SELECT count(*) FROM account_snapshot")).isZero();
+  }
+
   @Test
   void aCommittedBalanceIsReconciledAgainstTheLedger() {
     openingBalance("100.00");
@@ -656,6 +675,18 @@ class ImportStatementBalanceControllerTest {
   record PageOf<T>(List<T> content, long totalElements) {}
 
   // --- database helpers -------------------------------------------------------------------------
+
+  private void execute(String sql, Object... parameters) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement(sql)) {
+      for (int i = 0; i < parameters.length; i++) {
+        statement.setObject(i + 1, parameters[i]);
+      }
+      statement.executeUpdate();
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+  }
 
   private long count(String sql, Object... parameters) {
     List<Map<String, Object>> rows = rowsOf(sql, parameters);

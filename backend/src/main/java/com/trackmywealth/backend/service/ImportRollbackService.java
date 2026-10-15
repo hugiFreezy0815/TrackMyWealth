@@ -154,7 +154,9 @@ public class ImportRollbackService {
             : voidAll(account, batch, transactionIds, modified, why, actor);
     if (balanceRemoved) {
       // The account's newest observed balance is now an older one, which may have been superseded
-      // by the removed one: compare against it afresh.
+      // by the removed one: compare against it afresh. The ledger's own reconciliation above does
+      // not cover it: it re-checks the latest balance only when the change is dated on or before
+      // it, and a statement's bookings mostly come after its older balance.
       reconciliationService.reconcileLatest(account, actor.userId());
     }
     if (LOG.isInfoEnabled()) {

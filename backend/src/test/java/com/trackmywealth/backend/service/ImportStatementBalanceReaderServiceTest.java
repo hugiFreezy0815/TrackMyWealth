@@ -69,6 +69,22 @@ class ImportStatementBalanceReaderServiceTest {
     assertThat(read.unreadable()).isEqualTo(1);
   }
 
+  /** An unreadable line keeps the currency it names, so it hides only that currency's balance. */
+  @Test
+  void anUnreadableLineIsAttributedToTheCurrencyItNamesWhenThatIsReadable() {
+    ImportStatementBalances read =
+        reader.read(
+            List.of(
+                "Saldo per 31.01.2031 1.2.3 EUR",
+                "Saldo per 31.02.2031 10.00 CHF",
+                "Saldo per 31.01.2031 10.00 FRANKEN"),
+            swiss(SALDO));
+
+    assertThat(read.unreadableCurrencies()).containsExactly("EUR", "CHF", null);
+    assertThat(read.unreadableIn("EUR")).isEqualTo(2);
+    assertThat(read.unreadableIn("USD")).isEqualTo(1);
+  }
+
   @Test
   void anOptionalCurrencyGroupThatDidNotMatchLeavesTheCurrencyOpen() {
     ImportStatementBalances read =

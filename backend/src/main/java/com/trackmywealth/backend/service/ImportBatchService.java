@@ -310,7 +310,7 @@ public class ImportBatchService {
                 counts,
                 sameFiles,
                 identificationService.response(batch, actor),
-                statementBalanceService.response(batch)));
+                statementBalanceService.response(batch, account)));
   }
 
   /**
@@ -582,7 +582,7 @@ public class ImportBatchService {
         counts,
         sameFilesImportedIn(one),
         identificationService.response(batch, actor),
-        statementBalanceService.response(batch));
+        statementBalanceService.response(batch, account));
   }
 
   private static ImportBatchResponse summary(

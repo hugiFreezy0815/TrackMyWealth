@@ -18,7 +18,9 @@ public record ImportStatementBalanceRule(
     @Schema(
             description =
                 "RE2 pattern with the named groups date and amount, and optionally currency, e.g."
-                    + " Kontostand vom (?P<date>\\S+): (?P<amount>\\S+)")
+                    + " Kontostand vom (?P<date>\\S+): (?P<amount>\\S+). A statement with"
+                    + " sections in several currencies needs the currency group: without it,"
+                    + " every balance is taken to be in the account's currency.")
         @Size(max = ImportPdfLayout.MAX_PATTERN_LENGTH)
         String pattern,
     @Schema(description = "Optional: the date's format, if not the template's date format.")

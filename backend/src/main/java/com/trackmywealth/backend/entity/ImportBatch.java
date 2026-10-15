@@ -339,8 +339,9 @@ public class ImportBatch {
 
   /**
    * US-07-12: what a parse read as the file's balance; every value but {@code outcome} is {@code
-   * null} unless it is {@code FOUND}, the opening balance also when the file states only one. Only
-   * a batch before its commit is parsed, so no snapshot outcome is recorded yet.
+   * null} unless it is {@code FOUND} or {@code OUT_OF_RANGE}, the opening balance also when the
+   * file states only one. Only a batch before its commit is parsed, so no snapshot outcome is
+   * recorded yet.
    */
   public void recordStatementBalance(
       String outcome,
@@ -355,6 +356,14 @@ public class ImportBatch {
     this.statementBalanceCurrency = currency;
     this.openingBalanceDate = openingDate;
     this.openingBalance = opening;
+  }
+
+  /**
+   * US-07-12: the balance's date is no longer one the account admits (its dates changed since the
+   * parse); the commit records no snapshot. The balance read stays, for the batch's summary.
+   */
+  public void markStatementBalanceOutOfRange() {
+    this.statementBalanceOutcome = ImportBatchValues.BALANCE_OUT_OF_RANGE;
   }
 
   public String getStatementBalanceOutcome() {

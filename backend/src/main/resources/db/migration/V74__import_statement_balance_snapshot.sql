@@ -18,6 +18,8 @@ ADD CONSTRAINT chk_import_template_statement_balance_rule CHECK (
 -- What the parsed file states as its balance. The closing balance (the latest one in the account's
 -- currency) is what a commit records; the opening balance is shown in the preview only. The
 -- balance follows the snapshot's convention: a liability's is the positive amount owed.
+-- OUT_OF_RANGE keeps a balance read whose date the account does not admit (future, before it was
+-- opened, after it was closed): it is shown, and the commit records no snapshot for it.
 -- statement_balance_snapshot says what the commit, and later a rollback, did with it.
 ALTER TABLE import_batch
 ADD COLUMN statement_balance_outcome VARCHAR(20),
@@ -31,12 +33,14 @@ ADD COLUMN statement_balance_snapshot VARCHAR(20);
 ALTER TABLE import_batch
 ADD CONSTRAINT chk_import_batch_statement_balance_outcome CHECK (
     statement_balance_outcome IS NULL
-    OR statement_balance_outcome IN ('FOUND', 'NOT_FOUND', 'UNREADABLE', 'AMBIGUOUS')
+    OR statement_balance_outcome IN (
+        'FOUND', 'OUT_OF_RANGE', 'NOT_FOUND', 'UNREADABLE', 'AMBIGUOUS'
+    )
 );
 
 ALTER TABLE import_batch
 ADD CONSTRAINT chk_import_batch_statement_balance_found CHECK (
-    (statement_balance_outcome IS NOT DISTINCT FROM 'FOUND')
+    (coalesce(statement_balance_outcome IN ('FOUND', 'OUT_OF_RANGE'), FALSE))
     = (
         statement_balance_date IS NOT NULL
         AND statement_balance IS NOT NULL
@@ -49,7 +53,7 @@ ADD CONSTRAINT chk_import_batch_opening_balance CHECK (
     (opening_balance_date IS NULL) = (opening_balance IS NULL)
     AND (
         opening_balance_date IS NULL
-        OR statement_balance_outcome IS NOT DISTINCT FROM 'FOUND'
+        OR statement_balance_outcome IN ('FOUND', 'OUT_OF_RANGE')
     )
 );
 

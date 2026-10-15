@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -161,7 +162,7 @@ class ImportStatementBalanceServiceTest {
     service.record(batch, account, null);
 
     assertThat(batch.getStatementBalanceOutcome()).isNull();
-    assertThat(service.response(batch)).isNull();
+    assertThat(service.response(batch, account)).isNull();
   }
 
   @Test
@@ -179,7 +180,9 @@ class ImportStatementBalanceServiceTest {
         batch,
         account,
         new ImportStatementBalances(
-            List.of(balance(END, "100.00", "CHF"), balance(END, "120.00", "CHF")), 0, true));
+            List.of(balance(END, "100.00", "CHF"), balance(END, "120.00", "CHF")),
+            List.of(),
+            true));
     assertThat(batch.getStatementBalanceOutcome()).isEqualTo(ImportBatchValues.BALANCE_FOUND);
     assertThat(batch.getStatementBalance()).isEqualByComparingTo("120.00");
     assertThat(batch.getOpeningBalanceDate()).isEqualTo(END);
@@ -187,19 +190,73 @@ class ImportStatementBalanceServiceTest {
   }
 
   @Test
-  void importedBalanceMustRespectAccountDateBounds() {
-    found("100.00");
-    when(businessDates.today()).thenReturn(END.minusDays(1));
-    assertThatThrownBy(() -> service.commit(batch, account, MEMBER))
-        .isInstanceOf(ApiException.class);
-    when(businessDates.today()).thenReturn(END.plusDays(1));
+  void aBalanceTheAccountsDatesDoNotAdmitIsShownButNeverBlocksTheCommit() {
     when(account.getOpenedAt()).thenReturn(END.plusDays(1));
-    assertThatThrownBy(() -> service.commit(batch, account, MEMBER))
-        .isInstanceOf(ApiException.class);
-    when(account.getOpenedAt()).thenReturn(null);
+    service.record(batch, account, stated(balance(END, "100.00", "CHF")));
+
+    assertThat(batch.getStatementBalanceOutcome())
+        .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
+    assertThat(batch.getStatementBalance()).isEqualByComparingTo("100.00");
+    assertThat(service.response(batch, account).outcome())
+        .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
+    service.commit(batch, account, MEMBER);
+    verify(snapshots, never()).saveAndFlush(any());
+  }
+
+  @Test
+  void accountDatesChangedSinceTheParseSkipTheSnapshotAtCommitAndThePreviewSaysSo() {
+    found("100.00");
     when(account.getClosedAt()).thenReturn(END.minusDays(1));
-    assertThatThrownBy(() -> service.commit(batch, account, MEMBER))
-        .isInstanceOf(ApiException.class);
+
+    assertThat(service.response(batch, account).outcome())
+        .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
+    service.commit(batch, account, MEMBER);
+
+    assertThat(batch.getStatementBalanceOutcome())
+        .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
+    assertThat(batch.getStatementBalanceSnapshot()).isNull();
+    verify(snapshots, never()).saveAndFlush(any());
+    verify(reconciliation, never()).reconcileLatest(any(), any());
+  }
+
+  @Test
+  void aFutureBalanceIsOutOfRange() {
+    when(businessDates.today()).thenReturn(END.minusDays(1));
+    service.record(batch, account, stated(balance(END, "100.00", "CHF")));
+
+    assertThat(batch.getStatementBalanceOutcome())
+        .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
+  }
+
+  @Test
+  void anUnreadableLineInAnotherCurrencyHidesNothing() {
+    service.record(
+        batch,
+        account,
+        new ImportStatementBalances(
+            List.of(balance(START, "100.00", "CHF"), balance(END, "120.00", "CHF")),
+            List.of("EUR"),
+            true));
+
+    assertThat(batch.getStatementBalanceOutcome()).isEqualTo(ImportBatchValues.BALANCE_FOUND);
+    assertThat(batch.getStatementBalance()).isEqualByComparingTo("120.00");
+  }
+
+  @Test
+  void anUnreadableLineInTheAccountsCurrencyOrOfUnknownCurrencyHidesTheBalance() {
+    service.record(
+        batch,
+        account,
+        new ImportStatementBalances(
+            List.of(balance(START, "100.00", "CHF")), Arrays.asList("CHF"), true));
+    assertThat(batch.getStatementBalanceOutcome()).isEqualTo(ImportBatchValues.BALANCE_UNREADABLE);
+
+    service.record(
+        batch,
+        account,
+        new ImportStatementBalances(
+            List.of(balance(START, "100.00", "CHF")), Arrays.asList((String) null), true));
+    assertThat(batch.getStatementBalanceOutcome()).isEqualTo(ImportBatchValues.BALANCE_UNREADABLE);
   }
 
   @Test
@@ -207,15 +264,16 @@ class ImportStatementBalanceServiceTest {
     AccountSnapshot historical = recordedSnapshot();
     AccountSnapshot latest = new AccountSnapshot();
     ReflectionTestUtils.setField(latest, "id", UUID.randomUUID());
-    when(snapshots
-            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
-                account.getId()))
-        .thenReturn(Optional.of(latest));
+    when(snapshots.findLatestObserved(account.getId())).thenReturn(Optional.of(latest));
     ReconciliationResult accepted = result(ReconciliationResultValues.ACCEPTED);
-    when(results.findBySnapshotId(historical.getId())).thenReturn(List.of(accepted));
+    ReconciliationResult open = result(ReconciliationResultValues.OPEN);
+    when(results.findBySnapshotId(historical.getId())).thenReturn(List.of(accepted, open));
     assertThat(service.rollBack(batch, account, MEMBER)).isTrue();
     assertThat(historical.getWithdrawnAt()).isNotNull();
     assertThat(accepted.getStatus()).isEqualTo(ReconciliationResultValues.ACCEPTED);
+    assertThat(open.getStatus())
+        .as("withdrawn the same way as for an adjustment")
+        .isEqualTo(ReconciliationResultValues.SUPERSEDED);
     assertThat(batch.getStatementBalanceSnapshot()).isEqualTo(ImportBatchValues.SNAPSHOT_WITHDRAWN);
     verify(results, never()).deleteAll(any());
   }
@@ -225,7 +283,7 @@ class ImportStatementBalanceServiceTest {
   @Test
   void beforeTheCommitThePreviewSaysWhatItWouldDo() {
     found("100.00");
-    assertThat(service.response(batch))
+    assertThat(service.response(batch, account))
         .isEqualTo(
             new ImportStatementBalanceResponse(
                 ImportBatchValues.BALANCE_FOUND,
@@ -237,11 +295,11 @@ class ImportStatementBalanceServiceTest {
                 ImportBatchValues.SNAPSHOT_NEW));
 
     existingDocumentSnapshot("100.0000");
-    assertThat(service.response(batch).snapshot())
+    assertThat(service.response(batch, account).snapshot())
         .isEqualTo(ImportBatchValues.SNAPSHOT_ALREADY_RECORDED);
 
     existingDocumentSnapshot("99.0000");
-    assertThat(service.response(batch).snapshot())
+    assertThat(service.response(batch, account).snapshot())
         .isEqualTo(ImportBatchValues.SNAPSHOT_CONFLICTING);
   }
 
@@ -251,7 +309,8 @@ class ImportStatementBalanceServiceTest {
     batch.setStatus(ImportBatchValues.COMMITTED);
     batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_RECORDED);
 
-    assertThat(service.response(batch).snapshot()).isEqualTo(ImportBatchValues.SNAPSHOT_RECORDED);
+    assertThat(service.response(batch, account).snapshot())
+        .isEqualTo(ImportBatchValues.SNAPSHOT_RECORDED);
     verify(snapshots, never())
         .findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(any(), any(), any());
   }

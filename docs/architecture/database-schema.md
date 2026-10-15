@@ -1211,17 +1211,26 @@ of a PDF, from the same read as the bookings. Amounts are read with the template
 signed as the account holder sees them (negative: overdrawn or owed). A CSV template needs such
 lines (a preamble, a header row index above 0, or trailing summary rows). A dry run reports how
 many balances the rule read (`statementBalanceCount`) and how many matched lines it could not
-(`statementBalanceUnreadableCount`).
+(`statementBalanceUnreadableCount`). A statement with sections in several currencies (a
+multi-currency PDF) needs the `currency` group: without it, every balance line is taken to be in the
+account's currency, and the last one of the whole file would close the account's balance.
 
 **Batches.** Every parse records what the file states. Only balances in the account's own currency
 count (a card's `billing_currency`; a balance without a currency group is taken to be in it). The
 latest dated one is the closing balance: `statement_balance_outcome` `FOUND` with
 `statement_balance_date`, `statement_balance` and `_currency`, or `AMBIGUOUS` (different amounts on
-that date), `NOT_FOUND`, or `UNREADABLE` (only lines whose date, amount or currency could not be
-read). The earliest other balance is stored as `opening_balance_date`/`opening_balance` and shown in
+that date), `NOT_FOUND`, `UNREADABLE` (a matched line that may be in the account's currency, one
+naming it or no readable currency, could not be read: it might be the actual closing balance, so no
+other balance is promoted in its place; an unreadable line naming another currency hides nothing),
+or `OUT_OF_RANGE` (read, but dated in the future, before the account's `opened_at` or after its
+`closed_at`, as a hand-recorded snapshot may not be: shown with its date and amount, and the commit
+imports the rows without a snapshot; the preview and the commit check the dates again, so a change
+to the account's dates after the parse is seen). The earliest other balance is stored as `opening_balance_date`/`opening_balance` and shown in
 the preview only: making it the account's opening balance (US-25-04, `MANUAL` only under V58) stays
 the member's step. Balances follow the snapshot's sign convention: a liability's is the positive
-amount owed, so a file's negative balance is negated for a `LIABILITY` account.
+amount owed, so a file's negative balance is negated for a `LIABILITY` account. The batch keeps
+these values itself, although a committed snapshot holds the closing balance too: the preview needs
+them before any snapshot exists, and they stay the record of what the file said after a rollback.
 
 **Commit.** After the rows, the closing balance becomes a `DOCUMENT` snapshot of its date with
 `import_batch_id` set (`chk_account_snapshot_import_batch`: only `DOCUMENT` snapshots carry one,
@@ -1234,9 +1243,13 @@ does not stop it: the two sources are kept apart, as before.
 **Rollback.** The batch's snapshot is removed before its transactions, under the snapshot's row lock
 that reconciliation decisions take:
 
-- While a reconciliation of it is `ACCEPTED` or `DISMISSED` (a member's decision), the rollback is a
-  409 `IMPORT_ROLLBACK_RECONCILIATION_DECIDED` naming the result, and nothing changes. Reopen it
-  first. `RESOLVED` is the engine's own and does not block.
+- While a reconciliation of it is `ACCEPTED` or `DISMISSED` (a member's decision) and it is the
+  account's latest observed balance, the rollback is a 409 `IMPORT_ROLLBACK_RECONCILIATION_DECIDED`
+  naming the result, and nothing changes. Reopen it first. `RESOLVED` is the engine's own and does
+  not block.
+- A decision on an older balance (a newer snapshot exists) is final and cannot be reopened, so it
+  does not block: the snapshot is withdrawn as below, keeping the decision as history (product
+  owner, 2026-10-15, #272).
 - When a result of it ever had an accepted adjusting entry, that entry stays in the append-only
   ledger (V63's `reconciliation_result_id`, soft-deleted on reopen; V68 forbids deleting it), so the
   result and the snapshot cannot be deleted. The snapshot is **withdrawn** instead (`withdrawn_at`,

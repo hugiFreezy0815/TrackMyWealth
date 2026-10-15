@@ -48,6 +48,27 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
       findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullAndSnapshotDateLessThanOrderBySnapshotDateDescCreatedAtDesc(
           UUID accountId, LocalDate snapshotDate);
 
+  /**
+   * US-25-02: the account's newest observed balance in effect, the opening balance and withdrawn
+   * snapshots (US-07-12) left out.
+   */
+  default Optional<AccountSnapshot> findLatestObserved(UUID accountId) {
+    return findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
+        accountId);
+  }
+
+  /** The balance in effect on {@code asOf}, the opening balance included (valuation). */
+  default Optional<AccountSnapshot> findLatestWithBalance(UUID accountId, LocalDate asOf) {
+    return findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
+        accountId, asOf);
+  }
+
+  /** The observed balance immediately before {@code snapshotDate} (US-25-02's cause period). */
+  default Optional<AccountSnapshot> findObservedBefore(UUID accountId, LocalDate snapshotDate) {
+    return findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullAndSnapshotDateLessThanOrderBySnapshotDateDescCreatedAtDesc(
+        accountId, snapshotDate);
+  }
+
   // US-07-12: the snapshot an import batch's commit recorded, withdrawn or not.
   Optional<AccountSnapshot> findByImportBatchId(UUID importBatchId);
 

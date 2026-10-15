@@ -42,11 +42,12 @@ import org.springframework.stereotype.Service;
  *       date that points at the batch, and the account is reconciled against it (US-25-02). An
  *       imported snapshot of that date that exists already is never replaced: the batch records
  *       {@code ALREADY_RECORDED} or {@code CONFLICTING}, and the preview says so beforehand.
- *   <li><b>Rollback.</b> Refused while the member's decision on the snapshot's reconciliation
- *       stands ({@code ACCEPTED}, {@code DISMISSED}). Otherwise the snapshot is deleted with its
- *       results, unless one of them ever had an adjusting entry: that entry stays in the
- *       append-only ledger, pointing at the result, so the snapshot is withdrawn instead - kept as
- *       history and ignored by every balance lookup.
+ *   <li><b>Rollback.</b> Refused while the member's decision on the reconciliation of the account's
+ *       latest balance stands ({@code ACCEPTED}, {@code DISMISSED}): it can be reopened. A decision
+ *       on an older balance is final and cannot be: the snapshot is withdrawn instead, as it is
+ *       when a result of it ever had an adjusting entry, which stays in the append-only ledger
+ *       pointing at the result. A withdrawn snapshot is kept as history and ignored by every
+ *       balance lookup. Any other snapshot is deleted with its results.
  * </ul>
  *
  * <p>Every method runs inside the caller's transaction, after the account's import lock and the
@@ -57,6 +58,7 @@ public class ImportStatementBalanceService {
 
   private static final String SOURCE_DOCUMENT = "DOCUMENT";
   private static final String LIABILITY = "LIABILITY";
+  // A date's balance is ambiguous with more than one amount (a named limit, as PMD requires).
   private static final int ONE_BALANCE = 1;
   private static final Set<String> DECIDED =
       Set.of(ReconciliationResultValues.ACCEPTED, ReconciliationResultValues.DISMISSED);
@@ -96,53 +98,55 @@ public class ImportStatementBalanceService {
       return;
     }
     String currency = accountCurrencyService.ownCurrency(account);
-    List<ImportStatementBalances.Stated> inCurrency =
-        stated.balances().stream()
-            .filter(balance -> balance.currency() == null || balance.currency().equals(currency))
-            .toList();
-    // An unreadable matching line could be the actual closing observation. Never silently
-    // promote a readable opening or intermediate balance to the statement's closing snapshot.
-    if (stated.unreadable() > 0) {
+    // A matched line that could not be read may be the actual closing balance: never promote an
+    // opening or intermediate balance in its place. A line in another currency hides nothing.
+    if (stated.unreadableIn(currency) > 0) {
       batch.recordStatementBalance(
           ImportBatchValues.BALANCE_UNREADABLE, null, null, null, null, null);
       return;
     }
+    List<ImportStatementBalances.Stated> inCurrency =
+        stated.balances().stream()
+            .filter(balance -> balance.currency() == null || balance.currency().equals(currency))
+            .toList();
     if (inCurrency.isEmpty()) {
       batch.recordStatementBalance(
           ImportBatchValues.BALANCE_NOT_FOUND, null, null, null, null, null);
       return;
     }
-    LocalDate closingDate =
-        inCurrency.stream()
-            .map(ImportStatementBalances.Stated::date)
-            .max(Comparator.naturalOrder())
-            .orElseThrow();
-    List<BigDecimal> closing = amountsOn(inCurrency, closingDate);
-    // PDF balance markers are observations in statement order. A bank may print its opening
-    // and closing balance on the same date; the last marker is authoritative there.
-    if (!stated.pdf() && closing.size() > ONE_BALANCE) {
-      batch.recordStatementBalance(
-          ImportBatchValues.BALANCE_AMBIGUOUS, null, null, null, null, null);
-      return;
+    ImportStatementBalances.Stated closing;
+    Optional<ImportStatementBalances.Stated> opening;
+    if (stated.fileOrdered()) {
+      // A PDF's balance lines are observations in statement order; a bank may print its opening
+      // and closing balance on the same date, so the last line is the closing one.
+      closing = inCurrency.get(inCurrency.size() - 1);
+      opening = inCurrency.subList(0, inCurrency.size() - 1).stream().findFirst();
+    } else {
+      LocalDate closingDate =
+          inCurrency.stream()
+              .map(ImportStatementBalances.Stated::date)
+              .max(Comparator.naturalOrder())
+              .orElseThrow();
+      List<BigDecimal> amounts = amountsOn(inCurrency, closingDate);
+      if (amounts.size() > ONE_BALANCE) {
+        batch.recordStatementBalance(
+            ImportBatchValues.BALANCE_AMBIGUOUS, null, null, null, null, null);
+        return;
+      }
+      closing = new ImportStatementBalances.Stated(closingDate, amounts.get(0), currency);
+      // The earliest balance before the closing date.
+      opening =
+          inCurrency.stream()
+              .filter(balance -> balance.date().isBefore(closingDate))
+              .min(Comparator.comparing(ImportStatementBalances.Stated::date));
     }
-    BigDecimal closingAmount =
-        stated.pdf() ? inCurrency.get(inCurrency.size() - 1).amount() : closing.get(0);
-    if (stated.pdf()) {
-      closingDate = inCurrency.get(inCurrency.size() - 1).date();
-    }
-    // The earliest balance before the closing date, the first the file states on that date.
-    final LocalDate chosenClosingDate = closingDate;
-    Optional<ImportStatementBalances.Stated> opening =
-        stated.pdf()
-            ? inCurrency.subList(0, inCurrency.size() - 1).stream().findFirst()
-            : inCurrency.stream()
-                .filter(balance -> balance.date().isBefore(chosenClosingDate))
-                .min(Comparator.comparing(ImportStatementBalances.Stated::date));
     boolean liability = LIABILITY.equals(account.getNature());
     batch.recordStatementBalance(
-        ImportBatchValues.BALANCE_FOUND,
-        closingDate,
-        snapshotSign(closingAmount, liability),
+        withinAccountDates(account, closing.date())
+            ? ImportBatchValues.BALANCE_FOUND
+            : ImportBatchValues.BALANCE_OUT_OF_RANGE,
+        closing.date(),
+        snapshotSign(closing.amount(), liability),
         currency,
         opening.map(ImportStatementBalances.Stated::date).orElse(null),
         opening.map(balance -> snapshotSign(balance.amount(), liability)).orElse(null));
@@ -150,18 +154,23 @@ public class ImportStatementBalanceService {
 
   /**
    * The batch's statement balance for its summary; {@code null} for a template without a statement
-   * balance rule. Before the commit, {@code snapshot} says what a commit would do now.
+   * balance rule. Before the commit, it says what a commit would do now: {@code OUT_OF_RANGE} once
+   * the account's dates no longer admit the balance's, otherwise {@code snapshot} says whether it
+   * is new, recorded already or conflicting.
    */
-  public ImportStatementBalanceResponse response(ImportBatch batch) {
+  public ImportStatementBalanceResponse response(ImportBatch batch, Account account) {
     String outcome = batch.getStatementBalanceOutcome();
     if (outcome == null) {
       return null;
     }
     String snapshot = batch.getStatementBalanceSnapshot();
-    if (snapshot == null
-        && ImportBatchValues.BALANCE_FOUND.equals(outcome)
+    if (ImportBatchValues.BALANCE_FOUND.equals(outcome)
         && ImportBatchValues.PARSED.equals(batch.getStatus())) {
-      snapshot = existingOutcome(batch).orElse(ImportBatchValues.SNAPSHOT_NEW);
+      if (withinAccountDates(account, batch.getStatementBalanceDate())) {
+        snapshot = existingOutcome(batch).orElse(ImportBatchValues.SNAPSHOT_NEW);
+      } else {
+        outcome = ImportBatchValues.BALANCE_OUT_OF_RANGE;
+      }
     }
     return new ImportStatementBalanceResponse(
         outcome,
@@ -176,18 +185,16 @@ public class ImportStatementBalanceService {
   /**
    * On commit, after the batch's rows are in the ledger: records the closing balance as a {@code
    * DOCUMENT} snapshot of the batch, unless an imported snapshot of its date exists, and reconciles
-   * the account against it.
+   * the account against it. A balance the account's dates no longer admit (they changed since the
+   * parse) is recorded as {@code OUT_OF_RANGE} and skipped: it never stops the rows' commit.
    */
   public void commit(ImportBatch batch, Account account, UUID committedBy) {
     if (!ImportBatchValues.BALANCE_FOUND.equals(batch.getStatementBalanceOutcome())) {
       return;
     }
-    LocalDate date = batch.getStatementBalanceDate();
-    if (date.isAfter(businessDates.today())
-        || (account.getOpenedAt() != null && date.isBefore(account.getOpenedAt()))
-        || (account.getClosedAt() != null && date.isAfter(account.getClosedAt()))) {
-      throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.UNPROCESSABLE,
-          "The statement balance date is outside the account's permitted snapshot dates.");
+    if (!withinAccountDates(account, batch.getStatementBalanceDate())) {
+      batch.markStatementBalanceOutOfRange();
+      return;
     }
     Optional<String> existing = existingOutcome(batch);
     if (existing.isPresent()) {
@@ -205,6 +212,7 @@ public class ImportStatementBalanceService {
     snapshot.setCreatedBy(committedBy);
     snapshotRepository.saveAndFlush(snapshot);
     batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_RECORDED);
+    // The rows' own reconciliation ran before this snapshot existed; compare against it now.
     reconciliationService.reconcileLatest(account, committedBy);
   }
 
@@ -230,44 +238,32 @@ public class ImportStatementBalanceService {
     AccountSnapshot snapshot =
         snapshotRepository.findForUpdate(recorded.get().getId(), account.getId()).orElseThrow();
     List<ReconciliationResult> results = resultRepository.findBySnapshotId(snapshot.getId());
+    // A decision on the account's latest balance can be reopened, so it blocks the rollback. One
+    // on an older balance is final (ReconciliationHistoryService#isFinalized): it can never be
+    // reopened, so instead of blocking for ever the snapshot is withdrawn, keeping the decision as
+    // history (product owner, 2026-10-15, #272).
     boolean historical =
         snapshotRepository
-            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
-                account.getId())
-            .filter(latest -> !latest.getId().equals(snapshot.getId()))
+            .findLatestObserved(account.getId())
+            .filter(newest -> !newest.getId().equals(snapshot.getId()))
             .isPresent();
-    for (ReconciliationResult result : results) {
-      if (!historical && DECIDED.contains(result.getStatus())) {
-        ApiException exception =
-            new ApiException(
-                HttpStatus.CONFLICT,
-                ApiErrorCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED,
-                "The reconciliation of this statement's balance was "
-                    + result.getStatus().toLowerCase(Locale.ROOT)
-                    + "; reopen it before rolling back the import.");
-        exception.getBody().setProperty("reconciliationResultId", result.getId());
-        throw exception;
-      }
+    Optional<ReconciliationResult> decided =
+        results.stream().filter(result -> DECIDED.contains(result.getStatus())).findFirst();
+    if (!historical && decided.isPresent()) {
+      ApiException exception =
+          new ApiException(
+              HttpStatus.CONFLICT,
+              ApiErrorCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED,
+              "The reconciliation of this statement's balance was "
+                  + decided.get().getStatus().toLowerCase(Locale.ROOT)
+                  + "; reopen it before rolling back the import.");
+      exception.getBody().setProperty("reconciliationResultId", decided.get().getId());
+      throw exception;
     }
     List<UUID> resultIds = results.stream().map(ReconciliationResult::getId).toList();
-    if (historical && results.stream().anyMatch(result -> DECIDED.contains(result.getStatus()))) {
-      // A finalized decision cannot be reopened by the member. Preserve its audit trail and
-      // adjustment as history; retire the source observation without deleting its references.
-      snapshot.withdraw(OffsetDateTime.now(clock), rolledBackBy);
-      snapshotRepository.saveAndFlush(snapshot);
-      batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_WITHDRAWN);
-    } else if (!resultIds.isEmpty() && resultRepository.existsAdjustmentOf(resultIds)) {
-      OffsetDateTime now = OffsetDateTime.now(clock);
-      for (ReconciliationResult result : results) {
-        if (ReconciliationResultValues.OPEN.equals(result.getStatus())) {
-          result.setStatus(ReconciliationResultValues.SUPERSEDED);
-          result.setResolvedAt(now);
-        }
-      }
-      resultRepository.saveAllAndFlush(results);
-      snapshot.withdraw(now, rolledBackBy);
-      snapshotRepository.saveAndFlush(snapshot);
-      batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_WITHDRAWN);
+    if (decided.isPresent()
+        || !resultIds.isEmpty() && resultRepository.existsAdjustmentOf(resultIds)) {
+      withdraw(batch, snapshot, results, rolledBackBy);
     } else {
       // Removed through the session, not in bulk: the results are loaded and point at the
       // snapshot, so a bulk delete would leave them behind to be flushed against a deleted row.
@@ -279,6 +275,34 @@ public class ImportStatementBalanceService {
       batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_DELETED);
     }
     return true;
+  }
+
+  // Keeps the snapshot as history only: its results stay (a final decision, or an adjusting entry
+  // that points at one), its open result is superseded, and no balance lookup sees it any more.
+  private void withdraw(
+      ImportBatch batch,
+      AccountSnapshot snapshot,
+      List<ReconciliationResult> results,
+      UUID rolledBackBy) {
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    for (ReconciliationResult result : results) {
+      if (ReconciliationResultValues.OPEN.equals(result.getStatus())) {
+        result.setStatus(ReconciliationResultValues.SUPERSEDED);
+        result.setResolvedAt(now);
+      }
+    }
+    resultRepository.saveAllAndFlush(results);
+    snapshot.withdraw(now, rolledBackBy);
+    snapshotRepository.saveAndFlush(snapshot);
+    batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_WITHDRAWN);
+  }
+
+  // A snapshot may not lie in the future, before the account was opened or after it was closed
+  // (as for a snapshot recorded by hand, AccountSnapshotService).
+  private boolean withinAccountDates(Account account, LocalDate date) {
+    return !date.isAfter(businessDates.today())
+        && (account.getOpenedAt() == null || !date.isBefore(account.getOpenedAt()))
+        && (account.getClosedAt() == null || !date.isAfter(account.getClosedAt()));
   }
 
   // ALREADY_RECORDED or CONFLICTING when an imported snapshot of the balance's date is in effect.
