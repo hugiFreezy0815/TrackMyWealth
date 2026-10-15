@@ -75,6 +75,12 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V71` | Credit-card statement imports: versioned RE2 description patterns for classification, notably refunds (US-07-18, #284) |
 | `V73` | Account identification (US-07-10, #270): `account.identifier_hash` (keyed HMAC, unique per workspace), `identifier_masked` cleared and tied to it, `import_template.account_identifier_rule`, and the batch's `account_identification`, `proposed_account_id` and confirmation flags |
 | `V74` | Statement balances (US-07-12, #272): `import_template.statement_balance_rule`, the batch's read balance (`statement_balance_outcome`, `_date`, `statement_balance`, `_currency`, `opening_balance_date`, `opening_balance`) and `statement_balance_snapshot`, `account_snapshot.import_batch_id` (`DOCUMENT` only, one per batch) and `withdrawn_at`/`withdrawn_by`; V11's `(account, date, source)` uniqueness becomes a partial unique index of the same name that ignores withdrawn snapshots |
+| `V75` | Shipped import template DKB current account CSV (US-07-15, #275), with a fixed id (see "Shipped templates" below) |
+| `V76` | Shipped import template PostFinance account movements CSV, CHF (US-07-15, #275) |
+| `V77` | Shipped import templates Sparkasse CSV-CAMT V8, credit card CSV and annual loan statement PDF (US-07-15, #275) |
+| `V78` | Shipped import template Yuh account statement PDF (US-07-15, #275) |
+| `V79` | `LBS Süd` in `institution_catalogue`, and its shipped building-savings statement PDF template (US-07-15, #275) |
+| `V80` | Reference-data baseline `1.2.0-baseline` (current; `1.1.0-baseline` stays as history): the shipped import templates of V75-V79 and `LBS Süd` (US-07-15, #275) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -777,6 +783,17 @@ was built from (a JSON array; `NULL` for a file without a header row, `header_ro
 and lower-cased, joined by the ASCII unit separator (U+001F). Detection reads an uploaded file with
 each active template's own encoding, delimiter and skipped rows, and ranks an exact fingerprint
 before a header that merely holds every mapped column.
+
+**Shipped templates (US-07-15, V75-V79).** Until the reference-package importer (EPIC 32) exists,
+Flyway ships one template per supported bank document (DKB, PostFinance, Sparkasse account, card
+and loan, Yuh, LBS; formats in `import-source-analysis.md`). Each has a fixed literal id, equal to
+its family id, so every installation - and a later reference package publishing its next version -
+knows it by the same id. A shared row satisfies no insert policy (V65), so each migration sets
+`NO FORCE ROW LEVEL SECURITY` for its insert and `FORCE` again before it commits: today's
+superuser migration role does not need it, but the planned owner-only migration role (see section
+4, "Production hardening") does. Each template's synthetic fixture is named by
+`fixture_reference`, and `ShippedImportTemplatesIntegrationTest` detects and dry-runs every one. `V80` records this content as
+reference baseline `1.2.0-baseline`.
 
 **Delete and deactivate (FR-LIF-001).** A template is hard-deleted with all its versions only
 while no `import_batch` references any of them; otherwise it is deactivated (`is_active =

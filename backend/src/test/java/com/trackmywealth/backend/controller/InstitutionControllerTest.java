@@ -138,8 +138,9 @@ class InstitutionControllerTest {
   void searchingCatalogueWithNoQueryReturnsEveryActiveEntry() {
     String token = bootstrapAdministrator();
 
-    // The V19 seed carries PostFinance, Yuh, VIAC, DKB, Sparkasse - five active entries.
-    assertThat(searchCatalogue(token, null).totalElements()).isEqualTo(5);
+    // The V19 seed carries PostFinance, Yuh, VIAC, DKB, Sparkasse; V79 adds LBS Süd: six active
+    // entries.
+    assertThat(searchCatalogue(token, null).totalElements()).isEqualTo(6);
   }
 
   @Test

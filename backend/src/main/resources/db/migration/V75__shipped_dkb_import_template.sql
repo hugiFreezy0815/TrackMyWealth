@@ -1,8 +1,17 @@
--- US-07-15 (#275): the first shipped bank template, for DKB Girokonto CSV (DKB-1).
+-- US-07-15 (#275): the first shipped bank template, for DKB Girokonto CSV (DKB-1 in
+-- docs/architecture/import-source-analysis.md, section 3.1).
 -- The reference-package importer (EPIC 32) is not available yet; Flyway ships this baseline.
--- V20/V65 FORCE RLS on import_template. A migration-only table owner needs this temporary,
--- transaction-scoped NO FORCE to insert a shared row; the final FORCE policy is restored before
--- the migration commits. ALTER TABLE takes an exclusive lock throughout.
+--
+-- The id is a fixed literal, not gen_random_uuid(): every installation then knows this template
+-- by the same id, so a later reference package can address it (a new version of its family).
+-- The institution is looked up by a scalar subquery, so a missing catalogue entry leaves the
+-- template without an institution instead of silently inserting no template at all.
+--
+-- V20/V65 FORCE RLS on import_template, and its insert policy requires the caller's workspace, so
+-- a shared row (workspace_id IS NULL) can only be written by a role that bypasses RLS. Today the
+-- migration role is a superuser; the planned migration-owner role (database-schema.md, "Production
+-- hardening") is the table owner without BYPASSRLS, which only NO FORCE lets through. Both ALTERs
+-- run in this migration's transaction, so no other session ever sees the table unforced.
 ALTER TABLE import_template NO FORCE ROW LEVEL SECURITY;
 
 INSERT INTO import_template (
@@ -37,10 +46,14 @@ INSERT INTO import_template (
     account_identifier_rule,
     statement_balance_rule
 )
-SELECT
-    seed.id,
-    seed.id,
-    catalogue.id,
+VALUES (
+    '752d1bc3-1951-408f-9d08-fbe4a1f1d9c5'::UUID,
+    '752d1bc3-1951-408f-9d08-fbe4a1f1d9c5'::UUID,
+    (
+        SELECT catalogue.id
+        FROM institution_catalogue AS catalogue
+        WHERE catalogue.name = 'DKB' AND catalogue.country = 'DE'
+    ),
     NULL,
     'DKB Girokonto CSV',
     'CASH_TRANSACTIONS',
@@ -81,10 +94,7 @@ SELECT
         "pattern": "Kontostand vom (?P<date>[0-9]{2}[.][0-9]{2}[.][0-9]{4}):[ ]+(?P<amount>[0-9.,-]+)",
         "dateFormat": "dd.MM.yyyy"
     }'::JSONB
-FROM (SELECT gen_random_uuid() AS id) AS seed
-CROSS JOIN (
-    SELECT id FROM institution_catalogue WHERE name = 'DKB' AND country = 'DE'
-) AS catalogue;
+);
 
--- Every workspace can read shipped templates, but cannot insert/update/delete them.
+-- Every workspace can read shipped templates, but cannot insert/update/delete them (V65).
 ALTER TABLE import_template FORCE ROW LEVEL SECURITY;
