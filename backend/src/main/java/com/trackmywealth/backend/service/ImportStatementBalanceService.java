@@ -103,15 +103,13 @@ public class ImportStatementBalanceService {
     // An unreadable matching line could be the actual closing observation. Never silently
     // promote a readable opening or intermediate balance to the statement's closing snapshot.
     if (stated.unreadable() > 0) {
-      batch.recordStatementBalance(ImportBatchValues.BALANCE_UNREADABLE, null, null, null, null, null);
+      batch.recordStatementBalance(
+          ImportBatchValues.BALANCE_UNREADABLE, null, null, null, null, null);
       return;
     }
     if (inCurrency.isEmpty()) {
-      String outcome =
-          stated.unreadable() > 0
-              ? ImportBatchValues.BALANCE_UNREADABLE
-              : ImportBatchValues.BALANCE_NOT_FOUND;
-      batch.recordStatementBalance(outcome, null, null, null, null, null);
+      batch.recordStatementBalance(
+          ImportBatchValues.BALANCE_NOT_FOUND, null, null, null, null, null);
       return;
     }
     LocalDate closingDate =
@@ -127,9 +125,8 @@ public class ImportStatementBalanceService {
           ImportBatchValues.BALANCE_AMBIGUOUS, null, null, null, null, null);
       return;
     }
-    BigDecimal closingAmount = stated.pdf()
-        ? inCurrency.get(inCurrency.size() - 1).amount()
-        : closing.get(0);
+    BigDecimal closingAmount =
+        stated.pdf() ? inCurrency.get(inCurrency.size() - 1).amount() : closing.get(0);
     if (stated.pdf()) {
       closingDate = inCurrency.get(inCurrency.size() - 1).date();
     }
@@ -233,9 +230,12 @@ public class ImportStatementBalanceService {
     AccountSnapshot snapshot =
         snapshotRepository.findForUpdate(recorded.get().getId(), account.getId()).orElseThrow();
     List<ReconciliationResult> results = resultRepository.findBySnapshotId(snapshot.getId());
-    boolean historical = snapshotRepository
-        .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(account.getId())
-        .filter(latest -> !latest.getId().equals(snapshot.getId())).isPresent();
+    boolean historical =
+        snapshotRepository
+            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
+                account.getId())
+            .filter(latest -> !latest.getId().equals(snapshot.getId()))
+            .isPresent();
     for (ReconciliationResult result : results) {
       if (!historical && DECIDED.contains(result.getStatus())) {
         ApiException exception =
