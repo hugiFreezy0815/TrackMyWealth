@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Smoke test for Mobile Native CI: installs the release build on a running Android emulator or
-# iOS simulator, launches it, and fails if the app does not stay up. On Android it also switches
-# to the Explore tab (native tabs come from react-native-screens). Screenshots and logs land in
-# smoke/ for the workflow to upload.
+# iOS simulator, launches it, and fails if the app does not stay up. CI has no backend to sign in
+# against, so on Android it checks that the app opens on the sign-in screen (US-02-06) - the tabs
+# are only reachable after sign-in. Screenshots and logs land in smoke/ for the workflow to upload.
 #
 # Usage (from mobile/): scripts/native-smoke.sh android|ios
 set -euo pipefail
@@ -18,14 +18,16 @@ fail() {
   exit 1
 }
 
-android_tap_text() {
-  local text="$1" bounds x1 y1 x2 y2
+# Bounds of the first on-screen element with exactly this text, empty if there is none. The grep
+# must not end the script under pipefail: a missing element is reported by the caller.
+android_find_text() {
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null
-  bounds=$(adb exec-out cat /sdcard/ui.xml | tr '>' '\n' | grep "text=\"$text\"" | head -1 |
-    sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/')
-  [[ -n "$bounds" && "$bounds" != *bounds* ]] || fail "no '$text' element on screen"
-  read -r x1 y1 x2 y2 <<<"$bounds"
-  adb shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
+  adb exec-out cat /sdcard/ui.xml | tr '>' '\n' | { grep "text=\"$1\"" || true; } | head -1 |
+    sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/'
+}
+
+android_assert_text() {
+  [[ -n "$(android_find_text "$1")" ]] || fail "no '$1' element on screen"
 }
 
 android_assert_running() {
@@ -41,10 +43,8 @@ case "$platform" in
     adb exec-out screencap -p >smoke/android-home.png
     android_assert_running "launch"
 
-    android_tap_text "Explore"
-    sleep 5
-    adb exec-out screencap -p >smoke/android-explore.png
-    android_assert_running "switching to the Explore tab"
+    # Signed out on a fresh install: the sign-in form, not the tabs, and no crash restoring a session.
+    android_assert_text "Sign in"
 
     adb logcat -d >smoke/android-logcat.txt
     if grep -q "FATAL EXCEPTION" smoke/android-logcat.txt; then

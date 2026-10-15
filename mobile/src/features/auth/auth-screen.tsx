@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Button, StyleSheet, TextInput, View } from 'react-native';
+import { Button, StyleSheet, TextInput, type TextInputProps, View } from 'react-native';
 
 import { getApiBaseUrl } from '@/api/client';
 import { InvalidServerUrlError, saveServerUrl } from '@/api/server-url';
 import { ThemedText } from '@/components/themed-text';
+import { useTheme } from '@/hooks/use-theme';
 
 import { cancelMfa, signIn, verifyMfa } from './session';
 
@@ -49,42 +50,39 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
       <ThemedText type="subtitle">{mfaRequired ? 'Verify sign-in' : 'Sign in'}</ThemedText>
       {!mfaRequired ? (
         <>
-          <TextInput
-            accessibilityLabel="Server"
+          <LabeledField
+            label="Server"
+            placeholder="https://wealth.example.com"
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
             value={server}
             onChangeText={setServer}
-            style={styles.field}
           />
-          <TextInput
-            accessibilityLabel="Email"
+          <LabeledField
+            label="Email"
             autoCapitalize="none"
             autoComplete="email"
             keyboardType="email-address"
             value={email}
             onChangeText={setEmail}
-            style={styles.field}
           />
-          <TextInput
-            accessibilityLabel="Password"
+          <LabeledField
+            label="Password"
             secureTextEntry
             autoComplete="password"
             value={password}
             onChangeText={setPassword}
-            style={styles.field}
           />
         </>
       ) : (
-        <TextInput
-          accessibilityLabel="Authenticator code"
+        <LabeledField
+          label="Authenticator code"
           keyboardType="number-pad"
           autoComplete="one-time-code"
           maxLength={6}
           value={code}
           onChangeText={setCode}
-          style={styles.field}
         />
       )}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
@@ -94,7 +92,26 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
   );
 }
 
+/** A visible label above the input; the same text is its accessible name. */
+function LabeledField({ label, ...input }: TextInputProps & { label: string }) {
+  const theme = useTheme();
+  return (
+    <View style={styles.labeled}>
+      <ThemedText type="small" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+      <TextInput
+        accessibilityLabel={label}
+        placeholderTextColor={theme.textSecondary}
+        style={[styles.field, { color: theme.text, borderColor: theme.textSecondary }]}
+        {...input}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24, gap: 14 },
+  labeled: { gap: 4 },
   field: { borderWidth: 1, padding: 12, borderRadius: 8 },
 });

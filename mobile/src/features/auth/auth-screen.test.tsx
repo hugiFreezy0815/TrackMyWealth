@@ -38,6 +38,14 @@ describe('AuthScreen', () => {
     );
   });
 
+  it('labels every field visibly, not only for screen readers', async () => {
+    await render(<AuthScreen mfaRequired={false} />);
+
+    for (const label of ['Server', 'Email', 'Password']) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+  });
+
   it('never sends credentials to a server without HTTPS', async () => {
     await render(<AuthScreen mfaRequired={false} />);
 
