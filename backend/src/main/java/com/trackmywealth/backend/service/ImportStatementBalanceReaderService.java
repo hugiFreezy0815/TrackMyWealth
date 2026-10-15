@@ -133,7 +133,7 @@ public class ImportStatementBalanceReaderService {
         balances.add(stated);
       }
     }
-    return new ImportStatementBalances(balances, unreadable);
+    return new ImportStatementBalances(balances, unreadable, template.isPdf());
   }
 
   // The balance one matched line states, or null when its date, amount or currency is unreadable.
