@@ -182,6 +182,46 @@ suite `FR-TEN-010` requires (`CrossTenantIsolationTest`, US-28-04) already runs 
 `NOSUPERUSER NOBYPASSRLS` - because a superuser bypasses RLS unconditionally and the suite would
 pass for the wrong reason; keep any new isolation test on that role, not the migration role.
 
+### Authentication lookup with a hardened runtime role (#321)
+
+Access-token authentication happens **before** the workspace principal exists, so neither the
+JWT filter nor login/MFA/refresh can read `workspace_member` through the normal RLS policy
+(which compares to the transaction-local `app.current_workspace_id`). The forward-only V81
+migration supplies `public.auth_user_snapshot(user_id, session_id)` for this one case. It
+returns only the authentication fields (user id, role, status, token version, member's
+workspace id and status, requested session status and language). A non-null session id
+must reference a session owned by that user; a null session id supports the membership
+eligibility lookup for login, MFA and refresh. Financial and member profile columns are
+not returned. Application queries use this function; all subsequent workspace data access
+still uses ordinary FORCE RLS with the authenticated workspace context.
+
+**Mandatory production provisioning:** `SECURITY DEFINER` alone does not bypass FORCE
+ROW LEVEL SECURITY. The function must be owned by a dedicated `NOLOGIN BYPASSRLS` role,
+which has `SELECT` on `app_user`, `workspace_member` and `user_session` only.
+The application connects as `NOSUPERUSER NOBYPASSRLS` and gets **EXECUTE on this
+specific function only**, never BYPASSRLS or CREATE privileges. V81 initially creates
+the function under the migration user; as part of production role setup, transfer ownership
+to the dedicated definer role and provide its three SELECT grants:
+
+```sql
+-- Run as a privileged migration administrator, once per database.
+CREATE ROLE trackmywealth_auth_reader NOLOGIN BYPASSRLS;
+GRANT USAGE ON SCHEMA public TO trackmywealth_auth_reader;
+GRANT SELECT ON public.app_user, public.workspace_member, public.user_session
+    TO trackmywealth_auth_reader;
+ALTER FUNCTION public.auth_user_snapshot(UUID, UUID) OWNER TO trackmywealth_auth_reader;
+GRANT USAGE ON SCHEMA public TO trackmywealth_runtime;
+GRANT EXECUTE ON FUNCTION public.auth_user_snapshot(UUID, UUID)
+    TO trackmywealth_runtime;
+```
+
+Create the runtime role separately before Flyway (or grant EXECUTE after the role exists).
+Recheck ownership and EXECUTE grants after any deliberate function replacement. V81 revokes
+PostgreSQL's default PUBLIC EXECUTE grant. The function pins `search_path`, qualifies its
+tables, and sets `row_security=off`, so a misprovisioned owner fails closed instead of
+silently treating an existing membership as missing. This function is a narrowly privileged
+identity lookup, **not** a general tenant-data access facility.
+
 ### Object-level denial audit lifecycle (US-28-02, #205)
 
 Every audited single-resource denial still returns the same generic 404 and records only the
