@@ -82,6 +82,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V79` | `LBS Süd` in `institution_catalogue`, and its shipped building-savings statement PDF template (US-07-15, #275) |
 | `V80` | Reference-data baseline `1.2.0-baseline` (current; `1.1.0-baseline` stays as history): the shipped import templates of V75-V79 and `LBS Süd` (US-07-15, #275) |
 | `V81` | Authentication under a hardened runtime role (#321): `SECURITY DEFINER` functions `auth_user_snapshot(user, session)` and `auth_workspace_member_status(user)`, `EXECUTE` revoked from `PUBLIC` and granted to `trackmywealth_runtime` only (see "Authentication lookup with a hardened runtime role") |
+| `V86` | `flyway_schema_history` read-only for `trackmywealth_runtime`, when that role exists (US-28-05, #331) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -173,15 +174,31 @@ background job reads it across workspaces to re-run transfer detection once FX r
 reads it, and the job does the detection itself inside that workspace (`SystemWorkspaceContext`),
 under RLS like any request.
 
-**Production hardening not yet wired up:** the application runs migrations and its own queries
-under the same database role for local-development simplicity. Before a multi-workspace hosted
-deployment goes live, split this into a migration-owner role (used only by Flyway, at deploy
-time) and a `NOSUPERUSER`, non-owner runtime role (used only by the running application, granted
-`SELECT/INSERT/UPDATE/DELETE` but not `CREATEDB`/`ALTER`) — the commented-out template at the
-bottom of `V20__tenancy_row_level_security.sql` is the starting point. The automated cross-tenant
-suite `FR-TEN-010` requires (`CrossTenantIsolationTest`, US-28-04) already runs as such a role -
-`NOSUPERUSER NOBYPASSRLS` - because a superuser bypasses RLS unconditionally and the suite would
-pass for the wrong reason; keep any new isolation test on that role, not the migration role.
+**Database roles (US-28-05, #331, ADR 0005).** Two roles, provisioned by `deploy/postgres`
+(`role-split.sh`; the compose stack runs it on a fresh volume, an existing installation once by
+hand - README, "Database roles"):
+
+- `trackmywealth_migration` - `LOGIN NOSUPERUSER BYPASSRLS`: owns the database and every schema
+  object and runs Flyway (`DB_MIGRATION_USERNAME`, applied by `DatabaseRoleConfig`). It needs
+  `BYPASSRLS` because migrations work across workspaces (`V37` runs with `row_security = off`;
+  shared rows such as V75's templates are inserted under `NO FORCE`), and it owns V81's
+  authentication functions, whose owner must bypass FORCE RLS. Only trusted extensions are used
+  (`pgcrypto`, `citext`, `pg_trgm`), so it needs no superuser.
+- `trackmywealth_runtime` - `LOGIN NOSUPERUSER NOBYPASSRLS`: the running application
+  (`DB_USERNAME`). `SELECT/INSERT/UPDATE/DELETE` on every table and `USAGE` on sequences (default
+  privileges cover later migrations), `EXECUTE` on V81's two functions, read-only access to
+  `flyway_schema_history` (`V86`); no DDL, no `TRUNCATE`, no ownership. The name is fixed: V81 and
+  V86 refer to it.
+
+The split is opt-in: an installation without `DB_MIGRATION_USERNAME` keeps one role for both, as
+before. At startup `DatabaseRoleConfig` warns when the runtime role is a superuser or
+`BYPASSRLS`, and refuses to start with `DB_REQUIRE_RLS_BOUND_ROLE=true` or
+`app.deployment.topology=hosted`. `RoleSplitScriptsTest` runs the shipped scripts on an existing
+single-role database (ownership handed over, data kept, idempotent) and on a fresh one migrated by
+the migration role; `HardenedRuntimeAuthenticationHttpTest` runs the application on the split. The
+automated cross-tenant suite `FR-TEN-010` requires (`CrossTenantIsolationTest`, US-28-04) runs as
+a `NOSUPERUSER NOBYPASSRLS` role too, because a superuser bypasses RLS unconditionally and the
+suite would pass for the wrong reason; keep any new isolation test on such a role.
 
 ### Authentication lookup with a hardened runtime role (#321)
 
@@ -204,31 +221,16 @@ of the request runs under ordinary FORCE RLS with the authenticated workspace co
 a role without the grant is refused), and `HardenedRuntimeAuthenticationHttpTest` runs the whole
 HTTP path - filter, listener, services - as `trackmywealth_runtime`.
 
-**Mandatory production provisioning.** `SECURITY DEFINER` alone does not bypass FORCE RLS: the
-functions' owner must bypass it. Own them by a dedicated `NOLOGIN BYPASSRLS` role that can read
-the three tables and nothing else; the application connects as `NOSUPERUSER NOBYPASSRLS` and gets
-`EXECUTE` on these two functions only, never `BYPASSRLS` or `CREATE`. `V81` creates the functions
-as the migration user (a superuser today); with the role split, hand them over once per database:
-
-```sql
--- Run as a privileged migration administrator, once per database.
-CREATE ROLE trackmywealth_auth_reader NOLOGIN BYPASSRLS;
-GRANT USAGE ON SCHEMA public TO trackmywealth_auth_reader;
-GRANT SELECT ON public.app_user, public.workspace_member, public.user_session
-    TO trackmywealth_auth_reader;
-ALTER FUNCTION public.auth_user_snapshot(UUID, UUID) OWNER TO trackmywealth_auth_reader;
-ALTER FUNCTION public.auth_workspace_member_status(UUID) OWNER TO trackmywealth_auth_reader;
-GRANT USAGE ON SCHEMA public TO trackmywealth_runtime;
-GRANT EXECUTE ON FUNCTION public.auth_user_snapshot(UUID, UUID) TO trackmywealth_runtime;
-GRANT EXECUTE ON FUNCTION public.auth_workspace_member_status(UUID) TO trackmywealth_runtime;
-```
-
-`V81` grants `EXECUTE` itself when `trackmywealth_runtime` exists before Flyway runs; a runtime
-role created later needs the two grants above. `V81` revokes PostgreSQL's default `PUBLIC`
-`EXECUTE`. A later migration that replaces a function must restore its owner and grants. Both
-functions pin `search_path`, qualify their tables and set `row_security = off`, so a wrongly
-provisioned owner fails with an error instead of silently reading no membership. They are
-narrowly privileged identity lookups, **not** a general way around tenant isolation.
+**Owner and grants.** `SECURITY DEFINER` alone does not bypass FORCE RLS: the functions' owner
+must. Flyway creates them, so they belong to the migration role, which has `BYPASSRLS` (see
+"Database roles" above; ADR 0005 says why no separate owner role). The application connects as
+`trackmywealth_runtime` and gets `EXECUTE` on these two functions only: `V81` grants it when the
+role exists before Flyway runs (a fresh split installation), and `role-split-database.sql` when an
+existing installation is split later. `V81` revokes PostgreSQL's default `PUBLIC` `EXECUTE`. A
+later migration that replaces a function must keep its grants. Both functions pin `search_path`,
+qualify their tables and set `row_security = off`, so an owner that cannot bypass RLS fails with an
+error instead of silently reading no membership. They are narrowly privileged identity lookups,
+**not** a general way around tenant isolation.
 
 ### Object-level denial audit lifecycle (US-28-02, #205)
 

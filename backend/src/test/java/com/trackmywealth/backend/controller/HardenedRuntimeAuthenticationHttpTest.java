@@ -12,10 +12,9 @@ import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
+import com.trackmywealth.backend.testsupport.RoleSplitScripts;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -38,19 +37,20 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * #321 end to end: Flyway runs as the owning (superuser) role, but every HTTP request - the JWT
- * filter, the workspace context listener, the services and repositories - runs as the {@code
- * NOSUPERUSER NOBYPASSRLS} runtime login V20's role split prescribes. An active member reaches
- * their own workspace and nothing of another; once the member is INACTIVE, the access token, login,
- * MFA verification and refresh are each refused, as under the superuser.
+ * #321 and US-28-05 (#331) end to end, on the shipped role split: Flyway runs as the migration
+ * role, which owns the schema but is no superuser, and every HTTP request - the JWT filter, the
+ * workspace context listener, the services and repositories - runs as the {@code NOSUPERUSER
+ * NOBYPASSRLS} runtime role. An active member reaches their own workspace and nothing of another;
+ * once the member is INACTIVE, the access token, login, MFA verification and refresh are each
+ * refused, as under the superuser.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class HardenedRuntimeAuthenticationHttpTest {
 
-  private static final String OWNER = "trackmywealth";
-  private static final String OWNER_PASSWORD = "trackmywealth";
-  private static final String RUNTIME = "trackmywealth_runtime";
+  private static final String SUPERUSER = "trackmywealth";
+  private static final String SUPERUSER_PASSWORD = "trackmywealth";
+  private static final String MIGRATION_PASSWORD = "migration-integration-password";
   private static final String RUNTIME_PASSWORD = "runtime-integration-password";
   private static final String EMAIL = "hardened@example.invalid";
   private static final String PASSWORD = "correct-horse-battery-staple";
@@ -60,37 +60,35 @@ class HardenedRuntimeAuthenticationHttpTest {
   static PostgreSQLContainer<?> postgres =
       new PostgreSQLContainer<>("postgres:16")
           .withDatabaseName("trackmywealth")
-          .withUsername(OWNER)
-          .withPassword(OWNER_PASSWORD);
+          .withUsername(SUPERUSER)
+          .withPassword(SUPERUSER_PASSWORD);
 
   private final DefaultCodeGenerator codeGenerator = new DefaultCodeGenerator();
 
-  // The runtime role must exist before Flyway runs, as in production provisioning: V81 then grants
-  // it EXECUTE on the authentication functions, and the owner's default privileges give it DML on
-  // every table the migrations create. Run over JDBC, not Testcontainers' withInitScript, whose
-  // shaded dependency is missing from this Testcontainers version.
+  // US-28-05 (#331): the shipped role split (deploy/postgres) provisions both roles before Flyway
+  // runs, as on a fresh compose volume. The migration role is no superuser, so the application's
+  // start also proves that every migration runs under it.
   @BeforeAll
-  static void provisionRuntimeRole() throws IOException, SQLException {
-    String script;
-    try (InputStream stream =
-        HardenedRuntimeAuthenticationHttpTest.class.getResourceAsStream(
-            "/hardened-runtime-init.sql")) {
-      script = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-    }
-    try (Connection owner = ownerConnection();
-        Statement statement = owner.createStatement()) {
-      statement.execute(script);
-    }
+  static void splitRoles() throws IOException, SQLException {
+    RoleSplitScripts.apply(
+        postgres.getJdbcUrl(),
+        SUPERUSER,
+        SUPERUSER_PASSWORD,
+        postgres.getDatabaseName(),
+        MIGRATION_PASSWORD,
+        RUNTIME_PASSWORD);
   }
 
   @DynamicPropertySource
   static void datasource(DynamicPropertyRegistry registry) {
     registry.add("spring.datasource.url", postgres::getJdbcUrl);
-    registry.add("spring.datasource.username", () -> RUNTIME);
+    registry.add("spring.datasource.username", () -> RoleSplitScripts.RUNTIME_ROLE);
     registry.add("spring.datasource.password", () -> RUNTIME_PASSWORD);
-    registry.add("spring.flyway.url", postgres::getJdbcUrl);
-    registry.add("spring.flyway.user", () -> OWNER);
-    registry.add("spring.flyway.password", () -> OWNER_PASSWORD);
+    // The application's own switch (DatabaseRoleConfig), not spring.flyway.user.
+    registry.add("app.database.migration-username", () -> RoleSplitScripts.MIGRATION_ROLE);
+    registry.add("app.database.migration-password", () -> MIGRATION_PASSWORD);
+    // The context only starts if the runtime role is bound by row-level security.
+    registry.add("app.database.require-rls-bound-role", () -> "true");
     registry.add("app.database.auto-create", () -> "false");
     registry.add("app.rate-limit.enabled", () -> "false");
   }
@@ -235,7 +233,8 @@ class HardenedRuntimeAuthenticationHttpTest {
   // let this test pass for the wrong reason.
   private static boolean runtimeBypassesRls() throws SQLException {
     try (Connection runtime =
-            DriverManager.getConnection(postgres.getJdbcUrl(), RUNTIME, RUNTIME_PASSWORD);
+            DriverManager.getConnection(
+                postgres.getJdbcUrl(), RoleSplitScripts.RUNTIME_ROLE, RUNTIME_PASSWORD);
         Statement statement = runtime.createStatement();
         ResultSet result =
             statement.executeQuery(
@@ -245,19 +244,20 @@ class HardenedRuntimeAuthenticationHttpTest {
     }
   }
 
-  // Written as the owner, outside the application: a second workspace (V19's trigger gives it its
+  // Written as the superuser, outside the application: a second workspace (V19's trigger gives it
+  // its
   // personal-assets container) with one account.
   private static UUID insertAccountInAnotherWorkspace() throws SQLException {
     UUID workspace = UUID.randomUUID();
     UUID account = UUID.randomUUID();
-    try (Connection owner = ownerConnection()) {
+    try (Connection superuser = superuserConnection()) {
       try (PreparedStatement insert =
-          owner.prepareStatement("INSERT INTO workspace (id, name) VALUES (?, 'Other')")) {
+          superuser.prepareStatement("INSERT INTO workspace (id, name) VALUES (?, 'Other')")) {
         insert.setObject(1, workspace);
         insert.executeUpdate();
       }
       try (PreparedStatement insert =
-          owner.prepareStatement(
+          superuser.prepareStatement(
               "INSERT INTO account (id, workspace_id, financial_institution_id, account_type,"
                   + " name, native_currency) SELECT ?, ?, id, 'CASH', 'Foreign', 'CHF'"
                   + " FROM financial_institution"
@@ -271,12 +271,13 @@ class HardenedRuntimeAuthenticationHttpTest {
     return account;
   }
 
-  // Changed as the owner, outside the application's authorization path; the requests that follow
+  // Changed as the superuser, outside the application's authorization path; the requests that
+  // follow
   // still run as the runtime role.
   private static void setMemberStatus(String status) throws SQLException {
-    try (Connection owner = ownerConnection();
+    try (Connection superuser = superuserConnection();
         PreparedStatement update =
-            owner.prepareStatement(
+            superuser.prepareStatement(
                 "UPDATE workspace_member SET status = ? WHERE id ="
                     + " (SELECT workspace_member_id FROM app_user WHERE email = ?)")) {
       update.setString(1, status);
@@ -285,8 +286,8 @@ class HardenedRuntimeAuthenticationHttpTest {
     }
   }
 
-  private static Connection ownerConnection() throws SQLException {
-    return DriverManager.getConnection(postgres.getJdbcUrl(), OWNER, OWNER_PASSWORD);
+  private static Connection superuserConnection() throws SQLException {
+    return DriverManager.getConnection(postgres.getJdbcUrl(), SUPERUSER, SUPERUSER_PASSWORD);
   }
 
   private RestTestClient authorized(String accessToken) {
