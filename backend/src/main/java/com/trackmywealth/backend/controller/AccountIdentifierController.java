@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.controller;
 
+import com.trackmywealth.backend.dto.AccountIdentifierFromImportRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -47,6 +48,20 @@ public class AccountIdentifierController {
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return withEtag(
         registration.set(accountId, request, IfMatchVersionParser.parse(ifMatch), actor));
+  }
+
+  /**
+   * US-07-11: registers the identifier an open import batch's file names, without sending it. A 422
+   * {@code ACCOUNT_IDENTIFIER_NOT_IN_FILE} when the file names none this account could take.
+   */
+  @PutMapping("/from-import")
+  public ResponseEntity<AccountIdentifierResponse> setFromImport(
+      @PathVariable UUID accountId,
+      @Valid @RequestBody AccountIdentifierFromImportRequest request,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return withEtag(
+        registration.setFromImport(accountId, request, IfMatchVersionParser.parse(ifMatch), actor));
   }
 
   @DeleteMapping

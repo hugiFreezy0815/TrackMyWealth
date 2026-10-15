@@ -223,6 +223,12 @@ public final class ApiErrorCode {
   public static final String ACCOUNT_IDENTIFIER_IN_USE = "ACCOUNT_IDENTIFIER_IN_USE";
 
   /**
+   * 422: the import file names no account identifier its template's rule can read, or names one of
+   * another kind than the account is registered with (US-07-11).
+   */
+  public static final String ACCOUNT_IDENTIFIER_NOT_IN_FILE = "ACCOUNT_IDENTIFIER_NOT_IN_FILE";
+
+  /**
    * 503: account identification is switched off on this server, because no key is configured
    * ({@code app.import.account-identifier-key}, US-07-10).
    */

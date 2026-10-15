@@ -62,7 +62,10 @@ existing resource that a concurrent write could silently overwrite:
 - **Idempotent operations:** `POST /securities` (find-or-create of shared reference data) and
   `POST .../settlement-matches/run` (re-runs matching; no client-held state).
 - **Import dry runs** (US-07-03): `POST /import-templates/detect`, `POST /import-templates/test`
-  and `POST /import-templates/{id}/test` parse an uploaded file in memory and write nothing.
+  and `POST /import-templates/{id}/test` parse an uploaded file in memory and write nothing; so do
+  the account proposals (US-07-11), `POST /import-templates/{id}/account-proposal` and
+  `POST /accounts/{id}/imports/{batchId}/account-proposal`, the latter reading the batch's stored
+  file.
 - **Credential exchanges and bootstrap:** login, token refresh, MFA verification, and the one-time
   administrator setup.
 - **The caller's own MFA enrollment** (enroll, confirm, disable): each step is authorized by a fresh

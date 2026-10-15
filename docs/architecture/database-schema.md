@@ -1197,6 +1197,24 @@ again. The identifier read from the file is not stored on the batch. The uploade
 kept in `import_file` until the batch is committed or discarded, as every import file is (US-07-04),
 and it holds whatever the bank wrote, the account number included.
 
+**An account from a file (US-07-11, #271).** When a file names no account (`NO_MATCH`), the member
+can create the account from it. `POST /api/v1/accounts/{id}/imports/{batchId}/account-proposal`
+(EDIT access, an `UPLOADED` or `PARSED` batch) reads the batch's file with the template version it
+used; `POST /api/v1/import-templates/{templateId}/account-proposal` (multipart) reads an uploaded
+file with a template the member may see. Both are a template dry run without an account: nothing is
+stored. The answer suggests the template's catalogue institution (`institutionCatalogueId` and its
+name; the member picks one of the workspace's institutions), the account type (`CREDIT_CARD` when
+the template reads a masked card number or maps a type only a card statement has, `CASH`
+otherwise), the one currency every readable row is in (a `FIXED` template's own when no row could
+be read; none for `FROM_ACCOUNT`) and the identifier's display value, never the identifier. The
+member creates the account with `POST /api/v1/accounts`, then
+`PUT /api/v1/accounts/{id}/identifier/from-import` (`importAccountId`, `batchId`, `If-Match`,
+EDIT access to both accounts) registers the identifier the batch's file names, read on the server,
+so the member does not type it and it never travels; a file naming none, or one of another kind
+than the account takes (an IBAN for a credit card), is a 422 `ACCOUNT_IDENTIFIER_NOT_IN_FILE`.
+Uploading the file into the new account then matches it. A statement never tells holders,
+ownership shares or loan terms; the account form asks for them.
+
 ### Statement balances (US-07-12)
 
 The balance a statement prints becomes an account snapshot when its import is committed

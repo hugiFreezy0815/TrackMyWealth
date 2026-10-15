@@ -12,6 +12,7 @@ import com.trackmywealth.backend.dto.ImportRowFilter;
 import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
+import com.trackmywealth.backend.dto.ImportTemplateParse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
@@ -320,6 +321,27 @@ public class ImportTemplateService {
               return definitionOf(requireVisible(id, actor));
             });
     return preview(parseFor(content, definition, accountId, actor));
+  }
+
+  /**
+   * US-07-11: the dry run of template version {@code id} (current or not) on {@code content}
+   * without an account, as {@link #test} reads it, with the template's catalogue institution.
+   * Nothing is stored.
+   */
+  public ImportTemplateParse parseWithoutAccount(
+      UUID id, byte[] content, AuthenticatedUserPrincipal actor) {
+    ImportTemplateParse template =
+        readOnlyTransaction.execute(
+            status -> {
+              accessControlService.requireActingMember(actor);
+              ImportTemplate visible = requireVisible(id, actor);
+              return new ImportTemplateParse(
+                  visible.getInstitutionCatalogueId(), definitionOf(visible), null);
+            });
+    return new ImportTemplateParse(
+        template.institutionCatalogueId(),
+        template.definition(),
+        parseFor(content, template.definition(), null, actor));
   }
 
   /**

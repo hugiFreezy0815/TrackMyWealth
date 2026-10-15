@@ -33,6 +33,9 @@ public final class IfMatchExceptions {
           Map.entry("ImportTemplateController#detect", "dry run, writes nothing"),
           Map.entry("ImportTemplateController#testSaved", "dry run, writes nothing"),
           Map.entry("ImportTemplateController#testUnsaved", "dry run, writes nothing"),
+          // Account proposals: a dry run of a file without an account (US-07-11).
+          Map.entry("ImportAccountProposalController#propose", "dry run, writes nothing"),
+          Map.entry("ImportAccountProposalController#proposeFromBatch", "dry run, writes nothing"),
           // Credential exchanges and one-time bootstrap, not edits of a versioned resource.
           Map.entry("AuthController#login", "credential exchange"),
           Map.entry("AuthController#refresh", "credential exchange"),
