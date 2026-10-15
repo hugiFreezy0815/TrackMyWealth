@@ -343,7 +343,7 @@ public class ReconciliationService {
       Account account, AccountSnapshot opening, AccountSnapshot snapshot, BigDecimal difference) {
     LocalDate periodStart =
         snapshotRepository
-            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndSnapshotDateLessThanOrderBySnapshotDateDescCreatedAtDesc(
+            .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullAndSnapshotDateLessThanOrderBySnapshotDateDescCreatedAtDesc(
                 account.getId(), snapshot.getSnapshotDate())
             .map(AccountSnapshot::getSnapshotDate)
             .orElse(opening.getSnapshotDate());
@@ -426,7 +426,7 @@ public class ReconciliationService {
 
   private Optional<AccountSnapshot> latestSnapshot(UUID accountId) {
     return snapshotRepository
-        .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+        .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
             accountId);
   }
 

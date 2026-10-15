@@ -15,6 +15,8 @@ import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportRowFilter;
+import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
+import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.error.ApiErrorCode;
@@ -50,7 +52,84 @@ class ImportFileParserServiceTest {
 
   private final LocalOcrService ocr = mock(LocalOcrService.class);
   private final ImportFileParserService parser =
-      new ImportFileParserService(new PdfImportReaderService(ocr), new PdfBalanceCheckService());
+      new ImportFileParserService(
+          new PdfImportReaderService(ocr),
+          new PdfBalanceCheckService(),
+          new ImportStatementBalanceReaderService());
+
+  // --- statement balance (US-07-12) ---------------------------------------------------------
+
+  /**
+   * A CSV file states its balances in its preamble and its trailing summary rows; both are read,
+   * and neither is a booking.
+   */
+  @Test
+  void theStatementBalanceIsReadFromThePreambleAndTheTrailingSummaryRows() {
+    ImportTemplateDefinition template =
+        new Template()
+            .preamble(1)
+            .trailing(1)
+            .statementBalance(
+                new ImportStatementBalanceRule(
+                    "^(?:Kontostand vom|Endsaldo) (?P<date>[0-9.]+):? (?P<amount>-?[0-9.]+)$",
+                    "dd.MM.yyyy"))
+            .build();
+    String csv =
+        "Kontostand vom 01.01.2031:,100.00\n"
+            + "date,amount,text\n"
+            + "2031-01-02,-5.00,Groceries\n"
+            + "Endsaldo 31.01.2031,95.00\n";
+
+    ImportParseResult result = parser.parse(utf8(csv), template, null);
+
+    assertThat(result.statementBalances())
+        .isEqualTo(
+            new ImportStatementBalances(
+                List.of(
+                    new ImportStatementBalances.Stated(
+                        LocalDate.of(2031, 1, 1), new BigDecimal("100.00"), null),
+                    new ImportStatementBalances.Stated(
+                        LocalDate.of(2031, 1, 31), new BigDecimal("95.00"), null)),
+                0));
+    assertThat(result.rows()).extracting(ParsedImportRow::status).containsExactly("PARSED");
+  }
+
+  @Test
+  void aBookingRowIsNeverReadAsTheStatementBalance() {
+    ImportTemplateDefinition template =
+        new Template()
+            .preamble(1)
+            .statementBalance(
+                new ImportStatementBalanceRule(
+                    "(?P<date>\\d{4}-\\d{2}-\\d{2}),(?P<amount>-?[0-9.]+)", null))
+            .build();
+    String csv = "Statement\n" + "date,amount,text\n" + "2031-01-02,-5.00,Groceries\n";
+
+    assertThat(parser.parse(utf8(csv), template, null).statementBalances().balances()).isEmpty();
+  }
+
+  @Test
+  void aTemplateWithoutTheRuleReadsNoStatementBalance() {
+    String csv = "date,amount,text\n2031-01-02,-5.00,Groceries\n";
+
+    assertThat(parser.parse(utf8(csv), new Template().build(), null).statementBalances()).isNull();
+  }
+
+  @Test
+  void aCsvTemplateNeedsLinesOutsideItsBookingsForTheStatementBalance() {
+    ImportTemplateDefinition template =
+        new Template()
+            .statementBalance(new ImportStatementBalanceRule("(?P<date>x)(?P<amount>y)", null))
+            .build();
+
+    assertThatThrownBy(() -> parser.validateTemplate(template, null))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getBody().getProperties()).containsEntry("field", "statementBalance");
+            });
+  }
 
   // --- row filter (US-07-09) ----------------------------------------------------------------
 
@@ -1588,6 +1667,7 @@ class ImportFileParserServiceTest {
     private Map<String, String> descriptionPatterns = Map.of();
     private ImportRowFilter rowFilter;
     private ImportAccountIdentifierRule accountIdentifier;
+    private ImportStatementBalanceRule statementBalance;
     private String accountStrategy = "USER_SELECTED";
     private String fileFormat = "CSV";
     private ImportPdfLayout pdfLayout;
@@ -1667,6 +1747,11 @@ class ImportFileParserServiceTest {
       return this;
     }
 
+    Template statementBalance(ImportStatementBalanceRule rule) {
+      statementBalance = rule;
+      return this;
+    }
+
     Template accountIdentifier(String strategy, ImportAccountIdentifierRule rule) {
       accountStrategy = strategy;
       accountIdentifier = rule;
@@ -1710,7 +1795,8 @@ class ImportFileParserServiceTest {
           pdfLayout,
           descriptionPatterns,
           rowFilter,
-          accountIdentifier);
+          accountIdentifier,
+          statementBalance);
     }
   }
 

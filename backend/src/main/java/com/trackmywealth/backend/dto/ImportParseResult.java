@@ -12,17 +12,29 @@ import java.util.List;
  *     a header row
  * @param accountIdentifier the account identifier the file names, per its template's rule
  *     (US-07-10); {@code null} for a template whose account is selected at upload
+ * @param statementBalances the balances the file states, per its template's rule (US-07-12); {@code
+ *     null} for a template without one
  */
 public record ImportParseResult(
     List<String> headerColumns,
     String headerFingerprint,
     List<ParsedImportRow> rows,
-    ImportFileAccountIdentifier accountIdentifier) {
+    ImportFileAccountIdentifier accountIdentifier,
+    ImportStatementBalances statementBalances) {
 
   /** A file of a template that does not identify its account (US-07-10). */
   public ImportParseResult(
       List<String> headerColumns, String headerFingerprint, List<ParsedImportRow> rows) {
-    this(headerColumns, headerFingerprint, rows, null);
+    this(headerColumns, headerFingerprint, rows, null, null);
+  }
+
+  /** A file of a template that states no balance (US-07-12). */
+  public ImportParseResult(
+      List<String> headerColumns,
+      String headerFingerprint,
+      List<ParsedImportRow> rows,
+      ImportFileAccountIdentifier accountIdentifier) {
+    this(headerColumns, headerFingerprint, rows, accountIdentifier, null);
   }
 
   public ImportParseResult {

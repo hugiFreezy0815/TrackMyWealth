@@ -198,7 +198,7 @@ public class OpeningBalanceService {
     }
 
     snapshotRepository
-        .findByAccountIdAndSnapshotDateAndSource(account.getId(), date, MANUAL)
+        .findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(account.getId(), date, MANUAL)
         .filter(existing -> !existing.getId().equals(ownSnapshotId))
         .ifPresent(
             existing -> {

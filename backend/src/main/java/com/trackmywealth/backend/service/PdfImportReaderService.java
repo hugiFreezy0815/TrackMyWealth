@@ -5,6 +5,7 @@ import com.google.re2j.Pattern;
 import com.trackmywealth.backend.dto.ImportPdfBookingLine;
 import com.trackmywealth.backend.dto.ImportPdfBookingLine.Status;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
+import com.trackmywealth.backend.dto.ImportPdfStatement;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
@@ -125,6 +126,16 @@ public class PdfImportReaderService {
    */
   public List<ImportPdfBookingLine> readBookingLines(
       byte[] content, ImportTemplateDefinition template) {
+    return readStatement(content, template).bookingLines();
+  }
+
+  /**
+   * {@link #readBookingLines}, together with every text line of the statement in reading order,
+   * which a statement balance rule is searched in (US-07-12): one read of the PDF for both.
+   *
+   * @throws ApiException as {@link #readBookingLines}
+   */
+  public ImportPdfStatement readStatement(byte[] content, ImportTemplateDefinition template) {
     ImportPdfLayout layout = template.pdfLayout();
     List<PdfTextLine> lines = readLines(content, template.isOcr());
     if (!hasMarker(joined(lines), layout)) {
@@ -141,7 +152,9 @@ public class PdfImportReaderService {
           ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS, "The statement has no booking lines.");
     }
     Pattern row = Re2Patterns.compile(layout.rowPattern());
-    return walked.stream().map(booking -> bookingLine(booking, layout, row)).toList();
+    return new ImportPdfStatement(
+        walked.stream().map(booking -> bookingLine(booking, layout, row)).toList(),
+        lines.stream().map(PdfTextLine::text).toList());
   }
 
   // The bookings of lines from (inclusive) to (exclusive), line by line: a section's start, a

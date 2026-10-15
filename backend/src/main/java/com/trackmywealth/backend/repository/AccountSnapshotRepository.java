@@ -16,11 +16,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot, UUID> {
 
-  List<AccountSnapshot> findByAccountIdOrderBySnapshotDateDescSourceAsc(UUID accountId);
+  List<AccountSnapshot> findByAccountIdAndWithdrawnAtIsNullOrderBySnapshotDateDescSourceAsc(
+      UUID accountId);
 
   Optional<AccountSnapshot> findByIdAndAccountId(UUID id, UUID accountId);
 
-  Optional<AccountSnapshot> findByAccountIdAndSnapshotDateAndSource(
+  Optional<AccountSnapshot> findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
       UUID accountId, LocalDate snapshotDate, String source);
 
   // US-25-04: V58's partial unique index allows at most one.
@@ -33,19 +34,22 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
   // as-of date, the opening balance included. A holdings-only snapshot (no balance) says nothing
   // about it.
   Optional<AccountSnapshot>
-      findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+      findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
           UUID accountId, LocalDate asOf);
 
   // US-25-02: the newest observed balance, excluding the synthetic opening-balance starting point.
   Optional<AccountSnapshot>
-      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
           UUID accountId);
 
   // US-25-02: the observed balance immediately before a snapshot, used to bound best-effort cause
   // classification to the period that can have introduced the difference.
   Optional<AccountSnapshot>
-      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndSnapshotDateLessThanOrderBySnapshotDateDescCreatedAtDesc(
+      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullAndSnapshotDateLessThanOrderBySnapshotDateDescCreatedAtDesc(
           UUID accountId, LocalDate snapshotDate);
+
+  // US-07-12: the snapshot an import batch's commit recorded, withdrawn or not.
+  Optional<AccountSnapshot> findByImportBatchId(UUID importBatchId);
 
   // Replacing a snapshot deletes and re-inserts its holdings; the row lock keeps two concurrent
   // replacements from interleaving into a mix of both holding sets.

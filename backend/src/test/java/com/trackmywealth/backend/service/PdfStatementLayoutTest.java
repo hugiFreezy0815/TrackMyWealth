@@ -14,7 +14,10 @@ import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportPdfBookingLine;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
+import com.trackmywealth.backend.dto.ImportPdfStatement;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
+import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
+import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.error.ApiErrorCode;
@@ -46,7 +49,8 @@ class PdfStatementLayoutTest {
   private final PdfImportReaderService reader =
       new PdfImportReaderService(mock(LocalOcrService.class));
   private final ImportFileParserService parser =
-      new ImportFileParserService(reader, new PdfBalanceCheckService());
+      new ImportFileParserService(
+          reader, new PdfBalanceCheckService(), new ImportStatementBalanceReaderService());
 
   /**
    * Acceptance criterion 1: every booking parses with the sign of its column, the currency of its
@@ -832,6 +836,45 @@ class PdfStatementLayoutTest {
   }
 
   /**
+   * US-07-12: a PDF states its balances on its text lines - here per currency section, opening and
+   * closing - and the statement balance rule reads them all, with their currency, from the same
+   * read as the bookings.
+   */
+  @Test
+  void theStatementBalanceRuleReadsEveryBalanceLineOfAPdf() throws IOException {
+    ImportTemplateDefinition template =
+        new ImportFileParserServiceTest.Template()
+            .pdf("PDF_TEXT", SyntheticStatements.yuhLayout())
+            .mapping(SyntheticStatements.yuhMapping())
+            .amountRepresentation("SEPARATE_DEBIT_CREDIT")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .dateFormat("dd.MM.yyyy")
+            .decimal(".")
+            .thousands("'")
+            .statementBalance(
+                new ImportStatementBalanceRule(
+                    "^Saldo per (?P<date>\\S+)\\s+(?P<amount>-?[0-9'.]+) (?P<currency>[A-Z]{3})$",
+                    null))
+            .build();
+
+    ImportStatementBalances read =
+        parser.parse(SyntheticStatements.yuhStatement(false), template, null).statementBalances();
+
+    assertThat(read.balances())
+        .contains(
+            new ImportStatementBalances.Stated(
+                LocalDate.of(2031, 1, 1), new BigDecimal("263.40"), "CHF"),
+            new ImportStatementBalances.Stated(
+                LocalDate.of(2031, 1, 31), new BigDecimal("1248.55"), "CHF"),
+            new ImportStatementBalances.Stated(
+                LocalDate.of(2031, 1, 1), new BigDecimal("100.00"), "EUR"),
+            new ImportStatementBalances.Stated(
+                LocalDate.of(2031, 1, 31), new BigDecimal("60.00"), "EUR"));
+    assertThat(read.unreadable()).isZero();
+  }
+
+  /**
    * PR #281 review: the error rows of balance lines count against the file's row limit, so a
    * statement cannot hold more rows than a file may by its balance lines.
    */
@@ -850,11 +893,15 @@ class PdfStatementLayoutTest {
             .withHeaded(true)
             .build();
     PdfImportReaderService stub = mock(PdfImportReaderService.class);
-    when(stub.readBookingLines(any(), any())).thenReturn(List.of(withBalanceLines));
+    when(stub.readStatement(any(), any()))
+        .thenReturn(new ImportPdfStatement(List.of(withBalanceLines), List.of()));
 
     assertThatThrownBy(
             () ->
-                new ImportFileParserService(stub, new PdfBalanceCheckService())
+                new ImportFileParserService(
+                        stub,
+                        new PdfBalanceCheckService(),
+                        new ImportStatementBalanceReaderService())
                     .parse(new byte[0], yuhTemplate(), null))
         .isInstanceOfSatisfying(
             ApiException.class,

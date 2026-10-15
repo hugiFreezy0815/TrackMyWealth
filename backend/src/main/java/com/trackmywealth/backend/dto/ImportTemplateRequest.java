@@ -54,7 +54,60 @@ public record ImportTemplateRequest(
     @Valid ImportPdfLayout pdfLayout,
     @Size(max = MAX_DESCRIPTION_TYPE_PATTERNS) Map<String, String> descriptionTypePatterns,
     @Valid ImportRowFilter rowFilter,
-    @Valid ImportAccountIdentifierRule accountIdentifier) {
+    @Valid ImportAccountIdentifierRule accountIdentifier,
+    @Valid ImportStatementBalanceRule statementBalance) {
+
+  /** Existing API callers omit the statement balance rule (US-07-12). */
+  public ImportTemplateRequest(
+      String name,
+      UUID institutionCatalogueId,
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      Integer headerRowIndex,
+      Integer preambleRowCount,
+      Integer trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      List<String> headerColumns,
+      String fileFormat,
+      ImportPdfLayout pdfLayout,
+      Map<String, String> descriptionTypePatterns,
+      ImportRowFilter rowFilter,
+      ImportAccountIdentifierRule accountIdentifier) {
+    this(
+        name,
+        institutionCatalogueId,
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        headerColumns,
+        fileFormat,
+        pdfLayout,
+        descriptionTypePatterns,
+        rowFilter,
+        accountIdentifier,
+        null);
+  }
 
   /** Existing API callers omit regex-based type mapping. */
   public ImportTemplateRequest(
@@ -245,7 +298,8 @@ public record ImportTemplateRequest(
         pdfLayout,
         descriptionTypePatterns,
         rowFilter,
-        accountIdentifier);
+        accountIdentifier,
+        statementBalance);
   }
 
   private static String orDefault(String value, String defaultValue) {

@@ -15,6 +15,7 @@ import com.trackmywealth.backend.dto.ImportRowErrorResponse;
 import com.trackmywealth.backend.dto.ImportRowRecheck;
 import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.ImportSameFileResponse;
+import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
@@ -103,6 +104,7 @@ public class ImportBatchService {
   private final ImportRecheckService recheckService;
   private final ImportRowJsonService rowJson;
   private final ImportAccountIdentificationService identificationService;
+  private final ImportStatementBalanceService statementBalanceService;
   private final ImportBatchRepository batchRepository;
   private final ImportFileRepository fileRepository;
   private final ImportRowRawRepository rowRepository;
@@ -125,6 +127,7 @@ public class ImportBatchService {
       ImportRecheckService recheckService,
       ImportRowJsonService rowJson,
       ImportAccountIdentificationService identificationService,
+      ImportStatementBalanceService statementBalanceService,
       ImportBatchRepository batchRepository,
       ImportFileRepository fileRepository,
       ImportRowRawRepository rowRepository,
@@ -144,6 +147,7 @@ public class ImportBatchService {
     this.recheckService = recheckService;
     this.rowJson = rowJson;
     this.identificationService = identificationService;
+    this.statementBalanceService = statementBalanceService;
     this.batchRepository = batchRepository;
     this.fileRepository = fileRepository;
     this.rowRepository = rowRepository;
@@ -233,6 +237,7 @@ public class ImportBatchService {
           if (parsed != null) {
             useTemplate(batch, template);
             identificationService.identify(batch, account, parsed.accountIdentifier(), actor);
+            statementBalanceService.record(batch, account, parsed.statementBalances());
             stagingService.stage(batch, account, parsed.rows(), rates, actor);
           }
           return summary(batch, account, offered, actor);
@@ -279,6 +284,7 @@ public class ImportBatchService {
           requireParseable(batch, expectedVersion);
           useTemplate(batch, template);
           identificationService.identify(batch, account, parsed.accountIdentifier(), actor);
+          statementBalanceService.record(batch, account, parsed.statementBalances());
           stagingService.stage(batch, account, parsed.rows(), rates, actor);
           return summary(batch, account, List.of(), actor);
         });
@@ -303,7 +309,8 @@ public class ImportBatchService {
                 List.of(),
                 counts,
                 sameFiles,
-                identificationService.response(batch, actor)));
+                identificationService.response(batch, actor),
+                statementBalanceService.response(batch)));
   }
 
   /**
@@ -574,7 +581,8 @@ public class ImportBatchService {
         candidates,
         counts,
         sameFilesImportedIn(one),
-        identificationService.response(batch, actor));
+        identificationService.response(batch, actor),
+        statementBalanceService.response(batch));
   }
 
   private static ImportBatchResponse summary(
@@ -583,7 +591,8 @@ public class ImportBatchService {
       List<ImportTemplateCandidateResponse> candidates,
       Map<UUID, ImportBatchCountsResponse> counts,
       Map<UUID, ImportSameFileResponse> sameFiles,
-      ImportIdentificationResponse identification) {
+      ImportIdentificationResponse identification,
+      ImportStatementBalanceResponse statementBalance) {
     return new ImportBatchResponse(
         batch.getId(),
         account.getId(),
@@ -601,6 +610,7 @@ public class ImportBatchService {
         batch.getRolledBackAt(),
         batch.getRollbackReason(),
         identification,
+        statementBalance,
         VersionPreconditionService.persistedVersion(batch.getVersion(), VERSIONED_RESOURCE));
   }
 

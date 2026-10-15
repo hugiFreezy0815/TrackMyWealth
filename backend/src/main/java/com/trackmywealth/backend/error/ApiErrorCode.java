@@ -201,6 +201,14 @@ public final class ApiErrorCode {
   public static final String IMPORT_ACCOUNT_UNCONFIRMED = "IMPORT_ACCOUNT_UNCONFIRMED";
 
   /**
+   * 409: the import batch cannot be rolled back while the member's decision on the reconciliation
+   * of its statement balance stands (US-07-12): an accepted or dismissed difference covers that
+   * balance. {@code reconciliationResultId} names it; reopen it, then roll back.
+   */
+  public static final String IMPORT_ROLLBACK_RECONCILIATION_DECIDED =
+      "IMPORT_ROLLBACK_RECONCILIATION_DECIDED";
+
+  /**
    * 422: not a valid account identifier for this account (US-07-10): an IBAN failing its check
    * digits, or for a credit card a masked number showing more than its first 6 and last 4 digits.
    * The detail never repeats the value.

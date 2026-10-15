@@ -116,7 +116,8 @@ public class AccountSnapshotService {
         validate(account, request.snapshotDate(), request.balance(), request.holdings());
 
     snapshotRepository
-        .findByAccountIdAndSnapshotDateAndSource(accountId, request.snapshotDate(), MANUAL)
+        .findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
+            accountId, request.snapshotDate(), MANUAL)
         .ifPresent(
             existing -> {
               throw new ExistingResourceConflictException(
@@ -197,7 +198,8 @@ public class AccountSnapshotService {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     List<AccountSnapshot> snapshots =
-        snapshotRepository.findByAccountIdOrderBySnapshotDateDescSourceAsc(accountId);
+        snapshotRepository.findByAccountIdAndWithdrawnAtIsNullOrderBySnapshotDateDescSourceAsc(
+            accountId);
     if (snapshots.isEmpty()) {
       return List.of();
     }

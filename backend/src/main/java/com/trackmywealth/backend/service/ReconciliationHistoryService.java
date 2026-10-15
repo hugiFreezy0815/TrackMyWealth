@@ -120,7 +120,7 @@ public class ReconciliationHistoryService {
   /** The id of the account's newest observed balance snapshot, if one exists. */
   Optional<UUID> latestSnapshotId(UUID accountId) {
     return snapshotRepository
-        .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+        .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
             accountId)
         .map(AccountSnapshot::getId);
   }

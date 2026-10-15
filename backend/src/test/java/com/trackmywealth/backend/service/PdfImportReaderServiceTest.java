@@ -74,7 +74,8 @@ class PdfImportReaderServiceTest {
   private final LocalOcrService ocr = mock(LocalOcrService.class);
   private final PdfImportReaderService reader = new PdfImportReaderService(ocr);
   private final ImportFileParserService parser =
-      new ImportFileParserService(reader, new PdfBalanceCheckService());
+      new ImportFileParserService(
+          reader, new PdfBalanceCheckService(), new ImportStatementBalanceReaderService());
 
   @Test
   void textLayerBookingLinesParseThroughTheTemplateRules() throws IOException {

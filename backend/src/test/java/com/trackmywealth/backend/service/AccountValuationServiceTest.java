@@ -238,7 +238,7 @@ class AccountValuationServiceTest {
     LocalDate snapshotDate = TODAY.minusMonths(3);
     AccountSnapshot latest = snapshot(snapshotDate, "91000.00");
     when(snapshotRepository
-            .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+            .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
                 account.getId(), TODAY))
         .thenReturn(Optional.of(latest));
     withOpeningBalance("84000.00");
@@ -257,7 +257,7 @@ class AccountValuationServiceTest {
   void anAccountWithoutALedgerAndWithoutASnapshotByThenIsUnknown() {
     account.setHasTransactions(false);
     when(snapshotRepository
-            .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+            .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
                 any(), any()))
         .thenReturn(Optional.empty());
 
@@ -274,7 +274,7 @@ class AccountValuationServiceTest {
 
     assertThat(service.valueIn(account, "CHF", TODAY).valueKnown()).isFalse();
     verify(snapshotRepository, never())
-        .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullOrderBySnapshotDateDescCreatedAtDesc(
+        .findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
             any(), any());
   }
 

@@ -112,4 +112,41 @@ public final class ImportBatchValues {
 
   /** Account identification is not configured on this server. */
   public static final String IDENTIFIED_UNAVAILABLE = "UNAVAILABLE";
+
+  // --- US-07-12: the statement's balance (import_batch.statement_balance_outcome) ---
+
+  /** The file states one closing balance in the account's currency. */
+  public static final String BALANCE_FOUND = "FOUND";
+
+  /** No line of the file states a balance in the account's currency. */
+  public static final String BALANCE_NOT_FOUND = "NOT_FOUND";
+
+  /** A line matched the template's rule, but its date, amount or currency could not be read. */
+  public static final String BALANCE_UNREADABLE = "UNREADABLE";
+
+  /** The file states different balances for its latest date. */
+  public static final String BALANCE_AMBIGUOUS = "AMBIGUOUS";
+
+  // --- US-07-12: what became of the balance (import_batch.statement_balance_snapshot) ---
+
+  /** Before the commit: no imported snapshot of that date exists, so the commit records one. */
+  public static final String SNAPSHOT_NEW = "NEW";
+
+  /** The commit recorded the balance as a {@code DOCUMENT} snapshot. */
+  public static final String SNAPSHOT_RECORDED = "RECORDED";
+
+  /** An imported snapshot of that date already states the same balance: none is recorded. */
+  public static final String SNAPSHOT_ALREADY_RECORDED = "ALREADY_RECORDED";
+
+  /** An imported snapshot of that date states another balance: none is recorded. */
+  public static final String SNAPSHOT_CONFLICTING = "CONFLICTING";
+
+  /** A rollback deleted the recorded snapshot. */
+  public static final String SNAPSHOT_DELETED = "DELETED";
+
+  /**
+   * A rollback withdrew the recorded snapshot: an accepted reconciliation's adjusting entry still
+   * points at it, so it stays as history but no longer counts.
+   */
+  public static final String SNAPSHOT_WITHDRAWN = "WITHDRAWN";
 }

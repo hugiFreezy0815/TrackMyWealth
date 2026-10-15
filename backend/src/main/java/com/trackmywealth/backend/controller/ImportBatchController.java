@@ -235,7 +235,11 @@ public class ImportBatchController {
    * Rolls a committed batch back as a whole ({@code COMMITTED -> ROLLED_BACK} or {@code VOIDED}):
    * its transactions are deleted while nobody has worked on them, and voided once someone has - the
    * answer names those and why. {@code reason} (required, at most 500 characters) is recorded on
-   * the batch and becomes the void reason. The {@code ETag} is the batch's new version.
+   * the batch and becomes the void reason. The statement balance snapshot its commit recorded is
+   * deleted, or withdrawn while an accepted reconciliation's adjusting entry points at it; while a
+   * member's decision on that reconciliation stands, the rollback is a 409 {@code
+   * IMPORT_ROLLBACK_RECONCILIATION_DECIDED} (US-07-12). The {@code ETag} is the batch's new
+   * version.
    */
   @PostMapping(BY_ID + "/rollback")
   public ResponseEntity<ImportRollbackResponse> rollback(
