@@ -67,6 +67,7 @@ public class ImportStatementBalanceService {
   private final ReconciliationService reconciliationService;
   private final AccountCurrencyService accountCurrencyService;
   private final Clock clock;
+  private final BusinessDateService businessDates;
 
   public ImportStatementBalanceService(
       AccountSnapshotRepository snapshotRepository,
@@ -74,6 +75,7 @@ public class ImportStatementBalanceService {
       ReconciliationResultRepository resultRepository,
       ReconciliationService reconciliationService,
       AccountCurrencyService accountCurrencyService,
+      BusinessDateService businessDates,
       Clock clock) {
     this.snapshotRepository = snapshotRepository;
     this.holdingRepository = holdingRepository;
@@ -81,6 +83,7 @@ public class ImportStatementBalanceService {
     this.reconciliationService = reconciliationService;
     this.accountCurrencyService = accountCurrencyService;
     this.clock = clock;
+    this.businessDates = businessDates;
   }
 
   /**
@@ -97,6 +100,12 @@ public class ImportStatementBalanceService {
         stated.balances().stream()
             .filter(balance -> balance.currency() == null || balance.currency().equals(currency))
             .toList();
+    // An unreadable matching line could be the actual closing observation. Never silently
+    // promote a readable opening or intermediate balance to the statement's closing snapshot.
+    if (stated.unreadable() > 0) {
+      batch.recordStatementBalance(ImportBatchValues.BALANCE_UNREADABLE, null, null, null, null, null);
+      return;
+    }
     if (inCurrency.isEmpty()) {
       String outcome =
           stated.unreadable() > 0
@@ -111,21 +120,30 @@ public class ImportStatementBalanceService {
             .max(Comparator.naturalOrder())
             .orElseThrow();
     List<BigDecimal> closing = amountsOn(inCurrency, closingDate);
-    if (closing.size() > ONE_BALANCE) {
+    // PDF balance markers are observations in statement order. A bank may print its opening
+    // and closing balance on the same date; the last marker is authoritative there.
+    if (!stated.pdf() && closing.size() > ONE_BALANCE) {
       batch.recordStatementBalance(
           ImportBatchValues.BALANCE_AMBIGUOUS, null, null, null, null, null);
       return;
     }
+    BigDecimal closingAmount = stated.pdf()
+        ? inCurrency.get(inCurrency.size() - 1).amount()
+        : closing.get(0);
+    if (stated.pdf()) {
+      closingDate = inCurrency.get(inCurrency.size() - 1).date();
+    }
     // The earliest balance before the closing date, the first the file states on that date.
+    final LocalDate chosenClosingDate = closingDate;
     Optional<ImportStatementBalances.Stated> opening =
         inCurrency.stream()
-            .filter(balance -> balance.date().isBefore(closingDate))
+            .filter(balance -> balance.date().isBefore(chosenClosingDate))
             .min(Comparator.comparing(ImportStatementBalances.Stated::date));
     boolean liability = LIABILITY.equals(account.getNature());
     batch.recordStatementBalance(
         ImportBatchValues.BALANCE_FOUND,
         closingDate,
-        snapshotSign(closing.get(0), liability),
+        snapshotSign(closingAmount, liability),
         currency,
         opening.map(ImportStatementBalances.Stated::date).orElse(null),
         opening.map(balance -> snapshotSign(balance.amount(), liability)).orElse(null));
@@ -164,6 +182,13 @@ public class ImportStatementBalanceService {
   public void commit(ImportBatch batch, Account account, UUID committedBy) {
     if (!ImportBatchValues.BALANCE_FOUND.equals(batch.getStatementBalanceOutcome())) {
       return;
+    }
+    LocalDate date = batch.getStatementBalanceDate();
+    if (date.isAfter(businessDates.today())
+        || (account.getOpenedAt() != null && date.isBefore(account.getOpenedAt()))
+        || (account.getClosedAt() != null && date.isAfter(account.getClosedAt()))) {
+      throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.UNPROCESSABLE,
+          "The statement balance date is outside the account's permitted snapshot dates.");
     }
     Optional<String> existing = existingOutcome(batch);
     if (existing.isPresent()) {
@@ -206,8 +231,11 @@ public class ImportStatementBalanceService {
     AccountSnapshot snapshot =
         snapshotRepository.findForUpdate(recorded.get().getId(), account.getId()).orElseThrow();
     List<ReconciliationResult> results = resultRepository.findBySnapshotId(snapshot.getId());
+    boolean historical = snapshotRepository
+        .findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(account.getId())
+        .filter(latest -> !latest.getId().equals(snapshot.getId())).isPresent();
     for (ReconciliationResult result : results) {
-      if (DECIDED.contains(result.getStatus())) {
+      if (!historical && DECIDED.contains(result.getStatus())) {
         ApiException exception =
             new ApiException(
                 HttpStatus.CONFLICT,
@@ -220,7 +248,13 @@ public class ImportStatementBalanceService {
       }
     }
     List<UUID> resultIds = results.stream().map(ReconciliationResult::getId).toList();
-    if (!resultIds.isEmpty() && resultRepository.existsAdjustmentOf(resultIds)) {
+    if (historical && results.stream().anyMatch(result -> DECIDED.contains(result.getStatus()))) {
+      // A finalized decision cannot be reopened by the member. Preserve its audit trail and
+      // adjustment as history; retire the source observation without deleting its references.
+      snapshot.withdraw(OffsetDateTime.now(clock), rolledBackBy);
+      snapshotRepository.saveAndFlush(snapshot);
+      batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_WITHDRAWN);
+    } else if (!resultIds.isEmpty() && resultRepository.existsAdjustmentOf(resultIds)) {
       OffsetDateTime now = OffsetDateTime.now(clock);
       for (ReconciliationResult result : results) {
         if (ReconciliationResultValues.OPEN.equals(result.getStatus())) {
