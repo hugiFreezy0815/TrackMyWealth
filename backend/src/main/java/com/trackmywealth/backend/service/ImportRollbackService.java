@@ -193,7 +193,7 @@ public class ImportRollbackService {
       reconciliationService.reconcileAfterLedgerChange(account, earliest, actor.userId());
     }
     return new ImportRollbackResponse(
-        batchService.summary(batch, account, List.of()),
+        batchService.summary(batch, account, List.of(), actor),
         ImportRollbackValues.HARD_DELETE,
         deleted,
         List.of(),
@@ -235,7 +235,7 @@ public class ImportRollbackService {
         (transactionId, criteria) ->
             reasons.add(new ImportRollbackModifiedResponse(transactionId, criteria)));
     return new ImportRollbackResponse(
-        batchService.summary(batch, account, List.of()),
+        batchService.summary(batch, account, List.of(), actor),
         ImportRollbackValues.VOID,
         0,
         reasons,

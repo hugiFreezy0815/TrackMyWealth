@@ -73,6 +73,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V67` | Import batches (US-07-04, #230): `import_file` (the original file, own RLS policy), `import_batch.version` + `import_batch_bump_version`, `file_sha256`, `source_kind`; `import_row_raw.workspace_id` + RLS policy, `included`, `duplicate_of_transaction_id`, `warning_codes`, `error_code`/`error_args`, the canonical values (`canonical_data`, `booking_date`, `amount`, `currency`), and `raw_data` as `JSON` so the cells keep their order |
 | `V68` | Import batch rollback (US-07-05, #231): `import_batch.rolled_back_by` + `rollback_reason` (`chk_import_batch_rollback_recorded`: set exactly when `ROLLED_BACK`/`VOIDED`, with `rolled_back_at`), `trg_transaction_no_hard_delete`, which refuses every `DELETE` of a transaction except its own batch's rollback, `trg_transaction_no_truncate`, and indexes on the columns referencing a transaction that had none |
 | `V71` | Credit-card statement imports: versioned RE2 description patterns for classification, notably refunds (US-07-18, #284) |
+| `V73` | Account identification (US-07-10, #270): `account.identifier_hash` (keyed HMAC, unique per workspace), `identifier_masked` cleared and tied to it, `import_template.account_identifier_rule`, and the batch's `account_identification`, `proposed_account_id` and confirmation flags |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -1135,6 +1136,65 @@ shown as stored.
   matching the rows take part in, then the batch's transactions, each in id order. Every affected
   account is reconciled again (T3). The batch records `rolled_back_at`, `rolled_back_by` and
   `rollback_reason`.
+
+### Account identification (US-07-10)
+
+An import file names its account (FR-IMP-021), so the member does not pick it by hand and cannot
+import a file into the wrong account by mistake.
+
+**What is stored (V73).** `account.identifier_hash` is HMAC-SHA256, as 64 hex digits, over the
+account's normalized identifier and its kind (`IBAN:...` or `MASKED_CARD:...`), under a key of the
+account's workspace. That key is itself the HMAC of the workspace id under the server key, so equal
+identifiers in two workspaces hash differently. A partial unique index makes an identifier unique
+per workspace (`uq_account_workspace_identifier_hash`; a violation is a 409
+`ACCOUNT_IDENTIFIER_IN_USE`). That 409 does not name the other account, but it does tell a member
+with EDIT access to one account that the workspace holds this identifier, possibly on an account
+the member cannot see. This is accepted: the identifier is one the member already knows, a
+workspace is one household, and any refusal of a duplicate would say the same. Archiving an account
+clears its identifier (no file is matched to it any more), so a successor account can register it;
+a restored account registers it again. `identifier_masked` is the display value: an IBAN's last four
+characters, or a card number masked except for at most its first 6 and last 4 digits (PCI DSS).
+`chk_account_identifier_masked` keeps both columns set or both empty. The plain number is never
+stored, logged or returned. Before V73, `identifier_masked` was free text the account update stored
+as sent; V73 clears it, and only `PUT /api/v1/accounts/{id}/identifier` writes it now (EDIT access,
+`If-Match`). `GET` shows it, and `DELETE` removes it.
+
+**Normalization.** An IBAN loses its spaces, is upper case and must pass its ISO 13616 check digits
+(422 `ACCOUNT_IDENTIFIER_INVALID` otherwise, without repeating the value). A credit-card account
+registers a masked card number; `*`, `X`, `x` and the bullet all become `*`, so banks' spellings
+match.
+
+**The key (`app.import.account-identifier-key`, `IMPORT_ACCOUNT_IDENTIFIER_KEY`).** Base64 of at
+least 32 random bytes (`openssl rand -base64 32`), deployment configuration like the JWT and MFA
+secrets, never in source, and backed up with the database. A malformed key fails the start. Without
+a key, identification is off: registering is a 503 `ACCOUNT_IDENTIFICATION_UNAVAILABLE`, and an
+import's identification is `UNAVAILABLE` and needs a confirmation. There is deliberately no
+placeholder key: IBANs are few enough that a public key would let anyone recompute every hash.
+Changing the key invalidates every registered identifier, which must then be registered again; a
+lost key is the same. Tests use a random key per test context.
+
+**Templates.** `account_identification_strategy` is `USER_SELECTED`, `PREAMBLE_LINE` (CSV only: the
+first line before the header row that starts with the rule's `label`, its identifier the rest of the
+line or the single capture group of an optional RE2 `pattern`) or `COLUMN` (a mapped column of every
+row; every filled cell must hold the same identifier). `FILENAME` stays unsupported: a file name is
+renamed too easily. The rule (`account_identifier_rule`, JSONB object: `kind`, `label`, `pattern`,
+`column`; `chk_import_template_account_identifier_rule` requires a known `kind`) is part of the
+versioned definition, and a file lacking a `COLUMN` rule's column is `IMPORT_TEMPLATE_MISMATCH`
+naming it. A template's dry run says whether the rule found exactly one valid identifier in the
+sample (`accountIdentifierFound`), never which, so a wrong label or column shows before any upload.
+
+**Batches.** Every parse (upload or re-parse) matches the file's identifier by its hash and records
+the outcome in `import_batch.account_identification`: `MATCHED` (the batch's account by its IBAN),
+`MATCHED_MASKED` (the batch's account by masked digits, which several cards can share),
+`OTHER_ACCOUNT` (with `proposed_account_id`), `NO_MATCH`, `NOT_FOUND` (no readable identifier, or
+several different ones) or `UNAVAILABLE`. Another account is proposed only if the member may import
+into it (EDIT, active, holds transactions); otherwise the outcome is `NO_MATCH`, and a viewer
+without access to a proposed account sees `NO_MATCH` too. Every outcome but `MATCHED` sets
+`account_confirmation_required`: the commit is a 409 `IMPORT_ACCOUNT_UNCONFIRMED` until
+`POST .../imports/{batchId}/confirm-account` (`If-Match`) sets `account_confirmed`. A re-parse asks
+again. The identifier read from the file is not stored on the batch. The uploaded file itself is
+kept in `import_file` until the batch is committed or discarded, as every import file is (US-07-04),
+and it holds whatever the bank wrote, the account number included.
 
 ## 5. Time-series data and partitioning
 

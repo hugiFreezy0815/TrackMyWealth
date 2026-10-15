@@ -7,15 +7,19 @@ import static org.assertj.core.groups.Tuple.tuple;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.trackmywealth.backend.dto.AccessLevelValues;
+import com.trackmywealth.backend.dto.AccountIdentifierRequest;
+import com.trackmywealth.backend.dto.AccountIdentifierResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
+import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
+import com.trackmywealth.backend.dto.ImportIdentificationResponse;
 import com.trackmywealth.backend.dto.ImportParseRequest;
 import com.trackmywealth.backend.dto.ImportRowFilter;
 import com.trackmywealth.backend.dto.ImportRowInclusionRequest;
@@ -57,6 +61,7 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -65,6 +70,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -169,6 +175,276 @@ class ImportBatchControllerTest {
     }
     token = bootstrapAdministrator();
     account = createAccount("Privatkonto", "CHF");
+  }
+
+  // --- account identification (US-07-10) ---------------------------------------------------
+  // Synthetic identifiers: DE89...3000 is the standard published example IBAN, DE36...0001 is
+  // invented with valid check digits.
+
+  private static final String EXAMPLE_IBAN = "DE89 3704 0044 0532 0130 00";
+  private static final String EXAMPLE_IBAN_DIGITS = "370400440532013000";
+  private static final String OTHER_IBAN = "DE36 1001 0010 0000 0000 01";
+
+  /** Acceptance criterion 3: the database holds the keyed hash and the masked value only. */
+  @Test
+  void registeringAnIdentifierStoresOnlyItsHashAndMaskedValue() {
+    EntityExchangeResult<AccountIdentifierResponse> result =
+        putIdentifier(token, account, EXAMPLE_IBAN, "\"" + accountVersion(account) + "\"")
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountIdentifierResponse.class)
+            .returnResult();
+    AccountIdentifierResponse registered =
+        CurrentVersion.storedEtag(result, dataSource, "account", account);
+
+    assertThat(registered.kind()).isEqualTo("IBAN");
+    assertThat(registered.identifierMasked()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    Map<String, Object> stored =
+        rowsOf("SELECT identifier_hash, identifier_masked FROM account WHERE id = ?", account)
+            .get(0);
+    assertThat((String) stored.get("identifier_hash")).matches("[0-9a-f]{64}");
+    assertThat(stored.get("identifier_masked")).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat((String) single("SELECT row_to_json(a)::text FROM account a WHERE id = ?", account))
+        .doesNotContain(EXAMPLE_IBAN_DIGITS)
+        .doesNotContain("0532");
+    assertThat(
+            client()
+                .get()
+                .uri("/api/v1/accounts/" + account + "/identifier")
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(AccountIdentifierResponse.class)
+                .returnResult()
+                .getResponseBody())
+        .isEqualTo(registered);
+
+    AccountIdentifierResponse cleared =
+        client()
+            .delete()
+            .uri("/api/v1/accounts/" + account + "/identifier")
+            .header(HttpHeaders.IF_MATCH, "\"" + registered.version() + "\"")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountIdentifierResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(cleared.identifierMasked()).isNull();
+    assertThat(single("SELECT count(*) FROM account WHERE identifier_hash IS NOT NULL"))
+        .isEqualTo(0L);
+  }
+
+  @Test
+  void anIdentifierIsValidatedNeverEchoedAndUniqueInTheWorkspace() throws Exception {
+    putIdentifier(
+            token, account, "DE88 3704 0044 0532 0130 00", "\"" + accountVersion(account) + "\"")
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("ACCOUNT_IDENTIFIER_INVALID")
+        .jsonPath("$.field")
+        .isEqualTo("identifier")
+        .jsonPath("$.detail")
+        .value(detail -> assertThat((String) detail).doesNotContain("3704"));
+    putIdentifier(token, account, EXAMPLE_IBAN, null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
+
+    putIdentifier(token, account, EXAMPLE_IBAN, "\"" + accountVersion(account) + "\"")
+        .expectStatus()
+        .isOk();
+    UUID savings = createAccount("Sparkonto", "CHF");
+    putIdentifier(
+            token,
+            savings,
+            EXAMPLE_IBAN.toLowerCase(Locale.ROOT),
+            "\"" + accountVersion(savings) + "\"")
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("ACCOUNT_IDENTIFIER_IN_USE");
+
+    // A credit card is registered by its masked number, never by a full card number.
+    UUID card = createAccount("Synthetic card", "CREDIT_CARD", "CHF");
+    putIdentifier(token, card, "1234 5678 9012 3456", "\"" + accountVersion(card) + "\"")
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    putIdentifier(token, card, EXAMPLE_IBAN, "\"" + accountVersion(card) + "\"")
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    AccountIdentifierResponse masked =
+        putIdentifier(token, card, "1234 56XX XXXX 7890", "\"" + accountVersion(card) + "\"")
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountIdentifierResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(masked.kind()).isEqualTo("MASKED_CARD");
+    assertThat(masked.identifierMasked()).isEqualTo("123456******7890");
+
+    // Only a member who may edit the account sees or sets its identifier.
+    UUID reader = createSecondMember("reader@example.com");
+    grantOnAccount(reader, account, "READ");
+    String readerToken = login("reader@example.com");
+    client(readerToken)
+        .get()
+        .uri("/api/v1/accounts/" + account + "/identifier")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    putIdentifier(readerToken, account, OTHER_IBAN, "\"" + accountVersion(account) + "\"")
+        .expectStatus()
+        .isNotFound();
+  }
+
+  /**
+   * Acceptance criterion 1: a file naming the account by its IBAN is imported without a question.
+   */
+  @Test
+  void aFileNamingThisAccountByItsIbanIsMatchedAndCommits() {
+    registerIdentifier(account, EXAMPLE_IBAN);
+    UUID template = createTemplate(preambleTemplate()).id();
+
+    ImportBatchResponse batch = upload(token, template, preambleFile(EXAMPLE_IBAN));
+
+    assertThat(batch.accountIdentification())
+        .isEqualTo(new ImportIdentificationResponse("MATCHED", null, false, false));
+    assertThat(commit(account, batch.id(), batch.version()).status()).isEqualTo("COMMITTED");
+    assertThat(rowsOf("SELECT * FROM import_batch").toString()).doesNotContain(EXAMPLE_IBAN_DIGITS);
+  }
+
+  /**
+   * Acceptance criterion 2: a file naming another account proposes it, and nothing is committed
+   * until the member confirms; a re-parse asks again.
+   */
+  @Test
+  void aFileNamingAnotherAccountProposesItAndNeedsAConfirmation() {
+    UUID savings = createAccount("Sparkonto", "CHF");
+    registerIdentifier(savings, EXAMPLE_IBAN);
+    UUID template = createTemplate(preambleTemplate()).id();
+
+    ImportBatchResponse batch = upload(token, template, preambleFile(EXAMPLE_IBAN));
+
+    assertThat(batch.accountIdentification())
+        .isEqualTo(new ImportIdentificationResponse("OTHER_ACCOUNT", savings, true, false));
+    commitStatus(account, batch.id(), "\"" + batch.version() + "\"")
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("IMPORT_ACCOUNT_UNCONFIRMED")
+        .jsonPath("$.accountIdentification")
+        .isEqualTo("OTHER_ACCOUNT");
+    assertThat(count("SELECT count(*) FROM transaction")).isZero();
+
+    ImportBatchResponse confirmed = confirmAccount(batch.id(), batch.version());
+    assertThat(confirmed.accountIdentification().confirmed()).isTrue();
+    ImportBatchResponse reparsed = parse(batch.id(), confirmed.version(), template);
+    assertThat(reparsed.accountIdentification().confirmed()).as("a re-parse asks again").isFalse();
+
+    ImportBatchResponse again = confirmAccount(batch.id(), reparsed.version());
+    assertThat(commit(account, batch.id(), again.version()).status()).isEqualTo("COMMITTED");
+  }
+
+  @Test
+  void aFileNamingNoRegisteredAccountOrNoneAtAllNeedsAConfirmation() {
+    registerIdentifier(account, EXAMPLE_IBAN);
+    UUID template = createTemplate(preambleTemplate()).id();
+
+    ImportBatchResponse unknown = upload(token, template, preambleFile(OTHER_IBAN));
+    assertThat(unknown.accountIdentification())
+        .isEqualTo(new ImportIdentificationResponse("NO_MATCH", null, true, false));
+    commitStatus(account, unknown.id(), "\"" + unknown.version() + "\"")
+        .isEqualTo(HttpStatus.CONFLICT);
+    discard(unknown.id(), unknown.version());
+
+    ImportBatchResponse unreadable = upload(token, template, preambleFile("not an IBAN"));
+    assertThat(unreadable.accountIdentification().outcome()).isEqualTo("NOT_FOUND");
+    assertThat(unreadable.accountIdentification().confirmationRequired()).isTrue();
+  }
+
+  /** Another account is proposed only to a member who may import into it. */
+  @Test
+  void anAccountTheMemberMayNotImportIntoIsNeverProposed() throws Exception {
+    UUID savings = createAccount("Sparkonto", "CHF");
+    registerIdentifier(savings, EXAMPLE_IBAN);
+    UUID template = createTemplate(preambleTemplate()).id();
+    UUID member = createSecondMember("member@example.com");
+    grantOnAccount(member, account, "EDIT");
+    grantOnAccount(member, savings, "READ");
+    String memberToken = login("member@example.com");
+
+    ImportBatchResponse batch = upload(memberToken, template, preambleFile(EXAMPLE_IBAN));
+
+    assertThat(batch.accountIdentification())
+        .isEqualTo(new ImportIdentificationResponse("NO_MATCH", null, true, false));
+  }
+
+  /** A masked card number fits several cards: a match on it still needs a yes. */
+  @Test
+  void confirmingTheAccountNeedsTheCurrentVersionAndAnOpenBatch() {
+    UUID template = createTemplate(preambleTemplate()).id();
+    ImportBatchResponse batch = upload(token, template, preambleFile(EXAMPLE_IBAN));
+    assertThat(batch.accountIdentification().confirmationRequired()).isTrue();
+
+    confirmAccountStatus(batch.id(), "\"" + (batch.version() + 1) + "\"")
+        .isEqualTo(HttpStatus.PRECONDITION_FAILED);
+    confirmAccountStatus(batch.id(), null).isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
+
+    ImportBatchResponse confirmed = confirmAccount(batch.id(), batch.version());
+    ImportBatchResponse committed = commit(account, batch.id(), confirmed.version());
+    confirmAccountStatus(batch.id(), "\"" + committed.version() + "\"")
+        .isEqualTo(HttpStatus.CONFLICT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo(ApiErrorCode.IMPORT_BATCH_STATE);
+  }
+
+  @Test
+  void archivingAnAccountFreesItsIdentifierForASuccessor() {
+    registerIdentifier(account, EXAMPLE_IBAN);
+
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + account + "/archive")
+        .header(HttpHeaders.IF_MATCH, "\"" + accountVersion(account) + "\"")
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    assertThat(single("SELECT identifier_hash FROM account WHERE id = ?", account)).isNull();
+    assertThat(single("SELECT identifier_masked FROM account WHERE id = ?", account)).isNull();
+    UUID successor = createAccount("Neues Privatkonto", "CHF");
+    registerIdentifier(successor, EXAMPLE_IBAN);
+  }
+
+  @Test
+  void aMaskedCardMatchAlwaysNeedsAConfirmation() {
+    UUID card = createAccount("Synthetic card", "CREDIT_CARD", "CHF");
+    registerIdentifier(card, "1234 56XX XXXX 7890");
+    ImportTemplateRequest columnTemplate =
+        identifyingTemplate(
+            "COLUMN",
+            new ImportAccountIdentifierRule("MASKED_CARD", null, null, "Card"),
+            0,
+            Stream.concat(SIMPLE_COLUMNS.stream(), Stream.of("Card")).toList());
+    UUID template = createTemplate(columnTemplate).id();
+    byte[] file =
+        (SIMPLE_HEADER + ";Card\n" + "2019-01-05;-12.50;CHF;Coffee;R1;5812;123456******7890\n")
+            .getBytes(StandardCharsets.UTF_8);
+
+    ImportBatchResponse batch =
+        upload(token, card, file, template)
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(batch.accountIdentification())
+        .isEqualTo(new ImportIdentificationResponse("MATCHED_MASKED", null, true, false));
   }
 
   // --- upload and preview
@@ -1756,6 +2032,119 @@ class ImportBatchControllerTest {
         .expectBody(TransactionResponse.class)
         .returnResult()
         .getResponseBody();
+  }
+
+  // --- account identification helpers (US-07-10) -------------------------------------------
+
+  private RestTestClient.ResponseSpec putIdentifier(
+      String bearer, UUID accountId, String identifier, String ifMatch) {
+    RestTestClient.RequestBodySpec request =
+        client(bearer).put().uri("/api/v1/accounts/" + accountId + "/identifier");
+    if (ifMatch != null) {
+      request = request.header(HttpHeaders.IF_MATCH, ifMatch);
+    }
+    return request
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new AccountIdentifierRequest(identifier))
+        .exchange();
+  }
+
+  private void registerIdentifier(UUID accountId, String identifier) {
+    putIdentifier(token, accountId, identifier, "\"" + accountVersion(accountId) + "\"")
+        .expectStatus()
+        .isOk();
+  }
+
+  private int accountVersion(UUID accountId) {
+    return ((Number) single("SELECT version FROM account WHERE id = ?", accountId)).intValue();
+  }
+
+  private StatusAssertions confirmAccountStatus(UUID batchId, String ifMatch) {
+    RestTestClient.RequestBodySpec request =
+        client().post().uri(imports() + "/" + batchId + "/confirm-account");
+    if (ifMatch != null) {
+      request = request.header(HttpHeaders.IF_MATCH, ifMatch);
+    }
+    return request.exchange().expectStatus();
+  }
+
+  private ImportBatchResponse confirmAccount(UUID batchId, int version) {
+    EntityExchangeResult<ImportBatchResponse> result =
+        client()
+            .post()
+            .uri(imports() + "/" + batchId + "/confirm-account")
+            .header(HttpHeaders.IF_MATCH, "\"" + version + "\"")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult();
+    return CurrentVersion.storedEtag(result, dataSource, "import_batch", batchId);
+  }
+
+  private UUID createAccount(String name, String type, String currency) {
+    return client()
+        .post()
+        .uri("/api/v1/accounts")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(AccountRequests.account(name, type, currency).build())
+        .exchange()
+        .expectStatus()
+        .isCreated()
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .id();
+  }
+
+  // A simple export whose first line names the account: "Konto;<identifier>".
+  private static byte[] preambleFile(String identifier) {
+    return ("Konto;"
+            + identifier
+            + "\n"
+            + SIMPLE_HEADER
+            + "\n2019-01-05;-12.50;CHF;Coffee;R1;5812\n")
+        .getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static ImportTemplateRequest preambleTemplate() {
+    return identifyingTemplate(
+        "PREAMBLE_LINE",
+        new ImportAccountIdentifierRule("IBAN", "Konto", null, null),
+        1,
+        SIMPLE_COLUMNS);
+  }
+
+  private static ImportTemplateRequest identifyingTemplate(
+      String strategy,
+      ImportAccountIdentifierRule rule,
+      int preambleRows,
+      List<String> headerColumns) {
+    ImportTemplateRequest simple = simpleTemplate("Identifying " + strategy, headerColumns);
+    return new ImportTemplateRequest(
+        simple.name(),
+        simple.institutionCatalogueId(),
+        simple.templateClass(),
+        simple.delimiter(),
+        simple.encoding(),
+        simple.decimalSeparator(),
+        simple.thousandsSeparator(),
+        simple.dateFormat(),
+        simple.headerRowIndex(),
+        preambleRows,
+        simple.trailingSummaryRowCount(),
+        simple.amountRepresentation(),
+        simple.currencyMode(),
+        simple.fixedCurrency(),
+        simple.columnMapping(),
+        simple.typeMapping(),
+        strategy,
+        simple.headerColumns(),
+        simple.fileFormat(),
+        simple.pdfLayout(),
+        simple.descriptionTypePatterns(),
+        null,
+        rule);
   }
 
   private ImportTemplateResponse createTemplate(ImportTemplateRequest request) {

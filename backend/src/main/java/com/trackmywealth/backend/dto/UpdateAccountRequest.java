@@ -27,7 +27,6 @@ public record UpdateAccountRequest(
     // See AccountTypeValues' Javadoc for the full list of places a 12th account type touches.
     @NotBlank @Pattern(regexp = AccountTypeValues.PATTERN) String accountType,
     @NotBlank @ValidCurrencyCode String nativeCurrency,
-    String identifierMasked,
     @Pattern(regexp = "[A-Z]{2}") String jurisdiction,
     LocalDate openedAt,
     LocalDate closedAt) {
@@ -36,7 +35,6 @@ public record UpdateAccountRequest(
     name = RequestStrings.blankToNull(name);
     accountType = RequestStrings.blankToNull(accountType);
     nativeCurrency = RequestStrings.blankToNull(nativeCurrency);
-    identifierMasked = RequestStrings.blankToNull(identifierMasked);
     jurisdiction = RequestStrings.blankToNull(jurisdiction);
   }
 }

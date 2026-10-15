@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.Mockito.mock;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
+import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
@@ -242,6 +244,226 @@ class ImportFileParserServiceTest {
       assertThat(error).as("header %s", header).isNotNull();
       assertThat(error.getBody().getProperties()).containsEntry("field", "rowFilter.column");
     }
+  }
+
+  // --- account identification (US-07-10) ---------------------------------------------------
+  // Synthetic identifiers only: DE89...3000 is the standard published example IBAN.
+
+  private static final String EXAMPLE_IBAN = "DE89370400440532013000";
+  private static final String OTHER_IBAN = "DE36100100100000000001";
+
+  private static ImportAccountIdentifierRule preambleRule(String label, String pattern) {
+    return new ImportAccountIdentifierRule("IBAN", label, pattern, null);
+  }
+
+  private static ImportAccountIdentifierRule columnRule(String kind, String column) {
+    return new ImportAccountIdentifierRule(kind, null, null, column);
+  }
+
+  /** Acceptance criterion 1's parsing half: the IBAN on a labelled preamble line is read. */
+  @Test
+  void aPreambleLineNamesTheAccountAfterItsLabel() {
+    ImportTemplateDefinition template =
+        new Template()
+            .preamble(2)
+            .accountIdentifier("PREAMBLE_LINE", preambleRule("Kontonummer", null))
+            .build();
+    String csv =
+        "\"Zeitraum:\",\"01.01.2031 - 31.01.2031\"\n"
+            + "\"Kontonummer:\",\"DE89 3704 0044 0532 0130 00\"\n"
+            + "date,amount,text\n"
+            + "2031-01-02,-5.00,Groceries\n";
+
+    ImportParseResult result = parser.parse(utf8(csv), template, null);
+
+    assertThat(result.accountIdentifier())
+        .isEqualTo(new ImportFileAccountIdentifier("IBAN", EXAMPLE_IBAN));
+    assertThat(result.accountIdentifier().toString()).doesNotContain("3704");
+    assertThat(result.rows()).extracting(ParsedImportRow::status).containsExactly("PARSED");
+  }
+
+  @Test
+  void aPatternPicksTheIdentifierOutOfARecordBeforeTheHeaderRow() {
+    ImportTemplateDefinition template =
+        new Template()
+            .headerRowIndex(1)
+            .accountIdentifier(
+                "PREAMBLE_LINE", preambleRule("konto", "([A-Za-z]{2}[0-9][0-9 ]+[0-9])"))
+            .build();
+    String csv =
+        "Konto,DE89 3704 0044 0532 0130 00 (Girokonto)\n"
+            + "date,amount,text\n"
+            + "2031-01-02,-5.00,Groceries\n";
+
+    assertThat(parser.parse(utf8(csv), template, null).accountIdentifier().value())
+        .isEqualTo(EXAMPLE_IBAN);
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "\"Zeitraum:\",\"Januar\"\n\"Inhaber:\",\"Erika\"\n",
+        "\"Kontonummer:\",\"DE88 3704 0044 0532 0130 00\"\n\"Inhaber:\",\"Erika\"\n",
+        "\"Kontonummer:\",\"\"\n\"Inhaber:\",\"Erika\"\n"
+      })
+  void aPreambleWithoutAReadableIdentifierNamesNone(String preamble) {
+    ImportTemplateDefinition template =
+        new Template()
+            .preamble(2)
+            .accountIdentifier("PREAMBLE_LINE", preambleRule("Kontonummer", null))
+            .build();
+
+    ImportFileAccountIdentifier found =
+        parser
+            .parse(utf8(preamble + "date,amount,text\n2031-01-02,-5.00,x\n"), template, null)
+            .accountIdentifier();
+
+    assertThat(found.found()).isFalse();
+    assertThat(found.kind()).isEqualTo("IBAN");
+  }
+
+  @Test
+  void aColumnNamesTheAccountWhenEveryFilledCellAgrees() {
+    ImportTemplateDefinition template =
+        new Template().accountIdentifier("COLUMN", columnRule("IBAN", "Own IBAN")).build();
+    String agreeing =
+        "date,amount,text,Own IBAN\n"
+            + "2031-01-02,-5.00,a,DE89 3704 0044 0532 0130 00\n"
+            + "2031-01-03,-6.00,b,\n"
+            + "2031-01-04,-7.00,c,de89370400440532013000\n";
+    String differing =
+        "date,amount,text,Own IBAN\n"
+            + "2031-01-02,-5.00,a,"
+            + EXAMPLE_IBAN
+            + "\n2031-01-03,-6.00,b,"
+            + OTHER_IBAN
+            + "\n";
+    String unreadable = "date,amount,text,Own IBAN\n2031-01-02,-5.00,a,not an iban\n";
+
+    assertThat(parser.parse(utf8(agreeing), template, null).accountIdentifier().value())
+        .isEqualTo(EXAMPLE_IBAN);
+    assertThat(parser.parse(utf8(differing), template, null).accountIdentifier().found()).isFalse();
+    assertThat(parser.parse(utf8(unreadable), template, null).accountIdentifier().found())
+        .isFalse();
+  }
+
+  @Test
+  void aMaskedCardColumnIsReadInOneSpelling() {
+    ImportTemplateDefinition template =
+        new Template().accountIdentifier("COLUMN", columnRule("MASKED_CARD", "Karte")).build();
+    String csv =
+        "date,amount,text,Karte\n"
+            + "2031-01-02,-5.00,a,1234 56XX XXXX 7890\n"
+            + "2031-01-03,-6.00,b,123456******7890\n";
+
+    assertThat(parser.parse(utf8(csv), template, null).accountIdentifier())
+        .isEqualTo(new ImportFileAccountIdentifier("MASKED_CARD", "123456******7890"));
+  }
+
+  @Test
+  void aFileLackingTheIdentifierColumnIsAMismatchNamingIt() {
+    ImportTemplateDefinition template =
+        new Template().accountIdentifier("COLUMN", columnRule("IBAN", "Own IBAN")).build();
+
+    ApiException error =
+        assertFileError(
+            utf8("date,amount,text\n2031-01-02,-5.00,a\n"),
+            template,
+            ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+
+    assertThat(error.getBody().getProperties())
+        .containsEntry("missingColumns", List.of("Own IBAN"));
+    assertThat(parser.missingColumns(template, List.of("date", "amount", "text")))
+        .containsExactly("Own IBAN");
+    assertThat(parser.missingColumns(template, List.of("date", "amount", "text", "own iban")))
+        .isEmpty();
+  }
+
+  @Test
+  void aTemplateWhoseAccountIsSelectedAtUploadNamesNone() {
+    assertThat(
+            parser
+                .parse(utf8("date,amount,text\n2031-01-02,-5.00,a\n"), new Template().build(), null)
+                .accountIdentifier())
+        .isNull();
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidAccountIdentifierRules")
+  void invalidAccountIdentifierRulesAreRejected(Template template, String field) {
+    assertTemplateInvalid(template.build(), field);
+  }
+
+  static Stream<Arguments> invalidAccountIdentifierRules() {
+    return Stream.of(
+        Arguments.of(
+            new Template().accountIdentifier("USER_SELECTED", columnRule("IBAN", "text")),
+            "accountIdentifier"),
+        Arguments.of(new Template().accountIdentifier("COLUMN", null), "accountIdentifier"),
+        Arguments.of(
+            new Template().accountIdentifier("COLUMN", columnRule("BIC", "text")),
+            "accountIdentifier.kind"),
+        Arguments.of(
+            new Template().accountIdentifier("PREAMBLE_LINE", preambleRule("Konto", null)),
+            "accountIdentificationStrategy"),
+        Arguments.of(
+            new Template().preamble(1).accountIdentifier("PREAMBLE_LINE", preambleRule(" ", null)),
+            "accountIdentifier.label"),
+        Arguments.of(
+            new Template()
+                .preamble(1)
+                .accountIdentifier("PREAMBLE_LINE", preambleRule("Konto", "[A-Z]+")),
+            "accountIdentifier.pattern"),
+        Arguments.of(
+            new Template()
+                .preamble(1)
+                .accountIdentifier("PREAMBLE_LINE", preambleRule("Konto", "(a)(b)")),
+            "accountIdentifier.pattern"),
+        Arguments.of(
+            new Template()
+                .preamble(1)
+                .accountIdentifier(
+                    "PREAMBLE_LINE", new ImportAccountIdentifierRule("IBAN", "Konto", null, "x")),
+            "accountIdentifier.column"),
+        Arguments.of(
+            new Template().accountIdentifier("COLUMN", columnRule("IBAN", " ")),
+            "accountIdentifier.column"),
+        Arguments.of(
+            new Template()
+                .headerRowIndex(-1)
+                .mapping(mapping("0", "1").description("2").build())
+                .accountIdentifier("COLUMN", columnRule("IBAN", "Own IBAN")),
+            "accountIdentifier.column"),
+        Arguments.of(
+            new Template()
+                .accountIdentifier(
+                    "COLUMN", new ImportAccountIdentifierRule("IBAN", "Konto", null, "text")),
+            "accountIdentifier"));
+  }
+
+  @Test
+  void aFileNameIsNoWayToIdentifyAnAccount() {
+    ApiException error =
+        catchThrowableOfType(
+            ApiException.class,
+            () ->
+                parser.validateTemplate(
+                    new Template().accountIdentifier("FILENAME", columnRule("IBAN", "x")).build(),
+                    null));
+    assertThat(error.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED);
+  }
+
+  @Test
+  void theIdentifierColumnIsCheckedAgainstTheSampleHeader() {
+    ImportTemplateDefinition template =
+        new Template().accountIdentifier("COLUMN", columnRule("IBAN", "Own IBAN")).build();
+
+    parser.validateTemplate(template, List.of("date", "amount", "text", "OWN IBAN"));
+    ApiException error =
+        catchThrowableOfType(
+            ApiException.class,
+            () -> parser.validateTemplate(template, List.of("date", "amount", "text")));
+    assertThat(error.getBody().getProperties()).containsEntry("field", "accountIdentifier.column");
   }
 
   // --- golden fixtures --------------------------------------------------------------------
@@ -1148,12 +1370,13 @@ class ImportFileParserServiceTest {
   // --- template validation -----------------------------------------------------------------
 
   @Test
-  void onlyCashTransactionsWithAUserSelectedAccountAreSupported() {
+  void onlyCashTransactionsAndNoFileNameIdentificationAreSupported() {
     for (ImportTemplateDefinition template :
         List.of(
             new Template().templateClass("SECURITIES_TRANSACTIONS").build(),
             new Template().templateClass("SNAPSHOT").build(),
-            new Template().accountStrategy("COLUMN").build())) {
+            // US-07-10: PREAMBLE_LINE and COLUMN are supported; a file name stays too fragile.
+            new Template().accountStrategy("FILENAME").build())) {
       ApiException error =
           catchThrowableOfType(ApiException.class, () -> parser.validateTemplate(template, null));
       assertThat(error.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED);
@@ -1364,6 +1587,7 @@ class ImportFileParserServiceTest {
     private Map<String, String> typeMapping = Map.of();
     private Map<String, String> descriptionPatterns = Map.of();
     private ImportRowFilter rowFilter;
+    private ImportAccountIdentifierRule accountIdentifier;
     private String accountStrategy = "USER_SELECTED";
     private String fileFormat = "CSV";
     private ImportPdfLayout pdfLayout;
@@ -1443,6 +1667,12 @@ class ImportFileParserServiceTest {
       return this;
     }
 
+    Template accountIdentifier(String strategy, ImportAccountIdentifierRule rule) {
+      accountStrategy = strategy;
+      accountIdentifier = rule;
+      return this;
+    }
+
     Template rowFilter(String column, List<String> accepted) {
       rowFilter = new ImportRowFilter(column, accepted);
       return this;
@@ -1479,7 +1709,8 @@ class ImportFileParserServiceTest {
           fileFormat,
           pdfLayout,
           descriptionPatterns,
-          rowFilter);
+          rowFilter,
+          accountIdentifier);
     }
   }
 

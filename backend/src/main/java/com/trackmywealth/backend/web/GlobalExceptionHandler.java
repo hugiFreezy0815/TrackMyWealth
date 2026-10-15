@@ -65,6 +65,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   public ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex) {
     String rootMessage = rootCauseMessage(ex);
 
+    if (rootMessage.contains("uq_account_workspace_identifier_hash")) {
+      // US-07-10: two registrations of one identifier raced past the service's own check.
+      return conflict(
+          ApiErrorCode.ACCOUNT_IDENTIFIER_IN_USE,
+          "Another account of this workspace is already registered with this identifier.");
+    }
     if (rootMessage.contains("account_type_immutable")) {
       return conflict(
           ApiErrorCode.IMMUTABLE_FIELD,

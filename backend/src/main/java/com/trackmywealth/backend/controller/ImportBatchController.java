@@ -202,6 +202,23 @@ public class ImportBatchController {
     return VersionedResponse.ok(batch, batch.version());
   }
 
+  /**
+   * US-07-10: confirms importing the batch into this account although its file does not name the
+   * account for certain ({@code accountIdentification}); until then the commit is a 409 {@code
+   * IMPORT_ACCOUNT_UNCONFIRMED}.
+   */
+  @PostMapping(BY_ID + "/confirm-account")
+  public ResponseEntity<ImportBatchResponse> confirmAccount(
+      @PathVariable UUID accountId,
+      @PathVariable UUID batchId,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    ImportBatchResponse batch =
+        importBatchService.confirmAccount(
+            accountId, batchId, IfMatchVersionParser.parse(ifMatch), actor);
+    return VersionedResponse.ok(batch, batch.version());
+  }
+
   /** Ends a batch that is not committed and deletes its stored file. */
   @PostMapping(BY_ID + "/discard")
   public ResponseEntity<ImportBatchResponse> discard(

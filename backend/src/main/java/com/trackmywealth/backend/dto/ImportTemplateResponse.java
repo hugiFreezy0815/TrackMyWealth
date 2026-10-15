@@ -49,7 +49,8 @@ public record ImportTemplateResponse(
     ImportPdfLayout pdfLayout,
     int version,
     Map<String, String> descriptionTypePatterns,
-    ImportRowFilter rowFilter) {
+    ImportRowFilter rowFilter,
+    ImportAccountIdentifierRule accountIdentifier) {
 
   public ImportTemplateResponse {
     typeMapping = Collections.unmodifiableMap(new LinkedHashMap<>(typeMapping));

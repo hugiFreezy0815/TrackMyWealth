@@ -193,6 +193,34 @@ public final class ApiErrorCode {
   /** 422: an import row with status {@code ERROR} cannot be included in the commit (US-07-04). */
   public static final String IMPORT_ROW_NOT_INCLUDABLE = "IMPORT_ROW_NOT_INCLUDABLE";
 
+  /**
+   * 409: the file's account identification needs the member's confirmation before the batch can be
+   * committed (US-07-10); {@code accountIdentification} says why. Confirm it, or upload the file
+   * into the proposed account.
+   */
+  public static final String IMPORT_ACCOUNT_UNCONFIRMED = "IMPORT_ACCOUNT_UNCONFIRMED";
+
+  /**
+   * 422: not a valid account identifier for this account (US-07-10): an IBAN failing its check
+   * digits, or for a credit card a masked number showing more than its first 6 and last 4 digits.
+   * The detail never repeats the value.
+   */
+  public static final String ACCOUNT_IDENTIFIER_INVALID = "ACCOUNT_IDENTIFIER_INVALID";
+
+  /**
+   * 409: another account of the workspace is already registered with this identifier (US-07-10). It
+   * is not named: the member may not be allowed to see it. That the workspace holds the identifier
+   * is not hidden (database-schema.md, "Account identification").
+   */
+  public static final String ACCOUNT_IDENTIFIER_IN_USE = "ACCOUNT_IDENTIFIER_IN_USE";
+
+  /**
+   * 503: account identification is switched off on this server, because no key is configured
+   * ({@code app.import.account-identifier-key}, US-07-10).
+   */
+  public static final String ACCOUNT_IDENTIFICATION_UNAVAILABLE =
+      "ACCOUNT_IDENTIFICATION_UNAVAILABLE";
+
   /** 423: the user account is temporarily locked (FR-AUT lockout). */
   public static final String LOCKED = "LOCKED";
 

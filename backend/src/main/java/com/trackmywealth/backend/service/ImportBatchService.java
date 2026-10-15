@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.ImportBatchCountsResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportDuplicateOfResponse;
+import com.trackmywealth.backend.dto.ImportIdentificationResponse;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportRateNeed;
 import com.trackmywealth.backend.dto.ImportRecheck;
@@ -101,6 +102,7 @@ public class ImportBatchService {
   private final ImportDuplicateService duplicateService;
   private final ImportRecheckService recheckService;
   private final ImportRowJsonService rowJson;
+  private final ImportAccountIdentificationService identificationService;
   private final ImportBatchRepository batchRepository;
   private final ImportFileRepository fileRepository;
   private final ImportRowRawRepository rowRepository;
@@ -122,6 +124,7 @@ public class ImportBatchService {
       ImportDuplicateService duplicateService,
       ImportRecheckService recheckService,
       ImportRowJsonService rowJson,
+      ImportAccountIdentificationService identificationService,
       ImportBatchRepository batchRepository,
       ImportFileRepository fileRepository,
       ImportRowRawRepository rowRepository,
@@ -140,6 +143,7 @@ public class ImportBatchService {
     this.duplicateService = duplicateService;
     this.recheckService = recheckService;
     this.rowJson = rowJson;
+    this.identificationService = identificationService;
     this.batchRepository = batchRepository;
     this.fileRepository = fileRepository;
     this.rowRepository = rowRepository;
@@ -228,9 +232,10 @@ public class ImportBatchService {
 
           if (parsed != null) {
             useTemplate(batch, template);
+            identificationService.identify(batch, account, parsed.accountIdentifier(), actor);
             stagingService.stage(batch, account, parsed.rows(), rates, actor);
           }
-          return summary(batch, account, offered);
+          return summary(batch, account, offered, actor);
         });
   }
 
@@ -273,8 +278,9 @@ public class ImportBatchService {
           // Checked again under the lock: another parse, a discard or a commit may have come first.
           requireParseable(batch, expectedVersion);
           useTemplate(batch, template);
+          identificationService.identify(batch, account, parsed.accountIdentifier(), actor);
           stagingService.stage(batch, account, parsed.rows(), rates, actor);
-          return summary(batch, account, List.of());
+          return summary(batch, account, List.of(), actor);
         });
   }
 
@@ -289,7 +295,15 @@ public class ImportBatchService {
             account.getId(), PageRequest.of(pageable.getPageNumber(), size, NEWEST_FIRST));
     Map<UUID, ImportBatchCountsResponse> counts = recheckedCounts(page.getContent());
     Map<UUID, ImportSameFileResponse> sameFiles = sameFilesImportedIn(page.getContent());
-    return page.map(batch -> summary(batch, account, List.of(), counts, sameFiles));
+    return page.map(
+        batch ->
+            summary(
+                batch,
+                account,
+                List.of(),
+                counts,
+                sameFiles,
+                identificationService.response(batch, actor)));
   }
 
   /**
@@ -299,7 +313,7 @@ public class ImportBatchService {
   @Transactional(readOnly = true)
   public ImportBatchResponse get(UUID accountId, UUID batchId, AuthenticatedUserPrincipal actor) {
     Account account = requireEditableAccount(accountId, actor);
-    return recheckedSummary(requireBatch(account, batchId, actor), account);
+    return recheckedSummary(requireBatch(account, batchId, actor), account, actor);
   }
 
   /**
@@ -410,7 +424,7 @@ public class ImportBatchService {
     ImportRowRecheck rechecked = recheck.of(row.getId());
     boolean current = rechecked == null ? row.isIncluded() : rechecked.included();
     if (current == included) {
-      return summary(batch, account, List.of(), recheck);
+      return summary(batch, account, List.of(), recheck, actor);
     }
     if (!recheck.isEmpty()) {
       // The whole re-check, not only this row's: a row that holds a booking only by the re-check
@@ -426,7 +440,7 @@ public class ImportBatchService {
     // flush before it stores the batch's duplicate count of a re-checked row.
     batchRepository.touch(batch.getId());
     entityManager.refresh(batch);
-    return recheckedSummary(batch, account);
+    return recheckedSummary(batch, account, actor);
   }
 
   /**
@@ -444,7 +458,27 @@ public class ImportBatchService {
     batchRepository.saveAndFlush(batch);
     fileRepository.deleteById(batch.getId());
     fileRepository.flush();
-    return summary(batch, account, List.of());
+    return summary(batch, account, List.of(), actor);
+  }
+
+  /**
+   * US-07-10: the member confirms importing the batch into its account although its file does not
+   * name that account for certain ({@code accountIdentification}). Allowed while it is {@code
+   * PARSED}; a batch that needs no confirmation is answered as it is.
+   */
+  @Transactional
+  public ImportBatchResponse confirmAccount(
+      UUID accountId, UUID batchId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
+    Account account = requireImportableAccount(accountId, actor);
+    ImportBatch batch = lockBatch(account, batchId, actor);
+    requireStatus(batch, ImportBatchValues.PARSED);
+    versionPreconditionService.requireCurrent(
+        expectedVersion, batch.getVersion(), VERSIONED_RESOURCE);
+    if (batch.isAccountConfirmationRequired() && !batch.isAccountConfirmed()) {
+      batch.setAccountConfirmed(true);
+      batchRepository.saveAndFlush(batch);
+    }
+    return recheckedSummary(batch, account, actor);
   }
 
   // --- shared with ImportCommitService and ImportErrorExportService
@@ -512,24 +546,35 @@ public class ImportBatchService {
    * #recheckedSummary}.
    */
   ImportBatchResponse summary(
-      ImportBatch batch, Account account, List<ImportTemplateCandidateResponse> candidates) {
-    return summary(batch, account, candidates, ImportRecheck.NONE);
+      ImportBatch batch,
+      Account account,
+      List<ImportTemplateCandidateResponse> candidates,
+      AuthenticatedUserPrincipal actor) {
+    return summary(batch, account, candidates, ImportRecheck.NONE, actor);
   }
 
   // The summary of a PARSED batch whose rows the ledger may have overtaken since (#308).
-  private ImportBatchResponse recheckedSummary(ImportBatch batch, Account account) {
-    return summary(batch, account, List.of(), recheck(batch));
+  private ImportBatchResponse recheckedSummary(
+      ImportBatch batch, Account account, AuthenticatedUserPrincipal actor) {
+    return summary(batch, account, List.of(), recheck(batch), actor);
   }
 
   private ImportBatchResponse summary(
       ImportBatch batch,
       Account account,
       List<ImportTemplateCandidateResponse> candidates,
-      ImportRecheck recheck) {
+      ImportRecheck recheck,
+      AuthenticatedUserPrincipal actor) {
     List<ImportBatch> one = List.of(batch);
     Map<UUID, ImportBatchCountsResponse> counts = counts(one);
     counts.computeIfPresent(batch.getId(), (id, stored) -> recheck.applyTo(stored));
-    return summary(batch, account, candidates, counts, sameFilesImportedIn(one));
+    return summary(
+        batch,
+        account,
+        candidates,
+        counts,
+        sameFilesImportedIn(one),
+        identificationService.response(batch, actor));
   }
 
   private static ImportBatchResponse summary(
@@ -537,7 +582,8 @@ public class ImportBatchService {
       Account account,
       List<ImportTemplateCandidateResponse> candidates,
       Map<UUID, ImportBatchCountsResponse> counts,
-      Map<UUID, ImportSameFileResponse> sameFiles) {
+      Map<UUID, ImportSameFileResponse> sameFiles,
+      ImportIdentificationResponse identification) {
     return new ImportBatchResponse(
         batch.getId(),
         account.getId(),
@@ -554,6 +600,7 @@ public class ImportBatchService {
         batch.getCommittedAt(),
         batch.getRolledBackAt(),
         batch.getRollbackReason(),
+        identification,
         VersionPreconditionService.persistedVersion(batch.getVersion(), VERSIONED_RESOURCE));
   }
 

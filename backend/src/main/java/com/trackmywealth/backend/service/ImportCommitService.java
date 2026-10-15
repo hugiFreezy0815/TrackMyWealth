@@ -71,6 +71,7 @@ public class ImportCommitService {
   private final TransactionService transactionService;
   private final VersionPreconditionService versionPreconditionService;
   private final ImportLockService importLockService;
+  private final ImportAccountIdentificationService identificationService;
   private final Clock clock;
 
   public ImportCommitService(
@@ -83,6 +84,7 @@ public class ImportCommitService {
       TransactionService transactionService,
       VersionPreconditionService versionPreconditionService,
       ImportLockService importLockService,
+      ImportAccountIdentificationService identificationService,
       Clock clock) {
     this.batchService = batchService;
     this.batchRepository = batchRepository;
@@ -93,6 +95,7 @@ public class ImportCommitService {
     this.transactionService = transactionService;
     this.versionPreconditionService = versionPreconditionService;
     this.importLockService = importLockService;
+    this.identificationService = identificationService;
     this.clock = clock;
   }
 
@@ -100,7 +103,9 @@ public class ImportCommitService {
    * {@code PARSED -> COMMITTED}: inserts the included rows and returns the batch's summary.
    *
    * @throws com.trackmywealth.backend.error.ApiException 409 {@code IMPORT_BATCH_STATE} unless the
-   *     batch is {@code PARSED}; 412/428 for a stale or missing {@code If-Match}
+   *     batch is {@code PARSED}; 412/428 for a stale or missing {@code If-Match}; 409 {@code
+   *     IMPORT_ACCOUNT_UNCONFIRMED} while its file's account identification awaits the member's
+   *     confirmation (US-07-10)
    */
   @Transactional
   public ImportBatchResponse commit(
@@ -112,6 +117,8 @@ public class ImportCommitService {
     ImportBatchService.requireStatus(batch, ImportBatchValues.PARSED);
     versionPreconditionService.requireCurrent(
         expectedVersion, batch.getVersion(), ImportBatchService.VERSIONED_RESOURCE);
+    // US-07-10: a file that does not name this account for certain needs the member's yes first.
+    identificationService.requireConfirmedIfNeeded(batch);
 
     // Every readable row, in file order, and what the ledger makes of it now (#287): a duplicate
     // whose booking moved points at the row holding it, one whose booking is gone is new and
@@ -169,7 +176,7 @@ public class ImportCommitService {
           count(recheck, ImportBatchValues.RECHECK_DUPLICATE),
           count(recheck, ImportBatchValues.RECHECK_NEW));
     }
-    return batchService.summary(batch, account, List.of());
+    return batchService.summary(batch, account, List.of(), actor);
   }
 
   // Whether the row goes into the commit as a duplicate (forced in, or repointed and forced in):

@@ -86,6 +86,15 @@ holds itself to for its own exemption list.
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
 
+    <!-- Same reasoning again for US-07-10's AccountIdentifierService: it decodes and length-checks
+         app.import.account-identifier-key, and a malformed key must fail application startup
+         rather than yield a service that hashes account identifiers under a wrong key (every
+         registered identifier would silently stop matching). No finalizer exists on this class. -->
+    <Match>
+        <Class name="com.trackmywealth.backend.service.AccountIdentifierService"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+
     <!-- Same reasoning again, for US-10-06 (#181): TransferDetectionService range-checks
          app.fx.transfer-match-tolerance (0..1). An out-of-range tolerance must fail application
          startup rather than yield a matcher that proposes every cross-currency pair (> 1) or

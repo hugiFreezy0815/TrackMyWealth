@@ -10,9 +10,20 @@ import java.util.List;
  * @param headerColumns the header row's cells as written, empty without a header row
  * @param headerFingerprint FR-IMP-022's fingerprint of {@code headerColumns}, {@code null} without
  *     a header row
+ * @param accountIdentifier the account identifier the file names, per its template's rule
+ *     (US-07-10); {@code null} for a template whose account is selected at upload
  */
 public record ImportParseResult(
-    List<String> headerColumns, String headerFingerprint, List<ParsedImportRow> rows) {
+    List<String> headerColumns,
+    String headerFingerprint,
+    List<ParsedImportRow> rows,
+    ImportFileAccountIdentifier accountIdentifier) {
+
+  /** A file of a template that does not identify its account (US-07-10). */
+  public ImportParseResult(
+      List<String> headerColumns, String headerFingerprint, List<ParsedImportRow> rows) {
+    this(headerColumns, headerFingerprint, rows, null);
+  }
 
   public ImportParseResult {
     headerColumns = List.copyOf(headerColumns);

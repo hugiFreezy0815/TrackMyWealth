@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
 
 import com.trackmywealth.backend.dto.AuthTokensResponse;
+import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
@@ -352,6 +353,87 @@ class ImportTemplateControllerTest {
         .doesNotContain(created.id());
   }
 
+  /** US-07-10: the account identifier rule is stored, read back and versioned with the template. */
+  /**
+   * US-07-10: a dry run shows whether the rule finds the identifier, so a wrong rule shows early.
+   */
+  @Test
+  void aDryRunSaysWhetherTheAccountIdentifierRuleFindsOne() {
+    ImportTemplateResponse identifying =
+        create(
+            withAccountIdentifier(
+                withRowFilter(statusFilterRequest(List.of("Gebucht")), null),
+                "COLUMN",
+                new ImportAccountIdentifierRule("IBAN", null, null, "Status")));
+    byte[] named =
+        ("date,amount,text,Status\n2031-01-02,-5.00,Groceries,DE89 3704 0044 0532 0130 00\n")
+            .getBytes(StandardCharsets.UTF_8);
+
+    assertThat(dryRun(identifying.id(), named).accountIdentifierFound()).isTrue();
+    assertThat(dryRun(identifying.id(), STATUS_CSV).accountIdentifierFound())
+        .as("no valid IBAN in the column")
+        .isFalse();
+    ImportTemplateResponse selected = create(statusFilterRequest(List.of("Gebucht")));
+    assertThat(dryRun(selected.id(), STATUS_CSV).accountIdentifierFound())
+        .as("the account is selected at upload")
+        .isNull();
+  }
+
+  /** V73: the database refuses a stored rule of an unknown kind, whatever wrote it. */
+  @Test
+  void theDatabaseRefusesAnAccountIdentifierRuleOfAnUnknownKind() throws Exception {
+    ImportTemplateResponse created =
+        create(
+            withAccountIdentifier(
+                statusFilterRequest(List.of("Gebucht")),
+                "COLUMN",
+                new ImportAccountIdentifierRule("IBAN", null, null, "Status")));
+
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement update =
+            connection.prepareStatement(
+                "UPDATE import_template SET account_identifier_rule = ?::jsonb WHERE id = ?")) {
+      update.setString(1, "{\"kind\": \"PHONE\", \"column\": \"Status\"}");
+      update.setObject(2, created.id());
+      assertThatThrownBy(update::executeUpdate)
+          .isInstanceOf(SQLException.class)
+          .hasMessageContaining("chk_import_template_account_identifier_rule");
+    }
+  }
+
+  @Test
+  void theAccountIdentifierRuleIsStoredAndChangingItWritesANewVersion() throws Exception {
+    ImportAccountIdentifierRule rule =
+        new ImportAccountIdentifierRule("IBAN", null, null, "Status");
+    ImportTemplateResponse v1 =
+        create(withAccountIdentifier(statusFilterRequest(List.of("Gebucht")), "COLUMN", rule));
+    assertThat(v1.accountIdentificationStrategy()).isEqualTo("COLUMN");
+    assertThat(get(v1.id()).accountIdentifier()).isEqualTo(rule);
+
+    ImportTemplateResponse v2 =
+        update(
+            v1.id(),
+            v1.version(),
+            withAccountIdentifier(
+                statusFilterRequest(List.of("Gebucht")),
+                "COLUMN",
+                new ImportAccountIdentifierRule("MASKED_CARD", null, null, "Status")));
+    assertThat(v2.templateVersion()).isEqualTo("2");
+    assertThat(get(v1.id()).accountIdentifier())
+        .as("the old version keeps its rule")
+        .isEqualTo(rule);
+
+    postStatus(
+            withAccountIdentifier(
+                statusFilterRequest(List.of("Gebucht")),
+                "COLUMN",
+                new ImportAccountIdentifierRule("IBAN", null, null, "Zustand")))
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.field")
+        .isEqualTo("accountIdentifier.column");
+  }
+
   /** The filter is parse-relevant: changing it writes a new version; resending it does not. */
   @Test
   void changingTheRowFilterWritesANewVersion() throws Exception {
@@ -589,7 +671,8 @@ class ImportTemplateControllerTest {
         List.of(
             withClassAndStrategy(swissRequest(header), "SNAPSHOT", null),
             withClassAndStrategy(swissRequest(header), "SECURITIES_TRANSACTIONS", null),
-            withClassAndStrategy(swissRequest(header), null, "COLUMN"))) {
+            // US-07-10: PREAMBLE_LINE and COLUMN are supported; a file name is not.
+            withClassAndStrategy(swissRequest(header), null, "FILENAME"))) {
       postStatus(request)
           .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
           .expectBody()
@@ -1179,7 +1262,8 @@ class ImportTemplateControllerTest {
         format,
         layout,
         r.descriptionTypePatterns(),
-        r.rowFilter());
+        r.rowFilter(),
+        r.accountIdentifier());
   }
 
   // A one-page PDF with these text lines (invented values only).
@@ -1365,7 +1449,8 @@ class ImportTemplateControllerTest {
         r.fileFormat(),
         r.pdfLayout(),
         r.descriptionTypePatterns(),
-        r.rowFilter());
+        r.rowFilter(),
+        r.accountIdentifier());
   }
 
   private static ImportTemplateRequest withRowFilter(
@@ -1392,7 +1477,45 @@ class ImportTemplateControllerTest {
         r.fileFormat(),
         r.pdfLayout(),
         r.descriptionTypePatterns(),
-        filter);
+        filter,
+        r.accountIdentifier());
+  }
+
+  private ImportTemplateTestResponse dryRun(UUID templateId, byte[] content) {
+    return multipart(BASE + "/" + templateId + "/test", content, null)
+        .expectStatus()
+        .isOk()
+        .expectBody(ImportTemplateTestResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private static ImportTemplateRequest withAccountIdentifier(
+      ImportTemplateRequest r, String strategy, ImportAccountIdentifierRule rule) {
+    return new ImportTemplateRequest(
+        r.name(),
+        r.institutionCatalogueId(),
+        r.templateClass(),
+        r.delimiter(),
+        r.encoding(),
+        r.decimalSeparator(),
+        r.thousandsSeparator(),
+        r.dateFormat(),
+        r.headerRowIndex(),
+        r.preambleRowCount(),
+        r.trailingSummaryRowCount(),
+        r.amountRepresentation(),
+        r.currencyMode(),
+        r.fixedCurrency(),
+        r.columnMapping(),
+        r.typeMapping(),
+        strategy,
+        r.headerColumns(),
+        r.fileFormat(),
+        r.pdfLayout(),
+        r.descriptionTypePatterns(),
+        r.rowFilter(),
+        rule);
   }
 
   private static ImportTemplateRequest withName(ImportTemplateRequest r, String name) {
@@ -1418,7 +1541,8 @@ class ImportTemplateControllerTest {
         r.fileFormat(),
         r.pdfLayout(),
         r.descriptionTypePatterns(),
-        r.rowFilter());
+        r.rowFilter(),
+        r.accountIdentifier());
   }
 
   private static ImportTemplateRequest withInstitution(ImportTemplateRequest r, UUID institution) {
@@ -1444,7 +1568,8 @@ class ImportTemplateControllerTest {
         r.fileFormat(),
         r.pdfLayout(),
         r.descriptionTypePatterns(),
-        r.rowFilter());
+        r.rowFilter(),
+        r.accountIdentifier());
   }
 
   private static ImportTemplateRequest withClassAndStrategy(
@@ -1471,7 +1596,8 @@ class ImportTemplateControllerTest {
         r.fileFormat(),
         r.pdfLayout(),
         r.descriptionTypePatterns(),
-        r.rowFilter());
+        r.rowFilter(),
+        r.accountIdentifier());
   }
 
   private static ImportTemplateRequest withRowCounts(
@@ -1498,7 +1624,8 @@ class ImportTemplateControllerTest {
         r.fileFormat(),
         r.pdfLayout(),
         r.descriptionTypePatterns(),
-        r.rowFilter());
+        r.rowFilter(),
+        r.accountIdentifier());
   }
 
   // --- HTTP helpers ------------------------------------------------------------------------------
