@@ -7,6 +7,7 @@ import static org.assertj.core.groups.Tuple.tuple;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.trackmywealth.backend.dto.AccessLevelValues;
+import com.trackmywealth.backend.dto.AccountIdentifierFromImportRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
@@ -16,6 +17,7 @@ import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
+import com.trackmywealth.backend.dto.ImportAccountProposalResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
@@ -418,6 +420,132 @@ class ImportBatchControllerTest {
     assertThat(single("SELECT identifier_masked FROM account WHERE id = ?", account)).isNull();
     UUID successor = createAccount("Neues Privatkonto", "CHF");
     registerIdentifier(successor, EXAMPLE_IBAN);
+  }
+
+  // --- US-07-11: an account proposed from a statement ----------------------------------------
+
+  @Test
+  void aStatementProposesAnAccountAndNothingIsStored() {
+    UUID template = createTemplate(preambleTemplate()).id();
+    long accounts = count("SELECT count(*) FROM account");
+
+    ImportAccountProposalResponse proposal =
+        proposalStatus(
+                "/api/v1/import-templates/" + template + "/account-proposal",
+                preambleFile(EXAMPLE_IBAN))
+            .isOk()
+            .expectBody(ImportAccountProposalResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(proposal.templateId()).isEqualTo(template);
+    assertThat(proposal.suggestedAccountType()).isEqualTo("CASH");
+    assertThat(proposal.suggestedCurrency()).isEqualTo("CHF");
+    assertThat(proposal.maskedIdentifier()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(count("SELECT count(*) FROM account")).isEqualTo(accounts);
+    assertThat(count("SELECT count(*) FROM import_batch")).isZero();
+    assertThat(count("SELECT count(*) FROM import_file")).isZero();
+    proposalStatus(
+            "/api/v1/import-templates/" + UUID.randomUUID() + "/account-proposal",
+            preambleFile(EXAMPLE_IBAN))
+        .isNotFound();
+  }
+
+  /**
+   * The flow of #271: the file names no account, the member creates one from the proposal and
+   * registers the file's identifier on it without typing it; the same file then matches it.
+   */
+  @Test
+  void anAccountCreatedFromAnUnmatchedFileTakesItsIdentifierFromTheFile() {
+    UUID template = createTemplate(preambleTemplate()).id();
+    ImportBatchResponse batch = upload(token, template, preambleFile(EXAMPLE_IBAN));
+    assertThat(batch.accountIdentification().outcome()).isEqualTo("NO_MATCH");
+
+    ImportAccountProposalResponse proposal =
+        proposalStatus(imports() + "/" + batch.id() + "/account-proposal", null)
+            .isOk()
+            .expectBody(ImportAccountProposalResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(proposal.maskedIdentifier()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(proposal.suggestedCurrency()).isEqualTo("CHF");
+
+    UUID created = createAccount("Aus Kontoauszug", proposal.suggestedCurrency());
+    String registered =
+        fromImport(token, created, account, batch.id(), "\"" + accountVersion(created) + "\"")
+            .expectStatus()
+            .isOk()
+            .expectBody(String.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(registered)
+        .contains("\u2022\u2022\u2022\u20223000")
+        .doesNotContain(EXAMPLE_IBAN_DIGITS);
+
+    ImportBatchResponse again =
+        upload(token, created, preambleFile(EXAMPLE_IBAN), template)
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(again.accountIdentification().outcome()).isEqualTo("MATCHED");
+  }
+
+  @Test
+  void anIdentifierIsRegisteredFromAFileOnlyWhenTheFileNamesOneThisAccountTakes() {
+    UUID selected = createTemplate(simpleTemplate("Selected", SIMPLE_COLUMNS)).id();
+    ImportBatchResponse unnamed =
+        upload(token, selected, csv("2019-01-05;-12.50;CHF;Coffee;R1;5812"));
+    UUID target = createAccount("Neu", "CHF");
+
+    fromImport(token, target, account, unnamed.id(), "\"" + accountVersion(target) + "\"")
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo(ApiErrorCode.ACCOUNT_IDENTIFIER_NOT_IN_FILE);
+
+    // A credit card is registered by a masked card number, never by the file's IBAN.
+    UUID identifying = createTemplate(preambleTemplate()).id();
+    ImportBatchResponse named = upload(token, identifying, preambleFile(EXAMPLE_IBAN));
+    UUID card = createAccount("Synthetic card", "CREDIT_CARD", "CHF");
+    fromImport(token, card, account, named.id(), "\"" + accountVersion(card) + "\"")
+        .expectStatus()
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    fromImport(token, target, account, named.id(), null)
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
+    assertThat(count("SELECT count(*) FROM account WHERE identifier_hash IS NOT NULL")).isZero();
+
+    // A committed batch no longer keeps its file.
+    ImportBatchResponse confirmed = confirmAccount(named.id(), named.version());
+    commit(account, named.id(), confirmed.version());
+    proposalStatus(imports() + "/" + named.id() + "/account-proposal", null)
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void aMemberWithoutEditAccessToTheBatchsAccountGetsNeitherProposalNorIdentifier()
+      throws Exception {
+    UUID template = createTemplate(preambleTemplate()).id();
+    ImportBatchResponse batch = upload(token, template, preambleFile(EXAMPLE_IBAN));
+    UUID own = createAccount("Eigenes Konto", "CHF");
+    UUID member = createSecondMember("member@example.com");
+    grantOnAccount(member, account, "READ");
+    grantOnAccount(member, own, "EDIT");
+    String memberToken = login("member@example.com");
+
+    client(memberToken)
+        .post()
+        .uri(imports() + "/" + batch.id() + "/account-proposal")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    fromImport(memberToken, own, account, batch.id(), "\"" + accountVersion(own) + "\"")
+        .expectStatus()
+        .isNotFound();
+    assertThat(single("SELECT identifier_hash FROM account WHERE id = ?", own)).isNull();
   }
 
   @Test
@@ -2066,6 +2194,38 @@ class ImportBatchControllerTest {
       request = request.header(HttpHeaders.IF_MATCH, ifMatch);
     }
     return request.exchange().expectStatus();
+  }
+
+  // A proposal from an uploaded file (content) or from a batch (null).
+  private StatusAssertions proposalStatus(String uri, byte[] content) {
+    if (content == null) {
+      return client().post().uri(uri).exchange().expectStatus();
+    }
+    HttpHeaders fileHeaders = new HttpHeaders();
+    fileHeaders.setContentType(MediaType.parseMediaType("text/csv"));
+    fileHeaders.setContentDispositionFormData("file", "statement.csv");
+    MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+    body.add("file", new HttpEntity<>(new ByteArrayResource(content), fileHeaders));
+    return client()
+        .post()
+        .uri(uri)
+        .contentType(MediaType.MULTIPART_FORM_DATA)
+        .body(body)
+        .exchange()
+        .expectStatus();
+  }
+
+  private RestTestClient.ResponseSpec fromImport(
+      String bearer, UUID accountId, UUID importAccountId, UUID batchId, String ifMatch) {
+    RestTestClient.RequestBodySpec request =
+        client(bearer).put().uri("/api/v1/accounts/" + accountId + "/identifier/from-import");
+    if (ifMatch != null) {
+      request = request.header(HttpHeaders.IF_MATCH, ifMatch);
+    }
+    return request
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new AccountIdentifierFromImportRequest(importAccountId, batchId))
+        .exchange();
   }
 
   private ImportBatchResponse confirmAccount(UUID batchId, int version) {
