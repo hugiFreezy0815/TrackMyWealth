@@ -5,6 +5,7 @@ import static org.assertj.core.groups.Tuple.tuple;
 
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
+import com.trackmywealth.backend.dto.ImportRowErrorResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
@@ -242,7 +243,11 @@ class ShippedImportTemplatesIntegrationTest {
     assertBooking(result.rows().get(1), LocalDate.of(2031, 1, 29), "456.78", "EUR", "INCOME");
     assertBooking(result.rows().get(2), LocalDate.of(2031, 2, 28), "-118.63", "EUR", "EXPENSE");
     assertThat(result.rows().get(2).canonical().description()).isEqualTo("Darlehenszins");
-    assertThat(result.rows().get(2).canonical().valueDate()).isEqualTo(LocalDate.of(2031, 3, 1));
+    // #334: the 30/360 value date 30.02. is read as February's last day, with a warning.
+    assertThat(result.rows().get(2).canonical().valueDate()).isEqualTo(LocalDate.of(2031, 2, 28));
+    assertThat(result.rows().get(2).warnings())
+        .extracting(ImportRowErrorResponse::code)
+        .containsExactly("IMPORT_ROW_VALUE_DATE_ADJUSTED");
     assertBooking(result.rows().get(3), LocalDate.of(2031, 2, 28), "-2.50", "EUR", "EXPENSE");
     // #322: the blanks the statement draws over the date's first digit do not split it.
     assertBooking(result.rows().get(4), LocalDate.of(2031, 3, 31), "456.78", "EUR", "INCOME");

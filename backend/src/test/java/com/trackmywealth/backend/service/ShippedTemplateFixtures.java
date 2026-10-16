@@ -100,8 +100,9 @@ public final class ShippedTemplateFixtures {
     page.add(List.of(at(45, "Kontostand am 01.01.2031"), endingAt(LOAN_DEBIT_END, "-50.000,00")));
     page.add(loanBooking("29.01.2031", "Darlehenszins", "-123,45", LOAN_DEBIT_END));
     page.add(loanBooking("29.01.2031", "Darlehensleistung", "456,78", LOAN_CREDIT_END));
+    // #334: interest settled on the 30/360 day count carries a value date February does not have.
     page.add(
-        loanBooking("28.02.2031", "Darlehenszins / Wert: 01.03.2031", "-118,63", LOAN_DEBIT_END));
+        loanBooking("28.02.2031", "Darlehenszins / Wert: 30.02.2031", "-118,63", LOAN_DEBIT_END));
     page.add(loanBooking("28.02.2031", "Kontoauszugspreis", "-2,50", LOAN_DEBIT_END));
     // #322: two invisible spaces over the date's first digit, which the text layer once read as
     // "3 1.03.2031".
