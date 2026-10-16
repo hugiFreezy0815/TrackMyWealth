@@ -36,6 +36,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -627,6 +628,40 @@ class ImportTemplateControllerTest {
         .isEqualTo(
             "Diese Zeile hat den Betrag null und ver\u00e4ndert keinen Kontostand. Sie wird"
                 + " angezeigt, aber nicht importiert.");
+  }
+
+  // #334: a warning the row carries on its own shows in the dry run, so the template's author sees
+  // the adjusted value date before importing with it.
+  @Test
+  void anAdjustedValueDateIsAWarningOfTheDryRunInTheCallersLanguage() throws Exception {
+    byte[] csv =
+        ("Buchungsdatum;Valuta;Avisierungstext;Betrag;Währung;Saldo\r\n"
+                + "28.02.2031;30.02.2031;Darlehenszins;-12.40;CHF;0\r\n"
+                + "28.02.2031;28.02.2031;Preis;-2.50;CHF;0\r\n")
+            .getBytes(StandardCharsets.ISO_8859_1);
+
+    ImportTemplateTestResponse preview = testUnsaved(swissRequest(null), csv);
+
+    assertThat(preview.parsedRowCount()).isEqualTo(2);
+    ImportPreviewRowResponse interest = preview.rows().get(0);
+    assertThat(interest.canonical().valueDate()).isEqualTo(LocalDate.of(2031, 2, 28));
+    assertThat(interest.warnings())
+        .singleElement()
+        .satisfies(
+            warning -> {
+              assertThat(warning.code()).isEqualTo("IMPORT_ROW_VALUE_DATE_ADJUSTED");
+              assertThat(warning.args()).containsExactly(Map.entry("date", "2031-02-28"));
+              assertThat(warning.message())
+                  .isEqualTo(
+                      "The value date is written as a day February does not have (the 30/360"
+                          + " interest convention); it is read as 2031-02-28, the last day of"
+                          + " February.");
+            });
+    assertThat(preview.rows().get(1).warnings()).isEmpty();
+
+    setLanguage("DE");
+    assertThat(testUnsaved(swissRequest(null), csv).rows().get(0).warnings().get(0).message())
+        .startsWith("Das Valutadatum ist als ein Tag geschrieben, den der Februar nicht hat");
   }
 
   @Test

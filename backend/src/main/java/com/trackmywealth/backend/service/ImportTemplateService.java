@@ -751,17 +751,25 @@ public class ImportTemplateService {
 
   private ImportPreviewRowResponse previewRow(ParsedImportRow row, Locale locale) {
     ImportRowErrorResponse error =
-        row.isParsed()
-            ? null
-            : new ImportRowErrorResponse(
-                row.errorCode(),
-                row.errorArgs(),
-                messageSource.getMessage(
-                    MESSAGE_PREFIX + row.errorCode(),
-                    row.errorArgs().values().toArray(),
-                    row.errorCode(),
-                    locale));
+        row.isParsed() ? null : rowMessage(row.errorCode(), row.errorArgs(), locale);
+    List<ImportRowErrorResponse> warnings = new ArrayList<>();
+    if (row.isParsed()) {
+      for (String warning : ImportRowCheckService.rowWarnings(row.canonical())) {
+        warnings.add(
+            rowMessage(
+                warning,
+                ImportRowCheckService.warningArgs(warning, row.canonical(), null),
+                locale));
+      }
+    }
     return new ImportPreviewRowResponse(
-        row.rowNumber(), row.status(), row.rawData(), row.canonical(), error);
+        row.rowNumber(), row.status(), row.rawData(), row.canonical(), error, warnings);
+  }
+
+  private ImportRowErrorResponse rowMessage(String code, Map<String, String> args, Locale locale) {
+    return new ImportRowErrorResponse(
+        code,
+        args,
+        messageSource.getMessage(MESSAGE_PREFIX + code, args.values().toArray(), code, locale));
   }
 }

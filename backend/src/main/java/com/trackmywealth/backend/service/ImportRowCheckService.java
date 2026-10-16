@@ -257,9 +257,7 @@ public class ImportRowCheckService {
     if (!account.getNativeCurrency().equals(row.currency())) {
       warnings.add(ImportBatchValues.WARNING_CURRENCY_DIFFERS);
     }
-    if (row.valueDateAdjusted()) {
-      warnings.add(ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED);
-    }
+    warnings.addAll(rowWarnings(row));
     // A positive card booking is a payment by default, not a refund. Highlight an
     // unmatched payment so the member can correct its template instead of silently misclassifying
     // a refund. This is advisory; settlement matching still decides after commit.
@@ -270,6 +268,16 @@ public class ImportRowCheckService {
       warnings.add(ImportBatchValues.WARNING_CARD_SETTLEMENT_UNMATCHED);
     }
     return warnings;
+  }
+
+  /**
+   * The warnings {@code row} carries on its own, whatever account it is imported into, so the
+   * template dry run shows them too (#334). Part of {@link #warnings}.
+   */
+  public static List<String> rowWarnings(CanonicalImportRow row) {
+    return row.valueDateAdjusted()
+        ? List.of(ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED)
+        : List.of();
   }
 
   /**
