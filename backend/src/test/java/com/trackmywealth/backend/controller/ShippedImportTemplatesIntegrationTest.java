@@ -53,11 +53,16 @@ class ShippedImportTemplatesIntegrationTest {
   private static final String BASE = "/api/v1/import-templates";
   private static final UUID DKB = UUID.fromString("752d1bc3-1951-408f-9d08-fbe4a1f1d9c5");
   private static final UUID POSTFINANCE = UUID.fromString("8d1b8ef6-882f-46d9-87e1-a17278f8bfa3");
+  // US-07-21 (V88): the current version 2; the family keeps version 1's id.
   private static final UUID SPARKASSE_CAMT =
+      UUID.fromString("df6b6640-6a37-49ce-b5fc-feb61c677971");
+  private static final UUID SPARKASSE_CAMT_FAMILY =
       UUID.fromString("d902ba3d-1344-4e55-8cc2-e2b0e0fe8bf5");
   private static final UUID SPARKASSE_CARD =
       UUID.fromString("4a5b2ef3-9839-45c1-b173-fd9c33f57bd6");
   private static final UUID SPARKASSE_LOAN =
+      UUID.fromString("72805b69-3fa5-4922-b02a-af25e48dbd29");
+  private static final UUID SPARKASSE_LOAN_FAMILY =
       UUID.fromString("fe678117-6fd0-4863-b271-b2a038ecb5cf");
   private static final UUID YUH = UUID.fromString("a2820365-0b08-4474-bdb9-f2c419a91a25");
   private static final UUID LBS = UUID.fromString("0ac5fd45-d7f5-4c7b-895d-cc8233d07e7b");
@@ -119,7 +124,12 @@ class ShippedImportTemplatesIntegrationTest {
     assertThat(shipped)
         .allSatisfy(
             template -> {
-              assertThat(template.familyId()).isEqualTo(template.id());
+              assertThat(template.familyId())
+                  .isEqualTo(
+                      java.util.Map.of(
+                              SPARKASSE_CAMT, SPARKASSE_CAMT_FAMILY,
+                              SPARKASSE_LOAN, SPARKASSE_LOAN_FAMILY)
+                          .getOrDefault(template.id(), template.id()));
               assertThat(template.current()).isTrue();
               assertThat(template.active()).isTrue();
               assertThat(template.canEdit()).isFalse();
@@ -181,7 +191,7 @@ class ShippedImportTemplatesIntegrationTest {
 
     assertThat(result.rows())
         .extracting(ImportPreviewRowResponse::status)
-        .containsExactly("PARSED", "PARSED", "PARSED", "SKIPPED");
+        .containsExactly("PARSED", "PARSED", "PARSED", "PARSED", "SKIPPED");
     assertBooking(result.rows().get(0), LocalDate.of(2031, 1, 28), "-19.87", "EUR", "EXPENSE");
     assertThat(result.rows().get(0).canonical().counterpartyName())
         .isEqualTo("Beispiel Versicherung AG");
@@ -190,6 +200,8 @@ class ShippedImportTemplatesIntegrationTest {
         .as("decoded as windows-1252")
         .isEqualTo("Entgelt f\u00fcr Kontof\u00fchrung 01/2031");
     assertBooking(result.rows().get(2), LocalDate.of(2031, 1, 31), "1234.56", "EUR", "INCOME");
+    // US-07-21: the loan instalment the current account pays is one leg of a transfer.
+    assertBooking(result.rows().get(3), LocalDate.of(2031, 1, 31), "-481.37", "EUR", "TRANSFER");
     assertThat(result.accountIdentifierFound()).isTrue();
   }
 
@@ -240,6 +252,8 @@ class ShippedImportTemplatesIntegrationTest {
         .extracting(ImportPreviewRowResponse::status)
         .containsExactly("PARSED", "PARSED", "PARSED", "PARSED", "PARSED");
     assertBooking(result.rows().get(0), LocalDate.of(2031, 1, 29), "-123.45", "EUR", "EXPENSE");
+    // Without a target account the dry run reads the rows as into an ordinary account; on a loan
+    // the instalment is a DEBT_REPAYMENT (LoanStatementImportControllerTest).
     assertBooking(result.rows().get(1), LocalDate.of(2031, 1, 29), "456.78", "EUR", "INCOME");
     assertBooking(result.rows().get(2), LocalDate.of(2031, 2, 28), "-118.63", "EUR", "EXPENSE");
     assertThat(result.rows().get(2).canonical().description()).isEqualTo("Darlehenszins");
@@ -248,7 +262,7 @@ class ShippedImportTemplatesIntegrationTest {
     assertThat(result.rows().get(2).warnings())
         .extracting(ImportRowErrorResponse::code)
         .containsExactly("IMPORT_ROW_VALUE_DATE_ADJUSTED");
-    assertBooking(result.rows().get(3), LocalDate.of(2031, 2, 28), "-2.50", "EUR", "EXPENSE");
+    assertBooking(result.rows().get(3), LocalDate.of(2031, 2, 28), "-2.50", "EUR", "FEE");
     // #322: the blanks the statement draws over the date's first digit do not split it.
     assertBooking(result.rows().get(4), LocalDate.of(2031, 3, 31), "456.78", "EUR", "INCOME");
     assertThat(result.statementBalanceCount()).isEqualTo(2);

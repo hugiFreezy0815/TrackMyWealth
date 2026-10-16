@@ -54,6 +54,14 @@ public final class ValueBasisValues {
   public static final String ORIGINAL_PRINCIPAL_LESS_REPAYMENTS =
       "ORIGINAL_PRINCIPAL_LESS_REPAYMENTS";
 
+  /**
+   * US-07-21: a loan's or mortgage's newest statement balance on or before the as-of date - a loan
+   * statement's closing balance, or a snapshot the member recorded - adjusted by its ledger after
+   * that date. Measured, not approximate: it replaces {@link #ORIGINAL_PRINCIPAL_LESS_REPAYMENTS}
+   * as soon as a statement exists.
+   */
+  public static final String LEDGER_FROM_STATEMENT_BALANCE = "LEDGER_FROM_STATEMENT_BALANCE";
+
   /** {@code true} for a basis that is an approximation or assumption, not a measured figure. */
   public static boolean isApproximate(String valueBasis) {
     return LEDGER_EMPTY.equals(valueBasis)

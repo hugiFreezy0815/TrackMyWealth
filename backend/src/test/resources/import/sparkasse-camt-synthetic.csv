@@ -2,4 +2,5 @@
 "DE13 0000 0000 0000 0123 45";"28.01.31";"28.01.31";"FOLGELASTSCHRIFT";"Beitrag 01/2031";"DE00ZZZ00000000000";"M-0001";"";"";"";"";"Beispiel Versicherung AG";"DE00 3333 3333 3333 3333 33";"XXXXDEXXXXX";"-19,87";"EUR";"Umsatz gebucht"
 "DE13 0000 0000 0000 0123 45";"30.01.31";"30.01.31";"ENTGELTABSCHLUSS";"Entgelt für Kontoführung 01/2031";"";"";"";"";"";"";"";"0000000000";"00000000";"-7,45";"EUR";"Umsatz gebucht"
 "DE13 0000 0000 0000 0123 45";"31.01.31";"31.01.31";"GUTSCHR. UEBERWEISUNG";"Lohn Januar";"";"";"";"";"";"";"Beispiel GmbH";"DE00 2222 2222 2222 2222 22";"XXXXDEXXXXX";"1.234,56";"EUR";"Umsatz gebucht"
+"DE13 0000 0000 0000 0123 45";"31.01.31";"31.01.31";"EINZUG RATE/ANNUITAET";"Darlehen 0000000000 Rate 01/2031";"";"";"";"";"";"";"Sparkasse Musterstadt";"DE00 4444 4444 4444 4444 44";"XXXXDEXXXXX";"-481,37";"EUR";"Umsatz gebucht"
 "DE13 0000 0000 0000 0123 45";"31.01.31";"01.02.31";"KARTENZAHLUNG";"Vorgemerkte Zahlung";"";"";"";"";"";"";"Muster Markt";"";"";"-3,10";"EUR";"Umsatz vorgemerkt"

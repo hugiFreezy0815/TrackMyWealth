@@ -164,6 +164,7 @@ exact one:
 | `LATEST_SNAPSHOT` | newest snapshot balance on or before the as-of date, the opening balance included - an account without a ledger (`has_transactions = false`, vested benefits) | yes, as reported on that date |
 | `LEDGER_EMPTY` | card with no rows yet - assumed 0 | **no** - approximation |
 | `ORIGINAL_PRINCIPAL` | a loan's/mortgage's *original* principal, not its outstanding balance (no repayment recorded on it yet) | **no** - approximation |
+| `LEDGER_FROM_STATEMENT_BALANCE` | a loan's/mortgage's newest statement balance (snapshot) on or before the as-of date, adjusted by its ledger after that date (US-07-21) | yes |
 | `ORIGINAL_PRINCIPAL_LESS_REPAYMENTS` | a loan's/mortgage's original principal less the principal repaid on its ledger by the as-of date (US-10-02); repayments from before tracking began are missing | **no** - approximation |
 
 `valueBasis` is `null` when `valueKnown` is `false`. `AccountValuation.valueSourceDate` is the date

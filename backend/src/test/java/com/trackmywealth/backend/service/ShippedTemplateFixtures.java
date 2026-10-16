@@ -120,6 +120,41 @@ public final class ShippedTemplateFixtures {
     return SyntheticStatements.statement(List.of(page));
   }
 
+  /**
+   * US-07-21: a Sparkasse annual loan statement for 2019, outside every real sample's years, whose
+   * bookings add up - opening -50.000,00, interest and an instalment in January, interest with a
+   * value date and the statement fee in February, closing -49.787,80 - and no split date.
+   */
+  public static byte[] sparkasseLoanStatement2019() throws IOException {
+    List<List<Cell>> page = new ArrayList<>();
+    page.add(List.of(at(40, "Sparkasse Musterstadt")));
+    page.add(
+        List.of(
+            at(40, "Jahreskontoauszug f\u00fcr den Zeitraum 01.01.2019 - 31.12.2019"),
+            at(480, "Seite 1 von 1")));
+    page.add(
+        List.of(
+            at(40, "Darlehen 0000000000, DE00 0000 0000 0000 0000 00"),
+            at(330, "Tilgungsform: Annuit\u00e4tendarlehen")));
+    page.add(
+        List.of(
+            at(40, "Datum"),
+            at(100, "Erl\u00e4uterung"),
+            at(330, "Betrag Soll EUR"),
+            at(430, "Betrag Haben EUR")));
+    page.add(List.of(at(45, "Kontostand am 01.01.2019"), endingAt(LOAN_DEBIT_END, "-50.000,00")));
+    page.add(loanBooking("29.01.2019", "Darlehenszins", "-123,45", LOAN_DEBIT_END));
+    page.add(loanBooking("29.01.2019", "Darlehensleistung", "456,78", LOAN_CREDIT_END));
+    page.add(
+        loanBooking("28.02.2019", "Darlehenszins / Wert: 01.03.2019", "-118,63", LOAN_DEBIT_END));
+    page.add(loanBooking("28.02.2019", "Kontoauszugspreis", "-2,50", LOAN_DEBIT_END));
+    page.add(List.of(at(45, "Kontostand am 31.12.2019"), endingAt(LOAN_DEBIT_END, "-49.787,80")));
+    page.add(
+        List.of(at(40, "Nachweis f\u00fcr Darlehen 0000000000 Zeitraum 01.01.2019 - 31.12.2019")));
+    page.add(List.of(atFoot(40, "Sparkasse Musterstadt, Anstalt des \u00f6ffentlichen Rechts")));
+    return SyntheticStatements.statement(List.of(page));
+  }
+
   private static List<Cell> loanBooking(String date, String text, String amount, float end) {
     return List.of(at(40, date), at(100, text), endingAt(end, amount));
   }

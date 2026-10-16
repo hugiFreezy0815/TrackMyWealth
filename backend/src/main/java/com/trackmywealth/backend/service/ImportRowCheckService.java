@@ -83,7 +83,7 @@ public class ImportRowCheckService {
     CreateTransactionRequest request = ledgerRows.request(canonical);
     Optional<String> convertsInto;
     try {
-      convertsInto = transactionService.requireRecordable(account, request);
+      convertsInto = transactionService.requireImportable(account, request);
     } catch (ResponseStatusException e) {
       Map<String, String> args = new LinkedHashMap<>();
       args.put(ARG_REASON, e.getReason());
@@ -120,7 +120,7 @@ public class ImportRowCheckService {
       CreateTransactionRequest request = ledgerRows.request(canonical);
       Optional<String> convertsInto;
       try {
-        convertsInto = transactionService.requireRecordable(account, request);
+        convertsInto = transactionService.requireImportable(account, request);
       } catch (ResponseStatusException e) {
         continue;
       }

@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
@@ -149,20 +150,20 @@ public class ImportFileParserService {
    */
   public ImportParseResult parse(
       byte[] content, ImportTemplateDefinition template, String accountCurrency) {
-    return parse(content, template, accountCurrency, false);
+    return parseForAccount(
+        content, template, new ImportAccountContext(accountCurrency, false, false));
   }
 
   /**
-   * Account-aware import: on a credit card ({@code creditCardAccount}), a row neither the type
-   * mapping nor a description pattern types is a card purchase (negative) or settlement, not an
-   * expense or income. A template dry run without a target account uses the three-argument
+   * Account-aware import: a row neither the type mapping nor a description pattern types is, on a
+   * credit card, a card purchase (negative) or settlement, and on a loan or mortgage (US-07-21)
+   * interest charged onto it ({@code EXPENSE}, negative) or an instalment ({@code DEBT_REPAYMENT}),
+   * not an expense or income. A template dry run without a target account uses the three-argument
    * overload.
    */
-  public ImportParseResult parse(
-      byte[] content,
-      ImportTemplateDefinition template,
-      String accountCurrency,
-      boolean creditCardAccount) {
+  public ImportParseResult parseForAccount(
+      byte[] content, ImportTemplateDefinition template, ImportAccountContext account) {
+    String accountCurrency = account.currency();
     validateTemplate(template, null);
     List<String> header;
     List<List<String>> data;
@@ -259,7 +260,7 @@ public class ImportFileParserService {
                   typeMapping,
                   descriptionPatterns,
                   accountCurrency,
-                  creditCardAccount);
+                  account);
           if (checked) {
             running =
                 balances.balanceAfter(
@@ -1231,7 +1232,7 @@ public class ImportFileParserService {
       Map<String, String> typeMapping,
       Map<String, com.google.re2j.Pattern> descriptionPatterns,
       String accountCurrency,
-      boolean creditCardAccount) {
+      ImportAccountContext account) {
     ImportColumnMapping mapping = template.columnMapping();
     LocalDate bookingDate =
         parseDate(
@@ -1261,7 +1262,7 @@ public class ImportFileParserService {
             optionalCell(record, columns.get("description")),
             mapping.description(),
             descriptionPatterns,
-            creditCardAccount);
+            account);
     String mcc = optionalCell(record, columns.get("mcc"));
     if (mcc != null && !MCC.matcher(mcc).matches()) {
       throw rowError(ImportRowErrorValues.MCC_INVALID, ARG_COLUMN, mapping.mcc(), ARG_VALUE, mcc);
@@ -1626,7 +1627,7 @@ public class ImportFileParserService {
       String description,
       String descriptionColumn,
       Map<String, com.google.re2j.Pattern> descriptionPatterns,
-      boolean creditCardAccount) {
+      ImportAccountContext account) {
     if (value != null) {
       String mapped = typeMapping.get(normalize(value));
       if (mapped != null) {
@@ -1647,8 +1648,11 @@ public class ImportFileParserService {
     if (match != null) {
       return match;
     }
-    if (creditCardAccount) {
+    if (account.creditCard()) {
       return amount.signum() < 0 ? "CREDIT_CARD_PURCHASE" : "SETTLEMENT";
+    }
+    if (account.loan()) {
+      return amount.signum() < 0 ? "EXPENSE" : "DEBT_REPAYMENT";
     }
     return amount.signum() < 0
         ? ImportTemplateValues.FALLBACK_TYPE_NEGATIVE

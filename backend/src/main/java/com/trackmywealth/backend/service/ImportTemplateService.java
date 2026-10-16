@@ -372,10 +372,9 @@ public class ImportTemplateService {
             status -> {
               Account account = accountLookupService.findAccountOrThrow(accountId, actor);
               accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
-              return new ImportAccountContext(
-                  account.getNativeCurrency(), account.isHasStatementCycle());
+              return ImportBatchService.accountContext(account);
             });
-    return parser.parse(content, definition, context.currency(), context.creditCard());
+    return parser.parseForAccount(content, definition, context);
   }
 
   // --- rules ---------------------------------------------------------------------------------

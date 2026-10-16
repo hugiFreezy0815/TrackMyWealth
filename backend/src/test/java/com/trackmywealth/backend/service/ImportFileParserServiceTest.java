@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.Mockito.mock;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
@@ -667,7 +668,7 @@ class ImportFileParserServiceTest {
             .build();
     List<ParsedImportRow> rows =
         parser
-            .parse(
+            .parseForAccount(
                 utf8(
                     "date,amount,text,original,originalCurrency\n"
                         + "2031-05-01,-10.00,Missing currency,-8.00,\n"
@@ -676,8 +677,7 @@ class ImportFileParserServiceTest {
                         + "2031-05-04,-10.00,Wrong sign,8.00,EUR\n"
                         + "2031-05-05,-10.00,Valid original,-8.00,EUR\n"),
                 template,
-                "CHF",
-                true)
+                new ImportAccountContext("CHF", true, false))
             .rows();
     assertThat(rows.subList(0, 4)).allMatch(ParsedImportRow::isError);
     assertThat(rows.subList(0, 4))
@@ -745,7 +745,10 @@ class ImportFileParserServiceTest {
             .typeMapping(Map.of("payment", "SETTLEMENT"))
             .descriptionPatterns(template.descriptionTypePatterns())
             .build();
-    List<ParsedImportRow> card = parser.parse(statement, mapped, "CHF", true).rows();
+    List<ParsedImportRow> card =
+        parser
+            .parseForAccount(statement, mapped, new ImportAccountContext("CHF", true, false))
+            .rows();
 
     assertThat(card).allMatch(ParsedImportRow::isParsed).hasSize(4);
     assertThat(card)
@@ -765,8 +768,10 @@ class ImportFileParserServiceTest {
         new Template().descriptionPatterns(Map.of("REFUND", "refund", "SETTLEMENT", "ref")).build();
     List<ParsedImportRow> rows =
         parser
-            .parse(
-                utf8("date,amount,text\n2031-05-01,8.00,Refund received\n"), template, "CHF", true)
+            .parseForAccount(
+                utf8("date,amount,text\n2031-05-01,8.00,Refund received\n"),
+                template,
+                new ImportAccountContext("CHF", true, false))
             .rows();
 
     assertThat(rows).hasSize(1);
@@ -800,7 +805,7 @@ class ImportFileParserServiceTest {
 
     List<ParsedImportRow> rows =
         parser
-            .parse(
+            .parseForAccount(
                 utf8(
                     "date;amount;text;original;originalCurrency;rate\n"
                         + "2031-05-01;-10,00;Seoul;-14.501,20;KRW;1.450,12\n"
@@ -809,8 +814,7 @@ class ImportFileParserServiceTest {
                         + "\n"
                         + "2031-05-03;-10,00;Zero;-11,00;USD;0,00\n"),
                 template,
-                "CHF",
-                true)
+                new ImportAccountContext("CHF", true, false))
             .rows();
 
     assertThat(rows.get(0).isParsed()).isTrue();
@@ -837,11 +841,10 @@ class ImportFileParserServiceTest {
 
     ParsedImportRow row =
         parser
-            .parse(
+            .parseForAccount(
                 utf8("date,amount,text,kind\n2031-05-01,8.00,Refund received,\n"),
                 template,
-                "CHF",
-                true)
+                new ImportAccountContext("CHF", true, false))
             .rows()
             .get(0);
 
@@ -1329,6 +1332,35 @@ class ImportFileParserServiceTest {
                 utf8(csv), new Template().delimiter(";").dateFormat(pattern).build(), null));
 
     assertThat(row.bookingDate()).isEqualTo(LocalDate.parse(expected));
+  }
+
+  // US-07-21: on a loan or mortgage a row nothing types is interest charged (EXPENSE) when
+  // negative and an instalment (DEBT_REPAYMENT) otherwise; a mapped type still wins.
+  @Test
+  void onALoanAnUntypedRowIsInterestChargedOrAnInstalment() {
+    String csv = "date;amount;text\n2019-01-29;-123.45;Zins\n2019-01-29;456.78;Rate\n";
+    ImportTemplateDefinition template =
+        new Template().delimiter(";").descriptionPatterns(Map.of("FEE", "^Entgelt")).build();
+
+    List<ParsedImportRow> rows =
+        parser
+            .parseForAccount(utf8(csv), template, new ImportAccountContext("EUR", false, true))
+            .rows();
+
+    assertThat(rows)
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("EXPENSE", "DEBT_REPAYMENT");
+    assertThat(
+            parser
+                .parseForAccount(
+                    utf8("date;amount;text\n2019-02-28;-2.50;Entgelt\n"),
+                    template,
+                    new ImportAccountContext("EUR", false, true))
+                .rows()
+                .get(0)
+                .canonical()
+                .transactionType())
+        .isEqualTo("FEE");
   }
 
   @Test

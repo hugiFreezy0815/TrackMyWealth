@@ -366,13 +366,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * creditTypes}, not voided or reversing, not on a card (cards settle through US-09-02's
    * matching), not already linked to a counterpart account, and not already in a confirmed match or
    * an open card settlement. A leg confirmed as a transfer to an untracked account is flagged but
-   * has no counterpart account, so it stays a candidate for a later counterpart.
+   * has no counterpart account, so it stays a candidate for a later counterpart. On a loan or
+   * mortgage only its incoming instalment ({@code DEBT_REPAYMENT}, US-07-21) is a leg: the interest
+   * and fees charged onto it are no money moved between accounts.
    */
   @Query(
       "select t from Transaction t join fetch t.account a where t.workspace.id = :workspaceId"
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
           + " and a.hasStatementCycle = false and t.counterpartyAccountId is null"
+          + " and (a.hasAmortisation = false"
+          + " or (t.transactionType = 'DEBT_REPAYMENT' and t.amount > 0))"
           + " and ((t.amount < 0 and t.transactionType in :debitTypes)"
           + " or (t.amount > 0 and t.transactionType in :creditTypes))"
           + " and not exists (select 1 from SettlementMatch m where (m.status = 'CONFIRMED'"
@@ -520,22 +524,26 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * pair split across two months or across accounts the caller cannot all see is still counted.
    * US-10-02: also a loan payment whose interest/principal split is unknown - its {@code
    * DEBT_REPAYMENT} pair is not an internal transfer - counted once, by its incoming leg on the
-   * loan, like the saving figure counts a repaid principal. Internal transfers, voided rows and
-   * reversals are resolved and left out. Each element is {@code [bookingDate, currency, sum]}.
+   * loan, like the saving figure counts a repaid principal. US-07-21: an imported instalment on a
+   * loan is such an incoming leg until it is matched with the payment from the paying account; in a
+   * proposed pair it is counted once, like any proposed transfer pair. Internal transfers, voided
+   * rows and reversals are resolved and left out. Each element is {@code [bookingDate, currency,
+   * sum]}.
    */
   @Query(
       "select t.bookingDate, t.currency, sum(abs(t.amount)) from Transaction t"
           + " where t.account.id in :accountIds and t.internalTransfer = false"
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
-          + " and ((t.transactionType = 'DEBT_REPAYMENT'"
-          + " and (t.amount > 0 or (t.amount < 0 and not exists (select 1 from Transaction c"
+          + " and ((t.transactionType = 'DEBT_REPAYMENT' and t.amount < 0"
+          + " and not exists (select 1 from Transaction c"
           + " where c.relatedTransactionId = t.id and c.transactionType = 'DEBT_REPAYMENT'"
           + " and c.account.id in :accountIds and c.bookingDate between :from and :to"
-          + " and c.voidedAt is null and c.replacesTransactionId is null))))"
+          + " and c.voidedAt is null and c.replacesTransactionId is null))"
           + " or (t.amount < 0 and (t.transactionType = 'SETTLEMENT' or exists (select 1 from"
           + " SettlementMatch m where m.status = 'PROPOSED' and m.paymentTransaction = t)))"
           + " or ((t.transactionType in ('TRANSFER', 'PENSION_CONTRIBUTION')"
+          + " or (t.transactionType = 'DEBT_REPAYMENT' and t.amount > 0)"
           + " or exists (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
           + " and m.matchKind = 'TRANSFER' and m.cardTransaction = t))"
           + " and not exists (select 1 from SettlementMatch m join m.paymentTransaction d"
@@ -594,11 +602,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       @Param(FROM) LocalDate from,
       @Param("to") LocalDate to);
 
-  /** Whether an unresolved loan payment exists on or before a valuation date. */
+  /**
+   * Whether a loan payment whose split is unknown (US-10-02) is booked on the loan on or before
+   * {@code asOf}: its whole amount is on the loan's ledger until it is re-entered, so the loan's
+   * value is unknown. Its incoming leg names its outgoing one; an imported instalment (US-07-21),
+   * matched or not, names none and is exactly what the bank booked.
+   */
   @Query(
       "select case when count(t) > 0 then true else false end from Transaction t"
           + " where t.account.id = :accountId and t.transactionType = 'DEBT_REPAYMENT'"
           + " and t.amount > 0 and t.internalTransfer = false and t.bookingDate <= :asOf"
+          + " and t.relatedTransactionId is not null"
           + NOT_VOIDED_OR_REVERSAL)
   boolean existsUnresolvedLoanRepaymentAsOf(
       @Param(ACCOUNT_ID) UUID accountId, @Param(AS_OF) LocalDate asOf);
@@ -610,8 +624,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * instead) - paid from an account whose {@code counts_as_saving} is {@code fromSaving}. {@code
    * CashFlowService} treats the loan as a saving account exactly when the methodology includes
    * mortgage principal, so, like any other move between two kinds of account, only a payment
-   * between the two kinds moves the saving figure. Each element is {@code [bookingDate, currency,
-   * sum]}.
+   * between the two kinds moves the saving figure. An instalment confirmed as paid from an
+   * untracked account (US-07-21) counts as paid from a non-saving one: the money came from outside
+   * the accounts tracked here. Each element is {@code [bookingDate, currency, sum]}.
    */
   @Query(
       SIGNED_SUM_ON_ACCOUNTS
@@ -619,12 +634,33 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + " and t.amount > 0"
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
-          + " and exists (select 1 from Account c where c.id = t.counterpartyAccountId"
+          + " and (exists (select 1 from Account c where c.id = t.counterpartyAccountId"
           + " and c.countsAsSaving = :fromSaving)"
+          + " or (t.counterpartyAccountId is null and :fromSaving = false))"
           + PER_DATE_CURRENCY)
   List<Object[]> sumRepaidPrincipalByDateAndCurrency(
       @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
       @Param("fromSaving") boolean fromSaving,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to);
+
+  /**
+   * US-07-21: per booking date and currency, the interest and fees a loan statement charges onto
+   * the loans in {@code accountIds} ({@code EXPENSE}/{@code FEE} rows on an account with {@code
+   * has_amortisation}), signed - negative, as they raise what is owed. They are spending; with
+   * mortgage principal in the methodology they also come off the saving figure, which counts the
+   * loan's net debt reduction: instalments in less what was charged. Each element is {@code
+   * [bookingDate, currency, sum]}.
+   */
+  @Query(
+      SIGNED_SUM_ON_ACCOUNTS
+          + " and t.account.hasAmortisation = true and t.transactionType in ('EXPENSE', 'FEE')"
+          + " and t.internalTransfer = false"
+          + BOOKED_BETWEEN
+          + NOT_VOIDED_OR_REVERSAL
+          + PER_DATE_CURRENCY)
+  List<Object[]> sumLoanChargesByDateAndCurrency(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
       @Param(FROM) LocalDate from,
       @Param("to") LocalDate to);
 

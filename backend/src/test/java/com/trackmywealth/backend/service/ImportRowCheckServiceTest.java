@@ -230,7 +230,7 @@ class ImportRowCheckServiceTest {
 
   @Test
   void aRowTheLedgerTakesIsUnchanged() {
-    when(transactionService.requireRecordable(eq(account), any())).thenReturn(Optional.empty());
+    when(transactionService.requireImportable(eq(account), any())).thenReturn(Optional.empty());
     ParsedImportRow row = row("EUR", DAY);
 
     assertThat(service.checkRecordable(account, row, new HashMap<>())).isSameAs(row);
@@ -238,7 +238,7 @@ class ImportRowCheckServiceTest {
 
   @Test
   void aRowTheLedgerRefusesIsAnErrorWithTheLedgersReasonAndKeepsItsValues() {
-    when(transactionService.requireRecordable(eq(account), any()))
+    when(transactionService.requireImportable(eq(account), any()))
         .thenThrow(
             new ResponseStatusException(
                 HttpStatus.UNPROCESSABLE_CONTENT, "amount must be negative for a EXPENSE."));
@@ -256,7 +256,7 @@ class ImportRowCheckServiceTest {
 
   @Test
   void aForeignRowWithoutAnyRateIsAnErrorNamingThePairAndDate() {
-    when(transactionService.requireRecordable(eq(account), any())).thenReturn(Optional.of("EUR"));
+    when(transactionService.requireImportable(eq(account), any())).thenReturn(Optional.of("EUR"));
     when(fxRateService.tryGetConversionRateFetchingMissing("USD", "EUR", DAY, SOURCE))
         .thenReturn(Optional.empty());
 
@@ -272,7 +272,7 @@ class ImportRowCheckServiceTest {
 
   @Test
   void eachRateIsLookedUpOncePerBatch() {
-    when(transactionService.requireRecordable(eq(account), any())).thenReturn(Optional.of("EUR"));
+    when(transactionService.requireImportable(eq(account), any())).thenReturn(Optional.of("EUR"));
     when(fxRateService.tryGetConversionRateFetchingMissing("USD", "EUR", DAY, SOURCE))
         .thenReturn(Optional.of(mock(CurrencyConversionResult.class)));
     Map<String, Boolean> rates = new HashMap<>();
@@ -287,7 +287,7 @@ class ImportRowCheckServiceTest {
   @Test
   void theRatesABatchNeedsAreOnePerPairAndDateAndSkipRowsTheLedgerRefuses() {
     ParsedImportRow refused = row("CHF", DAY);
-    when(transactionService.requireRecordable(eq(account), any()))
+    when(transactionService.requireImportable(eq(account), any()))
         .thenAnswer(
             invocation -> {
               String currency = invocation.<CreateTransactionRequest>getArgument(1).currency();
@@ -316,7 +316,7 @@ class ImportRowCheckServiceTest {
 
   @Test
   void ratesLookedUpBeforeTheStagingTransactionAreNotAskedForAgain() {
-    when(transactionService.requireRecordable(eq(account), any())).thenReturn(Optional.of("EUR"));
+    when(transactionService.requireImportable(eq(account), any())).thenReturn(Optional.of("EUR"));
     when(fxRateService.tryGetConversionRateFetchingMissing("USD", "EUR", DAY, SOURCE))
         .thenReturn(Optional.empty());
 
@@ -350,7 +350,7 @@ class ImportRowCheckServiceTest {
             "EUR",
             new BigDecimal("1.100000"));
     ParsedImportRow parsed = ParsedImportRow.parsed(1, Map.of(), purchase);
-    when(transactionService.requireRecordable(eq(account), any())).thenReturn(Optional.of("CHF"));
+    when(transactionService.requireImportable(eq(account), any())).thenReturn(Optional.of("CHF"));
 
     assertThat(service.ratesNeeded(account, List.of(parsed))).isEmpty();
     assertThat(service.checkRecordable(account, parsed, new HashMap<>())).isSameAs(parsed);

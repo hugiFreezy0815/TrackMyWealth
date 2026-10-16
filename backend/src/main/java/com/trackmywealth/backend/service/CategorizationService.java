@@ -52,8 +52,8 @@ import tools.jackson.databind.ObjectMapper;
  *   <li><b>TRANSACTION_TYPE</b> - the category the row's own type implies: a {@code FEE} is in
  *       {@code FEES} (e.g. a card's foreign-transaction fee row, which has no merchant or code), a
  *       {@code TAX} in {@code TAXES}, and a loan payment's interest - an {@code EXPENSE} naming the
- *       loan as counterparty (US-10-02) - in {@code LOAN_INTEREST}. Certain where it applies, so it
- *       comes before any guess.
+ *       loan as counterparty (US-10-02), or one a loan statement charges onto the loan (US-07-21) -
+ *       in {@code LOAN_INTEREST}. Certain where it applies, so it comes before any guess.
  *   <li><b>FALLBACK_MATCH</b> - learning from the workspace's earlier rows that a rule or a user
  *       categorized: the most trigram-similar merchant description at or above the configured
  *       threshold, which must also share the merchant's brand (see {@link #brandOf}) - a shared
@@ -466,9 +466,17 @@ public class CategorizationService {
   // The shipped default the row's own shape implies: its type's, or LOAN_INTEREST for a loan
   // payment's interest, which is read from the row itself so a re-run keeps it.
   private static String impliedCategoryCode(Transaction transaction) {
-    return TransactionService.isLoanInterest(transaction)
+    return TransactionService.isLoanInterest(transaction) || isChargedOntoALoan(transaction)
         ? LOAN_INTEREST
         : TYPE_CATEGORY_CODES.get(transaction.getTransactionType());
+  }
+
+  // US-07-21: the interest a loan statement charges onto the loan itself - an EXPENSE on an account
+  // with amortisation, which takes no other EXPENSE.
+  private static boolean isChargedOntoALoan(Transaction transaction) {
+    return "EXPENSE".equals(transaction.getTransactionType())
+        && transaction.getAccount() != null
+        && transaction.getAccount().isHasAmortisation();
   }
 
   /** The id of the shipped UNCATEGORIZED default, for the actionable list (FR-CAT-013). */
