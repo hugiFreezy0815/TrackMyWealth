@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.apache.pdfbox.contentstream.operator.Operator;
@@ -29,9 +30,12 @@ import org.apache.pdfbox.util.IterativeMergeSort;
  * <p>#322: a blank glyph mostly covered by a visible glyph of the same line separates nothing and
  * is dropped before the page's lines are built ({@link #dropCoveredBlanks}). A statement may draw
  * invisible spaces over its own text - a Sparkasse loan statement draws two, a little below the
- * baseline, over the first digit of a booking date, which PDFBox would otherwise read as {@code " 3
- * 1.03.2031"}. PDFBox's own {@code removeContainedSpaces} drops only a space that lies wholly
- * inside the glyph before it, which these do not: they sit lower and one starts before the digit.
+ * baseline, over the first digit of a booking date, which PDFBox would otherwise read as {@code 3
+ * 1.03.2031}. PDFBox's own {@code removeContainedSpaces} drops only a space that lies wholly inside
+ * the glyph before it, which these do not: they sit lower and one starts before the digit.
+ *
+ * <p>{@link #writePage} repeats the sort of {@link PDFTextStripper#writePage}; a PDFBox upgrade
+ * must keep the two alike (see the dependency in {@code pom.xml}).
  */
 public final class BoundedTextStripper extends PDFTextStripper {
 
@@ -159,11 +163,13 @@ public final class BoundedTextStripper extends PDFTextStripper {
 
   // With sortByPosition, PDFBox sorts each article and then builds its lines; the covered blanks
   // are dropped from the same order first. Sorting the sorted list again in super is cheap.
+  // Unsorted, an article is in drawing order, where a glyph's neighbours in the list need not be
+  // its neighbours on the page, so nothing is dropped.
   @Override
   protected void writePage() throws IOException {
     if (getSortByPosition()) {
       for (List<TextPosition> article : charactersByArticle) {
-        sortAsPdfBoxDoes(article);
+        sortAsPdfBoxDoes(article, new TextPositionComparator());
         dropCoveredBlanks(article);
       }
     }
@@ -172,8 +178,8 @@ public final class BoundedTextStripper extends PDFTextStripper {
 
   // The order PDFTextStripper#writePage reads an article in: its comparator is not transitive, so
   // a sort the JDK refuses is done by PDFBox's own merge sort, as there.
-  private static void sortAsPdfBoxDoes(List<TextPosition> article) {
-    TextPositionComparator comparator = new TextPositionComparator();
+  static void sortAsPdfBoxDoes(
+      List<TextPosition> article, Comparator<? super TextPosition> comparator) {
     try {
       Collections.sort(article, comparator);
     } catch (IllegalArgumentException e) {

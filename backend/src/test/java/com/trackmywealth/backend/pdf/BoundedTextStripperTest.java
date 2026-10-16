@@ -170,6 +170,54 @@ class BoundedTextStripperTest {
     }
   }
 
+  /**
+   * PR #333 review: a real space that kerning has narrowed, the next word starting 0.4 of its width
+   * before it ends, is not covered for more than half its width and still separates the words.
+   */
+  @Test
+  void aSpaceKerningNarrowsStillSeparatesWords() throws IOException {
+    PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+    float wordEnd = 40 + font.getStringWidth("Konto") / 1000 * 8;
+    float space = font.getStringWidth(" ") / 1000 * 8;
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(
+                        at(40, "Konto"), at(wordEnd, " "), at(wordEnd + 0.6f * space, "Nummer")))));
+
+    try (PDDocument document = Loader.loadPDF(statement)) {
+      PdfTextLine line = stripper().readLines(document, 1).get(0);
+
+      assertThat(line.words()).extracting(PdfWord::text).containsExactly("Konto", "Nummer");
+    }
+  }
+
+  /**
+   * PR #333 review: unsorted, glyphs come in drawing order, where list neighbours need not be
+   * neighbours on the page; the stripper drops nothing and reads as getText does.
+   */
+  @Test
+  void unsortedTheStripperDropsNoBlank() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(
+                        at(40, "31.03.2031"),
+                        strayBlank(39.6f),
+                        strayBlank(41.55f),
+                        at(100, "Darlehensleistung")))));
+
+    try (PDDocument document = Loader.loadPDF(statement)) {
+      BoundedTextStripper stripper = stripper();
+      stripper.setSortByPosition(false);
+      List<String> expected = new PDFTextStripper().getText(document).lines().toList();
+
+      assertThat(stripper.readLines(document, 1)).extracting(PdfTextLine::text).isEqualTo(expected);
+    }
+  }
+
   @Test
   void eachWordHasItsPlaceOnThePage() throws IOException {
     byte[] statement =
