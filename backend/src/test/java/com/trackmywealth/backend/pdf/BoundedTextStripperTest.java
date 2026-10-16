@@ -2,6 +2,7 @@ package com.trackmywealth.backend.pdf;
 
 import static com.trackmywealth.backend.service.SyntheticStatements.at;
 import static com.trackmywealth.backend.service.SyntheticStatements.endingAt;
+import static com.trackmywealth.backend.service.SyntheticStatements.strayBlank;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.offset;
 
@@ -16,13 +17,16 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 
 /**
  * PR #281 review: the lines {@link BoundedTextStripper} rebuilds are exactly the lines of {@link
  * PDFTextStripper#getText} - every PDF layout saved under #267 cuts its rows, preamble and trailing
- * summary by those lines - and their words carry their positions on the page.
+ * summary by those lines - and their words carry their positions on the page. The one exception is
+ * #322's: a blank glyph a visible glyph of the same line covers is no word separator.
  */
 class BoundedTextStripperTest {
 
@@ -80,6 +84,137 @@ class BoundedTextStripperTest {
         assertThat(line.text()).isEqualTo("Profil Betrag");
         assertThat(line.words()).extracting(PdfWord::text).containsExactly("Profil", "Betrag");
       }
+    }
+  }
+
+  /**
+   * #322: a Sparkasse statement draws two invisible spaces, in smaller type a little below the
+   * baseline, over the first digit of a booking date. getText reads them as separators; the
+   * stripper drops them, so the date is one word.
+   */
+  @Test
+  void blanksDrawnOverADateDoNotSplitIt() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(
+                        at(40, "31.03.2031"),
+                        strayBlank(39.6f),
+                        strayBlank(41.55f),
+                        at(100, "Darlehensleistung")))));
+
+    try (PDDocument document = Loader.loadPDF(statement)) {
+      PDFTextStripper plain = new PDFTextStripper();
+      plain.setSortByPosition(true);
+      assertThat(plain.getText(document)).as("the fixture reproduces #322").contains("3 1.03.2031");
+
+      PdfTextLine line = stripper().readLines(document, 1).get(0);
+
+      assertThat(line.text()).isEqualTo("31.03.2031 Darlehensleistung");
+      assertThat(line.words())
+          .extracting(PdfWord::text)
+          .containsExactly("31.03.2031", "Darlehensleistung");
+    }
+  }
+
+  /**
+   * #322: a blank below the baseline also stretched the line down to the next one, which PDFBox
+   * then read as part of it; without it, the next line is a line of its own.
+   */
+  @Test
+  void aDroppedBlankNoLongerJoinsTheLineBelow() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(at(40, "Darlehen 0000000000"), strayBlank(39.6f)),
+                    List.of(at(330, "Tilgungsform: Annuitaet")))));
+
+    try (PDDocument document = Loader.loadPDF(statement)) {
+      List<PdfTextLine> lines = stripper().readLines(document, 1);
+
+      assertThat(lines)
+          .extracting(PdfTextLine::text)
+          .containsExactly("Darlehen 0000000000", "Tilgungsform: Annuitaet");
+    }
+  }
+
+  /**
+   * #322: a space of a heading's second line, in large type, may sit right under a letter of the
+   * first; it is on another line, so it still separates its words.
+   */
+  @Test
+  void aSpaceUnderTheLineAboveInLargeTypeStillSeparatesWords() throws IOException {
+    try (PDDocument document = new PDDocument()) {
+      PDPage page = new PDPage();
+      document.addPage(page);
+      PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+      try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+        content.beginText();
+        content.setFont(font, 19);
+        content.newLineAtOffset(40, 700);
+        content.showText("Jahreskontoauszug");
+        content.newLineAtOffset(0, -14);
+        content.showText("Ihr Darlehen");
+        content.endText();
+      }
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      document.save(out);
+
+      try (PDDocument read = Loader.loadPDF(out.toByteArray())) {
+        assertThat(stripper().readLines(read, 1))
+            .extracting(PdfTextLine::text)
+            .containsExactly("Jahreskontoauszug", "Ihr Darlehen");
+      }
+    }
+  }
+
+  /**
+   * PR #333 review: a real space that kerning has narrowed, the next word starting 0.4 of its width
+   * before it ends, is not covered for more than half its width and still separates the words.
+   */
+  @Test
+  void aSpaceKerningNarrowsStillSeparatesWords() throws IOException {
+    PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+    float wordEnd = 40 + font.getStringWidth("Konto") / 1000 * 8;
+    float space = font.getStringWidth(" ") / 1000 * 8;
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(
+                        at(40, "Konto"), at(wordEnd, " "), at(wordEnd + 0.6f * space, "Nummer")))));
+
+    try (PDDocument document = Loader.loadPDF(statement)) {
+      PdfTextLine line = stripper().readLines(document, 1).get(0);
+
+      assertThat(line.words()).extracting(PdfWord::text).containsExactly("Konto", "Nummer");
+    }
+  }
+
+  /**
+   * PR #333 review: unsorted, glyphs come in drawing order, where list neighbours need not be
+   * neighbours on the page; the stripper drops nothing and reads as getText does.
+   */
+  @Test
+  void unsortedTheStripperDropsNoBlank() throws IOException {
+    byte[] statement =
+        SyntheticStatements.statement(
+            List.of(
+                List.of(
+                    List.of(
+                        at(40, "31.03.2031"),
+                        strayBlank(39.6f),
+                        strayBlank(41.55f),
+                        at(100, "Darlehensleistung")))));
+
+    try (PDDocument document = Loader.loadPDF(statement)) {
+      BoundedTextStripper stripper = stripper();
+      stripper.setSortByPosition(false);
+      List<String> expected = new PDFTextStripper().getText(document).lines().toList();
+
+      assertThat(stripper.readLines(document, 1)).extracting(PdfTextLine::text).isEqualTo(expected);
     }
   }
 

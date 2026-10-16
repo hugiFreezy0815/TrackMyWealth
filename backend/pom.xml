@@ -171,7 +171,11 @@
 
         <!-- #268, #276: PDF statements are read locally - the text layer with
              PDFBox, a scanned page through a local Tesseract process (PdfImportReaderService,
-             LocalOcrService). No document ever leaves the server. -->
+             LocalOcrService). No document ever leaves the server.
+             #322: BoundedTextStripper#writePage repeats the sort of PDFTextStripper#writePage
+             (TextPositionComparator, IterativeMergeSort as its fallback). On an upgrade, compare
+             the two; BoundedTextStripperTest fails if the new version reads #322's date apart no
+             longer, or the stripper's lines no longer match getText's. -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
