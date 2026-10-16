@@ -42,7 +42,9 @@ services:
       - ./deploy/postgres:/trackmywealth:ro
       - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trackmywealth"]
+      # Over TCP, not the socket: while the image runs initdb/ on a fresh volume, its temporary
+      # server answers on the socket only, and the backend must not start against it.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U trackmywealth"]
       interval: 5s
       timeout: 5s
       retries: 10

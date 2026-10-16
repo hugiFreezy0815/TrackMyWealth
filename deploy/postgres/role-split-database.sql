@@ -86,6 +86,17 @@ $$;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO trackmywealth_runtime;
 
+-- Only the two roles connect, and only the owner creates temporary tables (migrations such as
+-- V37 do; the application never does). PostgreSQL grants both to PUBLIC by default; the runtime
+-- role would otherwise be able to create temporary objects that shadow the schema's for its own
+-- session. The superuser keeps both regardless.
+DO $$
+BEGIN
+    EXECUTE format('REVOKE CONNECT, TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO trackmywealth_runtime', current_database());
+END;
+$$;
+
 -- The runtime role reads and writes rows, under each table's RLS policies, and nothing else: no
 -- DDL, no TRUNCATE, no ownership. Default privileges extend this to every table and sequence a
 -- later migration creates.

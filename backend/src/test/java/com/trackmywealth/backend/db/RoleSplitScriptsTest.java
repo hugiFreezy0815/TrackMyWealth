@@ -150,12 +150,30 @@ class RoleSplitScriptsTest {
         assertDenied(statement, "CREATE TABLE public.intruder (id INTEGER)");
         assertDenied(statement, "ALTER TABLE account ADD COLUMN intruder INTEGER");
         assertDenied(statement, "TRUNCATE workspace");
+        assertDenied(statement, "CREATE TEMPORARY TABLE intruder (id INTEGER)");
         assertDenied(statement, "ALTER TABLE workspace NO FORCE ROW LEVEL SECURITY");
         assertDenied(
             statement,
             "INSERT INTO flyway_schema_history (installed_rank, description, type, script,"
                 + " installed_by, execution_time, success) VALUES (9999, 'x', 'SQL', 'x', 'x',"
                 + " 0, TRUE)");
+      }
+    }
+  }
+
+  @Test
+  void onlyTheTwoRolesMayConnectToEitherDatabase() throws Exception {
+    try (Connection superuser = connect(existing(), SUPERUSER, SUPERUSER);
+        Statement statement = superuser.createStatement()) {
+      statement.execute("CREATE ROLE stranger LOGIN PASSWORD '" + RUNTIME_PASSWORD + "'");
+    }
+    for (String url : new String[] {existing(), fresh()}) {
+      assertThatThrownBy(() -> connect(url, "stranger", RUNTIME_PASSWORD).close())
+          .as(url)
+          .isInstanceOf(SQLException.class)
+          .hasMessageContaining("permission denied for database");
+      try (Connection migration = connect(url, MIGRATION_ROLE, MIGRATION_PASSWORD)) {
+        assertThat(migration.isValid(1)).as("the owner, %s", url).isTrue();
       }
     }
   }

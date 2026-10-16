@@ -165,8 +165,9 @@ ADR 0005). The compose stack supports two roles:
   can change nothing else.
 
 The backend logs a warning at every start while its role is not bound by RLS: a superuser or
-`BYPASSRLS` role, a member of one, or the owner of the schema or its tables (the single-role setup,
-which uses the PostgreSQL superuser, is all of these). Set `DB_REQUIRE_RLS_BOUND_ROLE=true` to make
+`BYPASSRLS` role, a member of one, the owner of the schema or its tables, or allowed to `TRUNCATE`
+a table, which ignores RLS (the single-role setup, which uses the PostgreSQL superuser, is all of
+these). Set `DB_REQUIRE_RLS_BOUND_ROLE=true` to make
 that a refused start instead, before the backend serves anything; `DEPLOYMENT_TOPOLOGY=hosted`
 always does.
 
@@ -203,7 +204,9 @@ to 5 below.
 4. Split the roles: `docker compose exec postgres bash /trackmywealth/role-split.sh`
    It creates the two roles, then hands every database object to the migration role and grants
    the runtime role; that hand-over is one transaction, which completes or changes nothing. It can
-   safely be run again, e.g. after a failure or to change the passwords.
+   safely be run again, e.g. after a failure or to change the passwords. From then on only the
+   two roles and the superuser may connect to the database: if another login of yours uses it
+   (a reporting or backup tool), grant it `CONNECT` again.
 5. Start the backend: `docker compose up -d`
 
 To go back, remove the `DB_*` lines from `.env` and `docker compose up -d`: the backend then

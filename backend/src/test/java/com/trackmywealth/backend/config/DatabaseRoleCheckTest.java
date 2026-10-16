@@ -11,9 +11,12 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -24,14 +27,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /**
  * US-28-05 (#331): the runtime role check against a real PostgreSQL. A role is RLS-bound only when
  * neither it nor any role it may act as bypasses RLS or owns the schema: an owner is bound by FORCE
- * ROW LEVEL SECURITY only until it switches that off. A refused start happens before the context
- * starts its lifecycle beans - the web server and the Quartz scheduler.
+ * ROW LEVEL SECURITY only until it switches that off. Nor may it TRUNCATE a table, which ignores
+ * every policy. A refused start happens before the context starts its lifecycle beans - the web
+ * server and the Quartz scheduler.
  */
 @Testcontainers
+@ExtendWith(OutputCaptureExtension.class)
 class DatabaseRoleCheckTest {
 
   private static final String PASSWORD = "role-check-password";
   private static final String OWNED_DATABASE = "owned_by_its_login";
+  private static final String PUBLIC_TRUNCATE_DATABASE = "truncate_granted_to_public";
 
   @Container static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
 
@@ -54,6 +60,19 @@ class DatabaseRoleCheckTest {
       statement.execute("CREATE ROLE database_owner LOGIN PASSWORD '" + PASSWORD + "'");
       // PostgreSQL 15+: schema public of a new database belongs to pg_database_owner.
       statement.execute("CREATE DATABASE " + OWNED_DATABASE + " OWNER database_owner");
+      statement.execute("CREATE ROLE truncater LOGIN NOBYPASSRLS PASSWORD '" + PASSWORD + "'");
+      statement.execute("GRANT SELECT, TRUNCATE ON public.probe TO truncater");
+      statement.execute("CREATE DATABASE " + PUBLIC_TRUNCATE_DATABASE);
+    }
+    // A database of its own: a grant to PUBLIC would reach every role above.
+    try (Connection superuser =
+            DriverManager.getConnection(
+                RoleSplitScripts.withDatabase(postgres.getJdbcUrl(), PUBLIC_TRUNCATE_DATABASE),
+                postgres.getUsername(),
+                postgres.getPassword());
+        Statement statement = superuser.createStatement()) {
+      statement.execute("CREATE TABLE public.probe (id INTEGER)");
+      statement.execute("GRANT TRUNCATE ON public.probe TO PUBLIC");
     }
   }
 
@@ -68,8 +87,10 @@ class DatabaseRoleCheckTest {
     "table_owner, may switch RLS off",
     "owner_member, may switch RLS off",
     "bypass_member, superuser or BYPASSRLS",
+    "truncater, may TRUNCATE a table",
   })
-  void aRoleThatOwnsATableOrMayActAsOneThatBypassesRlsIsRefused(String role, String reason) {
+  void aRoleThatOwnsOrMayTruncateATableOrMayActAsOneThatBypassesRlsIsRefused(
+      String role, String reason) {
     assertThatThrownBy(() -> strictCheck(postgres.getJdbcUrl(), role, PASSWORD))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("'" + role + "'")
@@ -85,12 +106,21 @@ class DatabaseRoleCheckTest {
   }
 
   @Test
-  void theSuperuserIsRefusedForBothReasons() {
+  void aTruncateGrantedToPublicRefusesEvenAnOtherwiseBoundRole() {
+    String url = RoleSplitScripts.withDatabase(postgres.getJdbcUrl(), PUBLIC_TRUNCATE_DATABASE);
+    assertThatThrownBy(() -> strictCheck(url, "bound", PASSWORD))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("may TRUNCATE a table");
+  }
+
+  @Test
+  void theSuperuserIsRefusedForEveryReason() {
     assertThatThrownBy(
             () ->
                 strictCheck(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()))
         .hasMessageContaining("superuser or BYPASSRLS")
-        .hasMessageContaining("may switch RLS off");
+        .hasMessageContaining("may switch RLS off")
+        .hasMessageContaining("may TRUNCATE a table");
   }
 
   @Test
@@ -110,12 +140,17 @@ class DatabaseRoleCheckTest {
   }
 
   @Test
-  void aWarnedStartStartsTheLifecycleBeansAsUsual() {
+  void aWarnedStartStartsTheLifecycleBeansAsUsualAndLogsTheWarning(CapturedOutput output) {
     LifecycleProbe probe = new LifecycleProbe();
 
     contextRunner(false, probe).run(context -> assertThat(context).hasNotFailed());
 
     assertThat(probe.started).as("the probe would have seen a start").isTrue();
+    // The single-role installation's warning (#331 acceptance criterion 2), names the role.
+    assertThat(output)
+        .contains("WARN")
+        .contains("connects to PostgreSQL as '" + postgres.getUsername() + "'")
+        .contains("workspace isolation is not enforced by the database");
   }
 
   // As the superuser, which the check refuses in strict mode and only warns about otherwise.

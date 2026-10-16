@@ -142,7 +142,8 @@ app:
     # does both, as before the split. See the README, "Database roles".
     migration-username: ${DB_MIGRATION_USERNAME:}
     migration-password: ${DB_MIGRATION_PASSWORD:}
-    # Refuse to start when the runtime role is a superuser or BYPASSRLS (otherwise a warning).
+    # Refuse to start when the runtime role is not bound by RLS - a superuser or BYPASSRLS role, an
+    # owner of the schema or its tables, or allowed to TRUNCATE one (otherwise a warning).
     # Always on for app.deployment.topology=hosted.
     require-rls-bound-role: ${DB_REQUIRE_RLS_BOUND_ROLE:false}
   security:

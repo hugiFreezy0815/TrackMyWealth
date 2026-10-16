@@ -187,19 +187,22 @@ hand - README, "Database roles"):
 - `trackmywealth_runtime` - `LOGIN NOSUPERUSER NOBYPASSRLS`: the running application
   (`DB_USERNAME`). `SELECT/INSERT/UPDATE/DELETE` on every table and `USAGE` on sequences (default
   privileges cover later migrations), `EXECUTE` on V81's two functions, read-only access to
-  `flyway_schema_history` (`V86`); no DDL, no `TRUNCATE`, no ownership. The name is fixed: V81 and
-  V86 refer to it.
+  `flyway_schema_history` (`V86`); no DDL, no `TRUNCATE`, no temporary objects, no ownership.
+  Only these two roles may connect. The name is fixed: V81 and V86 refer to it.
 
 The split is opt-in: an installation without `DB_MIGRATION_USERNAME` keeps one role for both, as
 before. At startup, before the web server and the scheduler start, `DatabaseRoleConfig` warns
 when the runtime role is not bound by RLS - it, or a role it may act as, is a superuser or
-`BYPASSRLS`, or owns schema public or one of its tables - and refuses to start with
+`BYPASSRLS`, owns schema public or one of its tables, or may `TRUNCATE` one - and refuses to start with
 `DB_REQUIRE_RLS_BOUND_ROLE=true` or `app.deployment.topology=hosted`. RLS reads the workspace from
 a session setting the runtime role sets itself, so the split does not stop an SQL injection from
 choosing another workspace (ADR 0005, *Consequences*). `RoleSplitScriptsTest` runs the shipped scripts on an existing
 single-role database (ownership handed over, data kept, idempotent) and on a fresh one migrated by
 the migration role; `HardenedRuntimeAuthenticationHttpTest` and
-`UpgradedRoleSplitAuthenticationHttpTest` run the application on a fresh and an upgraded split. The
+`UpgradedRoleSplitAuthenticationHttpTest` run the application on a fresh and an upgraded split,
+`RoleSplitShellTest` the scripts as the postgres image runs them, and `RoleSplitRuntimeWorkHttpTest`
+an import, the FX import and the transfer re-check as the runtime role. Every `SECURITY DEFINER`
+function must revoke `EXECUTE` from `PUBLIC` and pin `search_path` (`SchemaConventionsTest`). The
 automated cross-tenant suite `FR-TEN-010` requires (`CrossTenantIsolationTest`, US-28-04) runs as
 a `NOSUPERUSER NOBYPASSRLS` role too, because a superuser bypasses RLS unconditionally and the
 suite would pass for the wrong reason; keep any new isolation test on such a role.

@@ -51,7 +51,7 @@ class DatabaseRoleConfigTest {
     assertThatCode(
             () ->
                 DatabaseRoleConfig.check(
-                    new RuntimeRole("trackmywealth_runtime", false, false), true))
+                    new RuntimeRole("trackmywealth_runtime", false, false, false), true))
         .doesNotThrowAnyException();
   }
 
@@ -59,7 +59,8 @@ class DatabaseRoleConfigTest {
   void aRoleThatIsNotRlsBoundIsOnlyAWarningByDefault() {
     for (RuntimeRole role :
         new RuntimeRole[] {
-          new RuntimeRole("trackmywealth", true, true), new RuntimeRole("owner", false, true)
+          new RuntimeRole("trackmywealth", true, true, true),
+          new RuntimeRole("owner", false, true, false)
         }) {
       assertThatCode(() -> DatabaseRoleConfig.check(role, false))
           .as(role.name())
@@ -70,7 +71,7 @@ class DatabaseRoleConfigTest {
   @Test
   void strictModeRefusesARoleThatBypassesRls() {
     assertThatThrownBy(
-            () -> DatabaseRoleConfig.check(new RuntimeRole("bypassing", true, false), true))
+            () -> DatabaseRoleConfig.check(new RuntimeRole("bypassing", true, false, false), true))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("'bypassing'")
         .hasMessageContaining("superuser or BYPASSRLS")
@@ -81,7 +82,8 @@ class DatabaseRoleConfigTest {
   @Test
   void strictModeRefusesTheSchemaOwnerThoughForceRlsBindsIt() {
     // FORCE ROW LEVEL SECURITY binds the owner too - until the owner switches it off.
-    assertThatThrownBy(() -> DatabaseRoleConfig.check(new RuntimeRole("owner", false, true), true))
+    assertThatThrownBy(
+            () -> DatabaseRoleConfig.check(new RuntimeRole("owner", false, true, false), true))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("'owner'")
         .hasMessageContaining("may switch RLS off")
@@ -89,11 +91,24 @@ class DatabaseRoleConfigTest {
   }
 
   @Test
-  void strictModeNamesBothReasonsForASuperuser() {
+  void strictModeRefusesARoleThatMayTruncateATable() {
+    // TRUNCATE empties a table without consulting a single policy.
     assertThatThrownBy(
-            () -> DatabaseRoleConfig.check(new RuntimeRole("postgres", true, true), true))
+            () -> DatabaseRoleConfig.check(new RuntimeRole("truncater", false, false, true), true))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("'truncater'")
+        .hasMessageContaining("may TRUNCATE a table")
+        .hasMessageNotContaining("BYPASSRLS role")
+        .hasMessageNotContaining("switch RLS off");
+  }
+
+  @Test
+  void strictModeNamesEveryReasonForASuperuser() {
+    assertThatThrownBy(
+            () -> DatabaseRoleConfig.check(new RuntimeRole("postgres", true, true, true), true))
         .hasMessageContaining("superuser or BYPASSRLS")
-        .hasMessageContaining("may switch RLS off");
+        .hasMessageContaining("may switch RLS off")
+        .hasMessageContaining("may TRUNCATE a table");
   }
 
   @Test

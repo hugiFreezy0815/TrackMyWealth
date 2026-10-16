@@ -309,4 +309,87 @@ class SchemaConventionsTest {
         .as("columns referencing transaction without an index that starts with them")
         .isEmpty();
   }
+
+  // US-28-05 (#331, ADR 0005): a SECURITY DEFINER function runs as its owner, the BYPASSRLS
+  // migration role, and PostgreSQL grants EXECUTE on every new function to PUBLIC. Each one must
+  // therefore revoke that grant (V81 grants the runtime role by name) and pin search_path, or a
+  // later migration hands the runtime role a way around row-level security. Extension members
+  // are not ours to change.
+  private static final String UNGUARDED_SECURITY_DEFINER_FUNCTIONS =
+      """
+      SELECT p.oid::regprocedure AS function_name,
+        EXISTS (
+          SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) AS acl
+          WHERE acl.grantee = 0 AND acl.privilege_type = 'EXECUTE'
+        ) AS public_may_execute,
+        EXISTS (
+          SELECT 1 FROM unnest(p.proconfig) AS setting WHERE setting LIKE 'search_path=%'
+        ) AS search_path_pinned
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE p.prosecdef
+        AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        AND n.nspname NOT LIKE 'pg\\_%'
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_depend d
+          WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e'
+        )
+      """;
+
+  @Test
+  void everySecurityDefinerFunctionIsHiddenFromPublicAndPinsItsSearchPath() throws Exception {
+    List<String> definers = new ArrayList<>();
+    List<String> unguarded = new ArrayList<>();
+    try (Statement stmt = connection.createStatement();
+        ResultSet rs = stmt.executeQuery(UNGUARDED_SECURITY_DEFINER_FUNCTIONS)) {
+      collectSecurityDefiners(rs, definers, unguarded);
+    }
+
+    assertThat(definers)
+        .as("the catalog query found V81's SECURITY DEFINER functions at all")
+        .contains("auth_user_snapshot(uuid,uuid)", "auth_workspace_member_status(uuid)");
+    assertThat(unguarded)
+        .as(
+            "SECURITY DEFINER functions that PUBLIC may execute or that leave search_path open;"
+                + " REVOKE ALL ... FROM PUBLIC, grant trackmywealth_runtime by name and SET"
+                + " search_path, as V81 does")
+        .isEmpty();
+  }
+
+  @Test
+  void theSecurityDefinerRuleCatchesAFunctionLeftOpenToPublic() throws Exception {
+    connection.setAutoCommit(false);
+    try (Statement stmt = connection.createStatement()) {
+      stmt.execute(
+          "CREATE FUNCTION public.open_definer() RETURNS INTEGER LANGUAGE sql SECURITY DEFINER"
+              + " AS 'SELECT 1'");
+      List<String> unguarded = new ArrayList<>();
+      try (ResultSet rs = stmt.executeQuery(UNGUARDED_SECURITY_DEFINER_FUNCTIONS)) {
+        collectSecurityDefiners(rs, new ArrayList<>(), unguarded);
+      }
+      assertThat(unguarded)
+          .containsExactly("open_definer() (PUBLIC may execute, search_path open)");
+    } finally {
+      connection.rollback();
+      connection.setAutoCommit(true);
+    }
+  }
+
+  private static void collectSecurityDefiners(
+      ResultSet rs, List<String> definers, List<String> unguarded) throws Exception {
+    while (rs.next()) {
+      String function = rs.getString("function_name");
+      definers.add(function);
+      List<String> problems = new ArrayList<>();
+      if (rs.getBoolean("public_may_execute")) {
+        problems.add("PUBLIC may execute");
+      }
+      if (!rs.getBoolean("search_path_pinned")) {
+        problems.add("search_path open");
+      }
+      if (!problems.isEmpty()) {
+        unguarded.add(function + " (" + String.join(", ", problems) + ")");
+      }
+    }
+  }
 }

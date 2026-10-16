@@ -10,8 +10,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param migrationUsername the role that owns the schema and runs Flyway ({@code
  *     DB_MIGRATION_USERNAME}); blank: the datasource's own role
  * @param migrationPassword its password ({@code DB_MIGRATION_PASSWORD})
- * @param requireRlsBoundRole refuse to start when the runtime role is a superuser or {@code
- *     BYPASSRLS} ({@code DB_REQUIRE_RLS_BOUND_ROLE}); otherwise that is only a startup warning
+ * @param requireRlsBoundRole refuse to start when the runtime role is not bound by row-level
+ *     security ({@code DB_REQUIRE_RLS_BOUND_ROLE}, see {@link DatabaseRoleConfig}); otherwise that
+ *     is only a startup warning
  */
 @ConfigurationProperties(prefix = "app.database")
 public record DatabaseRoleProperties(

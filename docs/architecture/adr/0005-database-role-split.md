@@ -73,15 +73,25 @@ deciding to.
   narrows an injection's reach; parameterized queries remain the defense against it. Closing
   this would need a context the runtime role cannot forge (e.g. a `SECURITY DEFINER` setter that
   checks a signed token) - not in scope here.
-- The runtime role cannot change the schema, truncate tables or rewrite Flyway's history.
+- The runtime role cannot change the schema, truncate tables, create temporary objects or rewrite
+  Flyway's history, and no other login may connect to the database (`CONNECT` and `TEMPORARY` are
+  revoked from `PUBLIC`). The startup check also counts a `TRUNCATE` grant, which ignores RLS.
 - The two role names are fixed: V81 and V86 grant to `trackmywealth_runtime` by name.
 - A migration that needs more than `BYPASSRLS` and ownership (an untrusted extension, a new role)
   can no longer rely on Flyway running as a superuser; it needs a provisioning step.
 - New grants follow the default privileges set by `role-split-database.sql`: a later migration's
   tables and sequences are usable by the runtime role without a grant of its own; a new
-  `SECURITY DEFINER` function needs its `EXECUTE` grant written explicitly, as V81 does.
-- Tests: `RoleSplitScriptsTest` (the scripts on existing and fresh databases),
+  `SECURITY DEFINER` function needs its `EXECUTE` grant written explicitly, as V81 does. Since
+  PostgreSQL grants `EXECUTE` on every new function to `PUBLIC` and such a function runs as the
+  `BYPASSRLS` migration role, `SchemaConventionsTest` fails the build for one that `PUBLIC` may
+  still execute or that leaves `search_path` open.
+- Tests: `RoleSplitScriptsTest` (the scripts' SQL on existing and fresh databases),
+  `RoleSplitShellTest` (the shell layer in the postgres image as compose runs it: the init hook,
+  `\getenv` passwords, the refusals, a fresh stack migrated by the migration role),
   `HardenedRuntimeAuthenticationHttpTest` and `UpgradedRoleSplitAuthenticationHttpTest` (the
-  application's HTTP path on a fresh and on an upgraded split, strict), `DatabaseRoleCheckTest`
-  (the startup check against real roles, and that a refused start starts no lifecycle bean),
-  `DatabaseRoleConfigTest`.
+  application's HTTP path on a fresh and on an upgraded split, strict),
+  `RoleSplitRuntimeWorkHttpTest` (an import, the FX import and the transfer re-check as the
+  runtime role), `DatabaseRoleCheckTest` (the startup check against real roles, its warning, and
+  that a refused start starts no lifecycle bean), `DatabaseRoleConfigTest`. The rest of the suite
+  runs as the superuser; work that runs outside a request's workspace belongs in
+  `RoleSplitRuntimeWorkHttpTest` too.

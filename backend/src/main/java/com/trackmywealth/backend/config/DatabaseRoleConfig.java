@@ -20,10 +20,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
  *       DB_MIGRATION_USERNAME} from a compose file would otherwise point Flyway at a user named "".
  *   <li>At startup the runtime role is checked. It is not bound by row-level security when it, or a
  *       role it may act as, is a superuser or {@code BYPASSRLS}, which ignore every policy, or owns
- *       the schema or its tables, which may switch the policies off. Workspace isolation then rests
- *       on the application alone. That is a warning for a single-role installation that has not
- *       been split yet, and a refused start with {@code app.database.require-rls-bound-role} or a
- *       hosted topology.
+ *       the schema or its tables, which may switch the policies off, or may {@code TRUNCATE} a
+ *       table, which empties it past every policy. Workspace isolation then rests on the
+ *       application alone. That is a warning for a single-role installation that has not been split
+ *       yet, and a refused start with {@code app.database.require-rls-bound-role} or a hosted
+ *       topology.
  * </ul>
  *
  * <p>The check runs once every singleton exists - after Flyway - but before the context starts its
@@ -37,7 +38,8 @@ public class DatabaseRoleConfig {
 
   // pg_has_role(..., 'MEMBER') is true for the role itself and every role it can SET ROLE to;
   // a superuser is a member of every role. In PostgreSQL 15+ schema public may belong to
-  // pg_database_owner, whose only member is the database's owner.
+  // pg_database_owner, whose only member is the database's owner. TRUNCATE ignores RLS, so a
+  // grant of it to the role, a role it may act as or PUBLIC counts too (grantee 0 is PUBLIC).
   private static final String RUNTIME_ROLE_QUERY =
       """
       SELECT current_user,
@@ -54,6 +56,13 @@ public class DatabaseRoleConfig {
               WHERE c.relnamespace = 'public'::REGNAMESPACE
                   AND c.relkind IN ('r', 'p')
                   AND pg_has_role(current_user, c.relowner, 'MEMBER')
+          ),
+          EXISTS (
+              SELECT 1 FROM pg_class AS c, aclexplode(c.relacl) AS acl
+              WHERE c.relnamespace = 'public'::REGNAMESPACE
+                  AND c.relkind IN ('r', 'p')
+                  AND acl.privilege_type = 'TRUNCATE'
+                  AND (acl.grantee = 0 OR pg_has_role(current_user, acl.grantee, 'MEMBER'))
           )
       """;
 
@@ -79,7 +88,8 @@ public class DatabaseRoleConfig {
             jdbc.queryForObject(
                 RUNTIME_ROLE_QUERY,
                 (row, number) ->
-                    new RuntimeRole(row.getString(1), row.getBoolean(2), row.getBoolean(3))),
+                    new RuntimeRole(
+                        row.getString(1), row.getBoolean(2), row.getBoolean(3), row.getBoolean(4))),
             strict);
   }
 
@@ -94,18 +104,21 @@ public class DatabaseRoleConfig {
   /**
    * Warns, or with {@code strict} throws, when {@code role} is not bound by row-level security.
    *
-   * @throws IllegalStateException in strict mode, for a role that bypasses RLS or owns the schema
+   * @throws IllegalStateException in strict mode, for a role that is not RLS-bound
    */
   static void check(RuntimeRole role, boolean strict) {
     if (role.isRlsBound()) {
       return;
     }
-    List<String> reasons = new ArrayList<>(2);
+    List<String> reasons = new ArrayList<>(3);
     if (role.bypassesRls()) {
       reasons.add("is, or may act as, a superuser or BYPASSRLS role, which ignores every policy");
     }
     if (role.ownsSchema()) {
       reasons.add("owns, or may act as the owner of, the schema, which may switch RLS off");
+    }
+    if (role.mayTruncate()) {
+      reasons.add("may TRUNCATE a table, which empties it past every policy");
     }
     String message =
         "The application connects to PostgreSQL as '"
@@ -128,11 +141,12 @@ public class DatabaseRoleConfig {
    *
    * @param bypassesRls it, or a role it may act as, is a superuser or {@code BYPASSRLS}
    * @param ownsSchema it, or a role it may act as, owns schema public or one of its tables
+   * @param mayTruncate it, a role it may act as, or PUBLIC holds TRUNCATE on one of those tables
    */
-  record RuntimeRole(String name, boolean bypassesRls, boolean ownsSchema) {
+  record RuntimeRole(String name, boolean bypassesRls, boolean ownsSchema, boolean mayTruncate) {
 
     boolean isRlsBound() {
-      return !bypassesRls && !ownsSchema;
+      return !bypassesRls && !ownsSchema && !mayTruncate;
     }
   }
 }
