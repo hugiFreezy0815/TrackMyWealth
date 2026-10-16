@@ -46,6 +46,7 @@ public final class ShippedTemplateFixtures {
     page.add(List.of(at(40, "Dein Kontoauszug")));
     page.add(List.of(at(40, "Kontoauszug vom 01.01.2031 bis 31.01.2031")));
     page.add(List.of(at(40, "Kunde X-00000"), at(300, "Endsaldo 1'308.55 CHF")));
+    page.add(List.of(at(40, "IBAN : CH21 0076 2000 0000 0000 0")));
     yuhSection(page, "CHF", "263.40", "1'248.55");
     page.add(List.of(at(40, "01.01.2031"), at(100, "Anfangsbestand"), endingAt(530, "263.40")));
     page.add(
@@ -93,7 +94,7 @@ public final class ShippedTemplateFixtures {
             at(480, "Seite 1 von 1")));
     page.add(
         List.of(
-            at(40, "Darlehen 0000000000, DE00 0000 0000 0000 0000 00"),
+            at(40, "Darlehen 0000000000, DE89 3704 0044 0532 0130 00"),
             at(330, "Tilgungsform: Annuit\u00e4tendarlehen")));
     page.add(
         List.of(
@@ -239,6 +240,7 @@ public final class ShippedTemplateFixtures {
   public static byte[] lbsStatement() throws IOException {
     List<List<Cell>> page = new ArrayList<>();
     page.add(List.of(at(40, "LBS Invented \u00b7 Postfach 00 00")));
+    page.add(List.of(at(40, "Bausparvertrag 4 268 135 009")));
     page.add(
         List.of(at(40, "Kontoauszug 2031 Seite Nr. 1 von 1"), at(LBS_PANEL, "Bausparvertrag")));
     page.add(
