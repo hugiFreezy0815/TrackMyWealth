@@ -14,17 +14,37 @@ services:
   postgres:
     image: postgres:16
     environment:
+      # The PostgreSQL superuser. Only provisioning uses it; with the role split below, the backend
+      # never receives its password. Set POSTGRES_PASSWORD in .env for a real installation (it only
+      # takes effect when the data volume is created).
       POSTGRES_USER: trackmywealth
-      POSTGRES_PASSWORD: trackmywealth
-      # Deliberately NOT setting POSTGRES_DB here - the application creates its own database on
-      # first startup. If you want Postgres to pre-create it instead, set POSTGRES_DB=trackmywealth
-      # and DB_AUTO_CREATE=false on the backend service below.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trackmywealth}
+      # POSTGRES_DB is not set, so the image creates an empty database named after POSTGRES_USER
+      # (trackmywealth) on a fresh volume; Flyway then creates the schema in it on the backend's
+      # first start. With the role split, the init script hands that database to the migration
+      # role first. (The backend's own CREATE DATABASE, DB_AUTO_CREATE, covers a bare PostgreSQL
+      # server outside this compose stack.)
+      #
+      # US-28-05 (#331): the database role split - see the root README, "Database roles". With
+      # DB_MIGRATION_PASSWORD set in .env, a fresh volume gets the roles trackmywealth_migration
+      # (owns the schema, runs Flyway) and trackmywealth_runtime (the backend, bound by row-level
+      # security). An existing volume keeps its single role until you run the documented upgrade.
+      TMW_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:-}
+      TMW_RUNTIME_PASSWORD: ${DB_PASSWORD:-}
     ports:
-      - "5432:5432"
+      # Published on this host's loopback only: PostgreSQL holds every workspace's data, and the
+      # backend reaches it over the compose network anyway. Set POSTGRES_PUBLISH_ADDRESS=0.0.0.0 in
+      # .env only if another machine must connect directly (e.g. a database tool on your LAN).
+      - "${POSTGRES_PUBLISH_ADDRESS:-127.0.0.1}:5432:5432"
     volumes:
       - trackmywealth_pgdata:/var/lib/postgresql/data
+      # The role split's scripts; the image runs initdb/ once, on an empty data volume only.
+      - ./deploy/postgres:/trackmywealth:ro
+      - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trackmywealth"]
+      # Over TCP, not the socket: while the image runs initdb/ on a fresh volume, its temporary
+      # server answers on the socket only, and the backend must not start against it.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U trackmywealth"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -40,8 +60,17 @@ services:
       # `postgres` here is the other service's name, resolved via Docker's internal DNS - not
       # `localhost`, since the two containers are not the same network namespace.
       DB_URL: jdbc:postgresql://postgres:5432/trackmywealth
-      DB_USERNAME: trackmywealth
-      DB_PASSWORD: trackmywealth
+      # US-28-05 (#331): unset, the backend connects as the superuser above and runs the migrations
+      # itself (single-role setup, a startup warning says so). With the role split, .env sets
+      # DB_USERNAME=trackmywealth_runtime and DB_MIGRATION_USERNAME=trackmywealth_migration - see
+      # .env.example and the root README, "Database roles".
+      DB_USERNAME: ${DB_USERNAME:-trackmywealth}
+      # Single-role: the superuser's own password, POSTGRES_PASSWORD, when .env changed it.
+      DB_PASSWORD: ${DB_PASSWORD:-${POSTGRES_PASSWORD:-trackmywealth}}
+      DB_MIGRATION_USERNAME: ${DB_MIGRATION_USERNAME:-}
+      DB_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:-}
+      # true: refuse to start while connected as a role that bypasses row-level security.
+      DB_REQUIRE_RLS_BOUND_ROLE: ${DB_REQUIRE_RLS_BOUND_ROLE:-false}
       # FR-AUT-003/005 / #188: a real self-hosted deployment must never sign access tokens
       # with the repository's public placeholder. A .env file next to this compose file is loaded
       # automatically. When JWT_SECRET is absent we pass an empty value so postgres-only developer

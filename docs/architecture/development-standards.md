@@ -162,6 +162,7 @@ cd backend
 | Style (keyword/function casing, line length) | sqlfluff (`.sqlfluff`) | **Automated**, new/changed migrations only (`.github/workflows/backend-ci.yml`, `sql-lint` job) |
 | No SERIAL/IDENTITY sequence primary keys | `SchemaConventionsTest` | **Automated** (`./mvnw test`) |
 | Every domain table's primary key includes a UUID column | `SchemaConventionsTest` | **Automated** (`./mvnw test`) |
+| Every `SECURITY DEFINER` function revokes `EXECUTE` from `PUBLIC` and pins `search_path` (it runs as the `BYPASSRLS` migration role, ADR 0005) | `SchemaConventionsTest` | **Automated** (`./mvnw test`) |
 | Migrations apply cleanly end-to-end | `TrackMyWealthApplicationStartupTest` | **Automated** (`./mvnw test`) |
 
 **An already-applied migration is never edited, ever** — not for a bug, not for a style fix, not

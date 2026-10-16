@@ -31,7 +31,9 @@ import org.springframework.core.env.ConfigurableEnvironment;
  * <ol>
  *   <li>parses {@code spring.datasource.url} to recover host, port and target database name;
  *   <li>opens a short-lived JDBC connection to the PostgreSQL <em>maintenance</em> database ({@code
- *       app.database.maintenance-database}, default {@code postgres}) using the same credentials;
+ *       app.database.maintenance-database}, default {@code postgres}) using the same credentials,
+ *       or the migration role's when one is configured ({@code app.database.migration-username},
+ *       US-28-05);
  *   <li>issues {@code CREATE DATABASE <name>} only if a row for it is not already present in {@code
  *       pg_database};
  *   <li>closes the connection and lets the normal Spring Boot startup sequence continue.
@@ -73,8 +75,16 @@ public class DatabaseBootstrapInitializer
     }
 
     String url = env.getProperty("spring.datasource.url");
-    String username = env.getProperty("spring.datasource.username");
-    String password = env.getProperty("spring.datasource.password");
+    // US-28-05 (#331): with the role split, the migration role owns the database and does this
+    // check; the runtime role has no business creating databases.
+    String migrationUsername = env.getProperty("app.database.migration-username");
+    boolean migrationRole = migrationUsername != null && !migrationUsername.isBlank();
+    String username =
+        migrationRole ? migrationUsername : env.getProperty("spring.datasource.username");
+    String password =
+        migrationRole
+            ? env.getProperty("app.database.migration-password")
+            : env.getProperty("spring.datasource.password");
     String maintenanceDb = env.getProperty("app.database.maintenance-database", "postgres");
 
     if (url == null || username == null) {

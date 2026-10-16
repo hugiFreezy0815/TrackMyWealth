@@ -127,15 +127,19 @@ your deployed web app's real origin there in every other environment.
 
 This project targets self-hosted, single-workspace use (a laptop or a home NAS), not a
 multi-tenant hosted service — see `docs/architecture/adr/0001-database-auto-migration.md` for what
-that does and doesn't simplify (the production DB role split it describes is a hosted-multi-tenant
-concern; not needed here).
+that does and doesn't simplify.
 
-Before the first real start, create a private deployment secret:
+Before the first real start, create the private deployment settings from the template and replace
+every `CHANGE-ME` (`openssl rand -base64 32` for each secret):
 
 ```bash
-printf 'JWT_SECRET=%s\n' "$(openssl rand -base64 32)" > .env
+cp .env.example .env    # then edit .env
 docker compose up -d --build
 ```
+
+`.env.example` also turns on the database role split for a new installation (see
+[Database roles](#database-roles)). Keeping only `JWT_SECRET` (and `MFA_ENCRYPTION_KEY`) in `.env`
+starts a single-role installation, as before.
 
 `docker-compose.yml` passes that value to the backend, whose startup guard rejects an absent,
 short, trivially weak, or public-placeholder secret. The public JWT placeholder is accepted only
@@ -149,6 +153,68 @@ internal network. Both images are multi-arch for amd64 and arm64 (`postgres:16`,
 64-bit ARM NAS - point Synology's Container Manager (or any Docker host) at this
 `docker-compose.yml` the same way. **32-bit ARM (armv7) is not supported:** the Java 25 runtime
 image has no such variant.
+
+### Database roles
+
+The backend should connect to PostgreSQL as a role that **row-level security binds**, so the
+database itself keeps every workspace's data apart, whatever the application does (US-28-05,
+ADR 0005). The compose stack supports two roles:
+
+- `trackmywealth_migration` owns the database and runs the schema migrations at startup;
+- `trackmywealth_runtime` is what the running backend uses: it reads and writes rows under RLS and
+  can change nothing else.
+
+The backend logs a warning at every start while its role is not bound by RLS: a superuser or
+`BYPASSRLS` role, a member of one, the owner of the schema or its tables, or allowed to `TRUNCATE`
+a table, which ignores RLS (the single-role setup, which uses the PostgreSQL superuser, is all of
+these). Set `DB_REQUIRE_RLS_BOUND_ROLE=true` to make
+that a refused start instead, before the backend serves anything; `DEPLOYMENT_TOPOLOGY=hosted`
+always does.
+
+What the split protects against: a query that forgets its workspace filter, and any attempt by
+the backend's connection to switch RLS off or change the schema. What it does not: RLS reads the
+current workspace from a session setting the backend itself sets, so SQL injected into the
+backend's own connection could set that too. The split narrows what an injection reaches; it does
+not replace parameterized queries.
+
+**New installation:** `.env.example` already sets the `DB_*` variables; give each password its own
+value of at least 16 characters (the script refuses `CHANGE-ME`, shorter ones, or one password for
+both roles). On the first `docker compose up` (empty data volume) the postgres container creates
+both roles and hands them the database; the backend then migrates as `trackmywealth_migration` and
+runs as `trackmywealth_runtime`. Nothing else to do. If the postgres log shows the passwords were
+refused, the volume was still created, as a single-role one: fix `.env` and continue with steps 3
+to 5 below.
+
+**Existing installation** (data already in the volume) - nothing changes until you do this once:
+
+1. Back up the database:
+   `docker compose exec -T postgres pg_dump -U trackmywealth -Fc trackmywealth > trackmywealth.dump`
+2. Add to `.env`, with two new passwords (e.g. `openssl rand -base64 32`; avoid `$`, which
+   compose would read as a variable):
+   ```
+   DB_USERNAME=trackmywealth_runtime
+   DB_PASSWORD=<runtime password>
+   DB_MIGRATION_USERNAME=trackmywealth_migration
+   DB_MIGRATION_PASSWORD=<migration password>
+   DB_REQUIRE_RLS_BOUND_ROLE=true
+   ```
+3. Stop the backend, then recreate only the database container, so it gets the scripts and the
+   passwords (the data volume is kept): `docker compose stop backend` and
+   `docker compose up -d postgres`
+4. Split the roles: `docker compose exec postgres bash /trackmywealth/role-split.sh`
+   It creates the two roles, then hands every database object to the migration role and grants
+   the runtime role; that hand-over is one transaction, which completes or changes nothing. It can
+   safely be run again, e.g. after a failure or to change the passwords. From then on only the
+   two roles and the superuser may connect to the database: if another login of yours uses it
+   (a reporting or backup tool), grant it `CONNECT` again.
+5. Start the backend: `docker compose up -d`
+
+To go back, remove the `DB_*` lines from `.env` and `docker compose up -d`: the backend then
+connects as the superuser again, which still has access to everything.
+
+A setup without compose (e.g. `java -jar` against your own PostgreSQL) uses the same scripts in
+`deploy/postgres`: run `role-split.sh` as the PostgreSQL superuser with `TMW_MIGRATION_PASSWORD` and
+`TMW_RUNTIME_PASSWORD` in the environment, then set the same `DB_*` variables for the backend.
 
 ### Actuator access
 

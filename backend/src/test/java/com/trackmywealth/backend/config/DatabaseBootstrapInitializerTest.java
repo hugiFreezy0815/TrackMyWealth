@@ -66,6 +66,35 @@ class DatabaseBootstrapInitializerTest {
     assertThat(databaseExists(targetDatabase)).isFalse();
   }
 
+  @Test
+  void usesTheMigrationRolesCredentialsWhenTheRolesAreSplit() throws Exception {
+    // US-28-05: the runtime role may not create databases; its credentials here would even fail
+    // to connect. The migration role's (here the container's superuser) are the ones used.
+    String targetDatabase = "bootstrap_migration_role_test";
+    MockEnvironment environment = datasourceEnvironment(targetDatabase);
+    environment.setProperty("spring.datasource.username", "no_such_runtime_role");
+    environment.setProperty("spring.datasource.password", "wrong");
+    environment.setProperty("app.database.migration-username", postgres.getUsername());
+    environment.setProperty("app.database.migration-password", postgres.getPassword());
+
+    runInitializer(environment);
+
+    assertThat(databaseExists(targetDatabase)).isTrue();
+  }
+
+  @Test
+  void anEmptyMigrationUsernameKeepsTheDatasourcesCredentials() throws Exception {
+    // A single-role compose installation passes DB_MIGRATION_USERNAME as an empty string.
+    String targetDatabase = "bootstrap_single_role_test";
+    MockEnvironment environment = datasourceEnvironment(targetDatabase);
+    environment.setProperty("app.database.migration-username", "");
+    environment.setProperty("app.database.migration-password", "");
+
+    runInitializer(environment);
+
+    assertThat(databaseExists(targetDatabase)).isTrue();
+  }
+
   private void runInitializer(String targetDatabase) {
     runInitializer(datasourceEnvironment(targetDatabase));
   }

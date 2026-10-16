@@ -137,6 +137,15 @@ app:
   database:
     auto-create: ${DB_AUTO_CREATE:true}
     maintenance-database: ${DB_MAINTENANCE_DATABASE:postgres}
+    # US-28-05 (#331, ADR 0005): the database role split. DB_USERNAME is then the RLS-bound
+    # runtime role and Flyway runs as this migration role, which owns the schema. Empty: one role
+    # does both, as before the split. See the README, "Database roles".
+    migration-username: ${DB_MIGRATION_USERNAME:}
+    migration-password: ${DB_MIGRATION_PASSWORD:}
+    # Refuse to start when the runtime role is not bound by RLS - a superuser or BYPASSRLS role, an
+    # owner of the schema or its tables, or allowed to TRUNCATE one (otherwise a warning).
+    # Always on for app.deployment.topology=hosted.
+    require-rls-bound-role: ${DB_REQUIRE_RLS_BOUND_ROLE:false}
   security:
     jwt:
       issuer: trackmywealth
