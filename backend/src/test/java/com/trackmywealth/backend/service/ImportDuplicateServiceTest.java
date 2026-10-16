@@ -334,6 +334,107 @@ class ImportDuplicateServiceTest {
     verify(transactionRepository).findLiveForDuplicateCheck(ACCOUNT, DAY, DAY.plusDays(3));
   }
 
+  // #341: the same purchase booked in euros (template version 1, or by hand) and in its original
+  // currency (version 2) is one booking, whichever of the two the ledger holds.
+  @Test
+  void aForeignPurchaseIsADuplicateOfTheSamePurchaseBookedInTheAccountsCurrency() {
+    UUID inEuros = UUID.randomUUID();
+    ledger(candidate(inEuros, "-1.4900", "Muster Online Shop", CSV, null));
+
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT, CSV, List.of(foreignPurchase(1, "-1.49", "-37.00", "CZK"))))
+        .containsExactly(Map.entry(1, inEuros));
+  }
+
+  @Test
+  void aRowInTheAccountsCurrencyIsADuplicateOfTheSamePurchaseBookedInItsOriginalCurrency() {
+    UUID inKoruna = UUID.randomUUID();
+    // -37.00 CZK at the rate derived from the billed -1.49 EUR: -1.4900000011, -1.49 to the cent.
+    ledger(candidate(inKoruna, "-37.0000", "CZK", "0.0402702703", false, "Shop", "MANUAL", null));
+
+    assertThat(service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "-1.49", "Shop", null))))
+        .containsExactly(Map.entry(1, inKoruna));
+  }
+
+  @Test
+  void aLedgerRowAtAnEstimatedRateIsNoCrossCurrencyMatch() {
+    ledger(
+        candidate(
+            UUID.randomUUID(), "-37.0000", "CZK", "0.0402702703", true, "Shop", "MANUAL", null));
+
+    assertThat(service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "-1.49", "Shop", null))))
+        .isEmpty();
+  }
+
+  @Test
+  void twoForeignPurchasesBilledAlikeAreNotPairedAcrossCurrencies() {
+    // Booked in CZK at a derived rate, billed -1.49 EUR: another purchase than 40.00 PLN.
+    ledger(
+        candidate(UUID.randomUUID(), "-37.0000", "CZK", "0.0402702703", false, "Shop", CSV, null));
+
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT, CSV, List.of(foreignPurchase(1, "-1.49", "-40.00", "PLN"))))
+        .isEmpty();
+  }
+
+  @Test
+  void aLedgerRowPairedExactlyIsNotPairedAgainAcrossCurrencies() {
+    UUID inEuros = UUID.randomUUID();
+    ledger(candidate(inEuros, "-1.49", "Shop", CSV, null));
+
+    // The euro row takes the euro booking; the foreign purchase billed alike is a booking of its
+    // own.
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT,
+                CSV,
+                List.of(
+                    row(1, "-1.49", "Shop", null), foreignPurchase(2, "-1.49", "-37.00", "CZK"))))
+        .containsExactly(Map.entry(1, inEuros));
+  }
+
+  @Test
+  void aReservedLedgerRowIsNoCrossCurrencyMatchEither() {
+    // #287: the commit's re-check; another row of the batch holds the euro booking already.
+    UUID held = UUID.randomUUID();
+    ledger(candidate(held, "-1.49", "Muster Online Shop", CSV, null));
+
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT, CSV, List.of(foreignPurchase(1, "-1.49", "-37.00", "CZK")), Set.of(held)))
+        .isEmpty();
+  }
+
+  @Test
+  void twoForeignPurchasesAgainstOneBookingInEurosGiveExactlyOneDuplicate() {
+    UUID inEuros = UUID.randomUUID();
+    ledger(candidate(inEuros, "-1.49", "Muster Online Shop", CSV, null));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(
+                foreignPurchase(1, "-1.49", "-37.00", "CZK"),
+                foreignPurchase(2, "-1.49", "-37.00", "CZK")));
+
+    assertThat(duplicates).containsExactly(Map.entry(1, inEuros));
+  }
+
+  @Test
+  void theConvertedAmountIsRoundedHalfUpToTheCent() {
+    // -10.00 CZK at 0.1235 is -1.2350: -1.24 to the cent, never -1.23.
+    UUID inKoruna = UUID.randomUUID();
+    ledger(candidate(inKoruna, "-10.00", "CZK", "0.1235", false, "Shop", "MANUAL", null));
+
+    assertThat(service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "-1.24", "Shop", null))))
+        .containsExactly(Map.entry(1, inKoruna));
+    assertThat(service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "-1.23", "Shop", null))))
+        .isEmpty();
+  }
+
   // --- fixtures --------------------------------------------------------------------------------
 
   private void ledger(ImportDuplicateCandidate... candidates) {
@@ -381,6 +482,19 @@ class ImportDuplicateServiceTest {
 
   private static ImportDuplicateCandidate candidate(
       UUID id, String amount, String description, String source, String externalId) {
+    return candidate(id, amount, "EUR", null, false, description, source, externalId);
+  }
+
+  // A ledger row on an EUR account in {@code currency}, at {@code rate} to EUR.
+  private static ImportDuplicateCandidate candidate(
+      UUID id,
+      String amount,
+      String currency,
+      String rate,
+      boolean estimated,
+      String description,
+      String source,
+      String externalId) {
     return new ImportDuplicateCandidate() {
       @Override
       public UUID getId() {
@@ -399,7 +513,7 @@ class ImportDuplicateServiceTest {
 
       @Override
       public String getCurrency() {
-        return "EUR";
+        return currency;
       }
 
       @Override
@@ -416,6 +530,45 @@ class ImportDuplicateServiceTest {
       public String getExternalId() {
         return externalId;
       }
+
+      @Override
+      public BigDecimal getFxRateToAccountCurrency() {
+        return rate == null ? null : new BigDecimal(rate);
+      }
+
+      @Override
+      public Boolean getFxRateEstimated() {
+        return estimated;
+      }
+
+      @Override
+      public String getAccountCurrency() {
+        return "EUR";
+      }
     };
+  }
+
+  // A card purchase of {@code billed} EUR for {@code original} in {@code originalCurrency}.
+  private static ParsedImportRow foreignPurchase(
+      int rowNumber, String billed, String original, String originalCurrency) {
+    return ParsedImportRow.parsed(
+        rowNumber,
+        Map.of(),
+        new CanonicalImportRow(
+            DAY,
+            null,
+            new BigDecimal(billed),
+            "EUR",
+            "CREDIT_CARD_PURCHASE",
+            "Muster Online Shop",
+            null,
+            null,
+            null,
+            null,
+            null,
+            new BigDecimal(original),
+            originalCurrency,
+            null,
+            false));
   }
 }

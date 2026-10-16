@@ -8,6 +8,7 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
+import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.ReconciliationStatusResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
@@ -16,6 +17,7 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.service.ShippedTemplateFixtures;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -226,6 +228,55 @@ class SparkasseCardImportControllerTest {
         .containsExactlyInAnyOrder("-23.6100", "-147.9300", "1204.3700", "-8.4700", "-5.3900");
   }
 
+  // #341: the foreign purchase already in the ledger in euros - as template version 1 booked it, or
+  // a member by hand - is a duplicate of the statement's row booked in its original currency.
+  @Test
+  void aForeignPurchaseAlreadyBookedInEurosIsADuplicate() throws IOException {
+    TransactionResponse manual =
+        client()
+            .post()
+            .uri("/api/v1/accounts/" + card + "/transactions")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(
+                TransactionRequests.cash(
+                    "CREDIT_CARD_PURCHASE",
+                    LocalDate.of(2031, 1, 29),
+                    new BigDecimal("-1.49"),
+                    "EUR",
+                    "Muster Online Shop",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null))
+            .exchange()
+            .expectStatus()
+            .isCreated()
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    ImportBatchResponse batch = upload(fixture("sparkasse-card-synthetic.csv"));
+
+    assertThat(batch.counts().duplicates()).isOne();
+    assertThat(batch.counts().newRows()).isEqualTo(2);
+    // The preview shows the euro booking next to the row in koruna (US-07-17).
+    List<ImportRowResponse> duplicates = rows(batch, "?status=DUPLICATE");
+    assertThat(duplicates)
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.duplicateOfTransactionId()).isEqualTo(manual.id());
+              assertThat(row.duplicateOf().amount()).isEqualByComparingTo("-1.49");
+              assertThat(row.duplicateOf().currency()).isEqualTo("EUR");
+            });
+    commit(confirmAccount(batch));
+    assertThat(list())
+        .extracting(TransactionResponse::currency)
+        .containsExactlyInAnyOrder("EUR", "EUR", "EUR");
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
 
   private void registerCard(String maskedNumber) throws Exception {
@@ -371,6 +422,19 @@ class SparkasseCardImportControllerTest {
         .exchange()
         .expectStatus()
         .isOk();
+  }
+
+  private List<ImportRowResponse> rows(ImportBatchResponse batch, String query) {
+    return client()
+        .get()
+        .uri("/api/v1/accounts/" + card + "/imports/" + batch.id() + "/rows" + query)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .returnResult()
+        .getResponseBody()
+        .content();
   }
 
   private List<TransactionResponse> list() {
