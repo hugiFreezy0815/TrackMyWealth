@@ -259,8 +259,9 @@ public class AccountValuationService {
         account, ownCurrency, targetCurrency, resolved, convertedValue, conversion.get(), warnings);
   }
 
-  // CUSTOM_ASSET (via CustomAssetValuation), MORTGAGE/LOAN (via original_principal less the
-  // principal repaid on its ledger, US-10-02 - see loanValue), an account without a ledger (via its
+  // CUSTOM_ASSET (via CustomAssetValuation), MORTGAGE/LOAN (via its newest statement balance and
+  // the ledger after it, US-07-21, else original_principal less the principal repaid on its ledger,
+  // US-10-02 - see loanValueFromStatement and loanValue), an account without a ledger (via its
   // latest snapshot), any account with an opening balance (US-25-04) and CREDIT_CARD (via its
   // ledger) have a value source today.
   private Optional<NativeAccountValue> resolveNativeAccountValue(
@@ -279,6 +280,11 @@ public class AccountValuationService {
       // would overstate net worth, so fail closed until the entry is resolved.
       if (transactionRepository.existsUnresolvedLoanRepaymentAsOf(account.getId(), asOf)) {
         return Optional.empty();
+      }
+      Optional<AccountSnapshot> statement =
+          accountSnapshotRepository.findLatestWithBalance(account.getId(), asOf);
+      if (statement.isPresent()) {
+        return Optional.of(loanValueFromStatement(account, statement.get(), asOf));
       }
       return accountMortgageRepository
           .findById(account.getId())
@@ -332,6 +338,26 @@ public class AccountValuationService {
                     principal.subtract(repaid),
                     ValueBasisValues.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS))
         .orElseGet(() -> new NativeAccountValue(principal, ValueBasisValues.ORIGINAL_PRINCIPAL));
+  }
+
+  /**
+   * US-07-21: what is still owed on a loan or mortgage with a statement balance - the newest
+   * snapshot on or before {@code asOf} (a loan statement's closing balance, or one the member
+   * recorded) less the ledger booked after it, by the same rule as an opening balance ({@link
+   * #fromOpeningBalance}): the snapshot holds the positive amount owed, the ledger is
+   * cash-direction signed, so an instalment (positive) lowers it and interest charged onto the loan
+   * (negative) raises it. Rows on the snapshot's date are contained in it. An exact figure, unlike
+   * the original principal less repayments it replaces.
+   */
+  private NativeAccountValue loanValueFromStatement(
+      Account account, AccountSnapshot statement, LocalDate asOf) {
+    BigDecimal ledger =
+        transactionRepository
+            .sumAmountByAccountIdBookedAfter(
+                account.getId(), statement.getSnapshotDate(), statement.getStatedAt(), asOf)
+            .orElse(BigDecimal.ZERO);
+    return new NativeAccountValue(
+        statement.getBalance().subtract(ledger), ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE);
   }
 
   /**

@@ -86,8 +86,11 @@ public class TransferDetectionService {
   static final int WINDOW_DAYS = 5;
 
   static final Set<String> DEBIT_TYPES = Set.of("TRANSFER", "WITHDRAWAL", "EXPENSE");
-  static final Set<String> CREDIT_TYPES = Set.of("TRANSFER", "DEPOSIT", "INCOME");
+  // US-07-21: DEBT_REPAYMENT is a loan statement's instalment, the loan's leg of the payment.
+  static final Set<String> CREDIT_TYPES = Set.of("TRANSFER", "DEPOSIT", "INCOME", "DEBT_REPAYMENT");
   private static final String TRANSFER = "TRANSFER";
+  // Legs whose own source says they are one side of a transfer; only two of these confirm alone.
+  private static final Set<String> TRANSFER_LEG_TYPES = Set.of(TRANSFER, "DEBT_REPAYMENT");
   // Decided pairs have a leg within one window of the run's date, so the other leg is within two;
   // their competitors pair with a leg, so they are within three.
   private static final int LOADED_WINDOWS = 3;
@@ -223,7 +226,7 @@ public class TransferDetectionService {
       if (unambiguous
           && debit.getCurrency().equals(only.getCurrency())
           && TRANSFER.equals(debit.getTransactionType())
-          && TRANSFER.equals(only.getTransactionType())
+          && TRANSFER_LEG_TYPES.contains(only.getTransactionType())
           && existing(known, debit, only) == null) {
         if (inScope(date, debit, only)) {
           confirm(debit, only);
@@ -333,7 +336,9 @@ public class TransferDetectionService {
     return match != null && SettlementMatchValues.REJECTED.equals(match.getStatus());
   }
 
-  // Decided by the system: an exact, unique pair of legs both typed TRANSFER.
+  // Decided by the system: an exact, unique pair of a TRANSFER debit and a TRANSFER or imported
+  // loan
+  // instalment (DEBT_REPAYMENT) credit - legs their own sources type as transfers.
   private void confirm(Transaction debit, Transaction credit) {
     SettlementMatch match = newMatch(debit, credit);
     match.setStatus(SettlementMatchValues.CONFIRMED);

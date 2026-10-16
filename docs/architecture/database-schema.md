@@ -88,6 +88,8 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V85` | Reference-data baseline `1.3.0-baseline` (current; `1.2.0-baseline` stays as history): the `LOAN_INTEREST` default category of V84 (US-10-02, #328) |
 | `V86` | `flyway_schema_history` read-only for `trackmywealth_runtime`, when that role exists (US-28-05, #331) |
 | `V87` | `loan_payment` append-only (US-10-02, #328): `trg_loan_payment_append_only` refuses every `UPDATE` and `DELETE` except V83's own `ON DELETE SET NULL` of `amortisation_schedule_entry_id`; a removed payment keeps its record and its `external_id` (`TRUNCATE` is not guarded) |
+| `V88` | Version 2 of the shipped Sparkasse CSV-CAMT and loan statement templates (US-07-21, #324): the current account's loan instalment (`EINZUG RATE/ANNUITAET`) is a `TRANSFER`, loan interest (`DARLEHENSZINSEN`) an `EXPENSE`, the loan statement's fee (`Kontoauszugspreis`) a `FEE`; version 1 stays, no longer current |
+| `V89` | Reference-data baseline `1.4.0-baseline` (current; `1.3.0-baseline` stays as history): the template versions of V88 (US-07-21, #324) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
@@ -855,7 +857,9 @@ knows it by the same id. A shared row satisfies no insert policy (V65), so each 
 superuser migration role does not need it, but the planned owner-only migration role (see section
 4, "Production hardening") does. Each template's synthetic fixture is named by
 `fixture_reference`, and `ShippedImportTemplatesIntegrationTest` detects and dry-runs every one. `V80` records this content as
-reference baseline `1.2.0-baseline`.
+reference baseline `1.2.0-baseline`. A shipped template's next version (V88: Sparkasse CSV-CAMT
+and loan statement, version 2) is a new row of the same family with a fixed id of its own; the
+previous version stays, no longer current, for the batches that used it.
 
 **Delete and deactivate (FR-LIF-001).** A template is hard-deleted with all its versions only
 while no `import_batch` references any of them; otherwise it is deactivated (`is_active =

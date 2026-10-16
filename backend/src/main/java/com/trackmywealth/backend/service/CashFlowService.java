@@ -45,7 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
  *       whatever its own flag, so a payment from a current account adds the principal and one from
  *       a savings account moves money between two saving accounts; without it, the loan counts as
  *       no saving account, and a payment from savings takes the principal out of saving. The
- *       interest is an {@code EXPENSE}, so it is spending;
+ *       interest is an {@code EXPENSE}, so it is spending. US-07-21: an imported loan statement
+ *       books the whole instalment onto the loan and charges interest and fees onto it; the saving
+ *       is then the net debt reduction - the instalment less those charges;
  *   <li><b>pendingReview</b> - what awaits a member's decision before it can count anywhere: an
  *       unresolved card settlement, a proposed transfer pair, an unlinked transfer leg, a loan
  *       payment whose interest/principal split is unknown (US-10-02).
@@ -185,7 +187,8 @@ public class CashFlowService {
 
   // US-10-02: with mortgage principal included, the loan is a saving account, so principal paid
   // from a non-saving account is saving; without it, principal paid out of a saving account is
-  // money taken out of saving. Either way a payment between two alike accounts moves nothing.
+  // money taken out of saving. Either way a payment between two alike accounts moves nothing; the
+  // charges a loan statement books onto a loan come off a saving loan (US-07-21).
   private List<Object[]> repaidPrincipalSaving(
       UUID workspaceId, List<UUID> accountIds, LocalDate from, LocalDate to) {
     boolean includePrincipal =
@@ -196,7 +199,15 @@ public class CashFlowService {
     List<Object[]> principal =
         transactionRepository.sumRepaidPrincipalByDateAndCurrency(
             accountIds, !includePrincipal, from, to);
-    return includePrincipal ? principal : negated(principal);
+    if (!includePrincipal) {
+      return negated(principal);
+    }
+    // US-07-21: a loan statement charges interest and fees onto the loan; the saving is the net
+    // debt reduction, so they come off (they are negative, so they are simply added).
+    return Stream.concat(
+            principal.stream(),
+            transactionRepository.sumLoanChargesByDateAndCurrency(accountIds, from, to).stream())
+        .toList();
   }
 
   // (booking date, currency, amount) rows summed per currency, in currency order; a currency that

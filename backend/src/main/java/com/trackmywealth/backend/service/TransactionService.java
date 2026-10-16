@@ -136,6 +136,8 @@ public class TransactionService {
   // A credit card is only ever charged (purchase, incl. its own FEE row), paid down (settlement) or
   // credited back by a merchant (refund, US-07-18).
   private static final Set<String> CARD_TYPES = Set.of(CREDIT_CARD_PURCHASE, SETTLEMENT, "REFUND");
+  // US-07-21: what a loan statement charges onto the loan, besides the instalment.
+  private static final Set<String> LOAN_STATEMENT_CASH_TYPES = Set.of(EXPENSE, FEE);
   private static final String BUY = "BUY";
   private static final String SELL = "SELL";
   private static final String DIVIDEND = "DIVIDEND";
@@ -310,7 +312,7 @@ public class TransactionService {
     // needed no such lookup, and still doesn't.
     boolean isCardPurchase = CREDIT_CARD_PURCHASE.equals(request.transactionType());
     AccountCreditCard cardExtension = cardExtensionFor(account, request);
-    boolean foreignCurrency = validate(account, cardExtension, request);
+    boolean foreignCurrency = validate(account, cardExtension, request, false);
     if (request.securityId() != null && !securityRepository.existsById(request.securityId())) {
       // Same answer as a snapshot holding (US-25-01): the master is shared, and the id reveals
       // nothing a workspace could not already look up.
@@ -395,8 +397,22 @@ public class TransactionService {
   // Deliberately not @Transactional: it throws by design, and a transactional method that throws
   // marks the import's surrounding transaction rollback-only.
   public Optional<String> requireRecordable(Account account, CreateTransactionRequest request) {
+    return requireValid(account, request, false);
+  }
+
+  /**
+   * US-07-04: {@link #requireRecordable} for an import row, which {@link #recordImported} records:
+   * on a loan or mortgage, the bookings of the loan's own statement (US-07-21) are accepted too.
+   */
+  // Not @Transactional, for the same reason as requireRecordable.
+  public Optional<String> requireImportable(Account account, CreateTransactionRequest request) {
+    return requireValid(account, request, true);
+  }
+
+  private Optional<String> requireValid(
+      Account account, CreateTransactionRequest request, boolean imported) {
     AccountCreditCard cardExtension = cardExtensionFor(account, request);
-    if (!validate(account, cardExtension, request)) {
+    if (!validate(account, cardExtension, request, imported)) {
       return Optional.empty();
     }
     return Optional.of(
@@ -576,7 +592,7 @@ public class TransactionService {
         CreateTransactionRequest request = row.request();
         AccountCreditCard cardExtension =
             CREDIT_CARD_PURCHASE.equals(request.transactionType()) ? card : null;
-        boolean foreignCurrency = validate(account, cardExtension, request);
+        boolean foreignCurrency = validate(account, cardExtension, request, true);
         Transaction transaction =
             newTransaction(account, request, source, row.rawSourceData(), actor);
         transaction.setExternalId(request.externalId());
@@ -953,13 +969,20 @@ public class TransactionService {
 
   /**
    * Which cash types an account takes, decided by capability flags, never {@code account_type}
-   * (US-05-04, enforced by ArchitectureTest). Narrowing later would break callers, so this starts
-   * strict: a loan or mortgage (amortisation) is serviced by DEBT_REPAYMENT (US-10-02) - a signed
-   * INTEREST/EXPENSE row would move its balance the wrong way - and a pension (contribution limit)
-   * by PENSION_CONTRIBUTION (US-10-01). A custodian account takes only its own cash movements.
+   * (US-05-04, enforced by ArchitectureTest). A pension (contribution limit) takes none: it is paid
+   * into by PENSION_CONTRIBUTION (US-10-01). A custodian account takes only its own cash movements.
+   *
+   * <p>A loan or mortgage (amortisation) takes none by hand: a payment is recorded with its split
+   * through {@code LoanRepaymentService} (US-10-02). An import (US-07-21, {@code imported}) records
+   * a loan statement as the bank books it: the interest ({@code EXPENSE}) and fees ({@code FEE})
+   * charged onto the loan, negative because they raise what is owed, beside the instalment ({@code
+   * DEBT_REPAYMENT}, see {@link #validate}).
    */
-  private static Set<String> cashTypesAllowedOn(Account account) {
-    if (account.isHasAmortisation() || account.isHasContributionLimit()) {
+  private static Set<String> cashTypesAllowedOn(Account account, boolean imported) {
+    if (account.isHasAmortisation()) {
+      return imported ? LOAN_STATEMENT_CASH_TYPES : Set.of();
+    }
+    if (account.isHasContributionLimit()) {
       return Set.of();
     }
     return account.isHoldsPositions() ? CUSTODY_CASH_TYPES : CASH_TYPES;
@@ -969,7 +992,7 @@ public class TransactionService {
     if (account.isHasAmortisation()) {
       return "; record a payment to it with POST /api/v1/accounts/{loanAccountId}/repayments";
     }
-    Set<String> allowed = cashTypesAllowedOn(account);
+    Set<String> allowed = cashTypesAllowedOn(account, false);
     return allowed.isEmpty()
         ? "; it is serviced by its own transaction types"
         : "; allowed: " + String.join(", ", new TreeSet<>(allowed));
@@ -981,14 +1004,23 @@ public class TransactionService {
    * that same boolean right after and previously recomputed it by hand a second time.
    */
   private static boolean validate(
-      Account account, AccountCreditCard cardExtension, CreateTransactionRequest request) {
+      Account account,
+      AccountCreditCard cardExtension,
+      CreateTransactionRequest request,
+      boolean imported) {
     String type = request.transactionType();
-    if (DEBT_REPAYMENT.equals(type)) {
+    boolean loanRepayment = DEBT_REPAYMENT.equals(type);
+    if (loanRepayment && !imported) {
       throw unprocessable(
           "A loan or mortgage payment is split into interest and principal: record it with POST"
               + " /api/v1/accounts/{loanAccountId}/repayments.");
     }
-    if (!SUPPORTED_TYPES.contains(type)) {
+    // US-07-21: the instalment a loan statement books onto the loan, one leg of the payment from
+    // the paying account, which transfer detection pairs with it.
+    if (loanRepayment && !account.isHasAmortisation()) {
+      throw unprocessable("A " + DEBT_REPAYMENT + " is imported onto a loan or mortgage only.");
+    }
+    if (!loanRepayment && !SUPPORTED_TYPES.contains(type)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           "Only "
@@ -1029,7 +1061,7 @@ public class TransactionService {
     }
     // A SETTLEMENT is not a cash type: it stays acceptable on an ordinary account as the payment
     // leg of a card payment (US-09-02), whatever that account's kind.
-    if (CASH_TYPES.contains(type) && !cashTypesAllowedOn(account).contains(type)) {
+    if (CASH_TYPES.contains(type) && !cashTypesAllowedOn(account, imported).contains(type)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
           type + " cannot be recorded on this kind of account" + allowedHint(account) + ".");
@@ -1118,9 +1150,11 @@ public class TransactionService {
     // interest, refund, a dividend and the card side of a settlement. A sale has no fixed sign: its
     // cash leg is proceeds minus costs, which is zero or negative when the costs of selling a
     // near-worthless remnant exceed its proceeds, so requireTradeAmountMatches alone decides it.
+    // An imported instalment enters the loan: it lowers what is owed.
     boolean mustBePositive =
         INFLOW_CASH_TYPES.contains(type)
             || DIVIDEND.equals(type)
+            || loanRepayment
             || (SETTLEMENT.equals(type) && card);
     // A one-sided TRANSFER may run either way; TransferRecordingService decides a transfer's sign.
     boolean signFixedByType = !SELL.equals(type) && !TRANSFER_TYPES.contains(type);

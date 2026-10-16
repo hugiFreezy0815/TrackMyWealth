@@ -19,7 +19,8 @@ import org.springframework.web.server.ResponseStatusException;
  * transfer ({@code is_internal_transfer}) with no counterpart account, so it counts as neither
  * income nor spending and leaves pending review; a counterpart recorded later still pairs with it
  * ({@link TransferDetectionService} treats it as a candidate). Undoing the confirmation puts it
- * back in pending review. Both need EDIT on the account and are idempotent.
+ * back in pending review. Both need EDIT on the account and are idempotent. US-07-21: a loan's
+ * imported instalment ({@code DEBT_REPAYMENT}) is such a leg too, paid from an untracked account.
  *
  * <p>The confirmation is not remembered apart from the flag. If the leg is later matched with a
  * counterpart and that match is undone ({@code reject} on a confirmed match), the leg reverts to an
@@ -88,6 +89,17 @@ public class TransferResolutionService {
     return transactionService.toResponses(List.of(leg)).get(0);
   }
 
+  // US-07-21: an instalment a loan statement booked onto the loan, paid from an account that may
+  // not
+  // be tracked here. A manual loan payment's leg names its outgoing leg and is resolved by entering
+  // the payment's split, never by this confirmation.
+  private static boolean isImportedLoanInstalment(Transaction leg) {
+    return TransactionService.DEBT_REPAYMENT.equals(leg.getTransactionType())
+        && leg.getAmount().signum() > 0
+        && leg.getAccount().isHasAmortisation()
+        && leg.getRelatedTransactionId() == null;
+  }
+
   // A TRANSFER-type leg of this account that is not linked to a counterpart account: a matched or
   // two-sided transfer already says where the money went.
   private Transaction requireOneSidedLeg(
@@ -100,11 +112,12 @@ public class TransferResolutionService {
             .filter(row -> row.getAccount().getId().equals(accountId))
             .orElseThrow(
                 () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
-    if (!TransferRecordingService.TRANSFER_TYPES.contains(leg.getTransactionType())) {
+    if (!TransferRecordingService.TRANSFER_TYPES.contains(leg.getTransactionType())
+        && !isImportedLoanInstalment(leg)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
-          "Only a TRANSFER or PENSION_CONTRIBUTION leg can be confirmed as a transfer to an"
-              + " untracked account.");
+          "Only a TRANSFER or PENSION_CONTRIBUTION leg, or a loan's imported instalment, can be"
+              + " confirmed as a transfer to or from an untracked account.");
     }
     if (leg.getVoidedAt() != null || leg.isReversal()) {
       throw new ResponseStatusException(
