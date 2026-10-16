@@ -88,6 +88,13 @@ public final class ImportBatchValues {
   public static final String WARNING_CARD_SETTLEMENT_UNMATCHED =
       "IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED";
 
+  /**
+   * Warning {@code date} (#334): the value date was written as a February day that does not exist
+   * (the 30/360 interest convention) and is read as {@code date}, that February's last day. The row
+   * stays included.
+   */
+  public static final String WARNING_VALUE_DATE_ADJUSTED = "IMPORT_ROW_VALUE_DATE_ADJUSTED";
+
   /** Booking is strictly before the account opening balance; importing remains allowed. */
   public static final String WARNING_BEFORE_OPENING_BALANCE = "IMPORT_ROW_BEFORE_OPENING_BALANCE";
 

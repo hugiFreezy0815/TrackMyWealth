@@ -374,6 +374,35 @@ class ImportRowCheckServiceTest {
         .containsExactly(Map.entry("date", "2019-01-06"));
   }
 
+  // #334: a value date read as February's last day is a warning naming that day.
+  @Test
+  void anAdjustedValueDateIsAWarningNamingTheDayItIsReadAs() {
+    CanonicalImportRow interest =
+        new CanonicalImportRow(
+            DAY,
+            LocalDate.of(2031, 2, 28),
+            new BigDecimal("-12.40"),
+            "EUR",
+            "EXPENSE",
+            "Darlehenszins",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            true);
+
+    assertThat(service.warnings(account, interest, DAY, false))
+        .containsExactly(ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED);
+    assertThat(
+            ImportRowCheckService.warningArgs(
+                ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED, interest, "EUR"))
+        .containsExactly(Map.entry("date", "2031-02-28"));
+  }
+
   private static ParsedImportRow row(String currency, LocalDate date) {
     return ParsedImportRow.parsed(
         1,

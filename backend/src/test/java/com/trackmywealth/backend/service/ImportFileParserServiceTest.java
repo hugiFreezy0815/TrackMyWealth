@@ -1349,6 +1349,70 @@ class ImportFileParserServiceTest {
     assertThat(result.rows().get(1).isParsed()).as("the next row still parses").isTrue();
   }
 
+  // #334: the February days a 30/360 interest convention writes are read as February's last day;
+  // every other value is left to the ordinary, strict parse.
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "dd.MM.yyyy|30.02.2031|2031-02-28",
+        "dd.MM.yyyy|29.02.2031|2031-02-28",
+        "dd.MM.yyyy|30.02.2032|2032-02-29",
+        "dd.MM.yy|30.02.31|2031-02-28",
+        "yyyy-MM-dd|2031-02-30|2031-02-28"
+      })
+  void aThirtyDayFebruaryDateIsReadAsTheLastDayOfFebruary(
+      String pattern, String value, String expected) {
+    assertThat(
+            ImportFileParserService.endOfThirtyDayFebruary(
+                value, ImportFileParserService.dateFormatter(pattern)))
+        .contains(LocalDate.parse(expected));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {"29.02.2032", "28.02.2031", "31.02.2031", "31.04.2031", "30.13.2031", "x"})
+  void anyOtherDateIsNotAThirtyDayFebruaryDate(String value) {
+    assertThat(
+            ImportFileParserService.endOfThirtyDayFebruary(
+                value, ImportFileParserService.dateFormatter("dd.MM.yyyy")))
+        .isEmpty();
+  }
+
+  @Test
+  void aValueDateOfThirtyFebruaryParsesAndIsMarkedAdjustedButABookingDateDoesNot() {
+    String csv =
+        "date;valuta;amount;text\n"
+            + "28.02.2031;30.02.2031;-123.45;Darlehenszins\n"
+            + "28.02.2031;28.02.2031;-2.50;Preis\n"
+            + "30.02.2031;28.02.2031;-1.00;x\n"
+            + "28.02.2031;31.02.2031;-1.00;y\n";
+
+    List<ParsedImportRow> rows =
+        parser
+            .parse(
+                utf8(csv),
+                new Template()
+                    .delimiter(";")
+                    .dateFormat("dd.MM.yyyy")
+                    .mapping(
+                        mapping("date", "amount").valueDate("valuta").description("text").build())
+                    .build(),
+                null)
+            .rows();
+
+    CanonicalImportRow interest = rows.get(0).canonical();
+    assertThat(interest.valueDate()).isEqualTo(LocalDate.of(2031, 2, 28));
+    assertThat(interest.valueDateAdjusted()).isTrue();
+    assertThat(rows.get(1).canonical().valueDateAdjusted()).isFalse();
+    assertThat(rows.get(2).errorCode())
+        .as("the decision covers the value date only")
+        .isEqualTo(ImportRowErrorValues.DATE_UNPARSEABLE);
+    assertThat(rows.get(3).errorCode())
+        .as("no 30/360 date")
+        .isEqualTo(ImportRowErrorValues.DATE_UNPARSEABLE);
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"", "dd.MM", "HH:mm", "not a pattern {", "dd.MM.yyyy'"})
   void anInvalidDatePatternIsATemplateError(String pattern) {
