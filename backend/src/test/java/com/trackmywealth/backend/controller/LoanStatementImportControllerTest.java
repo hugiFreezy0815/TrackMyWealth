@@ -62,7 +62,7 @@ class LoanStatementImportControllerTest {
   private static final String PASSWORD = "correct-horse-battery-staple";
   // The shipped templates' current versions (V88).
   private static final UUID SPARKASSE_LOAN =
-      UUID.fromString("72805b69-3fa5-4922-b02a-af25e48dbd29");
+      UUID.fromString("db261cc9-5ae3-4eef-b8b4-8529a243abcf");
   private static final UUID SPARKASSE_CAMT =
       UUID.fromString("df6b6640-6a37-49ce-b5fc-feb61c677971");
   private static final Charset WINDOWS_1252 = Charset.forName("windows-1252");
@@ -280,7 +280,20 @@ class LoanStatementImportControllerTest {
             "application/pdf",
             SPARKASSE_LOAN);
     assertThat(batch.counts().errors()).isZero();
-    commit(loan, batch);
+    // The synthetic fixture has no valid registered IBAN, so PDF identification now asks for
+    // confirmation just as CSV identification does when a file cannot match an account.
+    ImportBatchResponse confirmed =
+        client()
+            .post()
+            .uri("/api/v1/accounts/" + loan + "/imports/" + batch.id() + "/confirm-account")
+            .header(HttpHeaders.IF_MATCH, "\\"" + batch.version() + "\\"")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+    commit(loan, confirmed);
   }
 
   // The file names an IBAN the account does not carry, so the member confirms the account first
