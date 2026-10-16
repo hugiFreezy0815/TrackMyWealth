@@ -36,11 +36,15 @@ public class ImportStatementBalanceReaderService {
 
   static final String FIELD = "statementBalance";
   private static final String PATTERN_FIELD = FIELD + ".pattern";
+  private static final String STATEMENT_DATE_FIELD = FIELD + ".statementDatePattern";
   private static final Set<String> GROUPS =
       Set.of(
           ImportStatementBalanceRule.DATE_GROUP,
           ImportStatementBalanceRule.AMOUNT_GROUP,
-          ImportStatementBalanceRule.CURRENCY_GROUP);
+          ImportStatementBalanceRule.CURRENCY_GROUP,
+          ImportStatementBalanceRule.SIGN_GROUP);
+  private static final String MINUS = "-";
+  private static final String PLUS = "+";
   private static final int CURRENCY_CODE_LENGTH = 3;
 
   /**
@@ -53,44 +57,34 @@ public class ImportStatementBalanceReaderService {
     if (rule == null) {
       return;
     }
-    String pattern = rule.pattern();
-    if (pattern == null
-        || pattern.isBlank()
-        || pattern.length() > ImportPdfLayout.MAX_PATTERN_LENGTH) {
+    boolean statementDate = rule.statementDatePattern() != null;
+    Set<String> groups = compile(rule.pattern(), PATTERN_FIELD).namedGroups().keySet();
+    if (!groups.contains(ImportStatementBalanceRule.AMOUNT_GROUP)
+        || !(statementDate || groups.contains(ImportStatementBalanceRule.DATE_GROUP))) {
       throw invalid(
           PATTERN_FIELD,
-          "A pattern is required, with at most "
-              + ImportPdfLayout.MAX_PATTERN_LENGTH
-              + " characters.");
-    }
-    Pattern compiled;
-    try {
-      compiled = Re2Patterns.compile(pattern);
-    } catch (IllegalArgumentException e) {
-      ApiException exception =
-          new ApiException(
-              HttpStatus.UNPROCESSABLE_CONTENT,
-              ApiErrorCode.IMPORT_TEMPLATE_INVALID,
-              e.getMessage(),
-              e);
-      exception.getBody().setProperty("field", PATTERN_FIELD);
-      throw exception;
-    }
-    Set<String> groups = compiled.namedGroups().keySet();
-    if (!groups.contains(ImportStatementBalanceRule.DATE_GROUP)
-        || !groups.contains(ImportStatementBalanceRule.AMOUNT_GROUP)) {
-      throw invalid(
-          PATTERN_FIELD, "The pattern needs the named groups (?P<date>...) and (?P<amount>...).");
+          "The pattern needs the named groups (?P<date>...) and (?P<amount>...); the date group"
+              + " only when no statementDatePattern dates the balance.");
     }
     if (!GROUPS.containsAll(groups)) {
       throw invalid(
-          PATTERN_FIELD, "The pattern's named groups can only be date, amount and currency.");
+          PATTERN_FIELD, "The pattern's named groups can only be date, amount, currency and sign.");
     }
-    if (rule.dateFormat() != null
-        && (rule.dateFormat().length() > ImportStatementBalanceRule.MAX_DATE_FORMAT_LENGTH
-            || !ImportFileParserService.isValidDateFormat(rule.dateFormat()))) {
-      throw invalid(FIELD + ".dateFormat", "The date format is not a valid date pattern.");
+    requireDateFormat(rule.dateFormat(), FIELD + ".dateFormat");
+    // #339: the date of a balance line without one, e.g. the end of the statement's period.
+    if (statementDate
+        && !Set.of(ImportStatementBalanceRule.DATE_GROUP)
+            .equals(
+                compile(rule.statementDatePattern(), STATEMENT_DATE_FIELD)
+                    .namedGroups()
+                    .keySet())) {
+      throw invalid(STATEMENT_DATE_FIELD, "The pattern needs the one named group (?P<date>...).");
     }
+    if (rule.statementDateFormat() != null && !statementDate) {
+      throw invalid(
+          FIELD + ".statementDateFormat", "A statement date format needs a statementDatePattern.");
+    }
+    requireDateFormat(rule.statementDateFormat(), FIELD + ".statementDateFormat");
     if (!template.isPdf()
         && template.preambleRowCount() == 0
         && template.headerRowIndex() <= 0
@@ -99,6 +93,38 @@ public class ImportStatementBalanceReaderService {
           FIELD,
           "The template has no lines before its header row or trailing summary rows to find the"
               + " balance in.");
+    }
+  }
+
+  private static Pattern compile(String pattern, String field) {
+    if (pattern == null
+        || pattern.isBlank()
+        || pattern.length() > ImportPdfLayout.MAX_PATTERN_LENGTH) {
+      throw invalid(
+          field,
+          "A pattern is required, with at most "
+              + ImportPdfLayout.MAX_PATTERN_LENGTH
+              + " characters.");
+    }
+    try {
+      return Re2Patterns.compile(pattern);
+    } catch (IllegalArgumentException e) {
+      ApiException exception =
+          new ApiException(
+              HttpStatus.UNPROCESSABLE_CONTENT,
+              ApiErrorCode.IMPORT_TEMPLATE_INVALID,
+              e.getMessage(),
+              e);
+      exception.getBody().setProperty("field", field);
+      throw exception;
+    }
+  }
+
+  private static void requireDateFormat(String dateFormat, String field) {
+    if (dateFormat != null
+        && (dateFormat.length() > ImportStatementBalanceRule.MAX_DATE_FORMAT_LENGTH
+            || !ImportFileParserService.isValidDateFormat(dateFormat))) {
+      throw invalid(field, "The date format is not a valid date pattern.");
     }
   }
 
@@ -118,6 +144,7 @@ public class ImportStatementBalanceReaderService {
     DateTimeFormatter formatter = ImportFileParserService.dateFormatter(dateFormat);
     boolean parentheses =
         ImportTemplateValues.AMOUNT_NEGATIVE_IN_PARENTHESES.equals(template.amountRepresentation());
+    LocalDate statementDate = statementDate(lines, rule, dateFormat);
     List<ImportStatementBalances.Stated> balances = new ArrayList<>();
     List<String> unreadableCurrencies = new ArrayList<>();
     for (String line : lines) {
@@ -127,7 +154,7 @@ public class ImportStatementBalanceReaderService {
       }
       String currency = hasCurrency ? currencyOf(matcher) : null;
       ImportStatementBalances.Stated stated =
-          stated(matcher, hasCurrency, formatter, template, parentheses);
+          stated(matcher, pattern, formatter, statementDate, template, parentheses);
       if (stated == null) {
         unreadableCurrencies.add(currency);
       } else {
@@ -145,31 +172,79 @@ public class ImportStatementBalanceReaderService {
     return currency != null && isCurrencyCode(currency) ? currency : null;
   }
 
-  // The balance one matched line states, or null when its date, amount or currency is unreadable.
-  private static ImportStatementBalances.Stated stated(
-      Matcher matcher,
-      boolean hasCurrency,
-      DateTimeFormatter formatter,
-      ImportTemplateDefinition template,
-      boolean parentheses) {
-    String date = matcher.group(ImportStatementBalanceRule.DATE_GROUP);
-    String amount = matcher.group(ImportStatementBalanceRule.AMOUNT_GROUP);
-    if (date == null || amount == null) {
+  // #339: the date statementDatePattern's first match in the file gives, or null when the rule
+  // has none, nothing matches, or the match's date is unreadable - a balance line without a date
+  // of its own then is unreadable.
+  private static LocalDate statementDate(
+      List<String> lines, ImportStatementBalanceRule rule, String balanceDateFormat) {
+    if (rule.statementDatePattern() == null) {
       return null;
     }
-    String group = hasCurrency ? matcher.group(ImportStatementBalanceRule.CURRENCY_GROUP) : null;
+    Pattern pattern = Re2Patterns.compile(rule.statementDatePattern());
+    for (String line : lines) {
+      Matcher matcher = pattern.matcher(line.strip());
+      if (matcher.find()) {
+        String format =
+            rule.statementDateFormat() == null ? balanceDateFormat : rule.statementDateFormat();
+        return parseDate(
+            matcher.group(ImportStatementBalanceRule.DATE_GROUP),
+            ImportFileParserService.dateFormatter(format));
+      }
+    }
+    return null;
+  }
+
+  private static LocalDate parseDate(String value, DateTimeFormatter formatter) {
+    if (value == null) {
+      return null;
+    }
+    try {
+      return LocalDate.parse(value.strip(), formatter);
+    } catch (DateTimeException e) {
+      return null;
+    }
+  }
+
+  // The balance one matched line states, or null when its date, amount, sign or currency is
+  // unreadable. A line whose date group is absent or did not match takes the statement date.
+  private static ImportStatementBalances.Stated stated(
+      Matcher matcher,
+      Pattern pattern,
+      DateTimeFormatter formatter,
+      LocalDate statementDate,
+      ImportTemplateDefinition template,
+      boolean parentheses) {
+    String date = optionalGroup(matcher, pattern, ImportStatementBalanceRule.DATE_GROUP);
+    String amount = matcher.group(ImportStatementBalanceRule.AMOUNT_GROUP);
+    LocalDate parsedDate = date == null ? statementDate : parseDate(date, formatter);
+    if (parsedDate == null || amount == null) {
+      return null;
+    }
+    String group = optionalGroup(matcher, pattern, ImportStatementBalanceRule.CURRENCY_GROUP);
     String currency = group == null ? null : group.strip().toUpperCase(Locale.ROOT);
     if (currency != null && !isCurrencyCode(currency)) {
       return null;
     }
-    try {
-      LocalDate parsedDate = LocalDate.parse(date.strip(), formatter);
-      BigDecimal parsedAmount =
-          ImportFileParserService.parseAmount(amount, FIELD, template, parentheses);
-      return new ImportStatementBalances.Stated(parsedDate, parsedAmount, currency);
-    } catch (DateTimeException | ImportRowRejectedException e) {
+    String sign = optionalGroup(matcher, pattern, ImportStatementBalanceRule.SIGN_GROUP);
+    if (sign != null && !MINUS.equals(sign.strip()) && !PLUS.equals(sign.strip())) {
       return null;
     }
+    try {
+      BigDecimal parsedAmount =
+          ImportFileParserService.parseAmount(amount, FIELD, template, parentheses);
+      if (sign != null) {
+        parsedAmount =
+            MINUS.equals(sign.strip()) ? parsedAmount.abs().negate() : parsedAmount.abs();
+      }
+      return new ImportStatementBalances.Stated(parsedDate, parsedAmount, currency);
+    } catch (ImportRowRejectedException e) {
+      return null;
+    }
+  }
+
+  // A named group's text, or null when the pattern has no such group or it did not take part.
+  private static String optionalGroup(Matcher matcher, Pattern pattern, String name) {
+    return pattern.namedGroups().containsKey(name) ? matcher.group(name) : null;
   }
 
   // An ISO 4217 code's shape: three letters A-Z.

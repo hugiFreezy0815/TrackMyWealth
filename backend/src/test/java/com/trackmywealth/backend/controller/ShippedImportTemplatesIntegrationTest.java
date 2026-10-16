@@ -67,10 +67,21 @@ class ShippedImportTemplatesIntegrationTest {
       UUID.fromString("72805b69-3fa5-4922-b02a-af25e48dbd29");
   private static final UUID SPARKASSE_LOAN_FAMILY =
       UUID.fromString("fe678117-6fd0-4863-b271-b2a038ecb5cf");
+  // US-07-25 (V93).
+  private static final UUID SPARKASSE_CARD_PDF =
+      UUID.fromString("8f7e1b44-deb6-4e30-81d8-9a96d63d417c");
   private static final UUID YUH = UUID.fromString("a2820365-0b08-4474-bdb9-f2c419a91a25");
   private static final UUID LBS = UUID.fromString("0ac5fd45-d7f5-4c7b-895d-cc8233d07e7b");
   private static final List<UUID> SHIPPED =
-      List.of(DKB, POSTFINANCE, SPARKASSE_CAMT, SPARKASSE_CARD, SPARKASSE_LOAN, YUH, LBS);
+      List.of(
+          DKB,
+          POSTFINANCE,
+          SPARKASSE_CAMT,
+          SPARKASSE_CARD,
+          SPARKASSE_CARD_PDF,
+          SPARKASSE_LOAN,
+          YUH,
+          LBS);
   private static final ParameterizedTypeReference<List<ImportTemplateResponse>> TEMPLATE_LIST =
       new ParameterizedTypeReference<>() {};
   private static final ParameterizedTypeReference<List<ImportTemplateCandidateResponse>>
@@ -276,6 +287,30 @@ class ShippedImportTemplatesIntegrationTest {
     // #322: the blanks the statement draws over the date's first digit do not split it.
     assertBooking(result.rows().get(4), LocalDate.of(2031, 3, 31), "456.78", "EUR", "INCOME");
     assertThat(result.statementBalanceCount()).isEqualTo(2);
+  }
+
+  // US-07-25 (#339): the booking date is a line's second date, the sign after the amount decides
+  // debit or credit, both balances are read - the new one dated by the period's end - and the
+  // masked card number on the title line identifies the card.
+  @Test
+  void sparkasseCardStatementReadsSignsAfterTheAmountBothBalancesAndTheCard() throws IOException {
+    ImportTemplateTestResponse result =
+        detectAndTest(SPARKASSE_CARD_PDF, ShippedTemplateFixtures.sparkasseCardStatement());
+
+    assertThat(result.rowCount()).as("balance and header lines are no bookings").isEqualTo(4);
+    assertThat(result.parsedRowCount()).isEqualTo(4);
+    // Without a target account a dry run reads the rows as into an ordinary account; on a card
+    // account they become purchases and a settlement (US-07-18).
+    assertBooking(result.rows().get(0), LocalDate.of(2031, 2, 5), "-23.61", "EUR", "EXPENSE");
+    assertThat(result.rows().get(0).canonical().description())
+        .isEqualTo("Beispiel Laden, Musterstadt");
+    assertThat(result.rows().get(0).rawData()).containsEntry("Beleg", "03.02.31");
+    assertBooking(result.rows().get(1), LocalDate.of(2031, 2, 10), "-147.93", "EUR", "EXPENSE");
+    assertBooking(result.rows().get(2), LocalDate.of(2031, 2, 17), "1204.37", "EUR", "INCOME");
+    assertBooking(result.rows().get(3), LocalDate.of(2031, 2, 21), "-8.47", "EUR", "EXPENSE");
+    assertThat(result.statementBalanceCount()).isEqualTo(2);
+    assertThat(result.statementBalanceUnreadableCount()).isZero();
+    assertThat(result.accountIdentifierFound()).isTrue();
   }
 
   @Test

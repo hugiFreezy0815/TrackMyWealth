@@ -33,6 +33,7 @@ Analysed on 2026-10-04: 20 documents from 5 institutions.
 | SPK-5 | Sparkasse Freiburg | Credit card transactions | CSV, windows-1252, `;` | Card statement |
 | SPK-6 | Sparkasse Freiburg | Annual loan account statement (Jahreskontoauszug) | PDF, text | Account statement |
 | SPK-7 | LBS Süd (via Sparkasse) | Annual building-savings statement (Bausparvertrag) | PDF, text | Account statement |
+| SPK-8 | Sparkasse Freiburg | Monthly credit-card statement (Mastercard), added 2026-10-16 (#339) | PDF, text | Card statement |
 | TW-1 | True Wealth | Contract bundle: asset management mandate and pillar 3a agreement | PDF, text | Contract (other) |
 | YUH-1 | Yuh | Account statement, multi-currency, with savings pocket | PDF, text | Account statement |
 | YUH-2 | Yuh | Portfolio performance report | PDF, text | Holdings and performance statement |
@@ -65,6 +66,7 @@ identifier that could match or create an `account`.
 | SPK-5 | partial | partial: masked card number in every row (last four digits only) | no | no | yes: with original amount, currency and FX rate | no | no | FinTS for the card is bank-specific (#259) |
 | SPK-6 | yes: name, BIC, BLZ | yes: loan IBAN, product, approved amount, rate, fixed term | yes: "Kontostand am <start of year>" | yes: balance at the end of the period | yes: instalments, interest | no | no | FinTS (#259) |
 | SPK-7 | yes: LBS Süd | yes: contract number, tariff, contract sum, start date | yes: "Saldovortrag" | yes: "Ihr Bausparguthaben am <date>" | yes: deposits, interest | no | no | none known |
+| SPK-8 | partial | partial: masked card number on the title line | yes: dated "Saldo ... Abrechnung" line | yes: "Neuer Saldo", dated by the period's end | yes: purchases, the payment received (sign after the amount) | no | no | FinTS for the card is bank-specific (#259) |
 | TW-1 | yes: True Wealth, custodian bank, pension foundation | partial: customer number and product, no account number | no | no | no | no | no | none |
 | YUH-1 | yes: Swissquote as the bank, SWIFT | yes: IBAN, customer number | yes: "Anfangssaldo" / "Saldo per <start>" | yes: "Endsaldo" / "Saldo per <end>", per currency | yes: with value date and running balance | partial: buy/sell/dividend as cash bookings only | no | none |
 | YUH-2 | yes | yes: account number and IBAN | no | yes: liquidity per date | no | no | yes: shares, funds, crypto | none |
@@ -253,7 +255,7 @@ a PDF template is a set of label anchors and line patterns, not a column mapping
 | PostFinance, pillar 3a | PF-8 or manual | none | PF-8, manual entry recommended (unstable print layout) | PF-8 (fund units) | - |
 | Sparkasse, accounts | `Auftragskonto` column of SPK-1/SPK-2 | SPK-1/SPK-2 CSV, FinTS later | none in the CSV; FinTS later | - | - |
 | Sparkasse, loan | SPK-6 header (IBAN, loan terms) | SPK-3 (CSV-CAMT V8) | SPK-6: opening and closing balance once a year | - | SPK-4 (same bookings as SPK-3, older format) |
-| Sparkasse, credit card | `Umsatz getätigt von` of SPK-5, confirmed by the member | SPK-5 CSV | none | - | - |
+| Sparkasse, credit card | `Umsatz getätigt von` of SPK-5 or the title line of SPK-8, confirmed by the member | SPK-5 CSV or SPK-8 PDF (#339; domestic purchases only) | SPK-8: previous and new balance each month | - | SPK-5 and SPK-8 hold the same bookings where their periods overlap; both book on `Buchungsdatum`, so the duplicate rule (date, amount, currency) pairs them |
 | LBS Süd | SPK-7 header | SPK-7 (PDF, once a year): manual entry recommended | SPK-7 opening and closing balance | - | - |
 | True Wealth | TW-1, manual creation (mandate + pillar 3a) | none available: manual | manual snapshots | none available | TW-1 for anything but the container |
 | Yuh | YUH-1 summary (IBAN, customer number) | YUH-1 (PDF): no CSV export exists | YUH-1 opening and closing balance per currency | YUH-2 (or YUH-3 at year end) | - |
