@@ -57,7 +57,8 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li><b>ESTIMATED</b> - without an entry, a month's interest on the outstanding balance, {@code
  *       balance x interest_rate_percent / 100 / 12}, rounded to the currency's minor unit, at most
  *       the payment; the balance is the original principal less what the loan's ledger shows repaid
- *       up to the booking date (as {@link AccountValuationService} values it);
+ *       up to the booking date (as {@link AccountValuationService} values it), or the remaining
+ *       balance of the latest earlier schedule entry when that is lower ({@link #outstanding});
  *   <li><b>UNKNOWN</b> - without a rate either, nothing is guessed (PR-011): the whole payment is
  *       recorded as one principal pair that is not an internal transfer, so cash flow keeps it
  *       pending review until the member removes it and records it again with the split.
@@ -199,13 +200,16 @@ public class LoanRepaymentService {
     return toResponse(saved, rows);
   }
 
-  /** The loan's payments, newest booking first. */
+  /**
+   * The loan's payments still in effect, newest booking first. A removed payment - its rows
+   * soft-deleted or voided together - is left out; its record stays, holding its {@code
+   * externalId}.
+   */
   @Transactional(readOnly = true)
   public List<LoanRepaymentResponse> list(UUID loanAccountId, AuthenticatedUserPrincipal actor) {
     Account loan = accountLookupService.findAccountOrThrow(loanAccountId, actor);
     accessControlService.requireAccountAccess(actor, loan, AccessLevelValues.READ);
-    List<LoanPayment> payments =
-        loanPaymentRepository.findByLoanAccountIdOrderByBookingDateDescCreatedAtDesc(loan.getId());
+    List<LoanPayment> payments = loanPaymentRepository.findInEffectByLoanAccountId(loan.getId());
     if (payments.isEmpty()) {
       return List.of();
     }
@@ -246,8 +250,18 @@ public class LoanRepaymentService {
           entry.get().getInstalment(),
           entry.get().getId());
     }
-    Optional<BigDecimal> principal = originalPrincipal(loan);
-    Optional<BigDecimal> rate = interestRatePercent(loan);
+    // A mortgage requires its rate (AccountService); a loan's is optional.
+    Optional<AccountMortgage> mortgage = accountMortgageRepository.findById(loan.getId());
+    Optional<AccountLoan> plainLoan =
+        mortgage.isPresent() ? Optional.empty() : accountLoanRepository.findById(loan.getId());
+    Optional<BigDecimal> principal =
+        mortgage
+            .map(AccountMortgage::getOriginalPrincipal)
+            .or(() -> plainLoan.map(AccountLoan::getOriginalPrincipal));
+    Optional<BigDecimal> rate =
+        mortgage.isPresent()
+            ? Optional.ofNullable(mortgage.get().getInterestRatePercent())
+            : plainLoan.map(AccountLoan::getInterestRatePercent);
     if (principal.isEmpty() || rate.isEmpty()) {
       return unknown();
     }
@@ -261,7 +275,25 @@ public class LoanRepaymentService {
         transactionRepository
             .sumAmountByAccountIdAsOf(loan.getId(), request.bookingDate())
             .orElse(BigDecimal.ZERO);
-    return estimated(total, principal.get().subtract(repaid), rate.get(), request.currency());
+    return estimated(
+        total,
+        outstanding(
+            principal.get().subtract(repaid),
+            amortisationScheduleService
+                .latestEntryBefore(loan.getId(), request.bookingDate())
+                .map(AmortisationScheduleEntry::getRemainingBalance)),
+        rate.get(),
+        request.currency());
+  }
+
+  /**
+   * What is still owed, for an estimate: the lower of the ledger's figure - the original principal
+   * less the principal repaid on it - and the remaining balance of the latest schedule entry due
+   * before the payment's month. Both can only overstate the debt: the ledger misses repayments from
+   * before tracking began, the entry those made since its due date. So the lower one is the closer.
+   */
+  static BigDecimal outstanding(BigDecimal byLedger, Optional<BigDecimal> bySchedule) {
+    return bySchedule.map(byLedger::min).orElse(byLedger);
   }
 
   /** STATED: the interest a source gives; the rest is principal. Not an estimate. */
@@ -308,26 +340,6 @@ public class LoanRepaymentService {
   /** UNKNOWN: nothing to split by - neither part is set, and the payment is flagged. */
   static LoanPaymentSplit unknown() {
     return new LoanPaymentSplit(LoanRepaymentSplitValues.UNKNOWN, null, null, true, null);
-  }
-
-  private Optional<BigDecimal> originalPrincipal(Account loan) {
-    return accountMortgageRepository
-        .findById(loan.getId())
-        .map(AccountMortgage::getOriginalPrincipal)
-        .or(
-            () ->
-                accountLoanRepository
-                    .findById(loan.getId())
-                    .map(AccountLoan::getOriginalPrincipal));
-  }
-
-  // A mortgage requires its rate (AccountService); a loan's is optional.
-  private Optional<BigDecimal> interestRatePercent(Account loan) {
-    Optional<AccountMortgage> mortgage = accountMortgageRepository.findById(loan.getId());
-    if (mortgage.isPresent()) {
-      return Optional.ofNullable(mortgage.get().getInterestRatePercent());
-    }
-    return accountLoanRepository.findById(loan.getId()).map(AccountLoan::getInterestRatePercent);
   }
 
   // The account the money leaves: as a two-sided transfer's counterparty is checked
@@ -378,6 +390,16 @@ public class LoanRepaymentService {
     }
     Optional<LoanPayment> existing =
         loanPaymentRepository.findByLoanAccountIdAndExternalId(loan.getId(), request.externalId());
+    if (existing.isPresent() && !loanPaymentRepository.isInEffect(existing.get().getId())) {
+      // As POST /transactions: the key stays taken by the payment it recorded, now removed. A
+      // replay would answer as if it were recorded and write nothing.
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "externalId '"
+              + request.externalId()
+              + "' was used for a repayment that has since been removed; restore it (any of its"
+              + " transactions) or record the payment under a new externalId.");
+    }
     existing.ifPresent(
         payment -> {
           boolean samePayment =

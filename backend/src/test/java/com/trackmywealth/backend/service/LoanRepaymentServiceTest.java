@@ -215,6 +215,39 @@ class LoanRepaymentServiceTest {
   }
 
   @Test
+  void aLowerBalanceStatedByAnEarlierScheduleEntryIsTheEstimatesBasis() {
+    // Tracking began late: the ledger shows nothing repaid, but the lender's schedule said
+    // 240,000 were left after an earlier instalment - 240,000 x 2% / 12 = 400, not 833.33.
+    AccountMortgage mortgage = mock(AccountMortgage.class);
+    when(mortgage.getOriginalPrincipal()).thenReturn(amount("500000"));
+    when(mortgage.getInterestRatePercent()).thenReturn(amount("2"));
+    when(mortgageRepository.findById(loan.getId())).thenReturn(Optional.of(mortgage));
+    AmortisationScheduleEntry earlier = mock(AmortisationScheduleEntry.class);
+    when(earlier.getRemainingBalance()).thenReturn(amount("240000"));
+    when(scheduleService.latestEntryBefore(loan.getId(), BOOKED)).thenReturn(Optional.of(earlier));
+
+    LoanPaymentSplit split = service.split(loan, request("2000.00", null));
+
+    assertThat(split.splitSource()).isEqualTo(LoanRepaymentSplitValues.ESTIMATED);
+    assertThat(split.interest()).isEqualByComparingTo("400.00");
+    assertThat(split.scheduleEntryId()).as("an estimate names no entry").isNull();
+    // The mortgage's terms are read once, and a mortgage is never also looked up as a loan.
+    verify(mortgageRepository).findById(loan.getId());
+    verify(loanRepository, never()).findById(any());
+  }
+
+  @Test
+  void theEstimateTakesTheLowerOfTheLedgersAndTheSchedulesOutstandingBalance() {
+    // Both overstate the debt (repayments before tracking / since the entry), so the lower wins.
+    assertThat(LoanRepaymentService.outstanding(amount("480000"), Optional.of(amount("490000"))))
+        .isEqualByComparingTo("480000");
+    assertThat(LoanRepaymentService.outstanding(amount("480000"), Optional.of(amount("240000"))))
+        .isEqualByComparingTo("240000");
+    assertThat(LoanRepaymentService.outstanding(amount("480000"), Optional.empty()))
+        .isEqualByComparingTo("480000");
+  }
+
+  @Test
   void aLoanWithoutARateAndWithoutAnEntryHasAnUnknownSplit() {
     AccountLoan accountLoan = mock(AccountLoan.class);
     when(accountLoan.getOriginalPrincipal()).thenReturn(amount("20000"));

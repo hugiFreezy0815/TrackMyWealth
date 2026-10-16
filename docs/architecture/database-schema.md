@@ -87,6 +87,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V84` | Shipped category `LOAN_INTEREST` for the interest part of a loan payment (US-10-02, #328) |
 | `V85` | Reference-data baseline `1.3.0-baseline` (current; `1.2.0-baseline` stays as history): the `LOAN_INTEREST` default category of V84 (US-10-02, #328) |
 | `V86` | `flyway_schema_history` read-only for `trackmywealth_runtime`, when that role exists (US-28-05, #331) |
+| `V87` | `loan_payment` append-only (US-10-02, #328): `trg_loan_payment_append_only` refuses every `UPDATE` and `DELETE` except V83's own `ON DELETE SET NULL` of `amortisation_schedule_entry_id`; a removed payment keeps its record and its `external_id` (`TRUNCATE` is not guarded) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16

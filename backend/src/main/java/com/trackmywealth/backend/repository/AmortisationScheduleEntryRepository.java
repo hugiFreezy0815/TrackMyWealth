@@ -19,4 +19,8 @@ public interface AmortisationScheduleEntryRepository
   /** US-10-02: the entries due in [{@code from}, {@code to}], earliest first. */
   List<AmortisationScheduleEntry> findByAccountIdAndDueDateBetweenOrderByDueDateAsc(
       UUID accountId, LocalDate from, LocalDate to);
+
+  /** US-10-02: the latest entry due before {@code date}. */
+  Optional<AmortisationScheduleEntry> findFirstByAccountIdAndDueDateBeforeOrderByDueDateDesc(
+      UUID accountId, LocalDate date);
 }

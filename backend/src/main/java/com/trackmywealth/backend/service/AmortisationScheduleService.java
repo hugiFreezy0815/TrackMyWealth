@@ -138,6 +138,16 @@ public class AmortisationScheduleService {
                     Math.abs(ChronoUnit.DAYS.between(bookingDate, entry.getDueDate()))));
   }
 
+  /**
+   * US-10-02: the latest entry due before the month of {@code bookingDate} - the lender's last
+   * stated balance when no entry of that month splits the payment ({@link #entryForPayment}).
+   * Checks no access, as {@link #entryForPayment}.
+   */
+  Optional<AmortisationScheduleEntry> latestEntryBefore(UUID accountId, LocalDate bookingDate) {
+    return entryRepository.findFirstByAccountIdAndDueDateBeforeOrderByDueDateDesc(
+        accountId, YearMonth.from(bookingDate).atDay(1));
+  }
+
   private Account requireLoan(
       UUID accountId, String accessLevel, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);

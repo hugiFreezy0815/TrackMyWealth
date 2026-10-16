@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
@@ -93,7 +94,8 @@ class LoanRepaymentControllerTest {
         Statement statement = connection.createStatement()) {
       for (String sql :
           List.of(
-              "DELETE FROM loan_payment",
+              // V87 refuses to delete a loan payment, as V68 a transaction.
+              LedgerCleanup.withGuardsOff("DELETE FROM loan_payment"),
               "DELETE FROM amortisation_schedule_entry",
               "DELETE FROM savings_rate_methodology",
               "DELETE FROM settlement_match",
@@ -417,6 +419,136 @@ class LoanRepaymentControllerTest {
               assertThat(listed.id()).isEqualTo(first.id());
               assertThat(listed.transactions()).hasSize(3);
             });
+  }
+
+  @Test
+  void aRemovedPaymentLeavesTheListAndKeepsItsKeyUntilItIsRestored() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
+    CreateLoanRepaymentRequest request = payment(current.id(), "2000.00", "800.00", "pay-07");
+    LoanRepaymentResponse payment = repay(token, mortgage.id(), request);
+    TransactionResponse interest = row(payment, current.id(), EXPENSE);
+    client(token)
+        .delete()
+        .uri(rowUri(current.id(), interest.id()))
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", interest.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    // Gone from the list, and its key is not replayed as if the payment were still recorded.
+    assertThat(repayments(token, mortgage.id())).isEmpty();
+    postRepayment(token, mortgage.id(), request).expectStatus().isEqualTo(HttpStatus.CONFLICT);
+    assertThat(list(token, current.id())).as("nothing recorded by the refused retry").isEmpty();
+
+    TransactionResponse inflow = row(payment, mortgage.id(), DEBT_REPAYMENT);
+    client(token)
+        .post()
+        .uri(rowUri(mortgage.id(), inflow.id()) + "/restore")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", inflow.id()))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    assertThat(repayments(token, mortgage.id()))
+        .singleElement()
+        .satisfies(listed -> assertThat(listed.transactions()).hasSize(3));
+    assertThat(repay(token, mortgage.id(), request).id()).isEqualTo(payment.id());
+  }
+
+  @Test
+  void deletingTheScheduleEntryAPaymentWasSplitByKeepsTheSplitAsRecorded() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
+    scheduleEntry(token, mortgage.id(), today(), "800.00", "1200.00", "498800.00");
+    LoanRepaymentResponse payment =
+        repay(token, mortgage.id(), payment(current.id(), "2000.00", null, null));
+    UUID entryId = payment.amortisationScheduleEntryId();
+    assertThat(entryId).isNotNull();
+
+    // V83's ON DELETE SET NULL, the one change V87 lets through.
+    client(token)
+        .delete()
+        .uri("/api/v1/accounts/" + mortgage.id() + "/amortisation-schedule/" + entryId)
+        .headers(CurrentVersion.ifMatch(dataSource, "amortisation_schedule_entry", entryId))
+        .exchange()
+        .expectStatus()
+        .isNoContent();
+
+    assertThat(repayments(token, mortgage.id()))
+        .singleElement()
+        .satisfies(
+            listed -> {
+              assertThat(listed.splitSource()).isEqualTo(LoanRepaymentSplitValues.SCHEDULE);
+              assertThat(listed.interestAmount()).isEqualByComparingTo("800.00");
+              assertThat(listed.amortisationScheduleEntryId()).isNull();
+            });
+  }
+
+  @Test
+  void aLoanPaymentsRecordCannotBeChangedOrDeletedInTheDatabase() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
+    UUID paymentId =
+        repay(token, mortgage.id(), payment(current.id(), "2000.00", "800.00", null)).id();
+
+    for (String sql :
+        List.of(
+            "UPDATE loan_payment SET interest_amount = 0, principal_amount = 2000 WHERE id = ?",
+            "UPDATE loan_payment SET external_id = 'other' WHERE id = ?",
+            "DELETE FROM loan_payment WHERE id = ?")) {
+      assertThatThrownBy(() -> execute(sql, paymentId))
+          .as(sql)
+          .hasMessageContaining("loan_payment_append_only");
+    }
+    assertThat(repayments(token, mortgage.id()))
+        .singleElement()
+        .satisfies(listed -> assertThat(listed.interestAmount()).isEqualByComparingTo("800.00"));
+  }
+
+  @Test
+  void anotherWorkspacesLoanOrPayingAccountIsTheGenericNotFoundAndEachDenialIsAudited()
+      throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse current = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse mortgage = createMortgage(token, "500000.00", "2.0");
+    UUID foreign = accountInAnotherWorkspace();
+
+    postRepayment(token, foreign, payment(current.id(), "2000.00", "800.00", null))
+        .expectStatus()
+        .isNotFound();
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + foreign + "/repayments")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + foreign + "/amortisation-schedule")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + foreign + "/amortisation-schedule")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new AmortisationScheduleEntryRequest(
+                today(), new BigDecimal("800.00"), new BigDecimal("1200.00"), BigDecimal.ONE))
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    // Paid from another workspace's account onto the member's own mortgage.
+    postRepayment(token, mortgage.id(), payment(foreign, "2000.00", "800.00", null))
+        .expectStatus()
+        .isNotFound();
+
+    assertThat(deniedRequestsFor(foreign)).isEqualTo(5);
+    assertThat(repayments(token, mortgage.id())).isEmpty();
   }
 
   // --- refusals
@@ -915,6 +1047,35 @@ class LoanRepaymentControllerTest {
       try (ResultSet resultSet = statement.executeQuery()) {
         resultSet.next();
         return (UUID) resultSet.getObject(1);
+      }
+    }
+  }
+
+  // Workspace B, set up directly: this instance's API only ever bootstraps one workspace. V19's
+  // trigger gives it the personal-assets institution its account needs.
+  private UUID accountInAnotherWorkspace() throws Exception {
+    UUID workspace = UUID.randomUUID();
+    UUID account = UUID.randomUUID();
+    execute("INSERT INTO workspace (id, name) VALUES (?, 'Workspace B')", workspace);
+    execute(
+        "INSERT INTO account (id, workspace_id, financial_institution_id, account_type, name,"
+            + " native_currency) SELECT ?, ?, id, 'CASH', 'B checking', 'CHF'"
+            + " FROM financial_institution WHERE workspace_id = ?",
+        account,
+        workspace,
+        workspace);
+    return account;
+  }
+
+  private long deniedRequestsFor(UUID entityId) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT count(*) FROM authorization_denial_log WHERE requested_entity_id = ?")) {
+      statement.setObject(1, entityId);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        resultSet.next();
+        return resultSet.getLong(1);
       }
     }
   }

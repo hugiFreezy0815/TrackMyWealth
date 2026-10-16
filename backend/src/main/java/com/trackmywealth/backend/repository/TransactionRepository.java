@@ -34,18 +34,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   String PER_DATE_CURRENCY =
       " group by t.bookingDate, t.currency order by t.bookingDate, t.currency";
 
-  // US-07-02: neither a voided original nor its reversing row - the pair nets to zero in a
-  // balance, but must not count as spending or pair with a settlement.
   // The start of every signed per-date-and-currency sum over the caller's accounts (cash flow).
   String SIGNED_SUM_ON_ACCOUNTS =
       "select t.bookingDate, t.currency, sum(t.amount) from Transaction t"
           + " where t.account.id in :accountIds";
+
+  // US-07-02: neither a voided original nor its reversing row - the pair nets to zero in a
+  // balance, but must not count as spending or pair with a settlement.
   String NOT_VOIDED_OR_REVERSAL = " and t.voidedAt is null and t.replacesTransactionId is null";
 
   // US-10-02: not a loan payment's interest - an EXPENSE naming its loan that is not an internal
   // transfer (TransactionService#isLoanInterest). It is the cost of a loan, never a card payment,
-  // so
-  // settlement matching must not take it (and, confirming it, re-point it at the card).
+  // so settlement matching must not take it (and, confirming it, re-point it at the card).
   String NOT_LOAN_INTEREST =
       " and not (t.transactionType = 'EXPENSE' and t.counterpartyAccountId is not null"
           + " and t.internalTransfer = false)";

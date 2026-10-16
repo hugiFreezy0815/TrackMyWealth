@@ -460,6 +460,20 @@ payment groups rather than exposing partial transaction data, and the loan's own
 no description or notes from the paying account - only the amount, date and the paying account's
 id, which cash flow and removal need.
 
+**Estimated interest.** Without a stated split or a schedule entry for the payment's month, the
+interest is a month's interest on what is still owed: `outstanding × interest_rate_percent / 100 /
+12`, rounded half up to the currency's minor unit and capped at the payment. What is still owed is
+the lower of two figures that can each only overstate it: the original principal less the
+principal repaid on the loan's ledger (missing repayments from before tracking began), and the
+`remaining_balance` of the latest schedule entry due before the payment's month (missing the
+repayments since). While an earlier payment's split is unknown, the ledger figure is untrusted and
+the split stays unknown too.
+
+**Removed payments.** Removing any row of a payment removes all of them; `GET .../repayments` then
+leaves the payment out. Its `loan_payment` record stays (V87) and keeps its `externalId`: a retry
+with that key is a 409, as for a removed transaction - restore the payment, or record it again
+under a new key.
+
 A payment's interest row is an `EXPENSE` naming the loan as counterparty and is never an internal
 transfer; that shape is what identifies it. A card payment confirmed as a settlement also names an
 account (the card) but is always an internal transfer, so it stays an ordinary, correctable
