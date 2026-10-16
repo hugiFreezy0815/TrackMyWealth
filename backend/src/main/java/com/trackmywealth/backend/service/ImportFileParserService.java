@@ -1267,14 +1267,15 @@ public class ImportFileParserService {
     if (mcc != null && !MCC.matcher(mcc).matches()) {
       throw rowError(ImportRowErrorValues.MCC_INVALID, ARG_COLUMN, mapping.mcc(), ARG_VALUE, mcc);
     }
-    BigDecimal originalAmount = originalAmountOf(record, template, columns);
     String originalCurrency = originalCurrencyOf(record, template, columns);
+    BigDecimal originalAmount =
+        disclosedOriginalAmount(
+            originalAmountOf(record, template, columns), originalCurrency, amount);
     BigDecimal issuerRate = exchangeRateOf(record, template, columns);
+    // The original and the booked amount are zero together or not at all: no rate links a zero to
+    // anything else.
     if ((originalAmount == null) != (originalCurrency == null)
-        || (originalAmount != null && originalAmount.signum() == 0 && amount.signum() != 0)
-        || (originalAmount != null
-            && originalAmount.signum() != 0
-            && originalAmount.signum() != amount.signum())) {
+        || (originalAmount != null && (originalAmount.signum() == 0) != (amount.signum() == 0))) {
       // Both columns are mapped (validateColumnMapping), so neither argument is null.
       throw rowError(
           ImportRowErrorValues.ORIGINAL_AMOUNT_INCONSISTENT,
@@ -1307,6 +1308,21 @@ public class ImportFileParserService {
     return value == null
         ? null
         : parseAmount(value, template.columnMapping().originalAmount(), template, false);
+  }
+
+  /**
+   * US-07-24: the original amount a row discloses, from what its column states. A zero amount with
+   * no original currency discloses none: a card statement prints 0,00 there for a purchase in the
+   * card's own currency. Otherwise the column gives the magnitude and the booked amount the sign,
+   * whichever way the bank prints it, as the ledger records a foreign card purchase. A zero amount
+   * with a currency is returned as stated, for the consistency check that follows.
+   */
+  private static BigDecimal disclosedOriginalAmount(
+      BigDecimal stated, String originalCurrency, BigDecimal amount) {
+    if (stated == null || stated.signum() == 0 && originalCurrency == null) {
+      return null;
+    }
+    return amount.signum() < 0 ? stated.abs().negate() : stated.abs();
   }
 
   private static String originalCurrencyOf(

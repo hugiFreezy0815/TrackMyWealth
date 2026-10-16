@@ -40,8 +40,8 @@ public final class ImportRowErrorValues {
 
   /**
    * {@code column, currencyColumn}: the original amount and currency (US-07-18) do not go together:
-   * only one of the two cells is filled, the original amount is zero while the amount is not, or
-   * the two amounts have opposite signs.
+   * only one of the two cells is filled, or only one of the two amounts is zero. The original
+   * amount takes the amount's sign (US-07-24), so its own sign is never an inconsistency.
    */
   public static final String ORIGINAL_AMOUNT_INCONSISTENT =
       "IMPORT_ROW_ORIGINAL_AMOUNT_INCONSISTENT";

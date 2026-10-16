@@ -674,7 +674,7 @@ class ImportFileParserServiceTest {
                         + "2031-05-01,-10.00,Missing currency,-8.00,\n"
                         + "2031-05-02,-10.00,Missing amount,,EUR\n"
                         + "2031-05-03,-10.00,Zero original,0.00,EUR\n"
-                        + "2031-05-04,-10.00,Wrong sign,8.00,EUR\n"
+                        + "2031-05-04,0.00,Zero booked,8.00,EUR\n"
                         + "2031-05-05,-10.00,Valid original,-8.00,EUR\n"),
                 template,
                 new ImportAccountContext("CHF", true, false))
@@ -686,6 +686,59 @@ class ImportFileParserServiceTest {
     assertThat(rows.get(0).errorArgs())
         .containsExactly(entry("column", "original"), entry("currencyColumn", "originalCurrency"));
     assertThat(rows.get(4).isParsed()).isTrue();
+  }
+
+  // US-07-24: a card statement prints 0,00 and no currency for a purchase in its own currency.
+  @Test
+  void aZeroOriginalAmountWithoutCurrencyDisclosesNoOriginalAmount() {
+    List<ParsedImportRow> rows =
+        parser
+            .parseForAccount(
+                utf8(
+                    "date,amount,text,original,originalCurrency\n"
+                        + "2031-05-01,-23.75,In euros,0.00,\n"),
+                originalAmountTemplate(),
+                new ImportAccountContext("EUR", true, false))
+            .rows();
+
+    assertThat(rows.get(0).isParsed()).isTrue();
+    assertThat(rows.get(0).canonical().originalAmount()).isNull();
+    assertThat(rows.get(0).canonical().originalCurrency()).isNull();
+  }
+
+  // US-07-24: every template reads the original amount's magnitude with the booked amount's sign.
+  @Test
+  void theOriginalAmountTakesTheBookedAmountsSign() {
+    List<ParsedImportRow> rows =
+        parser
+            .parseForAccount(
+                utf8(
+                    "date,amount,text,original,originalCurrency\n"
+                        + "2031-05-01,-1.49,Printed unsigned,37.00,CZK\n"
+                        + "2031-05-02,1.49,Refund printed negative,-37.00,CZK\n"
+                        + "2031-05-03,-1.49,Signed alike,-37.00,CZK\n"
+                        + "2031-05-04,1.49,Refund printed unsigned,37.00,CZK\n"),
+                originalAmountTemplate(),
+                new ImportAccountContext("EUR", true, false))
+            .rows();
+
+    assertThat(rows).allMatch(ParsedImportRow::isParsed);
+    assertThat(rows)
+        .extracting(row -> row.canonical().originalAmount().toPlainString())
+        .containsExactly("-37.00", "37.00", "-37.00", "37.00");
+  }
+
+  private static ImportTemplateDefinition originalAmountTemplate() {
+    return new Template()
+        .mapping(
+            new MappingBuilder()
+                .bookingDate("date")
+                .amount("amount")
+                .description("text")
+                .originalAmount("original")
+                .originalCurrency("originalCurrency")
+                .build())
+        .build();
   }
 
   @Test
