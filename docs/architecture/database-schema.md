@@ -93,6 +93,8 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 | `V91` | Version 2 of the shipped Sparkasse credit card template (US-07-24, #327): `Originalbetrag`/`Originalwährung` mapped as the original amount and currency (the parser takes the original amount's sign from the booked amount, and reads `0,00` with no currency as none); `Umrechnungskurs` stays unmapped; version 1 stays, no longer current |
 | `V92` | Reference-data baseline `1.5.0-baseline` (current; `1.4.0-baseline` stays as history): the template version of V91 (US-07-24, #327) |
+| `V93` | Shipped template for the Sparkasse credit-card statement PDF (US-07-25, #339): the second date of a booking line is the booking date, the sign after the amount puts it in `Soll` or `Haben` (`SEPARATE_DEBIT_CREDIT`), the previous and new balance are read for reconciliation (the dateless new balance takes the period's end), and the masked card number on the title line identifies the card (`PREAMBLE_LINE` on a PDF) |
+| `V94` | Reference-data baseline `1.6.0-baseline` (current; `1.5.0-baseline` stays as history): the template of V93 (US-07-25, #339) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a
@@ -1265,9 +1267,11 @@ placeholder key: IBANs are few enough that a public key would let anyone recompu
 Changing the key invalidates every registered identifier, which must then be registered again; a
 lost key is the same. Tests use a random key per test context.
 
-**Templates.** `account_identification_strategy` is `USER_SELECTED`, `PREAMBLE_LINE` (CSV only: the
-first line before the header row that starts with the rule's `label`, its identifier the rest of the
-line or the single capture group of an optional RE2 `pattern`) or `COLUMN` (a mapped column of every
+**Templates.** `account_identification_strategy` is `USER_SELECTED`, `PREAMBLE_LINE` (the first line
+before a CSV file's header row, or the first text line of a PDF (#339; every line is searched,
+bookings and footer included, so the label must be one only the identifying line starts with), that
+starts with the rule's `label`, its identifier the rest of the line or the single capture group of
+an optional RE2 `pattern`) or `COLUMN` (a mapped column of every
 row; every filled cell must hold the same identifier). `FILENAME` stays unsupported: a file name is
 renamed too easily. The rule (`account_identifier_rule`, JSONB object: `kind`, `label`, `pattern`,
 `column`; `chk_import_template_account_identifier_rule` requires a known `kind`) is part of the
@@ -1323,6 +1327,13 @@ many balances the rule read (`statementBalanceCount`) and how many matched lines
 (`statementBalanceUnreadableCount`). A statement with sections in several currencies (a
 multi-currency PDF) needs the `currency` group: without it, every balance line is taken to be in the
 account's currency, and the last one of the whole file would close the account's balance.
+Two optional parts (#339), for a statement such as the Sparkasse card's: a named group `sign` (`+`
+or `-` printed after the amount, which signs it; anything else, or an amount that is signed
+itself, makes the line unreadable), and `statementDatePattern` (RE2, the one named group `date`)
+with an optional `statementDateFormat`: its first match in the file with a readable date dates every
+balance line without a date of its own (a dateless `Neuer Saldo`, dated by the period's end). With it, the pattern's `date` group may be
+left out, or out of some of its alternatives; a dateless line without a statement date is
+unreadable.
 
 **Batches.** Every parse records what the file states. Only balances in the account's own currency
 count (a card's `billing_currency`; a balance without a currency group is taken to be in it). The

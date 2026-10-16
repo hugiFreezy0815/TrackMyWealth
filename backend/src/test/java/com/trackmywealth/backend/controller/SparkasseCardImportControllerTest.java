@@ -3,19 +3,28 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRowResponse;
+import com.trackmywealth.backend.dto.OpeningBalanceRequest;
+import com.trackmywealth.backend.dto.ReconciliationStatusResponse;
+import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
+import com.trackmywealth.backend.service.ShippedTemplateFixtures;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.nio.charset.Charset;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -46,8 +55,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * US-07-24 against a real PostgreSQL: the shipped Sparkasse credit card template, version 2 (V91),
  * records a foreign purchase in its original amount and currency with the billed EUR amount - the
  * ledger derives the rate - while a purchase in euros (0,00 and no original currency) and a
- * settlement import as before. The statement is the template's synthetic fixture; every value is
- * invented.
+ * settlement import as before. US-07-25: the statement PDF (V93) names the card on its title line,
+ * records its bookings and reconciles the ledger against its new balance. The statements are the
+ * templates' synthetic fixtures; every value is invented.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -56,6 +66,9 @@ class SparkasseCardImportControllerTest {
   private static final String PASSWORD = "correct-horse-battery-staple";
   private static final UUID SPARKASSE_CARD =
       UUID.fromString("4fccd74c-48e2-4e96-aab3-37478b3e05be");
+  private static final Charset CP1252 = Charset.forName("windows-1252");
+  private static final UUID SPARKASSE_CARD_PDF =
+      UUID.fromString("8f7e1b44-deb6-4e30-81d8-9a96d63d417c");
 
   @Container
   static PostgreSQLContainer<?> postgres =
@@ -138,6 +151,83 @@ class SparkasseCardImportControllerTest {
     assertThat(rows.get(1).fxRateToAccountCurrency()).isNull();
   }
 
+  // US-07-25 (#339): the masked card number on the statement's title line matches the card; the
+  // bookings are purchases and the payment a settlement; the new balance, dated by the period's
+  // end, is the snapshot the ledger is reconciled against - and with the previous balance as the
+  // card's opening balance, they agree.
+  @Test
+  void theStatementPdfMatchesTheCardRecordsItsBookingsAndReconcilesItsNewBalance()
+      throws Exception {
+    registerCard("1234 56** **** 7890");
+    // The previous statement's balance, owed on the card, as its opening balance.
+    openingBalance(LocalDate.of(2019, 1, 31), "1204.37");
+
+    ImportBatchResponse batch =
+        upload(
+            ShippedTemplateFixtures.sparkasseCardStatement2019(),
+            "abrechnung.pdf",
+            "application/pdf",
+            SPARKASSE_CARD_PDF);
+
+    assertThat(batch.counts().errors()).isZero();
+    assertThat(batch.accountIdentification().outcome())
+        .isEqualTo(ImportBatchValues.IDENTIFIED_MATCHED_MASKED);
+    assertThat(batch.statementBalance().date()).isEqualTo(LocalDate.of(2019, 2, 28));
+    // The statement prints what is owed as "-"; a liability's balance is the amount owed.
+    assertThat(batch.statementBalance().balance()).isEqualByComparingTo("180.01");
+    assertThat(batch.statementBalance().openingDate()).isEqualTo(LocalDate.of(2019, 2, 1));
+    assertThat(batch.statementBalance().openingBalance()).isEqualByComparingTo("1204.37");
+    // Masked digits can be shared by several cards, so the member confirms the match (US-07-10).
+    assertThat(batch.accountIdentification().confirmationRequired()).isTrue();
+    commit(confirmAccount(batch));
+
+    assertThat(
+            list().stream().sorted(Comparator.comparing(TransactionResponse::bookingDate)).toList())
+        .extracting(TransactionResponse::transactionType, row -> row.amount().toPlainString())
+        .containsExactly(
+            tuple("CREDIT_CARD_PURCHASE", "-23.6100"),
+            tuple("CREDIT_CARD_PURCHASE", "-147.9300"),
+            tuple("SETTLEMENT", "1204.3700"),
+            tuple("CREDIT_CARD_PURCHASE", "-8.4700"));
+    // Opening balance + bookings = the statement's new balance: reconciled, no open difference.
+    ReconciliationStatusResponse reconciliation = summary().reconciliation();
+    assertThat(reconciliation.status()).isEqualTo(ReconciliationStatusValues.RECONCILED);
+    assertThat(reconciliation.asOf()).isEqualTo(LocalDate.of(2019, 2, 28));
+    assertThat(reconciliation.openDifference()).isNull();
+  }
+
+  // US-07-25 (#339): the CSV export and the statement PDF hold the same bookings where their
+  // periods overlap. Both book on the Buchungsdatum, so the duplicate rule (date, amount,
+  // currency; US-07-17) pairs them, whatever the description: only the CSV's new booking is new.
+  @Test
+  void theCsvExportAfterTheStatementPdfAddsOnlyItsNewBookings() throws Exception {
+    registerCard("1234 56** **** 7890");
+    commit(
+        confirmAccount(
+            upload(
+                ShippedTemplateFixtures.sparkasseCardStatement2019(),
+                "abrechnung.pdf",
+                "application/pdf",
+                SPARKASSE_CARD_PDF)));
+
+    ImportBatchResponse csv =
+        upload(
+            cardCsv(
+                csvRow("03.02.19", "05.02.19", "-23,61", "Beispiel Laden", "11"),
+                csvRow("09.02.19", "10.02.19", "-147,93", "Online-Shop Muster", "12"),
+                csvRow("17.02.19", "17.02.19", "1.204,37", "Lastschrift", "13"),
+                csvRow("20.02.19", "21.02.19", "-8,47", "Caf\u00e9 Beispiel", "14"),
+                csvRow("24.02.19", "26.02.19", "-5,39", "Muster Kiosk", "15")));
+
+    assertThat(csv.counts().errors()).isZero();
+    assertThat(csv.counts().duplicates()).isEqualTo(4);
+    assertThat(csv.counts().newRows()).isEqualTo(1);
+    commit(confirmAccount(csv));
+    assertThat(list())
+        .extracting(row -> row.amount().toPlainString())
+        .containsExactlyInAnyOrder("-23.6100", "-147.9300", "1204.3700", "-8.4700", "-5.3900");
+  }
+
   // #341: the foreign purchase already in the ledger in euros - as template version 1 booked it, or
   // a member by hand - is a duplicate of the statement's row booked in its original currency.
   @Test
@@ -189,6 +279,91 @@ class SparkasseCardImportControllerTest {
 
   // --- helpers ---------------------------------------------------------------------------------
 
+  private void registerCard(String maskedNumber) throws Exception {
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + card + "/identifier")
+        .header(HttpHeaders.IF_MATCH, "\"" + accountVersion() + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new AccountIdentifierRequest(maskedNumber))
+        .exchange()
+        .expectStatus()
+        .isOk();
+  }
+
+  private void openingBalance(LocalDate date, String balance) {
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + card + "/opening-balance")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new OpeningBalanceRequest(date, new BigDecimal(balance), "EUR", null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+  }
+
+  private AccountSummaryResponse summary() {
+    return client()
+        .get()
+        .uri("/api/v1/accounts/" + card)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private long accountVersion() throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("SELECT version FROM account WHERE id = ?")) {
+      statement.setObject(1, card);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        resultSet.next();
+        return resultSet.getLong(1);
+      }
+    }
+  }
+
+  // A CSV export of the card (the header of sparkasse-card-synthetic.csv) with these rows.
+  private static byte[] cardCsv(String... rows) throws IOException {
+    String header;
+    try (InputStream in =
+        SparkasseCardImportControllerTest.class.getResourceAsStream(
+            "/import/sparkasse-card-synthetic.csv")) {
+      header = new String(in.readAllBytes(), CP1252).lines().findFirst().orElseThrow();
+    }
+    return (header + "\n" + String.join("\n", rows) + "\n").getBytes(CP1252);
+  }
+
+  // A purchase or payment in euros on the card 1234 56** **** 7890.
+  private static String csvRow(
+      String purchased, String booked, String amount, String text, String reference) {
+    return String.join(
+        ";",
+        List.of(
+                "1234 56** **** 7890",
+                purchased,
+                booked,
+                "0,00",
+                "",
+                "0,00",
+                amount,
+                "EUR",
+                text,
+                "",
+                reference,
+                "",
+                "",
+                "",
+                "",
+                "")
+            .stream()
+            .map(cell -> "\"" + cell + "\"")
+            .toList());
+  }
+
   private static byte[] fixture(String name) throws IOException {
     try (InputStream in =
         SparkasseCardImportControllerTest.class.getResourceAsStream("/import/" + name)) {
@@ -197,12 +372,17 @@ class SparkasseCardImportControllerTest {
   }
 
   private ImportBatchResponse upload(byte[] content) {
+    return upload(content, "karte.csv", "text/csv", SPARKASSE_CARD);
+  }
+
+  private ImportBatchResponse upload(
+      byte[] content, String name, String mediaType, UUID templateId) {
     HttpHeaders fileHeaders = new HttpHeaders();
-    fileHeaders.setContentType(MediaType.parseMediaType("text/csv"));
-    fileHeaders.setContentDispositionFormData("file", "karte.csv");
+    fileHeaders.setContentType(MediaType.parseMediaType(mediaType));
+    fileHeaders.setContentDispositionFormData("file", name);
     MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
     body.add("file", new HttpEntity<>(new ByteArrayResource(content), fileHeaders));
-    body.add("templateId", SPARKASSE_CARD.toString());
+    body.add("templateId", templateId.toString());
     return client()
         .post()
         .uri("/api/v1/accounts/" + card + "/imports")

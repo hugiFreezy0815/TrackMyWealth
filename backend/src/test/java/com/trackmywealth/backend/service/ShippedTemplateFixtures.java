@@ -12,9 +12,10 @@ import java.util.List;
 
 /**
  * US-07-15 (#275): synthetic PDF statements in the layouts of the shipped PDF templates (V77-V79,
- * docs/architecture/import-source-analysis.md 6.8), named by each template's fixture_reference.
- * They reproduce the structure of the real statements - markers, header labels, balance lines,
- * columns, page furniture - with invented values only. A real statement is never used.
+ * V93, docs/architecture/import-source-analysis.md 6.8), named by each template's
+ * fixture_reference. They reproduce the structure of the real statements - markers, header labels,
+ * balance lines, columns, page furniture - with invented values only. A real statement is never
+ * used.
  */
 public final class ShippedTemplateFixtures {
 
@@ -27,6 +28,9 @@ public final class ShippedTemplateFixtures {
   private static final float LBS_PANEL = 450;
   private static final float LOAN_DEBIT_END = 400;
   private static final float LOAN_CREDIT_END = 500;
+  // Where a card statement's amount ends, and where the sign after it stands.
+  private static final float CARD_AMOUNT_END = 490;
+  private static final float CARD_SIGN = 495;
 
   private ShippedTemplateFixtures() {}
 
@@ -157,6 +161,74 @@ public final class ShippedTemplateFixtures {
 
   private static List<Cell> loanBooking(String date, String text, String amount, float end) {
     return List.of(at(40, date), at(100, text), endingAt(end, amount));
+  }
+
+  /**
+   * US-07-25 (#339): a Sparkasse credit-card statement (Mastercard) for February 2031: the period
+   * and masked card number on the title line, purchase and booking date on each booking line, the
+   * sign after the amount ("-" a purchase, "+" the payment received), the previous balance on a
+   * dated line and the new balance on one without a date. The bookings add up: -1.204,37 - 23,61 -
+   * 147,93 + 1.204,37 - 8,47 = -180,01.
+   */
+  public static byte[] sparkasseCardStatement() throws IOException {
+    return sparkasseCardStatement("2031");
+  }
+
+  /**
+   * The same statement for February 2019, outside every real sample's years and in the past, so its
+   * new balance is recorded as a snapshot and reconciled (a future one is out of range).
+   */
+  public static byte[] sparkasseCardStatement2019() throws IOException {
+    return sparkasseCardStatement("2019");
+  }
+
+  private static byte[] sparkasseCardStatement(String year) throws IOException {
+    String yy = "." + year.substring(2);
+    List<List<Cell>> page = new ArrayList<>();
+    page.add(List.of(at(40, "Sparkasse Musterstadt")));
+    page.add(
+        List.of(
+            at(40, "Ihre Abrechnung vom 01.02." + year + " bis 28.02." + year),
+            at(300, "Mastercard-Nummer: 1234 56XX XXXX 7890")));
+    page.add(List.of(at(40, "Karteninhaber: Erika Beispiel")));
+    page.add(
+        List.of(
+            at(40, "Datum"),
+            at(85, "Datum"),
+            at(130, "Verwendungszweck"),
+            at(440, "Betrag"),
+            at(500, "EUR")));
+    page.add(List.of(at(40, "Beleg"), at(85, "Buchung")));
+    page.add(
+        List.of(
+            at(40, "01.02" + yy),
+            at(130, "Saldo letzte Abrechnung"),
+            endingAt(CARD_AMOUNT_END, "1.204,37"),
+            at(CARD_SIGN, "-")));
+    page.add(cardBooking("03.02" + yy, "05.02" + yy, "Beispiel Laden, Musterstadt", "23,61", "-"));
+    page.add(
+        cardBooking(
+            "09.02" + yy, "10.02" + yy, "Online-Shop Muster, Beispielstadt", "147,93", "-"));
+    page.add(cardBooking("17.02" + yy, "17.02" + yy, "Lastschrift", "1.204,37", "+"));
+    page.add(
+        cardBooking("20.02" + yy, "21.02" + yy, "Caf\u00e9 Beispiel, Musterhausen", "8,47", "-"));
+    page.add(
+        List.of(at(130, "Neuer Saldo"), endingAt(CARD_AMOUNT_END, "180,01"), at(CARD_SIGN, "-")));
+    page.add(
+        List.of(
+            atFoot(40, "Der Rechnungsbetrag wird Ihrem Konto belastet."),
+            at(480, "Seite 1 von 1")));
+    return SyntheticStatements.statement(List.of(page));
+  }
+
+  private static List<Cell> cardBooking(
+      String purchased, String booked, String text, String amount, String sign) {
+    return List.of(
+        at(40, purchased),
+        at(85, booked),
+        at(130, text),
+        endingAt(CARD_AMOUNT_END, amount),
+        at(CARD_SIGN, sign));
   }
 
   /**

@@ -169,8 +169,9 @@ public class ImportFileParserService {
     List<List<String>> data;
     // #268: a PDF's booking lines, cut into the layout's named columns; null for a CSV file.
     List<ImportPdfBookingLine> bookingLines = null;
-    // US-07-10: a CSV file's lines before its header row, cells joined by a space.
-    List<String> preamble = List.of();
+    // US-07-10: the lines a PREAMBLE_LINE rule searches: a CSV file's lines before its header row,
+    // cells joined by a space; every text line of a PDF (#339).
+    List<String> preamble;
     // US-07-12: the lines a statement balance is searched in: a CSV file's preamble and trailing
     // summary rows, every text line of a PDF.
     List<String> balanceLines;
@@ -179,6 +180,7 @@ public class ImportFileParserService {
       ImportPdfStatement statement = pdfReader.readStatement(content, template);
       bookingLines = statement.bookingLines();
       balanceLines = statement.lines();
+      preamble = statement.lines();
       if (bookingLines.size() > MAX_DATA_ROWS) {
         throw tooManyRows();
       }
@@ -745,11 +747,8 @@ public class ImportFileParserService {
       throw invalid(ACCOUNT_IDENTIFIER + ".kind", "The identifier is an IBAN or a MASKED_CARD.");
     }
     if (ImportTemplateValues.ACCOUNT_PREAMBLE_LINE.equals(strategy)) {
-      if (template.isPdf()) {
-        throw invalid(
-            "accountIdentificationStrategy", "Only a CSV file has preamble lines to read.");
-      }
-      if (template.preambleRowCount() == 0 && template.headerRowIndex() <= 0) {
+      // #339: a PDF's rule searches every text line of the statement, e.g. its title line.
+      if (!template.isPdf() && template.preambleRowCount() == 0 && template.headerRowIndex() <= 0) {
         throw invalid(
             "accountIdentificationStrategy",
             "The template has no lines before its header row to find the identifier in.");

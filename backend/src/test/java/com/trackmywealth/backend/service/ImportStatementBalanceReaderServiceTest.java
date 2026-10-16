@@ -171,6 +171,155 @@ class ImportStatementBalanceReaderServiceTest {
             });
   }
 
+  // #339: a Sparkasse-card-like statement - the sign printed after the amount, and a closing line
+  // without a date of its own, dated by the end of the statement's period.
+  private static final ImportStatementBalanceRule CARD_RULE =
+      new ImportStatementBalanceRule(
+          "^(?:(?P<date>[0-9]{2}[.][0-9]{2}[.][0-9]{2}) Saldo letzte Abrechnung|Neuer Saldo)"
+              + " (?P<amount>[0-9.]*[0-9],[0-9]{2}) (?P<sign>[+-])$",
+          null,
+          "Abrechnung vom [0-9.]+ bis (?P<date>[0-9]{2}[.][0-9]{2}[.][0-9]{4})",
+          "dd.MM.yyyy");
+
+  // An amount that may carry its own sign, and an optional sign after it.
+  private static final ImportStatementBalanceRule SIGN_RULE =
+      new ImportStatementBalanceRule(
+          "^Saldo (?P<date>\\S+) (?P<amount>[0-9.,-]+)(?: (?P<sign>\\S))?$", null);
+
+  @Test
+  void aSignAfterTheAmountSignsItAndALineWithoutADateTakesTheStatementDate() {
+    ImportStatementBalances read =
+        reader.read(
+            List.of(
+                "Ihre Abrechnung vom 01.02.2031 bis 28.02.2031 Mastercard-Nummer: 1234 56XX XXXX"
+                    + " 7890",
+                "01.02.31 Saldo letzte Abrechnung 1.204,37 -",
+                "03.02.31 05.02.31 Beispiel Laden, Musterstadt 23,61 -",
+                "17.02.31 17.02.31 Lastschrift 1.204,37 +",
+                "Neuer Saldo 23,61 -",
+                "Saldo zum Vergleich 5,00 +"),
+            card(CARD_RULE));
+
+    assertThat(read.balances())
+        .containsExactly(
+            new ImportStatementBalances.Stated(
+                LocalDate.of(2031, 2, 1), new BigDecimal("-1204.37"), null),
+            new ImportStatementBalances.Stated(
+                LocalDate.of(2031, 2, 28), new BigDecimal("-23.61"), null));
+    assertThat(read.unreadable()).isZero();
+  }
+
+  @Test
+  void aPlusSignOrNoneLeavesTheAmountAsItIsAndAnyOtherSignIsUnreadable() {
+    ImportStatementBalances read =
+        reader.read(
+            List.of("Saldo 01.02.31 12,50 +", "Saldo 02.02.31 -7,25", "Saldo 03.02.31 9,00 x"),
+            card(SIGN_RULE));
+
+    assertThat(read.balances())
+        .extracting(ImportStatementBalances.Stated::amount)
+        .containsExactly(new BigDecimal("12.50"), new BigDecimal("-7.25"));
+    assertThat(read.unreadable()).isEqualTo(1);
+  }
+
+  // A sign after an amount that is signed itself could contradict it: neither is guessed.
+  @Test
+  void anAmountSignedTwiceIsUnreadable() {
+    ImportStatementBalances read =
+        reader.read(
+            List.of("Saldo 01.02.31 -7,25 +", "Saldo 02.02.31 -7,25 -", "Saldo 03.02.31 7,25 -"),
+            card(SIGN_RULE));
+
+    assertThat(read.balances())
+        .extracting(ImportStatementBalances.Stated::amount)
+        .containsExactly(new BigDecimal("-7.25"));
+    assertThat(read.unreadable()).isEqualTo(2);
+  }
+
+  // The first statement date that can be read counts; an unreadable one before it is skipped.
+  @Test
+  void aStatementDateThatCannotBeReadIsPassedOverForTheNextOne() {
+    ImportStatementBalances read =
+        reader.read(
+            List.of(
+                "Ihre Abrechnung vom 01.02.2031 bis 99.99.2031",
+                "Ihre Abrechnung vom 01.03.2031 bis 31.03.2031",
+                "Neuer Saldo 23,61 -"),
+            card(CARD_RULE));
+
+    assertThat(read.balances())
+        .containsExactly(
+            new ImportStatementBalances.Stated(
+                LocalDate.of(2031, 3, 31), new BigDecimal("-23.61"), null));
+    assertThat(read.unreadable()).isZero();
+  }
+
+  @Test
+  void aLineWithoutADateIsUnreadableWhenNoStatementDateIsFound() {
+    ImportStatementBalances read =
+        reader.read(
+            List.of("Neuer Saldo 23,61 -", "Abrechnung vom x bis 31.02.2031"), card(CARD_RULE));
+
+    assertThat(read.balances()).isEmpty();
+    assertThat(read.unreadable()).isEqualTo(1);
+  }
+
+  @Test
+  void aRuleWithAStatementDateNeedsNoDateGroupAndPassesItsCheck() {
+    assertThatCode(
+            () ->
+                reader.validate(
+                    card(
+                        new ImportStatementBalanceRule(
+                            "^Neuer Saldo (?P<amount>\\S+) (?P<sign>[+-])$",
+                            null,
+                            "bis (?P<date>\\S+)",
+                            null))))
+        .doesNotThrowAnyException();
+    assertThatCode(() -> reader.validate(card(CARD_RULE))).doesNotThrowAnyException();
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      nullValues = "NULL",
+      value = {
+        "(?P<amount>x)|NULL|NULL|statementBalance.pattern", // no date at all
+        "(?P<amount>x)|bis (\\S+)|NULL|statementBalance.statementDatePattern", // no date group
+        "(?P<amount>x)|(?P<date>x)(?P<amount>y)|NULL|statementBalance.statementDatePattern",
+        "(?P<amount>x)|bis (?P<date>[x)|NULL|statementBalance.statementDatePattern", // not RE2
+        "(?P<amount>x)|'  '|NULL|statementBalance.statementDatePattern",
+        "(?P<amount>x)|bis (?P<date>\\S+)|dd.MM.qq|statementBalance.statementDateFormat",
+        "(?P<date>x)(?P<amount>y)|NULL|dd.MM.yyyy|statementBalance.statementDateFormat",
+        "(?P<date>x)(?P<amount>y)(?P<signs>z)|NULL|NULL|statementBalance.pattern" // a typo
+      })
+  void anInvalidStatementDateOrSignIsA422NamingItsField(
+      String pattern, String statementDatePattern, String statementDateFormat, String field) {
+    ImportTemplateDefinition template =
+        card(
+            new ImportStatementBalanceRule(
+                pattern, null, statementDatePattern, statementDateFormat));
+
+    assertThatThrownBy(() -> reader.validate(template))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getBody().getProperties()).containsEntry("field", field);
+            });
+  }
+
+  // A template in German notation with two-digit years, whose rule is rule.
+  private static ImportTemplateDefinition card(ImportStatementBalanceRule rule) {
+    return new ImportFileParserServiceTest.Template()
+        .preamble(1)
+        .decimal(",")
+        .thousands(".")
+        .dateFormat("dd.MM.yy")
+        .statementBalance(rule)
+        .build();
+  }
+
   @Test
   void aPatternLongerThanAnyLayoutPatternIsRefused() {
     ImportTemplateDefinition template =
