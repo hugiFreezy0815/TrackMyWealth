@@ -237,16 +237,15 @@ class ShippedImportTemplatesIntegrationTest {
 
     assertThat(result.rows())
         .extracting(ImportPreviewRowResponse::status)
-        .containsExactly("PARSED", "PARSED", "PARSED", "PARSED", "ERROR");
+        .containsExactly("PARSED", "PARSED", "PARSED", "PARSED", "PARSED");
     assertBooking(result.rows().get(0), LocalDate.of(2031, 1, 29), "-123.45", "EUR", "EXPENSE");
     assertBooking(result.rows().get(1), LocalDate.of(2031, 1, 29), "456.78", "EUR", "INCOME");
     assertBooking(result.rows().get(2), LocalDate.of(2031, 2, 28), "-118.63", "EUR", "EXPENSE");
     assertThat(result.rows().get(2).canonical().description()).isEqualTo("Darlehenszins");
     assertThat(result.rows().get(2).canonical().valueDate()).isEqualTo(LocalDate.of(2031, 3, 1));
     assertBooking(result.rows().get(3), LocalDate.of(2031, 2, 28), "-2.50", "EUR", "EXPENSE");
-    // A date the text layer split is a visible row error, never a silently missing booking.
-    assertThat(result.rows().get(4).error().code())
-        .isEqualTo(ImportRowErrorValues.DATE_UNPARSEABLE);
+    // #322: the blanks the statement draws over the date's first digit do not split it.
+    assertBooking(result.rows().get(4), LocalDate.of(2031, 3, 31), "456.78", "EUR", "INCOME");
     assertThat(result.statementBalanceCount()).isEqualTo(2);
   }
 

@@ -25,6 +25,9 @@ public final class SyntheticStatements {
           "DATUM", "INFORMATION", "REFERENZ", "BELASTUNG", "GUTSCHRIFT", "VALUTA-DATUM", "SALDO");
 
   private static final float FONT_SIZE = 8;
+  // The real stray blanks are 0.9 of the text's size, their baseline a quarter of it lower.
+  private static final float STRAY_BLANK_SIZE = 7;
+  private static final float STRAY_BLANK_RISE = -1.5f;
   private static final float TOP = 780;
   // Where a page's footer starts, as a bank prints it: at the same place on every page.
   private static final float FOOT = 60;
@@ -37,23 +40,34 @@ public final class SyntheticStatements {
 
   /**
    * A piece of text on a line: from x on, or ending at x when right-aligned. A line whose first
-   * cell is {@code atFoot} is part of the page's footer.
+   * cell is {@code atFoot} is part of the page's footer. {@code rise} moves it off the line's
+   * baseline (negative: lower), {@code size} is its font size.
    */
-  public record Cell(String text, float x, boolean rightAligned, boolean atFoot) {}
+  public record Cell(
+      String text, float x, boolean rightAligned, boolean atFoot, float rise, float size) {}
 
   public static Cell at(float x, String text) {
-    return new Cell(text, x, false, false);
+    return new Cell(text, x, false, false, 0, FONT_SIZE);
   }
 
   public static Cell endingAt(float x, String text) {
-    return new Cell(text, x, true, false);
+    return new Cell(text, x, true, false, 0, FONT_SIZE);
   }
 
   /**
    * A footer line's text from x on: printed at the foot of the page, wherever the text above ends.
    */
   public static Cell atFoot(float x, String text) {
-    return new Cell(text, x, false, true);
+    return new Cell(text, x, false, true, 0, FONT_SIZE);
+  }
+
+  /**
+   * #322: an invisible space a statement draws over its own text, from x on, in smaller type a
+   * little below the line's baseline - as a Sparkasse statement draws two at the same place on
+   * every page, over whatever is printed there.
+   */
+  public static Cell strayBlank(float x) {
+    return new Cell(" ", x, false, false, STRAY_BLANK_RISE, STRAY_BLANK_SIZE);
   }
 
   /**
@@ -74,8 +88,8 @@ public final class SyntheticStatements {
             for (Cell cell : line) {
               float x = cell.rightAligned() ? cell.x() - width(cell.text()) : cell.x();
               stream.beginText();
-              stream.setFont(FONT, FONT_SIZE);
-              stream.newLineAtOffset(x, foot ? footY : y);
+              stream.setFont(FONT, cell.size());
+              stream.newLineAtOffset(x, (foot ? footY : y) + cell.rise());
               stream.showText(cell.text());
               stream.endText();
             }

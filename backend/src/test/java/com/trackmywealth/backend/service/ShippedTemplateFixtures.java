@@ -3,6 +3,7 @@ package com.trackmywealth.backend.service;
 import static com.trackmywealth.backend.service.SyntheticStatements.at;
 import static com.trackmywealth.backend.service.SyntheticStatements.atFoot;
 import static com.trackmywealth.backend.service.SyntheticStatements.endingAt;
+import static com.trackmywealth.backend.service.SyntheticStatements.strayBlank;
 
 import com.trackmywealth.backend.service.SyntheticStatements.Cell;
 import java.io.IOException;
@@ -102,10 +103,13 @@ public final class ShippedTemplateFixtures {
     page.add(
         loanBooking("28.02.2031", "Darlehenszins / Wert: 01.03.2031", "-118,63", LOAN_DEBIT_END));
     page.add(loanBooking("28.02.2031", "Kontoauszugspreis", "-2,50", LOAN_DEBIT_END));
+    // #322: two invisible spaces over the date's first digit, which the text layer once read as
+    // "3 1.03.2031".
     page.add(
         List.of(
-            at(40, "3"),
-            at(52, "1.03.2031"),
+            at(40, "31.03.2031"),
+            strayBlank(39.6f),
+            strayBlank(41.55f),
             at(100, "Darlehensleistung"),
             endingAt(LOAN_CREDIT_END, "456,78")));
     page.add(List.of(at(45, "Kontostand am 31.12.2031"), endingAt(LOAN_DEBIT_END, "-49.331,02")));
