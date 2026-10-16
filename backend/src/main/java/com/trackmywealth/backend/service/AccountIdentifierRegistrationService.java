@@ -67,7 +67,15 @@ public class AccountIdentifierRegistrationService {
       AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
     versions.requireCurrent(expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
-    String kind = AccountIdentifierService.kindOf(account);
+    String kind =
+        request.kind() == null
+            ? AccountIdentifierService.kindOf(account)
+            : request.kind();
+    if (!kind.equals(AccountIdentifierService.kindOf(account))
+        && !(ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)
+            && !account.isHasStatementCycle())) {
+      throw invalid(kind);
+    }
     String normalized =
         AccountIdentifierService.normalize(request.identifier(), kind)
             .orElseThrow(() -> invalid(kind));
@@ -91,10 +99,14 @@ public class AccountIdentifierRegistrationService {
       AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
     versions.requireCurrent(expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
-    String kind = AccountIdentifierService.kindOf(account);
     ImportFileAccountIdentifier named =
         proposals.identifierOf(request.importAccountId(), request.batchId(), actor);
-    if (named == null || !named.found() || !kind.equals(named.kind())) {
+    String kind = named == null ? AccountIdentifierService.kindOf(account) : named.kind();
+    if (named == null
+        || !named.found()
+        || (!kind.equals(AccountIdentifierService.kindOf(account))
+            && !(ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)
+                && !account.isHasStatementCycle()))) {
       ApiException exception =
           new ApiException(
               HttpStatus.UNPROCESSABLE_CONTENT,
@@ -102,7 +114,9 @@ public class AccountIdentifierRegistrationService {
               "The import file names no "
                   + (ImportTemplateValues.IDENTIFIER_MASKED_CARD.equals(kind)
                       ? "card number"
-                      : "IBAN")
+                      : ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)
+                          ? "contract number"
+                          : "IBAN")
                   + " this account could be registered with.");
       exception.getBody().setProperty("field", "batchId");
       throw exception;
@@ -115,8 +129,9 @@ public class AccountIdentifierRegistrationService {
     UUID workspaceId = account.getWorkspace().getId();
     String hash = identifiers.hash(workspaceId, normalized, kind);
     // Checked here for a clear answer; the unique index decides a race (GlobalExceptionHandler).
-    accounts
-        .findByWorkspaceIdAndIdentifierHash(workspaceId, hash)
+    (ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)
+            ? accounts.findByWorkspaceIdAndContractIdentifierHash(workspaceId, hash)
+            : accounts.findByWorkspaceIdAndIdentifierHash(workspaceId, hash))
         .filter(other -> !other.getId().equals(account.getId()))
         .ifPresent(
             other -> {
@@ -125,8 +140,13 @@ public class AccountIdentifierRegistrationService {
                   ApiErrorCode.ACCOUNT_IDENTIFIER_IN_USE,
                   "Another account of this workspace is already registered with this identifier.");
             });
-    account.setIdentifierHash(hash);
-    account.setIdentifierMasked(AccountIdentifierService.masked(normalized, kind));
+    if (ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)) {
+      account.setContractIdentifierHash(hash);
+      account.setContractIdentifierMasked(AccountIdentifierService.masked(normalized, kind));
+    } else {
+      account.setIdentifierHash(hash);
+      account.setIdentifierMasked(AccountIdentifierService.masked(normalized, kind));
+    }
     return response(accounts.saveAndFlush(account));
   }
 
@@ -138,6 +158,8 @@ public class AccountIdentifierRegistrationService {
     versions.requireCurrent(expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     account.setIdentifierHash(null);
     account.setIdentifierMasked(null);
+    account.setContractIdentifierHash(null);
+    account.setContractIdentifierMasked(null);
     return response(accounts.saveAndFlush(account));
   }
 
@@ -152,14 +174,17 @@ public class AccountIdentifierRegistrationService {
         account.getId(),
         AccountIdentifierService.kindOf(account),
         account.getIdentifierMasked(),
-        VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE));
+        VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE),
+        account.getContractIdentifierMasked());
   }
 
   private static ApiException invalid(String kind) {
     String detail =
         ImportTemplateValues.IDENTIFIER_MASKED_CARD.equals(kind)
             ? "Enter the card number masked except for at most its first 6 and last 4 digits."
-            : "This is not a valid IBAN; check it for typing errors.";
+            : ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)
+                ? "Enter a ten-digit contract number, with optional spaces or hyphens."
+                : "This is not a valid IBAN; check it for typing errors.";
     ApiException exception =
         new ApiException(
             HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.ACCOUNT_IDENTIFIER_INVALID, detail);
