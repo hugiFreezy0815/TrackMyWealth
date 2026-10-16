@@ -1075,20 +1075,26 @@ public class ImportFileParserService {
   private static String preambleIdentifier(
       ImportAccountIdentifierRule rule, List<String> preamble) {
     String label = rule.label().strip().toLowerCase(Locale.ROOT);
-    Optional<String> line =
-        preamble.stream()
-            .map(String::strip)
-            .filter(text -> text.toLowerCase(Locale.ROOT).startsWith(label))
-            .findFirst();
-    if (line.isEmpty()) {
-      return null;
+    // PDFs may repeat a heading without the number before the account-detail line.
+    // Find the first *valid identifier*, rather than stopping at the first matching label.
+    com.google.re2j.Pattern pattern =
+        rule.pattern() == null ? null : Re2Patterns.compile(rule.pattern());
+    for (String original : preamble) {
+      String line = original.strip();
+      if (!line.toLowerCase(Locale.ROOT).startsWith(label)) {
+        continue;
+      }
+      String rest = LABEL_SEPARATOR.matcher(line.substring(label.length())).replaceFirst("");
+      if (pattern != null) {
+        com.google.re2j.Matcher matcher = pattern.matcher(rest);
+        rest = matcher.find() && matcher.group(1) != null ? matcher.group(1) : "";
+      }
+      Optional<String> identifier = AccountIdentifierService.normalize(rest, rule.kind());
+      if (identifier.isPresent()) {
+        return identifier.get();
+      }
     }
-    String rest = LABEL_SEPARATOR.matcher(line.get().substring(label.length())).replaceFirst("");
-    if (rule.pattern() != null) {
-      com.google.re2j.Matcher matcher = Re2Patterns.compile(rule.pattern()).matcher(rest);
-      rest = matcher.find() && matcher.group(1) != null ? matcher.group(1) : "";
-    }
-    return AccountIdentifierService.normalize(rest, rule.kind()).orElse(null);
+    return null;
   }
 
   // Every filled cell of the column must name the same identifier; any other is none at all.
