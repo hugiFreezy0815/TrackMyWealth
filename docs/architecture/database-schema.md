@@ -91,6 +91,8 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V88` | Version 2 of the shipped Sparkasse CSV-CAMT and loan statement templates (US-07-21, #324): the current account's loan instalment (`EINZUG RATE/ANNUITAET`) is a `TRANSFER`, loan interest (`DARLEHENSZINSEN`) an `EXPENSE`, the loan statement's fee (`Kontoauszugspreis`) a `FEE`; version 1 stays, no longer current |
 | `V89` | Reference-data baseline `1.4.0-baseline` (current; `1.3.0-baseline` stays as history): the template versions of V88 (US-07-21, #324) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
+| `V91` | Version 2 of the shipped Sparkasse credit card template (US-07-24, #327): `Originalbetrag`/`Originalwährung` mapped as the original amount and currency (the parser takes the original amount's sign from the booked amount, and reads `0,00` with no currency as none); `Umrechnungskurs` stays unmapped; version 1 stays, no longer current |
+| `V92` | Reference-data baseline `1.5.0-baseline` (current; `1.4.0-baseline` stays as history): the template version of V91 (US-07-24, #327) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a

@@ -1298,7 +1298,8 @@ class ImportTemplateControllerTest {
         layout,
         r.descriptionTypePatterns(),
         r.rowFilter(),
-        r.accountIdentifier());
+        r.accountIdentifier(),
+        r.statementBalance());
   }
 
   // A one-page PDF with these text lines (invented values only).
@@ -1485,7 +1486,8 @@ class ImportTemplateControllerTest {
         r.pdfLayout(),
         r.descriptionTypePatterns(),
         r.rowFilter(),
-        r.accountIdentifier());
+        r.accountIdentifier(),
+        r.statementBalance());
   }
 
   private static ImportTemplateRequest withRowFilter(
@@ -1513,7 +1515,8 @@ class ImportTemplateControllerTest {
         r.pdfLayout(),
         r.descriptionTypePatterns(),
         filter,
-        r.accountIdentifier());
+        r.accountIdentifier(),
+        r.statementBalance());
   }
 
   private ImportTemplateTestResponse dryRun(UUID templateId, byte[] content) {
@@ -1550,7 +1553,8 @@ class ImportTemplateControllerTest {
         r.pdfLayout(),
         r.descriptionTypePatterns(),
         r.rowFilter(),
-        rule);
+        rule,
+        r.statementBalance());
   }
 
   private static ImportTemplateRequest withName(ImportTemplateRequest r, String name) {
@@ -1577,7 +1581,8 @@ class ImportTemplateControllerTest {
         r.pdfLayout(),
         r.descriptionTypePatterns(),
         r.rowFilter(),
-        r.accountIdentifier());
+        r.accountIdentifier(),
+        r.statementBalance());
   }
 
   private static ImportTemplateRequest withInstitution(ImportTemplateRequest r, UUID institution) {
@@ -1604,7 +1609,8 @@ class ImportTemplateControllerTest {
         r.pdfLayout(),
         r.descriptionTypePatterns(),
         r.rowFilter(),
-        r.accountIdentifier());
+        r.accountIdentifier(),
+        r.statementBalance());
   }
 
   private static ImportTemplateRequest withClassAndStrategy(
@@ -1632,7 +1638,8 @@ class ImportTemplateControllerTest {
         r.pdfLayout(),
         r.descriptionTypePatterns(),
         r.rowFilter(),
-        r.accountIdentifier());
+        r.accountIdentifier(),
+        r.statementBalance());
   }
 
   private static ImportTemplateRequest withRowCounts(
@@ -1660,7 +1667,8 @@ class ImportTemplateControllerTest {
         r.pdfLayout(),
         r.descriptionTypePatterns(),
         r.rowFilter(),
-        r.accountIdentifier());
+        r.accountIdentifier(),
+        r.statementBalance());
   }
 
   // --- HTTP helpers ------------------------------------------------------------------------------
