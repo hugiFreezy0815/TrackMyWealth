@@ -286,7 +286,7 @@ class LoanStatementImportControllerTest {
         client()
             .post()
             .uri("/api/v1/accounts/" + loan + "/imports/" + batch.id() + "/confirm-account")
-            .header(HttpHeaders.IF_MATCH, "\\"" + batch.version() + "\\"")
+            .header(HttpHeaders.IF_MATCH, "\"" + batch.version() + "\"")
             .exchange()
             .expectStatus()
             .isOk()
