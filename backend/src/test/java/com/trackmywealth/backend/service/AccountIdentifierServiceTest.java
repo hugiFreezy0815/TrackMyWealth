@@ -25,6 +25,7 @@ class AccountIdentifierServiceTest {
 
   private static final String IBAN = "IBAN";
   private static final String CARD = "MASKED_CARD";
+  private static final String CONTRACT = "CONTRACT_NUMBER";
   private static final String KEY =
       Base64.getEncoder()
           .encodeToString(
@@ -115,6 +116,25 @@ class AccountIdentifierServiceTest {
         .isEqualTo("\u2022\u2022\u2022\u20223000");
     assertThat(AccountIdentifierService.masked("123456******7890", CARD))
         .isEqualTo("123456******7890");
+  }
+
+  @Test
+  void contractNumbersNormalizeAsTenDigitsAndAreHashedSeparately() {
+    assertThat(AccountIdentifierService.normalize("4 268 135 009", CONTRACT))
+        .contains("4268135009");
+    assertThat(AccountIdentifierService.normalize("4-268-135-009", CONTRACT))
+        .contains("4268135009");
+    assertThat(AccountIdentifierService.normalize("42 681 350 09", CONTRACT))
+        .contains("4268135009");
+    assertThat(AccountIdentifierService.normalize("4 268 135 00", CONTRACT)).isEmpty();
+    assertThat(AccountIdentifierService.normalize("4 268 135 0090", CONTRACT)).isEmpty();
+    assertThat(AccountIdentifierService.normalize("4 268 135 00x", CONTRACT)).isEmpty();
+    assertThat(AccountIdentifierService.masked("4268135009", CONTRACT))
+        .isEqualTo("\u2022\u2022\u2022\u20220009");
+    UUID workspace = UUID.randomUUID();
+    assertThat(service.hash(workspace, "4268135009", CONTRACT))
+        .isNotEqualTo(service.hash(workspace, "4268135009", IBAN))
+        .isNotEqualTo(service.hash(UUID.randomUUID(), "4268135009", CONTRACT));
   }
 
   @Test
