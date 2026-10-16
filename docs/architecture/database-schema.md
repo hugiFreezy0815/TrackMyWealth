@@ -1233,6 +1233,25 @@ shown as stored.
 
 ### Account identification (US-07-10)
 
+**PDF identification (#323, V95–V97).** Yuh and Sparkasse loan PDF templates identify an
+account by its normalized IBAN. LBS building-savings PDF templates identify it by a
+`CONTRACT_NUMBER` of ten digits, for example a synthetic `4 268 135 009` (spaces and
+hyphens ignored). The PDF `PREAMBLE_LINE` rule examines all text lines and takes the first
+valid matching identifier, skipping headings without one.
+
+An account may keep its original IBAN and *also* register a contract number by sending
+`{"identifier":"4 268 135 009","kind":"CONTRACT_NUMBER"}` to
+`PUT /api/v1/accounts/{id}/identifier` with `If-Match`. The old one-field request keeps
+registering the primary IBAN or masked card number. `account.contract_identifier_hash`
+is keyed HMAC-SHA256, unique within the workspace; `contract_identifier_masked` shows
+only the last four digits. Neither the normalized nor the plain number is persisted.
+`GET` returns the extra masked value, and `DELETE` clears both identifiers.
+Only an account's EDIT-authorized member may register or read it. Import matching continues
+to protect against cross-workspace account enumeration and requires explicit confirmation
+when a PDF identifies a different account or no account.
+
+
+
 An import file names its account (FR-IMP-021), so the member does not pick it by hand and cannot
 import a file into the wrong account by mistake.
 
