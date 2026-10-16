@@ -33,6 +33,7 @@ import java.security.NoSuchAlgorithmException;
 import java.text.ParsePosition;
 import java.time.DateTimeException;
 import java.time.LocalDate;
+import java.time.Month;
 import java.time.format.DateTimeFormatter;
 import java.time.format.ResolverStyle;
 import java.time.temporal.ChronoField;
@@ -92,7 +93,6 @@ public class ImportFileParserService {
   // construction is quadratic in the length: a megabyte-long cell would hold a thread for minutes.
   private static final int MAX_INTEGER_DIGITS = 16;
   // #334: the February days a 30/360 interest convention writes that the calendar does not have.
-  private static final int FEBRUARY = 2;
   private static final int FEBRUARY_29 = 29;
   private static final int THIRTY_DAY_MONTH_END = 30;
   private static final int MAX_FRACTION_DIGITS = 4;
@@ -1240,17 +1240,16 @@ public class ImportFileParserService {
             template.dateFormat(),
             dateFormatter);
     String valueDateCell = optionalCell(record, columns.get("valueDate"));
-    Optional<LocalDate> thirtyDayFebruary =
-        valueDateCell == null
-            ? Optional.empty()
-            : endOfThirtyDayFebruary(valueDateCell, dateFormatter);
-    LocalDate valueDate =
-        valueDateCell == null
-            ? null
-            : thirtyDayFebruary.orElseGet(
-                () ->
-                    parseDate(
-                        valueDateCell, mapping.valueDate(), template.dateFormat(), dateFormatter));
+    LocalDate valueDate = null;
+    boolean valueDateAdjusted = false;
+    if (valueDateCell != null) {
+      Optional<LocalDate> thirtyDayFebruary = endOfThirtyDayFebruary(valueDateCell, dateFormatter);
+      valueDateAdjusted = thirtyDayFebruary.isPresent();
+      valueDate =
+          valueDateAdjusted
+              ? thirtyDayFebruary.get()
+              : parseDate(valueDateCell, mapping.valueDate(), template.dateFormat(), dateFormatter);
+    }
     BigDecimal amount = amountOf(record, template, columns);
     String currency = currencyOf(record, template, columns, accountCurrency);
     String type =
@@ -1298,7 +1297,7 @@ public class ImportFileParserService {
         originalAmount,
         originalCurrency,
         issuerRate,
-        thirtyDayFebruary.isPresent());
+        valueDateAdjusted);
   }
 
   private static BigDecimal originalAmountOf(
@@ -1389,7 +1388,7 @@ public class ImportFileParserService {
         || position.getIndex() != value.length()
         || !fields.isSupported(ChronoField.MONTH_OF_YEAR)
         || !fields.isSupported(ChronoField.DAY_OF_MONTH)
-        || fields.getLong(ChronoField.MONTH_OF_YEAR) != FEBRUARY) {
+        || fields.getLong(ChronoField.MONTH_OF_YEAR) != Month.FEBRUARY.getValue()) {
       return Optional.empty();
     }
     long day = fields.getLong(ChronoField.DAY_OF_MONTH);
