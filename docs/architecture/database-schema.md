@@ -1262,9 +1262,10 @@ Changing the key invalidates every registered identifier, which must then be reg
 lost key is the same. Tests use a random key per test context.
 
 **Templates.** `account_identification_strategy` is `USER_SELECTED`, `PREAMBLE_LINE` (the first line
-before a CSV file's header row, or the first text line of a PDF (#339), that starts with the rule's
-`label`, its identifier the rest of the line or the single capture group of an optional RE2
-`pattern`) or `COLUMN` (a mapped column of every
+before a CSV file's header row, or the first text line of a PDF (#339; every line is searched,
+bookings and footer included, so the label must be one only the identifying line starts with), that
+starts with the rule's `label`, its identifier the rest of the line or the single capture group of
+an optional RE2 `pattern`) or `COLUMN` (a mapped column of every
 row; every filled cell must hold the same identifier). `FILENAME` stays unsupported: a file name is
 renamed too easily. The rule (`account_identifier_rule`, JSONB object: `kind`, `label`, `pattern`,
 `column`; `chk_import_template_account_identifier_rule` requires a known `kind`) is part of the
@@ -1321,10 +1322,10 @@ many balances the rule read (`statementBalanceCount`) and how many matched lines
 multi-currency PDF) needs the `currency` group: without it, every balance line is taken to be in the
 account's currency, and the last one of the whole file would close the account's balance.
 Two optional parts (#339), for a statement such as the Sparkasse card's: a named group `sign` (`+`
-or `-` printed after the amount, which signs its magnitude; anything else makes the line
-unreadable), and `statementDatePattern` (RE2, the one named group `date`) with an optional
-`statementDateFormat`: its first match in the file dates every balance line without a date of its
-own (a dateless `Neuer Saldo`, dated by the period's end). With it, the pattern's `date` group may be
+or `-` printed after the amount, which signs it; anything else, or an amount that is signed
+itself, makes the line unreadable), and `statementDatePattern` (RE2, the one named group `date`)
+with an optional `statementDateFormat`: its first match in the file with a readable date dates every
+balance line without a date of its own (a dateless `Neuer Saldo`, dated by the period's end). With it, the pattern's `date` group may be
 left out, or out of some of its alternatives; a dateless line without a statement date is
 unreadable.
 

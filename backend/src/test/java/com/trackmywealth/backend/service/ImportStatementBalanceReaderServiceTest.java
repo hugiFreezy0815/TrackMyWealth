@@ -181,6 +181,11 @@ class ImportStatementBalanceReaderServiceTest {
           "Abrechnung vom [0-9.]+ bis (?P<date>[0-9]{2}[.][0-9]{2}[.][0-9]{4})",
           "dd.MM.yyyy");
 
+  // An amount that may carry its own sign, and an optional sign after it.
+  private static final ImportStatementBalanceRule SIGN_RULE =
+      new ImportStatementBalanceRule(
+          "^Saldo (?P<date>\\S+) (?P<amount>[0-9.,-]+)(?: (?P<sign>\\S))?$", null);
+
   @Test
   void aSignAfterTheAmountSignsItAndALineWithoutADateTakesTheStatementDate() {
     ImportStatementBalances read =
@@ -205,21 +210,48 @@ class ImportStatementBalanceReaderServiceTest {
   }
 
   @Test
-  void aPlusSignOrNoneLeavesTheAmountPositiveAndAnyOtherSignIsUnreadable() {
-    ImportTemplateDefinition template =
-        card(
-            new ImportStatementBalanceRule(
-                "^Saldo (?P<date>\\S+) (?P<amount>[0-9.,-]+)(?: (?P<sign>\\S))?$", null));
-
+  void aPlusSignOrNoneLeavesTheAmountAsItIsAndAnyOtherSignIsUnreadable() {
     ImportStatementBalances read =
         reader.read(
             List.of("Saldo 01.02.31 12,50 +", "Saldo 02.02.31 -7,25", "Saldo 03.02.31 9,00 x"),
-            template);
+            card(SIGN_RULE));
 
     assertThat(read.balances())
         .extracting(ImportStatementBalances.Stated::amount)
         .containsExactly(new BigDecimal("12.50"), new BigDecimal("-7.25"));
     assertThat(read.unreadable()).isEqualTo(1);
+  }
+
+  // A sign after an amount that is signed itself could contradict it: neither is guessed.
+  @Test
+  void anAmountSignedTwiceIsUnreadable() {
+    ImportStatementBalances read =
+        reader.read(
+            List.of("Saldo 01.02.31 -7,25 +", "Saldo 02.02.31 -7,25 -", "Saldo 03.02.31 7,25 -"),
+            card(SIGN_RULE));
+
+    assertThat(read.balances())
+        .extracting(ImportStatementBalances.Stated::amount)
+        .containsExactly(new BigDecimal("-7.25"));
+    assertThat(read.unreadable()).isEqualTo(2);
+  }
+
+  // The first statement date that can be read counts; an unreadable one before it is skipped.
+  @Test
+  void aStatementDateThatCannotBeReadIsPassedOverForTheNextOne() {
+    ImportStatementBalances read =
+        reader.read(
+            List.of(
+                "Ihre Abrechnung vom 01.02.2031 bis 99.99.2031",
+                "Ihre Abrechnung vom 01.03.2031 bis 31.03.2031",
+                "Neuer Saldo 23,61 -"),
+            card(CARD_RULE));
+
+    assertThat(read.balances())
+        .containsExactly(
+            new ImportStatementBalances.Stated(
+                LocalDate.of(2031, 3, 31), new BigDecimal("-23.61"), null));
+    assertThat(read.unreadable()).isZero();
   }
 
   @Test

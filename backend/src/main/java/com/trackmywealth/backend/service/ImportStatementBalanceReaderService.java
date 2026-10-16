@@ -138,8 +138,8 @@ public class ImportStatementBalanceReaderService {
       return null;
     }
     Pattern pattern = Re2Patterns.compile(rule.pattern());
-    boolean hasCurrency =
-        pattern.namedGroups().containsKey(ImportStatementBalanceRule.CURRENCY_GROUP);
+    Set<String> groups = pattern.namedGroups().keySet();
+    boolean hasCurrency = groups.contains(ImportStatementBalanceRule.CURRENCY_GROUP);
     String dateFormat = rule.dateFormat() == null ? template.dateFormat() : rule.dateFormat();
     DateTimeFormatter formatter = ImportFileParserService.dateFormatter(dateFormat);
     boolean parentheses =
@@ -154,7 +154,7 @@ public class ImportStatementBalanceReaderService {
       }
       String currency = hasCurrency ? currencyOf(matcher) : null;
       ImportStatementBalances.Stated stated =
-          stated(matcher, pattern, formatter, statementDate, template, parentheses);
+          stated(matcher, groups, formatter, statementDate, template, parentheses);
       if (stated == null) {
         unreadableCurrencies.add(currency);
       } else {
@@ -172,8 +172,8 @@ public class ImportStatementBalanceReaderService {
     return currency != null && isCurrencyCode(currency) ? currency : null;
   }
 
-  // #339: the date statementDatePattern's first match in the file gives, or null when the rule
-  // has none, nothing matches, or the match's date is unreadable - a balance line without a date
+  // #339: the date of statementDatePattern's first match in the file whose date can be read, or
+  // null when the rule has none or no match has a readable date - a balance line without a date
   // of its own then is unreadable.
   private static LocalDate statementDate(
       List<String> lines, ImportStatementBalanceRule rule, String balanceDateFormat) {
@@ -181,14 +181,17 @@ public class ImportStatementBalanceReaderService {
       return null;
     }
     Pattern pattern = Re2Patterns.compile(rule.statementDatePattern());
+    DateTimeFormatter formatter =
+        ImportFileParserService.dateFormatter(
+            rule.statementDateFormat() == null ? balanceDateFormat : rule.statementDateFormat());
     for (String line : lines) {
       Matcher matcher = pattern.matcher(line.strip());
-      if (matcher.find()) {
-        String format =
-            rule.statementDateFormat() == null ? balanceDateFormat : rule.statementDateFormat();
-        return parseDate(
-            matcher.group(ImportStatementBalanceRule.DATE_GROUP),
-            ImportFileParserService.dateFormatter(format));
+      LocalDate date =
+          matcher.find()
+              ? parseDate(matcher.group(ImportStatementBalanceRule.DATE_GROUP), formatter)
+              : null;
+      if (date != null) {
+        return date;
       }
     }
     return null;
@@ -206,26 +209,28 @@ public class ImportStatementBalanceReaderService {
   }
 
   // The balance one matched line states, or null when its date, amount, sign or currency is
-  // unreadable. A line whose date group is absent or did not match takes the statement date.
+  // unreadable. A line whose date group is absent or did not match takes the statement date. A
+  // sign after an amount that is signed itself ("-7,25 +", "(7,25) -") is unreadable: the two
+  // could contradict each other, and neither is the safer guess.
   private static ImportStatementBalances.Stated stated(
       Matcher matcher,
-      Pattern pattern,
+      Set<String> groups,
       DateTimeFormatter formatter,
       LocalDate statementDate,
       ImportTemplateDefinition template,
       boolean parentheses) {
-    String date = optionalGroup(matcher, pattern, ImportStatementBalanceRule.DATE_GROUP);
+    String date = optionalGroup(matcher, groups, ImportStatementBalanceRule.DATE_GROUP);
     String amount = matcher.group(ImportStatementBalanceRule.AMOUNT_GROUP);
     LocalDate parsedDate = date == null ? statementDate : parseDate(date, formatter);
     if (parsedDate == null || amount == null) {
       return null;
     }
-    String group = optionalGroup(matcher, pattern, ImportStatementBalanceRule.CURRENCY_GROUP);
+    String group = optionalGroup(matcher, groups, ImportStatementBalanceRule.CURRENCY_GROUP);
     String currency = group == null ? null : group.strip().toUpperCase(Locale.ROOT);
     if (currency != null && !isCurrencyCode(currency)) {
       return null;
     }
-    String sign = optionalGroup(matcher, pattern, ImportStatementBalanceRule.SIGN_GROUP);
+    String sign = optionalGroup(matcher, groups, ImportStatementBalanceRule.SIGN_GROUP);
     if (sign != null && !MINUS.equals(sign.strip()) && !PLUS.equals(sign.strip())) {
       return null;
     }
@@ -233,8 +238,10 @@ public class ImportStatementBalanceReaderService {
       BigDecimal parsedAmount =
           ImportFileParserService.parseAmount(amount, FIELD, template, parentheses);
       if (sign != null) {
-        parsedAmount =
-            MINUS.equals(sign.strip()) ? parsedAmount.abs().negate() : parsedAmount.abs();
+        if (parsedAmount.signum() < 0) {
+          return null;
+        }
+        parsedAmount = MINUS.equals(sign.strip()) ? parsedAmount.negate() : parsedAmount;
       }
       return new ImportStatementBalances.Stated(parsedDate, parsedAmount, currency);
     } catch (ImportRowRejectedException e) {
@@ -243,8 +250,8 @@ public class ImportStatementBalanceReaderService {
   }
 
   // A named group's text, or null when the pattern has no such group or it did not take part.
-  private static String optionalGroup(Matcher matcher, Pattern pattern, String name) {
-    return pattern.namedGroups().containsKey(name) ? matcher.group(name) : null;
+  private static String optionalGroup(Matcher matcher, Set<String> groups, String name) {
+    return groups.contains(name) ? matcher.group(name) : null;
   }
 
   // An ISO 4217 code's shape: three letters A-Z.

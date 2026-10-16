@@ -19,6 +19,7 @@ import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.nio.charset.Charset;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -63,6 +64,7 @@ class SparkasseCardImportControllerTest {
   private static final String PASSWORD = "correct-horse-battery-staple";
   private static final UUID SPARKASSE_CARD =
       UUID.fromString("4fccd74c-48e2-4e96-aab3-37478b3e05be");
+  private static final Charset CP1252 = Charset.forName("windows-1252");
   private static final UUID SPARKASSE_CARD_PDF =
       UUID.fromString("8f7e1b44-deb6-4e30-81d8-9a96d63d417c");
 
@@ -192,6 +194,38 @@ class SparkasseCardImportControllerTest {
     assertThat(reconciliation.openDifference()).isNull();
   }
 
+  // US-07-25 (#339): the CSV export and the statement PDF hold the same bookings where their
+  // periods overlap. Both book on the Buchungsdatum, so the duplicate rule (date, amount,
+  // currency; US-07-17) pairs them, whatever the description: only the CSV's new booking is new.
+  @Test
+  void theCsvExportAfterTheStatementPdfAddsOnlyItsNewBookings() throws Exception {
+    registerCard("1234 56** **** 7890");
+    commit(
+        confirmAccount(
+            upload(
+                ShippedTemplateFixtures.sparkasseCardStatement2019(),
+                "abrechnung.pdf",
+                "application/pdf",
+                SPARKASSE_CARD_PDF)));
+
+    ImportBatchResponse csv =
+        upload(
+            cardCsv(
+                csvRow("03.02.19", "05.02.19", "-23,61", "Beispiel Laden", "11"),
+                csvRow("09.02.19", "10.02.19", "-147,93", "Online-Shop Muster", "12"),
+                csvRow("17.02.19", "17.02.19", "1.204,37", "Lastschrift", "13"),
+                csvRow("20.02.19", "21.02.19", "-8,47", "Caf\u00e9 Beispiel", "14"),
+                csvRow("24.02.19", "26.02.19", "-5,39", "Muster Kiosk", "15")));
+
+    assertThat(csv.counts().errors()).isZero();
+    assertThat(csv.counts().duplicates()).isEqualTo(4);
+    assertThat(csv.counts().newRows()).isEqualTo(1);
+    commit(confirmAccount(csv));
+    assertThat(list())
+        .extracting(row -> row.amount().toPlainString())
+        .containsExactlyInAnyOrder("-23.6100", "-147.9300", "1204.3700", "-8.4700", "-5.3900");
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
 
   private void registerCard(String maskedNumber) throws Exception {
@@ -239,6 +273,44 @@ class SparkasseCardImportControllerTest {
         return resultSet.getLong(1);
       }
     }
+  }
+
+  // A CSV export of the card (the header of sparkasse-card-synthetic.csv) with these rows.
+  private static byte[] cardCsv(String... rows) throws IOException {
+    String header;
+    try (InputStream in =
+        SparkasseCardImportControllerTest.class.getResourceAsStream(
+            "/import/sparkasse-card-synthetic.csv")) {
+      header = new String(in.readAllBytes(), CP1252).lines().findFirst().orElseThrow();
+    }
+    return (header + "\n" + String.join("\n", rows) + "\n").getBytes(CP1252);
+  }
+
+  // A purchase or payment in euros on the card 1234 56** **** 7890.
+  private static String csvRow(
+      String purchased, String booked, String amount, String text, String reference) {
+    return String.join(
+        ";",
+        List.of(
+                "1234 56** **** 7890",
+                purchased,
+                booked,
+                "0,00",
+                "",
+                "0,00",
+                amount,
+                "EUR",
+                text,
+                "",
+                reference,
+                "",
+                "",
+                "",
+                "",
+                "")
+            .stream()
+            .map(cell -> "\"" + cell + "\"")
+            .toList());
   }
 
   private static byte[] fixture(String name) throws IOException {

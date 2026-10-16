@@ -425,6 +425,14 @@ the reconstructed line and its continuation lines. Fixtures are synthetic PDFs g
 tests (PDFBox), reproducing the three layouts above with invented values; a real statement is never
 committed.
 
+SPK-8 (#339) has no continuation lines: on the three samples (2026-10-16, counts only) no line
+stands between two booking lines, and `Neuer Saldo` follows the last one directly. Its template
+(V93) therefore has no continuation column: a merchant text that wrapped onto a second line would
+keep only its first line as the description (the amount is unaffected). A continuation column
+without header labels would take every line below a booking, so on a statement longer than one
+page the next page's title and table header would be appended to that page's last booking; add one
+only together with a `continuationEndPattern` for those lines, once a sample shows a wrapped line.
+
 Synthetic structure of a YUH-1-like statement section (invented values, columns aligned as on
 the page):
 

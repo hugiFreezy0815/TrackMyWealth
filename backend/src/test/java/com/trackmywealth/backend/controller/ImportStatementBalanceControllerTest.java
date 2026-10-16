@@ -8,6 +8,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
+import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRollbackRequest;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
@@ -419,6 +420,66 @@ class ImportStatementBalanceControllerTest {
 
     assertThat(saved.statementBalance())
         .isEqualTo(new ImportStatementBalanceRule(BALANCE_PATTERN, "dd.MM.yyyy"));
+  }
+
+  // #339: the rule's optional sign group and statement date travel through the API whole - saved,
+  // answered and read back as sent.
+  @Test
+  void aRuleWithASignAndAStatementDateIsSavedAndReadBackWhole() {
+    ImportStatementBalanceRule rule =
+        new ImportStatementBalanceRule(
+            "^Neuer Saldo (?P<amount>[0-9.]*[0-9],[0-9]{2}) (?P<sign>[+-])$",
+            null, "Abrechnung vom \\S+ bis (?P<date>[0-9.]+)", "dd.MM.yyyy");
+
+    ImportTemplateResponse created =
+        client()
+            .post()
+            .uri("/api/v1/import-templates")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(templateRequest("Card-like", rule))
+            .exchange()
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportTemplateResponse.class)
+            .returnResult()
+            .getResponseBody();
+    ImportTemplateResponse read =
+        client()
+            .get()
+            .uri("/api/v1/import-templates/" + created.id())
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(ImportTemplateResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(created.statementBalance()).isEqualTo(rule);
+    assertThat(read.statementBalance()).isEqualTo(rule);
+  }
+
+  @Test
+  void aStatementDatePatternOverTheLimitIsA400NamingTheField() {
+    client()
+        .post()
+        .uri("/api/v1/import-templates")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            templateRequest(
+                "Too long",
+                new ImportStatementBalanceRule(
+                    BALANCE_PATTERN,
+                    null,
+                    "(?P<date>x)" + "x".repeat(ImportPdfLayout.MAX_PATTERN_LENGTH),
+                    null)))
+        .exchange()
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VALIDATION_FAILED")
+        .jsonPath("$.errors[0].field")
+        .isEqualTo("statementBalance.statementDatePattern");
   }
 
   // --- helpers ----------------------------------------------------------------------------------

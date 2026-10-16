@@ -18,12 +18,14 @@ import jakarta.validation.constraints.Size;
  *
  * <ul>
  *   <li>a named group {@value #SIGN_GROUP}, {@code +} or {@code -}, for a statement that prints the
- *       sign after the amount ({@code 1.234,56 -}): it signs the amount's magnitude;
+ *       sign after the amount ({@code 1.234,56 -}): it signs the amount, which must then be
+ *       unsigned itself ({@code -1.234,56 +} is unreadable);
  *   <li>{@code statementDatePattern}, an RE2 pattern with the one named group {@value #DATE_GROUP}:
- *       its first match in the file is the date of a balance line without a date of its own ({@code
- *       Neuer Saldo 1.234,56 -}), e.g. the end of the statement's period. That date is read with
- *       {@code statementDateFormat}, or as a balance line's date when it is {@code null}. With it,
- *       {@code pattern} may leave its date group out, or out of some of its lines.
+ *       its first match in the file with a readable date is the date of a balance line without a
+ *       date of its own ({@code Neuer Saldo 1.234,56 -}), e.g. the end of the statement's period.
+ *       That date is read with {@code statementDateFormat}, or as a balance line's date when it is
+ *       {@code null}. With it, {@code pattern} may leave its date group out, or out of some of its
+ *       lines.
  * </ul>
  */
 public record ImportStatementBalanceRule(
@@ -42,8 +44,8 @@ public record ImportStatementBalanceRule(
     @Schema(
             description =
                 "Optional RE2 pattern with the one named group date, e.g. Abrechnung vom \\S+ bis"
-                    + " (?P<date>\\S+): its first match in the file dates every balance line that"
-                    + " has no date of its own.")
+                    + " (?P<date>\\S+): its first match in the file with a readable date dates"
+                    + " every balance line that has no date of its own.")
         @Size(max = ImportPdfLayout.MAX_PATTERN_LENGTH)
         String statementDatePattern,
     @Schema(

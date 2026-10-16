@@ -11,7 +11,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
+import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
+import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfBookingLine;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportPdfStatement;
@@ -1243,6 +1246,81 @@ class PdfStatementLayoutTest {
   }
 
   // --- helpers -------------------------------------------------------------------------------
+
+  // #339: PREAMBLE_LINE on a PDF needs no preamble rows; it searches the statement's text lines,
+  // here the title line that also names the period.
+  @Test
+  void aPdfsPreambleLineRuleReadsTheMaskedCardFromTheTitleLine() throws IOException {
+    ImportTemplateDefinition template = cardTemplate("Ihre Abrechnung vom");
+    parser.validateTemplate(template, null);
+
+    ImportParseResult result =
+        parser.parse(ShippedTemplateFixtures.sparkasseCardStatement(), template, null);
+
+    assertThat(result.accountIdentifier())
+        .isEqualTo(new ImportFileAccountIdentifier("MASKED_CARD", "123456******7890"));
+    assertThat(result.rows()).extracting(ParsedImportRow::status).containsOnly("PARSED").hasSize(4);
+  }
+
+  // No line starts with the label: no card is named, and the bookings are read all the same.
+  @Test
+  void aPdfWithoutTheLabelledLineNamesNoCard() throws IOException {
+    ImportParseResult result =
+        parser.parse(
+            ShippedTemplateFixtures.sparkasseCardStatement(), cardTemplate("Kartenkonto"), null);
+
+    assertThat(result.accountIdentifier().found()).isFalse();
+    assertThat(result.accountIdentifier().kind()).isEqualTo("MASKED_CARD");
+    assertThat(result.rows()).extracting(ParsedImportRow::status).containsOnly("PARSED").hasSize(4);
+  }
+
+  // The layout of the shipped Sparkasse card statement template (V93), its card found by label.
+  private static ImportTemplateDefinition cardTemplate(String label) {
+    String amount = "([0-9.]*[0-9],[0-9]{2})";
+    String date = "[0-9]{2}[.][0-9]{2}[.][0-9]{2}";
+    ImportPdfLayout layout =
+        ImportPdfLayout.builder(
+                List.of("Beleg", "Buchung", "Verwendungszweck", "Soll", "Haben"),
+                "^("
+                    + date
+                    + ")[ ]+("
+                    + date
+                    + ")[ ]+(.+?)[ ]+(?:"
+                    + amount
+                    + "[ ]*-|"
+                    + amount
+                    + "[ ]*[+])$",
+                "Mastercard-Nummer:",
+                "^" + date + "[ ]+" + date + "[ ]")
+            .build();
+    return new ImportFileParserServiceTest.Template()
+        .pdf("PDF_TEXT", layout)
+        .mapping(
+            new ImportColumnMapping(
+                "Buchung",
+                null,
+                null,
+                "Soll",
+                "Haben",
+                null,
+                "Verwendungszweck",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
+        .amountRepresentation("SEPARATE_DEBIT_CREDIT")
+        .fixedCurrency("EUR")
+        .dateFormat("dd.MM.yy")
+        .decimal(",")
+        .thousands(".")
+        .accountIdentifier(
+            "PREAMBLE_LINE",
+            new ImportAccountIdentifierRule(
+                "MASKED_CARD", label, "Mastercard-Nummer:[ ]*([0-9][0-9X ]*[0-9])", null))
+        .build();
+  }
 
   private static ImportTemplateDefinition yuhTemplate() {
     return yuhTemplate(SyntheticStatements.yuhLayout());
