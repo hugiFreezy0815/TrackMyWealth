@@ -744,7 +744,7 @@ public class ImportFileParserService {
       throw invalid(ACCOUNT_IDENTIFIER, "Say where the file names its account.");
     }
     if (!ImportTemplateValues.IDENTIFIER_KINDS.contains(rule.kind())) {
-      throw invalid(ACCOUNT_IDENTIFIER + ".kind", "The identifier is an IBAN or a MASKED_CARD.");
+      throw invalid(ACCOUNT_IDENTIFIER + ".kind", "The identifier is an IBAN, MASKED_CARD or CONTRACT_NUMBER.");
     }
     if (ImportTemplateValues.ACCOUNT_PREAMBLE_LINE.equals(strategy)) {
       // #339: a PDF's rule searches every text line of the statement, e.g. its title line.
