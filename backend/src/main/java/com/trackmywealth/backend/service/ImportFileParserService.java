@@ -30,10 +30,14 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.text.ParsePosition;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.ResolverStyle;
+import java.time.temporal.ChronoField;
+import java.time.temporal.TemporalAccessor;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -87,6 +91,10 @@ public class ImportFileParserService {
   // transaction.amount is NUMERIC(20,4). Checked on the digits before a BigDecimal is built, whose
   // construction is quadratic in the length: a megabyte-long cell would hold a thread for minutes.
   private static final int MAX_INTEGER_DIGITS = 16;
+  // #334: the February days a 30/360 interest convention writes that the calendar does not have.
+  private static final int FEBRUARY = 2;
+  private static final int FEBRUARY_29 = 29;
+  private static final int THIRTY_DAY_MONTH_END = 30;
   private static final int MAX_FRACTION_DIGITS = 4;
   // transaction.fx_rate_to_account_currency is NUMERIC(20,10).
   private static final int MAX_RATE_INTEGER_DIGITS = 10;
@@ -1232,10 +1240,17 @@ public class ImportFileParserService {
             template.dateFormat(),
             dateFormatter);
     String valueDateCell = optionalCell(record, columns.get("valueDate"));
+    Optional<LocalDate> thirtyDayFebruary =
+        valueDateCell == null
+            ? Optional.empty()
+            : endOfThirtyDayFebruary(valueDateCell, dateFormatter);
     LocalDate valueDate =
         valueDateCell == null
             ? null
-            : parseDate(valueDateCell, mapping.valueDate(), template.dateFormat(), dateFormatter);
+            : thirtyDayFebruary.orElseGet(
+                () ->
+                    parseDate(
+                        valueDateCell, mapping.valueDate(), template.dateFormat(), dateFormatter));
     BigDecimal amount = amountOf(record, template, columns);
     String currency = currencyOf(record, template, columns, accountCurrency);
     String type =
@@ -1282,7 +1297,8 @@ public class ImportFileParserService {
         optionalCell(record, columns.get("notes")),
         originalAmount,
         originalCurrency,
-        issuerRate);
+        issuerRate,
+        thirtyDayFebruary.isPresent());
   }
 
   private static BigDecimal originalAmountOf(
@@ -1357,6 +1373,38 @@ public class ImportFileParserService {
       throw rowError(ImportRowErrorValues.VALUE_MISSING, ARG_COLUMN, column);
     }
     return value;
+  }
+
+  /**
+   * #334: the real last day of February when {@code value} is a February day that does not exist
+   * but a bank's 30/360 interest convention writes - the 30th, or the 29th in a common year (every
+   * month has 30 days there, so its value dates fall on them); empty for any other value, valid or
+   * not, which is parsed as written. The 31st is no 30/360 day, so 31 February stays an error.
+   */
+  static Optional<LocalDate> endOfThirtyDayFebruary(String value, DateTimeFormatter formatter) {
+    ParsePosition position = new ParsePosition(0);
+    TemporalAccessor fields = formatter.parseUnresolved(value, position);
+    if (fields == null
+        || position.getErrorIndex() >= 0
+        || position.getIndex() != value.length()
+        || !fields.isSupported(ChronoField.MONTH_OF_YEAR)
+        || !fields.isSupported(ChronoField.DAY_OF_MONTH)
+        || fields.getLong(ChronoField.MONTH_OF_YEAR) != FEBRUARY) {
+      return Optional.empty();
+    }
+    long day = fields.getLong(ChronoField.DAY_OF_MONTH);
+    if (day < FEBRUARY_29 || day > THIRTY_DAY_MONTH_END) {
+      return Optional.empty();
+    }
+    try {
+      // SMART resolution reads the day as the month's last valid one; STRICT has refused it, so the
+      // year is the only thing left to take from it.
+      LocalDate lenient = LocalDate.parse(value, formatter.withResolverStyle(ResolverStyle.SMART));
+      LocalDate lastDay = lenient.with(TemporalAdjusters.lastDayOfMonth());
+      return day > lastDay.getDayOfMonth() ? Optional.of(lastDay) : Optional.empty();
+    } catch (DateTimeException e) {
+      return Optional.empty();
+    }
   }
 
   private static LocalDate parseDate(

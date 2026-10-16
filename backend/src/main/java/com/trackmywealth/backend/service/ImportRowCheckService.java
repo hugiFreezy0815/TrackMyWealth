@@ -257,6 +257,9 @@ public class ImportRowCheckService {
     if (!account.getNativeCurrency().equals(row.currency())) {
       warnings.add(ImportBatchValues.WARNING_CURRENCY_DIFFERS);
     }
+    if (row.valueDateAdjusted()) {
+      warnings.add(ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED);
+    }
     // A positive card booking is a payment by default, not a refund. Highlight an
     // unmatched payment so the member can correct its template instead of silently misclassifying
     // a refund. This is advisory; settlement matching still decides after commit.
@@ -280,6 +283,8 @@ public class ImportRowCheckService {
       args.put(ARG_DATE, row.bookingDate().toString());
     } else if (ImportBatchValues.WARNING_FUTURE_DATE.equals(warning)) {
       args.put(ARG_DATE, row.bookingDate().toString());
+    } else if (ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED.equals(warning)) {
+      args.put(ARG_DATE, row.valueDate().toString());
     } else if (ImportBatchValues.WARNING_CURRENCY_DIFFERS.equals(warning)) {
       args.put(ARG_CURRENCY, row.currency());
       args.put(ARG_ACCOUNT_CURRENCY, accountCurrency);
