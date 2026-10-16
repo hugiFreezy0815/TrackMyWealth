@@ -35,13 +35,13 @@ JOIN (
         '72805b69-3fa5-4922-b02a-af25e48dbd29'::UUID,
         'db261cc9-5ae3-4eef-b8b4-8529a243abcf'::UUID,
         '3',
-        '{"kind":"IBAN","label":"Darlehen","pattern":"(?:[0-9]+,[ ]*)?(DE[0-9A-Z ]{20,30})"}'::JSONB
+        '{"kind":"IBAN","label":"Darlehen","pattern":"(?:[0-9]+,[ ]*)?(DE[0-9]{2}(?:[ ]?[0-9]{4}){4}[ ]?[0-9]{2})"}'::JSONB
     ),
     (
         'a2820365-0b08-4474-bdb9-f2c419a91a25'::UUID,
         'a82dbfd8-abeb-4fad-af4e-0f9070b3111e'::UUID,
         '2',
-        '{"kind":"IBAN","label":"IBAN","pattern":"(CH[0-9A-Z ]{18,28})"}'::JSONB
+        '{"kind":"IBAN","label":"IBAN","pattern":"(CH[0-9]{2}(?:[ ]?[0-9]{4}){4}[ ]?[0-9])"}'::JSONB
     ),
     (
         '0ac5fd45-d7f5-4c7b-895d-cc8233d07e7b'::UUID,
