@@ -1112,7 +1112,13 @@ not compared (US-07-17, product owner 2026-10-07): two export formats of one acc
 CSV-CAMT and CSV-MT940) word the same booking differently, and no duplicate may be imported. Two
 real bookings of equal date, amount and currency are therefore flagged too, an accepted
 trade-off: the preview's `duplicateOf` shows the matched ledger row (booking date, amount,
-currency, description) next to the row, so the member can force it in. (3) Each ledger row is the
+currency, description) next to the row, so the member can force it in. (3) A foreign card
+purchase is booked in its original currency (US-07-18), the same purchase in euros by the Sparkasse card
+template's version 1 or by hand: so, for the rows (2) left over, a row booked in its original
+currency also duplicates a live row of its billed amount in the account's currency, and a row in
+the account's currency a live row in another currency whose stated or billed-derived (not
+estimated) rate gives that amount, rounded half up to the currency's minor unit (#341). Only such
+cross-currency pairs; two foreign purchases are compared by (2) alone. (4) Each ledger row is the
 duplicate of one import row at most, so *n* rows against *m* matches give min(n, m) duplicates.
 Rows are paired with ledger rows of the same normalized description (trimmed, lower case, blanks
 collapsed, none = empty) first, so the preview shows the closest booking, then in file order; an
