@@ -1267,14 +1267,11 @@ public class ImportFileParserService {
     if (mcc != null && !MCC.matcher(mcc).matches()) {
       throw rowError(ImportRowErrorValues.MCC_INVALID, ARG_COLUMN, mapping.mcc(), ARG_VALUE, mcc);
     }
-    BigDecimal originalAmount = originalAmountOf(record, template, columns);
     String originalCurrency = originalCurrencyOf(record, template, columns);
+    BigDecimal originalAmount = originalAmountOf(record, template, columns, originalCurrency);
     BigDecimal issuerRate = exchangeRateOf(record, template, columns);
     if ((originalAmount == null) != (originalCurrency == null)
-        || (originalAmount != null && originalAmount.signum() == 0 && amount.signum() != 0)
-        || (originalAmount != null
-            && originalAmount.signum() != 0
-            && originalAmount.signum() != amount.signum())) {
+        || (originalAmount != null && originalAmount.signum() == 0 && amount.signum() != 0)) {
       // Both columns are mapped (validateColumnMapping), so neither argument is null.
       throw rowError(
           ImportRowErrorValues.ORIGINAL_AMOUNT_INCONSISTENT,
@@ -1295,18 +1292,36 @@ public class ImportFileParserService {
         mcc,
         optionalCell(record, columns.get("iso20022BankTransactionCode")),
         optionalCell(record, columns.get("notes")),
-        originalAmount,
+        withSignOf(amount, originalAmount),
         originalCurrency,
         issuerRate,
         valueDateAdjusted);
   }
 
+  // #327: a zero original amount without an original currency is no original amount - a card
+  // export prints its domestic rows that way.
   private static BigDecimal originalAmountOf(
-      List<String> record, ImportTemplateDefinition template, Map<String, Integer> columns) {
+      List<String> record,
+      ImportTemplateDefinition template,
+      Map<String, Integer> columns,
+      String originalCurrency) {
     String value = optionalCell(record, columns.get("originalAmount"));
-    return value == null
-        ? null
-        : parseAmount(value, template.columnMapping().originalAmount(), template, false);
+    if (value == null) {
+      return null;
+    }
+    BigDecimal original =
+        parseAmount(value, template.columnMapping().originalAmount(), template, false);
+    return original.signum() == 0 && originalCurrency == null ? null : original;
+  }
+
+  // #327: banks print the original amount signed or unsigned; only its magnitude is read, with the
+  // booked amount's sign, as the ledger books a foreign purchase. A zero amount (a skipped row)
+  // leaves it as written.
+  private static BigDecimal withSignOf(BigDecimal amount, BigDecimal originalAmount) {
+    if (originalAmount == null || amount.signum() == 0) {
+      return originalAmount;
+    }
+    return amount.signum() < 0 ? originalAmount.abs().negate() : originalAmount.abs();
   }
 
   private static String originalCurrencyOf(

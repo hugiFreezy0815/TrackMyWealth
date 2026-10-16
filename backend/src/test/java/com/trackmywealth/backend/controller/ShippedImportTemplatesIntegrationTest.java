@@ -58,7 +58,10 @@ class ShippedImportTemplatesIntegrationTest {
       UUID.fromString("df6b6640-6a37-49ce-b5fc-feb61c677971");
   private static final UUID SPARKASSE_CAMT_FAMILY =
       UUID.fromString("d902ba3d-1344-4e55-8cc2-e2b0e0fe8bf5");
+  // #327 (V91): the current version 2; the family keeps version 1's id.
   private static final UUID SPARKASSE_CARD =
+      UUID.fromString("394a7a1d-1b0a-4cf1-a63a-b0e92cd1d0a0");
+  private static final UUID SPARKASSE_CARD_FAMILY =
       UUID.fromString("4a5b2ef3-9839-45c1-b173-fd9c33f57bd6");
   private static final UUID SPARKASSE_LOAN =
       UUID.fromString("72805b69-3fa5-4922-b02a-af25e48dbd29");
@@ -128,6 +131,7 @@ class ShippedImportTemplatesIntegrationTest {
                   .isEqualTo(
                       java.util.Map.of(
                               SPARKASSE_CAMT, SPARKASSE_CAMT_FAMILY,
+                              SPARKASSE_CARD, SPARKASSE_CARD_FAMILY,
                               SPARKASSE_LOAN, SPARKASSE_LOAN_FAMILY)
                           .getOrDefault(template.id(), template.id()));
               assertThat(template.current()).isTrue();
@@ -238,7 +242,17 @@ class ShippedImportTemplatesIntegrationTest {
     // account they become purchases and a settlement (US-07-18).
     assertBooking(result.rows().get(0), LocalDate.of(2031, 1, 29), "-1.49", "EUR", "EXPENSE");
     assertThat(result.rows().get(0).canonical().notes()).isEqualTo("Beispielstadt");
+    // #327: a foreign purchase keeps its original amount, with the billed amount's sign.
+    assertThat(result.rows().get(0).canonical().originalAmount()).isEqualByComparingTo("-37.00");
+    assertThat(result.rows().get(0).canonical().originalCurrency()).isEqualTo("CZK");
     assertThat(result.rows().get(1).canonical().description()).isEqualTo("Caf\u00e9 Beispiel");
+    // A domestic row prints 0,00 with no currency: no original amount.
+    assertThat(result.rows().subList(1, 3))
+        .allSatisfy(
+            row -> {
+              assertThat(row.canonical().originalAmount()).isNull();
+              assertThat(row.canonical().originalCurrency()).isNull();
+            });
     assertBooking(result.rows().get(2), LocalDate.of(2031, 1, 31), "263.17", "EUR", "INCOME");
     assertThat(result.accountIdentifierFound()).isTrue();
   }

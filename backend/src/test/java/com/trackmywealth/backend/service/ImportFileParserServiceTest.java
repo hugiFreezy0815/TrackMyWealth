@@ -674,18 +674,56 @@ class ImportFileParserServiceTest {
                         + "2031-05-01,-10.00,Missing currency,-8.00,\n"
                         + "2031-05-02,-10.00,Missing amount,,EUR\n"
                         + "2031-05-03,-10.00,Zero original,0.00,EUR\n"
-                        + "2031-05-04,-10.00,Wrong sign,8.00,EUR\n"
                         + "2031-05-05,-10.00,Valid original,-8.00,EUR\n"),
                 template,
                 new ImportAccountContext("CHF", true, false))
             .rows();
-    assertThat(rows.subList(0, 4)).allMatch(ParsedImportRow::isError);
-    assertThat(rows.subList(0, 4))
+    assertThat(rows.subList(0, 3)).allMatch(ParsedImportRow::isError);
+    assertThat(rows.subList(0, 3))
         .extracting(ParsedImportRow::errorCode)
         .containsOnly(ImportRowErrorValues.ORIGINAL_AMOUNT_INCONSISTENT);
     assertThat(rows.get(0).errorArgs())
         .containsExactly(entry("column", "original"), entry("currencyColumn", "originalCurrency"));
-    assertThat(rows.get(4).isParsed()).isTrue();
+    assertThat(rows.get(3).isParsed()).isTrue();
+  }
+
+  // #327 (PO decisions): a zero original amount without a currency is no original amount, and the
+  // original amount's magnitude is read with the booked amount's sign, however the bank prints it.
+  @Test
+  void aZeroOriginalAmountWithoutCurrencyIsNoneAndTheSignIsTheAmounts() {
+    ImportTemplateDefinition template =
+        new Template()
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .description("text")
+                    .originalAmount("original")
+                    .originalCurrency("originalCurrency")
+                    .build())
+            .build();
+    List<ParsedImportRow> rows =
+        parser
+            .parseForAccount(
+                utf8(
+                    "date,amount,text,original,originalCurrency\n"
+                        + "2031-05-01,-10.00,Domestic,0.00,\n"
+                        + "2031-05-02,-10.00,Unsigned original,37.13,CZK\n"
+                        + "2031-05-03,-10.00,Signed original,-37.13,CZK\n"
+                        + "2031-05-04,4.10,Refund printed negative,-17.30,CZK\n"),
+                template,
+                new ImportAccountContext("EUR", true, false))
+            .rows();
+
+    assertThat(rows).allMatch(ParsedImportRow::isParsed);
+    CanonicalImportRow domestic = rows.get(0).canonical();
+    assertThat(domestic.originalAmount()).isNull();
+    assertThat(domestic.originalCurrency()).isNull();
+    assertThat(rows.subList(1, 3))
+        .extracting(row -> row.canonical().originalAmount())
+        .containsExactly(new BigDecimal("-37.13"), new BigDecimal("-37.13"));
+    assertThat(rows.get(1).canonical().originalCurrency()).isEqualTo("CZK");
+    assertThat(rows.get(3).canonical().originalAmount()).isEqualTo(new BigDecimal("17.30"));
   }
 
   @Test
