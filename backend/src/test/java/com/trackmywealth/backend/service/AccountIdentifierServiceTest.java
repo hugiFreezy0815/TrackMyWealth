@@ -3,8 +3,10 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
+import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -25,6 +27,7 @@ class AccountIdentifierServiceTest {
 
   private static final String IBAN = "IBAN";
   private static final String CARD = "MASKED_CARD";
+  private static final String CONTRACT = "CONTRACT_NUMBER";
   private static final String KEY =
       Base64.getEncoder()
           .encodeToString(
@@ -115,6 +118,40 @@ class AccountIdentifierServiceTest {
         .isEqualTo("\u2022\u2022\u2022\u20223000");
     assertThat(AccountIdentifierService.masked("123456******7890", CARD))
         .isEqualTo("123456******7890");
+  }
+
+  @Test
+  void contractNumbersNormalizeAsTenDigitsAndAreHashedSeparately() {
+    assertThat(AccountIdentifierService.normalize("4 268 135 009", CONTRACT))
+        .contains("4268135009");
+    assertThat(AccountIdentifierService.normalize("4-268-135-009", CONTRACT))
+        .contains("4268135009");
+    assertThat(AccountIdentifierService.normalize("42 681 350 09", CONTRACT))
+        .contains("4268135009");
+    assertThat(AccountIdentifierService.normalize("4 268 135 00", CONTRACT)).isEmpty();
+    assertThat(AccountIdentifierService.normalize("4 268 135 0090", CONTRACT)).isEmpty();
+    assertThat(AccountIdentifierService.normalize("4 268 135 00x", CONTRACT)).isEmpty();
+    assertThat(AccountIdentifierService.masked("4268135009", CONTRACT))
+        .isEqualTo("\u2022\u2022\u2022\u20220009");
+    UUID workspace = UUID.randomUUID();
+    assertThat(service.hash(workspace, "4268135009", CONTRACT))
+        .isNotEqualTo(service.hash(workspace, "4268135009", IBAN))
+        .isNotEqualTo(service.hash(UUID.randomUUID(), "4268135009", CONTRACT));
+  }
+
+  @Test
+  void aRegisteredContractIsMatchedByItsOwnHashWithinTheWorkspace() {
+    UUID workspace = UUID.randomUUID();
+    String normalized = "4268135009";
+    String hashed = service.hash(workspace, normalized, CONTRACT);
+    Account account = mock(Account.class);
+    AccountRepository repository = mock(AccountRepository.class);
+    when(repository.findByWorkspaceIdAndContractIdentifierHash(workspace, hashed))
+        .thenReturn(Optional.of(account));
+    AccountIdentifierService matching = new AccountIdentifierService(KEY, repository);
+
+    assertThat(matching.match(workspace, normalized, CONTRACT)).contains(account);
+    assertThat(matching.match(workspace, normalized, IBAN)).isEmpty();
   }
 
   @Test

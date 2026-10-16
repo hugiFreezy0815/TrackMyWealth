@@ -46,6 +46,7 @@ public class AccountIdentifierService {
   private static final Pattern IBAN = Pattern.compile("[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}");
   // At most the first 6 and the last 4 digits visible (PCI DSS), at least one masked position.
   private static final Pattern MASKED_CARD = Pattern.compile("[0-9]{0,6}\\*+[0-9]{4}");
+  private static final Pattern CONTRACT_NUMBER = Pattern.compile("[0-9]{10}");
   private static final int MIN_CARD_LENGTH = 8;
   private static final int MAX_CARD_LENGTH = 19;
   private static final Pattern SEPARATORS = Pattern.compile("[\\s\\u00A0\\u202F-]");
@@ -116,7 +117,14 @@ public class AccountIdentifierService {
               && MASKED_CARD.matcher(card).matches();
       return valid ? Optional.of(card) : Optional.empty();
     }
-    return IBAN.matcher(compact).matches() && ibanChecksumValid(compact)
+    if (ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)) {
+      return CONTRACT_NUMBER.matcher(compact).matches()
+          ? Optional.of(compact)
+          : Optional.empty();
+    }
+    return ImportTemplateValues.IDENTIFIER_IBAN.equals(kind)
+            && IBAN.matcher(compact).matches()
+            && ibanChecksumValid(compact)
         ? Optional.of(compact)
         : Optional.empty();
   }
@@ -157,9 +165,12 @@ public class AccountIdentifierService {
 
   /** The active account of the workspace registered with this normalized identifier, if any. */
   public Optional<Account> match(UUID workspaceId, String normalized, String kind) {
-    return accounts
-        .findByWorkspaceIdAndIdentifierHash(workspaceId, hash(workspaceId, normalized, kind))
-        .filter(account -> account.getArchivedAt() == null);
+    String identifierHash = hash(workspaceId, normalized, kind);
+    Optional<Account> account =
+        ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)
+            ? accounts.findByWorkspaceIdAndContractIdentifierHash(workspaceId, identifierHash)
+            : accounts.findByWorkspaceIdAndIdentifierHash(workspaceId, identifierHash);
+    return account.filter(found -> found.getArchivedAt() == null);
   }
 
   // ISO 13616: the first four characters moved to the end, letters as 10..35, mod 97 is 1.

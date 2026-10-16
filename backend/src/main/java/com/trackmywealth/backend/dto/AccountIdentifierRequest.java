@@ -15,7 +15,13 @@ public record AccountIdentifierRequest(
                     + " first 6 and the last 4 digits.")
         @NotBlank
         @Size(max = 64)
-        String identifier) {
+        String identifier,
+    @Schema(description = "Optional CONTRACT_NUMBER kind; otherwise use the account's IBAN or MASKED_CARD.")
+        String kind) {
+
+  public AccountIdentifierRequest(String identifier) {
+    this(identifier, null);
+  }
 
   // The plain account number must never reach a log line, should anything print the request.
   @Override

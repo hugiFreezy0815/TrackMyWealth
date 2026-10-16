@@ -306,6 +306,90 @@ class ImportBatchControllerTest {
    * Acceptance criterion 1: a file naming the account by its IBAN is imported without a question.
    */
   @Test
+  void contractNumberAndIbanAreStoredIndependentlyAndUniquely() {
+    registerIdentifier(account, EXAMPLE_IBAN);
+    AccountIdentifierResponse added =
+        client()
+            .put()
+            .uri("/api/v1/accounts/" + account + "/identifier")
+            .header(HttpHeaders.IF_MATCH, "\"" + accountVersion(account) + "\"")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(new AccountIdentifierRequest("4 268 135 009", "CONTRACT_NUMBER"))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountIdentifierResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(added.kind()).isEqualTo("IBAN");
+    assertThat(added.identifierMasked()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(added.contractIdentifierMasked()).isEqualTo("\u2022\u2022\u2022\u20220009");
+    Map<String, Object> stored =
+        rowsOf(
+                "SELECT identifier_hash, contract_identifier_hash, contract_identifier_masked"
+                    + " FROM account WHERE id = ?",
+                account)
+            .get(0);
+    assertThat((String) stored.get("identifier_hash")).matches("[0-9a-f]{64}");
+    assertThat((String) stored.get("contract_identifier_hash")).matches("[0-9a-f]{64}");
+    assertThat(stored.get("identifier_hash")).isNotEqualTo(stored.get("contract_identifier_hash"));
+    assertThat(stored.toString()).doesNotContain("4268135009");
+
+    UUID another = createAccount("Other savings", "CHF");
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + another + "/identifier")
+        .header(HttpHeaders.IF_MATCH, "\"" + accountVersion(another) + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new AccountIdentifierRequest("4268135009", "CONTRACT_NUMBER"))
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void aContractIdentifierMatchesAndWarnsWhenImportedIntoAnotherAccount() {
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + account + "/identifier")
+        .header(HttpHeaders.IF_MATCH, "\"" + accountVersion(account) + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new AccountIdentifierRequest("4 268 135 009", "CONTRACT_NUMBER"))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    UUID template =
+        createTemplate(
+                identifyingTemplate(
+                    "PREAMBLE_LINE",
+                    new ImportAccountIdentifierRule("CONTRACT_NUMBER", "Konto", null, null),
+                    1,
+                    SIMPLE_COLUMNS))
+            .id();
+
+    ImportBatchResponse matched = upload(token, template, preambleFile("4268135009"));
+    assertThat(matched.accountIdentification())
+        .isEqualTo(new ImportIdentificationResponse("MATCHED", null, false, false));
+    discard(matched.id(), matched.version());
+
+    UUID other = createAccount("Different savings", "CHF");
+    ImportBatchResponse wrong =
+        upload(token, other, preambleFile("4-268-135-009"), template)
+            .expectStatus()
+            .isCreated()
+            .expectBody(ImportBatchResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(wrong.accountIdentification())
+        .isEqualTo(new ImportIdentificationResponse("OTHER_ACCOUNT", account, true, false));
+
+    ImportBatchResponse missing = upload(token, template, preambleFile("not a contract"));
+    assertThat(missing.accountIdentification().outcome()).isEqualTo("NOT_FOUND");
+    assertThat(missing.accountIdentification().confirmationRequired()).isTrue();
+  }
+
+  @Test
   void aFileNamingThisAccountByItsIbanIsMatchedAndCommits() {
     registerIdentifier(account, EXAMPLE_IBAN);
     UUID template = createTemplate(preambleTemplate()).id();

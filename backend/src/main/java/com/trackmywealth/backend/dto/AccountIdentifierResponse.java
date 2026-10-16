@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.UUID;
 
 /**
@@ -9,4 +10,13 @@ import java.util.UUID;
  * the account's {@code If-Match} revision.
  */
 public record AccountIdentifierResponse(
-    UUID accountId, String kind, String identifierMasked, int version) {}
+    UUID accountId,
+    String kind,
+    String identifierMasked,
+    int version,
+    @JsonInclude(JsonInclude.Include.NON_NULL) String contractIdentifierMasked) {
+
+  public AccountIdentifierResponse(UUID accountId, String kind, String identifierMasked, int version) {
+    this(accountId, kind, identifierMasked, version, null);
+  }
+}

@@ -280,6 +280,8 @@ public class AccountService {
     // register it. A restored account registers it again.
     account.setIdentifierHash(null);
     account.setIdentifierMasked(null);
+    account.setContractIdentifierHash(null);
+    account.setContractIdentifierMasked(null);
     account = accountRepository.saveAndFlush(account);
 
     return toSummary(account, actor);
