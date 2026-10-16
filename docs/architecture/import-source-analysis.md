@@ -191,8 +191,10 @@ Disclaimer:
   `Länderkennzeichen`, `BAR-Entgelt+Buchungsreferenz`, `AEE+Buchungsreferenz`,
   `Abrechnungskennzeichen`.
 - Dates `dd.MM.yy`; `Buchungsbetrag` signed, decimal `,`; the booking currency per row.
-- Original amount, original currency and FX rate are separate columns: they have no canonical
-  field yet and stay in `raw_source_data`.
+- Original amount, original currency and FX rate are separate columns. Since the template's
+  version 2 (V91, #327) `Originalbetrag` and `Originalwährung` are the original amount and
+  currency (`0,00` with an empty currency is none); `Umrechnungskurs` stays in `raw_source_data`,
+  as the ledger derives the rate from the billed amount.
 - `Buchungsreferenz` is not unique (a small running number).
 
 ```csv

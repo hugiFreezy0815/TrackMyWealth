@@ -6,10 +6,12 @@ import com.trackmywealth.backend.dto.ImportDuplicateOfResponse;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Currency;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -34,6 +36,15 @@ import org.springframework.transaction.annotation.Transactional;
  *       formats of one account word the same booking differently. A row with an external id is not
  *       matched to a row of its own source that has another id: one reference is one booking. No
  *       date tolerance.
+ *   <li><b>Across currencies</b> (#341), for every row rules 1 and 2 did not match: a foreign card
+ *       purchase, booked in its original currency ({@link
+ *       ImportLedgerRowService#isOriginalCurrencyPurchase}), is the same booking as a ledger row of
+ *       its billed amount in the account's currency, and a row in the account's currency the same
+ *       booking as a ledger row in another currency whose rate was stated or derived from a billed
+ *       amount (not estimated), when that row's amount at its rate, rounded half up to the
+ *       currency's minor unit, is the row's amount. So a purchase a template version or a manual
+ *       entry booked in euros and another one in its original currency is not booked twice. Only
+ *       such cross-currency pairs: two foreign purchases are compared by rule 2 alone.
  *   <li><b>Multiplicity:</b> each ledger row is the duplicate of one import row at most, so of
  *       <i>n</i> rows in the file with <i>m</i> matches in the ledger, min(n, m) are duplicates
  *       (two equal coffees on one day are two bookings). Where several ledger rows match, a row is
@@ -116,7 +127,82 @@ public class ImportDuplicateService {
             matchByFallback(keyRows, candidates, source, duplicates);
           }
         });
+    Set<UUID> paired = new HashSet<>(duplicates.values());
+    matchAcrossCurrencies(
+        open.stream().filter(row -> !duplicates.containsKey(row.rowNumber())).toList(),
+        ledgerByKey.values().stream()
+            .flatMap(List::stream)
+            .filter(candidate -> !paired.contains(candidate.getId()))
+            .toList(),
+        source,
+        duplicates);
     return duplicates;
+  }
+
+  // Rule 3 (#341): foreign purchases against ledger rows in the account's currency, then rows in
+  // the account's currency against converted ledger rows; each pass pairs disjoint rows and ledger
+  // rows, by the amount both stand for in the account's currency.
+  private static void matchAcrossCurrencies(
+      List<ParsedImportRow> rows,
+      List<ImportDuplicateCandidate> candidates,
+      String source,
+      Map<Integer, UUID> duplicates) {
+    if (rows.isEmpty() || candidates.isEmpty()) {
+      return;
+    }
+    for (boolean foreignRows : List.of(true, false)) {
+      Map<String, List<ParsedImportRow>> rowsByKey = new LinkedHashMap<>();
+      for (ParsedImportRow row : rows) {
+        CanonicalImportRow canonical = row.canonical();
+        if (ImportLedgerRowService.isOriginalCurrencyPurchase(canonical) == foreignRows) {
+          rowsByKey
+              .computeIfAbsent(
+                  key(canonical.bookingDate(), canonical.amount(), canonical.currency()),
+                  k -> new ArrayList<>())
+              .add(row);
+        }
+      }
+      Map<String, List<ImportDuplicateCandidate>> ledgerByKey = new LinkedHashMap<>();
+      for (ImportDuplicateCandidate candidate : candidates) {
+        String key = foreignRows ? accountCurrencyKey(candidate) : convertedKey(candidate);
+        if (key != null) {
+          ledgerByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(candidate);
+        }
+      }
+      rowsByKey.forEach(
+          (key, keyRows) -> {
+            List<ImportDuplicateCandidate> keyCandidates = ledgerByKey.get(key);
+            if (keyCandidates != null) {
+              matchByFallback(keyRows, keyCandidates, source, duplicates);
+            }
+          });
+    }
+  }
+
+  // A ledger row booked in the account's own currency, by its key; null for any other.
+  private static String accountCurrencyKey(ImportDuplicateCandidate candidate) {
+    return candidate.getCurrency().equals(candidate.getAccountCurrency()) ? key(candidate) : null;
+  }
+
+  // A ledger row in another currency, by the amount it stands for in the account's currency; null
+  // for one in the account's currency, or whose rate is missing or estimated - an estimated daily
+  // rate does not give back what the card issuer billed.
+  private static String convertedKey(ImportDuplicateCandidate candidate) {
+    BigDecimal rate = candidate.getFxRateToAccountCurrency();
+    if (candidate.getCurrency().equals(candidate.getAccountCurrency())
+        || rate == null
+        || !Boolean.FALSE.equals(candidate.getFxRateEstimated())) {
+      return null;
+    }
+    int minorUnits =
+        Currency.getInstance(candidate.getAccountCurrency()).getDefaultFractionDigits();
+    if (minorUnits < 0) {
+      return null;
+    }
+    return key(
+        candidate.getBookingDate(),
+        candidate.getAmount().multiply(rate).setScale(minorUnits, RoundingMode.HALF_UP),
+        candidate.getAccountCurrency());
   }
 
   /**

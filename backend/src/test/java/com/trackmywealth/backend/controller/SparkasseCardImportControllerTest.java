@@ -10,10 +10,13 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -132,6 +135,41 @@ class SparkasseCardImportControllerTest {
     assertThat(rows.get(0).fxRateToAccountCurrency()).isEqualByComparingTo("0.0402702703");
     assertThat(rows.get(0).fxRateEstimated()).isFalse();
     assertThat(rows.get(1).fxRateToAccountCurrency()).isNull();
+  }
+
+  // #341: the foreign purchase already in the ledger in euros - as template version 1 booked it, or
+  // a member by hand - is a duplicate of the statement's row booked in its original currency.
+  @Test
+  void aForeignPurchaseAlreadyBookedInEurosIsADuplicate() throws IOException {
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + card + "/transactions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            TransactionRequests.cash(
+                "CREDIT_CARD_PURCHASE",
+                LocalDate.of(2031, 1, 29),
+                new BigDecimal("-1.49"),
+                "EUR",
+                "Muster Online Shop",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+
+    ImportBatchResponse batch = upload(fixture("sparkasse-card-synthetic.csv"));
+
+    assertThat(batch.counts().duplicates()).isOne();
+    assertThat(batch.counts().newRows()).isEqualTo(2);
+    commit(confirmAccount(batch));
+    assertThat(list())
+        .extracting(TransactionResponse::currency)
+        .containsExactlyInAnyOrder("EUR", "EUR", "EUR");
   }
 
   // --- helpers ---------------------------------------------------------------------------------
