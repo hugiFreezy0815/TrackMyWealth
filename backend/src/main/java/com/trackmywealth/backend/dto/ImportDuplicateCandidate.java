@@ -24,6 +24,9 @@ public interface ImportDuplicateCandidate {
 
   String getExternalId();
 
+  // The three below are read by the cross-currency rule (#341) only: findLiveForDuplicateCheck
+  // selects them, the reference and preview queries do not, and they are null there.
+
   /** The rate to the account's currency; {@code null} for a row in the account's own currency. */
   BigDecimal getFxRateToAccountCurrency();
 

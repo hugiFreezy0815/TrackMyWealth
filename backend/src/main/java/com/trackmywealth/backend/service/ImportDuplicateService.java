@@ -20,6 +20,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -140,8 +142,8 @@ public class ImportDuplicateService {
   }
 
   // Rule 3 (#341): foreign purchases against ledger rows in the account's currency, then rows in
-  // the account's currency against converted ledger rows; each pass pairs disjoint rows and ledger
-  // rows, by the amount both stand for in the account's currency.
+  // the account's currency against converted ledger rows. The two passes pair disjoint rows and
+  // ledger rows, by the amount both stand for in the account's currency.
   private static void matchAcrossCurrencies(
       List<ParsedImportRow> rows,
       List<ImportDuplicateCandidate> candidates,
@@ -150,33 +152,55 @@ public class ImportDuplicateService {
     if (rows.isEmpty() || candidates.isEmpty()) {
       return;
     }
-    for (boolean foreignRows : List.of(true, false)) {
-      Map<String, List<ParsedImportRow>> rowsByKey = new LinkedHashMap<>();
-      for (ParsedImportRow row : rows) {
-        CanonicalImportRow canonical = row.canonical();
-        if (ImportLedgerRowService.isOriginalCurrencyPurchase(canonical) == foreignRows) {
-          rowsByKey
-              .computeIfAbsent(
-                  key(canonical.bookingDate(), canonical.amount(), canonical.currency()),
-                  k -> new ArrayList<>())
-              .add(row);
-        }
-      }
-      Map<String, List<ImportDuplicateCandidate>> ledgerByKey = new LinkedHashMap<>();
-      for (ImportDuplicateCandidate candidate : candidates) {
-        String key = foreignRows ? accountCurrencyKey(candidate) : convertedKey(candidate);
-        if (key != null) {
-          ledgerByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(candidate);
-        }
-      }
-      rowsByKey.forEach(
-          (key, keyRows) -> {
-            List<ImportDuplicateCandidate> keyCandidates = ledgerByKey.get(key);
-            if (keyCandidates != null) {
-              matchByFallback(keyRows, keyCandidates, source, duplicates);
-            }
-          });
+    Map<Boolean, List<ParsedImportRow>> byForeign =
+        rows.stream()
+            .collect(
+                Collectors.partitioningBy(
+                    row -> ImportLedgerRowService.isOriginalCurrencyPurchase(row.canonical())));
+    matchByCrossCurrencyKey(
+        byForeign.get(true),
+        candidates,
+        ImportDuplicateService::accountCurrencyKey,
+        source,
+        duplicates);
+    matchByCrossCurrencyKey(
+        byForeign.get(false), candidates, ImportDuplicateService::convertedKey, source, duplicates);
+  }
+
+  // Pairs rows, by their billed amount and currency, with the ledger rows {@code ledgerKey} gives a
+  // key in the account's currency; a ledger row it gives none is not compared.
+  private static void matchByCrossCurrencyKey(
+      List<ParsedImportRow> rows,
+      List<ImportDuplicateCandidate> candidates,
+      Function<ImportDuplicateCandidate, String> ledgerKey,
+      String source,
+      Map<Integer, UUID> duplicates) {
+    if (rows.isEmpty()) {
+      return;
     }
+    Map<String, List<ImportDuplicateCandidate>> ledgerByKey = new LinkedHashMap<>();
+    for (ImportDuplicateCandidate candidate : candidates) {
+      String key = ledgerKey.apply(candidate);
+      if (key != null) {
+        ledgerByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(candidate);
+      }
+    }
+    Map<String, List<ParsedImportRow>> rowsByKey = new LinkedHashMap<>();
+    for (ParsedImportRow row : rows) {
+      CanonicalImportRow canonical = row.canonical();
+      rowsByKey
+          .computeIfAbsent(
+              key(canonical.bookingDate(), canonical.amount(), canonical.currency()),
+              k -> new ArrayList<>())
+          .add(row);
+    }
+    rowsByKey.forEach(
+        (key, keyRows) -> {
+          List<ImportDuplicateCandidate> keyCandidates = ledgerByKey.get(key);
+          if (keyCandidates != null) {
+            matchByFallback(keyRows, keyCandidates, source, duplicates);
+          }
+        });
   }
 
   // A ledger row booked in the account's own currency, by its key; null for any other.

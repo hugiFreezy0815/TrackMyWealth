@@ -732,11 +732,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       value =
           "SELECT t.id AS id, t.booking_date AS bookingDate, t.amount AS amount,"
               + " t.currency AS currency, t.merchant_description AS merchantDescription,"
-              + " t.source AS source, t.external_id AS externalId,"
-              + " t.fx_rate_to_account_currency AS fxRateToAccountCurrency,"
-              + " t.fx_rate_estimated AS fxRateEstimated, a.native_currency AS accountCurrency"
-              + " FROM transaction t JOIN account a ON a.id = t.account_id"
-              + " WHERE t.account_id = :accountId AND t.source = :source"
+              + " t.source AS source, t.external_id AS externalId"
+              + " FROM transaction t WHERE t.account_id = :accountId AND t.source = :source"
               + " AND t.external_id IN (:externalIds) AND t.voided_at IS NULL",
       nativeQuery = true)
   List<ImportDuplicateCandidate> findByExternalIds(
@@ -753,11 +750,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       value =
           "SELECT t.id AS id, t.booking_date AS bookingDate, t.amount AS amount,"
               + " t.currency AS currency, t.merchant_description AS merchantDescription,"
-              + " t.source AS source, t.external_id AS externalId,"
-              + " t.fx_rate_to_account_currency AS fxRateToAccountCurrency,"
-              + " t.fx_rate_estimated AS fxRateEstimated, a.native_currency AS accountCurrency"
-              + " FROM transaction t JOIN account a ON a.id = t.account_id"
-              + " WHERE t.account_id = :accountId AND t.id IN (:ids)",
+              + " t.source AS source, t.external_id AS externalId"
+              + " FROM transaction t WHERE t.account_id = :accountId AND t.id IN (:ids)",
       nativeQuery = true)
   List<ImportDuplicateCandidate> findDuplicateTargets(
       @Param(ACCOUNT_ID) UUID accountId, @Param("ids") Collection<UUID> ids);

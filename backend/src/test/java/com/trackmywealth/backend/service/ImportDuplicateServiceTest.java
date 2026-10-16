@@ -334,8 +334,6 @@ class ImportDuplicateServiceTest {
     verify(transactionRepository).findLiveForDuplicateCheck(ACCOUNT, DAY, DAY.plusDays(3));
   }
 
-  // --- fixtures --------------------------------------------------------------------------------
-
   // #341: the same purchase booked in euros (template version 1, or by hand) and in its original
   // currency (version 2) is one booking, whichever of the two the ledger holds.
   @Test
@@ -396,6 +394,48 @@ class ImportDuplicateServiceTest {
                     row(1, "-1.49", "Shop", null), foreignPurchase(2, "-1.49", "-37.00", "CZK"))))
         .containsExactly(Map.entry(1, inEuros));
   }
+
+  @Test
+  void aReservedLedgerRowIsNoCrossCurrencyMatchEither() {
+    // #287: the commit's re-check; another row of the batch holds the euro booking already.
+    UUID held = UUID.randomUUID();
+    ledger(candidate(held, "-1.49", "Muster Online Shop", CSV, null));
+
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT, CSV, List.of(foreignPurchase(1, "-1.49", "-37.00", "CZK")), Set.of(held)))
+        .isEmpty();
+  }
+
+  @Test
+  void twoForeignPurchasesAgainstOneBookingInEurosGiveExactlyOneDuplicate() {
+    UUID inEuros = UUID.randomUUID();
+    ledger(candidate(inEuros, "-1.49", "Muster Online Shop", CSV, null));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(
+                foreignPurchase(1, "-1.49", "-37.00", "CZK"),
+                foreignPurchase(2, "-1.49", "-37.00", "CZK")));
+
+    assertThat(duplicates).containsExactly(Map.entry(1, inEuros));
+  }
+
+  @Test
+  void theConvertedAmountIsRoundedHalfUpToTheCent() {
+    // -10.00 CZK at 0.1235 is -1.2350: -1.24 to the cent, never -1.23.
+    UUID inKoruna = UUID.randomUUID();
+    ledger(candidate(inKoruna, "-10.00", "CZK", "0.1235", false, "Shop", "MANUAL", null));
+
+    assertThat(service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "-1.24", "Shop", null))))
+        .containsExactly(Map.entry(1, inKoruna));
+    assertThat(service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "-1.23", "Shop", null))))
+        .isEmpty();
+  }
+
+  // --- fixtures --------------------------------------------------------------------------------
 
   private void ledger(ImportDuplicateCandidate... candidates) {
     when(transactionRepository.findLiveForDuplicateCheck(eq(ACCOUNT), any(), any()))
