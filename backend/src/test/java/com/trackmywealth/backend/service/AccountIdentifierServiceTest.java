@@ -3,8 +3,10 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
+import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -135,6 +137,21 @@ class AccountIdentifierServiceTest {
     assertThat(service.hash(workspace, "4268135009", CONTRACT))
         .isNotEqualTo(service.hash(workspace, "4268135009", IBAN))
         .isNotEqualTo(service.hash(UUID.randomUUID(), "4268135009", CONTRACT));
+  }
+
+  @Test
+  void aRegisteredContractIsMatchedByItsOwnHashWithinTheWorkspace() {
+    UUID workspace = UUID.randomUUID();
+    String normalized = "4268135009";
+    String hashed = service.hash(workspace, normalized, CONTRACT);
+    Account account = mock(Account.class);
+    AccountRepository repository = mock(AccountRepository.class);
+    when(repository.findByWorkspaceIdAndContractIdentifierHash(workspace, hashed))
+        .thenReturn(Optional.of(account));
+    AccountIdentifierService matching = new AccountIdentifierService(KEY, repository);
+
+    assertThat(matching.match(workspace, normalized, CONTRACT)).contains(account);
+    assertThat(matching.match(workspace, normalized, IBAN)).isEmpty();
   }
 
   @Test
