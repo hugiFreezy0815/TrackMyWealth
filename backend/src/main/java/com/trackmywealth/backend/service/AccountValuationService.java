@@ -259,11 +259,10 @@ public class AccountValuationService {
         account, ownCurrency, targetCurrency, resolved, convertedValue, conversion.get(), warnings);
   }
 
-  // CUSTOM_ASSET (via CustomAssetValuation), MORTGAGE/LOAN (via original_principal - a real stored
-  // number, but the loan's original amount, not its current outstanding balance; no amortization
-  // tracking exists yet, EPIC 10), an account without a ledger (via its latest snapshot), any
-  // account with an opening balance (US-25-04) and CREDIT_CARD (via its ledger) have a value source
-  // today.
+  // CUSTOM_ASSET (via CustomAssetValuation), MORTGAGE/LOAN (via original_principal less the
+  // principal repaid on its ledger, US-10-02 - see loanValue), an account without a ledger (via its
+  // latest snapshot), any account with an opening balance (US-25-04) and CREDIT_CARD (via its
+  // ledger) have a value source today.
   private Optional<NativeAccountValue> resolveNativeAccountValue(
       Account account, Optional<AccountSnapshot> openingBalance, LocalDate asOf) {
     if (account.isManualValuation()) {
@@ -276,6 +275,11 @@ public class AccountValuationService {
                       v.getValue(), ValueBasisValues.MANUAL_VALUATION, v.getValuationDate()));
     }
     if (account.isHasAmortisation()) {
+      // An UNKNOWN split has no known principal. Reporting the entire payment as principal
+      // would overstate net worth, so fail closed until the entry is resolved.
+      if (transactionRepository.existsUnresolvedLoanRepaymentAsOf(account.getId(), asOf)) {
+        return Optional.empty();
+      }
       return accountMortgageRepository
           .findById(account.getId())
           .map(AccountMortgage::getOriginalPrincipal)
@@ -284,7 +288,7 @@ public class AccountValuationService {
                   accountLoanRepository
                       .findById(account.getId())
                       .map(AccountLoan::getOriginalPrincipal))
-          .map(principal -> new NativeAccountValue(principal, ValueBasisValues.ORIGINAL_PRINCIPAL));
+          .map(principal -> loanValue(account, principal, asOf));
     }
     if (!account.isHasTransactions()) {
       return latestSnapshot(account, asOf);
@@ -310,6 +314,24 @@ public class AccountValuationService {
                   () -> new NativeAccountValue(BigDecimal.ZERO, ValueBasisValues.LEDGER_EMPTY)));
     }
     return Optional.empty();
+  }
+
+  /**
+   * US-10-02: what is still owed on a loan or mortgage - its original principal less the principal
+   * repaid by {@code asOf}. A repayment's incoming leg is a positive row on the loan's ledger
+   * (cash-direction signed: money enters the loan), so the repaid principal is the ledger's sum,
+   * with voids and reversals left out as for any balance. A loan payment whose split is unknown is
+   * on the ledger in full until the member re-enters it; the basis is approximate either way.
+   */
+  private NativeAccountValue loanValue(Account account, BigDecimal principal, LocalDate asOf) {
+    return transactionRepository
+        .sumAmountByAccountIdAsOf(account.getId(), asOf)
+        .map(
+            repaid ->
+                new NativeAccountValue(
+                    principal.subtract(repaid),
+                    ValueBasisValues.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS))
+        .orElseGet(() -> new NativeAccountValue(principal, ValueBasisValues.ORIGINAL_PRINCIPAL));
   }
 
   /**

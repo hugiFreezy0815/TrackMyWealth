@@ -34,9 +34,21 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   String PER_DATE_CURRENCY =
       " group by t.bookingDate, t.currency order by t.bookingDate, t.currency";
 
+  // The start of every signed per-date-and-currency sum over the caller's accounts (cash flow).
+  String SIGNED_SUM_ON_ACCOUNTS =
+      "select t.bookingDate, t.currency, sum(t.amount) from Transaction t"
+          + " where t.account.id in :accountIds";
+
   // US-07-02: neither a voided original nor its reversing row - the pair nets to zero in a
   // balance, but must not count as spending or pair with a settlement.
   String NOT_VOIDED_OR_REVERSAL = " and t.voidedAt is null and t.replacesTransactionId is null";
+
+  // US-10-02: not a loan payment's interest - an EXPENSE naming its loan that is not an internal
+  // transfer (TransactionService#isLoanInterest). It is the cost of a loan, never a card payment,
+  // so settlement matching must not take it (and, confirming it, re-point it at the card).
+  String NOT_LOAN_INTEREST =
+      " and not (t.transactionType = 'EXPENSE' and t.counterpartyAccountId is not null"
+          + " and t.internalTransfer = false)";
 
   // US-25-03: not the adjusting entry of a reconciliation result (V63's owner link).
   String NOT_RECONCILIATION_ADJUSTMENT = " and t.reconciliationResultId is null";
@@ -210,13 +222,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /** US-07-07: the row that restored {@code voidedId}'s void, if any (at most one, V50). */
   Optional<Transaction> findByRestoresTransactionId(UUID voidedId);
 
-  /** US-07-02: the soft-deleted FEE row of a purchase, restored together with it. */
+  /**
+   * The soft-deleted rows linked to {@code ownerId} by {@code related_transaction_id}, restored
+   * together with it: a card purchase's FEE row (US-07-02), a loan payment's interest and incoming
+   * principal leg (US-10-02).
+   */
   @Query(
       value =
-          "SELECT * FROM transaction WHERE related_transaction_id = :purchaseId"
+          "SELECT * FROM transaction WHERE related_transaction_id = :ownerId"
               + " AND deleted_at IS NOT NULL FOR UPDATE",
       nativeQuery = true)
-  List<Transaction> findDeletedFeeRowsForUpdate(@Param("purchaseId") UUID purchaseId);
+  List<Transaction> findDeletedLinkedRowsForUpdate(@Param("ownerId") UUID ownerId);
 
   // US-09-04: the FEE row (if any) a foreign-currency purchase's replay check compares feeAmount
   // against - at most one exists per purchase (TransactionService only ever creates one).
@@ -384,6 +400,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
           + " and t.currency = :currency and t.transactionType in :types"
+          + NOT_LOAN_INTEREST
           + " and not exists (select 1 from SettlementMatch m where m.status = 'CONFIRMED'"
           + " and m.cardTransaction is not null and m.paymentTransaction = t)"
           + IN_LEDGER_ORDER)
@@ -405,6 +422,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
           + " and t.currency = :currency and t.transactionType in :types"
+          + NOT_LOAN_INTEREST
           + " and not exists (select 1 from SettlementMatch m where m.status = 'CONFIRMED'"
           + " and m.cardTransaction is not null and m.paymentTransaction = t)")
   List<Object[]> findPairablePaymentDatesByAmounts(
@@ -433,6 +451,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       "select t from Transaction t where t.account.id = :sourceAccountId and t.amount < 0"
           + NOT_VOIDED_OR_REVERSAL
           + " and t.currency = :currency and t.transactionType in :types"
+          + NOT_LOAN_INTEREST
           + " and t.bookingDate >= :since"
           + " and not exists (select 1 from SettlementMatch m"
           + " where m.cardAccount.id = :cardAccountId and m.paymentTransaction = t)"
@@ -476,8 +495,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * serve both the original-currency and the converted view.
    */
   @Query(
-      "select t.bookingDate, t.currency, sum(t.amount) from Transaction t"
-          + " where t.account.id in :accountIds"
+      SIGNED_SUM_ON_ACCOUNTS
           + " and t.transactionType in :types and t.internalTransfer = false"
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
@@ -500,15 +518,22 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * proposals' debits already stands for the pair in this very figure - booked in the same range,
    * on an account in {@code accountIds}, and itself unresolved - so a pair is counted once, and a
    * pair split across two months or across accounts the caller cannot all see is still counted.
-   * Internal transfers, voided rows and reversals are resolved and left out. Each element is {@code
-   * [bookingDate, currency, sum]}.
+   * US-10-02: also a loan payment whose interest/principal split is unknown - its {@code
+   * DEBT_REPAYMENT} pair is not an internal transfer - counted once, by its incoming leg on the
+   * loan, like the saving figure counts a repaid principal. Internal transfers, voided rows and
+   * reversals are resolved and left out. Each element is {@code [bookingDate, currency, sum]}.
    */
   @Query(
       "select t.bookingDate, t.currency, sum(abs(t.amount)) from Transaction t"
           + " where t.account.id in :accountIds and t.internalTransfer = false"
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
-          + " and ((t.amount < 0 and (t.transactionType = 'SETTLEMENT' or exists (select 1 from"
+          + " and ((t.transactionType = 'DEBT_REPAYMENT'"
+          + " and (t.amount > 0 or (t.amount < 0 and not exists (select 1 from Transaction c"
+          + " where c.relatedTransactionId = t.id and c.transactionType = 'DEBT_REPAYMENT'"
+          + " and c.account.id in :accountIds and c.bookingDate between :from and :to"
+          + " and c.voidedAt is null and c.replacesTransactionId is null))))"
+          + " or (t.amount < 0 and (t.transactionType = 'SETTLEMENT' or exists (select 1 from"
           + " SettlementMatch m where m.status = 'PROPOSED' and m.paymentTransaction = t)))"
           + " or ((t.transactionType in ('TRANSFER', 'PENSION_CONTRIBUTION')"
           + " or exists (select 1 from SettlementMatch m where m.status = 'PROPOSED'"
@@ -530,8 +555,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * currency, sum]}.
    */
   @Query(
-      "select t.bookingDate, t.currency, sum(t.amount) from Transaction t"
-          + " where t.account.id in :accountIds"
+      SIGNED_SUM_ON_ACCOUNTS
           + " and t.transactionType in :types and t.internalTransfer = false"
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
@@ -549,12 +573,15 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
    * transfers in [{@code from}, {@code to}] whose own account's {@code counts_as_saving} is {@code
    * intoSaving} and whose counterparty account's is the opposite - money moved into saving ({@code
    * true}) or back out of it ({@code false}). A transfer between two alike accounts, or to an
-   * untracked one, is in neither. Each element is {@code [bookingDate, currency, sum]}.
+   * untracked one, is in neither. A loan's repaid principal ({@code DEBT_REPAYMENT}) is not one of
+   * these: whether it counts is the workspace's savings-rate methodology, not the loan's flag (see
+   * {@link #sumRepaidPrincipalByDateAndCurrency}). Each element is {@code [bookingDate, currency,
+   * sum]}.
    */
   @Query(
-      "select t.bookingDate, t.currency, sum(t.amount) from Transaction t"
-          + " where t.account.id in :accountIds"
+      SIGNED_SUM_ON_ACCOUNTS
           + " and t.internalTransfer = true and t.amount > 0 and t.counterpartyAccountId is not null"
+          + " and t.transactionType <> 'DEBT_REPAYMENT'"
           + BOOKED_BETWEEN
           + NOT_VOIDED_OR_REVERSAL
           + " and t.account.countsAsSaving = :intoSaving"
@@ -564,6 +591,40 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   List<Object[]> sumSavingMovementsByDateAndCurrency(
       @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
       @Param("intoSaving") boolean intoSaving,
+      @Param(FROM) LocalDate from,
+      @Param("to") LocalDate to);
+
+  /** Whether an unresolved loan payment exists on or before a valuation date. */
+  @Query(
+      "select case when count(t) > 0 then true else false end from Transaction t"
+          + " where t.account.id = :accountId and t.transactionType = 'DEBT_REPAYMENT'"
+          + " and t.amount > 0 and t.internalTransfer = false and t.bookingDate <= :asOf"
+          + NOT_VOIDED_OR_REVERSAL)
+  boolean existsUnresolvedLoanRepaymentAsOf(
+      @Param(ACCOUNT_ID) UUID accountId, @Param(AS_OF) LocalDate asOf);
+
+  /**
+   * US-10-02/FR-CF-006: per booking date and currency, the principal repaid on the loans in {@code
+   * accountIds} - the incoming {@code DEBT_REPAYMENT} legs in [{@code from}, {@code to}] of
+   * payments whose split is known (an internal transfer; an unknown split is pending review
+   * instead) - paid from an account whose {@code counts_as_saving} is {@code fromSaving}. {@code
+   * CashFlowService} treats the loan as a saving account exactly when the methodology includes
+   * mortgage principal, so, like any other move between two kinds of account, only a payment
+   * between the two kinds moves the saving figure. Each element is {@code [bookingDate, currency,
+   * sum]}.
+   */
+  @Query(
+      SIGNED_SUM_ON_ACCOUNTS
+          + " and t.transactionType = 'DEBT_REPAYMENT' and t.internalTransfer = true"
+          + " and t.amount > 0"
+          + BOOKED_BETWEEN
+          + NOT_VOIDED_OR_REVERSAL
+          + " and exists (select 1 from Account c where c.id = t.counterpartyAccountId"
+          + " and c.countsAsSaving = :fromSaving)"
+          + PER_DATE_CURRENCY)
+  List<Object[]> sumRepaidPrincipalByDateAndCurrency(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds,
+      @Param("fromSaving") boolean fromSaving,
       @Param(FROM) LocalDate from,
       @Param("to") LocalDate to);
 

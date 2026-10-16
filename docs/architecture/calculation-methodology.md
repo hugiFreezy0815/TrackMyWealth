@@ -163,7 +163,8 @@ exact one:
 | `MANUAL_VALUATION` | latest manual valuation on or before the as-of date (`CUSTOM_ASSET`) | yes, as recorded |
 | `LATEST_SNAPSHOT` | newest snapshot balance on or before the as-of date, the opening balance included - an account without a ledger (`has_transactions = false`, vested benefits) | yes, as reported on that date |
 | `LEDGER_EMPTY` | card with no rows yet - assumed 0 | **no** - approximation |
-| `ORIGINAL_PRINCIPAL` | a loan's/mortgage's *original* principal, not its outstanding balance (no amortisation tracking until EPIC 10) | **no** - approximation |
+| `ORIGINAL_PRINCIPAL` | a loan's/mortgage's *original* principal, not its outstanding balance (no repayment recorded on it yet) | **no** - approximation |
+| `ORIGINAL_PRINCIPAL_LESS_REPAYMENTS` | a loan's/mortgage's original principal less the principal repaid on its ledger by the as-of date (US-10-02); repayments from before tracking began are missing | **no** - approximation |
 
 `valueBasis` is `null` when `valueKnown` is `false`. `AccountValuation.valueSourceDate` is the date
 of the observation a `LATEST_SNAPSHOT` or `MANUAL_VALUATION` figure rests on, so a client can show
@@ -437,3 +438,43 @@ card; on 3 Sep CHF 1,200 leaves the current account and a CHF 1,200 credit is bo
 |---|---|---|---|
 | CHF 1,200 payment matched | 1,200 | **0** | 0 |
 | no settlement source (control) | 1,200 | 1,200 (double count) | 0 |
+
+
+## Loan repayments with unknown interest/principal split (US-10-02, #328)
+
+A repayment with `splitSource=UNKNOWN` has no trustworthy principal amount. Its incoming
+`DEBT_REPAYMENT` ledger entry is retained for traceability but **must not** be deducted in full
+from the loan's original principal when reporting net worth. The loan's value is therefore
+`valueKnown=false` from the first unresolved payment's booking date until that payment has
+been removed or replaced by a split with known principal. This fail-closed treatment avoids
+presenting a fictional all-principal repayment as exact financial data. Earlier as-of valuations
+remain available. Net worth leaves the loan out of its totals and reports `complete=false` until
+then, like any other unknown value (PR-011). Subsequent automatic interest estimates must not use
+the untrusted ledger balance while an unresolved earlier payment remains.
+
+For cash flow, an UNKNOWN repayment is pending review: use the positive loan leg when it is
+readable, otherwise the negative paying-account leg when that is readable. Count the payment
+exactly once if both accounts are readable, and do not disclose account information from a
+paying account for which the member lacks transaction-level READ. The repayments list omits such
+payment groups rather than exposing partial transaction data, and the loan's own ledger leg carries
+no description or notes from the paying account - only the amount, date and the paying account's
+id, which cash flow and removal need.
+
+**Estimated interest.** Without a stated split or a schedule entry for the payment's month, the
+interest is a month's interest on what is still owed: `outstanding × interest_rate_percent / 100 /
+12`, rounded half up to the currency's minor unit and capped at the payment. What is still owed is
+the lower of two figures that can each only overstate it: the original principal less the
+principal repaid on the loan's ledger (missing repayments from before tracking began), and the
+`remaining_balance` of the latest schedule entry due before the payment's month (missing the
+repayments since). While an earlier payment's split is unknown, the ledger figure is untrusted and
+the split stays unknown too.
+
+**Removed payments.** Removing any row of a payment removes all of them; `GET .../repayments` then
+leaves the payment out. Its `loan_payment` record stays (V87) and keeps its `externalId`: a retry
+with that key is a 409, as for a removed transaction - restore the payment, or record it again
+under a new key.
+
+A payment's interest row is an `EXPENSE` naming the loan as counterparty and is never an internal
+transfer; that shape is what identifies it. A card payment confirmed as a settlement also names an
+account (the card) but is always an internal transfer, so it stays an ordinary, correctable
+expense, and card settlement matching never takes a loan's interest as a card payment.

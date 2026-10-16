@@ -16,6 +16,7 @@ public final class IfMatchExceptions {
           // Creates: POST on a collection, no prior version to protect.
           Map.entry("AccountController#createAccount", "create"),
           Map.entry("AccountSnapshotController#recordSnapshot", "create"),
+          Map.entry("AmortisationScheduleController#createEntry", "create"),
           Map.entry("AdminUserController#createUser", "create"),
           Map.entry("CategorizationRuleController#create", "create"),
           Map.entry("CategoryController#create", "create"),
@@ -23,6 +24,7 @@ public final class IfMatchExceptions {
           Map.entry("ImportTemplateController#create", "create"),
           Map.entry("ImportBatchController#upload", "create"),
           Map.entry("InstitutionController#createInstitution", "create"),
+          Map.entry("LoanRepaymentController#recordRepayment", "create (append-only ledger)"),
           Map.entry("OpeningBalanceController#recordOpeningBalance", "create"),
           Map.entry("SharingGrantController#grant", "create"),
           Map.entry("TransactionController#recordTransaction", "create (append-only ledger)"),

@@ -103,6 +103,9 @@ public class TransactionCorrectionService {
       }
     }
     CreateTransactionRequest replacementRequest = desired.replacementRequest();
+    if (TransactionService.isLoanPaymentRow(original)) {
+      return editLoanPaymentText(original, targetAccountId, replacementRequest, desired);
+    }
     boolean financialChange =
         !transactionService.financialStateMatches(original, targetAccountId, replacementRequest);
 
@@ -146,6 +149,32 @@ public class TransactionCorrectionService {
     }
 
     return new TransactionCorrectionResponse(created.version(), created, removal);
+  }
+
+  /**
+   * US-10-02: a loan payment's rows were split as one entry, so a replacement of one of them could
+   * not keep the split - the interest and both principal legs must add up to the payment. Only its
+   * description and notes are edited in place; any financial change is a 409 pointing the member at
+   * removing the payment (which takes all its rows) and recording it again.
+   */
+  private TransactionCorrectionResponse editLoanPaymentText(
+      Transaction original,
+      UUID targetAccountId,
+      CreateTransactionRequest replacementRequest,
+      CorrectTransactionRequest desired) {
+    boolean sameFinancialState =
+        original.getAccount().getId().equals(targetAccountId)
+            && original.getTransactionType().equals(replacementRequest.transactionType())
+            && original.getBookingDate().equals(replacementRequest.bookingDate())
+            && original.getAmount().compareTo(replacementRequest.amount()) == 0
+            && original.getCurrency().equals(replacementRequest.currency());
+    if (!sameFinancialState) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "This transaction is part of a loan payment, split into interest and principal as one"
+              + " entry; remove the payment and record it again instead.");
+    }
+    return editTextOnly(original, desired);
   }
 
   static boolean echoesEstimatedRate(Transaction original, CorrectTransactionRequest request) {

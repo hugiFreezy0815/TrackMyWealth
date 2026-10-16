@@ -82,7 +82,12 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V79` | `LBS Süd` in `institution_catalogue`, and its shipped building-savings statement PDF template (US-07-15, #275) |
 | `V80` | Reference-data baseline `1.2.0-baseline` (current; `1.1.0-baseline` stays as history): the shipped import templates of V75-V79 and `LBS Süd` (US-07-15, #275) |
 | `V81` | Authentication under a hardened runtime role (#321): `SECURITY DEFINER` functions `auth_user_snapshot(user, session)` and `auth_workspace_member_status(user)`, `EXECUTE` revoked from `PUBLIC` and granted to `trackmywealth_runtime` only (see "Authentication lookup with a hardened runtime role") |
+| `V82` | `amortisation_schedule_entry.version` + `amortisation_schedule_entry_bump_version`, and `chk_amortisation_schedule_entry_amounts` (no negative amount, an instalment above zero): members maintain a loan's schedule (US-10-02, #328) |
+| `V83` | `loan_payment` (US-10-02, #328): one payment to a loan or mortgage and how it was split (`split_source` `SCHEDULE`/`STATED`/`ESTIMATED`/`UNKNOWN`, `split_estimated`), naming its principal and interest rows; own RLS policy, idempotency key unique per loan |
+| `V84` | Shipped category `LOAN_INTEREST` for the interest part of a loan payment (US-10-02, #328) |
+| `V85` | Reference-data baseline `1.3.0-baseline` (current; `1.2.0-baseline` stays as history): the `LOAN_INTEREST` default category of V84 (US-10-02, #328) |
 | `V86` | `flyway_schema_history` read-only for `trackmywealth_runtime`, when that role exists (US-28-05, #331) |
+| `V87` | `loan_payment` append-only (US-10-02, #328): `trg_loan_payment_append_only` refuses every `UPDATE` and `DELETE` except V83's own `ON DELETE SET NULL` of `amortisation_schedule_entry_id`; a removed payment keeps its record and its `external_id` (`TRUNCATE` is not guarded) |
 | `V90` | Quartz job-store schema (framework-owned, deliberately gapped — see "Migration numbering and out-of-order application" below) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16

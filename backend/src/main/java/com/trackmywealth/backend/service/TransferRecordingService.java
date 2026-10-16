@@ -8,6 +8,7 @@ import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import java.math.BigDecimal;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,8 +23,8 @@ import org.springframework.web.server.ResponseStatusException;
  * leg, left to {@link TransferDetectionService} and {@link TransferResolutionService}.
  *
  * <p>Each leg is in its own account's currency - the other side's amount is {@code
- * counterpartyAmount} - so no FX field ever applies. A loan or mortgage is serviced by {@code
- * DEBT_REPAYMENT} (US-10-02), a card by a {@code SETTLEMENT}.
+ * counterpartyAmount} - so no FX field ever applies. A loan or mortgage is serviced by a loan
+ * payment ({@code LoanRepaymentService}, US-10-02), a card by a {@code SETTLEMENT}.
  */
 @Service
 public class TransferRecordingService {
@@ -74,7 +75,10 @@ public class TransferRecordingService {
     }
     if (account.isHasAmortisation()) {
       throw unprocessable(
-          "A loan or mortgage is serviced by its own transaction type, not a " + type + ".");
+          "A loan or mortgage is paid with POST /api/v1/accounts/{loanAccountId}/repayments, not"
+              + " a "
+              + type
+              + ".");
     }
     if (!request.currency().equals(account.getNativeCurrency())) {
       throw unprocessable(
@@ -142,7 +146,10 @@ public class TransferRecordingService {
     }
     if (counterparty.isHasAmortisation()) {
       throw unprocessable(
-          "A loan or mortgage is serviced by its own transaction type, not a " + type + ".");
+          "A loan or mortgage is paid with POST /api/v1/accounts/{loanAccountId}/repayments, not"
+              + " a "
+              + type
+              + ".");
     }
     if (PENSION_CONTRIBUTION.equals(type) != counterparty.isHasContributionLimit()) {
       throw unprocessable(
@@ -177,23 +184,52 @@ public class TransferRecordingService {
       Account counterparty,
       CreateTransactionRequest request,
       AuthenticatedUserPrincipal actor) {
+    Transaction credit =
+        creditLeg(
+            debit,
+            counterparty,
+            sameCurrency(debit.getAccount(), counterparty)
+                ? debit.getAmount().negate()
+                : request.counterpartyAmount(),
+            actor);
+    credit.setMerchantDescription(debit.getMerchantDescription());
+    credit.setNotes(debit.getNotes());
+    return save(credit);
+  }
+
+  /**
+   * US-10-02: the incoming leg of a loan payment's principal pair ({@code DEBT_REPAYMENT}) on the
+   * loan, written as {@link #recordCreditLeg} does - flagged like the debit, which is not flagged
+   * while the split is unknown - but without the paying account's description and notes: a member
+   * who may read the loan but not the paying account reads the loan's ledger, and must not learn
+   * from it what the owner wrote on their own account. Both currencies are the same.
+   */
+  Transaction recordLoanCreditLeg(
+      Transaction debit, Account loan, AuthenticatedUserPrincipal actor) {
+    return save(creditLeg(debit, loan, debit.getAmount().negate(), actor));
+  }
+
+  private static Transaction creditLeg(
+      Transaction debit,
+      Account counterparty,
+      BigDecimal amount,
+      AuthenticatedUserPrincipal actor) {
     Transaction credit = new Transaction();
     credit.setWorkspace(debit.getWorkspace());
     credit.setAccount(counterparty);
     credit.setTransactionType(debit.getTransactionType());
     credit.setBookingDate(debit.getBookingDate());
-    credit.setAmount(
-        sameCurrency(debit.getAccount(), counterparty)
-            ? debit.getAmount().negate()
-            : request.counterpartyAmount());
+    credit.setAmount(amount);
     credit.setCurrency(counterparty.getNativeCurrency());
-    credit.setMerchantDescription(debit.getMerchantDescription());
-    credit.setNotes(debit.getNotes());
     credit.setSource(debit.getSource());
-    credit.setInternalTransfer(true);
+    credit.setInternalTransfer(debit.isInternalTransfer());
     credit.setCounterpartyAccountId(debit.getAccount().getId());
     credit.setRelatedTransactionId(debit.getId());
     credit.setCreatedBy(actor.userId());
+    return credit;
+  }
+
+  private Transaction save(Transaction credit) {
     Transaction saved = transactionRepository.saveAndFlush(credit);
     categorizationService.categorize(saved);
     return saved;

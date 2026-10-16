@@ -52,12 +52,14 @@ import org.springframework.web.server.ResponseStatusException;
  *       linked by {@code restores_transaction_id} (V50).
  * </ul>
  *
- * <p>Nothing goes silently (FR-LIF-007): a card purchase's linked FEE row is removed with it, and
- * every settlement match the removal breaks is dissolved - a confirmed match's other leg becomes an
- * ordinary payment or credit again. The response names every row affected. Only open matches
- * (proposed, confirmed) are removed: a rejected one stays, beside a voided row as history and
- * beside a soft-deleted one so that a restore cannot re-propose or auto-confirm the pair the member
- * rejected. Match queries leave a match out while one of its legs is deleted.
+ * <p>Nothing goes silently (FR-LIF-007): a card purchase's linked FEE row is removed with it, a
+ * loan payment's rows (its principal pair and its interest, US-10-02) always go and come back
+ * together, whichever of them is named, and every settlement match the removal breaks is dissolved
+ * - a confirmed match's other leg becomes an ordinary payment or credit again. The response names
+ * every row affected. Only open matches (proposed, confirmed) are removed: a rejected one stays,
+ * beside a voided row as history and beside a soft-deleted one so that a restore cannot re-propose
+ * or auto-confirm the pair the member rejected. Match queries leave a match out while one of its
+ * legs is deleted.
  *
  * <p>Needs EDIT on the account, the same as recording there. An accepted reconciliation
  * difference's adjusting entry is neither removed nor restored here: its result's reopen does that
@@ -164,8 +166,9 @@ public class TransactionRemovalService {
 
   /**
    * The rows a removal of {@code original} takes with it, {@code original} first: a card purchase's
-   * linked FEE row (US-09-04) and the outgoing leg of a two-sided transfer's incoming leg
-   * (US-10-01). Only rows still in effect; the transfer leg is locked.
+   * linked FEE row (US-09-04), the outgoing leg of a two-sided transfer's incoming leg (US-10-01),
+   * and every other row of the same loan payment (US-10-02). Only rows still in effect; the
+   * outgoing leg is locked.
    */
   List<Transaction> removalGroupOf(Transaction original) {
     return removalGroupsOf(List.of(original));
@@ -177,22 +180,12 @@ public class TransactionRemovalService {
    * queries whatever the number of rows; the transfer legs are locked in id order.
    */
   List<Transaction> removalGroupsOf(List<Transaction> originals) {
-    // A fee removed on its own before is no longer found (voided, or hidden once soft-deleted).
-    Map<UUID, List<Transaction>> linkedTo = new HashMap<>();
-    transactionRepository
-        .findByRelatedTransactionIdIn(originals.stream().map(Transaction::getId).toList())
-        .stream()
-        .filter(linked -> linked.getVoidedAt() == null)
-        .forEach(
-            linked ->
-                linkedTo
-                    .computeIfAbsent(linked.getRelatedTransactionId(), key -> new ArrayList<>())
-                    .add(linked));
     // A two-sided transfer is one entry: removing its incoming leg takes the outgoing one too (the
-    // other direction is the lookup just above).
+    // other direction is the linked lookup below). A loan payment's interest belongs to its
+    // outgoing principal leg the same way (US-10-02).
     List<UUID> outgoingIds =
         originals.stream()
-            .filter(row -> isTransferLeg(row) && row.getRelatedTransactionId() != null)
+            .filter(TransactionRemovalService::belongsToOutgoingLeg)
             .map(Transaction::getRelatedTransactionId)
             .toList();
     Map<UUID, Transaction> outgoing = new HashMap<>();
@@ -201,6 +194,19 @@ public class TransactionRemovalService {
           .findAllByIdForUpdate(outgoingIds)
           .forEach(debit -> outgoing.put(debit.getId(), debit));
     }
+    // The rows linked to each original and to each outgoing leg: a fee, a transfer's incoming leg,
+    // a loan payment's other rows. A fee removed on its own before is no longer found (voided, or
+    // hidden once soft-deleted).
+    List<UUID> heads = new ArrayList<>(originals.stream().map(Transaction::getId).toList());
+    heads.addAll(outgoing.keySet());
+    Map<UUID, List<Transaction>> linkedTo = new HashMap<>();
+    transactionRepository.findByRelatedTransactionIdIn(heads).stream()
+        .filter(linked -> linked.getVoidedAt() == null)
+        .forEach(
+            linked ->
+                linkedTo
+                    .computeIfAbsent(linked.getRelatedTransactionId(), key -> new ArrayList<>())
+                    .add(linked));
     Map<UUID, Transaction> group = new LinkedHashMap<>();
     for (Transaction original : originals) {
       group.putIfAbsent(original.getId(), original);
@@ -208,11 +214,12 @@ public class TransactionRemovalService {
           .getOrDefault(original.getId(), List.of())
           .forEach(linked -> group.putIfAbsent(linked.getId(), linked));
       Transaction debit =
-          isTransferLeg(original) && original.getRelatedTransactionId() != null
-              ? outgoing.get(original.getRelatedTransactionId())
-              : null;
+          belongsToOutgoingLeg(original) ? outgoing.get(original.getRelatedTransactionId()) : null;
       if (debit != null && debit.getVoidedAt() == null) {
         group.putIfAbsent(debit.getId(), debit);
+        linkedTo
+            .getOrDefault(debit.getId(), List.of())
+            .forEach(linked -> group.putIfAbsent(linked.getId(), linked));
       }
     }
     return new ArrayList<>(group.values());
@@ -321,18 +328,30 @@ public class TransactionRemovalService {
     List<Transaction> restored = new ArrayList<>();
     restored.add(deleted);
     // Only a fee deleted in the same step: one the member deleted separately stays deleted.
-    for (Transaction fee : transactionRepository.findDeletedFeeRowsForUpdate(deleted.getId())) {
+    for (Transaction fee : transactionRepository.findDeletedLinkedRowsForUpdate(deleted.getId())) {
       if (fee.getDeletedAt().isEqual(deleted.getDeletedAt())) {
         restored.add(fee);
       }
     }
-    // US-10-01: the outgoing leg of a two-sided transfer comes back with its incoming leg.
-    if (isTransferLeg(deleted) && deleted.getRelatedTransactionId() != null) {
+    // US-10-01: the outgoing leg of a two-sided transfer comes back with its incoming leg, and
+    // US-10-02: a loan payment's outgoing principal leg with any of its rows, bringing the
+    // payment's other rows deleted in the same step too.
+    if (belongsToOutgoingLeg(deleted)) {
       transactionRepository
           .findByIdIncludingDeletedForUpdate(deleted.getRelatedTransactionId())
           .filter(debit -> debit.getDeletedAt() != null)
           .filter(debit -> debit.getDeletedAt().isEqual(deleted.getDeletedAt()))
-          .ifPresent(restored::add);
+          .ifPresent(
+              debit -> {
+                restored.add(debit);
+                for (Transaction sibling :
+                    transactionRepository.findDeletedLinkedRowsForUpdate(debit.getId())) {
+                  if (!sibling.getId().equals(deleted.getId())
+                      && sibling.getDeletedAt().isEqual(deleted.getDeletedAt())) {
+                    restored.add(sibling);
+                  }
+                }
+              });
     }
     requireEditOnOtherAccounts(restored, account, actor);
     requireNotCorrected(deleted, restored);
@@ -539,6 +558,9 @@ public class TransactionRemovalService {
     if (isTransferLeg(original)) {
       copy.setInternalTransfer(original.isInternalTransfer());
       copy.setCounterpartyAccountId(original.getCounterpartyAccountId());
+    } else if (TransactionService.isLoanInterest(original)) {
+      // The loan it was paid on is what makes it loan interest (and categorizes it so).
+      copy.setCounterpartyAccountId(original.getCounterpartyAccountId());
     }
     copy.setRestoresTransactionId(original.getId());
     copy.setCreatedBy(actor.userId());
@@ -639,8 +661,18 @@ public class TransactionRemovalService {
     }
   }
 
+  // A transfer leg, or a loan payment's principal leg (US-10-02): a row that is one side of a
+  // movement between two of the workspace's accounts.
   private static boolean isTransferLeg(Transaction row) {
-    return TransferRecordingService.TRANSFER_TYPES.contains(row.getTransactionType());
+    return TransferRecordingService.TRANSFER_TYPES.contains(row.getTransactionType())
+        || TransactionService.DEBT_REPAYMENT.equals(row.getTransactionType());
+  }
+
+  // A row removed and restored through the outgoing leg it names: a transfer's incoming leg, or a
+  // loan payment's interest or incoming principal leg.
+  private static boolean belongsToOutgoingLeg(Transaction row) {
+    return row.getRelatedTransactionId() != null
+        && (isTransferLeg(row) || TransactionService.isLoanInterest(row));
   }
 
   // The other leg of a two-sided transfer sits on another account, which the member must be able to

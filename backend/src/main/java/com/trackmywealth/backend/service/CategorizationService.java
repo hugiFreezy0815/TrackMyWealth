@@ -51,7 +51,9 @@ import tools.jackson.databind.ObjectMapper;
  *       gaps are common.
  *   <li><b>TRANSACTION_TYPE</b> - the category the row's own type implies: a {@code FEE} is in
  *       {@code FEES} (e.g. a card's foreign-transaction fee row, which has no merchant or code), a
- *       {@code TAX} in {@code TAXES}. Certain where it applies, so it comes before any guess.
+ *       {@code TAX} in {@code TAXES}, and a loan payment's interest - an {@code EXPENSE} naming the
+ *       loan as counterparty (US-10-02) - in {@code LOAN_INTEREST}. Certain where it applies, so it
+ *       comes before any guess.
  *   <li><b>FALLBACK_MATCH</b> - learning from the workspace's earlier rows that a rule or a user
  *       categorized: the most trigram-similar merchant description at or above the configured
  *       threshold, which must also share the merchant's brand (see {@link #brandOf}) - a shared
@@ -113,7 +115,10 @@ public class CategorizationService {
   private static final UUID NIL_ID = new UUID(0L, 0L);
   // The shipped default a type implies when nothing more specific applies (V37).
   static final Map<String, String> TYPE_CATEGORY_CODES = Map.of("FEE", "FEES", "TAX", "TAXES");
-  private static final Set<String> SHIPPED_CODES = Set.of(UNCATEGORIZED, "FEES", "TAXES");
+  // US-10-02 (V84): the interest part of a loan payment, see impliedCategoryCode.
+  static final String LOAN_INTEREST = "LOAN_INTEREST";
+  private static final Set<String> SHIPPED_CODES =
+      Set.of(UNCATEGORIZED, "FEES", "TAXES", LOAN_INTEREST);
   // Enough headroom for candidates that fail the brand or assignability check below.
   private static final int FUZZY_CANDIDATES = 20;
   private static final int MIN_BRAND_LENGTH = 3;
@@ -441,7 +446,7 @@ public class CategorizationService {
         return new CategoryDecision(mapped.get(), ASSIGNED_BY_SOURCE_CODE, null, null);
       }
     }
-    UUID typed = shipped.get(TYPE_CATEGORY_CODES.get(transaction.getTransactionType()));
+    UUID typed = shipped.get(impliedCategoryCode(transaction));
     if (typed != null && assignable.contains(typed)) {
       return new CategoryDecision(typed, ASSIGNED_BY_TRANSACTION_TYPE, null, null);
     }
@@ -456,6 +461,14 @@ public class CategorizationService {
           similar.get().getCategoryId(), ASSIGNED_BY_FALLBACK, null, similar.get().getSimilarity());
     }
     return new CategoryDecision(shipped.get(UNCATEGORIZED), null, null, null);
+  }
+
+  // The shipped default the row's own shape implies: its type's, or LOAN_INTEREST for a loan
+  // payment's interest, which is read from the row itself so a re-run keeps it.
+  private static String impliedCategoryCode(Transaction transaction) {
+    return TransactionService.isLoanInterest(transaction)
+        ? LOAN_INTEREST
+        : TYPE_CATEGORY_CODES.get(transaction.getTransactionType());
   }
 
   /** The id of the shipped UNCATEGORIZED default, for the actionable list (FR-CAT-013). */

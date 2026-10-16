@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.ForeignCurrencyResolution;
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.dto.ImportLedgerRow;
 import com.trackmywealth.backend.dto.LatestCategoryAssignment;
+import com.trackmywealth.backend.dto.LoanPaymentPlan;
 import com.trackmywealth.backend.dto.TransactionRemovalValues;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.entity.Account;
@@ -56,9 +57,11 @@ import tools.jackson.databind.node.ObjectNode;
  * INCOME}, {@code EXPENSE}, {@code DEPOSIT}, {@code WITHDRAWAL}, {@code INTEREST}, {@code FEE},
  * {@code TAX}, {@code REFUND}), the card types {@code CREDIT_CARD_PURCHASE} and {@code SETTLEMENT},
  * and the investment types {@code BUY}, {@code SELL} and {@code DIVIDEND}. Two-sided types
- * (TRANSFER, DEBT_REPAYMENT, PENSION_CONTRIBUTION) arrive with US-10-01. A card account accepts
- * only its own two types; a {@code FEE} is also created alongside a foreign-currency card purchase,
- * see {@link #recordTransaction}.
+ * (TRANSFER, PENSION_CONTRIBUTION) arrived with US-10-01. A {@code DEBT_REPAYMENT} is never
+ * recorded here: a loan payment is split into interest and principal, so it is recorded through
+ * {@code LoanRepaymentService} (US-10-02), which writes its rows with {@link #recordLoanPayment}. A
+ * card account accepts only its own two types; a {@code FEE} is also created alongside a
+ * foreign-currency card purchase, see {@link #recordTransaction}.
  *
  * <p><b>US-07-01 investment types</b> go on any account that holds positions (depot, mandate,
  * crypto, a pension that holds funds), with their cash leg on that same account, in the trade
@@ -113,10 +116,13 @@ public class TransactionService {
   private static final String SETTLEMENT = "SETTLEMENT";
   private static final String WITHDRAWAL = "WITHDRAWAL";
   private static final String FEE = "FEE";
+  private static final String EXPENSE = "EXPENSE";
+  // US-10-02: a loan payment's principal pair; recorded only by recordLoanPayment.
+  static final String DEBT_REPAYMENT = "DEBT_REPAYMENT";
   // US-07-01 cash types: single-account, cash-direction signed. Money leaves the account for the
   // first group and enters it for the second. TRANSFER, DEBT_REPAYMENT and PENSION_CONTRIBUTION are
   // two-sided and belong to US-10-01.
-  private static final Set<String> OUTFLOW_CASH_TYPES = Set.of(WITHDRAWAL, FEE, "EXPENSE", "TAX");
+  private static final Set<String> OUTFLOW_CASH_TYPES = Set.of(WITHDRAWAL, FEE, EXPENSE, "TAX");
   private static final Set<String> INFLOW_CASH_TYPES =
       Set.of("INCOME", "DEPOSIT", "INTEREST", "REFUND");
   private static final Set<String> CASH_TYPES =
@@ -395,6 +401,143 @@ public class TransactionService {
     }
     return Optional.of(
         cardExtension != null ? cardExtension.getBillingCurrency() : account.getNativeCurrency());
+  }
+
+  /**
+   * US-10-02: writes the ledger rows of one loan payment from {@code paying} to {@code loan}, which
+   * {@code LoanRepaymentService} has validated (both editable, same workspace and currency, the
+   * paying account takes an {@code EXPENSE}) and split:
+   *
+   * <ul>
+   *   <li>the principal - or, while the split is unknown, the whole payment - as a {@code
+   *       DEBT_REPAYMENT} pair: the paying account's outflow, naming the loan as counterparty, and
+   *       the loan's inflow written like a two-sided transfer's credit leg ({@link
+   *       TransferRecordingService#recordLoanCreditLeg}, without the paying account's description
+   *       and notes, which a member who may read only the loan must not see). It is flagged as an
+   *       internal transfer only when the split is known; an unknown split stays pending review in
+   *       cash flow;
+   *   <li>the interest as an {@code EXPENSE} on the paying account, naming the loan as its
+   *       counterparty - what categorizes it as loan interest and keeps transfer detection away
+   *       from it - and the outflow as its related row, so removing, restoring or correcting the
+   *       payment always takes the whole group.
+   * </ul>
+   *
+   * <p>Each row is categorized like any new row; detection and reconciliation run once for each
+   * account afterwards, as for a two-sided transfer.
+   *
+   * @return the new rows: the outflow and inflow of the principal (if any), then the interest (if
+   *     any)
+   */
+  @Transactional
+  List<Transaction> recordLoanPayment(
+      Account paying,
+      Account loan,
+      LoanPaymentPlan plan,
+      String source,
+      AuthenticatedUserPrincipal actor) {
+    List<Transaction> rows = new ArrayList<>(3);
+    UUID principalDebitId = null;
+    if (plan.principal() != null && plan.principal().signum() > 0) {
+      CreateTransactionRequest debitRequest =
+          loanPaymentRequest(
+              DEBT_REPAYMENT,
+              plan.bookingDate(),
+              plan.principal().negate(),
+              plan.currency(),
+              plan.merchantDescription(),
+              plan.notes(),
+              loan.getId());
+      Transaction debit = newTransaction(paying, debitRequest, source, null, actor);
+      debit.setInternalTransfer(plan.splitKnown());
+      debit.setCounterpartyAccountId(loan.getId());
+      Transaction savedDebit = transactionRepository.saveAndFlush(debit);
+      categorizationService.categorize(savedDebit);
+      rows.add(savedDebit);
+      rows.add(transferRecordingService.recordLoanCreditLeg(savedDebit, loan, actor));
+      principalDebitId = savedDebit.getId();
+    }
+    if (plan.interest() != null && plan.interest().signum() > 0) {
+      Transaction interest =
+          newTransaction(
+              paying,
+              loanPaymentRequest(
+                  EXPENSE,
+                  plan.bookingDate(),
+                  plan.interest().negate(),
+                  plan.currency(),
+                  plan.merchantDescription(),
+                  plan.notes(),
+                  null),
+              source,
+              null,
+              actor);
+      interest.setCounterpartyAccountId(loan.getId());
+      interest.setRelatedTransactionId(principalDebitId);
+      Transaction savedInterest = transactionRepository.saveAndFlush(interest);
+      categorizationService.categorize(savedInterest);
+      rows.add(savedInterest);
+    }
+    settlementDetectionService.detectAfterWrite(paying, plan.bookingDate());
+    transferDetectionService.detectAfterWrite(paying, plan.bookingDate());
+    reconciliationService.reconcileAfterLedgerChange(paying, plan.bookingDate(), actor.userId());
+    reconciliationService.reconcileAfterLedgerChange(loan, plan.bookingDate(), actor.userId());
+    return rows;
+  }
+
+  /**
+   * US-10-02: the request one row of a loan payment is checked and written with - a cash row in the
+   * account's own currency, so no FX, investment or card field applies. {@code
+   * LoanRepaymentService} checks the paying account with the same shape before anything is written.
+   */
+  static CreateTransactionRequest loanPaymentRequest(
+      String type,
+      LocalDate bookingDate,
+      BigDecimal amount,
+      String currency,
+      String merchantDescription,
+      String notes,
+      UUID counterpartyAccountId) {
+    return new CreateTransactionRequest(
+        type,
+        bookingDate,
+        amount,
+        currency,
+        merchantDescription,
+        null,
+        notes,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        counterpartyAccountId,
+        null);
+  }
+
+  /**
+   * US-10-02: whether the row is the interest of a loan payment - an {@code EXPENSE} naming the
+   * loan it was paid on as its counterparty, and not an internal transfer. Only {@link
+   * #recordLoanPayment} (and a restore of such a row) writes that shape. A card payment confirmed
+   * as a settlement is an {@code EXPENSE} naming an account too - the card - but {@link
+   * SettlementDetectionService#applyFlags} always flags it an internal transfer, and the interest
+   * is spending, so never one; the settlement queries leave the interest out in turn ({@code
+   * TransactionRepository.NOT_LOAN_INTEREST}).
+   */
+  static boolean isLoanInterest(Transaction transaction) {
+    return EXPENSE.equals(transaction.getTransactionType())
+        && transaction.getCounterpartyAccountId() != null
+        && !transaction.isInternalTransfer();
+  }
+
+  /** US-10-02: whether the row is one of a loan payment's rows (principal leg or interest). */
+  static boolean isLoanPaymentRow(Transaction transaction) {
+    return DEBT_REPAYMENT.equals(transaction.getTransactionType()) || isLoanInterest(transaction);
   }
 
   /**
@@ -823,6 +966,9 @@ public class TransactionService {
   }
 
   private static String allowedHint(Account account) {
+    if (account.isHasAmortisation()) {
+      return "; record a payment to it with POST /api/v1/accounts/{loanAccountId}/repayments";
+    }
     Set<String> allowed = cashTypesAllowedOn(account);
     return allowed.isEmpty()
         ? "; it is serviced by its own transaction types"
@@ -837,6 +983,11 @@ public class TransactionService {
   private static boolean validate(
       Account account, AccountCreditCard cardExtension, CreateTransactionRequest request) {
     String type = request.transactionType();
+    if (DEBT_REPAYMENT.equals(type)) {
+      throw unprocessable(
+          "A loan or mortgage payment is split into interest and principal: record it with POST"
+              + " /api/v1/accounts/{loanAccountId}/repayments.");
+    }
     if (!SUPPORTED_TYPES.contains(type)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT,
@@ -1139,7 +1290,7 @@ public class TransactionService {
     return bookedAmountRounding.add(quantity.abs().multiply(priceRounding)).stripTrailingZeros();
   }
 
-  private static int minorDigits(String currency) {
+  static int minorDigits(String currency) {
     int digits = Currency.getInstance(currency).getDefaultFractionDigits();
     return digits < 0 ? DEFAULT_MINOR_DIGITS : digits;
   }
