@@ -12,6 +12,10 @@ import static org.mockito.Mockito.when;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
 import com.trackmywealth.backend.dto.ParsedImportRow;
+import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.LoanPayment;
+import com.trackmywealth.backend.entity.Transaction;
+import com.trackmywealth.backend.repository.LoanPaymentRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -33,7 +37,122 @@ class ImportDuplicateServiceTest {
   private static final String CSV = "CSV";
 
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
-  private final ImportDuplicateService service = new ImportDuplicateService(transactionRepository);
+  private final LoanPaymentRepository loanPaymentRepository = mock(LoanPaymentRepository.class);
+  private final ImportDuplicateService service =
+      new ImportDuplicateService(transactionRepository, loanPaymentRepository);
+
+  // --- rule 4 (#337): a loan payment recorded by hand
+  // ----------------------------------------------
+
+  @Test
+  void aStatementsInstalmentAndInterestAreTheLoanPaymentRecordedByHand() {
+    UUID outgoing = UUID.randomUUID();
+    UUID incoming = UUID.randomUUID();
+    UUID interest = UUID.randomUUID();
+    loanPayments(payment(DAY.minusDays(2), "456.78", "123.45", outgoing, interest));
+    incomingLeg(incoming, outgoing);
+    when(transactionRepository.findLiveIdsAmong(anyCollection())).thenReturn(List.of(interest));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(
+                loanRow(1, "DEBT_REPAYMENT", "456.78", DAY),
+                loanRow(2, "EXPENSE", "-123.45", DAY),
+                loanRow(3, "FEE", "-2.50", DAY)));
+
+    assertThat(duplicates).containsOnly(Map.entry(1, incoming), Map.entry(2, interest));
+  }
+
+  @Test
+  void anotherTotalOrAPaymentOutsideTheWindowIsNoDuplicate() {
+    UUID outgoing = UUID.randomUUID();
+    UUID interest = UUID.randomUUID();
+    loanPayments(
+        payment(DAY, "500.00", "123.45", outgoing, interest),
+        payment(DAY.minusDays(6), "456.78", "99.99", UUID.randomUUID(), UUID.randomUUID()));
+    incomingLeg(UUID.randomUUID(), outgoing);
+    when(transactionRepository.findLiveIdsAmong(anyCollection())).thenReturn(List.of(interest));
+
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT, CSV, List.of(loanRow(1, "DEBT_REPAYMENT", "456.78", DAY))))
+        .isEmpty();
+  }
+
+  @Test
+  void anInterestOnlyPaymentsInstalmentIsItsInterestRowWhichIsThenTaken() {
+    UUID interest = UUID.randomUUID();
+    loanPayments(payment(DAY, "123.45", "123.45", null, interest));
+    when(transactionRepository.findLiveIdsAmong(anyCollection())).thenReturn(List.of(interest));
+
+    Map<Integer, UUID> duplicates =
+        service.findDuplicates(
+            ACCOUNT,
+            CSV,
+            List.of(
+                loanRow(1, "DEBT_REPAYMENT", "123.45", DAY),
+                loanRow(2, "EXPENSE", "-123.45", DAY)));
+
+    assertThat(duplicates).containsExactly(Map.entry(1, interest));
+  }
+
+  @Test
+  void rowsThatAreNoInstalmentOrInterestNeverLookForLoanPayments() {
+    service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "12.40", "Refund", null)));
+
+    verify(loanPaymentRepository, never())
+        .findInEffectByLoanAccountIdBookedBetween(any(), any(), any());
+  }
+
+  private void loanPayments(LoanPayment... payments) {
+    when(loanPaymentRepository.findInEffectByLoanAccountIdBookedBetween(eq(ACCOUNT), any(), any()))
+        .thenReturn(List.of(payments));
+  }
+
+  private void incomingLeg(UUID id, UUID outgoing) {
+    Account loan = mock(Account.class);
+    when(loan.getId()).thenReturn(ACCOUNT);
+    Transaction leg = mock(Transaction.class);
+    when(leg.getId()).thenReturn(id);
+    when(leg.getAccount()).thenReturn(loan);
+    when(leg.getTransactionType()).thenReturn("DEBT_REPAYMENT");
+    when(leg.getRelatedTransactionId()).thenReturn(outgoing);
+    when(transactionRepository.findByRelatedTransactionIdIn(anyCollection()))
+        .thenReturn(List.of(leg));
+  }
+
+  private static LoanPayment payment(
+      LocalDate booked, String total, String interest, UUID outgoing, UUID interestRow) {
+    LoanPayment payment = new LoanPayment();
+    payment.setBookingDate(booked);
+    payment.setCurrency("CHF");
+    payment.setTotalAmount(new BigDecimal(total));
+    payment.setInterestAmount(new BigDecimal(interest));
+    payment.setPrincipalAmount(new BigDecimal(total).subtract(new BigDecimal(interest)));
+    payment.setPrincipalTransactionId(outgoing);
+    payment.setInterestTransactionId(interestRow);
+    return payment;
+  }
+
+  private static ParsedImportRow loanRow(int number, String type, String amount, LocalDate day) {
+    return ParsedImportRow.parsed(
+        number,
+        Map.of(),
+        new CanonicalImportRow(
+            day,
+            null,
+            new BigDecimal(amount),
+            "CHF",
+            type,
+            "Darlehen",
+            null,
+            null,
+            null,
+            null,
+            null));
+  }
 
   @Test
   void aRowWithAReferenceTheAccountAlreadyHoldsIsADuplicateOfThatRow() {

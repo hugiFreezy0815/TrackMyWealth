@@ -7,7 +7,9 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
+import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
+import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
@@ -113,6 +115,8 @@ class LoanStatementImportControllerTest {
               "DELETE FROM transaction_categorization_log",
               "DELETE FROM transaction_category_split",
               "DELETE FROM import_row_raw",
+              // Append-only (V87): only with its guards off.
+              LedgerCleanup.withGuardsOff("DELETE FROM loan_payment"),
               LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM reconciliation_result",
               "DELETE FROM account_snapshot",
@@ -269,7 +273,78 @@ class LoanStatementImportControllerTest {
     }
   }
 
+  // --- #337: a payment recorded by hand and imported from the statement -------------------------
+
+  @Test
+  void aPaymentRecordedByHandIsADuplicateOfTheStatementsInstalmentAndInterest() throws Exception {
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + loan + "/repayments")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateLoanRepaymentRequest(
+                current,
+                LocalDate.of(2019, 1, 28),
+                new BigDecimal("456.78"),
+                "EUR",
+                new BigDecimal("123.45"),
+                "Darlehensrate",
+                null,
+                null))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+
+    ImportBatchResponse batch =
+        upload(
+            loan,
+            ShippedTemplateFixtures.sparkasseLoanStatement2019(),
+            "statement.pdf",
+            "application/pdf",
+            SPARKASSE_LOAN);
+
+    // January's instalment and interest are the payment entered by hand; February's are new.
+    assertThat(batch.counts().duplicates()).isEqualTo(2);
+    assertThat(batch.counts().newRows()).isEqualTo(2);
+    List<ImportRowResponse> rows = rows(batch);
+    ImportRowResponse interest =
+        rows.stream()
+            .filter(row -> row.canonical().amount().compareTo(new BigDecimal("-123.45")) == 0)
+            .findFirst()
+            .orElseThrow();
+    assertThat(interest.status()).isEqualTo("DUPLICATE");
+    assertThat(interest.duplicateOf().merchantDescription())
+        .as("the interest entered by hand, on the paying account")
+        .isEqualTo("Darlehensrate");
+
+    commit(loan, batch);
+
+    // Not doubled: the loan holds the manual principal and February's interest and fee.
+    assertThat(list(loan))
+        .extracting(TransactionResponse::transactionType, row -> row.amount().toPlainString())
+        .containsExactlyInAnyOrder(
+            tuple("DEBT_REPAYMENT", "333.3300"),
+            tuple("EXPENSE", "-118.6300"),
+            tuple("FEE", "-2.5000"));
+    CashFlowResponse january = cashFlow("2019-01");
+    assertThat(eur(january.spending())).as("the interest once").isEqualByComparingTo("123.45");
+    assertThat(eur(january.saving())).isEqualByComparingTo("333.33");
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
+
+  private List<ImportRowResponse> rows(ImportBatchResponse batch) {
+    return client()
+        .get()
+        .uri("/api/v1/accounts/" + loan + "/imports/" + batch.id() + "/rows?size=50")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .returnResult()
+        .getResponseBody()
+        .content();
+  }
 
   private void importLoanStatement() throws IOException {
     ImportBatchResponse batch =
