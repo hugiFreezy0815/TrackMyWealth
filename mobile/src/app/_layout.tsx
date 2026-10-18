@@ -38,7 +38,7 @@ export default function TabLayout() {
       ) : session.signedIn ? (
         <>
           <SessionBar identity={session.identity} />
-          <AppTabs />
+          <AppTabs identity={session.identity} />
         </>
       ) : (
         <AuthScreen mfaRequired={session.mfaRequired} />
