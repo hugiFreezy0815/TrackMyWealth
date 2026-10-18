@@ -15,8 +15,11 @@ import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { type Identity, isAdministrator } from '@/features/auth/session';
 
-export default function AppTabs() {
+type Props = { identity: Identity | null };
+
+export default function AppTabs({ identity }: Props) {
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
@@ -25,6 +28,11 @@ export default function AppTabs() {
           <TabTrigger name="home" href="/" asChild>
             <TabButton>Home</TabButton>
           </TabTrigger>
+          {isAdministrator(identity) && (
+            <TabTrigger name="reference-data" href="/reference-data" asChild>
+              <TabButton>Reference data</TabButton>
+            </TabTrigger>
+          )}
           <TabTrigger name="explore" href="/explore" asChild>
             <TabButton>Explore</TabButton>
           </TabTrigger>
