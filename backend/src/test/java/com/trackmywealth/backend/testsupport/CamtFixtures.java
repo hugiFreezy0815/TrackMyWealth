@@ -261,6 +261,23 @@ public final class CamtFixtures {
       return this;
     }
 
+    /** The ISO code and a bank's own code together, as German banks write them from .001.08. */
+    public Entry bankCodes(
+        String domain, String family, String subFamily, String proprietary, String issuer) {
+      bankCode =
+          "<BkTxCd><Domn><Cd>"
+              + domain
+              + "</Cd><Fmly><Cd>"
+              + family
+              + "</Cd><SubFmlyCd>"
+              + subFamily
+              + "</SubFmlyCd></Fmly></Domn><Prtry>"
+              + element("Cd", proprietary)
+              + element("Issr", issuer)
+              + "</Prtry></BkTxCd>";
+      return this;
+    }
+
     public Entry proprietaryCode(String code, String issuer) {
       bankCode =
           "<BkTxCd><Prtry>" + element("Cd", code) + element("Issr", issuer) + "</Prtry></BkTxCd>";

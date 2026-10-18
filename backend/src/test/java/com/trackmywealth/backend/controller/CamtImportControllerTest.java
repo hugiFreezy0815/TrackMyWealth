@@ -179,7 +179,7 @@ class CamtImportControllerTest {
   }
 
   // A ZIP archive of two intraday reports: both are read; an intraday balance is no statement
-  // balance, so none is recorded.
+  // balance, so none is recorded and no DOCUMENT snapshot written (product owner, 2026-10-18).
   @Test
   void aZipArchiveOfTwoReportsImportsBothAndStatesNoBalance() {
     registerIban(account, IBAN);
@@ -207,6 +207,40 @@ class CamtImportControllerTest {
         .extracting(row -> row.amount().toPlainString())
         .containsExactly("-12.0000", "30.0000");
     assertThat(documentSnapshots(account)).isEmpty();
+  }
+
+  // Sparkasse (.001.02): every entry of a daily report carries the report's one AcctSvcrRef. It
+  // names no booking: two equal coffees on one day are two bookings, and a reimport finds both.
+  @Test
+  void aReferenceSharedByAReportsEntriesNamesNoBookingAndEqualBookingsAreAllImported() {
+    registerIban(account, IBAN);
+    byte[] report =
+        camt052("001.02")
+            .statement(
+                IBAN,
+                s ->
+                    s.entry(entry("2.50", "DBIT", "2026-09-04").reference("2026090400001"))
+                        .entry(entry("2.50", "DBIT", "2026-09-04").reference("2026090400001"))
+                        .entry(entry("19.99", "DBIT", "2026-09-04").reference("2026090400001"))
+                        .entry(
+                            entry("4.00", "DBIT", "2026-09-04")
+                                .status("PDNG")
+                                .reference("2026090400001")))
+            .bytes();
+
+    ImportBatchResponse batch = upload(account, report, "umsaetze.xml", "application/xml");
+
+    assertThat(batch.counts().errors()).isZero();
+    assertThat(batch.counts().newRows()).isEqualTo(3);
+    assertThat(batch.counts().skipped()).isOne();
+    commit(account, batch);
+    assertThat(sortedTransactions(account))
+        .extracting(row -> row.amount().toPlainString())
+        .containsExactly("-19.9900", "-2.5000", "-2.5000");
+
+    ImportBatchResponse again = upload(account, report, "umsaetze.xml", "application/xml");
+    assertThat(again.counts().duplicates()).isEqualTo(3);
+    assertThat(again.counts().newRows()).isZero();
   }
 
   // The CSV export first, then the CAMT statement of the same bookings: only the new one is new.

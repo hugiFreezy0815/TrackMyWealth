@@ -132,25 +132,100 @@ class CamtImportReaderServiceTest {
             null);
   }
 
-  // A bank that reuses a reference names two bookings with two ids; the same booking twice (one
-  // day's camt.052 and camt.053 in one archive) has one id, so staging keeps only its first row.
+  // Sparkasse camt.052.001.02: every entry of a daily report carries the report's one
+  // AcctSvcrRef. It names no booking - two equal bookings of a day would otherwise share an id, and
+  // the second be dropped as a repeat - so duplicate rule 2 decides, counting them as two.
   @Test
-  void aReusedReferenceNamesEachBookingApart() {
+  void aReferenceSharedByEntriesOfOneStatementNamesNoBooking() {
+    byte[] report =
+        camt052("001.02")
+            .statement(
+                IBAN,
+                s ->
+                    s.entry(entry("2.50", "DBIT", DAY).reference("2031012500001"))
+                        .entry(entry("2.50", "DBIT", DAY).reference("2031012500001"))
+                        .entry(entry("19.99", "DBIT", DAY).reference("2031012500001"))
+                        .entry(entry("7.00", "CRDT", DAY).reference("UNIQUE-1")))
+            .bytes();
+
+    assertThat(service.parse(report, CASH).rows())
+        .extracting(row -> row.canonical().amount(), row -> row.canonical().externalId())
+        .containsExactly(
+            tuple(new BigDecimal("-2.50"), null),
+            tuple(new BigDecimal("-2.50"), null),
+            tuple(new BigDecimal("-19.99"), null),
+            tuple(new BigDecimal("7.00"), "CAMT:NTRY:2031-01-25:7:EUR:UNIQUE-1"));
+  }
+
+  // A detail reference shared within the statement is no id either; an entry's and a detail's
+  // reference are counted apart.
+  @Test
+  void aDetailReferenceSharedWithinTheStatementNamesNoBooking() {
     ImportParseResult result =
         parse(
             CASH,
-            entry("10.00", "DBIT", DAY).reference("SAME"),
-            entry("11.00", "DBIT", DAY).reference("SAME"),
-            entry("10.00", "DBIT", "2031-01-26").reference("SAME"),
-            entry("10.00", "DBIT", DAY).reference("SAME"));
+            entry("1.00", "DBIT", DAY).detail(detail("1.00", "DBIT").reference("TX-SHARED")),
+            entry("2.00", "DBIT", DAY).detail(detail("2.00", "DBIT").reference("TX-SHARED")),
+            entry("3.00", "DBIT", DAY)
+                .reference("SAME")
+                .detail(detail("3.00", "DBIT").reference("X")),
+            entry("4.00", "DBIT", DAY).detail(detail("4.00", "DBIT").reference("SAME")));
 
     assertThat(result.rows())
         .extracting(row -> row.canonical().externalId())
         .containsExactly(
-            "CAMT:NTRY:2031-01-25:-10:EUR:SAME",
-            "CAMT:NTRY:2031-01-25:-11:EUR:SAME",
-            "CAMT:NTRY:2031-01-26:-10:EUR:SAME",
-            "CAMT:NTRY:2031-01-25:-10:EUR:SAME");
+            null, null, "CAMT:NTRY:2031-01-25:-3:EUR:SAME", "CAMT:TX:2031-01-25:-4:EUR:SAME");
+  }
+
+  // One day as an intraday report and as a statement in one archive: each names the booking once,
+  // so both rows carry one id, and staging imports the first only.
+  @Test
+  void aReferenceOfOneEntryPerStatementNamesTheSameBookingAcrossStatements() {
+    byte[] archive =
+        zip(
+            camt052("001.08")
+                .statement(IBAN, s -> s.entry(entry("10.00", "DBIT", DAY).reference("R-1")))
+                .bytes(),
+            camt053("001.08")
+                .statement(IBAN, s -> s.entry(entry("10.00", "DBIT", DAY).reference("R-1")))
+                .bytes());
+
+    assertThat(service.parse(archive, CASH).rows())
+        .extracting(row -> row.canonical().externalId())
+        .containsExactly("CAMT:NTRY:2031-01-25:-10:EUR:R-1", "CAMT:NTRY:2031-01-25:-10:EUR:R-1");
+  }
+
+  // The status forms of the real Sparkasse files: a code in .001.02, Sts/Cd in .001.08.
+  @ParameterizedTest
+  @ValueSource(strings = {"001.02", "001.08"})
+  void aPendingEntryOfEitherStatusFormIsShownButNotImported(String version) {
+    byte[] report =
+        camt052(version)
+            .statement(
+                IBAN,
+                s ->
+                    s.entry(entry("5.00", "DBIT", DAY).status("PDNG"))
+                        .entry(entry("6.00", "DBIT", DAY)))
+            .bytes();
+
+    assertThat(service.parse(report, CASH).rows())
+        .extracting(ParsedImportRow::status, ParsedImportRow::errorCode)
+        .containsExactly(
+            tuple(ImportRowErrorValues.STATUS_SKIPPED, ImportRowErrorValues.CAMT_NOT_BOOKED),
+            tuple(ImportRowErrorValues.STATUS_PARSED, null));
+  }
+
+  // .001.08 as German banks write it: the ISO code on the row, the bank's own (issuer DK) kept.
+  @Test
+  void keepsTheIsoCodeOnTheRowAndTheBanksOwnCodeInItsCells() {
+    ParsedImportRow row =
+        parse(CASH, entry("1.00", "CRDT", DAY).bankCodes("PMNT", "RCDT", "ESCT", "166", "DK"))
+            .rows()
+            .get(0);
+
+    assertThat(row.canonical().iso20022BankTransactionCode()).isEqualTo("PMNT-RCDT-ESCT");
+    assertThat(row.rawData())
+        .containsEntry(CamtImportReaderService.CELL_PROPRIETARY_CODE, "166 (DK)");
   }
 
   // --- collective entries ------------------------------------------------------------------------
@@ -450,6 +525,7 @@ class CamtImportReaderServiceTest {
                 IBAN,
                 s ->
                     s.balance("OPBD", "30.00", "CRDT", "2031-01-01")
+                        .balance("PRCD", "30.00", "CRDT", "2030-12-31")
                         .balance("ITBD", "40.00", "CRDT", "2031-01-15")
                         .balance("CLBD", "12.50", "DBIT", "2031-01-31")
                         .balanceAt("CLBD", "20.00", "CRDT", "2031-02-28T23:30:00Z")
@@ -485,6 +561,25 @@ class CamtImportReaderServiceTest {
 
     assertThat(balances.balances()).isEmpty();
     assertThat(balances.unreadableCurrencies()).containsExactly("EUR", null);
+  }
+
+  // Product owner decision (2026-10-18): a camt.052 import stores no balance, not even its CLBD
+  // (Sparkasse writes PRCD and CLBD in .001.02, OPBD and CLBD in .001.08).
+  @ParameterizedTest
+  @ValueSource(strings = {"001.02", "001.08"})
+  void anIntradayReportStatesNoStatementBalanceWhateverItsBalances(String version) {
+    byte[] report =
+        camt052(version)
+            .statement(
+                IBAN,
+                s ->
+                    s.balance("PRCD", "10.00", "CRDT", "2031-01-24")
+                        .balance("OPBD", "10.00", "CRDT", "2031-01-25")
+                        .balance("CLBD", "12.50", "CRDT", "2031-01-25")
+                        .entry(entry("2.50", "CRDT", DAY)))
+            .bytes();
+
+    assertThat(service.parse(report, CASH).statementBalances()).isNull();
   }
 
   @Test

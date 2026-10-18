@@ -35,6 +35,8 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAccessor;
 import java.util.ArrayList;
 import java.util.Currency;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -65,8 +67,10 @@ import org.springframework.stereotype.Service;
  * split detail, scoped by kind and by the booking it names: {@code CAMT:NTRY:} or {@code CAMT:TX:},
  * booking date, signed amount and currency, then the reference. A bank that reuses a reference
  * therefore never makes one booking the duplicate of another, and an entry's reference never names
- * its details. {@code NOTPROVIDED}, {@code NONREF} and the originator's {@code EndToEndId} are no
- * booking id; without an id, the duplicate check compares booking date and amount.
+ * its details. A reference that several entries (or details) of one statement share names no
+ * booking either - Sparkasse's {@code camt.052.001.02} gives a whole daily report one - and neither
+ * do {@code NOTPROVIDED}, {@code NONREF} and the originator's {@code EndToEndId}; without an id,
+ * the duplicate check compares booking date, amount and currency, two equal bookings as two.
  *
  * <p>The account is named by the statements' IBAN; a file of several accounts is refused. Only a
  * {@code camt.053} states a statement balance - its closing booked balance ({@code CLBD}) - never a
@@ -93,6 +97,7 @@ public class CamtImportReaderService {
   static final String CELL_REVERSAL = "Reversal";
   static final String CELL_ENTRY_REFERENCE = "EntryReference";
   static final String CELL_BANK_CODE = "BankTransactionCode";
+  static final String CELL_PROPRIETARY_CODE = "ProprietaryBankTransactionCode";
   static final String CELL_ENTRY_INFORMATION = "AdditionalEntryInformation";
   static final String CELL_TRANSACTIONS = "Transactions";
   static final String CELL_TRANSACTION = "Transaction";
@@ -148,6 +153,8 @@ public class CamtImportReaderService {
       Pattern.compile("(\\d{4}-\\d{2}-\\d{2})(Z|[+-]\\d{2}:\\d{2})?");
   // A file names one account at most (a named limit, as PMD requires).
   private static final int ONE_ACCOUNT = 1;
+  // A reference used once in its statement can name a booking (a named limit, as PMD requires).
+  private static final int ONE_USE = 1;
   private static final int MAX_INTEGER_DIGITS = 16;
   private static final int MAX_FRACTION_DIGITS = 4;
   private static final int MAX_RATE_FRACTION_DIGITS = 10;
@@ -189,8 +196,9 @@ public class CamtImportReaderService {
     List<ParsedImportRow> rows = new ArrayList<>();
     for (CamtMessage message : messages) {
       for (CamtStatement statement : message.statements()) {
+        Set<String> shared = sharedReferences(statement);
         for (CamtEntry entry : statement.entries()) {
-          addEntry(rows, message, entry, account);
+          addEntry(rows, message, entry, account, shared);
         }
       }
     }
@@ -266,16 +274,43 @@ public class CamtImportReaderService {
 
   // --- entries -----------------------------------------------------------------------------------
 
+  // The references more than one entry, or more than one detail, of the statement carry, by kind:
+  // they name no booking. Sparkasse's camt.052.001.02 gives every entry of a daily report the
+  // report's one AcctSvcrRef, so two equal bookings of a day would otherwise share an id and the
+  // second be dropped as a repeat. Without the id, duplicate rule 2 counts them as two.
+  private static Set<String> sharedReferences(CamtStatement statement) {
+    Map<String, Integer> uses = new HashMap<>();
+    for (CamtEntry entry : statement.entries()) {
+      if (entry.accountServicerReference() != null) {
+        uses.merge(ENTRY_REFERENCE + entry.accountServicerReference(), 1, Integer::sum);
+      }
+      for (CamtTransaction detail : entry.transactions()) {
+        if (detail.accountServicerReference() != null) {
+          uses.merge(TRANSACTION_REFERENCE + detail.accountServicerReference(), 1, Integer::sum);
+        }
+      }
+    }
+    Set<String> shared = new HashSet<>();
+    uses.forEach(
+        (reference, count) -> {
+          if (count > ONE_USE) {
+            shared.add(reference);
+          }
+        });
+    return shared;
+  }
+
   private void addEntry(
       List<ParsedImportRow> rows,
       CamtMessage message,
       CamtEntry entry,
-      ImportAccountContext account) {
+      ImportAccountContext account,
+      Set<String> shared) {
     Map<String, String> cells = entryCells(message, entry);
     int number = rows.size() + 1;
     List<ParsedImportRow> entryRows;
     try {
-      entryRows = entryRows(number, cells, entry, account);
+      entryRows = entryRows(number, cells, entry, account, shared);
     } catch (ImportRowRejectedException e) {
       entryRows = List.of(ParsedImportRow.error(number, cells, e.getCode(), e.getArgs()));
     }
@@ -286,7 +321,11 @@ public class CamtImportReaderService {
   }
 
   private List<ParsedImportRow> entryRows(
-      int number, Map<String, String> cells, CamtEntry entry, ImportAccountContext account) {
+      int number,
+      Map<String, String> cells,
+      CamtEntry entry,
+      ImportAccountContext account,
+      Set<String> shared) {
     if (entry.status() == null) {
       throw rowError(ImportRowErrorValues.VALUE_MISSING, ARG_COLUMN, FIELD_STATUS);
     }
@@ -322,13 +361,13 @@ public class CamtImportReaderService {
     List<CamtTransaction> details = entry.transactions();
     boolean complete = isComplete(entry);
     if (complete && details.size() > 1) {
-      return split(number, cells, entry, base, reversal, account);
+      return split(number, cells, entry, base, reversal, account, shared);
     }
     CamtTransaction only = complete && details.size() == 1 ? details.get(0) : null;
     CanonicalImportRow row = only == null ? base : withDetail(base, only);
-    String reference = reference(ENTRY_REFERENCE, entry.accountServicerReference(), row);
+    String reference = reference(ENTRY_REFERENCE, entry.accountServicerReference(), row, shared);
     if (reference == null && only != null) {
-      reference = reference(TRANSACTION_REFERENCE, only.accountServicerReference(), row);
+      reference = reference(TRANSACTION_REFERENCE, only.accountServicerReference(), row, shared);
     }
     Map<String, String> rowCells = only == null ? cells : detailCells(cells, only, 1, 1);
     return List.of(row(number, rowCells, withReference(row, reference)));
@@ -361,7 +400,8 @@ public class CamtImportReaderService {
       CamtEntry entry,
       CanonicalImportRow base,
       boolean reversal,
-      ImportAccountContext account) {
+      ImportAccountContext account,
+      Set<String> shared) {
     List<CamtTransaction> details = entry.transactions();
     List<CanonicalImportRow> parts = new ArrayList<>(details.size());
     BigDecimal total = BigDecimal.ZERO;
@@ -401,7 +441,8 @@ public class CamtImportReaderService {
               detailCells(cells, detail, i + 1, parts.size()),
               withReference(
                   part,
-                  reference(TRANSACTION_REFERENCE, detail.accountServicerReference(), part))));
+                  reference(
+                      TRANSACTION_REFERENCE, detail.accountServicerReference(), part, shared))));
     }
     return rows;
   }
@@ -504,11 +545,14 @@ public class CamtImportReaderService {
         row.bankExchangeRate());
   }
 
-  // The scoped id of the booking row names with the bank's reference, or null without one.
-  private static String reference(String kind, String reference, CanonicalImportRow row) {
+  // The scoped id of the booking row names with the bank's reference, or null without one, or with
+  // one that other entries or details of its statement share.
+  private static String reference(
+      String kind, String reference, CanonicalImportRow row, Set<String> shared) {
     if (reference == null
         || reference.length() > MAX_REFERENCE_LENGTH
-        || NO_REFERENCE.contains(reference.toUpperCase(Locale.ROOT))) {
+        || NO_REFERENCE.contains(reference.toUpperCase(Locale.ROOT))
+        || shared.contains(kind + reference)) {
       return null;
     }
     return kind
@@ -535,6 +579,10 @@ public class CamtImportReaderService {
       }
       return bounded(String.join("-", parts), MAX_CODE_LENGTH);
     }
+    return proprietaryCode(code);
+  }
+
+  private static String proprietaryCode(CamtBankCode code) {
     if (code.proprietary() == null) {
       return null;
     }
@@ -561,6 +609,10 @@ public class CamtImportReaderService {
     put(cells, CELL_REVERSAL, entry.reversal());
     put(cells, CELL_ENTRY_REFERENCE, entry.accountServicerReference());
     put(cells, CELL_BANK_CODE, bankCode(entry.bankCode()));
+    // A German bank's own code (issuer DK) next to the ISO one, which the row keeps.
+    if (entry.bankCode() != null && entry.bankCode().domain() != null) {
+      put(cells, CELL_PROPRIETARY_CODE, proprietaryCode(entry.bankCode()));
+    }
     put(cells, CELL_ENTRY_INFORMATION, entry.additionalInfo());
     if (!entry.transactions().isEmpty()) {
       put(cells, CELL_TRANSACTIONS, Integer.toString(entry.transactions().size()));
