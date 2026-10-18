@@ -120,6 +120,9 @@ public final class ImportRowErrorValues {
    */
   public static final String EXTERNAL_ID_REPEATED = "IMPORT_ROW_EXTERNAL_ID_REPEATED";
 
+  /** A CAMT entry cannot safely be split into booked transactions. */
+  public static final String CAMT_ENTRY_AMBIGUOUS = "IMPORT_ROW_CAMT_ENTRY_AMBIGUOUS";
+
   /**
    * {@code currency, accountCurrency, date}: the row is in another currency than the account and no
    * exchange rate for its booking date is available, not even from the provider (US-07-04, #223).
