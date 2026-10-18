@@ -18,6 +18,7 @@ Analysed on 2026-10-04: 20 documents from 5 institutions.
 | Id | Institution | Document | Format | Kind |
 |---|---|---|---|---|
 | DKB-1 | DKB | Transaction list, current account (Girokonto) | CSV, UTF-8 with BOM, `;` | Transaction list |
+| DKB-2 | DKB | Current-account statement with card payments, added 2026-10-18 | PDF, text | Account statement |
 | PF-1 | PostFinance | Account movements, private account | CSV, UTF-8 with BOM, `;`, CRLF | Transaction list |
 | PF-2 | PostFinance | Account movements, savings account | CSV, same format as PF-1 | Transaction list |
 | PF-3 | PostFinance | E-Trading transactions | CSV, windows-1252, `;` | Securities and cash transactions |
@@ -34,13 +35,19 @@ Analysed on 2026-10-04: 20 documents from 5 institutions.
 | SPK-6 | Sparkasse Freiburg | Annual loan account statement (Jahreskontoauszug) | PDF, text | Account statement |
 | SPK-7 | LBS Süd (via Sparkasse) | Annual building-savings statement (Bausparvertrag) | PDF, text | Account statement |
 | SPK-8 | Sparkasse Freiburg | Monthly credit-card statement (Mastercard), added 2026-10-16 (#339) | PDF, text | Card statement |
+| SPK-9 | Sparkasse Freiburg | Current-account turnover as `camt.052.001.02`, one report per day, added 2026-10-18 | ZIP of XML files, or a single XML | Account report |
+| SPK-10 | Sparkasse Freiburg | The same turnover as `camt.052.001.08`, added 2026-10-18 | ZIP of XML files, or a single XML | Account report |
+| SPK-11 | Sparkasse Freiburg | The same turnover as MT940, added 2026-10-18 | TXT (SWIFT), CRLF | Account statement |
+| SPK-12 | Sparkasse Freiburg | Intraday report as MT942, added 2026-10-18 | TXT (SWIFT), CRLF | Account report |
 | TW-1 | True Wealth | Contract bundle: asset management mandate and pillar 3a agreement | PDF, text | Contract (other) |
 | YUH-1 | Yuh | Account statement, multi-currency, with savings pocket | PDF, text | Account statement |
 | YUH-2 | Yuh | Portfolio performance report | PDF, text | Holdings and performance statement |
 | YUH-3 | Yuh | Swiss tax statement (Steuerauszug), eCH-0196 v2 (6.5.1) | PDF, text + Code 128 per page + PDF417 barcode pages | Tax statement |
 
-No document is scanned: every PDF has a text layer, so none needs OCR. No CAMT/ISO 20022 XML
-file was supplied; SPK-3 is the Sparkasse's CSV rendering of camt.052 (17 columns, see 3.4).
+No document is scanned: every PDF has a text layer, so none needs OCR. SPK-3 is the Sparkasse's
+CSV rendering of camt.052 (17 columns, see 3.4); the XML itself (SPK-9, SPK-10) was added on
+2026-10-18 with the download check of spike #277 (6.5.1). The same check added newer exports in
+the DKB-1, SPK-1 and SPK-4 formats (unchanged headers), which need no id of their own.
 TrueWealth and Yuh, listed as empty in the issue, now have samples, but neither has a
 transaction export (see section 5).
 
@@ -358,7 +365,7 @@ would produce incomplete containers.
   layout of PF-7 and YUH-2) follow with the holdings import (6.6).
 - **OCR**: no sample is scanned (every page of every PDF has a text layer), so nothing justifies
   OCR today. It stays out of scope until a scanned statement turns up.
-- **CAMT XML**: none supplied. A generic CAMT importer (one for all banks, no template) is
+- **CAMT XML**: Sparkasse `camt.052` supplied (SPK-9, SPK-10; 6.5.1). A generic CAMT importer (one for all banks, no template) is
   preferable to per-bank CSV renderings: stable schema, account IBAN and statement balances
   included. `AcctSvcrRef` is a bank reference but not guaranteed present or unique (6.5.1).
 - **eCH-0196 tax statements** (YUH-3): the barcode is confirmed as eCH-0196 v2, a standardized,
@@ -374,9 +381,8 @@ would produce incomplete containers.
    for every Swiss bank that prints the standard's barcodes. Confirmed on YUH-3; the posting
    path waits for the securities master (EPIC 15) and the holdings import (#273).
 
-Which of the owner's banks offer a CAMT XML download is still open: no sample folder contains
-one, and the download menus have to be checked in online banking by the owner (follow-up 2
-below).
+The owner's download check (2026-10-18) found `camt.052` at Sparkasse Freiburg and no CAMT at
+DKB; PostFinance and Yuh are still to be checked (follow-up 2 below).
 
 ##### Where the standards are used
 
@@ -402,8 +408,8 @@ is why it is not deferred.
 | PostFinance (PF-1..8) | **To confirm** in e-finance; the Swiss standard makes `camt.053` likely | Not among the samples; to confirm |
 | Yuh (YUH-1..3) | **To confirm** in the app/e-banking | **Confirmed** on YUH-3: eCH-0196 v2.22 (below) |
 | True Wealth (TW-1) | Not applicable (asset manager, no cash account export seen) | Not among the samples; to confirm |
-| Sparkasse Freiburg (SPK-1..8) | **To confirm**: CSV rendering of `camt.052` exists (SPK-3); XML download unknown | Not applicable (German bank) |
-| DKB (DKB-1) | **To confirm**: only CSV seen | Not applicable (German bank) |
+| Sparkasse Freiburg (SPK-1..12) | **`camt.052` yes** (`.001.02` and `.001.08`, ZIP of daily reports or single XML; SPK-9, SPK-10); **`camt.053` not offered**; also MT940/MT942 | Not applicable (German bank) |
+| DKB (DKB-1, DKB-2) | **No**: online banking offers the CSV (DKB-1) and PDF statements (DKB-2) only | Not applicable (German bank) |
 | Any other Swiss bank | Generic `camt.053`/`camt.052` parser applies when it offers the file | Generic decoder applies when it prints the barcodes |
 
 A bank advertising *ISO 20022 payment files* (`pain.001`) does not prove a statement download.
@@ -419,6 +425,26 @@ formats locally, without sharing files.
 - Deutsche Kreditwirtschaft, DFÜ-Abkommen Anlage 3 (data formats): https://www.ebics.de/
 - eCH-0196 e-tax statement, standard and version documents:
   https://www.ech.ch/de/ech/ech-0196
+
+##### What the Sparkasse files show (2026-10-18)
+
+Read locally in a container without network access; structure and counts only. Both ZIPs hold
+40 daily reports with 95 booked entries in total, plus pending entries in the single files.
+
+| | `camt.052.001.02` (SPK-9) | `camt.052.001.08` (SPK-10) |
+|---|---|---|
+| Entry status | `Sts` code: `BOOK`, `PDNG` | `Sts/Cd`: `BOOK`, `PDNG` |
+| Balances per report | `PRCD` (previous closing) and `CLBD` | `OPBD` and `CLBD` |
+| `Ntry/AcctSvcrRef` | Present on every entry, but **shared by all entries of a report** (24 of the 40 reports have more than one entry) | Distinct per entry |
+| Bank transaction code | Proprietary only (issuer `DK`) | Proprietary (`DK`) and ISO `Domn` |
+| Other | `EndToEndId` and `MndtId` where the payment had them; one `TxDtls` per entry; EUR only; no `AmtDtls`, no reversals | same |
+
+Consequences: `AcctSvcrRef` alone can never identify a Sparkasse booking in `.001.02`, which
+confirms the scoped external id (reference plus date, amount and currency). Each daily report
+ends in a closed booked balance (`CLBD`), not an intraday one; whether such a `camt.052` balance
+may become a `DOCUMENT` snapshot is a product owner decision (the safe default records none).
+MT940/MT942 (SPK-11, SPK-12) carry the same bookings in an older format; with `camt.052`
+available they need no importer.
 
 ##### Generic CAMT XML architecture
 
@@ -515,14 +541,14 @@ encoded into PDF417 by the test itself.
 1. **CAMT import story #350 (SHOULD, M–L):** `camt.053` and `camt.052`, the supported versions
    above, ZIP containers, the mapping table, typed statement balances, synthetic fixtures,
    preview/commit and duplicate tests.
-2. **CAMT availability (product owner, local only):** for PostFinance, Yuh, Sparkasse Freiburg
-   and DKB record `camt.053` yes/no, `camt.052` yes/no, ZIP or single XML, channel (online
-   banking download, FinTS, EBICS) and the date checked. Do not attach files. #350 is only
-   worth building once at least one of these is yes.
+2. **CAMT availability (product owner, local only):** Sparkasse Freiburg `camt.052` yes
+   (`.001.02`/`.001.08`, ZIP or single XML, online-banking download), `camt.053` no; DKB no CAMT
+   (checked 2026-10-18). PostFinance and Yuh: record `camt.053`/`camt.052` yes/no, ZIP or
+   single XML and the channel when #350's implementation is checked. Do not attach files.
 3. **eCH-0196 decoder story (SHOULD, M):** generic Swiss e-tax statement import into a
    holdings/bank-account snapshot, blocked on EPIC 15 and #273. Open it when those are planned.
-4. **Spike #277 closure:** Q2 (barcode) is answered; Q1 is answered for the standards and for
-   the Swiss/German landscape, and stays open per institution until item 2 is recorded.
+4. **Spike #277 closure:** Q2 (barcode) is answered; Q1 is answered for the standards, the
+   Swiss/German landscape, Sparkasse and DKB. PostFinance and Yuh remain for item 2.
 
 ### 6.6 Holdings and securities
 
