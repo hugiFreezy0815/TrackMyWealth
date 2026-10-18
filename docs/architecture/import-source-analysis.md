@@ -37,7 +37,7 @@ Analysed on 2026-10-04: 20 documents from 5 institutions.
 | TW-1 | True Wealth | Contract bundle: asset management mandate and pillar 3a agreement | PDF, text | Contract (other) |
 | YUH-1 | Yuh | Account statement, multi-currency, with savings pocket | PDF, text | Account statement |
 | YUH-2 | Yuh | Portfolio performance report | PDF, text | Holdings and performance statement |
-| YUH-3 | Yuh | Swiss tax statement (Steuerauszug) | PDF, text + one barcode image per page | Tax statement |
+| YUH-3 | Yuh | Swiss tax statement (Steuerauszug), eCH-0196 v2 (6.5.1) | PDF, text + Code 128 per page + PDF417 barcode pages | Tax statement |
 
 No document is scanned: every PDF has a text layer, so none needs OCR. No CAMT/ISO 20022 XML
 file was supplied; SPK-3 is the Sparkasse's CSV rendering of camt.052 (17 columns, see 3.4).
@@ -358,11 +358,171 @@ would produce incomplete containers.
   layout of PF-7 and YUH-2) follow with the holdings import (6.6).
 - **OCR**: no sample is scanned (every page of every PDF has a text layer), so nothing justifies
   OCR today. It stays out of scope until a scanned statement turns up.
-- **CAMT XML**: none supplied. If the Sparkasse offers camt.052/053 XML, a generic CAMT importer
-  (one for all banks, no template) is preferable to its CSV rendering: stable schema, account
-  IBAN and statement balances included, `AcctSvcrRef` as a unique booking id.
-- **eCH-0196 tax statements** (YUH-3): if the barcode is confirmed, it is a standardized,
-  machine-readable year-end holdings source for every Swiss bank. Worth its own spike.
+- **CAMT XML**: none supplied. A generic CAMT importer (one for all banks, no template) is
+  preferable to per-bank CSV renderings: stable schema, account IBAN and statement balances
+  included. `AcctSvcrRef` is a bank reference but not guaranteed present or unique (6.5.1).
+- **eCH-0196 tax statements** (YUH-3): the barcode is confirmed as eCH-0196 v2, a standardized,
+  machine-readable year-end source for every Swiss bank that issues it (6.5.1).
+
+#### 6.5.1 Standards feasibility decision (spike #277, 2026-10-18)
+
+**Decision: build two format-driven importers instead of more per-bank templates.**
+
+1. **ISO 20022 CAMT XML** for cash statements: one parser for every bank that offers the
+   download, Swiss or German, starting with `camt.053` and with `camt.052` in the same story.
+2. **eCH-0196 e-tax statements** for Swiss year-end holdings and bank accounts: one decoder
+   for every Swiss bank that prints the standard's barcodes. Confirmed on YUH-3; the posting
+   path waits for the securities master (EPIC 15) and the holdings import (#273).
+
+Which of the owner's banks offer a CAMT XML download is still open: no sample folder contains
+one, and the download menus have to be checked in online banking by the owner (follow-up 2
+below).
+
+##### Where the standards are used
+
+**Switzerland.** The Swiss Payment Standards (SIX) replaced MT940/MT942 with ISO 20022 in the
+payments harmonisation: `camt.053` is the end-of-day statement, `camt.052` the intraday report
+and `camt.054` the debit/credit notification (it also resolves collective bookings). Swiss
+banks offer these in e-banking as file downloads, so a `camt.053` importer is generic across
+Swiss banks in the same way the eCH-0196 decoder is. The Swiss guidelines follow message
+versions `.001.04` and, in newer releases, `.001.08`; support both.
+
+**Germany.** Yes, `camt.053` is used: the Deutsche Kreditwirtschaft's DFÜ agreement
+(Anlage 3) defines `camt.052` (intraday/turnover report), `camt.053` (end-of-day statement,
+the MT940 successor) and `camt.054` (notification, collective-booking resolution). The
+delivery channel differs from Switzerland, though: `camt.053` mainly reaches business
+customers over **EBICS**, while retail tools reading over **FinTS** get `camt.052`, and an
+online-banking download, where offered, is often a ZIP of several XML files. The Sparkasse
+CSV the project already imports (SPK-3, "CSV-CAMT") is a CSV rendering of `camt.052`, not of
+`camt.053`. For the owner's German banks, `camt.052` is therefore the more likely file, which
+is why it is not deferred.
+
+| Institution (inventory) | CAMT XML download | eCH-0196 tax statement |
+|---|---|---|
+| PostFinance (PF-1..8) | **To confirm** in e-finance; the Swiss standard makes `camt.053` likely | Not among the samples; to confirm |
+| Yuh (YUH-1..3) | **To confirm** in the app/e-banking | **Confirmed** on YUH-3: eCH-0196 v2.22 (below) |
+| True Wealth (TW-1) | Not applicable (asset manager, no cash account export seen) | Not among the samples; to confirm |
+| Sparkasse Freiburg (SPK-1..8) | **To confirm**: CSV rendering of `camt.052` exists (SPK-3); XML download unknown | Not applicable (German bank) |
+| DKB (DKB-1) | **To confirm**: only CSV seen | Not applicable (German bank) |
+| Any other Swiss bank | Generic `camt.053`/`camt.052` parser applies when it offers the file | Generic decoder applies when it prints the barcodes |
+
+A bank advertising *ISO 20022 payment files* (`pain.001`) does not prove a statement download.
+Do **not** label an institution supported until the owner has checked the actual download
+formats locally, without sharing files.
+
+**Public references** (verify exact versions before implementation):
+
+- ISO 20022 message catalogue (cash management, `camt`):
+  https://www.iso20022.org/iso-20022-message-definitions
+- SIX Swiss Payment Standards, ISO 20022 implementation guidelines incl. cash management:
+  https://www.six-group.com/en/products-services/banking-services/payment-standardization/standards/iso-20022.html
+- Deutsche Kreditwirtschaft, DFÜ-Abkommen Anlage 3 (data formats): https://www.ebics.de/
+- eCH-0196 e-tax statement, standard and version documents:
+  https://www.ech.ch/de/ech/ech-0196
+
+##### Generic CAMT XML architecture
+
+A **format-driven** parser, not an institution template: detect the message by its XML
+namespace (`urn:iso:std:iso:20022:tech:xsd:camt.05x.001.nn`), accept an explicit list of
+supported message/version pairs, and reject everything else with an import error. Start with
+`camt.053` and `camt.052` in versions `.001.02`, `.001.04` and `.001.08`. For `camt.052`,
+import booked entries only and never store an intraday balance as a closing balance.
+`camt.054` stays out until a bank is found that delivers collective bookings only that way.
+
+| Source field / XML concept | Project destination | Rule / caveat |
+|---|---|---|
+| `Stmt/Acct/Id/IBAN` (`Rpt/...` in `camt.052`) | Account identifier matching (`IBAN`) | Check digits; the existing wrong-account confirmation applies when it does not match |
+| `Ntry/Sts` | Preview inclusion | A code (`BOOK`) up to `.001.04`; a choice `Sts/Cd` from `.001.06`. Booked only; pending (`PDNG`) and information entries never commit |
+| `Ntry/BookgDt/Dt` (or `DtTm`) | `CanonicalImportRow.bookingDate` | Convert `DtTm` explicitly to the account's zone |
+| `Ntry/ValDt/Dt` | `valueDate` | Optional |
+| `Ntry/Amt` + `CdtDbtInd` | Signed `amount` | Debit negative, credit positive; the XML amount itself is unsigned |
+| `Ntry/RvslInd` | Transaction type / notes | A reversal; the sign still follows `CdtDbtInd`, mark the row so the preview shows it |
+| `Ntry/Amt/@Ccy` | `currency` | Keep the stated currency |
+| `TxDtls/AmtDtls/InstdAmt`, `TxAmt`, `CcyXchg` | `originalAmount`, `originalCurrency`, `bankExchangeRate` | Feeds duplicate rule 3 (#341) for foreign-currency card purchases |
+| `Ntry/AcctSvcrRef`, `TxDtls/Refs/AcctSvcrRef`, `EndToEndId` | `externalId` | Neither present nor unique at every bank; scope by account and source, keep entry- and detail-level references apart, ignore `NOTPROVIDED` |
+| `Ntry/BkTxCd` (or `TxDtls/BkTxCd`) | `iso20022BankTransactionCode` | Domain/family/sub-family, or the proprietary code with its issuer |
+| `TxDtls/RltdPties/Cdtr` / `Dbtr` | `counterpartyName` | Direction-dependent: the creditor for a debit, the debtor for a credit |
+| `TxDtls/RmtInf/Ustrd` / `Strd` | `description` | Bounded concatenation; never log the full text |
+| `Stmt/Bal` (type, date, currency) | `account_snapshot`, source `DOCUMENT`, at commit | Closing booked `CLBD` only, never a sum of balances; verify against the ledger |
+
+**Grouping is essential:** one `Ntry` can hold several `TxDtls` (a collective booking) with
+their own amounts and references. Emit one row per entry when there is a single detail; split
+into one row per detail only when the detail amounts reconcile to the entry; otherwise show a
+structured preview error. Duplicates use the existing `ImportDuplicateService`: (1) the
+source-qualified external id, (2) booking date, amount and currency against any source, and
+(3) foreign purchases against rows in the account's currency (#341). A missing `AcctSvcrRef` is
+not an id. Re-importing the same file or the same bookings as CSV must not double-post.
+
+**Security and operations:** a streaming StAX parser with `SUPPORT_DTD` and
+`IS_SUPPORTING_EXTERNAL_ENTITIES` off and `ACCESS_EXTERNAL_DTD`/`ACCESS_EXTERNAL_SCHEMA` empty;
+XSDs, if validated against, bundled locally with secure processing on. Bound the upload size,
+nesting depth, entry count and text lengths. **ZIP containers** (German downloads) need the same
+care: a bound on entry count, per-entry and total inflated size and compression ratio, no path
+handling of entry names (each entry is parsed in memory), and XML entries only. Malformed input
+becomes an import error, not an uncaught exception. The upload goes through the existing
+`import_file`/batch lifecycle, workspace RLS and access checks, preview first, explicit commit,
+**never auto-post**. A synthetic fixture covers: two plain entries, a collective entry with
+reconciling and with non-reconciling details, a pending entry, a reversal, a foreign-currency
+entry, an absent reference, two balance types, a ZIP with two statements, and hostile XML
+(XXE, entity expansion, deep nesting). No bank data is needed for any of these tests.
+
+**Value vs effort:** one parser can replace per-bank CSV templates for every Swiss bank and
+every German bank that offers the file, and brings IBAN, transaction codes and balances with
+it. Version differences, the grouping rules, reference semantics and ZIP handling make it
+**M–L**. The shipped CSV and PDF templates stay as the fallback.
+
+##### eCH-0196 e-tax statement architecture
+
+eCH-0196 is the Swiss standard for electronic tax statements (*E-Steuerauszug*): the bank
+prints the statement as a PDF and embeds the same data as barcodes, which cantonal tax software
+reads. It is a Swiss standard, not a Yuh format, so one decoder serves every Swiss bank that
+issues it; banks are not obliged to, so availability is per bank.
+
+**Confirmed on YUH-3** (decoded locally in a container without network access; only structure
+was printed):
+
+- Every page carries a **Code 128** barcode of 16 digits starting with `196`, which identifies
+  the document and page.
+- The data sits in **PDF417** symbols on dedicated barcode pages at the end (9 symbols on
+  2 pages, 300 dpi rendering suffices). There is no per-symbol header: the symbols are
+  consecutive slices of one **zlib** stream, in page order and, within a page, column by column
+  from right to left.
+- The inflated payload (about 33 KB) is an XML `taxStatement` in namespace
+  `http://www.ech.ch/xmlns/eCH-0196/2`, `minorVersion` 22, with tax period, canton and totals
+  (tax value, gross revenue A/B, withholding-tax claim) as attributes.
+- It contains `listOfBankAccounts` (4 accounts with tax values and payments), `listOfSecurities`
+  with one `depot` (13 securities and their `stock` entries: positions and quantity changes
+  over the year), `listOfLiabilities` and `listOfExpenses`, plus issuer-specific elements
+  outside the eCH namespace (they hold personal data and must be ignored).
+
+Design: render the barcode pages (PDFBox), decode PDF417 and Code 128 (ZXing), order the
+symbols by the Code 128 page number and the standard's symbol order, check the result with
+the zlib checksum instead of guessing an order, then inflate with a size bound and validate
+against the bundled eCH-0196 v2 XSD. The result is a **tax/holdings snapshot**, not a cash
+history; it never feeds `CASH_TRANSACTIONS`. It maps to a `SNAPSHOT` import at the period end:
+bank account balances (tax value at year end, matched by IBAN) and depot positions (ISIN,
+quantity, value, currency), confirmed by the member. An unknown security becomes a review item,
+never an auto-created holding. The `stock` quantity changes could later seed securities
+transactions; that is out of scope here.
+
+Threat model: bound image size, symbol count, inflated size (a zlib bomb) and XML depth;
+reject unknown major versions, XXE and entity expansion. Never commit, log or attach a real
+barcode, decoded payload or tax value; fixtures are synthetic eCH-0196 v2 XML, compressed and
+encoded into PDF417 by the test itself.
+
+##### Follow-up and exit criteria
+
+1. **CAMT import story #350 (SHOULD, M–L):** `camt.053` and `camt.052`, the supported versions
+   above, ZIP containers, the mapping table, typed statement balances, synthetic fixtures,
+   preview/commit and duplicate tests.
+2. **CAMT availability (product owner, local only):** for PostFinance, Yuh, Sparkasse Freiburg
+   and DKB record `camt.053` yes/no, `camt.052` yes/no, ZIP or single XML, channel (online
+   banking download, FinTS, EBICS) and the date checked. Do not attach files. #350 is only
+   worth building once at least one of these is yes.
+3. **eCH-0196 decoder story (SHOULD, M):** generic Swiss e-tax statement import into a
+   holdings/bank-account snapshot, blocked on EPIC 15 and #273. Open it when those are planned.
+4. **Spike #277 closure:** Q2 (barcode) is answered; Q1 is answered for the standards and for
+   the Swiss/German landscape, and stays open per institution until item 2 is recorded.
 
 ### 6.6 Holdings and securities
 
@@ -462,7 +622,8 @@ Saldo per 31.01.2031                                                            
   4. Import a statement's balance as an `account_snapshot` (`DOCUMENT`, with `import_batch_id`).
   5. Holdings snapshot import (Swissquote PDF layout, PostFinance XLSX), depends on EPIC 15.
   6. Securities transaction import (PostFinance E-Trading CSV), depends on EPIC 15.
-  7. Spike: CAMT XML import and eCH-0196 tax statement barcodes.
+  7. Spike: CAMT XML import and eCH-0196 tax statement barcodes (#277, done: 6.5.1; CAMT
+     import #350, eCH-0196 decoder after EPIC 15).
   8. Shipped templates per institution: DKB, PostFinance, Sparkasse account and card, Yuh
      statement, Sparkasse loan statement, LBS (one story each, after #230).
   9. Import from scanned PDFs (OCR), only once a scanned statement is supplied.
