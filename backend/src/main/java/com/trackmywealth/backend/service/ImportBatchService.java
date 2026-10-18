@@ -98,6 +98,7 @@ public class ImportBatchService {
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final ImportTemplateService importTemplateService;
+  private final Camt053ImportReader camtReader;
   private final ImportFileParserService parser;
   private final ImportStagingService stagingService;
   private final ImportRowCheckService rowCheckService;
@@ -121,6 +122,7 @@ public class ImportBatchService {
       AccountLookupService accountLookupService,
       AccessControlService accessControlService,
       ImportTemplateService importTemplateService,
+      Camt053ImportReader camtReader,
       ImportFileParserService parser,
       ImportStagingService stagingService,
       ImportRowCheckService rowCheckService,
@@ -141,6 +143,7 @@ public class ImportBatchService {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.importTemplateService = importTemplateService;
+    this.camtReader = camtReader;
     this.parser = parser;
     this.stagingService = stagingService;
     this.rowCheckService = rowCheckService;
@@ -190,18 +193,22 @@ public class ImportBatchService {
     if (content.length == 0) {
       throw new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_EMPTY, "The file is empty.");
     }
+    boolean camt =
+        templateId == null && Camt053ImportReader.looksLikeXml(fileName, mediaType, content);
     List<ImportTemplateCandidateResponse> candidates = List.of();
     UUID chosen = templateId;
-    if (chosen == null) {
+    if (chosen == null && !camt) {
       candidates = importTemplateService.detect(content, actor);
       chosen = singleExactMatch(candidates);
     }
     ResolvedImportTemplate template =
         chosen == null ? null : importTemplateService.resolveForImport(chosen, actor);
     ImportParseResult parsed =
-        template == null
-            ? null
-            : parser.parseForAccount(content, template.definition(), accountContext);
+        camt
+            ? camtReader.parse(content, accountContext)
+            : template == null
+                ? null
+                : parser.parseForAccount(content, template.definition(), accountContext);
     List<ImportTemplateCandidateResponse> offered = template == null ? candidates : List.of();
     Map<String, Boolean> rates =
         parsed == null ? new HashMap<>() : lookUpRates(accountId, parsed.rows(), actor);
@@ -231,8 +238,13 @@ public class ImportBatchService {
           fileRepository.saveAndFlush(file);
 
           if (parsed != null) {
-            useTemplate(batch, template);
-            identificationService.identify(batch, account, fileIdentifier(template, parsed), actor);
+            if (camt) {
+              batch.setSourceKind(ImportBatchValues.SOURCE_DOCUMENT);
+            } else {
+              useTemplate(batch, template);
+            }
+            identificationService.identify(
+                batch, account, camt ? parsed.accountIdentifier() : fileIdentifier(template, parsed), actor);
             statementBalanceService.record(batch, account, parsed.statementBalances());
             stagingService.stage(batch, account, parsed.rows(), rates, actor);
           }
@@ -265,9 +277,15 @@ public class ImportBatchService {
                     .findById(batchId)
                     .map(ImportFile::getContent)
                     .orElseThrow(() -> new IllegalStateException("Batch has no stored file.")));
-    ResolvedImportTemplate template = importTemplateService.resolveForImport(templateId, actor);
+    boolean camt = Camt053ImportReader.looksLikeXml(null, null, content);
+    ResolvedImportTemplate template =
+        camt && templateId == null
+            ? null
+            : importTemplateService.resolveForImport(templateId, actor);
     ImportParseResult parsed =
-        parser.parseForAccount(content, template.definition(), accountContext);
+        template == null
+            ? camtReader.parse(content, accountContext)
+            : parser.parseForAccount(content, template.definition(), accountContext);
     Map<String, Boolean> rates = lookUpRates(accountId, parsed.rows(), actor);
 
     return writeTransaction.execute(
@@ -276,8 +294,13 @@ public class ImportBatchService {
           ImportBatch batch = lockBatch(account, batchId, actor);
           // Checked again under the lock: another parse, a discard or a commit may have come first.
           requireParseable(batch, expectedVersion);
-          useTemplate(batch, template);
-          identificationService.identify(batch, account, fileIdentifier(template, parsed), actor);
+          if (template == null) {
+            batch.setSourceKind(ImportBatchValues.SOURCE_DOCUMENT);
+          } else {
+            useTemplate(batch, template);
+          }
+          identificationService.identify(
+              batch, account, template == null ? parsed.accountIdentifier() : fileIdentifier(template, parsed), actor);
           statementBalanceService.record(batch, account, parsed.statementBalances());
           stagingService.stage(batch, account, parsed.rows(), rates, actor);
           return summary(batch, account, List.of(), actor);
