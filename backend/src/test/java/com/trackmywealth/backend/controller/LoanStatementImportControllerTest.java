@@ -3,12 +3,15 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
+import com.trackmywealth.backend.dto.ImportBatchValues;
+import com.trackmywealth.backend.dto.ImportIdentificationResponse;
 import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
@@ -62,9 +65,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class LoanStatementImportControllerTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
-  // The shipped templates' current versions (V88).
+  // The shipped templates' current versions (loan statement V96, CAMT V88).
   private static final UUID SPARKASSE_LOAN =
-      UUID.fromString("72805b69-3fa5-4922-b02a-af25e48dbd29");
+      UUID.fromString("db261cc9-5ae3-4eef-b8b4-8529a243abcf");
   private static final UUID SPARKASSE_CAMT =
       UUID.fromString("df6b6640-6a37-49ce-b5fc-feb61c677971");
   private static final Charset WINDOWS_1252 = Charset.forName("windows-1252");
@@ -273,6 +276,34 @@ class LoanStatementImportControllerTest {
     }
   }
 
+  // US-07-20 (#323), acceptance criterion 1: the statement names the loan by the IBAN after its
+  // number, so a loan registered with that IBAN is found without the member confirming it.
+  @Test
+  void theStatementFindsTheLoanRegisteredWithItsIban() throws Exception {
+    client()
+        .put()
+        .uri("/api/v1/accounts/" + loan + "/identifier")
+        .header(HttpHeaders.IF_MATCH, "\"" + accountVersion(loan) + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new AccountIdentifierRequest("DE89 3704 0044 0532 0130 00"))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    ImportBatchResponse batch =
+        upload(
+            loan,
+            ShippedTemplateFixtures.sparkasseLoanStatement(),
+            "statement.pdf",
+            "application/pdf",
+            SPARKASSE_LOAN);
+
+    assertThat(batch.accountIdentification())
+        .isEqualTo(
+            new ImportIdentificationResponse(
+                ImportBatchValues.IDENTIFIED_MATCHED, null, false, false));
+  }
+
   // --- #337: a payment recorded by hand and imported from the statement -------------------------
 
   @Test
@@ -355,6 +386,9 @@ class LoanStatementImportControllerTest {
             "application/pdf",
             SPARKASSE_LOAN);
     assertThat(batch.counts().errors()).isZero();
+    // #323: the 2019 fixture's text names no valid IBAN, so the statement imports into the loan
+    // the member picked, as with a USER_SELECTED template, without asking for a confirmation.
+    assertThat(batch.accountIdentification()).isNull();
     commit(loan, batch);
   }
 
@@ -488,6 +522,18 @@ class LoanStatementImportControllerTest {
       try (ResultSet resultSet = statement.executeQuery()) {
         resultSet.next();
         return (UUID) resultSet.getObject(1);
+      }
+    }
+  }
+
+  private long accountVersion(UUID account) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("SELECT version FROM account WHERE id = ?")) {
+      statement.setObject(1, account);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        resultSet.next();
+        return resultSet.getLong(1);
       }
     }
   }

@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * US-07-10: registers, shows and removes an account's identifier under EDIT access to the account.
  * Only the keyed hash and the masked display value are stored ({@link AccountIdentifierService}).
+ * Besides its IBAN, an account other than a credit card can have a contract number (#323).
  */
 @Service
 public class AccountIdentifierRegistrationService {
@@ -67,7 +68,9 @@ public class AccountIdentifierRegistrationService {
       AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
     versions.requireCurrent(expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
-    String kind = AccountIdentifierService.kindOf(account);
+    String kind =
+        request.kind() == null ? AccountIdentifierService.kindOf(account) : request.kind();
+    requireRegistrable(account, kind);
     String normalized =
         AccountIdentifierService.normalize(request.identifier(), kind)
             .orElseThrow(() -> invalid(kind));
@@ -91,32 +94,30 @@ public class AccountIdentifierRegistrationService {
       AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
     versions.requireCurrent(expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
-    String kind = AccountIdentifierService.kindOf(account);
     ImportFileAccountIdentifier named =
         proposals.identifierOf(request.importAccountId(), request.batchId(), actor);
-    if (named == null || !named.found() || !kind.equals(named.kind())) {
+    String kind = named == null ? AccountIdentifierService.kindOf(account) : named.kind();
+    if (named == null || !named.found() || !registrable(account, kind)) {
       ApiException exception =
           new ApiException(
               HttpStatus.UNPROCESSABLE_CONTENT,
               ApiErrorCode.ACCOUNT_IDENTIFIER_NOT_IN_FILE,
-              "The import file names no "
-                  + (ImportTemplateValues.IDENTIFIER_MASKED_CARD.equals(kind)
-                      ? "card number"
-                      : "IBAN")
-                  + " this account could be registered with.");
+              "The import file names no " + noun(kind) + " this account could be registered with.");
       exception.getBody().setProperty("field", "batchId");
       throw exception;
     }
     return register(account, named.value(), kind);
   }
 
-  // Stores the keyed hash and the display value of a normalized identifier of the account's kind.
+  // Stores the keyed hash and the display value of a normalized identifier of a registrable kind:
+  // a contract number in its own columns, beside the account's IBAN (#323).
   private AccountIdentifierResponse register(Account account, String normalized, String kind) {
     UUID workspaceId = account.getWorkspace().getId();
     String hash = identifiers.hash(workspaceId, normalized, kind);
     // Checked here for a clear answer; the unique index decides a race (GlobalExceptionHandler).
-    accounts
-        .findByWorkspaceIdAndIdentifierHash(workspaceId, hash)
+    (isContract(kind)
+            ? accounts.findByWorkspaceIdAndContractIdentifierHash(workspaceId, hash)
+            : accounts.findByWorkspaceIdAndIdentifierHash(workspaceId, hash))
         .filter(other -> !other.getId().equals(account.getId()))
         .ifPresent(
             other -> {
@@ -125,20 +126,69 @@ public class AccountIdentifierRegistrationService {
                   ApiErrorCode.ACCOUNT_IDENTIFIER_IN_USE,
                   "Another account of this workspace is already registered with this identifier.");
             });
-    account.setIdentifierHash(hash);
-    account.setIdentifierMasked(AccountIdentifierService.masked(normalized, kind));
+    if (isContract(kind)) {
+      account.setContractIdentifierHash(hash);
+      account.setContractIdentifierMasked(AccountIdentifierService.masked(normalized, kind));
+    } else {
+      account.setIdentifierHash(hash);
+      account.setIdentifierMasked(AccountIdentifierService.masked(normalized, kind));
+    }
     return response(accounts.saveAndFlush(account));
   }
 
-  /** Removes the account's identifier: no file is matched to it any more. */
+  /**
+   * Removes the account's identifiers, or with {@code kind} only that one (#323: its contract
+   * number, or its IBAN or card number): no file is matched to it by them any more.
+   *
+   * @throws ApiException 422 {@code ACCOUNT_IDENTIFIER_INVALID} for a kind the account cannot have
+   */
   @Transactional
   public AccountIdentifierResponse clear(
-      UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
+      UUID accountId, String kind, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = requireEditable(accountId, actor);
     versions.requireCurrent(expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
-    account.setIdentifierHash(null);
-    account.setIdentifierMasked(null);
+    if (kind != null) {
+      requireRegistrable(account, kind);
+    }
+    if (kind == null || !isContract(kind)) {
+      account.setIdentifierHash(null);
+      account.setIdentifierMasked(null);
+    }
+    if (kind == null || isContract(kind)) {
+      account.setContractIdentifierHash(null);
+      account.setContractIdentifierMasked(null);
+    }
     return response(accounts.saveAndFlush(account));
+  }
+
+  // An account takes an identifier of its own kind and, unless it is a credit card, a contract
+  // number besides it (#323).
+  private static boolean registrable(Account account, String kind) {
+    return kind.equals(AccountIdentifierService.kindOf(account))
+        || isContract(kind) && !account.isHasStatementCycle();
+  }
+
+  private static void requireRegistrable(Account account, String kind) {
+    if (!registrable(account, kind)) {
+      ApiException exception =
+          new ApiException(
+              HttpStatus.UNPROCESSABLE_CONTENT,
+              ApiErrorCode.ACCOUNT_IDENTIFIER_INVALID,
+              "This account cannot be registered with a " + noun(kind) + ".");
+      exception.getBody().setProperty("field", "kind");
+      throw exception;
+    }
+  }
+
+  private static boolean isContract(String kind) {
+    return ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind);
+  }
+
+  private static String noun(String kind) {
+    if (ImportTemplateValues.IDENTIFIER_MASKED_CARD.equals(kind)) {
+      return "card number";
+    }
+    return isContract(kind) ? "contract number" : "IBAN";
   }
 
   private Account requireEditable(UUID accountId, AuthenticatedUserPrincipal actor) {
@@ -152,14 +202,17 @@ public class AccountIdentifierRegistrationService {
         account.getId(),
         AccountIdentifierService.kindOf(account),
         account.getIdentifierMasked(),
-        VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE));
+        VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE),
+        account.getContractIdentifierMasked());
   }
 
   private static ApiException invalid(String kind) {
     String detail =
         ImportTemplateValues.IDENTIFIER_MASKED_CARD.equals(kind)
             ? "Enter the card number masked except for at most its first 6 and last 4 digits."
-            : "This is not a valid IBAN; check it for typing errors.";
+            : isContract(kind)
+                ? "Enter a ten-digit contract number, with optional spaces or hyphens."
+                : "This is not a valid IBAN; check it for typing errors.";
     ApiException exception =
         new ApiException(
             HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.ACCOUNT_IDENTIFIER_INVALID, detail);
