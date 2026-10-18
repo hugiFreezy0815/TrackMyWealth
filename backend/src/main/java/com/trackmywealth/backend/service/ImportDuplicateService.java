@@ -4,6 +4,11 @@ import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
 import com.trackmywealth.backend.dto.ImportDuplicateOfResponse;
 import com.trackmywealth.backend.dto.ParsedImportRow;
+import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.LoanPayment;
+import com.trackmywealth.backend.entity.Transaction;
+import com.trackmywealth.backend.repository.AccountRepository;
+import com.trackmywealth.backend.repository.LoanPaymentRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -18,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -47,12 +53,29 @@ import org.springframework.transaction.annotation.Transactional;
  *       currency's minor unit, is the row's amount. So a purchase a template version or a manual
  *       entry booked in euros and another one in its original currency is not booked twice. Only
  *       such cross-currency pairs: two foreign purchases are compared by rule 2 alone.
+ *   <li><b>A loan payment recorded by hand</b> (#337), for every row rules 1 to 3 did not match, on
+ *       an account with amortisation (a loan or mortgage, the only accounts that take one): an
+ *       imported instalment ({@code DEBT_REPAYMENT}) is the payment of the same total recorded via
+ *       {@code LoanRepaymentService} (US-10-02) and booked within {@value
+ *       TransferDetectionService#WINDOW_DAYS} days, and an imported interest row ({@code EXPENSE})
+ *       within that window that payment's interest. The bank books the whole instalment onto the
+ *       loan, the manual entry its principal only, so rule 2 cannot see them. The instalment
+ *       duplicates the payment's incoming principal leg (its interest row when it was all
+ *       interest), the interest row its interest row on the paying account. Each payment takes one
+ *       instalment and one interest row, nearest booking first, only payments still in effect. A
+ *       payment whose instalment the file holds takes the interest row next to it whatever its
+ *       amount, one of the same amount first: a split that was an estimate is a duplicate all the
+ *       same (PO, #337), and replacing the estimate with the statement's figures is a separate
+ *       decision. A payment whose split was unknown recorded no interest, so the statement's
+ *       interest row is new: booked onto the loan, it is the interest the payment left out.
  *   <li><b>Multiplicity:</b> each ledger row is the duplicate of one import row at most, so of
  *       <i>n</i> rows in the file with <i>m</i> matches in the ledger, min(n, m) are duplicates
- *       (two equal coffees on one day are two bookings). Where several ledger rows match, a row is
- *       paired with one of the same normalized description ({@link
- *       ImportLedgerRowService#normalizedDescription}) first, so the preview shows the closest
- *       booking; the pairing never costs a duplicate: as many rows are paired as the rule allows.
+ *       (two equal coffees on one day are two bookings). One exception: a loan payment that was all
+ *       interest recorded one row for the statement's two, so its instalment and its interest row
+ *       both duplicate its interest row. Where several ledger rows match, a row is paired with one
+ *       of the same normalized description ({@link ImportLedgerRowService#normalizedDescription})
+ *       first, so the preview shows the closest booking; the pairing never costs a duplicate: as
+ *       many rows are paired as the rule allows.
  * </ol>
  */
 @Service
@@ -60,10 +83,19 @@ public class ImportDuplicateService {
 
   private static final char KEY_SEPARATOR = '\u001f';
 
-  private final TransactionRepository transactionRepository;
+  private static final String EXPENSE = "EXPENSE";
 
-  public ImportDuplicateService(TransactionRepository transactionRepository) {
+  private final TransactionRepository transactionRepository;
+  private final LoanPaymentRepository loanPaymentRepository;
+  private final AccountRepository accountRepository;
+
+  public ImportDuplicateService(
+      TransactionRepository transactionRepository,
+      LoanPaymentRepository loanPaymentRepository,
+      AccountRepository accountRepository) {
     this.transactionRepository = transactionRepository;
+    this.loanPaymentRepository = loanPaymentRepository;
+    this.accountRepository = accountRepository;
   }
 
   /**
@@ -138,7 +170,174 @@ public class ImportDuplicateService {
             .toList(),
         source,
         duplicates);
+    taken.addAll(duplicates.values());
+    matchManualLoanPayments(
+        accountId,
+        open.stream().filter(row -> !duplicates.containsKey(row.rowNumber())).toList(),
+        duplicates,
+        taken);
     return duplicates;
+  }
+
+  // Rule 4 (#337): an imported instalment or interest row against the loan payments recorded on
+  // this account by hand. One query for the payments, one for each kind of row they name; none on
+  // an account without amortisation, which takes no payment (the account is already loaded).
+  private void matchManualLoanPayments(
+      UUID accountId, List<ParsedImportRow> rows, Map<Integer, UUID> duplicates, Set<UUID> taken) {
+    List<ParsedImportRow> loanRows =
+        rows.stream().filter(row -> isInstalment(row) || isInterest(row)).toList();
+    if (loanRows.isEmpty()
+        || !accountRepository.findById(accountId).map(Account::isHasAmortisation).orElse(false)) {
+      return;
+    }
+    LocalDate from =
+        loanRows.stream()
+            .map(row -> row.canonical().bookingDate())
+            .min(LocalDate::compareTo)
+            .orElseThrow()
+            .minusDays(TransferDetectionService.WINDOW_DAYS);
+    LocalDate to =
+        loanRows.stream()
+            .map(row -> row.canonical().bookingDate())
+            .max(LocalDate::compareTo)
+            .orElseThrow()
+            .plusDays(TransferDetectionService.WINDOW_DAYS);
+    List<LoanPayment> payments =
+        loanPaymentRepository.findInEffectByLoanAccountIdBookedBetween(accountId, from, to);
+    if (payments.isEmpty()) {
+      return;
+    }
+    Map<UUID, UUID> incomingLegByOutgoing = incomingLegs(accountId, payments);
+    Set<UUID> liveInterest = liveInterestRows(payments);
+    // Instalments first: a payment whose instalment the file holds takes the interest next to it.
+    Set<LoanPayment> paidIn = new HashSet<>();
+    for (ParsedImportRow row :
+        loanRows.stream().filter(ImportDuplicateService::isInstalment).toList()) {
+      BigDecimal total = row.canonical().amount();
+      nearestFirst(payments, row).stream()
+          .filter(payment -> !paidIn.contains(payment))
+          .filter(payment -> payment.getTotalAmount().compareTo(total) == 0)
+          .filter(
+              payment ->
+                  instalmentTarget(payment, incomingLegByOutgoing, liveInterest)
+                      .filter(target -> !taken.contains(target))
+                      .isPresent())
+          .findFirst()
+          .ifPresent(
+              payment -> {
+                duplicates.put(
+                    row.rowNumber(),
+                    instalmentTarget(payment, incomingLegByOutgoing, liveInterest).orElseThrow());
+                paidIn.add(payment);
+              });
+    }
+    // Interest of the payment's amount first, across the file; then, for a payment whose instalment
+    // matched, the interest row next to it of another amount (an estimated split). The interest row
+    // an all-interest payment's instalment points at is its interest row too, so rule 4's own
+    // matches are not checked against each other, only payment by payment.
+    Set<LoanPayment> charged = new HashSet<>();
+    List<ParsedImportRow> interestRows =
+        loanRows.stream().filter(ImportDuplicateService::isInterest).toList();
+    for (boolean sameAmount : new boolean[] {true, false}) {
+      for (ParsedImportRow row : interestRows) {
+        if (duplicates.containsKey(row.rowNumber())) {
+          continue;
+        }
+        BigDecimal interest = row.canonical().amount().negate();
+        nearestFirst(payments, row).stream()
+            .filter(payment -> !charged.contains(payment))
+            .filter(payment -> liveInterest.contains(payment.getInterestTransactionId()))
+            .filter(payment -> !taken.contains(payment.getInterestTransactionId()))
+            .filter(
+                payment -> sameAmount ? sameInterest(payment, interest) : paidIn.contains(payment))
+            .findFirst()
+            .ifPresent(
+                payment -> {
+                  duplicates.put(row.rowNumber(), payment.getInterestTransactionId());
+                  charged.add(payment);
+                });
+      }
+    }
+  }
+
+  // The payments in row's currency booked within the transfer window of it, nearest first.
+  private static List<LoanPayment> nearestFirst(List<LoanPayment> payments, ParsedImportRow row) {
+    CanonicalImportRow canonical = row.canonical();
+    return payments.stream()
+        .filter(payment -> payment.getCurrency().equals(canonical.currency()))
+        .filter(payment -> withinWindow(payment.getBookingDate(), canonical.bookingDate()))
+        .sorted(
+            Comparator.comparingLong(
+                (LoanPayment payment) ->
+                    Math.abs(
+                        payment.getBookingDate().toEpochDay()
+                            - canonical.bookingDate().toEpochDay())))
+        .toList();
+  }
+
+  // The ledger row of payment an imported instalment books a second time: its live incoming
+  // principal leg, or its live interest row when it was all interest.
+  private static Optional<UUID> instalmentTarget(
+      LoanPayment payment, Map<UUID, UUID> incomingLegByOutgoing, Set<UUID> liveInterest) {
+    UUID principal = incomingLegByOutgoing.get(payment.getPrincipalTransactionId());
+    if (principal != null) {
+      return Optional.of(principal);
+    }
+    return Optional.ofNullable(payment.getInterestTransactionId()).filter(liveInterest::contains);
+  }
+
+  private static boolean sameInterest(LoanPayment payment, BigDecimal interest) {
+    return payment.getInterestAmount() != null
+        && payment.getInterestAmount().compareTo(interest) == 0;
+  }
+
+  // The live incoming principal leg on the loan of each payment, by its outgoing leg's id.
+  private Map<UUID, UUID> incomingLegs(UUID loanAccountId, List<LoanPayment> payments) {
+    List<UUID> outgoing =
+        payments.stream()
+            .map(LoanPayment::getPrincipalTransactionId)
+            .filter(Objects::nonNull)
+            .toList();
+    Map<UUID, UUID> incoming = new HashMap<>();
+    if (outgoing.isEmpty()) {
+      return incoming;
+    }
+    for (Transaction leg : transactionRepository.findByRelatedTransactionIdIn(outgoing)) {
+      if (leg.getAccount().getId().equals(loanAccountId)
+          && TransactionService.DEBT_REPAYMENT.equals(leg.getTransactionType())
+          && leg.getVoidedAt() == null
+          && !leg.isReversal()) {
+        incoming.put(leg.getRelatedTransactionId(), leg.getId());
+      }
+    }
+    return incoming;
+  }
+
+  private Set<UUID> liveInterestRows(List<LoanPayment> payments) {
+    List<UUID> interest =
+        payments.stream()
+            .map(LoanPayment::getInterestTransactionId)
+            .filter(Objects::nonNull)
+            .toList();
+    return interest.isEmpty()
+        ? Set.of()
+        : new HashSet<>(transactionRepository.findLiveIdsAmong(interest));
+  }
+
+  // On a loan, a statement's instalment (paid in) and its interest (charged onto the loan).
+  private static boolean isInstalment(ParsedImportRow row) {
+    return TransactionService.DEBT_REPAYMENT.equals(row.canonical().transactionType())
+        && row.canonical().amount().signum() > 0;
+  }
+
+  private static boolean isInterest(ParsedImportRow row) {
+    return EXPENSE.equals(row.canonical().transactionType())
+        && row.canonical().amount().signum() < 0;
+  }
+
+  private static boolean withinWindow(LocalDate recorded, LocalDate imported) {
+    return Math.abs(recorded.toEpochDay() - imported.toEpochDay())
+        <= TransferDetectionService.WINDOW_DAYS;
   }
 
   // Rule 3 (#341): foreign purchases against ledger rows in the account's currency, then rows in
