@@ -1292,6 +1292,24 @@ again. The identifier read from the file is not stored on the batch. The uploade
 kept in `import_file` until the batch is committed or discarded, as every import file is (US-07-04),
 and it holds whatever the bank wrote, the account number included.
 
+**Contract numbers and PDF statements (US-07-20, #323, V95–V97).** An LBS building-savings
+statement names its account by a ten-digit contract number, not an IBAN. Any account but a credit
+card can register one besides its IBAN: `PUT /api/v1/accounts/{id}/identifier` with
+`{"identifier": "...", "kind": "CONTRACT_NUMBER"}` (spaces and hyphens are ignored; without `kind`
+the request registers the account's own kind, as before). It is stored like the IBAN, in its own
+columns: `account.contract_identifier_hash` (HMAC over `CONTRACT_NUMBER:...`, unique per workspace
+by `uq_account_workspace_contract_identifier`, a race also a 409 `ACCOUNT_IDENTIFIER_IN_USE`) and
+`contract_identifier_masked` (the last four digits; `chk_account_contract_identifier_masked`).
+`GET` shows it as `contractIdentifierMasked` (`null` while none is registered; `kind` stays the
+kind of the account's own identifier). `DELETE` removes both identifiers, `DELETE ?kind=...` only
+that one; archiving clears both. The shipped Yuh (IBAN, label `IBAN`), Sparkasse loan (IBAN after
+the loan number, label `Darlehen`) and LBS (contract number, label `Bausparvertrag`) statement PDF
+templates have a `PREAMBLE_LINE` rule since V96. The parser takes the first line that starts with
+the label *and* holds a valid identifier, so a heading repeating the label is skipped. A PDF
+statement whose text names no readable identifier imports into the account the member picked,
+as with a `USER_SELECTED` template, without a confirmation; one naming an identifier that matches
+no account, or another account, needs one as a CSV file does.
+
 **An account from a file (US-07-11, #271).** When a file names no account (`NO_MATCH`), the member
 can create the account from it. `POST /api/v1/accounts/{id}/imports/{batchId}/account-proposal`
 (EDIT access, an `UPLOADED` or `PARSED` batch) reads the batch's file with the template version it

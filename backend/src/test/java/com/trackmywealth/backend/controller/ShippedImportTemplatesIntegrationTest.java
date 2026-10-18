@@ -63,15 +63,18 @@ class ShippedImportTemplatesIntegrationTest {
       UUID.fromString("4fccd74c-48e2-4e96-aab3-37478b3e05be");
   private static final UUID SPARKASSE_CARD_FAMILY =
       UUID.fromString("4a5b2ef3-9839-45c1-b173-fd9c33f57bd6");
+  // #323 (V96): current PDF-identifying version 3 of the loan family.
   private static final UUID SPARKASSE_LOAN =
-      UUID.fromString("72805b69-3fa5-4922-b02a-af25e48dbd29");
+      UUID.fromString("db261cc9-5ae3-4eef-b8b4-8529a243abcf");
   private static final UUID SPARKASSE_LOAN_FAMILY =
       UUID.fromString("fe678117-6fd0-4863-b271-b2a038ecb5cf");
   // US-07-25 (V93).
   private static final UUID SPARKASSE_CARD_PDF =
       UUID.fromString("8f7e1b44-deb6-4e30-81d8-9a96d63d417c");
-  private static final UUID YUH = UUID.fromString("a2820365-0b08-4474-bdb9-f2c419a91a25");
-  private static final UUID LBS = UUID.fromString("0ac5fd45-d7f5-4c7b-895d-cc8233d07e7b");
+  private static final UUID YUH = UUID.fromString("a82dbfd8-abeb-4fad-af4e-0f9070b3111e");
+  private static final UUID LBS = UUID.fromString("d2971d6e-e091-48c5-96dd-d59c45c8dbd4");
+  private static final UUID YUH_FAMILY = UUID.fromString("a2820365-0b08-4474-bdb9-f2c419a91a25");
+  private static final UUID LBS_FAMILY = UUID.fromString("0ac5fd45-d7f5-4c7b-895d-cc8233d07e7b");
   private static final List<UUID> SHIPPED =
       List.of(
           DKB,
@@ -143,7 +146,9 @@ class ShippedImportTemplatesIntegrationTest {
                       java.util.Map.of(
                               SPARKASSE_CAMT, SPARKASSE_CAMT_FAMILY,
                               SPARKASSE_LOAN, SPARKASSE_LOAN_FAMILY,
-                              SPARKASSE_CARD, SPARKASSE_CARD_FAMILY)
+                              SPARKASSE_CARD, SPARKASSE_CARD_FAMILY,
+                              YUH, YUH_FAMILY,
+                              LBS, LBS_FAMILY)
                           .getOrDefault(template.id(), template.id()));
               assertThat(template.current()).isTrue();
               assertThat(template.active()).isTrue();
@@ -269,6 +274,7 @@ class ShippedImportTemplatesIntegrationTest {
     ImportTemplateTestResponse result =
         detectAndTest(SPARKASSE_LOAN, ShippedTemplateFixtures.sparkasseLoanStatement());
 
+    assertThat(result.accountIdentifierFound()).isTrue();
     assertThat(result.rows())
         .extracting(ImportPreviewRowResponse::status)
         .containsExactly("PARSED", "PARSED", "PARSED", "PARSED", "PARSED");
@@ -317,6 +323,7 @@ class ShippedImportTemplatesIntegrationTest {
   void yuhStatementReadsEachCurrencySectionAndChecksTheRunningBalance() throws IOException {
     ImportTemplateTestResponse result = detectAndTest(YUH, ShippedTemplateFixtures.yuhStatement());
 
+    assertThat(result.accountIdentifierFound()).isTrue();
     assertThat(result.rowCount()).as("balance lines are no bookings").isEqualTo(4);
     assertThat(result.parsedRowCount()).isEqualTo(4);
     assertBooking(result.rows().get(0), LocalDate.of(2031, 1, 3), "1000.00", "CHF", "INCOME");
@@ -335,6 +342,7 @@ class ShippedImportTemplatesIntegrationTest {
   void lbsStatementTypesDepositsAndInterestAndIgnoresTheContractPanel() throws IOException {
     ImportTemplateTestResponse result = detectAndTest(LBS, ShippedTemplateFixtures.lbsStatement());
 
+    assertThat(result.accountIdentifierFound()).isTrue();
     assertThat(result.rowCount()).isEqualTo(4);
     assertThat(result.parsedRowCount()).isEqualTo(4);
     assertBooking(result.rows().get(0), LocalDate.of(2031, 1, 15), "47.13", "EUR", "DEPOSIT");

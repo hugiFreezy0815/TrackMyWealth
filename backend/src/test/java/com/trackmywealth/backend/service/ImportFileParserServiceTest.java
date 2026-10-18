@@ -379,6 +379,32 @@ class ImportFileParserServiceTest {
         .isEqualTo(EXAMPLE_IBAN);
   }
 
+  // #323: a statement can repeat the label as a heading before the line holding the identifier;
+  // the first line holding a valid one names the account, not the first labelled line.
+  @Test
+  void theFirstLabelledLineHoldingAValidIdentifierNamesTheAccount() {
+    ImportTemplateDefinition template =
+        new Template()
+            .preamble(3)
+            .accountIdentifier(
+                "PREAMBLE_LINE",
+                new ImportAccountIdentifierRule(
+                    "CONTRACT_NUMBER",
+                    "Bausparvertrag",
+                    "([0-9][ ]+[0-9]{3}[ ]+[0-9]{3}[ ]+[0-9]{3})",
+                    null))
+            .build();
+    String csv =
+        "\"Bausparvertrag\",\"Kontoauszug\"\n"
+            + "\"Bausparvertrag\",\"4 268 135 0\"\n"
+            + "\"Bausparvertrag\",\"4 268 135 009\"\n"
+            + "date,amount,text\n"
+            + "2031-01-02,-5.00,Groceries\n";
+
+    assertThat(parser.parse(utf8(csv), template, null).accountIdentifier())
+        .isEqualTo(new ImportFileAccountIdentifier("CONTRACT_NUMBER", "4268135009"));
+  }
+
   @ParameterizedTest
   @ValueSource(
       strings = {

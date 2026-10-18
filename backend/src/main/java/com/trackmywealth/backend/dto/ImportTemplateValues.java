@@ -70,8 +70,11 @@ public final class ImportTemplateValues {
   /** A card number masked except for at most its first 6 and its last 4 digits (US-07-10). */
   public static final String IDENTIFIER_MASKED_CARD = "MASKED_CARD";
 
+  /** Building-savings contract number, independently registered alongside the IBAN (#323). */
+  public static final String IDENTIFIER_CONTRACT_NUMBER = "CONTRACT_NUMBER";
+
   public static final Set<String> IDENTIFIER_KINDS =
-      Set.of(IDENTIFIER_IBAN, IDENTIFIER_MASKED_CARD);
+      Set.of(IDENTIFIER_IBAN, IDENTIFIER_MASKED_CARD, IDENTIFIER_CONTRACT_NUMBER);
 
   public static final String ENCODING_UTF_8 = "UTF-8";
   public static final String ENCODING_ISO_8859_1 = "ISO-8859-1";

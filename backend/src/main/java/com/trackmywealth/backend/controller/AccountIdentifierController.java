@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -64,12 +65,18 @@ public class AccountIdentifierController {
         registration.setFromImport(accountId, request, IfMatchVersionParser.parse(ifMatch), actor));
   }
 
+  /**
+   * Removes the account's identifiers; with {@code kind} ({@code IBAN}, {@code MASKED_CARD} or
+   * {@code CONTRACT_NUMBER}) only that one (#323).
+   */
   @DeleteMapping
   public ResponseEntity<AccountIdentifierResponse> clear(
       @PathVariable UUID accountId,
+      @RequestParam(required = false) String kind,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return withEtag(registration.clear(accountId, IfMatchVersionParser.parse(ifMatch), actor));
+    return withEtag(
+        registration.clear(accountId, kind, IfMatchVersionParser.parse(ifMatch), actor));
   }
 
   private static ResponseEntity<AccountIdentifierResponse> withEtag(

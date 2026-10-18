@@ -15,7 +15,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * column mapping) on every booking row; every filled cell must hold the same identifier.
  */
 public record ImportAccountIdentifierRule(
-    @Schema(description = "IBAN or MASKED_CARD.") String kind,
+    @Schema(description = "IBAN, MASKED_CARD or CONTRACT_NUMBER.") String kind,
     @Schema(description = "PREAMBLE_LINE: the text the identifier's line starts with.")
         String label,
     @Schema(

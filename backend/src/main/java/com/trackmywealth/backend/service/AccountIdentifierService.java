@@ -20,8 +20,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
- * US-07-10: an account identifier (an IBAN, or a credit card's masked number) is kept only as an
- * HMAC-SHA256 under a key of the account's workspace, derived from the server key {@code
+ * US-07-10: an account identifier (an IBAN, a credit card's masked number, or since #323 a
+ * building-savings contract number kept besides the IBAN) is kept only as an HMAC-SHA256 under a
+ * key of the account's workspace, derived from the server key {@code
  * app.import.account-identifier-key}, plus a masked display value. The same identifier read from an
  * import file hashes to the same value, so a file finds its account without the number being
  * stored. Never log or persist an identifier, its normalized form or a key.
@@ -46,6 +47,7 @@ public class AccountIdentifierService {
   private static final Pattern IBAN = Pattern.compile("[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}");
   // At most the first 6 and the last 4 digits visible (PCI DSS), at least one masked position.
   private static final Pattern MASKED_CARD = Pattern.compile("[0-9]{0,6}\\*+[0-9]{4}");
+  private static final Pattern CONTRACT_NUMBER = Pattern.compile("[0-9]{10}");
   private static final int MIN_CARD_LENGTH = 8;
   private static final int MAX_CARD_LENGTH = 19;
   private static final Pattern SEPARATORS = Pattern.compile("[\\s\\u00A0\\u202F-]");
@@ -101,7 +103,7 @@ public class AccountIdentifierService {
    * The canonical form of {@code value} as an identifier of {@code kind}, or empty when it is none:
    * an IBAN without separators, upper case and with valid check digits; a masked card number
    * without separators, every mask character as {@code *}, showing at most its first 6 and its last
-   * 4 digits.
+   * 4 digits; a contract number as its ten digits without separators (#323).
    */
   public static Optional<String> normalize(String value, String kind) {
     if (value == null) {
@@ -116,12 +118,20 @@ public class AccountIdentifierService {
               && MASKED_CARD.matcher(card).matches();
       return valid ? Optional.of(card) : Optional.empty();
     }
-    return IBAN.matcher(compact).matches() && ibanChecksumValid(compact)
+    if (ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)) {
+      return CONTRACT_NUMBER.matcher(compact).matches() ? Optional.of(compact) : Optional.empty();
+    }
+    return ImportTemplateValues.IDENTIFIER_IBAN.equals(kind)
+            && IBAN.matcher(compact).matches()
+            && ibanChecksumValid(compact)
         ? Optional.of(compact)
         : Optional.empty();
   }
 
-  /** The display value: an IBAN's last 4 characters, a masked card number as it is. */
+  /**
+   * The display value: an IBAN's or a contract number's last 4 characters, a masked card number as
+   * it is.
+   */
   public static String masked(String normalized, String kind) {
     if (ImportTemplateValues.IDENTIFIER_MASKED_CARD.equals(kind)) {
       return normalized;
@@ -155,11 +165,17 @@ public class AccountIdentifierService {
     }
   }
 
-  /** The active account of the workspace registered with this normalized identifier, if any. */
+  /**
+   * The active account of the workspace registered with this normalized identifier, if any; a
+   * contract number is looked up among the accounts' contract numbers (#323).
+   */
   public Optional<Account> match(UUID workspaceId, String normalized, String kind) {
-    return accounts
-        .findByWorkspaceIdAndIdentifierHash(workspaceId, hash(workspaceId, normalized, kind))
-        .filter(account -> account.getArchivedAt() == null);
+    String identifierHash = hash(workspaceId, normalized, kind);
+    Optional<Account> account =
+        ImportTemplateValues.IDENTIFIER_CONTRACT_NUMBER.equals(kind)
+            ? accounts.findByWorkspaceIdAndContractIdentifierHash(workspaceId, identifierHash)
+            : accounts.findByWorkspaceIdAndIdentifierHash(workspaceId, identifierHash);
+    return account.filter(found -> found.getArchivedAt() == null);
   }
 
   // ISO 13616: the first four characters moved to the end, letters as 10..35, mod 97 is 1.

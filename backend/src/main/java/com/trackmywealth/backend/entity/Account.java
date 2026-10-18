@@ -93,6 +93,13 @@ public class Account {
   @Column(name = "identifier_masked")
   private String identifierMasked;
 
+  // #323: contract numbers coexist with IBANs. Only a keyed hash and masked display are stored.
+  @Column(name = "contract_identifier_hash", length = 64)
+  private String contractIdentifierHash;
+
+  @Column(name = "contract_identifier_masked")
+  private String contractIdentifierMasked;
+
   @JdbcTypeCode(SqlTypes.CHAR)
   @Column(length = 2)
   private String jurisdiction;
@@ -268,6 +275,22 @@ public class Account {
 
   public void setIdentifierMasked(String identifierMasked) {
     this.identifierMasked = identifierMasked;
+  }
+
+  public String getContractIdentifierHash() {
+    return contractIdentifierHash;
+  }
+
+  public void setContractIdentifierHash(String contractIdentifierHash) {
+    this.contractIdentifierHash = contractIdentifierHash;
+  }
+
+  public String getContractIdentifierMasked() {
+    return contractIdentifierMasked;
+  }
+
+  public void setContractIdentifierMasked(String contractIdentifierMasked) {
+    this.contractIdentifierMasked = contractIdentifierMasked;
   }
 
   public String getJurisdiction() {
