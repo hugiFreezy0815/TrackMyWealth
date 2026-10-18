@@ -453,8 +453,16 @@ Read locally in a container without network access; structure and counts only. B
 
 Consequences: `AcctSvcrRef` alone can never identify a Sparkasse booking in `.001.02`, which
 confirms the scoped external id (reference plus date, amount and currency). Each daily report
-ends in a closed booked balance (`CLBD`), not an intraday one; whether such a `camt.052` balance
-may become a `DOCUMENT` snapshot is a product owner decision (the safe default records none).
+ends in a closed booked balance (`CLBD`), not an intraday one. **Product owner decision
+(2026-10-18):** a `camt.052` import stores no balance; its `CLBD` may later serve as a
+reconciliation check if one is needed, never as a `DOCUMENT` snapshot.
+
+**Local check of #352 against these files** (counts only): the `.001.02` ZIP imports 95 of 95
+booked entries with no errors, although its entries share references; the `.001.08` ZIP of the
+same days then finds 95 of 95 duplicates and posts nothing, and the reverse order gives the same.
+Pending entries in the single files are skipped, never imported. The 18-column CSV export of the
+same account after the CAMT import is 95 duplicates and 1 filtered pending row. With the IBAN on
+the account, the account is identified without confirmation. No balance is stored.
 MT940/MT942 (SPK-11, SPK-12) carry the same bookings in an older format; with `camt.052`
 available they need no importer.
 
