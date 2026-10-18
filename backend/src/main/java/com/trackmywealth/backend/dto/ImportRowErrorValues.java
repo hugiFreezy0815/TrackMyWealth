@@ -121,6 +121,28 @@ public final class ImportRowErrorValues {
   public static final String EXTERNAL_ID_REPEATED = "IMPORT_ROW_EXTERNAL_ID_REPEATED";
 
   /**
+   * {@code status} (SKIPPED): a CAMT entry that is not booked ({@code BOOK}) - pending ({@code
+   * PDNG}), information only ({@code INFO}) or proprietary - is shown but never imported (#350): it
+   * comes back booked later.
+   */
+  public static final String CAMT_NOT_BOOKED = "IMPORT_ROW_CAMT_NOT_BOOKED";
+
+  /**
+   * {@code entryAmount, detailTotal}: a collective CAMT entry whose transaction details do not add
+   * up to its signed amount; it is not split, so no amount is imported twice or lost (#350).
+   */
+  public static final String CAMT_DETAILS_MISMATCH = "IMPORT_ROW_CAMT_DETAILS_MISMATCH";
+
+  /**
+   * {@code entryCurrency, detailCurrency}: a collective CAMT entry with a transaction detail in
+   * another currency than the entry, which therefore cannot be reconciled with it (#350).
+   */
+  public static final String CAMT_DETAILS_CURRENCY = "IMPORT_ROW_CAMT_DETAILS_CURRENCY";
+
+  /** {@code column, value}: a CAMT field holds a value its schema does not allow there (#350). */
+  public static final String CAMT_VALUE_INVALID = "IMPORT_ROW_CAMT_VALUE_INVALID";
+
+  /**
    * {@code currency, accountCurrency, date}: the row is in another currency than the account and no
    * exchange rate for its booking date is available, not even from the provider (US-07-04, #223).
    */

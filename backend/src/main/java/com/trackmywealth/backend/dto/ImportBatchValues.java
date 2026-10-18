@@ -30,8 +30,16 @@ public final class ImportBatchValues {
   /** {@code source_kind} and so {@code transaction.source}: a delimited text file. */
   public static final String SOURCE_CSV = "CSV";
 
-  /** {@code source_kind} of a PDF statement (#268). */
+  /** {@code source_kind} of a PDF statement (#268) and of a CAMT XML statement (#350). */
   public static final String SOURCE_DOCUMENT = "DOCUMENT";
+
+  /**
+   * #350: what every external id of a CAMT row starts with. A CAMT statement and a PDF template of
+   * one account share the source {@code DOCUMENT}, but not their references: a row is compared with
+   * a ledger row of the other scheme by booking date and amount (duplicate rule 2), however the two
+   * references differ.
+   */
+  public static final String CAMT_REFERENCE_PREFIX = "CAMT:";
 
   /** {@code source_file_storage_ref} of a file kept in {@code import_file}. */
   public static final String STORAGE_DATABASE = "db";

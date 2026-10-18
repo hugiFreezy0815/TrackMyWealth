@@ -22,15 +22,20 @@ import org.springframework.stereotype.Service;
 public class BusinessDateService {
 
   private final Clock clock;
-  private final ZoneId zone;
+  private final ZoneId businessZone;
 
   public BusinessDateService(Clock clock, @Value("${app.business-zone}") String zone) {
     this.clock = clock;
     // ZoneId.of fails fast at startup on a typo rather than on the first balance read.
-    this.zone = ZoneId.of(zone);
+    this.businessZone = ZoneId.of(zone);
   }
 
   public LocalDate today() {
-    return LocalDate.now(clock.withZone(zone));
+    return LocalDate.now(clock.withZone(businessZone));
+  }
+
+  /** The zone a moment becomes a calendar date in, such as a CAMT booking's date-time (#350). */
+  public ZoneId zone() {
+    return businessZone;
   }
 }

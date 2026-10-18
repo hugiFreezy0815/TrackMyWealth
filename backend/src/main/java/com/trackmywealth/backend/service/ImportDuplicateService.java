@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
 import com.trackmywealth.backend.dto.ImportDuplicateOfResponse;
 import com.trackmywealth.backend.dto.ParsedImportRow;
@@ -43,7 +44,9 @@ import org.springframework.transaction.annotation.Transactional;
  *       from another format or a bank sync. The description is not compared (US-07-17): two export
  *       formats of one account word the same booking differently. A row with an external id is not
  *       matched to a row of its own source that has another id: one reference is one booking. No
- *       date tolerance.
+ *       date tolerance. References of different schemes do not tell two bookings apart: a CAMT
+ *       statement's ({@link ImportBatchValues#CAMT_REFERENCE_PREFIX}) and a PDF template's share
+ *       the source {@code DOCUMENT}, never a reference (#350).
  *   <li><b>Across currencies</b> (#341), for every row rules 1 and 2 did not match: a foreign card
  *       purchase, booked in its original currency ({@link
  *       ImportLedgerRowService#isOriginalCurrencyPurchase}), is the same booking as a ledger row of
@@ -566,12 +569,19 @@ public class ImportDuplicateService {
   }
 
   // A row with a reference is the same booking as a row of another source, or one of its own
-  // source that has no reference; a row of its own source with another reference is another one.
+  // source that has no reference; a row of its own source with another reference is another one,
+  // unless the two references are of different schemes: a CAMT statement's and a PDF template's
+  // of one account (both DOCUMENT) never name a booking alike (#350).
   private static boolean fallbackApplies(
       CanonicalImportRow row, String source, ImportDuplicateCandidate candidate) {
     return row.externalId() == null
         || !source.equals(candidate.getSource())
-        || candidate.getExternalId() == null;
+        || candidate.getExternalId() == null
+        || isCamtReference(row.externalId()) != isCamtReference(candidate.getExternalId());
+  }
+
+  private static boolean isCamtReference(String externalId) {
+    return externalId.startsWith(ImportBatchValues.CAMT_REFERENCE_PREFIX);
   }
 
   private static String key(CanonicalImportRow row) {
