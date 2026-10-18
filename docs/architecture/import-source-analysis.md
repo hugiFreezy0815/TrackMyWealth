@@ -27,6 +27,13 @@ Analysed on 2026-10-04: 20 documents from 5 institutions.
 | PF-6 | PostFinance | E-Trading account overview | PDF, text | Balance and holdings statement |
 | PF-7 | PostFinance | E-Trading portfolio performance report | PDF, text | Holdings and performance statement |
 | PF-8 | PostFinance | Pillar 3a account, E-Finance browser print | PDF, text (printed web page) | Balance and holdings statement |
+| PF-9 | PostFinance | Private-account statement, added 2026-10-18 | PDF, text | Account statement |
+| PF-10 | PostFinance | Savings-account statement with interest statement, added 2026-10-18 | PDF, text | Account statement |
+| PF-11 | PostFinance | E-Trading account statement (buys, sells, dividends), added 2026-10-18 | PDF, text | Account statement |
+| PF-12 | PostFinance | E-Trading portfolio valuation, added 2026-10-18 | PDF, text | Holdings statement |
+| PF-13 | PostFinance | Single E-Trading notices: trade confirmation (stamp duty, fees), dividend, cash movement, added 2026-10-18 | PDF, text, one page each | Transaction notice |
+| PF-14 | PostFinance | Pillar 3a notices: fund-unit statement, income booking, added 2026-10-18 | PDF, text, one page each | Transaction notice |
+| PF-15 | PostFinance | Private-account single-booking notice, added 2026-10-18 | PDF, text, one page | Transaction notice |
 | SPK-1 | Sparkasse Freiburg | Transaction list, current account (18-column CSV with `Kategorie`) | CSV, windows-1252, `;` | Transaction list |
 | SPK-2 | Sparkasse Freiburg | Transaction list, savings-type account (same 18-column format) | CSV, windows-1252, `;` | Transaction list |
 | SPK-3 | Sparkasse Freiburg | Transaction list, loan account, "CSV-CAMT V8" (17 columns) | CSV, windows-1252, `;` | Transaction list |
@@ -43,11 +50,15 @@ Analysed on 2026-10-04: 20 documents from 5 institutions.
 | YUH-1 | Yuh | Account statement, multi-currency, with savings pocket | PDF, text | Account statement |
 | YUH-2 | Yuh | Portfolio performance report | PDF, text | Holdings and performance statement |
 | YUH-3 | Yuh | Swiss tax statement (Steuerauszug), eCH-0196 v2 (6.5.1) | PDF, text + Code 128 per page + PDF417 barcode pages | Tax statement |
+| YUH-4 | Yuh | Single-booking notices (debit, credit), added 2026-10-18 | PDF, text, one page each | Transaction notice |
+| YUH-5 | Yuh | Securities buy confirmation (stamp duty, commission), added 2026-10-18 | PDF, text, one page | Transaction notice |
 
 No document is scanned: every PDF has a text layer, so none needs OCR. SPK-3 is the Sparkasse's
 CSV rendering of camt.052 (17 columns, see 3.4); the XML itself (SPK-9, SPK-10) was added on
 2026-10-18 with the download check of spike #277 (6.5.1). The same check added newer exports in
-the DKB-1, SPK-1 and SPK-4 formats (unchanged headers), which need no id of their own.
+the DKB-1, SPK-1, SPK-4 and PF-1 formats (unchanged headers) and copies of YUH-1 and YUH-3,
+which need no id of their own. The PDF notices' small Data Matrix codes hold a short
+document id (no XML), not import data.
 TrueWealth and Yuh, listed as empty in the issue, now have samples, but neither has a
 transaction export (see section 5).
 
@@ -77,7 +88,7 @@ identifier that could match or create an `account`.
 | TW-1 | yes: True Wealth, custodian bank, pension foundation | partial: customer number and product, no account number | no | no | no | no | no | none |
 | YUH-1 | yes: Swissquote as the bank, SWIFT | yes: IBAN, customer number | yes: "Anfangssaldo" / "Saldo per <start>" | yes: "Endsaldo" / "Saldo per <end>", per currency | yes: with value date and running balance | partial: buy/sell/dividend as cash bookings only | no | none |
 | YUH-2 | yes | yes: account number and IBAN | no | yes: liquidity per date | no | no | yes: shares, funds, crypto | none |
-| YUH-3 | yes | partial: customer number | no | partial: tax values at year end | no | no | partial: tax value per position at year end; machine-readable only through the barcode (to verify) | none |
+| YUH-3 | yes | partial: customer number | no | partial: tax values at year end | no | no | partial: tax value per position at year end; machine-readable through the eCH-0196 barcode (confirmed, 6.5.1) | none |
 
 ## 3. Formats in detail
 
@@ -259,7 +270,7 @@ a PDF template is a set of label anchors and line patterns, not a column mapping
 | Institution | Container details | Cash transactions | Balances (snapshot) | Positions | Ignore |
 |---|---|---|---|---|---|
 | DKB | DKB-1 preamble (IBAN, account kind) | DKB-1 CSV now, FinTS later (#259-#262) | DKB-1 preamble `Kontostand vom` | none (no depot sample) | - |
-| PostFinance, accounts | PF-1/PF-2 preamble (IBAN, currency) | PF-1/PF-2 CSV | none in any file: manual entry for now | - | - |
+| PostFinance, accounts | PF-1/PF-2 preamble (IBAN, currency) | PF-1/PF-2 CSV | none in the CSV; PF-9/PF-10 statement PDFs once a PDF template exists, manual entry until then | - | PF-9/PF-10 bookings (same as the CSV), PF-15 |
 | PostFinance, E-Trading | PF-7 (account number, holder) or manual | PF-3 cash rows (later, with the securities import) | PF-4 (cash per currency) | PF-7 (has ISIN); PF-5 only with ticker resolution | PF-6 (duplicates PF-4/PF-5) |
 | PostFinance, pillar 3a | PF-8 or manual | none | PF-8, manual entry recommended (unstable print layout) | PF-8 (fund units) | - |
 | Sparkasse, accounts | `Auftragskonto` column of SPK-1/SPK-2 | SPK-1/SPK-2 CSV, FinTS later | none in the CSV; FinTS later | - | - |
@@ -381,8 +392,9 @@ would produce incomplete containers.
    for every Swiss bank that prints the standard's barcodes. Confirmed on YUH-3; the posting
    path waits for the securities master (EPIC 15) and the holdings import (#273).
 
-The owner's download check (2026-10-18) found `camt.052` at Sparkasse Freiburg and no CAMT at
-DKB; PostFinance and Yuh are still to be checked (follow-up 2 below).
+The owner's download check (2026-10-18) found `camt.052` at Sparkasse Freiburg only. DKB,
+PostFinance and Yuh offered no CAMT file for the owner's accounts: CSV and PDF only
+(follow-up 2 below).
 
 ##### Where the standards are used
 
@@ -405,8 +417,8 @@ is why it is not deferred.
 
 | Institution (inventory) | CAMT XML download | eCH-0196 tax statement |
 |---|---|---|
-| PostFinance (PF-1..8) | **To confirm** in e-finance; the Swiss standard makes `camt.053` likely | Not among the samples; to confirm |
-| Yuh (YUH-1..3) | **To confirm** in the app/e-banking | **Confirmed** on YUH-3: eCH-0196 v2.22 (below) |
+| PostFinance (PF-1..15) | **No** among the owner's e-finance downloads: CSV (PF-1 format) and PDF statements and notices only | Not among the downloads (issued once a year); to confirm |
+| Yuh (YUH-1..5) | **No**: PDF statements and notices only, no CSV | **Confirmed** on YUH-3: eCH-0196 v2.22 (below) |
 | True Wealth (TW-1) | Not applicable (asset manager, no cash account export seen) | Not among the samples; to confirm |
 | Sparkasse Freiburg (SPK-1..12) | **`camt.052` yes** (`.001.02` and `.001.08`, ZIP of daily reports or single XML; SPK-9, SPK-10); **`camt.053` not offered**; also MT940/MT942 | Not applicable (German bank) |
 | DKB (DKB-1, DKB-2) | **No**: online banking offers the CSV (DKB-1) and PDF statements (DKB-2) only | Not applicable (German bank) |
@@ -543,12 +555,14 @@ encoded into PDF417 by the test itself.
    preview/commit and duplicate tests.
 2. **CAMT availability (product owner, local only):** Sparkasse Freiburg `camt.052` yes
    (`.001.02`/`.001.08`, ZIP or single XML, online-banking download), `camt.053` no; DKB no CAMT
-   (checked 2026-10-18). PostFinance and Yuh: record `camt.053`/`camt.052` yes/no, ZIP or
-   single XML and the channel when #350's implementation is checked. Do not attach files.
+   (checked 2026-10-18). PostFinance and Yuh: no CAMT among the downloads (checked
+   2026-10-18). Re-check only if a bank announces a CAMT download.
 3. **eCH-0196 decoder story (SHOULD, M):** generic Swiss e-tax statement import into a
    holdings/bank-account snapshot, blocked on EPIC 15 and #273. Open it when those are planned.
-4. **Spike #277 closure:** Q2 (barcode) is answered; Q1 is answered for the standards, the
-   Swiss/German landscape, Sparkasse and DKB. PostFinance and Yuh remain for item 2.
+4. **Spike #277 closure:** both questions are answered. Q1: only Sparkasse Freiburg offers CAMT
+   (`camt.052`), so #350 serves it first and every other bank that offers the file later.
+   Q2: YUH-3 is eCH-0196 v2. The other new documents (PF-9..15, YUH-4/5, DKB-2) are PDF
+   statements and notices for future PDF templates and the securities import (EPIC 15).
 
 ### 6.6 Holdings and securities
 
