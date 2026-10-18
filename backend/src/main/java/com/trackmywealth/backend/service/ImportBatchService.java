@@ -98,7 +98,7 @@ public class ImportBatchService {
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
   private final ImportTemplateService importTemplateService;
-  private final Camt053ImportReader camtReader;
+  private final CamtImportReaderService camtReader;
   private final ImportFileParserService parser;
   private final ImportStagingService stagingService;
   private final ImportRowCheckService rowCheckService;
@@ -122,7 +122,7 @@ public class ImportBatchService {
       AccountLookupService accountLookupService,
       AccessControlService accessControlService,
       ImportTemplateService importTemplateService,
-      Camt053ImportReader camtReader,
+      CamtImportReaderService camtReader,
       ImportFileParserService parser,
       ImportStagingService stagingService,
       ImportRowCheckService rowCheckService,
@@ -169,7 +169,9 @@ public class ImportBatchService {
    * Stores {@code content} as a new batch of the account. With {@code templateId}, or when exactly
    * one template's header fingerprint matches the file (FR-IMP-022), the file is parsed at once and
    * the batch is {@code PARSED}; otherwise it stays {@code UPLOADED} and the answer lists the
-   * templates that can read it, for a {@link #parse}.
+   * templates that can read it, for a {@link #parse}. An XML file or ZIP archive without {@code
+   * templateId} is a CAMT statement (#350), parsed at once without a template ({@link
+   * CamtImportReaderService}).
    *
    * @throws ImportFileRejectedException 422 for an empty file, or one the chosen template cannot
    *     read; nothing is stored then
@@ -193,8 +195,7 @@ public class ImportBatchService {
     if (content.length == 0) {
       throw new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_EMPTY, "The file is empty.");
     }
-    boolean camt =
-        templateId == null && Camt053ImportReader.looksLikeXml(fileName, mediaType, content);
+    boolean camt = templateId == null && camtReader.isCamtFile(content);
     List<ImportTemplateCandidateResponse> candidates = List.of();
     UUID chosen = templateId;
     if (chosen == null && !camt) {
@@ -238,15 +239,7 @@ public class ImportBatchService {
           fileRepository.saveAndFlush(file);
 
           if (parsed != null) {
-            if (camt) {
-              batch.setSourceKind(ImportBatchValues.SOURCE_DOCUMENT);
-            } else {
-              useTemplate(batch, template);
-            }
-            identificationService.identify(
-                batch, account, camt ? parsed.accountIdentifier() : fileIdentifier(template, parsed), actor);
-            statementBalanceService.record(batch, account, parsed.statementBalances());
-            stagingService.stage(batch, account, parsed.rows(), rates, actor);
+            applyParse(batch, account, template, parsed, rates, actor);
           }
           return summary(batch, account, offered, actor);
         });
@@ -254,7 +247,11 @@ public class ImportBatchService {
 
   /**
    * Parses the batch's stored file (again) with the current version of {@code templateId},
-   * replacing its rows; allowed while it is {@code UPLOADED} or {@code PARSED}.
+   * replacing its rows; allowed while it is {@code UPLOADED} or {@code PARSED}. Without {@code
+   * templateId}, only a CAMT statement (#350) is parsed, as it is without a template on upload.
+   *
+   * @throws ResponseStatusException 400 without {@code templateId} for a file that is no CAMT
+   *     statement
    */
   public ImportBatchResponse parse(
       UUID accountId,
@@ -277,11 +274,12 @@ public class ImportBatchService {
                     .findById(batchId)
                     .map(ImportFile::getContent)
                     .orElseThrow(() -> new IllegalStateException("Batch has no stored file.")));
-    boolean camt = Camt053ImportReader.looksLikeXml(null, null, content);
+    if (templateId == null && !camtReader.isCamtFile(content)) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "templateId is required for a file that is no CAMT statement.");
+    }
     ResolvedImportTemplate template =
-        camt && templateId == null
-            ? null
-            : importTemplateService.resolveForImport(templateId, actor);
+        templateId == null ? null : importTemplateService.resolveForImport(templateId, actor);
     ImportParseResult parsed =
         template == null
             ? camtReader.parse(content, accountContext)
@@ -294,15 +292,7 @@ public class ImportBatchService {
           ImportBatch batch = lockBatch(account, batchId, actor);
           // Checked again under the lock: another parse, a discard or a commit may have come first.
           requireParseable(batch, expectedVersion);
-          if (template == null) {
-            batch.setSourceKind(ImportBatchValues.SOURCE_DOCUMENT);
-          } else {
-            useTemplate(batch, template);
-          }
-          identificationService.identify(
-              batch, account, template == null ? parsed.accountIdentifier() : fileIdentifier(template, parsed), actor);
-          statementBalanceService.record(batch, account, parsed.statementBalances());
-          stagingService.stage(batch, account, parsed.rows(), rates, actor);
+          applyParse(batch, account, template, parsed, rates, actor);
           return summary(batch, account, List.of(), actor);
         });
   }
@@ -686,6 +676,37 @@ public class ImportBatchService {
       return null;
     }
     return identifier;
+  }
+
+  // Records a parse on the batch and stages its rows: with template, as that template reads files;
+  // without one, as a CAMT statement, which names its account and states its balances itself.
+  private void applyParse(
+      ImportBatch batch,
+      Account account,
+      ResolvedImportTemplate template,
+      ImportParseResult parsed,
+      Map<String, Boolean> rates,
+      AuthenticatedUserPrincipal actor) {
+    if (template == null) {
+      useCamt(batch);
+    } else {
+      useTemplate(batch, template);
+    }
+    identificationService.identify(
+        batch,
+        account,
+        template == null ? parsed.accountIdentifier() : fileIdentifier(template, parsed),
+        actor);
+    statementBalanceService.record(batch, account, parsed.statementBalances());
+    stagingService.stage(batch, account, parsed.rows(), rates, actor);
+  }
+
+  // A CAMT statement is a statement document, read by no template: a batch parsed before with one
+  // no longer names it.
+  private static void useCamt(ImportBatch batch) {
+    batch.setTemplateId(null);
+    batch.setTemplateVersionUsed(null);
+    batch.setSourceKind(ImportBatchValues.SOURCE_DOCUMENT);
   }
 
   private static void useTemplate(ImportBatch batch, ResolvedImportTemplate template) {

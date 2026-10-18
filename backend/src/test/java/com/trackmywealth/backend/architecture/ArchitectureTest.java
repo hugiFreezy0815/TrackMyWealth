@@ -328,6 +328,33 @@ class ArchitectureTest {
           .because("an untrusted PDF is read only through PdfImportReaderService's limits")
           .allowEmptyShould(true);
 
+  // #350: camt reads an untrusted ISO 20022 CAMT file - streaming StAX without DTDs or entities,
+  // ZIP archives within inflation bounds - into its own records, as pdf reads a PDF. It knows
+  // nothing of the application: it throws CamtLimitException and CamtFormatException, which
+  // CamtImportReaderService maps to API errors, and only services use it.
+  @ArchTest
+  static final ArchRule camt_depends_on_nothing_of_the_application =
+      noClasses()
+          .that()
+          .resideInAPackage("..camt..")
+          .should()
+          .dependOnClassesThat(
+              JavaClass.Predicates.resideInAPackage("com.trackmywealth.backend..")
+                  .and(DescribedPredicate.not(JavaClass.Predicates.resideInAPackage("..camt.."))))
+          .because("the CAMT limits are plain JDK readers; a service maps their exceptions")
+          .allowEmptyShould(true);
+
+  @ArchTest
+  static final ArchRule only_services_read_camt_files =
+      classes()
+          .that()
+          .resideInAPackage("..camt..")
+          .should()
+          .onlyBeAccessed()
+          .byAnyPackage("..camt..", "..service..")
+          .because("an untrusted CAMT file is read only through CamtImportReaderService's limits")
+          .allowEmptyShould(true);
+
   @ArchTest
   static final ArchRule no_standard_streams =
       GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;

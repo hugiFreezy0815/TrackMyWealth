@@ -38,7 +38,10 @@ cd backend
   `pdf` (PDFBox extensions that bound the reading of an untrusted PDF, such as
   `BoundedPdfParser`, and the reading of a statement's page layout from its words' positions,
   such as `PdfColumns`; they know nothing of the application, templates included, and only
-  services use them, both enforced by ArchUnit), `client` (calls to external providers such as `EcbFxRateProvider`; returns its own records,
+  services use them, both enforced by ArchUnit), `camt` (the bounded reading of an untrusted
+  ISO 20022 CAMT XML file or ZIP archive into its own records - streaming StAX without DTDs or
+  entities, inflation-bounded ZIP entries; like `pdf`, it knows nothing of the application and only
+  services use it, enforced by ArchUnit), `client` (calls to external providers such as `EcbFxRateProvider`; returns its own records,
   never entities; selectable providers below) and `job` (Quartz jobs: thin wrappers that run a
   service under a correlation id of their own, see `CorrelatedJob`). A repository uses
   `JdbcTemplate` where JPA does not fit, e.g. `FxRateBatchRepository`'s bulk insert. A job that

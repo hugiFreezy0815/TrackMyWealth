@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.CanonicalImportRow;
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.entity.Account;
@@ -37,6 +38,7 @@ class ImportDuplicateServiceTest {
   private static final UUID ACCOUNT = UUID.randomUUID();
   private static final LocalDate DAY = LocalDate.of(2019, 1, 5);
   private static final String CSV = "CSV";
+  private static final String DOCUMENT = "DOCUMENT";
 
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
   private final LoanPaymentRepository loanPaymentRepository = mock(LoanPaymentRepository.class);
@@ -390,6 +392,33 @@ class ImportDuplicateServiceTest {
 
     assertThat(service.findDuplicates(ACCOUNT, CSV, List.of(row(1, "-12.40", "Bakery", "REF-1"))))
         .containsExactly(Map.entry(1, unreferenced));
+  }
+
+  // #350: a CAMT statement and a PDF template of one account share the source DOCUMENT, never a
+  // reference: the same booking from both is found by its date and amount.
+  @Test
+  void aCamtRowIsThePdfRowOfItsSourceWhateverTheirReferences() {
+    UUID fromPdf = UUID.randomUUID();
+    ledger(candidate(fromPdf, "-12.40", "BAECKEREI MUSTER GMBH", DOCUMENT, "PDF-REF"));
+
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT, DOCUMENT, List.of(row(1, "-12.40", "Bakery", camtReference("R-1")))))
+        .containsExactly(Map.entry(1, fromPdf));
+  }
+
+  @Test
+  void twoCamtRowsWithAnotherReferenceAreTwoBookings() {
+    ledger(candidate(UUID.randomUUID(), "-12.40", "Bakery", DOCUMENT, camtReference("R-0")));
+
+    assertThat(
+            service.findDuplicates(
+                ACCOUNT, DOCUMENT, List.of(row(1, "-12.40", "Bakery", camtReference("R-1")))))
+        .isEmpty();
+  }
+
+  private static String camtReference(String bankReference) {
+    return ImportBatchValues.CAMT_REFERENCE_PREFIX + "NTRY:" + DAY + ":-12.4:EUR:" + bankReference;
   }
 
   @Test

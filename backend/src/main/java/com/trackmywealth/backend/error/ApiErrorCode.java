@@ -145,6 +145,26 @@ public final class ApiErrorCode {
   public static final String IMPORT_FILE_TOO_MANY_ROWS = "IMPORT_FILE_TOO_MANY_ROWS";
 
   /**
+   * 422: an XML import file without a template is no supported ISO 20022 message: only {@code
+   * camt.053} and {@code camt.052}, versions {@code 001.02}, {@code 001.04} and {@code 001.08}, can
+   * be imported (#350).
+   */
+  public static final String IMPORT_CAMT_UNSUPPORTED = "IMPORT_CAMT_UNSUPPORTED";
+
+  /**
+   * 422: a CAMT import file is readable, but holds more than one import may: elements, entries,
+   * nesting, text, or ZIP archive entries and their inflated size. Unlike {@code
+   * IMPORT_FILE_MALFORMED}, exporting a shorter period helps (#350).
+   */
+  public static final String IMPORT_CAMT_LIMIT_EXCEEDED = "IMPORT_CAMT_LIMIT_EXCEEDED";
+
+  /**
+   * 422: a CAMT import file holds statements of more than one account; each account's statements
+   * are imported into that account on their own (#350).
+   */
+  public static final String IMPORT_CAMT_MULTIPLE_ACCOUNTS = "IMPORT_CAMT_MULTIPLE_ACCOUNTS";
+
+  /**
    * 422: a PDF import file has more pages than one import may hold; {@code maxPages} says how many.
    */
   public static final String IMPORT_FILE_TOO_MANY_PAGES = "IMPORT_FILE_TOO_MANY_PAGES";

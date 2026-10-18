@@ -1671,15 +1671,7 @@ public class ImportFileParserService {
     if (match != null) {
       return match;
     }
-    if (account.creditCard()) {
-      return amount.signum() < 0 ? "CREDIT_CARD_PURCHASE" : "SETTLEMENT";
-    }
-    if (account.loan()) {
-      return amount.signum() < 0 ? "EXPENSE" : "DEBT_REPAYMENT";
-    }
-    return amount.signum() < 0
-        ? ImportTemplateValues.FALLBACK_TYPE_NEGATIVE
-        : ImportTemplateValues.FALLBACK_TYPE_NOT_NEGATIVE;
+    return account.fallbackType(amount);
   }
 
   // --- helpers ---------------------------------------------------------------------------
@@ -1759,7 +1751,8 @@ public class ImportFileParserService {
     return args;
   }
 
-  private static ImportFileRejectedException tooManyRows() {
+  // Package-private for CamtImportReaderService: a CAMT file is held to the same row limit.
+  static ImportFileRejectedException tooManyRows() {
     return fileError(
             ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS,
             "An import file may hold at most " + MAX_DATA_ROWS + " data rows.")

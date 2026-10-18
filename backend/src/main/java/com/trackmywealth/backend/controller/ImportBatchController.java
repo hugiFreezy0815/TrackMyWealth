@@ -73,8 +73,11 @@ public class ImportBatchController {
    * Stores the file (at most 5 MB, else 413 {@code IMPORT_FILE_TOO_LARGE}) as a new batch. With
    * {@code templateId}, or when exactly one template's header fingerprint matches, it is parsed at
    * once ({@code PARSED}); otherwise it stays {@code UPLOADED} and {@code templateCandidates} lists
-   * the templates that can read it. A 422 for an empty file, one the template cannot read, or more
-   * than 20,000 rows ({@code IMPORT_FILE_TOO_MANY_ROWS}).
+   * the templates that can read it. An XML file or ZIP archive without {@code templateId} is read
+   * as an ISO 20022 CAMT statement ({@code camt.053}, {@code camt.052}; #350) and parsed at once. A
+   * 422 for an empty file, one the template cannot read, or more than 20,000 rows ({@code
+   * IMPORT_FILE_TOO_MANY_ROWS}); for a CAMT file also {@code IMPORT_CAMT_UNSUPPORTED}, {@code
+   * IMPORT_CAMT_LIMIT_EXCEEDED} and {@code IMPORT_CAMT_MULTIPLE_ACCOUNTS}.
    */
   @RetryableWhenBusy
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -101,7 +104,10 @@ public class ImportBatchController {
         .body(created);
   }
 
-  /** Parses the stored file (again) with a template, replacing the batch's rows. */
+  /**
+   * Parses the stored file (again) with a template, replacing the batch's rows; a CAMT statement
+   * without one (#350). Without {@code templateId}, any other file is a 400.
+   */
   @RetryableWhenBusy
   @PostMapping(BY_ID + "/parse")
   public ResponseEntity<ImportBatchResponse> parse(
