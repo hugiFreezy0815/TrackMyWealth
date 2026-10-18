@@ -17,6 +17,9 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
   Optional<Account> findByWorkspaceIdAndIdentifierHash(UUID workspaceId, String identifierHash);
 
+  Optional<Account> findByWorkspaceIdAndContractIdentifierHash(
+      UUID workspaceId, String contractIdentifierHash);
+
   // Same SELECT ... FOR UPDATE pattern as AppUserRepository.findByIdForUpdate - serializes any
   // read-modify-write sequence keyed off this account (see AccountOwnershipService.assignOwnership,
   // the first caller) so a second concurrent writer blocks here until the first commits, rather

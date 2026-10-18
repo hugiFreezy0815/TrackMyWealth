@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.ImportBatchCountsResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportDuplicateOfResponse;
+import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
 import com.trackmywealth.backend.dto.ImportIdentificationResponse;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportRateNeed;
@@ -231,7 +232,7 @@ public class ImportBatchService {
 
           if (parsed != null) {
             useTemplate(batch, template);
-            identificationService.identify(batch, account, parsed.accountIdentifier(), actor);
+            identificationService.identify(batch, account, fileIdentifier(template, parsed), actor);
             statementBalanceService.record(batch, account, parsed.statementBalances());
             stagingService.stage(batch, account, parsed.rows(), rates, actor);
           }
@@ -276,7 +277,7 @@ public class ImportBatchService {
           // Checked again under the lock: another parse, a discard or a commit may have come first.
           requireParseable(batch, expectedVersion);
           useTemplate(batch, template);
-          identificationService.identify(batch, account, parsed.accountIdentifier(), actor);
+          identificationService.identify(batch, account, fileIdentifier(template, parsed), actor);
           statementBalanceService.record(batch, account, parsed.statementBalances());
           stagingService.stage(batch, account, parsed.rows(), rates, actor);
           return summary(batch, account, List.of(), actor);
@@ -650,6 +651,18 @@ public class ImportBatchService {
             () ->
                 new ResponseStatusException(
                     HttpStatus.NOT_FOUND, "The import batch has no row " + rowNumber + "."));
+  }
+
+  // #323: a PDF statement whose text names no identifier the rule can read is imported as with a
+  // USER_SELECTED template, into the account the member picked, without asking for a confirmation.
+  // A CSV file without one still asks (US-07-10).
+  private static ImportFileAccountIdentifier fileIdentifier(
+      ResolvedImportTemplate template, ImportParseResult parsed) {
+    ImportFileAccountIdentifier identifier = parsed.accountIdentifier();
+    if (identifier != null && !identifier.found() && template.definition().isPdf()) {
+      return null;
+    }
+    return identifier;
   }
 
   private static void useTemplate(ImportBatch batch, ResolvedImportTemplate template) {
