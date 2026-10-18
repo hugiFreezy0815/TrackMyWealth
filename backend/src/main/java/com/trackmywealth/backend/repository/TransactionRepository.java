@@ -744,14 +744,17 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   /**
    * US-07-17: the account's rows of {@code ids} that import rows point at as their duplicates, for
    * the preview to show next to them. Soft-deleted and voided rows included: a pointer shows what
-   * it points at.
+   * it points at. #337: on a loan, also the interest row of a payment recorded on it by hand, which
+   * sits on the paying account (US-10-02) and is what an imported interest row duplicates.
    */
   @Query(
       value =
           "SELECT t.id AS id, t.booking_date AS bookingDate, t.amount AS amount,"
               + " t.currency AS currency, t.merchant_description AS merchantDescription,"
               + " t.source AS source, t.external_id AS externalId"
-              + " FROM transaction t WHERE t.account_id = :accountId AND t.id IN (:ids)",
+              + " FROM transaction t WHERE t.id IN (:ids) AND (t.account_id = :accountId"
+              + " OR t.id IN (SELECT p.interest_transaction_id FROM loan_payment p"
+              + " WHERE p.loan_account_id = :accountId))",
       nativeQuery = true)
   List<ImportDuplicateCandidate> findDuplicateTargets(
       @Param(ACCOUNT_ID) UUID accountId, @Param("ids") Collection<UUID> ids);
@@ -777,4 +780,15 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       nativeQuery = true)
   List<ImportDuplicateCandidate> findLiveForDuplicateCheck(
       @Param(ACCOUNT_ID) UUID accountId, @Param(FROM) LocalDate from, @Param("to") LocalDate to);
+
+  /**
+   * #337: which of {@code ids} are still in effect - neither soft-deleted, voided nor a reversal: a
+   * row of a removed loan payment is nothing an import could duplicate.
+   */
+  @Query(
+      value =
+          "SELECT t.id FROM transaction t WHERE t.id IN (:ids) AND t.deleted_at IS NULL"
+              + " AND t.voided_at IS NULL AND t.replaces_transaction_id IS NULL",
+      nativeQuery = true)
+  List<UUID> findLiveIdsAmong(@Param("ids") Collection<UUID> ids);
 }

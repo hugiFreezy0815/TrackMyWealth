@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.LoanPayment;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,6 +28,20 @@ public interface LoanPaymentRepository extends JpaRepository<LoanPayment, UUID> 
           + IN_EFFECT
           + " order by p.bookingDate desc, p.createdAt desc")
   List<LoanPayment> findInEffectByLoanAccountId(@Param("loanAccountId") UUID loanAccountId);
+
+  /**
+   * #337: the loan's payments still in effect booked in [{@code from}, {@code to}], earliest first,
+   * which an imported loan statement may be about to book a second time.
+   */
+  @Query(
+      "select p from LoanPayment p where p.loanAccount.id = :loanAccountId"
+          + " and p.bookingDate between :from and :to and"
+          + IN_EFFECT
+          + " order by p.bookingDate, p.createdAt")
+  List<LoanPayment> findInEffectByLoanAccountIdBookedBetween(
+      @Param("loanAccountId") UUID loanAccountId,
+      @Param("from") LocalDate from,
+      @Param("to") LocalDate to);
 
   /** Whether the payment's rows are still in effect, i.e. it was not removed. */
   @Query(
