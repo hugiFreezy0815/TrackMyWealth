@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.ImportBatchValues;
+import com.trackmywealth.backend.dto.ImportSnapshotValues;
 import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
@@ -20,7 +21,9 @@ import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
+import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -30,6 +33,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +41,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -56,10 +61,23 @@ class ImportStatementBalanceServiceTest {
   private final ReconciliationService reconciliation = mock(ReconciliationService.class);
   private final AccountCurrencyService currencies = mock(AccountCurrencyService.class);
   private final BusinessDateService businessDates = mock(BusinessDateService.class);
+  private final ImportBatchRepository batches = mock(ImportBatchRepository.class);
+  // US-07-31: the real completion rules, on the same mocks.
+  private final ImportSnapshotCompletionService completion =
+      new ImportSnapshotCompletionService(
+          snapshots,
+          holdings,
+          results,
+          mock(SecurityRepository.class),
+          batches,
+          reconciliation,
+          businessDates);
   private final ImportStatementBalanceService service =
       new ImportStatementBalanceService(
           snapshots,
           holdings,
+          completion,
+          new ImportSnapshotExplanationService(messages()),
           results,
           reconciliation,
           currencies,
@@ -162,7 +180,7 @@ class ImportStatementBalanceServiceTest {
     service.record(batch, account, null);
 
     assertThat(batch.getStatementBalanceOutcome()).isNull();
-    assertThat(service.response(batch, account)).isNull();
+    assertThat(service.response(batch, account, Locale.ENGLISH)).isNull();
   }
 
   @Test
@@ -197,7 +215,7 @@ class ImportStatementBalanceServiceTest {
     assertThat(batch.getStatementBalanceOutcome())
         .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
     assertThat(batch.getStatementBalance()).isEqualByComparingTo("100.00");
-    assertThat(service.response(batch, account).outcome())
+    assertThat(service.response(batch, account, Locale.ENGLISH).outcome())
         .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
     service.commit(batch, account, MEMBER);
     verify(snapshots, never()).saveAndFlush(any());
@@ -208,7 +226,7 @@ class ImportStatementBalanceServiceTest {
     found("100.00");
     when(account.getClosedAt()).thenReturn(END.minusDays(1));
 
-    assertThat(service.response(batch, account).outcome())
+    assertThat(service.response(batch, account, Locale.ENGLISH).outcome())
         .isEqualTo(ImportBatchValues.BALANCE_OUT_OF_RANGE);
     service.commit(batch, account, MEMBER);
 
@@ -283,7 +301,7 @@ class ImportStatementBalanceServiceTest {
   @Test
   void beforeTheCommitThePreviewSaysWhatItWouldDo() {
     found("100.00");
-    assertThat(service.response(batch, account))
+    assertThat(service.response(batch, account, Locale.ENGLISH))
         .isEqualTo(
             new ImportStatementBalanceResponse(
                 ImportBatchValues.BALANCE_FOUND,
@@ -292,15 +310,34 @@ class ImportStatementBalanceServiceTest {
                 "CHF",
                 null,
                 null,
-                ImportBatchValues.SNAPSHOT_NEW));
+                ImportBatchValues.SNAPSHOT_NEW,
+                null,
+                List.of(ImportSnapshotValues.PART_BALANCE),
+                List.of(),
+                "This statement records a new snapshot of Jan 31, 2031 with the cash balance."));
 
     existingDocumentSnapshot("100.0000");
-    assertThat(service.response(batch, account).snapshot())
-        .isEqualTo(ImportBatchValues.SNAPSHOT_ALREADY_RECORDED);
+    ImportStatementBalanceResponse recorded = service.response(batch, account, Locale.ENGLISH);
+    assertThat(recorded.snapshot()).isEqualTo(ImportBatchValues.SNAPSHOT_ALREADY_RECORDED);
+    assertThat(recorded.existingSnapshot().balance()).isEqualByComparingTo("100.00");
+    // Unlike a holdings statement, the bookings still go in: no "discard this import".
+    assertThat(recorded.explanation())
+        .isEqualTo(
+            "The closing balance of this statement is already in the snapshot of Jan 31, 2031;"
+                + " it is not recorded again. The bookings are imported regardless.");
 
     existingDocumentSnapshot("99.0000");
-    assertThat(service.response(batch, account).snapshot())
-        .isEqualTo(ImportBatchValues.SNAPSHOT_CONFLICTING);
+    ImportStatementBalanceResponse conflicting = service.response(batch, account, Locale.GERMAN);
+    assertThat(conflicting.snapshot()).isEqualTo(ImportBatchValues.SNAPSHOT_CONFLICTING);
+    assertThat(conflicting.conflicts())
+        .singleElement()
+        .satisfies(
+            conflict -> {
+              assertThat(conflict.existingValue()).isEqualByComparingTo("99.00");
+              assertThat(conflict.statementValue()).isEqualByComparingTo("100.00");
+            });
+    assertThat(conflicting.explanation())
+        .startsWith("Der Schlusssaldo dieses Auszugs weicht vom Stand vom 31.01.2031 ab");
   }
 
   @Test
@@ -309,7 +346,7 @@ class ImportStatementBalanceServiceTest {
     batch.setStatus(ImportBatchValues.COMMITTED);
     batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_RECORDED);
 
-    assertThat(service.response(batch, account).snapshot())
+    assertThat(service.response(batch, account, Locale.ENGLISH).snapshot())
         .isEqualTo(ImportBatchValues.SNAPSHOT_RECORDED);
     verify(snapshots, never())
         .findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(any(), any(), any());
@@ -363,7 +400,7 @@ class ImportStatementBalanceServiceTest {
 
   @Test
   void aBatchWithoutASnapshotRollsBackWithoutTouchingAny() {
-    when(snapshots.findByImportBatchId(batch.getId())).thenReturn(Optional.empty());
+    when(snapshots.findContributedBy(batch.getId())).thenReturn(Optional.empty());
 
     assertThat(service.rollBack(batch, account, MEMBER)).isFalse();
     verify(snapshots, never()).delete(any());
@@ -457,7 +494,7 @@ class ImportStatementBalanceServiceTest {
     AccountSnapshot snapshot = new AccountSnapshot();
     ReflectionTestUtils.setField(snapshot, "id", UUID.randomUUID());
     snapshot.setImportBatchId(batch.getId());
-    when(snapshots.findByImportBatchId(batch.getId())).thenReturn(Optional.of(snapshot));
+    when(snapshots.findContributedBy(batch.getId())).thenReturn(Optional.of(snapshot));
     when(snapshots.findForUpdate(snapshot.getId(), account.getId()))
         .thenReturn(Optional.of(snapshot));
     return snapshot;
@@ -477,5 +514,13 @@ class ImportStatementBalanceServiceTest {
   private static ImportStatementBalances.Stated balance(
       LocalDate date, String amount, String currency) {
     return new ImportStatementBalances.Stated(date, new BigDecimal(amount), currency);
+  }
+
+  private static ResourceBundleMessageSource messages() {
+    ResourceBundleMessageSource messages = new ResourceBundleMessageSource();
+    messages.setBasename("messages");
+    messages.setDefaultEncoding("UTF-8");
+    messages.setFallbackToSystemLocale(false);
+    return messages;
   }
 }

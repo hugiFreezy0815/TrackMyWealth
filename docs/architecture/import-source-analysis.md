@@ -599,9 +599,11 @@ read every currency and position row. The committed fixtures (`ShippedTemplateFi
 invented, with ISINs of the non-country `ZZ` and dates in 2031.
 
 Only the cash in the account's own currency becomes the snapshot's balance; the statement's other
-currencies are shown in the preview. PF-5 lists no cash and PF-4 no positions, so for one account
-and date only one of the two can be imported as a snapshot (the second is refused as an existing
-`DOCUMENT` snapshot of that date); PF-7, which holds both, is the source to prefer.
+currencies are shown in the preview. PF-5 lists no cash and PF-4 no positions: whichever of the
+two comes second for an account and date completes the snapshot the first one recorded (#366,
+database-schema.md "Holdings statements"), and PF-7 after either adds what it lacks. A statement
+that adds nothing is refused as a duplicate, one that differs as a conflict - nothing is
+overwritten.
 
 The source documents remain private and local; never add real holdings or extracted PDF text to
 CI, source control, bug reports, or logs.

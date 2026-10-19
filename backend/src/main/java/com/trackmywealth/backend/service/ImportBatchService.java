@@ -370,7 +370,7 @@ public class ImportBatchService {
                 counts,
                 sameFiles,
                 identificationService.response(batch, actor),
-                statementBalanceService.response(batch, account),
+                statementBalanceService.response(batch, account, LocaleContextHolder.getLocale()),
                 holdingsService.response(batch, account, LocaleContextHolder.getLocale())));
   }
 
@@ -649,7 +649,7 @@ public class ImportBatchService {
         counts,
         sameFilesImportedIn(one),
         identificationService.response(batch, actor),
-        statementBalanceService.response(batch, account),
+        statementBalanceService.response(batch, account, LocaleContextHolder.getLocale()),
         holdingsService.response(batch, account, LocaleContextHolder.getLocale()));
   }
 
