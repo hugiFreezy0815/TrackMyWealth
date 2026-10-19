@@ -65,7 +65,9 @@ public class ImportLedgerRowService {
         row.originalAmount(),
         row.originalCurrency(),
         row.bankExchangeRate(),
-        row.valueDateAdjusted());
+        row.valueDateAdjusted(),
+        row.groupReference(),
+        row.savingsPocket());
   }
 
   /**

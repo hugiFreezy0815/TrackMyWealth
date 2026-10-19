@@ -10,6 +10,7 @@ import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -207,6 +208,20 @@ public class TransferRecordingService {
   Transaction recordLoanCreditLeg(
       Transaction debit, Account loan, AuthenticatedUserPrincipal actor) {
     return save(creditLeg(debit, loan, debit.getAmount().negate(), actor));
+  }
+
+  /**
+   * US-07-22 (#325): the savings pocket's side of {@code booked}, a pocket move an import just
+   * recorded and flagged as a transfer to {@code pocket}: the opposite amount on the pocket, in its
+   * currency - the account's own, like the move's - linked back to the move and part of the same
+   * import batch, so a rollback of the batch removes it with the move.
+   */
+  Transaction recordPocketLeg(
+      Transaction booked, Account pocket, UUID importBatchId, AuthenticatedUserPrincipal actor) {
+    Transaction leg = creditLeg(booked, pocket, booked.getAmount().negate(), actor);
+    leg.setMerchantDescription(booked.getMerchantDescription());
+    leg.setImportBatchId(importBatchId);
+    return save(leg);
   }
 
   private static Transaction creditLeg(

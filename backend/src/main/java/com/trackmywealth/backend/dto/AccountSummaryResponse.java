@@ -10,6 +10,8 @@ import java.util.UUID;
  * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), empty
  *     when there are none (PR-011, FR-CON-007)
  * @param reconciliation the account's current cash reconciliation signal (US-25-02)
+ * @param savingsPocketAccountId the account's savings pocket, an account of its own that an import
+ *     created for the bank's pocket moves (US-07-22); {@code null} while it has none
  */
 public record AccountSummaryResponse(
     UUID id,
@@ -26,6 +28,7 @@ public record AccountSummaryResponse(
     boolean discretionary,
     boolean manualValuation,
     boolean countsAsSaving,
+    UUID savingsPocketAccountId,
     String status,
     OffsetDateTime archivedAt,
     int version,

@@ -1,8 +1,10 @@
 package com.trackmywealth.backend.service;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +34,7 @@ class ImportStagingServiceTest {
   private final AccountRepository accounts = mock(AccountRepository.class);
   private final AccessControlService access = mock(AccessControlService.class);
   private final AccountSnapshotRepository snapshots = mock(AccountSnapshotRepository.class);
+  private final SavingsPocketService pockets = mock(SavingsPocketService.class);
   private final ImportStagingService staging =
       new ImportStagingService(
           batches,
@@ -42,7 +45,8 @@ class ImportStagingServiceTest {
           Clock.systemUTC(),
           accounts,
           access,
-          snapshots);
+          snapshots,
+          pockets);
 
   @Test
   void revokedPaymentAccountAccessPreventsSettlementCandidateLookup() {
@@ -89,5 +93,20 @@ class ImportStagingServiceTest {
     staging.stage(batch, card, List.of(), Map.of(), actor);
 
     verify(rowChecks).matchedSettlementRows(eq(sourceId), eq("CHF"), eq(List.of()));
+  }
+
+  @Test
+  void aBatchWithoutSavingsPocketMovesNeverLooksUpThePocket() {
+    Account account = mock(Account.class);
+    ImportBatch batch = mock(ImportBatch.class);
+    AuthenticatedUserPrincipal actor = mock(AuthenticatedUserPrincipal.class);
+    when(account.getId()).thenReturn(UUID.randomUUID());
+    when(account.getNativeCurrency()).thenReturn("CHF");
+    when(batch.getSourceKind()).thenReturn("DOCUMENT");
+    when(rowChecks.settlementSourceOf(account)).thenReturn(Optional.empty());
+
+    staging.stage(batch, account, List.of(), Map.of(), actor);
+
+    verify(pockets, never()).previewWarning(any(), any());
   }
 }

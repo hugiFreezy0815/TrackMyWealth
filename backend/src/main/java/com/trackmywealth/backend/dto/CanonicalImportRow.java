@@ -18,6 +18,12 @@ import java.time.LocalDate;
  * about it ({@code IMPORT_ROW_VALUE_DATE_ADJUSTED}). Rows stored before it existed have no such
  * property; they read as {@code false} rather than failing Jackson 3's {@code
  * FAIL_ON_NULL_FOR_PRIMITIVES}.
+ *
+ * <p>US-07-22 (#325): {@code groupReference} is the reference the bank gives the bookings that
+ * belong together - both legs of a currency exchange - never this booking's own id. {@code
+ * savingsPocket}: the row moves money between the account and its savings pocket (the template's
+ * {@code savingsPocketPattern}); it is a {@code TRANSFER}, and the commit books the other leg on
+ * the pocket. Rows stored before either existed read as {@code null} and {@code false}.
  */
 public record CanonicalImportRow(
     LocalDate bookingDate,
@@ -34,7 +40,46 @@ public record CanonicalImportRow(
     BigDecimal originalAmount,
     String originalCurrency,
     BigDecimal bankExchangeRate,
-    @JsonSetter(nulls = Nulls.AS_EMPTY) boolean valueDateAdjusted) {
+    @JsonSetter(nulls = Nulls.AS_EMPTY) boolean valueDateAdjusted,
+    String groupReference,
+    @JsonSetter(nulls = Nulls.AS_EMPTY) boolean savingsPocket) {
+
+  /** A row that belongs to no group of bookings and is no savings pocket move. */
+  public CanonicalImportRow(
+      LocalDate bookingDate,
+      LocalDate valueDate,
+      BigDecimal amount,
+      String currency,
+      String transactionType,
+      String description,
+      String counterpartyName,
+      String externalId,
+      String mcc,
+      String iso20022BankTransactionCode,
+      String notes,
+      BigDecimal originalAmount,
+      String originalCurrency,
+      BigDecimal bankExchangeRate,
+      boolean valueDateAdjusted) {
+    this(
+        bookingDate,
+        valueDate,
+        amount,
+        currency,
+        transactionType,
+        description,
+        counterpartyName,
+        externalId,
+        mcc,
+        iso20022BankTransactionCode,
+        notes,
+        originalAmount,
+        originalCurrency,
+        bankExchangeRate,
+        valueDateAdjusted,
+        null,
+        false);
+  }
 
   /**
    * A row whose value date is as the file wrote it.

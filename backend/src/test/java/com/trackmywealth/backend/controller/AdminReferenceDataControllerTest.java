@@ -103,8 +103,8 @@ class AdminReferenceDataControllerTest {
             .returnResult()
             .getResponseBody();
 
-    assertThat(current.packageVersion()).isEqualTo("1.7.0-baseline");
-    assertThat(current.publicationDate()).isEqualTo(LocalDate.of(2026, 10, 16));
+    assertThat(current.packageVersion()).isEqualTo("1.8.0-baseline");
+    assertThat(current.publicationDate()).isEqualTo(LocalDate.of(2026, 10, 19));
     assertThat(current.importedAt()).isNotNull();
     assertThat(current.importedBy()).isNull(); // shipped with the application
     // Pins the shipped content on purpose (V19 plus V37 plus V84: 10 + 7 + 1 default categories, 43

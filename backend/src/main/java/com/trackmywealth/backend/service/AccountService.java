@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -78,6 +79,9 @@ public class AccountService {
   private static final String LOAN = "LOAN";
   private static final String PENSION = "PENSION";
   private static final String CUSTOM_ASSET = "CUSTOM_ASSET";
+  private static final String SAVINGS = "SAVINGS";
+  // US-07-22: what the bank calls the pocket; the member may rename it.
+  private static final String SAVINGS_POCKET_NAME_SUFFIX = " \u2013 Sparkonto";
   private static final String ACTIVE = "ACTIVE";
   // US-10-01: the types whose accounts count as saving by default (the type -> capability mapping
   // lives in this service, like every other capability default).
@@ -168,6 +172,16 @@ public class AccountService {
         workspaceAccessService.requireWorkspace(actor.workspaceId(), "an account");
     FinancialInstitution institution = resolveInstitution(request.financialInstitutionId(), actor);
 
+    Account account = insertAccount(workspace, institution, request);
+    assignInitialOwnershipToCreator(account, actor);
+
+    return toSummary(account, actor);
+  }
+
+  // The account of a validated request, with its capability defaults and extension row - every
+  // account's creation, whoever owns it afterwards.
+  private Account insertAccount(
+      Workspace workspace, FinancialInstitution institution, CreateAccountRequest request) {
     Account account = new Account();
     account.setWorkspace(workspace);
     account.setFinancialInstitution(institution);
@@ -177,15 +191,60 @@ public class AccountService {
     applyCapabilityDefaults(account, request);
     // saveAndFlush, not save: `nature` is a Postgres GENERATED ALWAYS AS (...) STORED column
     // (V4), only computed once the INSERT statement actually executes - a plain save() defers
-    // that to end-of-transaction, so toSummary() below would read the field's still-null
-    // in-memory value. Flushing forces the INSERT now, which is also what makes Hibernate's
-    // @Generated support issue its post-insert refresh SELECT.
+    // that to end-of-transaction, so toSummary() would read the field's still-null in-memory
+    // value. Flushing forces the INSERT now, which is also what makes Hibernate's @Generated
+    // support issue its post-insert refresh SELECT.
     account = accountRepository.saveAndFlush(account);
-
     createExtensionRowIfNeeded(account, request);
-    assignInitialOwnershipToCreator(account, actor);
+    return account;
+  }
 
-    return toSummary(account, actor);
+  /**
+   * US-07-22 (#325): creates the savings pocket of {@code parent} - a {@code SAVINGS} account in
+   * {@code currency} at the same institution, named after it - and links it as the parent's pocket.
+   * The import commit that first books a pocket move calls this, in its own transaction, under the
+   * parent's import lock, so a parent never gains two pockets. The pocket has the parent's current
+   * owners and shares, each from the day it owns the parent, so the pocket's past bookings have an
+   * owner too; an unowned parent's pocket goes to the committing member, as {@link #createAccount}
+   * does, so it is never left without an owner. The link is written on its own, not by saving
+   * {@code parent}: the entity was loaded before the import lock and may be stale.
+   */
+  @Transactional
+  public Account createSavingsPocket(
+      Account parent, String currency, AuthenticatedUserPrincipal actor) {
+    CreateAccountRequest request =
+        new CreateAccountRequest(
+            parent.getFinancialInstitution().getId(),
+            parent.getName() + SAVINGS_POCKET_NAME_SUFFIX,
+            SAVINGS,
+            currency,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+    validateExtensionFields(request);
+    Account pocket =
+        insertAccount(parent.getWorkspace(), parent.getFinancialInstitution(), request);
+
+    List<AccountOwnership> owners =
+        accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(parent.getId());
+    if (owners.isEmpty()) {
+      assignInitialOwnershipToCreator(pocket, actor);
+    }
+    for (AccountOwnership owner : owners) {
+      AccountOwnership ownership = new AccountOwnership();
+      ownership.setAccount(pocket);
+      ownership.setWorkspaceMember(owner.getWorkspaceMember());
+      ownership.setOwnershipShare(owner.getOwnershipShare());
+      ownership.setEffectiveFrom(owner.getEffectiveFrom());
+      accountOwnershipRepository.saveAndFlush(ownership);
+    }
+
+    accountRepository.linkSavingsPocket(parent.getId(), pocket.getId());
+    return pocket;
   }
 
   // US-03-03: see this class's own Javadoc for why this exists - share 1.0, effective today,
@@ -587,6 +646,7 @@ public class AccountService {
         account.isDiscretionary(),
         account.isManualValuation(),
         account.isCountsAsSaving(),
+        account.getSavingsPocketAccountId(),
         account.getStatus(),
         account.getArchivedAt(),
         VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE),

@@ -144,6 +144,26 @@ public class ImportRollbackRepository {
   }
 
   /**
+   * US-07-22 (#325): the accounts other than {@code accountId} that hold rows of the batch - the
+   * legs its commit booked on the account's savings pocket - each with the earliest booking date of
+   * its rows, in id order.
+   */
+  public Map<UUID, LocalDate> findEarliestBookingDatesOnOtherAccounts(
+      UUID batchId, UUID accountId) {
+    Map<UUID, LocalDate> earliest = new LinkedHashMap<>();
+    jdbcTemplate.query(
+        "SELECT account_id, min(booking_date) AS earliest FROM transaction"
+            + " WHERE import_batch_id = ? AND account_id <> ? GROUP BY account_id ORDER BY account_id",
+        row -> {
+          earliest.put(
+              row.getObject("account_id", UUID.class), row.getObject("earliest", LocalDate.class));
+        },
+        batchId,
+        accountId);
+    return earliest;
+  }
+
+  /**
    * FR-LIF-010: deletes every transaction of an unmodified batch and what only described them - the
    * settlement and transfer matches they are a leg of (the caller has cleared the other legs'
    * flags), their categorization log - and unlinks the batch's rows, and the duplicate rows of an

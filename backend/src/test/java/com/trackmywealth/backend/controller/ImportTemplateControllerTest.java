@@ -462,6 +462,34 @@ class ImportTemplateControllerTest {
     assertThat(v3.rowFilter()).isNull();
   }
 
+  /**
+   * US-07-22 (#325): the savings pocket pattern is parse-relevant and stored with its version; a
+   * blank one is refused naming the field.
+   */
+  @Test
+  void theSavingsPocketPatternIsStoredAndChangingItWritesANewVersion() throws Exception {
+    ImportTemplateResponse v1 =
+        create(withSavingsPocketPattern(statusFilterRequest(List.of("Gebucht")), "^Spareinlage"));
+    assertThat(v1.savingsPocketPattern()).isEqualTo("^Spareinlage");
+
+    ImportTemplateResponse v2 =
+        update(
+            v1.id(),
+            v1.version(),
+            withSavingsPocketPattern(statusFilterRequest(List.of("Gebucht")), "^Sparziel"));
+    assertThat(v2.templateVersion()).isEqualTo("2");
+    assertThat(v2.savingsPocketPattern()).isEqualTo("^Sparziel");
+    assertThat(get(v1.id()).savingsPocketPattern())
+        .as("the old version keeps its pattern")
+        .isEqualTo("^Spareinlage");
+
+    postStatus(withSavingsPocketPattern(statusFilterRequest(List.of("Gebucht")), " "))
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.field")
+        .isEqualTo("savingsPocketPattern");
+  }
+
   /** More accepted values than allowed are refused as the request is read, before the rules. */
   @Test
   void tooManyAcceptedValuesAreA400NamingTheField() {
@@ -1306,7 +1334,9 @@ class ImportTemplateControllerTest {
         r.descriptionTypePatterns(),
         r.rowFilter(),
         r.accountIdentifier(),
-        r.statementBalance());
+        r.statementBalance(),
+        r.holdingsRule(),
+        r.savingsPocketPattern());
   }
 
   // A one-page PDF with these text lines (invented values only).
@@ -1494,7 +1524,40 @@ class ImportTemplateControllerTest {
         r.descriptionTypePatterns(),
         r.rowFilter(),
         r.accountIdentifier(),
-        r.statementBalance());
+        r.statementBalance(),
+        r.holdingsRule(),
+        r.savingsPocketPattern());
+  }
+
+  private static ImportTemplateRequest withSavingsPocketPattern(
+      ImportTemplateRequest r, String pattern) {
+    return new ImportTemplateRequest(
+        r.name(),
+        r.institutionCatalogueId(),
+        r.templateClass(),
+        r.delimiter(),
+        r.encoding(),
+        r.decimalSeparator(),
+        r.thousandsSeparator(),
+        r.dateFormat(),
+        r.headerRowIndex(),
+        r.preambleRowCount(),
+        r.trailingSummaryRowCount(),
+        r.amountRepresentation(),
+        r.currencyMode(),
+        r.fixedCurrency(),
+        r.columnMapping(),
+        r.typeMapping(),
+        r.accountIdentificationStrategy(),
+        r.headerColumns(),
+        r.fileFormat(),
+        r.pdfLayout(),
+        r.descriptionTypePatterns(),
+        r.rowFilter(),
+        r.accountIdentifier(),
+        r.statementBalance(),
+        r.holdingsRule(),
+        pattern);
   }
 
   private static ImportTemplateRequest withRowFilter(
@@ -1523,7 +1586,9 @@ class ImportTemplateControllerTest {
         r.descriptionTypePatterns(),
         filter,
         r.accountIdentifier(),
-        r.statementBalance());
+        r.statementBalance(),
+        r.holdingsRule(),
+        r.savingsPocketPattern());
   }
 
   private ImportTemplateTestResponse dryRun(UUID templateId, byte[] content) {
@@ -1561,7 +1626,9 @@ class ImportTemplateControllerTest {
         r.descriptionTypePatterns(),
         r.rowFilter(),
         rule,
-        r.statementBalance());
+        r.statementBalance(),
+        r.holdingsRule(),
+        r.savingsPocketPattern());
   }
 
   private static ImportTemplateRequest withName(ImportTemplateRequest r, String name) {
@@ -1589,7 +1656,9 @@ class ImportTemplateControllerTest {
         r.descriptionTypePatterns(),
         r.rowFilter(),
         r.accountIdentifier(),
-        r.statementBalance());
+        r.statementBalance(),
+        r.holdingsRule(),
+        r.savingsPocketPattern());
   }
 
   private static ImportTemplateRequest withInstitution(ImportTemplateRequest r, UUID institution) {
@@ -1617,7 +1686,9 @@ class ImportTemplateControllerTest {
         r.descriptionTypePatterns(),
         r.rowFilter(),
         r.accountIdentifier(),
-        r.statementBalance());
+        r.statementBalance(),
+        r.holdingsRule(),
+        r.savingsPocketPattern());
   }
 
   private static ImportTemplateRequest withClassAndStrategy(
@@ -1646,7 +1717,9 @@ class ImportTemplateControllerTest {
         r.descriptionTypePatterns(),
         r.rowFilter(),
         r.accountIdentifier(),
-        r.statementBalance());
+        r.statementBalance(),
+        r.holdingsRule(),
+        r.savingsPocketPattern());
   }
 
   private static ImportTemplateRequest withRowCounts(
@@ -1675,7 +1748,9 @@ class ImportTemplateControllerTest {
         r.descriptionTypePatterns(),
         r.rowFilter(),
         r.accountIdentifier(),
-        r.statementBalance());
+        r.statementBalance(),
+        r.holdingsRule(),
+        r.savingsPocketPattern());
   }
 
   // --- HTTP helpers ------------------------------------------------------------------------------

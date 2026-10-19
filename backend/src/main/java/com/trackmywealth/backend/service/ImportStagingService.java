@@ -59,6 +59,7 @@ public class ImportStagingService {
   private final AccountRepository accountRepository;
   private final AccessControlService accessControlService;
   private final AccountSnapshotRepository accountSnapshotRepository;
+  private final SavingsPocketService savingsPocketService;
 
   public ImportStagingService(
       ImportBatchRepository batchRepository,
@@ -69,7 +70,8 @@ public class ImportStagingService {
       Clock clock,
       AccountRepository accountRepository,
       AccessControlService accessControlService,
-      AccountSnapshotRepository accountSnapshotRepository) {
+      AccountSnapshotRepository accountSnapshotRepository,
+      SavingsPocketService savingsPocketService) {
     this.batchRepository = batchRepository;
     this.rowBatchRepository = rowBatchRepository;
     this.rowCheckService = rowCheckService;
@@ -79,6 +81,7 @@ public class ImportStagingService {
     this.accountRepository = accountRepository;
     this.accessControlService = accessControlService;
     this.accountSnapshotRepository = accountSnapshotRepository;
+    this.savingsPocketService = savingsPocketService;
   }
 
   /**
@@ -140,6 +143,11 @@ public class ImportStagingService {
                 .orElse(null);
     Set<Integer> matched =
         rowCheckService.matchedSettlementRows(visibleSource, account.getNativeCurrency(), checked);
+    // US-07-22: what the commit will do with the batch's savings pocket moves, the same for each.
+    String pocketWarning =
+        checked.stream().anyMatch(row -> row.isParsed() && row.canonical().savingsPocket())
+            ? savingsPocketService.previewWarning(account, actor).orElse(null)
+            : null;
     List<StagedImportRow> staged = new ArrayList<>(checked.size());
     int duplicateCount = 0;
     int errorCount = 0;
@@ -154,7 +162,14 @@ public class ImportStagingService {
         skippedCount++;
       }
       staged.add(
-          staged(row, duplicateOf, account, today, openingDate, matched.contains(row.rowNumber())));
+          staged(
+              row,
+              duplicateOf,
+              account,
+              today,
+              openingDate,
+              matched.contains(row.rowNumber()),
+              pocketWarning));
     }
     rowBatchRepository.deleteByBatch(batch.getId());
     rowBatchRepository.insertAll(batch.getId(), batch.getWorkspaceId(), staged);
@@ -211,7 +226,8 @@ public class ImportStagingService {
       Account account,
       LocalDate today,
       LocalDate openingDate,
-      boolean matchingPayment) {
+      boolean matchingPayment,
+      String pocketWarning) {
     CanonicalImportRow canonical = row.canonical();
     String status;
     if (row.isSkipped()) {
@@ -223,10 +239,14 @@ public class ImportStagingService {
     } else {
       status = ImportBatchValues.ROW_PARSED;
     }
-    List<String> warnings =
-        row.isParsed()
-            ? rowCheckService.warnings(account, canonical, today, openingDate, matchingPayment)
-            : List.of();
+    List<String> warnings = new ArrayList<>();
+    if (row.isParsed()) {
+      warnings.addAll(
+          rowCheckService.warnings(account, canonical, today, openingDate, matchingPayment));
+      if (canonical.savingsPocket() && pocketWarning != null) {
+        warnings.add(pocketWarning);
+      }
+    }
     return new StagedImportRow(
         UUID.randomUUID(),
         row.rowNumber(),
