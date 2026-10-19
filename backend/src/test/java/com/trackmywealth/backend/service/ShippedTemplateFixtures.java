@@ -6,9 +6,15 @@ import static com.trackmywealth.backend.service.SyntheticStatements.endingAt;
 import static com.trackmywealth.backend.service.SyntheticStatements.strayBlank;
 
 import com.trackmywealth.backend.service.SyntheticStatements.Cell;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
  * US-07-15 (#275): synthetic PDF statements in the layouts of the shipped PDF templates (V77-V79,
@@ -293,5 +299,242 @@ public final class ShippedTemplateFixtures {
       cells.add(at(LBS_PANEL, panel));
     }
     return cells;
+  }
+
+  // --- holdings statements (US-07-13, #273; V100) ------------------------------------------
+
+  /** Invented ISINs with valid check digits; no country uses ZZ, so none is a real security. */
+  public static final String HOLDING_ISIN_CHF = "ZZ0000000016";
+
+  public static final String HOLDING_ISIN_USD = "ZZ0000000024";
+  public static final String HOLDING_ISIN_FUND = "ZZ0000000032";
+
+  /** The invented crypto symbol of the Yuh-style line, resolved by the workspace's ticker. */
+  public static final String HOLDING_CRYPTO = "XQZ";
+
+  /** The statement's date, far in the future so no real statement shares it. */
+  public static final String HOLDING_DATE = "31.12.2031";
+
+  /**
+   * A "Portfolio-Wertentwicklung" statement in the Swissquote layout (PF-7, YUH-2): title page,
+   * overview, then cash (CHF and USD Kontokorrent), a Yuh-style crypto section, equities in CHF and
+   * USD (one name continued on a second line, a section total) and a fund in CHF with a fractional
+   * quantity, the page furniture repeated on page two.
+   */
+  public static byte[] swissquoteHoldings() throws IOException {
+    List<List<Cell>> first = new ArrayList<>();
+    first.add(List.of(at(40, "Portfolio-Wertentwicklung per " + HOLDING_DATE)));
+    first.add(List.of(at(40, "Kontonummer 000000")));
+    first.add(List.of(at(40, "Bewertet in CHF")));
+    first.add(List.of(at(40, "1. Übersicht")));
+    first.add(List.of(at(40, "CHF 1'452.51 12.19")));
+    first.add(List.of(at(40, "Total 11'915.18 100.00")));
+    first.add(holdingsHeading());
+    first.add(List.of(at(40, "Liquidität")));
+    first.add(List.of(at(40, "Währung Referenz Beschreibung Wert Wechselkurs Bewertung in CHF %")));
+    first.add(List.of(at(40, "CHF 00000001 Kontokorrent CHF 1'204.35 1.00000 1'204.35 10.11")));
+    first.add(List.of(at(40, "USD 00000002 Kontokorrent USD 310.20 0.80000 248.16 2.08")));
+    first.add(List.of(at(40, " Total Liquidität 1'452.51 12.19")));
+    first.add(List.of(at(40, "Kryptowährungen")));
+    first.add(List.of(at(40, "Währung Beschreibung Wert Wechselkurs (1) Bewertung in CHF %")));
+    first.add(
+        List.of(
+            at(
+                40,
+                HOLDING_CRYPTO
+                    + " Position in "
+                    + HOLDING_CRYPTO
+                    + " 12.5000000 3.1415926 39.27 0.33")));
+    first.add(List.of(at(40, "Aktien in CHF")));
+    first.add(List.of(at(40, positionsHeader("CHF"))));
+    first.add(
+        List.of(
+            at(
+                40,
+                "25 INVENTED HOLDING AG N "
+                    + HOLDING_ISIN_CHF
+                    + " 101.250 113.400 30.12.2031 2'835.00 23.79")));
+    first.add(List.of(at(40, "Total Aktien in CHF 2'835.00 23.79")));
+    first.add(List.of(atFoot(40, "Invented Bank AG, Beispielweg 1"), at(480, "Seite 1 / 2")));
+    List<List<Cell>> second = new ArrayList<>();
+    second.add(holdingsHeading());
+    second.add(List.of(at(40, "Aktien in USD")));
+    second.add(List.of(at(40, positionsHeader("USD") + " Wechselkurs Bewertung in CHF %")));
+    second.add(
+        List.of(
+            at(
+                40,
+                "1'200 EXAMPLE TECHNOLOGIES "
+                    + HOLDING_ISIN_USD
+                    + " 4.105 4.370 30.12.2031 5'244.00 4'195.20 35.21")));
+    second.add(List.of(at(40, "ORD")));
+    second.add(List.of(at(40, "Total Aktien in USD 5'244.00 0.80000 4'195.20 35.21")));
+    second.add(List.of(at(40, "Anlagefonds in CHF")));
+    second.add(List.of(at(40, positionsHeader("CHF"))));
+    second.add(
+        List.of(
+            at(
+                40,
+                "12.3456 SAMPLE WORLD ETF "
+                    + HOLDING_ISIN_FUND
+                    + " 87.650 95.120 30.12.2031 1'174.31 9.86")));
+    second.add(List.of(at(40, "GESAMTVERMÖGEN IN CHF 11'915.18")));
+    second.add(List.of(atFoot(40, "Invented Bank AG, Beispielweg 1"), at(480, "Seite 2 / 2")));
+    return SyntheticStatements.statement(List.of(first, second));
+  }
+
+  private static List<Cell> holdingsHeading() {
+    return List.of(at(40, "Portfolio-Wertentwicklung per " + HOLDING_DATE + " - Erika Beispiel"));
+  }
+
+  // A section's table header; a foreign section's header continues with the CHF columns.
+  private static String positionsHeader(String currency) {
+    String header =
+        "Anzahl Wertpapier ISIN Durchschnittspreis Marktpreis Kursdatum Bewertung in " + currency;
+    return "CHF".equals(currency) ? header + " %" : header;
+  }
+
+  /** The tickers of {@link #postfinancePositionsWorkbook}. */
+  public static final String WORKBOOK_TICKER_CHF = "INVT";
+
+  public static final String WORKBOOK_TICKER_USD = "EXMP";
+  public static final String WORKBOOK_TICKER_ETF = "SMPW";
+
+  /**
+   * An E-Trading positions export (PF-5) as .xlsx: the shipped header row, then group headings,
+   * positions by ticker (numbers stored as numbers, one value a binary double with a rounding
+   * tail), subtotals and a total - which have no quantity.
+   */
+  public static byte[] postfinancePositionsWorkbook() throws IOException {
+    try (Workbook workbook = new XSSFWorkbook()) {
+      Sheet sheet = workbook.createSheet("Positionen");
+      row(
+          sheet,
+          0,
+          "",
+          "Symbol",
+          "Anzahl",
+          "Einstandskurs",
+          "Totalwert",
+          "Tagesveränderung",
+          "Diff. Vortag %",
+          "Preis",
+          "Währung",
+          "G&V Nominalwert CHF",
+          "G&V % CHF",
+          "Totalwert CHF",
+          "Positionen %");
+      row(sheet, 1, "Aktien");
+      row(
+          sheet,
+          2,
+          "",
+          WORKBOOK_TICKER_CHF,
+          25,
+          101.25,
+          2835.0,
+          "",
+          "",
+          113.4,
+          "CHF",
+          303.75,
+          0.12,
+          2835.0,
+          0.4);
+      row(
+          sheet,
+          3,
+          "",
+          WORKBOOK_TICKER_USD,
+          1200,
+          4.105,
+          5244.000000000001,
+          "",
+          "",
+          4.37,
+          "USD",
+          254.4,
+          0.06,
+          4195.2,
+          0.5);
+      row(
+          sheet,
+          4,
+          "",
+          "Zwischensumme Aktien in CHF",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          558.15,
+          0.08,
+          7030.2,
+          0.9);
+      row(sheet, 5, "ETFs");
+      row(
+          sheet,
+          6,
+          "",
+          WORKBOOK_TICKER_ETF,
+          12.3456,
+          87.65,
+          1174.31,
+          "",
+          "",
+          95.12,
+          "CHF",
+          92.2,
+          0.09,
+          1174.31,
+          0.1);
+      row(sheet, 7, "", "Gesamt", "", "", "", "", "", "", "", 650.35, 0.08, 8204.51, 1.0);
+      return bytes(workbook);
+    }
+  }
+
+  /**
+   * An E-Trading cash export (PF-4) as binary .xls: one row per currency with its account balance,
+   * then the total in CHF, which names no currency code.
+   */
+  public static byte[] postfinanceCashWorkbook() throws IOException {
+    try (Workbook workbook = new HSSFWorkbook()) {
+      Sheet sheet = workbook.createSheet("Liquiditaet");
+      row(
+          sheet,
+          0,
+          "Währung",
+          "Kurs",
+          "Kontosaldo",
+          "Positionswert",
+          "Totalwert",
+          "Bewertung CHF",
+          "Portfolio %");
+      row(sheet, 1, "CHF", 1.0, 1204.35, 4009.31, 5213.66, 5213.66, 0.62);
+      row(sheet, 2, "USD", 0.8, 310.2, 5244.0, 5554.2, 4443.36, 0.38);
+      row(sheet, 3, "Gesamt CHF", " ", 1452.51, 8204.51, 9657.02, 9657.02, 1.0);
+      return bytes(workbook);
+    }
+  }
+
+  // A row of text and number cells; an empty string is a blank text cell.
+  private static void row(Sheet sheet, int index, Object... values) {
+    Row row = sheet.createRow(index);
+    for (int column = 0; column < values.length; column++) {
+      Object value = values[column];
+      if (value instanceof Number number) {
+        row.createCell(column).setCellValue(number.doubleValue());
+      } else {
+        row.createCell(column).setCellValue((String) value);
+      }
+    }
+  }
+
+  private static byte[] bytes(Workbook workbook) throws IOException {
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    workbook.write(output);
+    return output.toByteArray();
   }
 }

@@ -71,11 +71,19 @@ class ShippedImportTemplatesIntegrationTest {
   // US-07-25 (V93).
   private static final UUID SPARKASSE_CARD_PDF =
       UUID.fromString("8f7e1b44-deb6-4e30-81d8-9a96d63d417c");
-  // US-07-22 (V101): current version 3, with exchanges and savings pocket moves.
+  // US-07-22 (V103): current version 3, with exchanges and savings pocket moves.
   private static final UUID YUH = UUID.fromString("2548b28a-0884-4aa9-b544-557446e0963c");
   private static final UUID LBS = UUID.fromString("d2971d6e-e091-48c5-96dd-d59c45c8dbd4");
   private static final UUID YUH_FAMILY = UUID.fromString("a2820365-0b08-4474-bdb9-f2c419a91a25");
   private static final UUID LBS_FAMILY = UUID.fromString("0ac5fd45-d7f5-4c7b-895d-cc8233d07e7b");
+  // US-07-13 (V100): holdings statements. The Swissquote PDF serves PostFinance and Yuh alike, so
+  // it names no institution.
+  private static final UUID SWISSQUOTE_HOLDINGS =
+      UUID.fromString("003878c0-995e-4801-96d3-3e431c5095a2");
+  private static final UUID POSTFINANCE_POSITIONS =
+      UUID.fromString("41aff7f6-3fc8-4206-ae61-dc4bf3fdad53");
+  private static final UUID POSTFINANCE_CASH =
+      UUID.fromString("1dcaf9a1-3aab-4b56-8e44-1a252821ca23");
   private static final List<UUID> SHIPPED =
       List.of(
           DKB,
@@ -85,7 +93,10 @@ class ShippedImportTemplatesIntegrationTest {
           SPARKASSE_CARD_PDF,
           SPARKASSE_LOAN,
           YUH,
-          LBS);
+          LBS,
+          SWISSQUOTE_HOLDINGS,
+          POSTFINANCE_POSITIONS,
+          POSTFINANCE_CASH);
   private static final ParameterizedTypeReference<List<ImportTemplateResponse>> TEMPLATE_LIST =
       new ParameterizedTypeReference<>() {};
   private static final ParameterizedTypeReference<List<ImportTemplateCandidateResponse>>
@@ -154,7 +165,9 @@ class ShippedImportTemplatesIntegrationTest {
               assertThat(template.current()).isTrue();
               assertThat(template.active()).isTrue();
               assertThat(template.canEdit()).isFalse();
-              assertThat(template.institutionCatalogueId()).isNotNull();
+              if (!SWISSQUOTE_HOLDINGS.equals(template.id())) {
+                assertThat(template.institutionCatalogueId()).isNotNull();
+              }
             });
     assertThat(
             jdbc.queryForObject(
@@ -163,6 +176,21 @@ class ShippedImportTemplatesIntegrationTest {
                 String.class,
                 LBS))
         .isEqualTo("LBS S\u00fcd");
+  }
+
+  /** #273: each holdings fixture is detected by its shipped template alone. */
+  @Test
+  void eachHoldingsStatementIsDetectedByItsShippedTemplateOnly() throws IOException {
+    assertThat(detect(ShippedTemplateFixtures.swissquoteHoldings()))
+        .extracting(c -> c.template().id())
+        .containsExactly(SWISSQUOTE_HOLDINGS);
+    assertThat(detect(ShippedTemplateFixtures.postfinancePositionsWorkbook()))
+        .extracting(c -> c.template().id(), ImportTemplateCandidateResponse::match)
+        .containsExactly(
+            tuple(POSTFINANCE_POSITIONS, ImportTemplateCandidateResponse.EXACT_HEADER));
+    assertThat(detect(ShippedTemplateFixtures.postfinanceCashWorkbook()))
+        .extracting(c -> c.template().id(), ImportTemplateCandidateResponse::match)
+        .containsExactly(tuple(POSTFINANCE_CASH, ImportTemplateCandidateResponse.EXACT_HEADER));
   }
 
   @Test

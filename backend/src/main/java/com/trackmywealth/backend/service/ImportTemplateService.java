@@ -4,6 +4,7 @@ import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
+import com.trackmywealth.backend.dto.ImportHoldingsRule;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportPreviewRowResponse;
@@ -87,6 +88,7 @@ public class ImportTemplateService {
   private final InstitutionCatalogueRepository institutionCatalogueRepository;
   private final ImportFileParserService parser;
   private final PdfImportReaderService pdfReader;
+  private final ImportHoldingsReaderService holdingsReader;
   private final LocalOcrService ocr;
   // Detection and dry runs read the templates in a short transaction of their own and parse the
   // file after it: an OCR run can take minutes and must not hold a pooled connection meanwhile.
@@ -106,6 +108,7 @@ public class ImportTemplateService {
       InstitutionCatalogueRepository institutionCatalogueRepository,
       ImportFileParserService parser,
       PdfImportReaderService pdfReader,
+      ImportHoldingsReaderService holdingsReader,
       LocalOcrService ocr,
       PlatformTransactionManager transactionManager,
       AccessControlService accessControlService,
@@ -118,6 +121,7 @@ public class ImportTemplateService {
     this.institutionCatalogueRepository = institutionCatalogueRepository;
     this.parser = parser;
     this.pdfReader = pdfReader;
+    this.holdingsReader = holdingsReader;
     this.ocr = ocr;
     this.readOnlyTransaction = new TransactionTemplate(transactionManager);
     this.readOnlyTransaction.setReadOnly(true);
@@ -430,7 +434,8 @@ public class ImportTemplateService {
       ImportTemplateDefinition definition, List<String> requestedHeaderColumns) {
     if (definition.isPdf()) {
       parser.validateTemplate(definition, null);
-      return definition.pdfLayout().cellNames();
+      // A holdings PDF (#273) is read by its holdings rule: it has no layout columns.
+      return definition.pdfLayout() == null ? null : definition.pdfLayout().cellNames();
     }
     List<String> headerColumns =
         requestedHeaderColumns == null || requestedHeaderColumns.isEmpty()
@@ -512,6 +517,25 @@ public class ImportTemplateService {
         : ImportTemplateCandidateResponse.MAPPED_COLUMNS_PRESENT;
   }
 
+  // #273: a holdings statement holding the rule's marker and a readable statement date is an exact
+  // match: the date pattern is as specific as a booking table's header.
+  private String holdingsPdfMatch(ImportTemplateDefinition definition, String pdfText) {
+    return pdfText != null
+            && isApplicable(definition)
+            && ImportHoldingsReaderService.isStatementOf(pdfText, definition)
+        ? ImportTemplateCandidateResponse.EXACT_HEADER
+        : null;
+  }
+
+  // A spreadsheet's header, or the API exception of a file that is no workbook: no candidate.
+  private List<String> spreadsheetHeader(byte[] content, ImportTemplateDefinition definition) {
+    if (!SpreadsheetImportReaderService.isWorkbook(content)) {
+      throw new ImportFileRejectedException(
+          ApiErrorCode.IMPORT_FILE_MALFORMED, "The file is no .xlsx or .xls workbook.");
+    }
+    return holdingsReader.readHeader(content, definition);
+  }
+
   // Whether this release can apply the template at all (e.g. not a retired setting).
   private boolean isApplicable(ImportTemplateDefinition definition) {
     try {
@@ -530,12 +554,17 @@ public class ImportTemplateService {
       return null;
     }
     if (definition.isPdf()) {
-      return pdfMatch(definition, pdfText);
+      return definition.isSnapshot()
+          ? holdingsPdfMatch(definition, pdfText)
+          : pdfMatch(definition, pdfText);
     }
     List<String> header;
     try {
       parser.validateTemplate(definition, null);
-      header = parser.readHeader(content, definition);
+      header =
+          definition.isSpreadsheet()
+              ? spreadsheetHeader(content, definition)
+              : parser.readHeader(content, definition);
     } catch (ApiException e) {
       // This template cannot read the file (or this release cannot apply it): no candidate.
       return null;
@@ -584,6 +613,7 @@ public class ImportTemplateService {
         definition.rowFilter(),
         definition.accountIdentifier(),
         definition.statementBalance(),
+        definition.holdingsRule(),
         definition.savingsPocketPattern());
   }
 
@@ -620,6 +650,9 @@ public class ImportTemplateService {
             ? null
             : objectMapper.readValue(
                 template.getStatementBalanceRule(), ImportStatementBalanceRule.class),
+        template.getHoldingsRule() == null
+            ? null
+            : objectMapper.readValue(template.getHoldingsRule(), ImportHoldingsRule.class),
         template.getSavingsPocketPattern());
   }
 
@@ -659,6 +692,10 @@ public class ImportTemplateService {
         definition.statementBalance() == null
             ? null
             : objectMapper.writeValueAsString(definition.statementBalance()));
+    template.setHoldingsRule(
+        definition.holdingsRule() == null
+            ? null
+            : objectMapper.writeValueAsString(definition.holdingsRule()));
     template.setSavingsPocketPattern(definition.savingsPocketPattern());
     template.setAccountIdentificationStrategy(definition.accountIdentificationStrategy());
     template.setFileFormat(definition.fileFormat());
@@ -715,6 +752,7 @@ public class ImportTemplateService {
         definition.rowFilter(),
         definition.accountIdentifier(),
         definition.statementBalance(),
+        definition.holdingsRule(),
         definition.savingsPocketPattern());
   }
 

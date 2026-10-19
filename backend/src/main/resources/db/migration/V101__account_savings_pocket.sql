@@ -1,5 +1,5 @@
 -- =============================================================================================
--- V99: An account's savings pocket (US-07-22, #325)
+-- V101: An account's savings pocket (US-07-22, #325)
 -- =============================================================================================
 -- Yuh sets money aside in a savings pocket within the account ("Spareinlage"). The pocket is kept
 -- as a savings account of its own, so that a move into it is saving, not spending; the account

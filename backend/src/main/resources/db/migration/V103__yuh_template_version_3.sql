@@ -1,5 +1,5 @@
 -- =============================================================================================
--- V101: Yuh statement template, version 3: exchanges and savings pocket moves (US-07-22, #325)
+-- V103: Yuh statement template, version 3: exchanges and savings pocket moves (US-07-22, #325)
 -- =============================================================================================
 -- Version 2 (V96) types every row by its sign, so both legs of a currency exchange counted as
 -- income or spending, and so did a move into the savings pocket. Version 3:
@@ -8,7 +8,7 @@
 --    "Automatisierter Währungstausch") carry the same one, so the commit links the two as one
 --    exchange (ImportTransferLinkService). It is still no booking id (see V78);
 -- 2. reads a "Spareinlage" as a savings pocket move: a TRANSFER whose other leg the commit books
---    on the account's savings pocket (V99), creating the pocket the first time.
+--    on the account's savings pocket (V101), creating the pocket the first time.
 --
 -- Buys and sells stay typed by their sign until the securities import links them (#274).
 -- A copy of version 2 with a fixed id of its own; version 2 stays, no longer current, for the

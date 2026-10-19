@@ -66,6 +66,10 @@ import org.springframework.transaction.annotation.Transactional;
  * <p><b>Statement balance (US-07-12).</b> After the rows, the balance the file states becomes a
  * {@code DOCUMENT} snapshot of the batch and the account is reconciled against it ({@link
  * ImportStatementBalanceService}).
+ *
+ * <p><b>Holdings statement (US-07-13).</b> A batch a {@code SNAPSHOT} template parsed has no rows:
+ * its commit records its snapshot with positions ({@link ImportHoldingsService#commit}) under the
+ * same locks, state and version checks.
  */
 @Service
 public class ImportCommitService {
@@ -83,6 +87,7 @@ public class ImportCommitService {
   private final ImportLockService importLockService;
   private final ImportAccountIdentificationService identificationService;
   private final ImportStatementBalanceService statementBalanceService;
+  private final ImportHoldingsService holdingsService;
   private final SavingsPocketService savingsPocketService;
   private final ImportTransferLinkService transferLinkService;
   private final Clock clock;
@@ -99,6 +104,7 @@ public class ImportCommitService {
       ImportLockService importLockService,
       ImportAccountIdentificationService identificationService,
       ImportStatementBalanceService statementBalanceService,
+      ImportHoldingsService holdingsService,
       SavingsPocketService savingsPocketService,
       ImportTransferLinkService transferLinkService,
       Clock clock) {
@@ -113,6 +119,7 @@ public class ImportCommitService {
     this.importLockService = importLockService;
     this.identificationService = identificationService;
     this.statementBalanceService = statementBalanceService;
+    this.holdingsService = holdingsService;
     this.savingsPocketService = savingsPocketService;
     this.transferLinkService = transferLinkService;
     this.clock = clock;
@@ -138,6 +145,11 @@ public class ImportCommitService {
         expectedVersion, batch.getVersion(), ImportBatchService.VERSIONED_RESOURCE);
     // US-07-10: a file that does not name this account for certain needs the member's yes first.
     identificationService.requireConfirmedIfNeeded(batch);
+    if (batch.isHoldingsStatement()) {
+      // US-07-13: a holdings statement has no rows; its commit is its snapshot.
+      holdingsService.commit(batch, account, actor.userId());
+      return committed(batch, account, 0, actor);
+    }
 
     // Every readable row, in file order, and what the ledger makes of it now (#287): a duplicate
     // whose booking moved points at the row holding it, one whose booking is gone is new and
@@ -197,10 +209,7 @@ public class ImportCommitService {
     // US-07-12: the statement's balance, once the rows it closes are in the ledger.
     statementBalanceService.commit(batch, account, actor.userId());
 
-    batch.setStatus(ImportBatchValues.COMMITTED);
-    batch.setCommittedAt(OffsetDateTime.now(clock));
-    batch.setImportedRowCount(recorded.size());
-    batchRepository.saveAndFlush(batch);
+    ImportBatchResponse response = committed(batch, account, recorded.size(), actor);
     if (LOG.isInfoEnabled()) {
       LOG.info(
           "Committed import batch {}: {} transactions, {} rows found duplicate at commit,"
@@ -210,6 +219,15 @@ public class ImportCommitService {
           count(recheck, ImportBatchValues.RECHECK_DUPLICATE),
           count(recheck, ImportBatchValues.RECHECK_NEW));
     }
+    return response;
+  }
+
+  private ImportBatchResponse committed(
+      ImportBatch batch, Account account, int importedRows, AuthenticatedUserPrincipal actor) {
+    batch.setStatus(ImportBatchValues.COMMITTED);
+    batch.setCommittedAt(OffsetDateTime.now(clock));
+    batch.setImportedRowCount(importedRows);
+    batchRepository.saveAndFlush(batch);
     return batchService.summary(batch, account, List.of(), actor);
   }
 

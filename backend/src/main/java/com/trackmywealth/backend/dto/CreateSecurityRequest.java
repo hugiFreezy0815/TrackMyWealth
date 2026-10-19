@@ -26,6 +26,11 @@ import java.util.Locale;
  *
  * <p>If the ISIN already exists, the existing record is returned unchanged and every other field
  * here is ignored - shared reference data is never edited by a later caller (NFR-LIC-007).
+ *
+ * <p>{@code ticker} (#273) is not part of the shared record: it maps the ticker, upper-cased, to
+ * the returned security for the caller's workspace only, new or existing alike, so a holdings
+ * statement that lists the position by ticker resolves to it. A later mapping of the same ticker
+ * replaces it.
  */
 public record CreateSecurityRequest(
     @ValidIsin String isin,
@@ -42,7 +47,32 @@ public record CreateSecurityRequest(
     @Pattern(regexp = "[A-Z]{2}") String securityCountry,
     @Pattern(regexp = "[A-Z]{2}") String issuerCountry,
     @Size(max = 255) String legalName,
-    @Size(max = 128) String idempotencyKey) {
+    @Size(max = 128) String idempotencyKey,
+    @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9.:-]{0,19}") String ticker) {
+
+  /** A security without a ticker for the caller's statements. */
+  public CreateSecurityRequest(
+      String isin,
+      String displayName,
+      String denominationCurrency,
+      String instrumentType,
+      String assetClass,
+      String securityCountry,
+      String issuerCountry,
+      String legalName,
+      String idempotencyKey) {
+    this(
+        isin,
+        displayName,
+        denominationCurrency,
+        instrumentType,
+        assetClass,
+        securityCountry,
+        issuerCountry,
+        legalName,
+        idempotencyKey,
+        null);
+  }
 
   public CreateSecurityRequest {
     isin = RequestStrings.blankToNull(isin);
@@ -57,5 +87,9 @@ public record CreateSecurityRequest(
     issuerCountry = RequestStrings.blankToNull(issuerCountry);
     legalName = RequestStrings.blankToNull(legalName);
     idempotencyKey = RequestStrings.blankToNull(idempotencyKey);
+    ticker = RequestStrings.blankToNull(ticker);
+    if (ticker != null) {
+      ticker = ticker.trim().toUpperCase(Locale.ROOT);
+    }
   }
 }

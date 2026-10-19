@@ -574,13 +574,37 @@ encoded into PDF417 by the test itself.
 
 ### 6.6 Holdings and securities
 
-- `template_class SNAPSHOT` (PF-4/5/7/8, YUH-2/3) needs `snapshot_holding.security_id`, i.e. a
-  security master lookup by ISIN (PF-7, PF-8, YUH-2) or by ticker plus exchange (PF-5). That is
-  EPIC 15 / OPEN-008 work. `snapshot_holding` has no column for the reported price or market
-  value: add `reported_price`, `reported_value` and their currency, so a reconciliation can
-  compare them.
+- `template_class SNAPSHOT` (PF-4/5/7/8, YUH-2/3): done for PF-4, PF-5, PF-7 and YUH-2 (#273,
+  6.6.1), resolving positions by ISIN in the security master or by a ticker the workspace mapped;
+  `snapshot_holding` keeps the reported price, value and currency (V98). PF-8 (an unstable browser
+  print) and YUH-3 (a tax statement, eCH-0196) are not imported as snapshots.
 - `template_class SECURITIES_TRANSACTIONS` (PF-3) needs quantity, price, fees, accrued interest
   and corporate-action handling in the canonical row: also EPIC 15.
+
+### 6.6.1 Holdings statements as snapshots (#273)
+
+A holdings statement is imported through the import batch like a cash statement, by a template of
+class `SNAPSHOT` (see database-schema.md, "Holdings statements"). V100 ships three:
+
+| Template | Sources | Reads |
+|---|---|---|
+| Swissquote Portfolio-Wertentwicklung PDF | PF-7, YUH-2 (one layout for PostFinance E-Trading and Yuh) | date from `Portfolio-Wertentwicklung per <date>`; positions with ISIN, quantity, market price and value in the currency of their section (the first `Bewertung in <currency>` of the section's table header); Yuh's crypto lines by symbol; one `Kontokorrent` cash line per currency |
+| PostFinance E-Trading Positionen XLSX | PF-5 | positions by ticker (`Symbol`, `Anzahl`, `Preis`, `Totalwert`, `Währung`); group headings and subtotals passed over; date entered at upload |
+| PostFinance E-Trading Liquidität XLS | PF-4 | cash per currency (`Währung`, `Kontosaldo`); the `Gesamt CHF` total passed over; date entered at upload |
+
+Checked locally against the product owner's PF-4, PF-5, PF-7 and YUH-2 by a probe that printed
+counts only: every ISIN line of PF-7 and YUH-2 became a position, Yuh's crypto lines positions by
+symbol, every cash line a balance, with no unreadable line and no value mismatch; PF-4 and PF-5
+read every currency and position row. The committed fixtures (`ShippedTemplateFixtures`) are
+invented, with ISINs of the non-country `ZZ` and dates in 2031.
+
+Only the cash in the account's own currency becomes the snapshot's balance; the statement's other
+currencies are shown in the preview. PF-5 lists no cash and PF-4 no positions, so for one account
+and date only one of the two can be imported as a snapshot (the second is refused as an existing
+`DOCUMENT` snapshot of that date); PF-7, which holds both, is the source to prefer.
+
+The source documents remain private and local; never add real holdings or extracted PDF text to
+CI, source control, bug reports, or logs.
 
 ### 6.7 Duplicates across documents
 

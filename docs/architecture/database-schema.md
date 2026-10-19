@@ -95,6 +95,9 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V92` | Reference-data baseline `1.5.0-baseline` (current; `1.4.0-baseline` stays as history): the template version of V91 (US-07-24, #327) |
 | `V93` | Shipped template for the Sparkasse credit-card statement PDF (US-07-25, #339): the second date of a booking line is the booking date, the sign after the amount puts it in `Soll` or `Haben` (`SEPARATE_DEBIT_CREDIT`), the previous and new balance are read for reconciliation (the dateless new balance takes the period's end), and the masked card number on the title line identifies the card (`PREAMBLE_LINE` on a PDF) |
 | `V94` | Reference-data baseline `1.6.0-baseline` (current; `1.5.0-baseline` stays as history): the template of V93 (US-07-25, #339) |
+| `V98` | `snapshot_holding.reported_price`/`reported_value`/`reported_currency` (US-07-13, #273): what an imported statement printed for a position, unconverted; value and currency together, the price optional |
+| `V99` | Holdings statements (US-07-13, #273): `import_template.holdings_rule` (required exactly for `SNAPSHOT`), file format `SPREADSHEET` (holdings only), `pdf_layout` for cash PDFs only; `import_batch.holdings_snapshot_date`/`holdings_date_source`/`holdings_snapshot`; `import_holding_row` (own RLS policy); `workspace_security_ticker` (own RLS policy) |
+| `V100` | Shipped holdings templates (US-07-13, #273): the Swissquote "Portfolio-Wertentwicklung" PDF (PostFinance E-Trading, Yuh), the PostFinance E-Trading positions XLSX and cash XLS |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a
@@ -1399,6 +1402,58 @@ that reconciliation decisions take:
 - Otherwise the snapshot and its results are deleted, and the batch records `DELETED`.
 
 Either way the account is then reconciled against its new newest snapshot.
+
+### Holdings statements (US-07-13)
+
+A bank's positions statement becomes one `DOCUMENT` snapshot with a holding per position when its
+import batch is committed (FR-REC-*, INPUT-004) - the same batch lifecycle as a cash statement
+(US-07-04/05/12): upload and preview, commit with `If-Match`, rollback.
+
+**Templates (V99).** A `SNAPSHOT` template reads its file through `holdings_rule`
+(`ImportHoldingsRule`, required exactly for that class by `chk_import_template_holdings_rule`) and
+maps no booking columns, types, row filter, account identifier or statement balance; its account
+is the one selected at upload. A PDF (`PDF_TEXT`, `PDF_OCR`) is read by RE2 line patterns: a
+`documentMarker` for detection, a `datePattern` (named group `date`) whose first readable match
+dates the snapshot, an optional `sectionPattern` (`currency`) that sets the currency of the
+positions after it, one to five `positionPatterns` (`quantity`, `value`, `isin` and/or `symbol`,
+optionally `price`, `name`, `currency`) and an optional `cashPattern` (`currency`, `amount`). A
+`SPREADSHEET` (`.xlsx` or `.xls`, first sheet, through Apache POI within
+`SpreadsheetImportReaderService`'s limits) is read by `columns` named in its header row: a row with
+a quantity is a position, one with a cash amount and a currency code a cash balance, anything else
+(a heading, a subtotal) is passed over. A spreadsheet states no date: the member sends
+`snapshotDate` at upload or parse (`holdings_date_source` `MEMBER`; a PDF's is `STATEMENT`, and a
+`snapshotDate` for it is a 400). A holdings template has no dry run (422
+`IMPORT_TEMPLATE_UNSUPPORTED`): the upload is the preview, and nothing is recorded before the
+commit.
+
+**Batches.** A parse stages every line on `import_holding_row` (`POSITION`, `CASH` or `ERROR`;
+raw bank data, so under its own workspace policy) and none on `import_row_raw`. A line a pattern
+took for a position or a cash balance but whose values cannot be read - a number past its column
+(`quantity NUMERIC(28,10)`, price `(20,10)`, value and amount `(20,4)`), an ISIN with a wrong
+check digit, no currency, or a second line of the same ISIN/symbol - is an `ERROR` line, never
+dropped. A position whose quantity times price is neither its value nor a hundredth of it (a bond
+in percent), within 1 % or 0.05, carries the warning `HOLDING_VALUE_MISMATCH`. A statement with
+positions needs an account that `holds_positions`; one with neither a position, nor cash in the
+account's currency, nor an `ERROR` line is refused (`IMPORT_FILE_NO_DATA_ROWS`).
+`chk_import_batch_holdings_not_balance` keeps a holdings batch from also recording a statement
+balance.
+
+**Resolution.** A position is the security of its ISIN in the shared master, else the security its
+symbol means in the workspace (`workspace_security_ticker`, set by `POST /api/v1/securities` with
+`ticker`, for the caller's workspace only). Tickers are per workspace on purpose: they repeat across
+exchanges, and a shared mapping would let one workspace decide what another's statement holds, or
+discover another workspace's hand-entered security by its ticker (NFR-LIC-007). Positions are
+resolved again on every read and at the commit; the import never creates a security.
+
+**Commit.** Refused while a line is unreadable (422 `IMPORT_HOLDINGS_UNREADABLE`, `rowNumbers`), a
+position resolves to nothing (422 `IMPORT_HOLDINGS_UNRESOLVED`, `unresolved`), two positions resolve
+to one security, the date is not one the account admits, or an imported snapshot of that date is in
+effect (409, `existingSnapshotId`). Then the snapshot is recorded with `import_batch_id`, its
+balance the sum of the statement's cash in the account's currency (cash in other currencies is
+shown, not stored), one `snapshot_holding` per position with its quantity and V98's reported
+price, value and currency, and the account is reconciled against it. `holdings_snapshot` records
+`RECORDED`, and after a rollback - which removes the snapshot and its holdings by US-07-12's rules -
+`DELETED` or `WITHDRAWN`.
 
 ## 5. Time-series data and partitioning
 

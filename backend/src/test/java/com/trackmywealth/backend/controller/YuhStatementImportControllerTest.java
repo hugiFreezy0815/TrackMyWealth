@@ -48,7 +48,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * US-07-22 (#325) against a real PostgreSQL: a Yuh statement imported with the shipped template
- * (V101) keeps its currency exchange and its savings pocket moves out of income and spending. The
+ * (V103) keeps its currency exchange and its savings pocket moves out of income and spending. The
  * statement is the template's synthetic fixture ({@link ShippedTemplateFixtures#yuhStatement});
  * every value is invented. In January 2031 it books, on a CHF account: 1000.00 CHF in, 17.35 CHF
  * into the savings pocket, a 2.50 CHF dividend, an exchange of 23.17 CHF into 24.53 EUR, and a
@@ -324,7 +324,7 @@ class YuhStatementImportControllerTest {
     assertThat(sum(january.spending(), "CHF")).isNull();
   }
 
-  // V99: a pocket is an account of the same workspace, and never the account itself.
+  // V101: a pocket is an account of the same workspace, and never the account itself.
   @Test
   void theDatabaseRefusesAPocketOfAnotherWorkspaceOrTheAccountItself() {
     UUID workspace = UUID.randomUUID();

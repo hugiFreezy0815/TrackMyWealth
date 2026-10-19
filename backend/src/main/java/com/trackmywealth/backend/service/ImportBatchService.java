@@ -8,6 +8,8 @@ import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportDuplicateOfResponse;
 import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
+import com.trackmywealth.backend.dto.ImportHoldingsResponse;
+import com.trackmywealth.backend.dto.ImportHoldingsStatement;
 import com.trackmywealth.backend.dto.ImportIdentificationResponse;
 import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportRateNeed;
@@ -35,6 +37,7 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import jakarta.persistence.EntityManager;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -107,6 +110,8 @@ public class ImportBatchService {
   private final ImportRowJsonService rowJson;
   private final ImportAccountIdentificationService identificationService;
   private final ImportStatementBalanceService statementBalanceService;
+  private final ImportHoldingsReaderService holdingsReader;
+  private final ImportHoldingsService holdingsService;
   private final ImportBatchRepository batchRepository;
   private final ImportFileRepository fileRepository;
   private final ImportRowRawRepository rowRepository;
@@ -131,6 +136,8 @@ public class ImportBatchService {
       ImportRowJsonService rowJson,
       ImportAccountIdentificationService identificationService,
       ImportStatementBalanceService statementBalanceService,
+      ImportHoldingsReaderService holdingsReader,
+      ImportHoldingsService holdingsService,
       ImportBatchRepository batchRepository,
       ImportFileRepository fileRepository,
       ImportRowRawRepository rowRepository,
@@ -152,6 +159,8 @@ public class ImportBatchService {
     this.rowJson = rowJson;
     this.identificationService = identificationService;
     this.statementBalanceService = statementBalanceService;
+    this.holdingsReader = holdingsReader;
+    this.holdingsService = holdingsService;
     this.batchRepository = batchRepository;
     this.fileRepository = fileRepository;
     this.rowRepository = rowRepository;
@@ -173,6 +182,10 @@ public class ImportBatchService {
    * templateId} is a CAMT statement (#350), parsed at once without a template ({@link
    * CamtImportReaderService}).
    *
+   * <p>A file a {@code SNAPSHOT} template reads is a holdings statement (#273): its positions and
+   * cash are staged instead of rows ({@link ImportHoldingsService}). {@code snapshotDate} dates a
+   * statement that states no date of its own (a spreadsheet); it is refused for any other file.
+   *
    * @throws ImportFileRejectedException 422 for an empty file, or one the chosen template cannot
    *     read; nothing is stored then
    * @throws ApiException 409 {@code IMPORT_TOO_MANY_OPEN_BATCHES} when the account holds as many
@@ -185,6 +198,18 @@ public class ImportBatchService {
       byte[] content,
       UUID templateId,
       AuthenticatedUserPrincipal actor) {
+    return upload(accountId, fileName, mediaType, content, templateId, null, actor);
+  }
+
+  /** {@link #upload} of a holdings statement dated {@code snapshotDate} by the member (#273). */
+  public ImportBatchResponse upload(
+      UUID accountId,
+      String fileName,
+      String mediaType,
+      byte[] content,
+      UUID templateId,
+      LocalDate snapshotDate,
+      AuthenticatedUserPrincipal actor) {
     ImportAccountContext accountContext =
         readOnlyTransaction.execute(
             status -> {
@@ -195,7 +220,11 @@ public class ImportBatchService {
     if (content.length == 0) {
       throw new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_EMPTY, "The file is empty.");
     }
-    boolean camt = templateId == null && camtReader.isCamtFile(content);
+    // An .xlsx workbook is a ZIP archive too, but no CAMT statement (#273).
+    boolean camt =
+        templateId == null
+            && camtReader.isCamtFile(content)
+            && !SpreadsheetImportReaderService.isWorkbook(content);
     List<ImportTemplateCandidateResponse> candidates = List.of();
     UUID chosen = templateId;
     if (chosen == null && !camt) {
@@ -204,10 +233,11 @@ public class ImportBatchService {
     }
     ResolvedImportTemplate template =
         chosen == null ? null : importTemplateService.resolveForImport(chosen, actor);
+    ImportHoldingsStatement holdings = readHoldings(content, template, snapshotDate);
     ImportParseResult parsed =
         camt
             ? camtReader.parse(content, accountContext)
-            : template == null
+            : template == null || holdings != null
                 ? null
                 : parser.parseForAccount(content, template.definition(), accountContext);
     List<ImportTemplateCandidateResponse> offered = template == null ? candidates : List.of();
@@ -238,7 +268,9 @@ public class ImportBatchService {
           file.setMediaType(mediaType);
           fileRepository.saveAndFlush(file);
 
-          if (parsed != null) {
+          if (holdings != null) {
+            applyHoldings(batch, account, template, holdings, actor);
+          } else if (parsed != null) {
             applyParse(batch, account, template, parsed, rates, actor);
           }
           return summary(batch, account, offered, actor);
@@ -259,6 +291,17 @@ public class ImportBatchService {
       UUID templateId,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
+    return parse(accountId, batchId, templateId, null, expectedVersion, actor);
+  }
+
+  /** {@link #parse} of a holdings statement dated {@code snapshotDate} by the member (#273). */
+  public ImportBatchResponse parse(
+      UUID accountId,
+      UUID batchId,
+      UUID templateId,
+      LocalDate snapshotDate,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
     ImportAccountContext accountContext =
         readOnlyTransaction.execute(
             status -> {
@@ -274,17 +317,23 @@ public class ImportBatchService {
                     .findById(batchId)
                     .map(ImportFile::getContent)
                     .orElseThrow(() -> new IllegalStateException("Batch has no stored file.")));
-    if (templateId == null && !camtReader.isCamtFile(content)) {
+    if (templateId == null
+        && (!camtReader.isCamtFile(content)
+            || SpreadsheetImportReaderService.isWorkbook(content))) {
       throw new ResponseStatusException(
           HttpStatus.BAD_REQUEST, "templateId is required for a file that is no CAMT statement.");
     }
     ResolvedImportTemplate template =
         templateId == null ? null : importTemplateService.resolveForImport(templateId, actor);
+    ImportHoldingsStatement holdings = readHoldings(content, template, snapshotDate);
     ImportParseResult parsed =
-        template == null
-            ? camtReader.parse(content, accountContext)
-            : parser.parseForAccount(content, template.definition(), accountContext);
-    Map<String, Boolean> rates = lookUpRates(accountId, parsed.rows(), actor);
+        holdings != null
+            ? null
+            : template == null
+                ? camtReader.parse(content, accountContext)
+                : parser.parseForAccount(content, template.definition(), accountContext);
+    Map<String, Boolean> rates =
+        parsed == null ? new HashMap<>() : lookUpRates(accountId, parsed.rows(), actor);
 
     return writeTransaction.execute(
         status -> {
@@ -292,7 +341,11 @@ public class ImportBatchService {
           ImportBatch batch = lockBatch(account, batchId, actor);
           // Checked again under the lock: another parse, a discard or a commit may have come first.
           requireParseable(batch, expectedVersion);
-          applyParse(batch, account, template, parsed, rates, actor);
+          if (holdings != null) {
+            applyHoldings(batch, account, template, holdings, actor);
+          } else {
+            applyParse(batch, account, template, parsed, rates, actor);
+          }
           return summary(batch, account, List.of(), actor);
         });
   }
@@ -317,7 +370,8 @@ public class ImportBatchService {
                 counts,
                 sameFiles,
                 identificationService.response(batch, actor),
-                statementBalanceService.response(batch, account)));
+                statementBalanceService.response(batch, account),
+                holdingsService.response(batch, account, LocaleContextHolder.getLocale())));
   }
 
   /**
@@ -595,7 +649,8 @@ public class ImportBatchService {
         counts,
         sameFilesImportedIn(one),
         identificationService.response(batch, actor),
-        statementBalanceService.response(batch, account));
+        statementBalanceService.response(batch, account),
+        holdingsService.response(batch, account, LocaleContextHolder.getLocale()));
   }
 
   private static ImportBatchResponse summary(
@@ -605,7 +660,8 @@ public class ImportBatchService {
       Map<UUID, ImportBatchCountsResponse> counts,
       Map<UUID, ImportSameFileResponse> sameFiles,
       ImportIdentificationResponse identification,
-      ImportStatementBalanceResponse statementBalance) {
+      ImportStatementBalanceResponse statementBalance,
+      ImportHoldingsResponse holdings) {
     return new ImportBatchResponse(
         batch.getId(),
         account.getId(),
@@ -624,6 +680,7 @@ public class ImportBatchService {
         batch.getRollbackReason(),
         identification,
         statementBalance,
+        holdings,
         VersionPreconditionService.persistedVersion(batch.getVersion(), VERSIONED_RESOURCE));
   }
 
@@ -697,8 +754,46 @@ public class ImportBatchService {
         account,
         template == null ? parsed.accountIdentifier() : fileIdentifier(template, parsed),
         actor);
+    // A batch parsed before as a holdings statement holds none any more.
+    holdingsService.stage(batch, account, null);
     statementBalanceService.record(batch, account, parsed.statementBalances());
     stagingService.stage(batch, account, parsed.rows(), rates, actor);
+  }
+
+  // #273: what a SNAPSHOT template reads in the file, outside any transaction (as a parse is);
+  // null for any other file. A spreadsheet states no date, so the member gives it; a PDF's own date
+  // is never overridden.
+  private ImportHoldingsStatement readHoldings(
+      byte[] content, ResolvedImportTemplate template, LocalDate snapshotDate) {
+    if (template == null || !template.definition().isSnapshot()) {
+      if (snapshotDate != null) {
+        throw new ResponseStatusException(
+            HttpStatus.BAD_REQUEST,
+            "snapshotDate is only for a holdings statement that states no date of its own.");
+      }
+      return null;
+    }
+    if (template.definition().isPdf() && snapshotDate != null) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST, "This statement states its date itself; send no snapshotDate.");
+    }
+    return holdingsReader.read(content, template.definition(), snapshotDate);
+  }
+
+  // #273: stages a holdings statement on the batch. It has no rows (the staging leaves the batch
+  // PARSED with none), names no account of its own and states no balance besides its cash.
+  private void applyHoldings(
+      ImportBatch batch,
+      Account account,
+      ResolvedImportTemplate template,
+      ImportHoldingsStatement holdings,
+      AuthenticatedUserPrincipal actor) {
+    batch.setTemplateId(template.id());
+    batch.setTemplateVersionUsed(template.templateVersion());
+    batch.setSourceKind(ImportBatchValues.SOURCE_DOCUMENT);
+    identificationService.identify(batch, account, null, actor);
+    holdingsService.stage(batch, account, holdings);
+    stagingService.stage(batch, account, List.of(), Map.of(), actor);
   }
 
   // A CAMT statement is a statement document, read by no template: a batch parsed before with one

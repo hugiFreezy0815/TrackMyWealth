@@ -123,6 +123,11 @@ public class ImportTemplate {
   @Column(name = "statement_balance_rule", columnDefinition = JSONB, updatable = false)
   private String statementBalanceRule;
 
+  // V99 (#273): how a SNAPSHOT template reads a holdings statement; null for any other class.
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "holdings_rule", columnDefinition = JSONB, updatable = false)
+  private String holdingsRule;
+
   @Column(name = "account_identification_strategy", nullable = false, updatable = false)
   private String accountIdentificationStrategy;
 
@@ -133,7 +138,8 @@ public class ImportTemplate {
   @Column(name = "header_fingerprint", updatable = false)
   private String headerFingerprint;
 
-  // V66 (#268): CSV, PDF_TEXT or PDF_OCR; a PDF template reads through pdf_layout.
+  // V66 (#268): CSV, PDF_TEXT or PDF_OCR; a PDF template reads through pdf_layout. V99 (#273):
+  // SPREADSHEET, a holdings template's workbook.
   @Column(name = "file_format", nullable = false, updatable = false)
   private String fileFormat = ImportTemplateValues.FORMAT_CSV;
 
@@ -365,6 +371,14 @@ public class ImportTemplate {
 
   public void setStatementBalanceRule(String statementBalanceRule) {
     this.statementBalanceRule = statementBalanceRule;
+  }
+
+  public String getHoldingsRule() {
+    return holdingsRule;
+  }
+
+  public void setHoldingsRule(String holdingsRule) {
+    this.holdingsRule = holdingsRule;
   }
 
   public String getAccountIdentificationStrategy() {

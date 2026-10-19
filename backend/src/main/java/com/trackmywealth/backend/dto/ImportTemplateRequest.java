@@ -26,6 +26,10 @@ import java.util.UUID;
  * header row has none. A PDF template ({@code fileFormat} {@code PDF_TEXT} or {@code PDF_OCR})
  * needs a {@code pdfLayout}, whose column names are its header columns: {@code headerColumns} is
  * ignored.
+ *
+ * <p>A {@code SNAPSHOT} template (#273) needs a {@code holdingsRule} instead, maps no columns and
+ * reads a PDF ({@code PDF_TEXT}) or a {@code SPREADSHEET}; a spreadsheet's {@code headerColumns}
+ * are its sample's header cells, as a CSV file's are.
  */
 public record ImportTemplateRequest(
     @NotBlank @Size(max = MAX_NAME_LENGTH) String name,
@@ -50,12 +54,13 @@ public record ImportTemplateRequest(
     @Pattern(regexp = "USER_SELECTED|COLUMN|PREAMBLE_LINE|FILENAME")
         String accountIdentificationStrategy,
     @Size(max = MAX_HEADER_COLUMNS) List<String> headerColumns,
-    @Pattern(regexp = "CSV|PDF_TEXT|PDF_OCR") String fileFormat,
+    @Pattern(regexp = "CSV|PDF_TEXT|PDF_OCR|SPREADSHEET") String fileFormat,
     @Valid ImportPdfLayout pdfLayout,
     @Size(max = MAX_DESCRIPTION_TYPE_PATTERNS) Map<String, String> descriptionTypePatterns,
     @Valid ImportRowFilter rowFilter,
     @Valid ImportAccountIdentifierRule accountIdentifier,
     @Valid ImportStatementBalanceRule statementBalance,
+    @Valid ImportHoldingsRule holdingsRule,
     @Schema(
             description =
                 "US-07-22: RE2 pattern (matched ignoring case) for the description of a move"
@@ -65,6 +70,62 @@ public record ImportTemplateRequest(
         String savingsPocketPattern) {
 
   /** Existing API callers omit the savings pocket rule (US-07-22). */
+  public ImportTemplateRequest(
+      String name,
+      UUID institutionCatalogueId,
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      Integer headerRowIndex,
+      Integer preambleRowCount,
+      Integer trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      List<String> headerColumns,
+      String fileFormat,
+      ImportPdfLayout pdfLayout,
+      Map<String, String> descriptionTypePatterns,
+      ImportRowFilter rowFilter,
+      ImportAccountIdentifierRule accountIdentifier,
+      ImportStatementBalanceRule statementBalance,
+      ImportHoldingsRule holdingsRule) {
+    this(
+        name,
+        institutionCatalogueId,
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        headerColumns,
+        fileFormat,
+        pdfLayout,
+        descriptionTypePatterns,
+        rowFilter,
+        accountIdentifier,
+        statementBalance,
+        holdingsRule,
+        null);
+  }
+
+  /** A cash statement's template, without the holdings rule of a SNAPSHOT one (#273). */
   public ImportTemplateRequest(
       String name,
       UUID institutionCatalogueId,
@@ -361,6 +422,7 @@ public record ImportTemplateRequest(
         rowFilter,
         accountIdentifier,
         statementBalance,
+        holdingsRule,
         savingsPocketPattern);
   }
 

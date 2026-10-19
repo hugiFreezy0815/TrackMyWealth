@@ -13,6 +13,7 @@ import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.SecurityAssetClassWeightRepository;
 import com.trackmywealth.backend.repository.SecurityFieldProvenanceRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
+import com.trackmywealth.backend.repository.WorkspaceSecurityTickerRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -42,7 +43,8 @@ import org.springframework.web.server.ResponseStatusException;
  * and is returned unchanged whatever a later caller supplies; nothing on the row or in its
  * provenance identifies the workspace or user that caused it to exist; and creating one needs EDIT
  * on at least one active account of the caller's workspace - a member who cannot record a
- * transaction has no reason to add to the shared master.
+ * transaction has no reason to add to the shared master. A ticker sent along (#273) is mapped for
+ * the caller's workspace only ({@code workspace_security_ticker}), not stored on the shared row.
  */
 @Service
 public class SecurityService {
@@ -59,18 +61,21 @@ public class SecurityService {
   private final SecurityFieldProvenanceRepository provenanceRepository;
   private final AccountRepository accountRepository;
   private final AccessControlService accessControlService;
+  private final WorkspaceSecurityTickerRepository tickerRepository;
 
   public SecurityService(
       SecurityRepository securityRepository,
       SecurityAssetClassWeightRepository weightRepository,
       SecurityFieldProvenanceRepository provenanceRepository,
       AccountRepository accountRepository,
-      AccessControlService accessControlService) {
+      AccessControlService accessControlService,
+      WorkspaceSecurityTickerRepository tickerRepository) {
     this.securityRepository = securityRepository;
     this.weightRepository = weightRepository;
     this.provenanceRepository = provenanceRepository;
     this.accountRepository = accountRepository;
     this.accessControlService = accessControlService;
+    this.tickerRepository = tickerRepository;
   }
 
   /** Read-only lookup by ISIN; writes nothing (FR-SMD-007). Any workspace member may look up. */
@@ -144,14 +149,25 @@ public class SecurityService {
                               + " either column can be the conflicting one), so it absorbs every"
                               + " unique constraint on the table - including any added after this"
                               + " code was written. Check whether a migration added one."));
+      mapTicker(request, actor, existing.getId());
       SecurityResponse response = toResponse(existing);
       return new SecurityCreation(response, false, ignoredFields(request, response));
     }
 
     recordAssetClass(id, request.assetClass());
     recordProvenance(id, request);
+    mapTicker(request, actor, id);
     Security created = securityRepository.findById(id).orElseThrow();
     return new SecurityCreation(toResponse(created), true, List.of());
+  }
+
+  // #273: the ticker means this security on the caller's workspace's statements - never on any
+  // other workspace's, so neither the mapping nor the security it names is visible elsewhere.
+  private void mapTicker(
+      CreateSecurityRequest request, AuthenticatedUserPrincipal actor, UUID securityId) {
+    if (request.ticker() != null) {
+      tickerRepository.map(actor.workspaceId(), request.ticker(), securityId);
+    }
   }
 
   // A one-way hash of (workspace, key): stable for a retry, different for every workspace, and it
