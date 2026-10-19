@@ -230,6 +230,15 @@ public final class SyntheticStatements {
     }
   }
 
+  /** How wide {@code text} is printed, in points: to place a right-aligned cell's label. */
+  static float textWidth(String text) {
+    try {
+      return width(text);
+    } catch (IOException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
   private static float width(String text) throws IOException {
     return FONT.getStringWidth(text) / 1000 * FONT_SIZE;
   }

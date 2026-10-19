@@ -58,6 +58,10 @@ import java.util.Objects;
  *       to page, so they are no page furniture, and would otherwise continue the page's last
  *       booking. One at the top of a later page carries the booking above it over, so a booking
  *       split across the page keeps its continuation lines from there.
+ *   <li>{@code flowColumn} (#326, with {@code headerLabels}): the header label of the free text
+ *       that may run on under the next labels on a booking line. A word that follows a word of it
+ *       at word spacing stays in it ({@link com.trackmywealth.backend.pdf.PdfColumns}); without it,
+ *       a long text's last words would be read as the amount column they reach into.
  * </ul>
  *
  * <p>Lines repeated at the same place at the top or bottom of every page (a page header or footer,
@@ -125,7 +129,13 @@ public record ImportPdfLayout(
                 "Optional RE2 pattern; a line on which it finds a match ends the booking above it,"
                     + " and no line continues a booking until the next booking line.")
         @Size(max = MAX_PATTERN_LENGTH)
-        String continuationEndPattern) {
+        String continuationEndPattern,
+    @Schema(
+            description =
+                "Optional (with headerLabels): the label of free text that may run on under the next"
+                    + " labels; a word following it at word spacing stays in it.")
+        @Size(max = MAX_COLUMN_NAME_LENGTH)
+        String flowColumn) {
 
   public static final int MAX_COLUMNS = 50;
   public static final int MAX_PATTERN_LENGTH = 1000;
@@ -142,6 +152,34 @@ public record ImportPdfLayout(
     headerLabels =
         Collections.unmodifiableList(
             new ArrayList<>(headerLabels == null ? List.of() : headerLabels));
+  }
+
+  /** A layout without a flowing text column, as every layout before #326. */
+  public ImportPdfLayout(
+      List<String> columns,
+      String rowPattern,
+      String documentMarker,
+      String recordStartPattern,
+      List<String> headerLabels,
+      String continuationColumn,
+      String sectionPattern,
+      String sectionColumn,
+      String balanceLinePattern,
+      String balanceColumn,
+      String continuationEndPattern) {
+    this(
+        columns,
+        rowPattern,
+        documentMarker,
+        recordStartPattern,
+        headerLabels,
+        continuationColumn,
+        sectionPattern,
+        sectionColumn,
+        balanceLinePattern,
+        balanceColumn,
+        continuationEndPattern,
+        null);
   }
 
   /** A layout of the four fields every PDF layout has, and none of the optional ones. */
@@ -163,7 +201,7 @@ public record ImportPdfLayout(
 
   /**
    * A layout of the four fields every PDF layout has, to which the builder's {@code with...}
-   * methods add the optional ones by name, never by their place among eleven.
+   * methods add the optional ones by name, never by their place among twelve.
    */
   public static Builder builder(
       List<String> columns, String rowPattern, String documentMarker, String recordStartPattern) {
@@ -179,7 +217,8 @@ public record ImportPdfLayout(
         .withSectionColumn(sectionColumn)
         .withBalanceLinePattern(balanceLinePattern)
         .withBalanceColumn(balanceColumn)
-        .withContinuationEndPattern(continuationEndPattern);
+        .withContinuationEndPattern(continuationEndPattern)
+        .withFlowColumn(flowColumn);
   }
 
   /**
@@ -215,6 +254,7 @@ public record ImportPdfLayout(
     private String balanceLine;
     private String balanceCell;
     private String continuationEnd;
+    private String flow;
 
     private Builder(
         List<String> columns, String rowPattern, String documentMarker, String recordStartPattern) {
@@ -259,6 +299,11 @@ public record ImportPdfLayout(
       return this;
     }
 
+    public Builder withFlowColumn(String value) {
+      flow = value;
+      return this;
+    }
+
     public ImportPdfLayout build() {
       return new ImportPdfLayout(
           columnNames,
@@ -271,7 +316,8 @@ public record ImportPdfLayout(
           sectionCell,
           balanceLine,
           balanceCell,
-          continuationEnd);
+          continuationEnd,
+          flow);
     }
   }
 }

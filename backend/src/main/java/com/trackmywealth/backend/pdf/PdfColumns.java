@@ -13,11 +13,19 @@ import java.util.Optional;
  * to the label it overlaps most - an amount is right-aligned under its label and may reach past
  * either edge, but always overlaps its own label more than its neighbour's. A word that overlaps
  * none belongs to the nearest.
+ *
+ * <p>#326: a table's free-text column may run on under the next labels on a booking line (a long
+ * PostFinance booking text). With such a flowing column, a word that follows a word of it at word
+ * spacing - closer than {@value #WORD_GAP_FACTOR} of that word's average character widths - is part
+ * of the same text, whatever label it overlaps; a column's own value stands apart by a wide gap.
  */
 public final class PdfColumns {
 
   // Where each label is on the page, from the left edge of its first word to the right of its last.
   private record Span(float left, float right) {}
+
+  // Word spacing is about half a character wide; a gap between columns is several characters.
+  static final float WORD_GAP_FACTOR = 1.5f;
 
   private final List<Span> spans;
 
@@ -74,16 +82,41 @@ public final class PdfColumns {
 
   /** The words of {@code words} under each column, joined by a space; empty where none is. */
   public List<String> cells(List<PdfWord> words) {
+    return cells(words, -1);
+  }
+
+  /**
+   * As {@link #cells(List)}, with column {@code flowing} (none when negative) the free text that
+   * runs on: a word at word spacing after a word of it belongs to it too.
+   */
+  public List<String> cells(List<PdfWord> words, int flowing) {
     List<StringBuilder> cells = new ArrayList<>(spans.size());
     spans.forEach(span -> cells.add(new StringBuilder()));
+    PdfWord previous = null;
+    int previousColumn = -1;
     for (PdfWord word : words) {
-      StringBuilder cell = cells.get(columnOf(word));
+      int column =
+          flowing >= 0 && previousColumn == flowing && atWordSpacing(previous, word)
+              ? flowing
+              : columnOf(word);
+      previous = word;
+      previousColumn = column;
+      StringBuilder cell = cells.get(column);
       if (!cell.isEmpty()) {
         cell.append(' ');
       }
       cell.append(word.text());
     }
     return cells.stream().map(StringBuilder::toString).toList();
+  }
+
+  // Whether next follows word as text does: closer than a few of word's average character widths.
+  private static boolean atWordSpacing(PdfWord word, PdfWord next) {
+    if (word.text().isEmpty()) {
+      return false;
+    }
+    float characterWidth = (word.right() - word.left()) / word.text().length();
+    return next.left() - word.right() < WORD_GAP_FACTOR * characterWidth;
   }
 
   // Where each label's first word is in words, or an empty array when not every label is there in

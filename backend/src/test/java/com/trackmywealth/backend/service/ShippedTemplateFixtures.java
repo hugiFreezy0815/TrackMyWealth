@@ -93,6 +93,102 @@ public final class ShippedTemplateFixtures {
     page.add(header);
   }
 
+  // PF-9 (US-07-23, #326): where the PostFinance statement's labels start.
+  private static final float PF_DATE = 40;
+  private static final float PF_TEXT = 95;
+  private static final float PF_CREDIT = 300;
+  private static final float PF_DEBIT = 370;
+  private static final float PF_VALUE = 440;
+  private static final float PF_BALANCE = 510;
+
+  /**
+   * A PostFinance EUR account statement (PF-9, two pages): the IBAN line ends in the currency on
+   * page 1 and repeats without it on page 2. As in the real statement, a day's date is printed only
+   * at its first booking (the 05.03. and the first booking of page 2 have none), the balance only
+   * at some bookings, a booking's value date may lie before its date, a long booking text runs on
+   * towards the credit column, and a "Total" line and a remark follow the last booking. Every value
+   * is invented; the IBAN is the standard example (valid check digits).
+   */
+  public static byte[] postFinanceStatement() throws IOException {
+    return postFinanceStatement("EUR");
+  }
+
+  /** {@link #postFinanceStatement()} of an account in {@code currency}. */
+  public static byte[] postFinanceStatement(String currency) throws IOException {
+    List<List<Cell>> first = new ArrayList<>();
+    first.add(List.of(at(40, "PostFinance")));
+    first.add(List.of(at(40, "Privatkonto"), at(450, "Seite: 1/2")));
+    first.add(List.of(at(40, "Kontoauszug 01.03.2031 - 31.03.2031"), at(450, "Datum: 31.03.2031")));
+    first.add(List.of(at(300, "IBAN CH93 0076 2011 6238 5295 7"), at(520, currency)));
+    first.add(postFinanceHeader());
+    first.add(postFinanceRow("01.03.31", "Kontostand", null, null, null, "1 204.37"));
+    first.add(
+        postFinanceRow(
+            "03.03.31", "Gutschrift Muster AG", "2 487.13", null, "03.03.31", "3 691.50"));
+    first.add(List.of(at(PF_TEXT, "Lohn Maerz")));
+    // A long text: its last words lie nearer to the credit label than to the text label.
+    first.add(
+        postFinanceRow(
+            "05.03.31",
+            "Zahlung an Max Muster Beispielweg 12 Rechnung",
+            null,
+            "41.19",
+            "04.03.31",
+            null));
+    first.add(postFinanceRow(null, "TWINT Kauf Backstube", null, "8.53", "05.03.31", "3 641.78"));
+    first.add(List.of(at(PF_TEXT, "Musterdorf")));
+    first.add(List.of(atFoot(40, "Invented Bank AG, Beispielweg 1")));
+
+    List<List<Cell>> second = new ArrayList<>();
+    second.add(List.of(at(40, "PostFinance")));
+    second.add(List.of(at(40, "Privatkonto"), at(450, "Seite: 2/2")));
+    second.add(List.of(at(300, "IBAN CH93 0076 2011 6238 5295 7")));
+    second.add(postFinanceHeader());
+    second.add(
+        postFinanceRow(null, "Dauerauftrag Miete", null, "1 213.77", "06.03.31", "2 428.01"));
+    second.add(
+        postFinanceRow(
+            "20.03.31", "Gutschrift Erika Beispiel", "17.41", null, "20.03.31", "2 445.42"));
+    second.add(postFinanceRow(null, "Total", "2 504.54", "1 263.49", null, null));
+    second.add(postFinanceRow("31.03.31", "Kontostand", null, null, null, "2 445.42"));
+    second.add(List.of(at(PF_TEXT, "Bitte pruefen Sie diesen Kontoauszug.")));
+    second.add(List.of(atFoot(40, "Invented Bank AG, Beispielweg 1")));
+    return SyntheticStatements.statement(List.of(first, second));
+  }
+
+  private static List<Cell> postFinanceHeader() {
+    return List.of(
+        at(PF_DATE, "Datum"),
+        at(PF_TEXT, "Text"),
+        at(PF_CREDIT, "Gutschrift"),
+        at(PF_DEBIT, "Lastschrift"),
+        at(PF_VALUE, "Valuta"),
+        at(PF_BALANCE, "Saldo"));
+  }
+
+  // One statement line; amounts are right-aligned under their label, null cells are left out.
+  private static List<Cell> postFinanceRow(
+      String date, String text, String credit, String debit, String valueDate, String balance) {
+    List<Cell> cells = new ArrayList<>();
+    if (date != null) {
+      cells.add(at(PF_DATE, date));
+    }
+    cells.add(at(PF_TEXT, text));
+    if (credit != null) {
+      cells.add(endingAt(PF_CREDIT + SyntheticStatements.textWidth("Gutschrift"), credit));
+    }
+    if (debit != null) {
+      cells.add(endingAt(PF_DEBIT + SyntheticStatements.textWidth("Lastschrift"), debit));
+    }
+    if (valueDate != null) {
+      cells.add(at(PF_VALUE, valueDate));
+    }
+    if (balance != null) {
+      cells.add(endingAt(PF_BALANCE + SyntheticStatements.textWidth("Saldo"), balance));
+    }
+    return cells;
+  }
+
   /**
    * A Sparkasse annual loan statement (SPK-6): signed amounts in the Soll or Haben column, one with
    * a "/ Wert:" value date, opening and closing "Kontostand am", and one booking whose date the

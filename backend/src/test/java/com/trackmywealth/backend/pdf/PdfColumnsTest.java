@@ -45,6 +45,44 @@ class PdfColumnsTest {
   }
 
   /**
+   * #326: a long text runs on towards the amount columns at word spacing and stays text; a word
+   * after a wide gap is its column's value. Without a flowing column, a text word nearer to an
+   * amount label than to the text label is read as that amount.
+   */
+  @Test
+  void aFlowingTextColumnKeepsWordsAtWordSpacingAndLetsAWideGapEndIt() {
+    // DATUM 40-65, TEXT 95-112, GUTSCHRIFT 300-337, LASTSCHRIFT 370-408.
+    PdfColumns columns =
+        PdfColumns.of(
+                line(
+                    word("Datum", 40, 65),
+                    word("Text", 95, 112),
+                    word("Gutschrift", 300, 337),
+                    word("Lastschrift", 370, 408)),
+                List.of("DATUM", "TEXT", "GUTSCHRIFT", "LASTSCHRIFT"))
+            .orElseThrow();
+    // Words 2 points apart (word spacing for 4-point characters), the last ending near GUTSCHRIFT;
+    // then the debit amount after a gap of 70 points.
+    List<PdfWord> words =
+        List.of(
+            word("05.03.31", 40, 70),
+            word("Zahlung", 95, 123),
+            word("an", 125, 133),
+            word("Max", 135, 147),
+            word("Muster", 149, 173),
+            word("Beispielweg", 175, 219),
+            word("12", 221, 229),
+            word("Rechnung", 231, 263),
+            word("41.19", 391, 408));
+
+    assertThat(columns.cells(words, 1))
+        .containsExactly("05.03.31", "Zahlung an Max Muster Beispielweg 12 Rechnung", "", "41.19");
+    assertThat(columns.cells(words).get(2))
+        .as("without a flowing column, the last words are nearer to GUTSCHRIFT")
+        .isEqualTo("12 Rechnung");
+  }
+
+  /**
    * A header line holds every label's words in order, ignoring case; other words may sit between
    * them, such as the section's currency after a balance label.
    */

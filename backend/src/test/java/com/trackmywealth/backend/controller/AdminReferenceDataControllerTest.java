@@ -103,7 +103,7 @@ class AdminReferenceDataControllerTest {
             .returnResult()
             .getResponseBody();
 
-    assertThat(current.packageVersion()).isEqualTo("1.8.0-baseline");
+    assertThat(current.packageVersion()).isEqualTo("1.9.0-baseline");
     assertThat(current.publicationDate()).isEqualTo(LocalDate.of(2026, 10, 19));
     assertThat(current.importedAt()).isNotNull();
     assertThat(current.importedBy()).isNull(); // shipped with the application
