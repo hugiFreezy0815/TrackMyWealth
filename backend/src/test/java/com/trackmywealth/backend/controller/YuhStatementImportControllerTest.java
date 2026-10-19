@@ -219,6 +219,29 @@ class YuhStatementImportControllerTest {
     assertThat(january.pendingReview()).isEmpty();
   }
 
+  // PO rule: nothing is imported twice. The same statement committed again finds every row a
+  // duplicate, so the commit adds no row, no pocket leg, no exchange link and no second pocket.
+  @Test
+  void theSameStatementCommittedTwiceAddsNothing() throws IOException {
+    commit(upload());
+    long rows = count("SELECT count(*) FROM transaction");
+    CashFlowResponse before = cashFlow();
+
+    // A new rendering of the statement, not the same bytes: the rows themselves are recognised.
+    ImportBatchResponse again = upload();
+    assertThat(again.counts().duplicates()).as("every booking").isEqualTo(6);
+    assertThat(again.counts().newRows()).isZero();
+    assertThat(again.counts().included()).isZero();
+    ImportBatchResponse committed = commit(again);
+
+    assertThat(committed.counts().imported()).isZero();
+    assertThat(rows).as("six bookings and the pocket's leg").isEqualTo(7);
+    assertThat(count("SELECT count(*) FROM transaction")).isEqualTo(rows);
+    assertThat(count("SELECT count(*) FROM settlement_match")).isOne();
+    assertThat(count("SELECT count(*) FROM account")).as("no second pocket").isEqualTo(2);
+    assertThat(cashFlow()).isEqualTo(before);
+  }
+
   // A rollback undoes everything the commit linked, keeps the pocket, and the next commit of the
   // statement books onto that same pocket.
   @Test
