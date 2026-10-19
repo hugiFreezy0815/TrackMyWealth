@@ -234,6 +234,28 @@ public final class ApiErrorCode {
   public static final String IMPORT_ACCOUNT_UNCONFIRMED = "IMPORT_ACCOUNT_UNCONFIRMED";
 
   /**
+   * 409: the statement adds nothing to the imported snapshot of its account and date and differs in
+   * nothing from it (US-07-31, #366) - it was imported already. {@code existingSnapshotId} names
+   * the snapshot; discard the import.
+   */
+  public static final String IMPORT_SNAPSHOT_ALREADY_RECORDED = "IMPORT_SNAPSHOT_ALREADY_RECORDED";
+
+  /**
+   * 409: the statement differs from the imported snapshot of its account and date (US-07-31):
+   * another balance, or other positions or quantities. {@code existingSnapshotId} and {@code
+   * conflicts} say where; nothing is overwritten.
+   */
+  public static final String IMPORT_SNAPSHOT_CONFLICT = "IMPORT_SNAPSHOT_CONFLICT";
+
+  /**
+   * 409: the imported snapshot cannot be completed, or have an import's part removed, while a
+   * member's reconciliation decision on it stands or an adjusting entry points at it (US-07-31);
+   * {@code reconciliationResultId} names it.
+   */
+  public static final String IMPORT_SNAPSHOT_RECONCILIATION_DECIDED =
+      "IMPORT_SNAPSHOT_RECONCILIATION_DECIDED";
+
+  /**
    * 422: a holdings statement's batch (US-07-13, #273) cannot be committed while a position
    * resolves to no security; {@code unresolved} lists each one's {@code rowNumber}, {@code isin}
    * and {@code symbol}. Create the security (with the statement's ticker, for a position without an

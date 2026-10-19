@@ -20,7 +20,10 @@ import java.time.LocalDate;
  * <p>{@code snapshot}: before the commit, {@code NEW} (it will be recorded), {@code
  * ALREADY_RECORDED} or {@code CONFLICTING} (an imported snapshot of that date exists, with the same
  * or another balance: it will not be); afterwards, {@code RECORDED}, {@code ALREADY_RECORDED} or
- * {@code CONFLICTING}, and after a rollback {@code DELETED} or {@code WITHDRAWN}.
+ * {@code CONFLICTING}, and after a rollback {@code DELETED} or {@code WITHDRAWN}. US-07-31: {@code
+ * COMPLETES}/{@code COMPLETED} when the balance completes an imported snapshot of its date that has
+ * none (a holdings statement's), and {@code REMOVED} when a rollback took it out of a snapshot
+ * another import keeps.
  */
 public record ImportStatementBalanceResponse(
     @Schema(allowableValues = {"FOUND", "OUT_OF_RANGE", "NOT_FOUND", "UNREADABLE", "AMBIGUOUS"})
@@ -33,10 +36,13 @@ public record ImportStatementBalanceResponse(
     @Schema(
             allowableValues = {
               "NEW",
+              "COMPLETES",
               "ALREADY_RECORDED",
               "CONFLICTING",
               "RECORDED",
+              "COMPLETED",
               "DELETED",
-              "WITHDRAWN"
+              "WITHDRAWN",
+              "REMOVED"
             })
         String snapshot) {}

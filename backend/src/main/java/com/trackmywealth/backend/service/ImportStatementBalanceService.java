@@ -1,6 +1,8 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.ImportBatchValues;
+import com.trackmywealth.backend.dto.ImportSnapshotPlan;
+import com.trackmywealth.backend.dto.ImportSnapshotValues;
 import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
@@ -8,9 +10,11 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ReconciliationResult;
+import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import java.math.BigDecimal;
@@ -19,8 +23,11 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -68,6 +75,8 @@ public class ImportStatementBalanceService {
 
   private final AccountSnapshotRepository snapshotRepository;
   private final SnapshotHoldingRepository holdingRepository;
+  private final ImportBatchRepository batchRepository;
+  private final ImportSnapshotCompletionService completionService;
   private final ReconciliationResultRepository resultRepository;
   private final ReconciliationService reconciliationService;
   private final AccountCurrencyService accountCurrencyService;
@@ -77,6 +86,8 @@ public class ImportStatementBalanceService {
   public ImportStatementBalanceService(
       AccountSnapshotRepository snapshotRepository,
       SnapshotHoldingRepository holdingRepository,
+      ImportBatchRepository batchRepository,
+      ImportSnapshotCompletionService completionService,
       ReconciliationResultRepository resultRepository,
       ReconciliationService reconciliationService,
       AccountCurrencyService accountCurrencyService,
@@ -84,6 +95,8 @@ public class ImportStatementBalanceService {
       Clock clock) {
     this.snapshotRepository = snapshotRepository;
     this.holdingRepository = holdingRepository;
+    this.batchRepository = batchRepository;
+    this.completionService = completionService;
     this.resultRepository = resultRepository;
     this.reconciliationService = reconciliationService;
     this.accountCurrencyService = accountCurrencyService;
@@ -170,7 +183,7 @@ public class ImportStatementBalanceService {
     if (ImportBatchValues.BALANCE_FOUND.equals(outcome)
         && ImportBatchValues.PARSED.equals(batch.getStatus())) {
       if (withinAccountDates(account, batch.getStatementBalanceDate())) {
-        snapshot = existingOutcome(batch).orElse(ImportBatchValues.SNAPSHOT_NEW);
+        snapshot = plan(batch, account).outcome();
       } else {
         outcome = ImportBatchValues.BALANCE_OUT_OF_RANGE;
       }
@@ -199,24 +212,30 @@ public class ImportStatementBalanceService {
       batch.markStatementBalanceOutOfRange();
       return;
     }
-    Optional<String> existing = existingOutcome(batch);
-    if (existing.isPresent()) {
-      batch.setStatementBalanceSnapshot(existing.get());
+    ImportSnapshotPlan plan = plan(batch, account);
+    if (!plan.committable()) {
+      // ALREADY_RECORDED or CONFLICTING: the balance is not recorded; the rows still go in.
+      batch.setStatementBalanceSnapshot(plan.outcome());
       return;
     }
-    AccountSnapshot snapshot = new AccountSnapshot();
-    snapshot.setWorkspace(account.getWorkspace());
-    snapshot.setAccount(account);
-    snapshot.setSnapshotDate(batch.getStatementBalanceDate());
-    snapshot.setBalance(batch.getStatementBalance());
-    snapshot.setCurrency(batch.getStatementBalanceCurrency());
-    snapshot.setSource(SOURCE_DOCUMENT);
-    snapshot.setImportBatchId(batch.getId());
-    snapshot.setCreatedBy(committedBy);
-    snapshotRepository.saveAndFlush(snapshot);
-    batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_RECORDED);
-    // The rows' own reconciliation ran before this snapshot existed; compare against it now.
-    reconciliationService.reconcileLatest(account, committedBy);
+    // A new snapshot, or the balance a holdings statement's snapshot of the date lacks (US-07-31).
+    // The rows' own reconciliation ran before; the commit compares against the snapshot now.
+    batch.setStatementBalanceSnapshot(
+        completionService.commit(
+            batch,
+            account,
+            batch.getStatementBalanceDate(),
+            batch.getStatementBalanceCurrency(),
+            plan,
+            batch.getStatementBalance(),
+            List.of(),
+            committedBy));
+  }
+
+  // US-07-31: what the balance would do to the imported snapshot of its date.
+  private ImportSnapshotPlan plan(ImportBatch batch, Account account) {
+    return completionService.plan(
+        account, batch.getStatementBalanceDate(), batch.getStatementBalance(), Map.of(), true);
   }
 
   /**
@@ -231,7 +250,7 @@ public class ImportStatementBalanceService {
   public boolean rollBack(ImportBatch batch, Account account, UUID rolledBackBy) {
     Optional<AccountSnapshot> recorded =
         snapshotRepository
-            .findByImportBatchId(batch.getId())
+            .findContributedBy(batch.getId())
             .filter(snapshot -> snapshot.getWithdrawnAt() == null);
     if (recorded.isEmpty()) {
       return false;
@@ -264,10 +283,21 @@ public class ImportStatementBalanceService {
       throw exception;
     }
     List<UUID> resultIds = results.stream().map(ReconciliationResult::getId).toList();
-    if (decided.isPresent()
-        || !resultIds.isEmpty() && resultRepository.existsAdjustmentOf(resultIds)) {
-      withdraw(batch, snapshot, results, rolledBackBy);
-    } else {
+    boolean keptAsHistory =
+        decided.isPresent()
+            || !resultIds.isEmpty() && resultRepository.existsAdjustmentOf(resultIds);
+    // US-07-31: the other batches whose statements completed the snapshot.
+    Set<UUID> others = contributors(snapshot);
+    others.remove(batch.getId());
+    if (keptAsHistory) {
+      // The decision covered the snapshot as a whole: it is withdrawn as a whole, for every batch
+      // that contributed to it.
+      withdraw(snapshot, results, rolledBackBy);
+      recordRemoval(batch, ImportBatchValues.SNAPSHOT_WITHDRAWN);
+      batchRepository
+          .findAllById(others)
+          .forEach(other -> recordRemoval(other, ImportBatchValues.SNAPSHOT_WITHDRAWN));
+    } else if (others.isEmpty()) {
       // Removed through the session, not in bulk: the results are loaded and point at the
       // snapshot, so a bulk delete would leave them behind to be flushed against a deleted row.
       resultRepository.deleteAll(results);
@@ -276,17 +306,56 @@ public class ImportStatementBalanceService {
       snapshotRepository.delete(snapshot);
       snapshotRepository.flush();
       recordRemoval(batch, ImportBatchValues.SNAPSHOT_DELETED);
+    } else {
+      removeParts(batch, snapshot, results, others);
     }
     return true;
+  }
+
+  // US-07-31: takes out only this batch's parts of a snapshot another batch completed; the snapshot
+  // stays, passing to a remaining contributor if this batch recorded it. Its results go with the
+  // balance they compared, and the caller reconciles afresh.
+  private void removeParts(
+      ImportBatch batch,
+      AccountSnapshot snapshot,
+      List<ReconciliationResult> results,
+      Set<UUID> others) {
+    holdingRepository.deleteBySnapshotIdAndImportBatchId(snapshot.getId(), batch.getId());
+    if (batch.getId().equals(snapshot.getBalanceImportBatchId())) {
+      resultRepository.deleteAll(results);
+      resultRepository.flush();
+      snapshot.setImportedBalance(null, null);
+    }
+    if (batch.getId().equals(snapshot.getImportBatchId())) {
+      snapshot.setImportBatchId(
+          snapshot.getBalanceImportBatchId() != null
+              ? snapshot.getBalanceImportBatchId()
+              : others.iterator().next());
+    }
+    snapshotRepository.saveAndFlush(snapshot);
+    recordRemoval(batch, ImportSnapshotValues.REMOVED);
+  }
+
+  // Every batch that recorded the snapshot or contributed a part of it.
+  private Set<UUID> contributors(AccountSnapshot snapshot) {
+    Set<UUID> batches = new LinkedHashSet<>();
+    if (snapshot.getImportBatchId() != null) {
+      batches.add(snapshot.getImportBatchId());
+    }
+    if (snapshot.getBalanceImportBatchId() != null) {
+      batches.add(snapshot.getBalanceImportBatchId());
+    }
+    holdingRepository.findBySnapshotId(snapshot.getId()).stream()
+        .map(SnapshotHolding::getImportBatchId)
+        .filter(Objects::nonNull)
+        .forEach(batches::add);
+    return batches;
   }
 
   // Keeps the snapshot as history only: its results stay (a final decision, or an adjusting entry
   // that points at one), its open result is superseded, and no balance lookup sees it any more.
   private void withdraw(
-      ImportBatch batch,
-      AccountSnapshot snapshot,
-      List<ReconciliationResult> results,
-      UUID rolledBackBy) {
+      AccountSnapshot snapshot, List<ReconciliationResult> results, UUID rolledBackBy) {
     OffsetDateTime now = OffsetDateTime.now(clock);
     for (ReconciliationResult result : results) {
       if (ReconciliationResultValues.OPEN.equals(result.getStatus())) {
@@ -297,7 +366,6 @@ public class ImportStatementBalanceService {
     resultRepository.saveAllAndFlush(results);
     snapshot.withdraw(now, rolledBackBy);
     snapshotRepository.saveAndFlush(snapshot);
-    recordRemoval(batch, ImportBatchValues.SNAPSHOT_WITHDRAWN);
   }
 
   // A holdings statement's batch (#273) records its snapshot's fate in its own column.
@@ -315,19 +383,6 @@ public class ImportStatementBalanceService {
     return !date.isAfter(businessDates.today())
         && (account.getOpenedAt() == null || !date.isBefore(account.getOpenedAt()))
         && (account.getClosedAt() == null || !date.isAfter(account.getClosedAt()));
-  }
-
-  // ALREADY_RECORDED or CONFLICTING when an imported snapshot of the balance's date is in effect.
-  private Optional<String> existingOutcome(ImportBatch batch) {
-    return snapshotRepository
-        .findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
-            batch.getAccountId(), batch.getStatementBalanceDate(), SOURCE_DOCUMENT)
-        .map(
-            existing ->
-                existing.getBalance() != null
-                        && existing.getBalance().compareTo(batch.getStatementBalance()) == 0
-                    ? ImportBatchValues.SNAPSHOT_ALREADY_RECORDED
-                    : ImportBatchValues.SNAPSHOT_CONFLICTING);
   }
 
   // The different amounts stated for date, in file order; 1.10 and 1.1 are one amount.

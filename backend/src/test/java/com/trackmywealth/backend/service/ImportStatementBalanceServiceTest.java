@@ -20,7 +20,9 @@ import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
+import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -56,10 +58,22 @@ class ImportStatementBalanceServiceTest {
   private final ReconciliationService reconciliation = mock(ReconciliationService.class);
   private final AccountCurrencyService currencies = mock(AccountCurrencyService.class);
   private final BusinessDateService businessDates = mock(BusinessDateService.class);
+  private final ImportBatchRepository batches = mock(ImportBatchRepository.class);
+  // US-07-31: the real completion rules, on the same mocks.
+  private final ImportSnapshotCompletionService completion =
+      new ImportSnapshotCompletionService(
+          snapshots,
+          holdings,
+          results,
+          mock(SecurityRepository.class),
+          reconciliation,
+          businessDates);
   private final ImportStatementBalanceService service =
       new ImportStatementBalanceService(
           snapshots,
           holdings,
+          batches,
+          completion,
           results,
           reconciliation,
           currencies,
@@ -363,7 +377,7 @@ class ImportStatementBalanceServiceTest {
 
   @Test
   void aBatchWithoutASnapshotRollsBackWithoutTouchingAny() {
-    when(snapshots.findByImportBatchId(batch.getId())).thenReturn(Optional.empty());
+    when(snapshots.findContributedBy(batch.getId())).thenReturn(Optional.empty());
 
     assertThat(service.rollBack(batch, account, MEMBER)).isFalse();
     verify(snapshots, never()).delete(any());
@@ -457,7 +471,7 @@ class ImportStatementBalanceServiceTest {
     AccountSnapshot snapshot = new AccountSnapshot();
     ReflectionTestUtils.setField(snapshot, "id", UUID.randomUUID());
     snapshot.setImportBatchId(batch.getId());
-    when(snapshots.findByImportBatchId(batch.getId())).thenReturn(Optional.of(snapshot));
+    when(snapshots.findContributedBy(batch.getId())).thenReturn(Optional.of(snapshot));
     when(snapshots.findForUpdate(snapshot.getId(), account.getId()))
         .thenReturn(Optional.of(snapshot));
     return snapshot;

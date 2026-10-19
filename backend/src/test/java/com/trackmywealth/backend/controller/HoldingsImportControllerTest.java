@@ -9,10 +9,15 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
+import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportHoldingsResponse;
 import com.trackmywealth.backend.dto.ImportHoldingsValues;
 import com.trackmywealth.backend.dto.ImportRollbackRequest;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
+import com.trackmywealth.backend.dto.ImportSnapshotValues;
+import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
+import com.trackmywealth.backend.dto.ImportTemplateRequest;
+import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingResponse;
@@ -23,6 +28,7 @@ import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.MutableClock;
 import com.trackmywealth.backend.testsupport.TestClockConfig;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -114,6 +120,7 @@ class HoldingsImportControllerTest {
               "DELETE FROM import_holding_row",
               "DELETE FROM import_file",
               "DELETE FROM import_batch",
+              "DELETE FROM import_template WHERE workspace_id IS NOT NULL",
               "DELETE FROM workspace_security_ticker",
               "DELETE FROM security_asset_class_weight",
               "DELETE FROM security_field_provenance",
@@ -152,7 +159,7 @@ class HoldingsImportControllerTest {
     ImportHoldingsResponse holdings = preview.holdings();
     assertThat(holdings.snapshotDate()).isEqualTo(STATEMENT_DATE);
     assertThat(holdings.dateSource()).isEqualTo(ImportHoldingsValues.DATE_STATEMENT);
-    assertThat(holdings.snapshot()).isEqualTo(ImportHoldingsValues.SNAPSHOT_NEW);
+    assertThat(holdings.snapshot()).isEqualTo(ImportSnapshotValues.NEW);
     assertThat(holdings.balance()).isEqualByComparingTo("1204.35");
     assertThat(holdings.cashBalances())
         .extracting(ImportHoldingsResponse.Cash::currency, ImportHoldingsResponse.Cash::recorded)
@@ -182,7 +189,7 @@ class HoldingsImportControllerTest {
     ImportBatchResponse committed = commit(resolved);
 
     assertThat(committed.status()).isEqualTo(ImportBatchValues.COMMITTED);
-    assertThat(committed.holdings().snapshot()).isEqualTo(ImportHoldingsValues.SNAPSHOT_RECORDED);
+    assertThat(committed.holdings().snapshot()).isEqualTo(ImportSnapshotValues.RECORDED);
     AccountSnapshotResponse snapshot = snapshots(depot).get(0);
     assertThat(snapshot.source()).isEqualTo("DOCUMENT");
     assertThat(snapshot.snapshotDate()).isEqualTo(STATEMENT_DATE);
@@ -233,19 +240,19 @@ class HoldingsImportControllerTest {
 
     ImportBatchResponse again = upload(depot, statement, null);
     assertThat(again.sameFileImportedIn().batchId()).isEqualTo(first.id());
-    assertThat(again.holdings().snapshot()).isEqualTo(ImportHoldingsValues.SNAPSHOT_EXISTS);
+    assertThat(again.holdings().snapshot()).isEqualTo(ImportSnapshotValues.ALREADY_RECORDED);
     assertThat(again.holdings().readyToCommit()).isFalse();
-    expectProblem(commitRequest(again), 409, null);
+    expectProblem(commitRequest(again), 409, ApiErrorCode.IMPORT_SNAPSHOT_ALREADY_RECORDED);
 
     ImportRollbackResponse rolledBack = rollback(get(depot, first.id()));
     assertThat(rolledBack.batch().holdings().snapshot())
-        .isEqualTo(ImportHoldingsValues.SNAPSHOT_DELETED);
+        .isEqualTo(ImportBatchValues.SNAPSHOT_DELETED);
     assertThat(count("SELECT count(*) FROM account_snapshot")).isZero();
     assertThat(count("SELECT count(*) FROM snapshot_holding")).isZero();
 
     assertThat(get(depot, again.id()).holdings().readyToCommit()).isTrue();
     assertThat(commit(get(depot, again.id())).holdings().snapshot())
-        .isEqualTo(ImportHoldingsValues.SNAPSHOT_RECORDED);
+        .isEqualTo(ImportSnapshotValues.RECORDED);
   }
 
   // --- spreadsheets --------------------------------------------------------------------------
@@ -266,7 +273,7 @@ class HoldingsImportControllerTest {
     createSecurity(null, ShippedTemplateFixtures.WORKBOOK_TICKER_ETF, "ETF", "CHF");
     ImportBatchResponse committed = commit(get(depot, preview.id()));
 
-    assertThat(committed.holdings().snapshot()).isEqualTo(ImportHoldingsValues.SNAPSHOT_RECORDED);
+    assertThat(committed.holdings().snapshot()).isEqualTo(ImportSnapshotValues.RECORDED);
     AccountSnapshotResponse snapshot = snapshots(depot).get(0);
     assertThat(snapshot.balance()).isNull();
     assertThat(snapshot.holdings()).hasSize(3);
@@ -290,6 +297,148 @@ class HoldingsImportControllerTest {
     assertThat(snapshot.balance()).isEqualByComparingTo("1204.35");
     assertThat(snapshot.currency()).isEqualTo("CHF");
     assertThat(snapshot.holdings()).isEmpty();
+  }
+
+  // --- US-07-31: completing a snapshot part by part -------------------------------------------
+
+  @Test
+  void theCashExportCompletesTheSnapshotThePositionsExportRecorded() throws Exception {
+    createWorkbookSecurities();
+    ImportBatchResponse positions =
+        commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+
+    ImportBatchResponse cash =
+        upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE);
+
+    ImportHoldingsResponse preview = cash.holdings();
+    assertThat(preview.snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(preview.adds()).containsExactly(ImportSnapshotValues.PART_BALANCE);
+    assertThat(preview.conflicts()).isEmpty();
+    assertThat(preview.existingSnapshot().importBatchId()).isEqualTo(positions.id());
+    assertThat(preview.existingSnapshot().balance()).isNull();
+    assertThat(preview.existingSnapshot().holdingsCount()).isEqualTo(3);
+    assertThat(preview.explanation())
+        .startsWith("This statement adds the cash balance to the snapshot of");
+    assertThat(preview.readyToCommit()).isTrue();
+
+    ImportBatchResponse completed = commit(cash);
+
+    assertThat(completed.holdings().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETED);
+    assertThat(snapshots(depot))
+        .singleElement()
+        .satisfies(
+            snapshot -> {
+              assertThat(snapshot.balance()).isEqualByComparingTo("1204.35");
+              assertThat(snapshot.holdings()).hasSize(3);
+            });
+    assertThat(
+            rowsOf(
+                "SELECT import_batch_id, balance_import_batch_id FROM account_snapshot"
+                    + " WHERE account_id = ?",
+                depot))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.get("import_batch_id")).isEqualTo(positions.id());
+              assertThat(row.get("balance_import_batch_id")).isEqualTo(cash.id());
+            });
+  }
+
+  @Test
+  void thePositionsExportCompletesTheSnapshotTheCashExportRecorded() throws Exception {
+    createWorkbookSecurities();
+    commit(upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE));
+
+    ImportBatchResponse positions =
+        upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE);
+    assertThat(positions.holdings().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(positions.holdings().adds()).containsExactly(ImportSnapshotValues.PART_HOLDINGS);
+
+    commit(positions);
+
+    AccountSnapshotResponse snapshot = snapshots(depot).get(0);
+    assertThat(snapshot.balance()).isEqualByComparingTo("1204.35");
+    assertThat(snapshot.holdings()).hasSize(3);
+  }
+
+  @Test
+  void theSameCashInAnotherFormatIsADuplicateAndOtherPositionsAConflict() throws Exception {
+    createAllSecurities();
+    commit(upload(depot, ShippedTemplateFixtures.swissquoteHoldings(), null));
+
+    // PF-4 states the cash the PDF recorded already, and nothing else.
+    ImportBatchResponse cash =
+        upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), STATEMENT_DATE);
+    assertThat(cash.holdings().snapshot()).isEqualTo(ImportSnapshotValues.ALREADY_RECORDED);
+    assertThat(cash.holdings().explanation()).endsWith("Discard this import.");
+    expectProblem(commitRequest(cash), 409, ApiErrorCode.IMPORT_SNAPSHOT_ALREADY_RECORDED);
+
+    // PF-5 lists other securities (its tickers are mapped to none of the PDF's): a conflict, each
+    // position named; nothing is overwritten.
+    createWorkbookSecurities();
+    ImportBatchResponse positions =
+        upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), STATEMENT_DATE);
+    ImportHoldingsResponse preview = positions.holdings();
+    assertThat(preview.snapshot()).isEqualTo(ImportSnapshotValues.CONFLICTING);
+    assertThat(preview.conflicts())
+        .extracting(c -> c.part(), c -> c.existingValue() == null, c -> c.statementValue() == null)
+        .containsOnly(
+            tuple(ImportSnapshotValues.CONFLICT_HOLDING, false, true),
+            tuple(ImportSnapshotValues.CONFLICT_HOLDING, true, false));
+    assertThat(preview.conflicts()).hasSize(7);
+    assertThat(preview.readyToCommit()).isFalse();
+    expectProblem(commitRequest(positions), 409, ApiErrorCode.IMPORT_SNAPSHOT_CONFLICT);
+    assertThat(snapshots(depot).get(0).holdings()).hasSize(4);
+  }
+
+  @Test
+  void aRollbackRemovesOnlyItsOwnPartAndTheSnapshotPassesToTheRemainingImport() throws Exception {
+    createWorkbookSecurities();
+    ImportBatchResponse positions =
+        commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+    ImportBatchResponse cash =
+        commit(upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE));
+
+    // The cash import goes: the positions stay, without a balance.
+    ImportRollbackResponse cashGone = rollback(get(depot, cash.id()));
+    assertThat(cashGone.batch().holdings().snapshot()).isEqualTo(ImportSnapshotValues.REMOVED);
+    AccountSnapshotResponse positionsOnly = snapshots(depot).get(0);
+    assertThat(positionsOnly.balance()).isNull();
+    assertThat(positionsOnly.holdings()).hasSize(3);
+
+    // The cash again, then the positions import goes: the balance stays, and so does the
+    // snapshot, now the cash import's.
+    ImportBatchResponse cashAgain =
+        commit(upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE));
+    rollback(get(depot, positions.id()));
+    AccountSnapshotResponse cashOnly = snapshots(depot).get(0);
+    assertThat(cashOnly.balance()).isEqualByComparingTo("1204.35");
+    assertThat(cashOnly.holdings()).isEmpty();
+    assertThat(rowsOf("SELECT import_batch_id FROM account_snapshot WHERE account_id = ?", depot))
+        .singleElement()
+        .satisfies(row -> assertThat(row.get("import_batch_id")).isEqualTo(cashAgain.id()));
+
+    // The last part goes: no snapshot remains.
+    ImportRollbackResponse last = rollback(get(depot, cashAgain.id()));
+    assertThat(last.batch().holdings().snapshot()).isEqualTo(ImportBatchValues.SNAPSHOT_DELETED);
+    assertThat(snapshots(depot)).isEmpty();
+  }
+
+  @Test
+  void aCashStatementsBalanceCompletesAHoldingsOnlySnapshot() throws Exception {
+    createWorkbookSecurities();
+    commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+    UUID template = createCashTemplate();
+
+    ImportBatchResponse statement = uploadWithTemplate(depot, CASH_STATEMENT, template);
+    assertThat(statement.statementBalance().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+
+    ImportBatchResponse committed = commit(statement);
+
+    assertThat(committed.statementBalance().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETED);
+    AccountSnapshotResponse snapshot = snapshots(depot).get(0);
+    assertThat(snapshot.balance()).isEqualByComparingTo("1204.35");
+    assertThat(snapshot.holdings()).hasSize(3);
   }
 
   // --- refusals ------------------------------------------------------------------------------
@@ -339,6 +488,93 @@ class HoldingsImportControllerTest {
     createSecurity(ShippedTemplateFixtures.HOLDING_ISIN_USD, null, "EQUITY", "USD");
     createSecurity(ShippedTemplateFixtures.HOLDING_ISIN_FUND, null, "ETF", "CHF");
     createSecurity(null, ShippedTemplateFixtures.HOLDING_CRYPTO, "CRYPTO", "CHF");
+  }
+
+  // PF-5's tickers, each a security of its own.
+  private void createWorkbookSecurities() {
+    createSecurity(null, ShippedTemplateFixtures.WORKBOOK_TICKER_CHF, "EQUITY", "CHF");
+    createSecurity(null, ShippedTemplateFixtures.WORKBOOK_TICKER_USD, "EQUITY", "USD");
+    createSecurity(null, ShippedTemplateFixtures.WORKBOOK_TICKER_ETF, "ETF", "CHF");
+  }
+
+  // A DKB-like cash statement of the depot, stating its balance of the export date (US-07-12).
+  private static final String CASH_STATEMENT =
+      """
+      Kontostand vom 30.11.2031: 1.204,35 €
+      Datum;Betrag;Waehrung;Text;Referenz
+      15.11.31;-12,40;CHF;Invented fee;R1
+      """;
+
+  private UUID createCashTemplate() {
+    return client()
+        .post()
+        .uri("/api/v1/import-templates")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new ImportTemplateRequest(
+                "Invented cash statement",
+                null,
+                null,
+                ";",
+                "UTF-8",
+                ",",
+                ".",
+                "dd.MM.yy",
+                0,
+                1,
+                0,
+                "SINGLE_SIGNED_COLUMN",
+                "PER_ROW",
+                null,
+                new ImportColumnMapping(
+                    "Datum",
+                    null,
+                    "Betrag",
+                    null,
+                    null,
+                    "Waehrung",
+                    "Text",
+                    null,
+                    "Referenz",
+                    null,
+                    null,
+                    null,
+                    null),
+                Map.of(),
+                null,
+                List.of("Datum", "Betrag", "Waehrung", "Text", "Referenz"),
+                null,
+                null,
+                Map.of(),
+                null,
+                null,
+                new ImportStatementBalanceRule(
+                    "^Kontostand vom (?P<date>[0-9.]+): (?P<amount>-?[0-9.]+,[0-9]{2}) €$",
+                    "dd.MM.yyyy")))
+        .exchange()
+        .expectStatus()
+        .isCreated()
+        .expectBody(ImportTemplateResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .id();
+  }
+
+  private ImportBatchResponse uploadWithTemplate(UUID account, String content, UUID template) {
+    MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+    body.add("file", file(content.getBytes(StandardCharsets.UTF_8), "statement.csv"));
+    body.add("templateId", template.toString());
+    return client()
+        .post()
+        .uri(imports(account))
+        .contentType(MediaType.MULTIPART_FORM_DATA)
+        .body(body)
+        .exchange()
+        .expectStatus()
+        .isCreated()
+        .expectBody(ImportBatchResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   private UUID createSecurity(String isin, String ticker, String type, String currency) {
