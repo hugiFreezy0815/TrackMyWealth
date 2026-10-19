@@ -35,11 +35,12 @@ public final class ShippedTemplateFixtures {
   private ShippedTemplateFixtures() {}
 
   /**
-   * A Yuh account statement (YUH-1): a summary, then a CHF section (three bookings, a continuation
-   * line, a closing "Schlussbilanz" that includes the savings pocket and so differs from the
-   * running balance) and a EUR section (one booking). As in the real statement, each section states
-   * its opening and closing "Saldo per" before the table, and the balance label carries the
-   * currency.
+   * A Yuh account statement (YUH-1): a summary, then a CHF section (four bookings, one a move into
+   * the savings pocket, a continuation line, a closing "Schlussbilanz" that includes the pocket and
+   * so differs from the running balance) and a EUR section (two bookings). A currency exchange
+   * books one leg in each section, on the same day under the same REFERENZ (US-07-22). As in the
+   * real statement, each section states its opening and closing "Saldo per" before the table, and
+   * the balance label carries the currency.
    */
   public static byte[] yuhStatement() throws IOException {
     List<List<Cell>> page = new ArrayList<>();
@@ -47,7 +48,7 @@ public final class ShippedTemplateFixtures {
     page.add(List.of(at(40, "Kontoauszug vom 01.01.2031 bis 31.01.2031")));
     page.add(List.of(at(40, "Kunde X-00000"), at(300, "Endsaldo 1'308.55 CHF")));
     page.add(List.of(at(40, "IBAN : CH21 0076 2000 0000 0000 0")));
-    yuhSection(page, "CHF", "263.40", "1'248.55");
+    yuhSection(page, "CHF", "263.40", "1'225.38");
     page.add(List.of(at(40, "01.01.2031"), at(100, "Anfangsbestand"), endingAt(530, "263.40")));
     page.add(
         SyntheticStatements.booking(
@@ -59,12 +60,18 @@ public final class ShippedTemplateFixtures {
     page.add(
         SyntheticStatements.booking(
             0, "07.01.2031", "Dividende", "R-0000003", null, "2.50", "1'248.55"));
-    page.add(List.of(at(40, "31.01.2031"), at(100, "Schlussbilanz"), endingAt(530, "1'265.90")));
-    yuhSection(page, "EUR", "103.27", "62.08");
+    page.add(
+        SyntheticStatements.booking(
+            0, "08.01.2031", "W\u00e4hrungsumtausch", "R-0000005", "23.17", null, "1'225.38"));
+    page.add(List.of(at(40, "31.01.2031"), at(100, "Schlussbilanz"), endingAt(530, "1'242.73")));
+    yuhSection(page, "EUR", "103.27", "86.61");
     page.add(List.of(at(40, "01.01.2031"), at(100, "Anfangsbestand"), endingAt(530, "103.27")));
     page.add(
         SyntheticStatements.booking(
-            0, "10.01.2031", "Zahlung an", "R-0000004", "41.19", null, "62.08"));
+            0, "08.01.2031", "W\u00e4hrungsumtausch", "R-0000005", null, "24.53", "127.80"));
+    page.add(
+        SyntheticStatements.booking(
+            0, "10.01.2031", "Zahlung an", "R-0000004", "41.19", null, "86.61"));
     page.add(List.of(at(100, "Max Muster")));
     page.add(List.of(atFoot(40, "Invented Bank AG, Beispielweg 1"), at(480, "Seite 1 / 1")));
     return SyntheticStatements.statement(List.of(page));

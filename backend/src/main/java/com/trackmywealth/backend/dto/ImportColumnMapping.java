@@ -13,6 +13,10 @@ import java.util.Map;
  * <p>Which fields are required depends on the template: {@code bookingDate} always, {@code amount}
  * or {@code debitAmount} plus {@code creditAmount} by amount representation, {@code currency} for
  * currency mode {@code PER_ROW}.
+ *
+ * <p>{@code groupReference} (US-07-22, #325) is a reference the bank gives several bookings that
+ * belong together - both legs of a currency exchange - and so never a booking's own id: two rows of
+ * a batch typed {@code TRANSFER} that share it are linked as one exchange on commit.
  */
 @Schema(
     description =
@@ -35,7 +39,50 @@ public record ImportColumnMapping(
     String notes,
     String originalAmount,
     String originalCurrency,
-    String exchangeRate) {
+    String exchangeRate,
+    @Schema(
+            description =
+                "A reference several bookings share, e.g. both legs of a currency exchange; never"
+                    + " a booking's own id.")
+        String groupReference) {
+
+  /** Backward-compatible constructor for templates without a group reference. */
+  public ImportColumnMapping(
+      String bookingDate,
+      String valueDate,
+      String amount,
+      String debitAmount,
+      String creditAmount,
+      String currency,
+      String description,
+      String counterpartyName,
+      String externalId,
+      String transactionType,
+      String mcc,
+      String iso20022BankTransactionCode,
+      String notes,
+      String originalAmount,
+      String originalCurrency,
+      String exchangeRate) {
+    this(
+        bookingDate,
+        valueDate,
+        amount,
+        debitAmount,
+        creditAmount,
+        currency,
+        description,
+        counterpartyName,
+        externalId,
+        transactionType,
+        mcc,
+        iso20022BankTransactionCode,
+        notes,
+        originalAmount,
+        originalCurrency,
+        exchangeRate,
+        null);
+  }
 
   /** Backward-compatible constructor for existing cash templates. */
   public ImportColumnMapping(
@@ -90,6 +137,7 @@ public record ImportColumnMapping(
     put(columns, "originalAmount", originalAmount);
     put(columns, "originalCurrency", originalCurrency);
     put(columns, "exchangeRate", exchangeRate);
+    put(columns, "groupReference", groupReference);
     return columns;
   }
 

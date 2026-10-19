@@ -87,6 +87,11 @@ public class Account {
   @Column(name = "counts_as_saving", nullable = false)
   private boolean countsAsSaving;
 
+  // US-07-22 (#325): the account's savings pocket (Yuh's "Sparkonto"), its own savings account that
+  // an import created; null while it has none.
+  @Column(name = "savings_pocket_account_id")
+  private UUID savingsPocketAccountId;
+
   @Column(name = "identifier_hash", length = 64)
   private String identifierHash;
 
@@ -243,6 +248,14 @@ public class Account {
 
   public void setCountsAsSaving(boolean countsAsSaving) {
     this.countsAsSaving = countsAsSaving;
+  }
+
+  public UUID getSavingsPocketAccountId() {
+    return savingsPocketAccountId;
+  }
+
+  public void setSavingsPocketAccountId(UUID savingsPocketAccountId) {
+    this.savingsPocketAccountId = savingsPocketAccountId;
   }
 
   public String getStatus() {

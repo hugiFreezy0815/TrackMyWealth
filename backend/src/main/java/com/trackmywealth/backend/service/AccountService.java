@@ -32,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -78,6 +79,9 @@ public class AccountService {
   private static final String LOAN = "LOAN";
   private static final String PENSION = "PENSION";
   private static final String CUSTOM_ASSET = "CUSTOM_ASSET";
+  private static final String SAVINGS = "SAVINGS";
+  // US-07-22: what the bank calls the pocket; the member may rename it.
+  private static final String SAVINGS_POCKET_NAME_SUFFIX = " \u2013 Sparkonto";
   private static final String ACTIVE = "ACTIVE";
   // US-10-01: the types whose accounts count as saving by default (the type -> capability mapping
   // lives in this service, like every other capability default).
@@ -186,6 +190,60 @@ public class AccountService {
     assignInitialOwnershipToCreator(account, actor);
 
     return toSummary(account, actor);
+  }
+
+  /**
+   * US-07-22 (#325): creates the savings pocket of {@code parent} - a {@code SAVINGS} account in
+   * {@code currency} at the same institution, named after it - and links it as the parent's pocket.
+   * The import commit that first books a pocket move calls this, in its own transaction, under the
+   * parent's import lock, so a parent never gains two pockets. The pocket has the parent's current
+   * owners and shares; an unowned parent's pocket goes to the committing member, as {@link
+   * #createAccount} does, so it is never left without an owner.
+   */
+  @Transactional
+  public Account createSavingsPocket(
+      Account parent, String currency, AuthenticatedUserPrincipal actor) {
+    CreateAccountRequest request =
+        new CreateAccountRequest(
+            parent.getFinancialInstitution().getId(),
+            parent.getName() + SAVINGS_POCKET_NAME_SUFFIX,
+            SAVINGS,
+            currency,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+    validateExtensionFields(request);
+    Account pocket = new Account();
+    pocket.setWorkspace(parent.getWorkspace());
+    pocket.setFinancialInstitution(parent.getFinancialInstitution());
+    pocket.setName(request.name());
+    pocket.setAccountType(request.accountType());
+    pocket.setNativeCurrency(request.nativeCurrency());
+    applyCapabilityDefaults(pocket, request);
+    pocket = accountRepository.saveAndFlush(pocket);
+    createExtensionRowIfNeeded(pocket, request);
+
+    List<AccountOwnership> owners =
+        accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(parent.getId());
+    if (owners.isEmpty()) {
+      assignInitialOwnershipToCreator(pocket, actor);
+    }
+    for (AccountOwnership owner : owners) {
+      AccountOwnership ownership = new AccountOwnership();
+      ownership.setAccount(pocket);
+      ownership.setWorkspaceMember(owner.getWorkspaceMember());
+      ownership.setOwnershipShare(owner.getOwnershipShare());
+      ownership.setEffectiveFrom(LocalDate.now());
+      accountOwnershipRepository.saveAndFlush(ownership);
+    }
+
+    parent.setSavingsPocketAccountId(pocket.getId());
+    accountRepository.saveAndFlush(parent);
+    return pocket;
   }
 
   // US-03-03: see this class's own Javadoc for why this exists - share 1.0, effective today,
@@ -587,6 +645,7 @@ public class AccountService {
         account.isDiscretionary(),
         account.isManualValuation(),
         account.isCountsAsSaving(),
+        account.getSavingsPocketAccountId(),
         account.getStatus(),
         account.getArchivedAt(),
         VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE),

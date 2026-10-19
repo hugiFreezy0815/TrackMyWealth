@@ -108,6 +108,9 @@ public class ImportTemplate {
       updatable = false)
   private String descriptionTypePatterns = "{}";
 
+  @Column(name = "savings_pocket_pattern", updatable = false)
+  private String savingsPocketPattern;
+
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "row_filter", columnDefinition = JSONB, updatable = false)
   private String rowFilter;
@@ -330,6 +333,14 @@ public class ImportTemplate {
 
   public void setDescriptionTypePatterns(String descriptionTypePatterns) {
     this.descriptionTypePatterns = descriptionTypePatterns;
+  }
+
+  public String getSavingsPocketPattern() {
+    return savingsPocketPattern;
+  }
+
+  public void setSavingsPocketPattern(String savingsPocketPattern) {
+    this.savingsPocketPattern = savingsPocketPattern;
   }
 
   public String getRowFilter() {

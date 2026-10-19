@@ -583,7 +583,8 @@ public class ImportTemplateService {
         definition.descriptionTypePatterns(),
         definition.rowFilter(),
         definition.accountIdentifier(),
-        definition.statementBalance());
+        definition.statementBalance(),
+        definition.savingsPocketPattern());
   }
 
   private ImportTemplateDefinition definitionOf(ImportTemplate template) {
@@ -618,7 +619,8 @@ public class ImportTemplateService {
         template.getStatementBalanceRule() == null
             ? null
             : objectMapper.readValue(
-                template.getStatementBalanceRule(), ImportStatementBalanceRule.class));
+                template.getStatementBalanceRule(), ImportStatementBalanceRule.class),
+        template.getSavingsPocketPattern());
   }
 
   private void apply(
@@ -657,6 +659,7 @@ public class ImportTemplateService {
         definition.statementBalance() == null
             ? null
             : objectMapper.writeValueAsString(definition.statementBalance()));
+    template.setSavingsPocketPattern(definition.savingsPocketPattern());
     template.setAccountIdentificationStrategy(definition.accountIdentificationStrategy());
     template.setFileFormat(definition.fileFormat());
     if (definition.pdfLayout() != null) {
@@ -711,7 +714,8 @@ public class ImportTemplateService {
         definition.descriptionTypePatterns(),
         definition.rowFilter(),
         definition.accountIdentifier(),
-        definition.statementBalance());
+        definition.statementBalance(),
+        definition.savingsPocketPattern());
   }
 
   private ImportTemplateTestResponse preview(ImportParseResult result) {

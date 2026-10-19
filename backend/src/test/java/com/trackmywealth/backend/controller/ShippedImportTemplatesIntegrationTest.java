@@ -71,7 +71,8 @@ class ShippedImportTemplatesIntegrationTest {
   // US-07-25 (V93).
   private static final UUID SPARKASSE_CARD_PDF =
       UUID.fromString("8f7e1b44-deb6-4e30-81d8-9a96d63d417c");
-  private static final UUID YUH = UUID.fromString("a82dbfd8-abeb-4fad-af4e-0f9070b3111e");
+  // US-07-22 (V101): current version 3, with exchanges and savings pocket moves.
+  private static final UUID YUH = UUID.fromString("2548b28a-0884-4aa9-b544-557446e0963c");
   private static final UUID LBS = UUID.fromString("d2971d6e-e091-48c5-96dd-d59c45c8dbd4");
   private static final UUID YUH_FAMILY = UUID.fromString("a2820365-0b08-4474-bdb9-f2c419a91a25");
   private static final UUID LBS_FAMILY = UUID.fromString("0ac5fd45-d7f5-4c7b-895d-cc8233d07e7b");
@@ -324,18 +325,46 @@ class ShippedImportTemplatesIntegrationTest {
     ImportTemplateTestResponse result = detectAndTest(YUH, ShippedTemplateFixtures.yuhStatement());
 
     assertThat(result.accountIdentifierFound()).isTrue();
-    assertThat(result.rowCount()).as("balance lines are no bookings").isEqualTo(4);
-    assertThat(result.parsedRowCount()).isEqualTo(4);
+    assertThat(result.rowCount()).as("balance lines are no bookings").isEqualTo(6);
+    assertThat(result.parsedRowCount()).isEqualTo(6);
     assertBooking(result.rows().get(0), LocalDate.of(2031, 1, 3), "1000.00", "CHF", "INCOME");
     assertThat(result.rows().get(0).canonical().description())
         .isEqualTo("Zahlung von Erika Beispiel");
     assertThat(result.rows().get(0).canonical().externalId())
         .as("REFERENZ repeats across the legs of a currency exchange")
         .isNull();
-    assertBooking(result.rows().get(1), LocalDate.of(2031, 1, 5), "-17.35", "CHF", "EXPENSE");
+    // US-07-22: a move into the savings pocket is a transfer to the pocket, not spending.
+    assertBooking(result.rows().get(1), LocalDate.of(2031, 1, 5), "-17.35", "CHF", "TRANSFER");
+    assertThat(result.rows().get(1).canonical().savingsPocket()).isTrue();
     assertBooking(result.rows().get(2), LocalDate.of(2031, 1, 7), "2.50", "CHF", "INCOME");
-    assertBooking(result.rows().get(3), LocalDate.of(2031, 1, 10), "-41.19", "EUR", "EXPENSE");
+    // Both legs of the exchange keep their sign's type; the commit links them by REFERENZ.
+    assertBooking(result.rows().get(3), LocalDate.of(2031, 1, 8), "-23.17", "CHF", "EXPENSE");
+    assertBooking(result.rows().get(4), LocalDate.of(2031, 1, 8), "24.53", "EUR", "INCOME");
+    assertThat(result.rows())
+        .extracting(row -> row.canonical().groupReference())
+        .containsExactly(
+            "R-0000001", "R-0000002", "R-0000003", "R-0000005", "R-0000005", "R-0000004");
+    assertThat(result.rows())
+        .extracting(row -> row.canonical().savingsPocket())
+        .containsExactly(false, true, false, false, false, false);
+    assertBooking(result.rows().get(5), LocalDate.of(2031, 1, 10), "-41.19", "EUR", "EXPENSE");
     assertThat(result.statementBalanceCount()).as("opening and closing per section").isEqualTo(4);
+  }
+
+  @Test
+  void yuhVersionTwoStaysForTheBatchesThatUsedItButIsNoLongerCurrent() {
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT is_current FROM import_template WHERE id = ?",
+                Boolean.class,
+                UUID.fromString("a82dbfd8-abeb-4fad-af4e-0f9070b3111e")))
+        .isFalse();
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT savings_pocket_pattern FROM import_template WHERE id = ?",
+                String.class,
+                YUH))
+        .isEqualTo("^Spareinlage");
   }
 
   @Test

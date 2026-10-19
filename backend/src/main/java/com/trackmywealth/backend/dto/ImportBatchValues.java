@@ -103,6 +103,20 @@ public final class ImportBatchValues {
    */
   public static final String WARNING_VALUE_DATE_ADJUSTED = "IMPORT_ROW_VALUE_DATE_ADJUSTED";
 
+  /**
+   * US-07-22 (#325): the row is a savings pocket move and the account has no pocket yet; the commit
+   * creates it and books the move's other leg there. The row stays included.
+   */
+  public static final String WARNING_SAVINGS_POCKET_CREATED = "IMPORT_ROW_SAVINGS_POCKET_CREATED";
+
+  /**
+   * US-07-22: the row is a savings pocket move, but the account's pocket cannot take it (archived,
+   * another currency, not editable by the member) or the account can have none; it is imported as a
+   * one-sided transfer, pending review. The row stays included.
+   */
+  public static final String WARNING_SAVINGS_POCKET_UNAVAILABLE =
+      "IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE";
+
   /** Booking is strictly before the account opening balance; importing remains allowed. */
   public static final String WARNING_BEFORE_OPENING_BALANCE = "IMPORT_ROW_BEFORE_OPENING_BALANCE";
 

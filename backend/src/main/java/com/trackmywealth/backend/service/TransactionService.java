@@ -36,6 +36,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
@@ -566,7 +567,11 @@ public class TransactionService {
    *
    * <p>The caller has checked that {@code actor} may write to {@code account}. An import row never
    * names a counterparty account or a fee, so neither a transfer's credit leg nor a card purchase's
-   * FEE row is written.
+   * FEE row is written here.
+   *
+   * <p>US-07-22: {@code beforeMatching} sees the new rows, in the order of {@code rows}, once they
+   * are all inserted and before detection runs: the import links the transfers its own file books
+   * there ({@link ImportTransferLinkService}), so that detection leaves them alone.
    *
    * @return the new rows, in the order of {@code rows}
    */
@@ -576,7 +581,8 @@ public class TransactionService {
       List<ImportLedgerRow> rows,
       UUID importBatchId,
       String source,
-      AuthenticatedUserPrincipal actor) {
+      AuthenticatedUserPrincipal actor,
+      Consumer<List<Transaction>> beforeMatching) {
     AccountCreditCard card =
         account.isHasStatementCycle()
             ? accountCreditCardRepository.findById(account.getId()).orElse(null)
@@ -616,6 +622,7 @@ public class TransactionService {
     if (recorded.isEmpty()) {
       return recorded;
     }
+    beforeMatching.accept(Collections.unmodifiableList(recorded));
     Set<LocalDate> bookedOn =
         recorded.stream().map(Transaction::getBookingDate).collect(Collectors.toSet());
     LocalDate earliest = Collections.min(bookedOn);

@@ -111,6 +111,10 @@ public class ImportFileParserService {
   private static final Set<String> SPACES = Set.of(" ", "\u00A0", "\u202F");
   private static final String ARG_COLUMN = "column";
   private static final String DESCRIPTION_TYPE_PATTERNS = "descriptionTypePatterns";
+  private static final String SAVINGS_POCKET_PATTERN = "savingsPocketPattern";
+  // US-07-22: a move between an account and its savings pocket is one leg of an own-account
+  // transfer.
+  private static final String TRANSFER = "TRANSFER";
   private static final int MAX_ROW_FILTER_COLUMN_LENGTH = 200;
   private static final int MAX_IDENTIFIER_LABEL_LENGTH = 100;
   private static final String ACCOUNT_IDENTIFIER = "accountIdentifier";
@@ -214,6 +218,10 @@ public class ImportFileParserService {
         .forEach(
             (type, pattern) ->
                 descriptionPatterns.put(type, Re2Patterns.compile("(?i)" + pattern)));
+    com.google.re2j.Pattern savingsPocket =
+        template.savingsPocketPattern() == null
+            ? null
+            : Re2Patterns.compile("(?i)" + template.savingsPocketPattern());
 
     // #268: the column of each booking's running balance, when the layout checks one; and the
     // balance the bookings so far lead to, null while unknown.
@@ -261,6 +269,7 @@ public class ImportFileParserService {
                   dateFormatter,
                   typeMapping,
                   descriptionPatterns,
+                  savingsPocket,
                   accountCurrency,
                   account);
           if (checked) {
@@ -488,6 +497,7 @@ public class ImportFileParserService {
         template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
     validateTypeMapping(template.typeMapping());
     validateDescriptionPatterns(template);
+    validateSavingsPocketPattern(template);
     validateRowFilter(
         template, template.isPdf() ? template.pdfLayout().cellNames() : headerColumns);
     validateAccountIdentifier(
@@ -880,6 +890,22 @@ public class ImportFileParserService {
     }
   }
 
+  // US-07-22: what marks a savings pocket move is read from the description, as a type pattern is.
+  private static void validateSavingsPocketPattern(ImportTemplateDefinition template) {
+    String pattern = template.savingsPocketPattern();
+    if (pattern == null) {
+      return;
+    }
+    if (pattern.isBlank()) {
+      throw invalid(SAVINGS_POCKET_PATTERN, "A savings pocket pattern cannot be blank.");
+    }
+    if (template.columnMapping().description() == null) {
+      throw invalid(
+          SAVINGS_POCKET_PATTERN, "A description column is required for a savings pocket pattern.");
+    }
+    patternGroups(pattern, SAVINGS_POCKET_PATTERN);
+  }
+
   static boolean isValidDateFormat(String pattern) {
     if (pattern == null || pattern.isBlank()) {
       return false;
@@ -1238,6 +1264,7 @@ public class ImportFileParserService {
       DateTimeFormatter dateFormatter,
       Map<String, String> typeMapping,
       Map<String, com.google.re2j.Pattern> descriptionPatterns,
+      com.google.re2j.Pattern savingsPocket,
       String accountCurrency,
       ImportAccountContext account) {
     ImportColumnMapping mapping = template.columnMapping();
@@ -1260,16 +1287,22 @@ public class ImportFileParserService {
     }
     BigDecimal amount = amountOf(record, template, columns);
     String currency = currencyOf(record, template, columns, accountCurrency);
+    String description = optionalCell(record, columns.get("description"));
+    // US-07-22: a savings pocket move is a transfer, whatever else would type it.
+    boolean pocketMove =
+        savingsPocket != null && description != null && savingsPocket.matcher(description).find();
     String type =
-        transactionTypeOf(
-            optionalCell(record, columns.get("transactionType")),
-            mapping.transactionType(),
-            typeMapping,
-            amount,
-            optionalCell(record, columns.get("description")),
-            mapping.description(),
-            descriptionPatterns,
-            account);
+        pocketMove
+            ? TRANSFER
+            : transactionTypeOf(
+                optionalCell(record, columns.get("transactionType")),
+                mapping.transactionType(),
+                typeMapping,
+                amount,
+                description,
+                mapping.description(),
+                descriptionPatterns,
+                account);
     String mcc = optionalCell(record, columns.get("mcc"));
     if (mcc != null && !MCC.matcher(mcc).matches()) {
       throw rowError(ImportRowErrorValues.MCC_INVALID, ARG_COLUMN, mapping.mcc(), ARG_VALUE, mcc);
@@ -1297,7 +1330,7 @@ public class ImportFileParserService {
         amount,
         currency,
         type,
-        optionalCell(record, columns.get("description")),
+        description,
         optionalCell(record, columns.get("counterpartyName")),
         optionalCell(record, columns.get("externalId")),
         mcc,
@@ -1306,7 +1339,9 @@ public class ImportFileParserService {
         originalAmount,
         originalCurrency,
         issuerRate,
-        valueDateAdjusted);
+        valueDateAdjusted,
+        optionalCell(record, columns.get("groupReference")),
+        pocketMove);
   }
 
   private static BigDecimal originalAmountOf(
