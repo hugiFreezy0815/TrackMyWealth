@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportLedgerRow;
 import com.trackmywealth.backend.dto.ImportRecheck;
 import com.trackmywealth.backend.dto.ImportRowRecheck;
+import com.trackmywealth.backend.dto.ImportTransferPlan;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ImportRowRaw;
@@ -57,6 +58,11 @@ import org.springframework.transaction.annotation.Transactional;
  * check is {@link ImportRecheckService}'s, the same one the preview's rows and counts report
  * (#308), so the commit does what the member saw.
  *
+ * <p><b>Transfers the file books (US-07-22).</b> The two legs of a currency exchange are linked as
+ * one pair, and a savings pocket move gets its other leg on the account's savings pocket - created
+ * by the first commit that needs it ({@link SavingsPocketService}) - before transfer matching runs
+ * ({@link ImportTransferLinkService}).
+ *
  * <p><b>Statement balance (US-07-12).</b> After the rows, the balance the file states becomes a
  * {@code DOCUMENT} snapshot of the batch and the account is reconciled against it ({@link
  * ImportStatementBalanceService}).
@@ -82,6 +88,8 @@ public class ImportCommitService {
   private final ImportAccountIdentificationService identificationService;
   private final ImportStatementBalanceService statementBalanceService;
   private final ImportHoldingsService holdingsService;
+  private final SavingsPocketService savingsPocketService;
+  private final ImportTransferLinkService transferLinkService;
   private final Clock clock;
 
   public ImportCommitService(
@@ -97,6 +105,8 @@ public class ImportCommitService {
       ImportAccountIdentificationService identificationService,
       ImportStatementBalanceService statementBalanceService,
       ImportHoldingsService holdingsService,
+      SavingsPocketService savingsPocketService,
+      ImportTransferLinkService transferLinkService,
       Clock clock) {
     this.batchService = batchService;
     this.batchRepository = batchRepository;
@@ -110,6 +120,8 @@ public class ImportCommitService {
     this.identificationService = identificationService;
     this.statementBalanceService = statementBalanceService;
     this.holdingsService = holdingsService;
+    this.savingsPocketService = savingsPocketService;
+    this.transferLinkService = transferLinkService;
     this.clock = clock;
   }
 
@@ -163,6 +175,7 @@ public class ImportCommitService {
                 .filter(Objects::nonNull)
                 .toList());
 
+    List<CanonicalImportRow> canonicals = new ArrayList<>();
     List<ImportLedgerRow> ledger = new ArrayList<>();
     for (ImportRowRaw row : included) {
       CanonicalImportRow canonical = batchService.canonical(row);
@@ -171,13 +184,25 @@ public class ImportCommitService {
           && takenReferences.contains(canonical.externalId())) {
         canonical = ImportLedgerRowService.withoutReference(canonical);
       }
+      canonicals.add(canonical);
       ledger.add(ledgerRows.toLedgerRow(canonical, batchService.stringMap(row.getRawData())));
     }
     recheckService.apply(batch, recheck);
 
+    // US-07-22: the pocket is resolved, or created, only for a batch that moves money into it.
+    UUID pocketId =
+        canonicals.stream().anyMatch(CanonicalImportRow::savingsPocket)
+            ? savingsPocketService.pocketFor(account, actor).map(Account::getId).orElse(null)
+            : null;
+    ImportTransferPlan plan = ImportTransferLinkService.plan(account, canonicals, pocketId);
     List<Transaction> recorded =
         transactionService.recordImported(
-            account, ledger, batch.getId(), batch.getSourceKind(), actor);
+            account,
+            ledger,
+            batch.getId(),
+            batch.getSourceKind(),
+            actor,
+            rows -> transferLinkService.link(account, plan, rows, batch.getId(), actor));
     rowBatchRepository.linkTransactions(
         included.stream().map(ImportRowRaw::getId).toList(),
         recorded.stream().map(Transaction::getId).toList());

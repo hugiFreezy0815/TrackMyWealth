@@ -60,7 +60,70 @@ public record ImportTemplateRequest(
     @Valid ImportRowFilter rowFilter,
     @Valid ImportAccountIdentifierRule accountIdentifier,
     @Valid ImportStatementBalanceRule statementBalance,
-    @Valid ImportHoldingsRule holdingsRule) {
+    @Valid ImportHoldingsRule holdingsRule,
+    @Schema(
+            description =
+                "US-07-22: RE2 pattern (matched ignoring case) for the description of a move"
+                    + " between the account and its savings pocket. Such a row is a TRANSFER, and"
+                    + " its commit books the other leg on the pocket account.")
+        @Size(max = ImportPdfLayout.MAX_PATTERN_LENGTH)
+        String savingsPocketPattern) {
+
+  /** Existing API callers omit the savings pocket rule (US-07-22). */
+  public ImportTemplateRequest(
+      String name,
+      UUID institutionCatalogueId,
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      Integer headerRowIndex,
+      Integer preambleRowCount,
+      Integer trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      List<String> headerColumns,
+      String fileFormat,
+      ImportPdfLayout pdfLayout,
+      Map<String, String> descriptionTypePatterns,
+      ImportRowFilter rowFilter,
+      ImportAccountIdentifierRule accountIdentifier,
+      ImportStatementBalanceRule statementBalance,
+      ImportHoldingsRule holdingsRule) {
+    this(
+        name,
+        institutionCatalogueId,
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        headerColumns,
+        fileFormat,
+        pdfLayout,
+        descriptionTypePatterns,
+        rowFilter,
+        accountIdentifier,
+        statementBalance,
+        holdingsRule,
+        null);
+  }
 
   /** A cash statement's template, without the holdings rule of a SNAPSHOT one (#273). */
   public ImportTemplateRequest(
@@ -359,7 +422,8 @@ public record ImportTemplateRequest(
         rowFilter,
         accountIdentifier,
         statementBalance,
-        holdingsRule);
+        holdingsRule,
+        savingsPocketPattern);
   }
 
   private static String orDefault(String value, String defaultValue) {

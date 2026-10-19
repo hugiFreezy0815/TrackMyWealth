@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.entry;
+import static org.assertj.core.groups.Tuple.tuple;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.Mockito.mock;
 
@@ -862,6 +863,121 @@ class ImportFileParserServiceTest {
     assertThatThrownBy(() -> parser.validateTemplate(invalid, null))
         .isInstanceOf(ApiException.class)
         .hasMessageContaining("pattern");
+  }
+
+  @Test
+  void aSavingsPocketMoveIsATransferWhateverElseWouldTypeItAndRowsKeepTheirGroupReference() {
+    // US-07-22 (#325): the pocket pattern wins over a description type pattern and the sign.
+    ImportTemplateDefinition template =
+        new Template()
+            .delimiter(";")
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .description("text")
+                    .groupReference("ref")
+                    .build())
+            .descriptionPatterns(Map.of("FEE", "pocket fee"))
+            .savingsPocketPattern("^Spareinlage")
+            .build();
+
+    List<ParsedImportRow> rows =
+        parser
+            .parse(
+                utf8(
+                    "date;amount;text;ref\n"
+                        + "2031-05-01;-17.35;SPAREINLAGE pocket fee;R-71\n"
+                        + "2031-05-01;-41.19;Zahlung an Max Muster;R-73\n"
+                        + "2031-05-02;-2.17;Note: Spareinlage later;\n"),
+                template,
+                "CHF")
+            .rows();
+
+    assertThat(rows).allMatch(ParsedImportRow::isParsed).hasSize(3);
+    assertThat(rows)
+        .extracting(row -> row.canonical().transactionType())
+        .containsExactly("TRANSFER", "EXPENSE", "EXPENSE");
+    assertThat(rows)
+        .extracting(row -> row.canonical().savingsPocket())
+        .as("anchored: a description that only mentions the pocket is no move")
+        .containsExactly(true, false, false);
+    assertThat(rows)
+        .extracting(row -> row.canonical().groupReference())
+        .containsExactly("R-71", "R-73", null);
+    assertThat(rows.get(0).canonical().externalId())
+        .as("a group reference is never a booking id")
+        .isNull();
+  }
+
+  @Test
+  void aPocketMoveTheLedgerCannotTakeAsATransferIsTypedAsAnyOtherRow() {
+    // The ledger takes a TRANSFER only in the account's own currency, and none on a card or loan.
+    ImportTemplateDefinition template =
+        new Template()
+            .delimiter(";")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .currency("currency")
+                    .description("text")
+                    .build())
+            .savingsPocketPattern("^Spareinlage")
+            .build();
+    byte[] statement =
+        utf8(
+            "date;amount;currency;text\n"
+                + "2031-05-01;-17.35;CHF;Spareinlage\n"
+                + "2031-05-01;-8.19;EUR;Spareinlage\n");
+
+    List<ParsedImportRow> chf =
+        parser
+            .parseForAccount(statement, template, new ImportAccountContext("CHF", false, false))
+            .rows();
+    List<ParsedImportRow> card =
+        parser
+            .parseForAccount(statement, template, new ImportAccountContext("CHF", true, false))
+            .rows();
+
+    assertThat(chf)
+        .extracting(
+            row -> row.canonical().transactionType(), row -> row.canonical().savingsPocket())
+        .containsExactly(tuple("TRANSFER", true), tuple("EXPENSE", false));
+    assertThat(card)
+        .extracting(
+            row -> row.canonical().transactionType(), row -> row.canonical().savingsPocket())
+        .containsExactly(
+            tuple("CREDIT_CARD_PURCHASE", false), tuple("CREDIT_CARD_PURCHASE", false));
+  }
+
+  @Test
+  void aSavingsPocketPatternNeedsADescriptionColumnAndAValidNonBlankPattern() {
+    ImportColumnMapping noDescription = mapping("date", "amount").build();
+    ImportTemplateDefinition withoutDescription =
+        new Template().mapping(noDescription).savingsPocketPattern("^Spareinlage").build();
+    assertThatThrownBy(() -> parser.validateTemplate(withoutDescription, null))
+        .isInstanceOf(ApiException.class)
+        .hasMessageContaining("description column");
+
+    ImportTemplateDefinition blank = new Template().savingsPocketPattern(" ").build();
+    assertThatThrownBy(() -> parser.validateTemplate(blank, null))
+        .isInstanceOf(ApiException.class)
+        .hasMessageContaining("cannot be blank");
+
+    ImportTemplateDefinition invalid = new Template().savingsPocketPattern("(Spareinlage").build();
+    assertThatThrownBy(() -> parser.validateTemplate(invalid, null))
+        .isInstanceOf(ApiException.class);
+
+    ImportTemplateDefinition tooLong =
+        new Template()
+            .savingsPocketPattern("a".repeat(ImportPdfLayout.MAX_PATTERN_LENGTH + 1))
+            .build();
+    assertThatThrownBy(() -> parser.validateTemplate(tooLong, null))
+        .isInstanceOf(ApiException.class)
+        .hasMessageContaining("at most");
   }
 
   @Test
@@ -1850,6 +1966,7 @@ class ImportFileParserServiceTest {
     private String accountStrategy = "USER_SELECTED";
     private String fileFormat = "CSV";
     private ImportPdfLayout pdfLayout;
+    private String savingsPocketPattern;
 
     Template templateClass(String value) {
       templateClass = value;
@@ -1926,6 +2043,11 @@ class ImportFileParserServiceTest {
       return this;
     }
 
+    Template savingsPocketPattern(String value) {
+      savingsPocketPattern = value;
+      return this;
+    }
+
     Template statementBalance(ImportStatementBalanceRule rule) {
       statementBalance = rule;
       return this;
@@ -1975,7 +2097,9 @@ class ImportFileParserServiceTest {
           descriptionPatterns,
           rowFilter,
           accountIdentifier,
-          statementBalance);
+          statementBalance,
+          null,
+          savingsPocketPattern);
     }
   }
 
@@ -2052,6 +2176,11 @@ class ImportFileParserServiceTest {
       return this;
     }
 
+    MappingBuilder groupReference(String column) {
+      fields.put("groupReference", column);
+      return this;
+    }
+
     ImportColumnMapping build() {
       return new ImportColumnMapping(
           fields.get("bookingDate"),
@@ -2069,7 +2198,8 @@ class ImportFileParserServiceTest {
           fields.get("notes"),
           fields.get("originalAmount"),
           fields.get("originalCurrency"),
-          fields.get("exchangeRate"));
+          fields.get("exchangeRate"),
+          fields.get("groupReference"));
     }
   }
 }

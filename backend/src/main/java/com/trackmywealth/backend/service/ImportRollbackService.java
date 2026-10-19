@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRollbackModifiedResponse;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
@@ -9,6 +10,7 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.SettlementMatch;
 import com.trackmywealth.backend.entity.Transaction;
+import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportRollbackRepository;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
@@ -82,6 +84,8 @@ public class ImportRollbackService {
   private final VersionPreconditionService versionPreconditionService;
   private final ImportLockService importLockService;
   private final ImportStatementBalanceService statementBalanceService;
+  private final AccountRepository accountRepository;
+  private final AccessControlService accessControlService;
   private final EntityManager entityManager;
   private final Clock clock;
 
@@ -97,6 +101,8 @@ public class ImportRollbackService {
       VersionPreconditionService versionPreconditionService,
       ImportLockService importLockService,
       ImportStatementBalanceService statementBalanceService,
+      AccountRepository accountRepository,
+      AccessControlService accessControlService,
       EntityManager entityManager,
       Clock clock) {
     this.batchService = batchService;
@@ -110,6 +116,8 @@ public class ImportRollbackService {
     this.versionPreconditionService = versionPreconditionService;
     this.importLockService = importLockService;
     this.statementBalanceService = statementBalanceService;
+    this.accountRepository = accountRepository;
+    this.accessControlService = accessControlService;
     this.entityManager = entityManager;
     this.clock = clock;
   }
@@ -179,6 +187,16 @@ public class ImportRollbackService {
       List<UUID> transactionIds,
       String reason,
       AuthenticatedUserPrincipal actor) {
+    // US-07-22: the legs the commit booked on the savings pocket go too; as for a void, the member
+    // must be able to edit that account, checked before anything is deleted.
+    Map<UUID, LocalDate> otherAccounts =
+        rollbackRepository.findEarliestBookingDatesOnOtherAccounts(batch.getId(), account.getId());
+    List<Account> others = new ArrayList<>(otherAccounts.size());
+    for (UUID otherId : otherAccounts.keySet()) {
+      Account other = accountRepository.findById(otherId).orElseThrow();
+      accessControlService.requireAccountAccess(actor, other, AccessLevelValues.EDIT);
+      others.add(other);
+    }
     SortedSet<UUID> unmatched = new TreeSet<>();
     if (!transactionIds.isEmpty()) {
       Set<UUID> batchRows = new HashSet<>(transactionIds);
@@ -209,6 +227,10 @@ public class ImportRollbackService {
     end(batch, ImportBatchValues.ROLLED_BACK, reason, actor);
     if (earliest != null) {
       reconciliationService.reconcileAfterLedgerChange(account, earliest, actor.userId());
+    }
+    for (Account other : others) {
+      reconciliationService.reconcileAfterLedgerChange(
+          other, otherAccounts.get(other.getId()), actor.userId());
     }
     return new ImportRollbackResponse(
         batchService.summary(batch, account, List.of(), actor),

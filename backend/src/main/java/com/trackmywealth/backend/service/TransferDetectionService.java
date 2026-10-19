@@ -336,6 +336,17 @@ public class TransferDetectionService {
     return match != null && SettlementMatchValues.REJECTED.equals(match.getStatus());
   }
 
+  /**
+   * US-07-22 (#325): links two rows of one import that its file books as the legs of one currency
+   * exchange, as a pair the system decided - the bank's shared reference makes it certain, so no
+   * member confirms it, and a rollback of the import undoes it with the rows. The caller holds the
+   * workspace's transfer lock ({@link #lockForWrite}) and runs matching afterwards, which leaves
+   * the linked legs alone. Both legs may be on the same account, in different currencies.
+   */
+  void confirmImportedPair(Transaction debit, Transaction credit) {
+    confirm(debit, credit);
+  }
+
   // Decided by the system: an exact, unique pair of a TRANSFER debit and a TRANSFER or imported
   // loan
   // instalment (DEBT_REPAYMENT) credit - legs their own sources type as transfers.
@@ -343,6 +354,9 @@ public class TransferDetectionService {
     SettlementMatch match = newMatch(debit, credit);
     match.setStatus(SettlementMatchValues.CONFIRMED);
     match.setDecidedAt(OffsetDateTime.now(clock));
+    // V51: a confirmed cross-currency pair (an imported exchange, US-07-22) keeps the rate the bank
+    // applied, as a member's confirmation does; a same-currency pair has none.
+    match.setTransferFxRate(SettlementMatchService.impliedTransferRate(match));
     settlementMatchRepository.saveAndFlush(match);
     settlementDetectionService.rejectCompetitors(match, match.getDecidedAt());
     settlementDetectionService.applyFlags(match);

@@ -27,6 +27,10 @@ import java.util.Map;
  *
  * @param typeMapping source type text (matched trimmed and ignoring case) to a canonical {@code
  *     transaction_type}
+ * @param savingsPocketPattern US-07-22 (#325): an RE2 pattern, matched ignoring case, for the
+ *     description of a move between the account and its savings pocket (Yuh's "Spareinlage"). Such
+ *     a row is a {@code TRANSFER} whatever else would type it, and its commit books the other leg
+ *     on the account's savings pocket. {@code null}: the bank has no pocket.
  */
 public record ImportTemplateDefinition(
     String templateClass,
@@ -50,7 +54,58 @@ public record ImportTemplateDefinition(
     ImportRowFilter rowFilter,
     ImportAccountIdentifierRule accountIdentifier,
     ImportStatementBalanceRule statementBalance,
-    ImportHoldingsRule holdingsRule) {
+    ImportHoldingsRule holdingsRule,
+    String savingsPocketPattern) {
+
+  /** Existing saved and client templates have no savings pocket rule (US-07-22). */
+  public ImportTemplateDefinition(
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      int headerRowIndex,
+      int preambleRowCount,
+      int trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      String fileFormat,
+      ImportPdfLayout pdfLayout,
+      Map<String, String> descriptionTypePatterns,
+      ImportRowFilter rowFilter,
+      ImportAccountIdentifierRule accountIdentifier,
+      ImportStatementBalanceRule statementBalance,
+      ImportHoldingsRule holdingsRule) {
+    this(
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        fileFormat,
+        pdfLayout,
+        descriptionTypePatterns,
+        rowFilter,
+        accountIdentifier,
+        statementBalance,
+        holdingsRule,
+        null);
+  }
 
   /** A cash statement's template, which has no holdings rule (US-07-13 reads holdings). */
   public ImportTemplateDefinition(

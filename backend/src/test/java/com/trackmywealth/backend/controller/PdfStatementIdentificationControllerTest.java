@@ -53,7 +53,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class PdfStatementIdentificationControllerTest {
 
   private static final String PASSWORD = "correct-horse-battery-staple";
-  private static final UUID YUH = UUID.fromString("a82dbfd8-abeb-4fad-af4e-0f9070b3111e");
+  // US-07-22 (V103): the current version of the Yuh template.
+  private static final UUID YUH = UUID.fromString("2548b28a-0884-4aa9-b544-557446e0963c");
   private static final UUID LBS = UUID.fromString("d2971d6e-e091-48c5-96dd-d59c45c8dbd4");
   // The identifiers the synthetic fixtures name (ShippedTemplateFixtures).
   private static final String YUH_IBAN = "CH21 0076 2000 0000 0000 0";

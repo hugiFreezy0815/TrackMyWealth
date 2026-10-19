@@ -53,7 +53,8 @@ public record ImportTemplateResponse(
     ImportRowFilter rowFilter,
     ImportAccountIdentifierRule accountIdentifier,
     ImportStatementBalanceRule statementBalance,
-    ImportHoldingsRule holdingsRule) {
+    ImportHoldingsRule holdingsRule,
+    String savingsPocketPattern) {
 
   public ImportTemplateResponse {
     typeMapping = Collections.unmodifiableMap(new LinkedHashMap<>(typeMapping));
