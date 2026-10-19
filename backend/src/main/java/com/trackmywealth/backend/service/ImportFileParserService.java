@@ -165,6 +165,12 @@ public class ImportFileParserService {
       byte[] content, ImportTemplateDefinition template, ImportAccountContext account) {
     String accountCurrency = account.currency();
     validateTemplate(template, null);
+    if (template.isSnapshot()) {
+      // #273: no booking rows to dry-run; an upload previews a holdings statement without storing
+      // anything until its commit.
+      throw unsupported(
+          "A holdings statement is read by uploading it into an account, which previews it.");
+    }
     List<String> header;
     List<List<String>> data;
     // #268: a PDF's booking lines, cut into the layout's named columns; null for a CSV file.
@@ -360,6 +366,9 @@ public class ImportFileParserService {
     if (template.isPdf()) {
       throw unsupported("A PDF template has no header row to read.");
     }
+    if (template.isSpreadsheet()) {
+      throw unsupported("A spreadsheet's header is read by ImportHoldingsReaderService.");
+    }
     List<String> header = headerOf(readRecords(content, template, true), template);
     requireDecodable(header);
     return header;
@@ -381,6 +390,14 @@ public class ImportFileParserService {
 
   /** Missing columns from both ordinary mappings and the optional row filter. */
   public List<String> missingColumns(ImportTemplateDefinition template, List<String> header) {
+    if (template.isSnapshot()) {
+      // #273: a spreadsheet holdings template's columns are its holdings rule's.
+      return template.holdingsRule() == null || template.holdingsRule().columns() == null
+          ? List.of()
+          : ImportHoldingsReaderService.mappedColumns(template.holdingsRule().columns()).stream()
+              .filter(column -> columnIndex(column, header) < 0)
+              .toList();
+    }
     List<String> missing = missingColumns(template.columnMapping(), header);
     if (template.rowFilter() != null
         && columnIndex(template.rowFilter().column(), header) < 0
@@ -448,8 +465,18 @@ public class ImportFileParserService {
    *     {@code field} for any other rule
    */
   public void validateTemplate(ImportTemplateDefinition template, List<String> headerColumns) {
+    if (template.isSnapshot()) {
+      validateSnapshotTemplate(template, headerColumns);
+      return;
+    }
     if (!ImportTemplateValues.CLASS_CASH_TRANSACTIONS.equals(template.templateClass())) {
-      throw unsupported("Only cash transaction templates can be imported so far.");
+      throw unsupported("Only cash transaction and holdings templates can be imported so far.");
+    }
+    if (template.holdingsRule() != null) {
+      throw invalid("holdingsRule", "Only a SNAPSHOT template has a holdings rule.");
+    }
+    if (template.isSpreadsheet()) {
+      throw invalid("fileFormat", "A spreadsheet is read as a holdings statement (SNAPSHOT) only.");
     }
     if (!ImportTemplateValues.ACCOUNT_STRATEGIES.contains(
         template.accountIdentificationStrategy())) {
@@ -496,6 +523,43 @@ public class ImportFileParserService {
   }
 
   // --- template rules ----------------------------------------------------------------------
+
+  // #273: a holdings statement is read through its holdings rule alone. Its account is the one the
+  // member picked; none of the cash statement settings applies, so none may be set.
+  private static void validateSnapshotTemplate(
+      ImportTemplateDefinition template, List<String> headerColumns) {
+    if (!ImportTemplateValues.ACCOUNT_USER_SELECTED.equals(
+        template.accountIdentificationStrategy())) {
+      throw unsupported("A holdings statement is imported into the account selected at upload.");
+    }
+    if (!template.isPdf() && !template.isSpreadsheet()) {
+      throw invalid(
+          "fileFormat",
+          "A holdings statement is read from a PDF (PDF_TEXT, PDF_OCR) or a SPREADSHEET.");
+    }
+    if (template.pdfLayout() != null) {
+      throw invalid("pdfLayout", "A holdings template reads its PDF through its holdings rule.");
+    }
+    boolean cashSettings =
+        template.columnMapping() != null && !template.columnMapping().mappedColumns().isEmpty()
+            || !template.typeMapping().isEmpty()
+            || !template.descriptionTypePatterns().isEmpty()
+            || template.rowFilter() != null
+            || template.accountIdentifier() != null
+            || template.statementBalance() != null;
+    if (cashSettings) {
+      throw invalid(
+          "templateClass",
+          "A holdings template maps no booking columns, types, row filter, account identifier or"
+              + " statement balance.");
+    }
+    validateRowCounts(template);
+    validateSeparators(template);
+    if (!isValidDateFormat(template.dateFormat())) {
+      throw invalid("dateFormat", "The date format is not a valid date pattern.");
+    }
+    ImportHoldingsReaderService.validate(template, headerColumns);
+  }
 
   // #268: the layout must name each capture group of a row pattern that RE2 can compile, and its
   // optional fields must name columns it has.
@@ -1176,8 +1240,9 @@ public class ImportFileParserService {
   }
 
   // A column is named by header text (trimmed, ignoring case; it must occur exactly once) or by
-  // its 0-based index. -1 when the header has no such single column.
-  private static int columnIndex(String column, List<String> header) {
+  // its 0-based index. -1 when the header has no such single column. Package-private for the
+  // holdings reader (#273), which names a spreadsheet's columns the same way.
+  static int columnIndex(String column, List<String> header) {
     List<Integer> matches = matchesByName(column, header);
     if (!matches.isEmpty()) {
       // A name occurring more than once is ambiguous: such a column is mapped by index.
@@ -1511,6 +1576,28 @@ public class ImportFileParserService {
         parentheses,
         MAX_INTEGER_DIGITS,
         MAX_FRACTION_DIGITS,
+        ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
+  }
+
+  /**
+   * #273: a number in parseAmount's grammar (sign, the template's separators, no parentheses), with
+   * the digit limits of the column it is stored in.
+   *
+   * @throws ImportRowRejectedException {@code AMOUNT_UNPARSEABLE} or {@code AMOUNT_OUT_OF_RANGE}
+   */
+  static BigDecimal parseNumber(
+      String value,
+      String column,
+      ImportTemplateDefinition template,
+      int maxIntegerDigits,
+      int maxFractionDigits) {
+    return parseDecimal(
+        value,
+        column,
+        template,
+        false,
+        maxIntegerDigits,
+        maxFractionDigits,
         ImportRowErrorValues.AMOUNT_OUT_OF_RANGE);
   }
 

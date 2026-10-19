@@ -50,6 +50,9 @@ import org.springframework.stereotype.Service;
  *       balance lookup. Any other snapshot is deleted with its results.
  * </ul>
  *
+ * <p>A holdings statement's snapshot (US-07-13, {@link ImportHoldingsService}) is rolled back the
+ * same way, its holdings with it.
+ *
  * <p>Every method runs inside the caller's transaction, after the account's import lock and the
  * batch row's lock: two commits or rollbacks of one account never interleave here.
  */
@@ -272,7 +275,7 @@ public class ImportStatementBalanceService {
       holdingRepository.deleteBySnapshotId(snapshot.getId());
       snapshotRepository.delete(snapshot);
       snapshotRepository.flush();
-      batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_DELETED);
+      recordRemoval(batch, ImportBatchValues.SNAPSHOT_DELETED);
     }
     return true;
   }
@@ -294,7 +297,16 @@ public class ImportStatementBalanceService {
     resultRepository.saveAllAndFlush(results);
     snapshot.withdraw(now, rolledBackBy);
     snapshotRepository.saveAndFlush(snapshot);
-    batch.setStatementBalanceSnapshot(ImportBatchValues.SNAPSHOT_WITHDRAWN);
+    recordRemoval(batch, ImportBatchValues.SNAPSHOT_WITHDRAWN);
+  }
+
+  // A holdings statement's batch (#273) records its snapshot's fate in its own column.
+  private static void recordRemoval(ImportBatch batch, String outcome) {
+    if (batch.isHoldingsStatement()) {
+      batch.setHoldingsSnapshot(outcome);
+    } else {
+      batch.setStatementBalanceSnapshot(outcome);
+    }
   }
 
   // A snapshot may not lie in the future, before the account was opened or after it was closed

@@ -90,7 +90,9 @@ class CrossTenantIsolationTest {
           "import_template",
           "import_batch",
           "import_file",
-          "import_row_raw");
+          "import_row_raw",
+          "import_holding_row",
+          "workspace_security_ticker");
 
   private UUID workspaceAId;
   private UUID workspaceBId;
@@ -310,6 +312,69 @@ class CrossTenantIsolationTest {
                     UUID.randomUUID(),
                     batchAId,
                     workspaceAId))
+        .isInstanceOf(SQLException.class)
+        .hasMessageContaining("row-level security");
+  }
+
+  // US-07-13 (#273): a holdings statement's staged lines are raw bank data under their own policy,
+  // and a workspace's ticker mapping says what it holds - neither crosses to another workspace.
+  @Test
+  void holdingRowsAndTickerMappingsAreInvisibleAcrossWorkspaces() throws Exception {
+    UUID batchAId = insertImportBatch(workspaceAId, accountAId);
+    UUID lineAId = UUID.randomUUID();
+    rowsCommittedUnderContext(
+        workspaceAId,
+        "INSERT INTO import_holding_row (id, workspace_id, import_batch_id, row_number, kind,"
+            + " currency, amount) VALUES (?, ?, ?, 1, 'CASH', 'CHF', 12.34)",
+        lineAId,
+        workspaceAId,
+        batchAId);
+    UUID securityId = UUID.randomUUID();
+    try (Connection admin = adminConnection();
+        PreparedStatement insert =
+            admin.prepareStatement(
+                "INSERT INTO security (id, synthetic_key, legal_name, display_name,"
+                    + " instrument_type, denomination_currency)"
+                    + " VALUES (?, ?, 'Invented Coin', 'Invented Coin', 'CRYPTO', 'CHF')")) {
+      insert.setObject(1, securityId);
+      insert.setString(2, "MANUAL-" + securityId);
+      insert.executeUpdate();
+    }
+    UUID tickerAId = UUID.randomUUID();
+    rowsCommittedUnderContext(
+        workspaceAId,
+        "INSERT INTO workspace_security_ticker (id, workspace_id, ticker, security_id)"
+            + " VALUES (?, ?, 'XQZ', ?)",
+        tickerAId,
+        workspaceAId,
+        securityId);
+
+    assertThat(rowVisibleUnderContext(workspaceAId, "import_holding_row", lineAId)).isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "import_holding_row", lineAId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceAId, "workspace_security_ticker", tickerAId))
+        .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "workspace_security_ticker", tickerAId))
+        .isFalse();
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceBId,
+                "UPDATE workspace_security_ticker SET ticker = 'HIJACK' WHERE id = ?",
+                tickerAId))
+        .isZero();
+    assertThat(
+            rowsChangedUnderContext(
+                workspaceBId, "DELETE FROM import_holding_row WHERE id = ?", lineAId))
+        .isZero();
+    // Nor can B map a ticker in A's name.
+    assertThatThrownBy(
+            () ->
+                rowsChangedUnderContext(
+                    workspaceBId,
+                    "INSERT INTO workspace_security_ticker (id, workspace_id, ticker, security_id)"
+                        + " VALUES (?, ?, 'OTHER', ?)",
+                    UUID.randomUUID(),
+                    workspaceAId,
+                    securityId))
         .isInstanceOf(SQLException.class)
         .hasMessageContaining("row-level security");
   }

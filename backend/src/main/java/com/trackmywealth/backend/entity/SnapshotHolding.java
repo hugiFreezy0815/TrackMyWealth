@@ -8,12 +8,15 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Maps {@code snapshot_holding} (V11, V33): one reported position of an {@link AccountSnapshot}. At
  * most one line per security per snapshot (V33). {@code reportedCostBasis} is the total cost in the
  * snapshot's currency (the account's native currency), and may be missing: transferred-in positions
- * often arrive without one (FR-REC-008).
+ * often arrive without one (FR-REC-008). An imported holding (#273) also keeps the price and value
+ * its statement printed, in the currency it printed them in.
  *
  * <p>Not RLS-protected itself (V20): isolation is inherited through {@code snapshot_id}, and it is
  * only ever read by the id of a snapshot already loaded under the caller's workspace. The ids are
@@ -44,6 +47,18 @@ public class SnapshotHolding {
 
   @Column(name = "cost_basis_is_estimated", nullable = false)
   private boolean costBasisEstimated;
+
+  // V98 (#273): what an imported statement printed for the position, in its own currency; all
+  // null for a holding entered by hand.
+  @Column(name = "reported_price")
+  private BigDecimal reportedPrice;
+
+  @Column(name = "reported_value")
+  private BigDecimal reportedValue;
+
+  @JdbcTypeCode(SqlTypes.CHAR)
+  @Column(name = "reported_currency", length = 3)
+  private String reportedCurrency;
 
   public UUID getId() {
     return id;
@@ -87,5 +102,27 @@ public class SnapshotHolding {
 
   public void setCostBasisEstimated(boolean costBasisEstimated) {
     this.costBasisEstimated = costBasisEstimated;
+  }
+
+  public BigDecimal getReportedPrice() {
+    return reportedPrice;
+  }
+
+  public BigDecimal getReportedValue() {
+    return reportedValue;
+  }
+
+  public String getReportedCurrency() {
+    return reportedCurrency;
+  }
+
+  /**
+   * #273: the position as the statement reports it: the value and its currency always together, the
+   * price optional (V98).
+   */
+  public void setReported(BigDecimal price, BigDecimal value, String currency) {
+    this.reportedPrice = price;
+    this.reportedValue = value;
+    this.reportedCurrency = currency;
   }
 }

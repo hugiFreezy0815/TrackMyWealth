@@ -188,6 +188,19 @@ public final class ApiErrorCode {
    */
   public static final String IMPORT_PDF_BUSY = "IMPORT_PDF_BUSY";
 
+  /**
+   * 422: a spreadsheet import file (#273) is readable, but holds more than one import may: sheets,
+   * rows, cells or text. Unlike {@code IMPORT_FILE_MALFORMED}, exporting less helps.
+   */
+  public static final String IMPORT_SPREADSHEET_LIMIT_EXCEEDED =
+      "IMPORT_SPREADSHEET_LIMIT_EXCEEDED";
+
+  /**
+   * 503: the server is already reading as many spreadsheets as it may at once (each workbook is
+   * held in memory while it is read); retry later.
+   */
+  public static final String IMPORT_SPREADSHEET_BUSY = "IMPORT_SPREADSHEET_BUSY";
+
   /** 422: local OCR could not read a scanned page (it failed or produced too much text). */
   public static final String IMPORT_OCR_FAILED = "IMPORT_OCR_FAILED";
 
@@ -219,6 +232,21 @@ public final class ApiErrorCode {
    * into the proposed account.
    */
   public static final String IMPORT_ACCOUNT_UNCONFIRMED = "IMPORT_ACCOUNT_UNCONFIRMED";
+
+  /**
+   * 422: a holdings statement's batch (US-07-13, #273) cannot be committed while a position
+   * resolves to no security; {@code unresolved} lists each one's {@code rowNumber}, {@code isin}
+   * and {@code symbol}. Create the security (with the statement's ticker, for a position without an
+   * ISIN), then commit again: positions are resolved afresh.
+   */
+  public static final String IMPORT_HOLDINGS_UNRESOLVED = "IMPORT_HOLDINGS_UNRESOLVED";
+
+  /**
+   * 422: a holdings statement's batch (US-07-13) cannot be committed while a line its template took
+   * for a position or a cash balance could not be read: the snapshot would miss it. {@code
+   * rowNumbers} lists them; the template needs correcting.
+   */
+  public static final String IMPORT_HOLDINGS_UNREADABLE = "IMPORT_HOLDINGS_UNREADABLE";
 
   /**
    * 409: the import batch cannot be rolled back while the member's decision on the reconciliation

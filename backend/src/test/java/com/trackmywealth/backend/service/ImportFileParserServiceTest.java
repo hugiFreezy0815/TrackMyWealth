@@ -1624,11 +1624,10 @@ class ImportFileParserServiceTest {
   // --- template validation -----------------------------------------------------------------
 
   @Test
-  void onlyCashTransactionsAndNoFileNameIdentificationAreSupported() {
+  void securitiesTransactionsAndFileNameIdentificationAreNotSupported() {
     for (ImportTemplateDefinition template :
         List.of(
             new Template().templateClass("SECURITIES_TRANSACTIONS").build(),
-            new Template().templateClass("SNAPSHOT").build(),
             // US-07-10: PREAMBLE_LINE and COLUMN are supported; a file name stays too fragile.
             new Template().accountStrategy("FILENAME").build())) {
       ApiException error =
@@ -1636,6 +1635,8 @@ class ImportFileParserServiceTest {
       assertThat(error.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED);
       assertThat(error.getStatusCode().value()).isEqualTo(422);
     }
+    // #273: SNAPSHOT is supported, for a holdings PDF or spreadsheet; a CSV cash template is none.
+    assertTemplateInvalid(new Template().templateClass("SNAPSHOT").build(), "fileFormat");
   }
 
   @Test

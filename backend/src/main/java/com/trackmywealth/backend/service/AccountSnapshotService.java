@@ -324,7 +324,10 @@ public class AccountSnapshotService {
                       security.getDisplayName(),
                       holding.getQuantity(),
                       holding.getReportedCostBasis(),
-                      holding.isCostBasisEstimated());
+                      holding.isCostBasisEstimated(),
+                      holding.getReportedPrice(),
+                      holding.getReportedValue(),
+                      holding.getReportedCurrency());
                 })
             .sorted(
                 Comparator.comparing(

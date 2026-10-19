@@ -20,6 +20,11 @@ import java.util.Map;
  * of the header row, and {@code preambleRowCount}/{@code trailingSummaryRowCount} skip text lines.
  * Delimiter, encoding and {@code headerRowIndex} do not apply.
  *
+ * <p>A {@code SNAPSHOT} template (#273) reads a holdings statement through {@code holdingsRule}: a
+ * PDF's text lines, or the rows of a {@code SPREADSHEET} file's first sheet, whose header row is
+ * found as a CSV file's is. Its cash transaction settings (column and type mapping, amounts, row
+ * filter, statement balance) do not apply.
+ *
  * @param typeMapping source type text (matched trimmed and ignoring case) to a canonical {@code
  *     transaction_type}
  */
@@ -44,7 +49,56 @@ public record ImportTemplateDefinition(
     Map<String, String> descriptionTypePatterns,
     ImportRowFilter rowFilter,
     ImportAccountIdentifierRule accountIdentifier,
-    ImportStatementBalanceRule statementBalance) {
+    ImportStatementBalanceRule statementBalance,
+    ImportHoldingsRule holdingsRule) {
+
+  /** A cash statement's template, which has no holdings rule (US-07-13 reads holdings). */
+  public ImportTemplateDefinition(
+      String templateClass,
+      String delimiter,
+      String encoding,
+      String decimalSeparator,
+      String thousandsSeparator,
+      String dateFormat,
+      int headerRowIndex,
+      int preambleRowCount,
+      int trailingSummaryRowCount,
+      String amountRepresentation,
+      String currencyMode,
+      String fixedCurrency,
+      ImportColumnMapping columnMapping,
+      Map<String, String> typeMapping,
+      String accountIdentificationStrategy,
+      String fileFormat,
+      ImportPdfLayout pdfLayout,
+      Map<String, String> descriptionTypePatterns,
+      ImportRowFilter rowFilter,
+      ImportAccountIdentifierRule accountIdentifier,
+      ImportStatementBalanceRule statementBalance) {
+    this(
+        templateClass,
+        delimiter,
+        encoding,
+        decimalSeparator,
+        thousandsSeparator,
+        dateFormat,
+        headerRowIndex,
+        preambleRowCount,
+        trailingSummaryRowCount,
+        amountRepresentation,
+        currencyMode,
+        fixedCurrency,
+        columnMapping,
+        typeMapping,
+        accountIdentificationStrategy,
+        fileFormat,
+        pdfLayout,
+        descriptionTypePatterns,
+        rowFilter,
+        accountIdentifier,
+        statementBalance,
+        null);
+  }
 
   /** Existing saved and client templates omit the optional statement balance rule (US-07-12). */
   public ImportTemplateDefinition(
@@ -247,5 +301,18 @@ public record ImportTemplateDefinition(
   /** Whether the file is a scanned PDF, read through local OCR. */
   public boolean isOcr() {
     return ImportTemplateValues.FORMAT_PDF_OCR.equals(fileFormat);
+  }
+
+  /** Whether the file is a workbook (.xlsx or .xls), read through its first sheet (#273). */
+  public boolean isSpreadsheet() {
+    return ImportTemplateValues.FORMAT_SPREADSHEET.equals(fileFormat);
+  }
+
+  /**
+   * Whether the file is a holdings statement (INPUT-004, #273), read through {@link #holdingsRule}
+   * into a snapshot rather than into transactions.
+   */
+  public boolean isSnapshot() {
+    return ImportTemplateValues.CLASS_SNAPSHOT.equals(templateClass);
   }
 }

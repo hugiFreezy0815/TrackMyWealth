@@ -702,9 +702,16 @@ class ImportTemplateControllerTest {
   @Test
   void unsupportedTemplateClassesAndAccountStrategiesAre422() throws Exception {
     List<String> header = headerOf(SWISS);
+    // #273: a SNAPSHOT template reads a holdings PDF or spreadsheet; a CSV cash template is none.
+    postStatus(withClassAndStrategy(swissRequest(header), "SNAPSHOT", null))
+        .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("IMPORT_TEMPLATE_INVALID")
+        .jsonPath("$.field")
+        .isEqualTo("fileFormat");
     for (ImportTemplateRequest request :
         List.of(
-            withClassAndStrategy(swissRequest(header), "SNAPSHOT", null),
             withClassAndStrategy(swissRequest(header), "SECURITIES_TRANSACTIONS", null),
             // US-07-10: PREAMBLE_LINE and COLUMN are supported; a file name is not.
             withClassAndStrategy(swissRequest(header), null, "FILENAME"))) {

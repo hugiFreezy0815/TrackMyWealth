@@ -15,6 +15,9 @@ public final class ImportTemplateValues {
 
   public static final String CLASS_CASH_TRANSACTIONS = "CASH_TRANSACTIONS";
 
+  /** A holdings statement, imported as a snapshot with positions (INPUT-004, #273). */
+  public static final String CLASS_SNAPSHOT = "SNAPSHOT";
+
   /** A delimited text file (the default). */
   public static final String FORMAT_CSV = "CSV";
 
@@ -24,8 +27,11 @@ public final class ImportTemplateValues {
   /** A scanned PDF read through local OCR, then like {@link #FORMAT_PDF_TEXT}. */
   public static final String FORMAT_PDF_OCR = "PDF_OCR";
 
+  /** An .xlsx or .xls workbook, read through its first sheet; holdings only so far (#273). */
+  public static final String FORMAT_SPREADSHEET = "SPREADSHEET";
+
   public static final Set<String> FILE_FORMATS =
-      Set.of(FORMAT_CSV, FORMAT_PDF_TEXT, FORMAT_PDF_OCR);
+      Set.of(FORMAT_CSV, FORMAT_PDF_TEXT, FORMAT_PDF_OCR, FORMAT_SPREADSHEET);
 
   /** One signed amount column; a negative value is money leaving the account. */
   public static final String AMOUNT_SINGLE_SIGNED_COLUMN = "SINGLE_SIGNED_COLUMN";
