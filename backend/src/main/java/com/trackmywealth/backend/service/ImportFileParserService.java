@@ -1288,9 +1288,16 @@ public class ImportFileParserService {
     BigDecimal amount = amountOf(record, template, columns);
     String currency = currencyOf(record, template, columns, accountCurrency);
     String description = optionalCell(record, columns.get("description"));
-    // US-07-22: a savings pocket move is a transfer, whatever else would type it.
+    // US-07-22: a savings pocket move is a transfer, whatever else would type it - where the ledger
+    // takes one: in the account's own currency (unknown in a template's dry run), and not on a card
+    // or a loan. Anywhere else the row is typed as any other.
     boolean pocketMove =
-        savingsPocket != null && description != null && savingsPocket.matcher(description).find();
+        savingsPocket != null
+            && description != null
+            && !account.creditCard()
+            && !account.loan()
+            && (accountCurrency == null || accountCurrency.equals(currency))
+            && savingsPocket.matcher(description).find();
     String type =
         pocketMove
             ? TRANSFER

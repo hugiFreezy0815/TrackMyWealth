@@ -19,6 +19,7 @@ import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -155,14 +156,14 @@ class YuhStatementImportControllerTest {
         .isEqualTo(account(yuh).financialInstitutionId());
     assertThat(
             jdbc.queryForList(
-                "SELECT workspace_member_id::TEXT || ':' || ownership_share FROM account_ownership"
+                "SELECT workspace_member_id::TEXT || ':' || ownership_share || ':' || effective_from FROM account_ownership"
                     + " WHERE account_id = ? AND effective_to IS NULL ORDER BY 1",
                 String.class,
                 pocket))
-        .as("the pocket has the Yuh account's owners and shares")
+        .as("the pocket has the Yuh account's owners and shares, from the same day")
         .isEqualTo(
             jdbc.queryForList(
-                "SELECT workspace_member_id::TEXT || ':' || ownership_share FROM account_ownership"
+                "SELECT workspace_member_id::TEXT || ':' || ownership_share || ':' || effective_from FROM account_ownership"
                     + " WHERE account_id = ? AND effective_to IS NULL ORDER BY 1",
                 String.class,
                 yuh));
@@ -194,14 +195,18 @@ class YuhStatementImportControllerTest {
     // The exchange: one pair the system decided, the CHF leg sending, the EUR leg receiving.
     Map<String, Object> exchange =
         jdbc.queryForMap(
-            "SELECT payment_transaction_id, card_transaction_id, status, match_kind, decided_by"
-                + " FROM settlement_match");
+            "SELECT payment_transaction_id, card_transaction_id, status, match_kind, decided_by,"
+                + " transfer_fx_rate FROM settlement_match");
     assertThat(exchange)
         .containsEntry("payment_transaction_id", moveId("-23.17"))
         .containsEntry("card_transaction_id", moveId("24.53"))
         .containsEntry("status", "CONFIRMED")
         .containsEntry("match_kind", "TRANSFER")
         .containsEntry("decided_by", null);
+    assertThat((BigDecimal) exchange.get("transfer_fx_rate"))
+        .as("the rate the bank applied, as a member's confirmation keeps it (V51)")
+        .isEqualByComparingTo(
+            new BigDecimal("24.53").divide(new BigDecimal("23.17"), 10, RoundingMode.HALF_EVEN));
 
     CashFlowResponse january = cashFlow();
     assertThat(sum(january.income(), "CHF"))

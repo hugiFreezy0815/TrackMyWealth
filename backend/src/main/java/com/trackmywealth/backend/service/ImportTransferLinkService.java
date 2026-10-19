@@ -121,11 +121,18 @@ public class ImportTransferLinkService {
       return;
     }
     transferDetectionService.lockForWrite(account);
-    // The recorded rows were detached after their chunk was flushed; link the managed ones.
+    // The recorded rows were detached after their chunk was flushed; only the planned ones are
+    // loaded again, so later flushes do not check the whole batch (#230).
+    List<UUID> planned = new ArrayList<>();
+    for (ImportRowPair exchange : plan.exchanges()) {
+      planned.add(recorded.get(exchange.debit()).getId());
+      planned.add(recorded.get(exchange.credit()).getId());
+    }
+    if (plan.savingsPocketAccountId() != null) {
+      plan.pocketMoves().forEach(position -> planned.add(recorded.get(position).getId()));
+    }
     Map<UUID, Transaction> managed = new HashMap<>();
-    transactionRepository
-        .findAllById(recorded.stream().map(Transaction::getId).toList())
-        .forEach(row -> managed.put(row.getId(), row));
+    transactionRepository.findAllById(planned).forEach(row -> managed.put(row.getId(), row));
 
     for (ImportRowPair exchange : plan.exchanges()) {
       transferDetectionService.confirmImportedPair(

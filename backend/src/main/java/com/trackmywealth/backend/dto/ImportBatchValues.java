@@ -111,8 +111,9 @@ public final class ImportBatchValues {
 
   /**
    * US-07-22: the row is a savings pocket move, but the account's pocket cannot take it (archived,
-   * another currency, not editable by the member) or the account can have none; it is imported as a
-   * one-sided transfer, pending review. The row stays included.
+   * another currency, not editable by the member), the account has none and only an owner may have
+   * it created, or the account can have none; it is imported as a one-sided transfer, pending
+   * review. The row stays included.
    */
   public static final String WARNING_SAVINGS_POCKET_UNAVAILABLE =
       "IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE";

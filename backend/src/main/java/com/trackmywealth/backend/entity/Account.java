@@ -88,8 +88,9 @@ public class Account {
   private boolean countsAsSaving;
 
   // US-07-22 (#325): the account's savings pocket (Yuh's "Sparkonto"), its own savings account that
-  // an import created; null while it has none.
-  @Column(name = "savings_pocket_account_id")
+  // an import created; null while it has none. Written only by AccountRepository#linkSavingsPocket,
+  // so saving an entity loaded before the link was made never clears it.
+  @Column(name = "savings_pocket_account_id", updatable = false)
   private UUID savingsPocketAccountId;
 
   @Column(name = "identifier_hash", length = 64)
@@ -252,10 +253,6 @@ public class Account {
 
   public UUID getSavingsPocketAccountId() {
     return savingsPocketAccountId;
-  }
-
-  public void setSavingsPocketAccountId(UUID savingsPocketAccountId) {
-    this.savingsPocketAccountId = savingsPocketAccountId;
   }
 
   public String getStatus() {

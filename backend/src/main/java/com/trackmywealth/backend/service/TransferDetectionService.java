@@ -354,6 +354,9 @@ public class TransferDetectionService {
     SettlementMatch match = newMatch(debit, credit);
     match.setStatus(SettlementMatchValues.CONFIRMED);
     match.setDecidedAt(OffsetDateTime.now(clock));
+    // V51: a confirmed cross-currency pair (an imported exchange, US-07-22) keeps the rate the bank
+    // applied, as a member's confirmation does; a same-currency pair has none.
+    match.setTransferFxRate(SettlementMatchService.impliedTransferRate(match));
     settlementMatchRepository.saveAndFlush(match);
     settlementDetectionService.rejectCompetitors(match, match.getDecidedAt());
     settlementDetectionService.applyFlags(match);

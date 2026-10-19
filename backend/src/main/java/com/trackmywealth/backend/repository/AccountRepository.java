@@ -35,6 +35,15 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
   @Query("SELECT a.savingsPocketAccountId FROM Account a WHERE a.id = :id")
   Optional<UUID> findSavingsPocketAccountId(@Param("id") UUID id);
 
+  // US-07-22: links a new pocket by this column alone - the account entity never writes it (it is
+  // not updatable), and the account's version, its ETag, stays as the member last saw it. Only an
+  // account without a pocket gains one.
+  @Modifying(flushAutomatically = true)
+  @Query(
+      "UPDATE Account a SET a.savingsPocketAccountId = :pocketId"
+          + " WHERE a.id = :id AND a.savingsPocketAccountId IS NULL")
+  int linkSavingsPocket(@Param("id") UUID id, @Param("pocketId") UUID pocketId);
+
   // US-04-03/FR-LIF-005: an institution summary counts only currently-active accounts - an
   // archived account is excluded from current totals (though still included in a historical
   // figure covering a period it was active in, not this story's concern). Explicit ordering

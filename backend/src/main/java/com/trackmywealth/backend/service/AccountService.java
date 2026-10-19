@@ -172,6 +172,16 @@ public class AccountService {
         workspaceAccessService.requireWorkspace(actor.workspaceId(), "an account");
     FinancialInstitution institution = resolveInstitution(request.financialInstitutionId(), actor);
 
+    Account account = insertAccount(workspace, institution, request);
+    assignInitialOwnershipToCreator(account, actor);
+
+    return toSummary(account, actor);
+  }
+
+  // The account of a validated request, with its capability defaults and extension row - every
+  // account's creation, whoever owns it afterwards.
+  private Account insertAccount(
+      Workspace workspace, FinancialInstitution institution, CreateAccountRequest request) {
     Account account = new Account();
     account.setWorkspace(workspace);
     account.setFinancialInstitution(institution);
@@ -181,15 +191,12 @@ public class AccountService {
     applyCapabilityDefaults(account, request);
     // saveAndFlush, not save: `nature` is a Postgres GENERATED ALWAYS AS (...) STORED column
     // (V4), only computed once the INSERT statement actually executes - a plain save() defers
-    // that to end-of-transaction, so toSummary() below would read the field's still-null
-    // in-memory value. Flushing forces the INSERT now, which is also what makes Hibernate's
-    // @Generated support issue its post-insert refresh SELECT.
+    // that to end-of-transaction, so toSummary() would read the field's still-null in-memory
+    // value. Flushing forces the INSERT now, which is also what makes Hibernate's @Generated
+    // support issue its post-insert refresh SELECT.
     account = accountRepository.saveAndFlush(account);
-
     createExtensionRowIfNeeded(account, request);
-    assignInitialOwnershipToCreator(account, actor);
-
-    return toSummary(account, actor);
+    return account;
   }
 
   /**
@@ -197,8 +204,10 @@ public class AccountService {
    * {@code currency} at the same institution, named after it - and links it as the parent's pocket.
    * The import commit that first books a pocket move calls this, in its own transaction, under the
    * parent's import lock, so a parent never gains two pockets. The pocket has the parent's current
-   * owners and shares; an unowned parent's pocket goes to the committing member, as {@link
-   * #createAccount} does, so it is never left without an owner.
+   * owners and shares, each from the day it owns the parent, so the pocket's past bookings have an
+   * owner too; an unowned parent's pocket goes to the committing member, as {@link #createAccount}
+   * does, so it is never left without an owner. The link is written on its own, not by saving
+   * {@code parent}: the entity was loaded before the import lock and may be stale.
    */
   @Transactional
   public Account createSavingsPocket(
@@ -217,15 +226,8 @@ public class AccountService {
             null,
             null);
     validateExtensionFields(request);
-    Account pocket = new Account();
-    pocket.setWorkspace(parent.getWorkspace());
-    pocket.setFinancialInstitution(parent.getFinancialInstitution());
-    pocket.setName(request.name());
-    pocket.setAccountType(request.accountType());
-    pocket.setNativeCurrency(request.nativeCurrency());
-    applyCapabilityDefaults(pocket, request);
-    pocket = accountRepository.saveAndFlush(pocket);
-    createExtensionRowIfNeeded(pocket, request);
+    Account pocket =
+        insertAccount(parent.getWorkspace(), parent.getFinancialInstitution(), request);
 
     List<AccountOwnership> owners =
         accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(parent.getId());
@@ -237,12 +239,11 @@ public class AccountService {
       ownership.setAccount(pocket);
       ownership.setWorkspaceMember(owner.getWorkspaceMember());
       ownership.setOwnershipShare(owner.getOwnershipShare());
-      ownership.setEffectiveFrom(LocalDate.now());
+      ownership.setEffectiveFrom(owner.getEffectiveFrom());
       accountOwnershipRepository.saveAndFlush(ownership);
     }
 
-    parent.setSavingsPocketAccountId(pocket.getId());
-    accountRepository.saveAndFlush(parent);
+    accountRepository.linkSavingsPocket(parent.getId(), pocket.getId());
     return pocket;
   }
 

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.entry;
+import static org.assertj.core.groups.Tuple.tuple;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.Mockito.mock;
 
@@ -907,6 +908,49 @@ class ImportFileParserServiceTest {
     assertThat(rows.get(0).canonical().externalId())
         .as("a group reference is never a booking id")
         .isNull();
+  }
+
+  @Test
+  void aPocketMoveTheLedgerCannotTakeAsATransferIsTypedAsAnyOtherRow() {
+    // The ledger takes a TRANSFER only in the account's own currency, and none on a card or loan.
+    ImportTemplateDefinition template =
+        new Template()
+            .delimiter(";")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .currency("currency")
+                    .description("text")
+                    .build())
+            .savingsPocketPattern("^Spareinlage")
+            .build();
+    byte[] statement =
+        utf8(
+            "date;amount;currency;text\n"
+                + "2031-05-01;-17.35;CHF;Spareinlage\n"
+                + "2031-05-01;-8.19;EUR;Spareinlage\n");
+
+    List<ParsedImportRow> chf =
+        parser
+            .parseForAccount(statement, template, new ImportAccountContext("CHF", false, false))
+            .rows();
+    List<ParsedImportRow> card =
+        parser
+            .parseForAccount(statement, template, new ImportAccountContext("CHF", true, false))
+            .rows();
+
+    assertThat(chf)
+        .extracting(
+            row -> row.canonical().transactionType(), row -> row.canonical().savingsPocket())
+        .containsExactly(tuple("TRANSFER", true), tuple("EXPENSE", false));
+    assertThat(card)
+        .extracting(
+            row -> row.canonical().transactionType(), row -> row.canonical().savingsPocket())
+        .containsExactly(
+            tuple("CREDIT_CARD_PURCHASE", false), tuple("CREDIT_CARD_PURCHASE", false));
   }
 
   @Test
