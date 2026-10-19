@@ -21,4 +21,14 @@ public interface SnapshotHoldingRepository extends JpaRepository<SnapshotHolding
   @Modifying(flushAutomatically = true)
   @Query("DELETE FROM SnapshotHolding h WHERE h.snapshotId = :snapshotId")
   void deleteBySnapshotId(@Param("snapshotId") UUID snapshotId);
+
+  List<SnapshotHolding> findBySnapshotId(UUID snapshotId);
+
+  // US-07-31: a rollback takes out only its own batch's holdings of a completed snapshot.
+  @Modifying(flushAutomatically = true)
+  @Query(
+      "DELETE FROM SnapshotHolding h WHERE h.snapshotId = :snapshotId AND h.importBatchId ="
+          + " :batchId")
+  void deleteBySnapshotIdAndImportBatchId(
+      @Param("snapshotId") UUID snapshotId, @Param("batchId") UUID batchId);
 }

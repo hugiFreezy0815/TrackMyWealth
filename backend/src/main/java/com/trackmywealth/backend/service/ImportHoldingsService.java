@@ -5,21 +5,19 @@ import com.trackmywealth.backend.dto.ImportHoldingsResponse;
 import com.trackmywealth.backend.dto.ImportHoldingsStatement;
 import com.trackmywealth.backend.dto.ImportHoldingsValues;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
+import com.trackmywealth.backend.dto.ImportSnapshotHolding;
+import com.trackmywealth.backend.dto.ImportSnapshotPlan;
+import com.trackmywealth.backend.dto.ImportSnapshotValues;
 import com.trackmywealth.backend.entity.Account;
-import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ImportHoldingRow;
 import com.trackmywealth.backend.entity.Security;
-import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.entity.WorkspaceSecurityTicker;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
-import com.trackmywealth.backend.error.ExistingResourceConflictException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
-import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportHoldingRowRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
-import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import com.trackmywealth.backend.repository.WorkspaceSecurityTickerRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -30,10 +28,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -57,14 +55,17 @@ import org.springframework.web.server.ResponseStatusException;
  *       several such balances) is the snapshot's balance; cash in another currency is shown only.
  *   <li><b>Commit.</b> Refused while a line is unreadable (422 {@code IMPORT_HOLDINGS_UNREADABLE}),
  *       a position resolves to nothing (422 {@code IMPORT_HOLDINGS_UNRESOLVED}), two resolve to the
- *       same security, the account's dates do not admit the statement's (as for a snapshot recorded
- *       by hand), or an imported snapshot of that date is in effect (409 with {@code
- *       existingSnapshotId}). Then it records the snapshot, pointing at the batch, with each
- *       position's quantity and the price and value the statement reports, and reconciles the
- *       account against it (US-25-02).
+ *       same security, or the account's dates do not admit the statement's (as for a snapshot
+ *       recorded by hand). An imported snapshot of that date is completed part by part ({@link
+ *       ImportSnapshotCompletionService}, US-07-31): a duplicate is a 409 {@code
+ *       IMPORT_SNAPSHOT_ALREADY_RECORDED}, a difference a 409 {@code IMPORT_SNAPSHOT_CONFLICT}, a
+ *       standing reconciliation decision a 409 {@code IMPORT_SNAPSHOT_RECONCILIATION_DECIDED}.
+ *       Otherwise it records the snapshot, or the parts the existing one lacks, pointing at the
+ *       batch, with each position's quantity and the price and value the statement reports, and
+ *       reconciles the account (US-25-02).
  *   <li><b>Rollback.</b> As a statement balance's (US-07-12): {@link
- *       ImportStatementBalanceService#rollBack} deletes or withdraws the batch's snapshot, holdings
- *       included.
+ *       ImportStatementBalanceService#rollBack} removes the batch's parts, and the snapshot with
+ *       them unless another import's part remains.
  * </ul>
  *
  * <p>Every method runs inside the caller's transaction; a commit holds the account's import lock
@@ -73,38 +74,30 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ImportHoldingsService {
 
-  private static final String SOURCE_DOCUMENT = "DOCUMENT";
   private static final String MESSAGE_PREFIX = "tmw.import.row.";
-  private static final int QUANTITY_SCALE = 10;
 
   private final ImportHoldingRowRepository rowRepository;
   private final SecurityRepository securityRepository;
   private final WorkspaceSecurityTickerRepository tickerRepository;
-  private final AccountSnapshotRepository snapshotRepository;
-  private final SnapshotHoldingRepository holdingRepository;
-  private final ReconciliationService reconciliationService;
+  private final ImportSnapshotCompletionService completionService;
+  private final ImportSnapshotExplanationService explanations;
   private final AccountCurrencyService accountCurrencyService;
-  private final BusinessDateService businessDates;
   private final MessageSource messageSource;
 
   public ImportHoldingsService(
       ImportHoldingRowRepository rowRepository,
       SecurityRepository securityRepository,
       WorkspaceSecurityTickerRepository tickerRepository,
-      AccountSnapshotRepository snapshotRepository,
-      SnapshotHoldingRepository holdingRepository,
-      ReconciliationService reconciliationService,
+      ImportSnapshotCompletionService completionService,
+      ImportSnapshotExplanationService explanations,
       AccountCurrencyService accountCurrencyService,
-      BusinessDateService businessDates,
       MessageSource messageSource) {
     this.rowRepository = rowRepository;
     this.securityRepository = securityRepository;
     this.tickerRepository = tickerRepository;
-    this.snapshotRepository = snapshotRepository;
-    this.holdingRepository = holdingRepository;
-    this.reconciliationService = reconciliationService;
+    this.completionService = completionService;
+    this.explanations = explanations;
     this.accountCurrencyService = accountCurrencyService;
-    this.businessDates = businessDates;
     this.messageSource = messageSource;
   }
 
@@ -161,19 +154,22 @@ public class ImportHoldingsService {
     Map<Integer, UUID> resolved = resolve(account.getWorkspace().getId(), positions);
     String currency = accountCurrencyService.ownCurrency(account);
     BigDecimal balance = ownCash(rows, currency);
+    int unresolvedCount = positions.size() - resolved.size();
+    List<String> duplicates = duplicateSecurities(positions, resolved);
+    List<ImportHoldingRow> errors = ofKind(rows, ImportHoldingsValues.KIND_ERROR);
 
+    // Before the commit, what it would do now; afterwards, what it (and a rollback) did.
     String snapshot = batch.getHoldingsSnapshot();
-    UUID existingId = null;
+    ImportSnapshotPlan plan = null;
     if (snapshot == null && ImportBatchValues.PARSED.equals(batch.getStatus())) {
-      Optional<AccountSnapshot> existing = existing(batch);
-      if (!withinAccountDates(account, batch.getHoldingsSnapshotDate())) {
-        snapshot = ImportHoldingsValues.SNAPSHOT_OUT_OF_RANGE;
-      } else if (existing.isPresent()) {
-        snapshot = ImportHoldingsValues.SNAPSHOT_EXISTS;
-        existingId = existing.get().getId();
-      } else {
-        snapshot = ImportHoldingsValues.SNAPSHOT_NEW;
-      }
+      plan =
+          completionService.plan(
+              account,
+              batch.getHoldingsSnapshotDate(),
+              balance,
+              quantities(positions, resolved),
+              unresolvedCount == 0 && duplicates.isEmpty());
+      snapshot = plan.outcome();
     }
 
     List<ImportHoldingsResponse.Position> positionResponses = new ArrayList<>();
@@ -204,23 +200,36 @@ public class ImportHoldingsService {
                         currency.equals(row.getCurrency())))
             .toList();
     List<ImportHoldingsResponse.Unreadable> unreadable =
-        ofKind(rows, ImportHoldingsValues.KIND_ERROR).stream()
+        errors.stream()
             .map(
                 row ->
                     new ImportHoldingsResponse.Unreadable(
                         row.getRowNumber(), row.getRawText(), message(row.getErrorCode(), locale)))
             .toList();
-    int unresolvedCount = positions.size() - resolved.size();
     boolean ready =
-        ImportHoldingsValues.SNAPSHOT_NEW.equals(snapshot)
+        plan != null
+            && plan.committable()
+            && !plan.decided()
             && unresolvedCount == 0
-            && unreadable.isEmpty()
-            && duplicateSecurities(positions, resolved).isEmpty();
+            && errors.isEmpty()
+            && duplicates.isEmpty();
+    String explanation =
+        explanations.explain(
+            snapshot,
+            plan,
+            batch.getHoldingsSnapshotDate(),
+            errors.size(),
+            unresolvedCount,
+            !duplicates.isEmpty(),
+            locale);
     return new ImportHoldingsResponse(
         batch.getHoldingsSnapshotDate(),
         batch.getHoldingsDateSource(),
         snapshot,
-        existingId,
+        plan == null ? null : plan.existing(),
+        plan == null ? List.of() : plan.adds(),
+        plan == null ? List.of() : plan.conflicts(),
+        explanation,
         balance,
         balance == null ? null : currency,
         positionResponses,
@@ -231,13 +240,12 @@ public class ImportHoldingsService {
   }
 
   /**
-   * On commit: records the batch's snapshot with its holdings (see the class comment) and
-   * reconciles the account against it.
+   * On commit: records the batch's snapshot with its holdings, or completes the imported snapshot
+   * of its date ({@link ImportSnapshotCompletionService}), and reconciles the account.
    *
    * @throws ApiException 422 {@code IMPORT_HOLDINGS_UNREADABLE} or {@code
-   *     IMPORT_HOLDINGS_UNRESOLVED}; nothing is written then
-   * @throws ExistingResourceConflictException 409 when an imported snapshot of the date is in
-   *     effect
+   *     IMPORT_HOLDINGS_UNRESOLVED}, 409 {@code IMPORT_SNAPSHOT_ALREADY_RECORDED} or {@code
+   *     IMPORT_SNAPSHOT_CONFLICT}; nothing is written then
    */
   public void commit(ImportBatch batch, Account account, UUID committedBy) {
     List<ImportHoldingRow> rows = rowRepository.findByImportBatchIdOrderByRowNumber(batch.getId());
@@ -258,13 +266,6 @@ public class ImportHoldingsService {
       throw holdsNoPositions();
     }
     LocalDate date = batch.getHoldingsSnapshotDate();
-    if (!withinAccountDates(account, date)) {
-      throw new ResponseStatusException(
-          HttpStatus.UNPROCESSABLE_CONTENT,
-          "The statement's date "
-              + date
-              + " is in the future, before the account was opened or after it was closed.");
-    }
     Map<Integer, UUID> resolved = resolve(account.getWorkspace().getId(), positions);
     requireResolved(positions, resolved);
     List<String> duplicates = duplicateSecurities(positions, resolved);
@@ -275,44 +276,50 @@ public class ImportHoldingsService {
               + String.join(", ", duplicates)
               + " are the same security; a snapshot holds it once.");
     }
-    existing(batch)
-        .ifPresent(
-            existing -> {
-              throw new ExistingResourceConflictException(
-                  "An imported snapshot of this account and date exists already. Roll back the"
-                      + " import that recorded it first.",
-                  "existingSnapshotId",
-                  existing.getId());
-            });
-
     String currency = accountCurrencyService.ownCurrency(account);
-    AccountSnapshot snapshot = new AccountSnapshot();
-    snapshot.setWorkspace(account.getWorkspace());
-    snapshot.setAccount(account);
-    snapshot.setSnapshotDate(date);
-    snapshot.setBalance(ownCash(rows, currency));
-    snapshot.setCurrency(currency);
-    snapshot.setSource(SOURCE_DOCUMENT);
-    snapshot.setImportBatchId(batch.getId());
-    snapshot.setCreatedBy(committedBy);
-    // Flushed: a concurrent snapshot of the date surfaces here as the unique index's 409.
-    snapshot = snapshotRepository.saveAndFlush(snapshot);
-
-    List<SnapshotHolding> holdings = new ArrayList<>(positions.size());
-    for (ImportHoldingRow position : positions) {
-      SnapshotHolding holding = new SnapshotHolding();
-      holding.setSnapshotId(snapshot.getId());
-      holding.setSecurityId(resolved.get(position.getRowNumber()));
-      holding.setQuantity(position.getQuantity().setScale(QUANTITY_SCALE));
-      holding.setReported(
-          position.getReportedPrice(),
-          position.getReportedValue().setScale(FxRateService.MONEY_SCALE),
-          position.getCurrency());
-      holdings.add(holding);
+    BigDecimal balance = ownCash(rows, currency);
+    ImportSnapshotPlan plan =
+        completionService.plan(account, date, balance, quantities(positions, resolved), true);
+    if (ImportSnapshotValues.OUT_OF_RANGE.equals(plan.outcome())) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_CONTENT,
+          "The statement's date "
+              + date
+              + " is in the future, before the account was opened or after it was closed.");
     }
-    holdingRepository.saveAllAndFlush(holdings);
-    batch.setHoldingsSnapshot(ImportHoldingsValues.SNAPSHOT_RECORDED);
-    reconciliationService.reconcileLatest(account, committedBy);
+    if (!plan.committable()) {
+      throw ImportSnapshotCompletionService.refusal(
+          plan,
+          explanations.explain(
+              plan.outcome(), plan, date, 0, 0, false, LocaleContextHolder.getLocale()));
+    }
+    List<ImportSnapshotHolding> holdings =
+        positions.stream()
+            .map(
+                position ->
+                    new ImportSnapshotHolding(
+                        resolved.get(position.getRowNumber()),
+                        position.getQuantity(),
+                        position.getReportedPrice(),
+                        position.getReportedValue(),
+                        position.getCurrency()))
+            .toList();
+    batch.setHoldingsSnapshot(
+        completionService.commit(
+            batch, account, date, currency, plan, balance, holdings, committedBy));
+  }
+
+  // Each resolved position's quantity by security (the statement lists a security once).
+  private static Map<UUID, BigDecimal> quantities(
+      List<ImportHoldingRow> positions, Map<Integer, UUID> resolved) {
+    Map<UUID, BigDecimal> quantities = new LinkedHashMap<>();
+    for (ImportHoldingRow row : positions) {
+      UUID id = resolved.get(row.getRowNumber());
+      if (id != null) {
+        quantities.putIfAbsent(id, row.getQuantity());
+      }
+    }
+    return quantities;
   }
 
   /**
@@ -404,18 +411,6 @@ public class ImportHoldingsService {
         .reduce(BigDecimal::add)
         .map(sum -> sum.setScale(FxRateService.MONEY_SCALE))
         .orElse(null);
-  }
-
-  private Optional<AccountSnapshot> existing(ImportBatch batch) {
-    return snapshotRepository.findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
-        batch.getAccountId(), batch.getHoldingsSnapshotDate(), SOURCE_DOCUMENT);
-  }
-
-  // As for a snapshot recorded by hand (AccountSnapshotService) or a statement balance.
-  private boolean withinAccountDates(Account account, LocalDate date) {
-    return !date.isAfter(businessDates.today())
-        && (account.getOpenedAt() == null || !date.isBefore(account.getOpenedAt()))
-        && (account.getClosedAt() == null || !date.isAfter(account.getClosedAt()));
   }
 
   private ImportRowErrorResponse message(String code, Locale locale) {

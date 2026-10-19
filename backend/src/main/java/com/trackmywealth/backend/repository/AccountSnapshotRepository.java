@@ -72,6 +72,16 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
   // US-07-12: the snapshot an import batch's commit recorded, withdrawn or not.
   Optional<AccountSnapshot> findByImportBatchId(UUID importBatchId);
 
+  /**
+   * US-07-31: the snapshot in effect a batch contributed to - it recorded it, or added its balance
+   * or holdings - if any. A batch contributes to at most one (one account and date).
+   */
+  @Query(
+      "SELECT s FROM AccountSnapshot s WHERE s.withdrawnAt IS NULL AND (s.importBatchId = :batchId"
+          + " OR s.balanceImportBatchId = :batchId OR EXISTS (SELECT 1 FROM SnapshotHolding h"
+          + " WHERE h.snapshotId = s.id AND h.importBatchId = :batchId))")
+  Optional<AccountSnapshot> findContributedBy(@Param("batchId") UUID batchId);
+
   // Replacing a snapshot deletes and re-inserts its holdings; the row lock keeps two concurrent
   // replacements from interleaving into a mix of both holding sets.
   @Lock(LockModeType.PESSIMISTIC_WRITE)

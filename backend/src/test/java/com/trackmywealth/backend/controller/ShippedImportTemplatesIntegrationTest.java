@@ -53,7 +53,7 @@ class ShippedImportTemplatesIntegrationTest {
   private static final String BASE = "/api/v1/import-templates";
   private static final UUID DKB = UUID.fromString("752d1bc3-1951-408f-9d08-fbe4a1f1d9c5");
   private static final UUID POSTFINANCE = UUID.fromString("8d1b8ef6-882f-46d9-87e1-a17278f8bfa3");
-  // US-07-23 (V105): the account statement PDF, for CHF and EUR accounts.
+  // US-07-23 (V106): the account statement PDF, for CHF and EUR accounts.
   private static final UUID POSTFINANCE_STATEMENT =
       UUID.fromString("35cd132b-78f1-4480-93a7-e59e0fd18f9f");
   // US-07-21 (V88): the current version 2; the family keeps version 1's id.

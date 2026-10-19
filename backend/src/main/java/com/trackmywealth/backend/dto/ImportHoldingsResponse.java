@@ -11,11 +11,22 @@ import java.util.UUID;
  * it. Positions are resolved afresh on every read: a security created (or a ticker mapped) since
  * the upload counts at once.
  *
- * <p>{@code snapshot}: before the commit {@code NEW}, {@code EXISTS} (an imported snapshot of the
- * date is in effect: {@code existingSnapshotId}; the commit is refused) or {@code OUT_OF_RANGE}
- * (the account's dates do not admit the date); afterwards {@code RECORDED}, and after a rollback
- * {@code DELETED} or {@code WITHDRAWN}. {@code readyToCommit} is whether a commit would succeed
- * now: the snapshot is {@code NEW}, every position resolves and no line is unreadable.
+ * <p>US-07-31 (#366): the preview says exactly what the commit will do to the imported snapshot of
+ * the statement's date. {@code snapshot} before the commit: {@code NEW}, {@code COMPLETES} (adds
+ * the parts in {@code adds} to {@code existingSnapshot}), {@code ALREADY_RECORDED} (a duplicate:
+ * discard it), {@code CONFLICTING} (differs as {@code conflicts} lists; nothing is overwritten) or
+ * {@code OUT_OF_RANGE}; afterwards {@code RECORDED} or {@code COMPLETED}, and after a rollback
+ * {@code DELETED}, {@code WITHDRAWN} or {@code REMOVED} (its parts taken out of a snapshot another
+ * import keeps). {@code explanation} is one sentence to show above the preview, in the caller's
+ * language; what keeps the commit back comes first. {@code readyToCommit} is whether a commit would
+ * succeed now: {@code existingSnapshot.reconciliationResultId} names a reconciliation decision that
+ * keeps a {@code COMPLETES} statement back until it is reopened.
+ *
+ * <p>While a position resolves to no security, or two resolve to the same one, the statement's
+ * holdings are not compared with the snapshot's yet (the position resolving later may be the one
+ * the snapshot holds): {@code conflicts} then lists no position and an {@code ALREADY_RECORDED} is
+ * no duplicate verdict, {@code readyToCommit} is false and {@code explanation} names what is
+ * missing. Once every position resolves, the preview compares them.
  *
  * <p>Only the cash in the account's own currency becomes the snapshot's balance ({@code recorded});
  * a statement's cash in other currencies is shown, not recorded.
@@ -23,9 +34,24 @@ import java.util.UUID;
 public record ImportHoldingsResponse(
     LocalDate snapshotDate,
     @Schema(allowableValues = {"STATEMENT", "MEMBER"}) String dateSource,
-    @Schema(allowableValues = {"NEW", "EXISTS", "OUT_OF_RANGE", "RECORDED", "DELETED", "WITHDRAWN"})
+    @Schema(
+            allowableValues = {
+              "NEW",
+              "COMPLETES",
+              "ALREADY_RECORDED",
+              "CONFLICTING",
+              "OUT_OF_RANGE",
+              "RECORDED",
+              "COMPLETED",
+              "DELETED",
+              "WITHDRAWN",
+              "REMOVED"
+            })
         String snapshot,
-    UUID existingSnapshotId,
+    ImportSnapshotPlan.Existing existingSnapshot,
+    @Schema(allowableValues = {"BALANCE", "HOLDINGS"}) List<String> adds,
+    List<ImportSnapshotPlan.Conflict> conflicts,
+    String explanation,
     BigDecimal balance,
     String balanceCurrency,
     List<Position> positions,
@@ -35,6 +61,8 @@ public record ImportHoldingsResponse(
     boolean readyToCommit) {
 
   public ImportHoldingsResponse {
+    adds = List.copyOf(adds);
+    conflicts = List.copyOf(conflicts);
     positions = List.copyOf(positions);
     cashBalances = List.copyOf(cashBalances);
     unreadable = List.copyOf(unreadable);

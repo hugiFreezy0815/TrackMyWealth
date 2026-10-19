@@ -21,21 +21,6 @@ public final class ImportHoldingsValues {
   /** {@code holdings_date_source}: the date the member entered at upload. */
   public static final String DATE_MEMBER = "MEMBER";
 
-  /** Preview: the commit would record a new snapshot. */
-  public static final String SNAPSHOT_NEW = "NEW";
-
-  /** Preview: an imported snapshot of the date is in effect; the commit is refused. */
-  public static final String SNAPSHOT_EXISTS = "EXISTS";
-
-  /** Preview: the account's dates do not admit the snapshot's (future, before opened, closed). */
-  public static final String SNAPSHOT_OUT_OF_RANGE = "OUT_OF_RANGE";
-
-  /** After the commit; rollback outcomes as for a statement balance (US-07-12). */
-  public static final String SNAPSHOT_RECORDED = ImportBatchValues.SNAPSHOT_RECORDED;
-
-  public static final String SNAPSHOT_DELETED = ImportBatchValues.SNAPSHOT_DELETED;
-  public static final String SNAPSHOT_WITHDRAWN = ImportBatchValues.SNAPSHOT_WITHDRAWN;
-
   /** A position's security: found by its ISIN, or by a ticker the workspace mapped. */
   public static final String RESOLVED = "RESOLVED";
 

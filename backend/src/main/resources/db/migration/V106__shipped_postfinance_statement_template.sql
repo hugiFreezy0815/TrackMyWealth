@@ -1,5 +1,5 @@
 -- =============================================================================================
--- V105: shipped template for the PostFinance account statement PDF (US-07-23, #326)
+-- V106: shipped template for the PostFinance account statement PDF (US-07-23, #326)
 -- =============================================================================================
 -- PF-9 and PF-10 in docs/architecture/import-source-analysis.md: the "Privatkonto" and the savings
 -- account statement share one layout, for CHF and EUR accounts alike. The table is "Datum | Text |

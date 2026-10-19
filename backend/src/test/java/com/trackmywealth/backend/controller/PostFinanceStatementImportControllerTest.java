@@ -40,7 +40,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * US-07-23 (#326) against a real PostgreSQL: a PostFinance account statement PDF imported with the
- * shipped template (V105) books every booking by its value date in the statement's currency, and
+ * shipped template (V106) books every booking by its value date in the statement's currency, and
  * the same bookings imported from the statement and from the CSV export (V76) are in the ledger
  * once, whichever comes first (PO rule: nothing is imported twice). The statement is the template's
  * synthetic fixture ({@link ShippedTemplateFixtures#postFinanceStatement}); the CSV is built here

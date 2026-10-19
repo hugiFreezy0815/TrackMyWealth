@@ -82,8 +82,15 @@ public class AccountSnapshot {
   private UUID updatedBy;
 
   // US-07-12: the import batch whose commit recorded this DOCUMENT snapshot; a rollback removes it.
-  @Column(name = "import_batch_id", columnDefinition = UUID_COLUMN, updatable = false)
+  // US-07-31 (V105): updatable, since a rollback of the creating batch passes the snapshot to the
+  // batch whose part remains.
+  @Column(name = "import_batch_id", columnDefinition = UUID_COLUMN)
   private UUID importBatchId;
+
+  // US-07-31 (V105): the batch whose statement contributed the balance; null for a balance
+  // recorded by hand, or no balance.
+  @Column(name = "balance_import_batch_id", columnDefinition = UUID_COLUMN)
+  private UUID balanceImportBatchId;
 
   // US-07-12: set when a rollback could not delete the snapshot (see V74). A withdrawn snapshot is
   // history only: every lookup of an observed balance leaves it out.
@@ -194,6 +201,18 @@ public class AccountSnapshot {
 
   public void setImportBatchId(UUID importBatchId) {
     this.importBatchId = importBatchId;
+  }
+
+  public UUID getBalanceImportBatchId() {
+    return balanceImportBatchId;
+  }
+
+  /**
+   * US-07-31: the balance and the batch whose statement contributed it, set or cleared together.
+   */
+  public void setImportedBalance(BigDecimal balance, UUID importBatchId) {
+    this.balance = balance;
+    this.balanceImportBatchId = importBatchId;
   }
 
   public OffsetDateTime getWithdrawnAt() {

@@ -1,7 +1,7 @@
 -- =============================================================================================
--- V106: Reference-data baseline 1.9.0 (US-07-23, #326, FR-REF-001/010)
+-- V107: Reference-data baseline 1.9.0 (US-07-23, #326, FR-REF-001/010)
 -- =============================================================================================
--- V105 ships the PostFinance statement PDF template. As V43, V80, V85, V89, V92, V94, V97
+-- V106 ships the PostFinance statement PDF template. As V43, V80, V85, V89, V92, V94, V97
 -- and V104 did, this records the shipped content as its own package, 1.9.0-baseline, and makes
 -- it current; 1.8.0-baseline stays as history.
 -- =============================================================================================
