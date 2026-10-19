@@ -622,6 +622,10 @@ public class ImportFileParserService {
       }
     }
     requireCell(layout, layout.balanceColumn(), "pdfLayout.balanceColumn");
+    if (layout.flowColumn() != null
+        && matchesByName(layout.flowColumn(), layout.headerLabels()).size() != 1) {
+      throw invalid("pdfLayout.flowColumn", "Name one of the layout's header labels.");
+    }
   }
 
   private static void validateHeaderLabels(ImportTemplateDefinition template, Set<String> seen) {

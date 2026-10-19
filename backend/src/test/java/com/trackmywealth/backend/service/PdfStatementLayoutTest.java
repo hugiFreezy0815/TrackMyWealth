@@ -1176,6 +1176,11 @@ class PdfStatementLayoutTest {
     assertInvalid(
         yuhTemplate(yuh.toBuilder().withContinuationEndPattern(" ").build()),
         "pdfLayout.continuationEndPattern");
+    // #326: the flowing text column is one of the header labels, not a row pattern column.
+    assertInvalid(
+        yuhTemplate(yuh.toBuilder().withFlowColumn("Unknown").build()), "pdfLayout.flowColumn");
+    assertInvalid(
+        yuhTemplate(yuh.toBuilder().withFlowColumn("Zeile").build()), "pdfLayout.flowColumn");
   }
 
   /**

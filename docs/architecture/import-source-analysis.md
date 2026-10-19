@@ -270,7 +270,7 @@ a PDF template is a set of label anchors and line patterns, not a column mapping
 | Institution | Container details | Cash transactions | Balances (snapshot) | Positions | Ignore |
 |---|---|---|---|---|---|
 | DKB | DKB-1 preamble (IBAN, account kind) | DKB-1 CSV now, FinTS later (#259-#262) | DKB-1 preamble `Kontostand vom` | none (no depot sample) | - |
-| PostFinance, accounts | PF-1/PF-2 preamble (IBAN, currency) | PF-1/PF-2 CSV | none in the CSV; PF-9/PF-10 statement PDFs once a PDF template exists, manual entry until then | - | PF-9/PF-10 bookings (same as the CSV), PF-15 |
+| PostFinance, accounts | PF-1/PF-2 preamble (IBAN, currency), PF-9/PF-10 IBAN line | PF-1/PF-2 CSV, or PF-9/PF-10 statement PDF (shipped template V106, #326; CHF and EUR) | PF-9/PF-10 opening and closing `Kontostand` (none in the CSV) | - | PF-15 |
 | PostFinance, E-Trading | PF-7 (account number, holder) or manual | PF-3 cash rows (later, with the securities import) | PF-4 (cash per currency) | PF-7 (has ISIN); PF-5 only with ticker resolution | PF-6 (duplicates PF-4/PF-5) |
 | PostFinance, pillar 3a | PF-8 or manual | none | PF-8, manual entry recommended (unstable print layout) | PF-8 (fund units) | - |
 | Sparkasse, accounts | `Auftragskonto` column of SPK-1/SPK-2 | SPK-1/SPK-2 CSV, FinTS later | none in the CSV; FinTS later | - | - |
@@ -617,6 +617,7 @@ CI, source control, bug reports, or logs.
 | SPK-6/SPK-7/YUH-1 (PDF) vs a CSV or FinTS of the same account | Use the PDF only for balances when the transactions come from elsewhere. |
 | YUH-1 trade rows vs a later securities import | The cash leg of a trade must be linked to, not duplicated by, the securities transaction (EPIC 15). |
 | DKB pending vs booked rows | Row filter (6.1). |
+| PF-1/PF-2 CSV vs PF-9/PF-10 statement PDF of the same account | Duplicate check on date + amount + currency (#363). The CSV's `Datum` is the statement's **value date** (`Valuta`), which can lie a day before the statement's `Datum` (card and TWINT purchases); the statement template therefore books by `Valuta` (V106). Checked on the owner's files, counts only (2026-10-19): of the CSV's 37 rows in the statement's period, the statement's `Datum` found 32 as duplicates, `Valuta` 36 - every booking in both files (the 37th is in the next statement). |
 
 ### 6.8 PDF cash statements: what the template must express
 

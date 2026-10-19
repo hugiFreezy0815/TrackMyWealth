@@ -53,6 +53,9 @@ class ShippedImportTemplatesIntegrationTest {
   private static final String BASE = "/api/v1/import-templates";
   private static final UUID DKB = UUID.fromString("752d1bc3-1951-408f-9d08-fbe4a1f1d9c5");
   private static final UUID POSTFINANCE = UUID.fromString("8d1b8ef6-882f-46d9-87e1-a17278f8bfa3");
+  // US-07-23 (V106): the account statement PDF, for CHF and EUR accounts.
+  private static final UUID POSTFINANCE_STATEMENT =
+      UUID.fromString("35cd132b-78f1-4480-93a7-e59e0fd18f9f");
   // US-07-21 (V88): the current version 2; the family keeps version 1's id.
   private static final UUID SPARKASSE_CAMT =
       UUID.fromString("df6b6640-6a37-49ce-b5fc-feb61c677971");
@@ -88,6 +91,7 @@ class ShippedImportTemplatesIntegrationTest {
       List.of(
           DKB,
           POSTFINANCE,
+          POSTFINANCE_STATEMENT,
           SPARKASSE_CAMT,
           SPARKASSE_CARD,
           SPARKASSE_CARD_PDF,
@@ -231,6 +235,38 @@ class ShippedImportTemplatesIntegrationTest {
     assertBooking(result.rows().get(2), LocalDate.of(2031, 1, 26), "-1234.55", "CHF", "EXPENSE");
     assertThat(result.accountIdentifierFound()).isTrue();
     assertThat(result.statementBalanceCount()).as("the export states no balance").isNull();
+  }
+
+  // US-07-23 (#326): the statement's currency, a day's date printed once, a balance at some
+  // bookings, a long text and the value date as the ledger date (that of the CSV export).
+  @Test
+  void postFinanceStatementReadsEveryBookingByItsValueDateInTheStatementsCurrency()
+      throws IOException {
+    ImportTemplateTestResponse result =
+        detectAndTest(POSTFINANCE_STATEMENT, ShippedTemplateFixtures.postFinanceStatement());
+
+    assertThat(result.accountIdentifierFound()).isTrue();
+    assertThat(result.rowCount()).as("balance and total lines are no bookings").isEqualTo(5);
+    assertThat(result.parsedRowCount()).as("every running balance agrees").isEqualTo(5);
+    assertBooking(result.rows().get(0), LocalDate.of(2031, 3, 3), "2487.13", "EUR", "INCOME");
+    assertThat(result.rows().get(0).canonical().description())
+        .isEqualTo("Gutschrift Muster AG Lohn Maerz");
+    // Booked on the 05.03., valued on the 04.03.: the ledger date is the value date.
+    assertBooking(result.rows().get(1), LocalDate.of(2031, 3, 4), "-41.19", "EUR", "EXPENSE");
+    assertThat(result.rows().get(1).canonical().description())
+        .as("the long text stays one text")
+        .isEqualTo("Zahlung an Max Muster Beispielweg 12 Rechnung");
+    // No date printed: the booking still has its value date.
+    assertBooking(result.rows().get(2), LocalDate.of(2031, 3, 5), "-8.53", "EUR", "EXPENSE");
+    assertThat(result.rows().get(2).canonical().description())
+        .isEqualTo("TWINT Kauf Backstube Musterdorf");
+    // The first booking of page 2, without a date.
+    assertBooking(result.rows().get(3), LocalDate.of(2031, 3, 6), "-1213.77", "EUR", "EXPENSE");
+    assertBooking(result.rows().get(4), LocalDate.of(2031, 3, 20), "17.41", "EUR", "INCOME");
+    assertThat(result.rows().get(4).canonical().description())
+        .as("the total and the remark after it are no booking text")
+        .isEqualTo("Gutschrift Erika Beispiel");
+    assertThat(result.statementBalanceCount()).as("opening and closing").isEqualTo(2);
   }
 
   @Test

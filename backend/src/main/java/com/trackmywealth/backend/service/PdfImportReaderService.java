@@ -341,7 +341,10 @@ public class PdfImportReaderService {
         cells.addAll(
             booking
                 .columns()
-                .map(columns -> columns.cells(booking.line().words()))
+                .map(
+                    columns ->
+                        columns.cells(
+                            booking.line().words(), labelIndex(layout, layout.flowColumn())))
                 .orElseGet(() -> Collections.nCopies(layout.headerLabels().size(), "")));
       }
       if (layout.sectionColumn() != null) {
