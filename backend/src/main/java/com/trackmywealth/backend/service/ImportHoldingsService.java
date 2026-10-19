@@ -55,14 +55,17 @@ import org.springframework.web.server.ResponseStatusException;
  *       several such balances) is the snapshot's balance; cash in another currency is shown only.
  *   <li><b>Commit.</b> Refused while a line is unreadable (422 {@code IMPORT_HOLDINGS_UNREADABLE}),
  *       a position resolves to nothing (422 {@code IMPORT_HOLDINGS_UNRESOLVED}), two resolve to the
- *       same security, the account's dates do not admit the statement's (as for a snapshot recorded
- *       by hand), or an imported snapshot of that date is in effect (409 with {@code
- *       existingSnapshotId}). Then it records the snapshot, pointing at the batch, with each
- *       position's quantity and the price and value the statement reports, and reconciles the
- *       account against it (US-25-02).
+ *       same security, or the account's dates do not admit the statement's (as for a snapshot
+ *       recorded by hand). An imported snapshot of that date is completed part by part ({@link
+ *       ImportSnapshotCompletionService}, US-07-31): a duplicate is a 409 {@code
+ *       IMPORT_SNAPSHOT_ALREADY_RECORDED}, a difference a 409 {@code IMPORT_SNAPSHOT_CONFLICT}, a
+ *       standing reconciliation decision a 409 {@code IMPORT_SNAPSHOT_RECONCILIATION_DECIDED}.
+ *       Otherwise it records the snapshot, or the parts the existing one lacks, pointing at the
+ *       batch, with each position's quantity and the price and value the statement reports, and
+ *       reconciles the account (US-25-02).
  *   <li><b>Rollback.</b> As a statement balance's (US-07-12): {@link
- *       ImportStatementBalanceService#rollBack} deletes or withdraws the batch's snapshot, holdings
- *       included.
+ *       ImportStatementBalanceService#rollBack} removes the batch's parts, and the snapshot with
+ *       them unless another import's part remains.
  * </ul>
  *
  * <p>Every method runs inside the caller's transaction; a commit holds the account's import lock
@@ -206,6 +209,7 @@ public class ImportHoldingsService {
     boolean ready =
         plan != null
             && plan.committable()
+            && !plan.decided()
             && unresolvedCount == 0
             && errors.isEmpty()
             && duplicates.isEmpty();

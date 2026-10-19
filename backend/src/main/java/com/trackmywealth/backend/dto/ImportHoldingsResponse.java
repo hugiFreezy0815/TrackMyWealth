@@ -19,7 +19,14 @@ import java.util.UUID;
  * {@code DELETED}, {@code WITHDRAWN} or {@code REMOVED} (its parts taken out of a snapshot another
  * import keeps). {@code explanation} is one sentence to show above the preview, in the caller's
  * language; what keeps the commit back comes first. {@code readyToCommit} is whether a commit would
- * succeed now.
+ * succeed now: {@code existingSnapshot.reconciliationResultId} names a reconciliation decision that
+ * keeps a {@code COMPLETES} statement back until it is reopened.
+ *
+ * <p>While a position resolves to no security, or two resolve to the same one, the statement's
+ * holdings are not compared with the snapshot's yet (the position resolving later may be the one
+ * the snapshot holds): {@code conflicts} then lists no position and an {@code ALREADY_RECORDED} is
+ * no duplicate verdict, {@code readyToCommit} is false and {@code explanation} names what is
+ * missing. Once every position resolves, the preview compares them.
  *
  * <p>Only the cash in the account's own currency becomes the snapshot's balance ({@code recorded});
  * a statement's cash in other currencies is shown, not recorded.

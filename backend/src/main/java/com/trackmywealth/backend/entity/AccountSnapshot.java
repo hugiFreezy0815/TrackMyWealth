@@ -82,12 +82,12 @@ public class AccountSnapshot {
   private UUID updatedBy;
 
   // US-07-12: the import batch whose commit recorded this DOCUMENT snapshot; a rollback removes it.
-  // US-07-31 (V101): updatable, since a rollback of the creating batch passes the snapshot to the
+  // US-07-31 (V105): updatable, since a rollback of the creating batch passes the snapshot to the
   // batch whose part remains.
   @Column(name = "import_batch_id", columnDefinition = UUID_COLUMN)
   private UUID importBatchId;
 
-  // US-07-31 (V101): the batch whose statement contributed the balance; null for a balance
+  // US-07-31 (V105): the batch whose statement contributed the balance; null for a balance
   // recorded by hand, or no balance.
   @Column(name = "balance_import_batch_id", columnDefinition = UUID_COLUMN)
   private UUID balanceImportBatchId;

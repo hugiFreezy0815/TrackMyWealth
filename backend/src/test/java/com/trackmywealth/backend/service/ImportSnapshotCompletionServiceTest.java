@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.trackmywealth.backend.dto.ImportSnapshotHolding;
 import com.trackmywealth.backend.dto.ImportSnapshotPlan;
 import com.trackmywealth.backend.dto.ImportSnapshotValues;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
@@ -19,6 +20,7 @@ import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
@@ -51,12 +53,14 @@ class ImportSnapshotCompletionServiceTest {
   private final ReconciliationResultRepository results = mock(ReconciliationResultRepository.class);
   private final ReconciliationService reconciliation = mock(ReconciliationService.class);
   private final BusinessDateService businessDates = mock(BusinessDateService.class);
+  private final ImportBatchRepository batches = mock(ImportBatchRepository.class);
   private final ImportSnapshotCompletionService service =
       new ImportSnapshotCompletionService(
           snapshots,
           holdings,
           results,
           mock(SecurityRepository.class),
+          batches,
           reconciliation,
           businessDates);
   private final Account account = mock(Account.class);
@@ -137,30 +141,21 @@ class ImportSnapshotCompletionServiceTest {
         .isEqualTo(ImportSnapshotValues.OUT_OF_RANGE);
   }
 
+  /** A decision on the account's newest balance can be reopened: until then it stands. */
   @Test
-  void aStandingDecisionOrAnAdjustingEntryKeepsTheSnapshotFromBeingCompleted() {
-    AccountSnapshot snapshot = existing(null, holding(CHF_SHARE, "25"), holding(USD_SHARE, "1200"));
+  void aStandingDecisionKeepsTheSnapshotFromBeingCompleted() {
+    AccountSnapshot snapshot = existing(new BigDecimal("1204.35"));
     when(snapshots.findForUpdate(snapshot.getId(), account.getId()))
         .thenReturn(Optional.of(snapshot));
-    ReconciliationResult accepted = new ReconciliationResult();
-    ReflectionTestUtils.setField(accepted, "id", UUID.randomUUID());
-    accepted.setStatus(ReconciliationResultValues.ACCEPTED);
-    when(results.findBySnapshotId(snapshot.getId())).thenReturn(List.of(accepted));
+    when(snapshots.findLatestObserved(account.getId())).thenReturn(Optional.of(snapshot));
+    ReconciliationResult accepted = decided(snapshot);
     ImportSnapshotPlan plan = service.plan(account, DATE, new BigDecimal("1204.35"), held(), true);
-    ImportBatch batch = new ImportBatch();
-    ReflectionTestUtils.setField(batch, "id", UUID.randomUUID());
 
-    assertThatThrownBy(
-            () ->
-                service.commit(
-                    batch,
-                    account,
-                    DATE,
-                    "CHF",
-                    plan,
-                    new BigDecimal("1204.35"),
-                    List.of(),
-                    UUID.randomUUID()))
+    // The preview says so beforehand.
+    assertThat(plan.outcome()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(plan.decided()).isTrue();
+    assertThat(plan.existing().reconciliationResultId()).isEqualTo(accepted.getId());
+    assertThatThrownBy(() -> commit(plan))
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
@@ -170,6 +165,27 @@ class ImportSnapshotCompletionServiceTest {
                   .containsEntry("reconciliationResultId", accepted.getId());
             });
     verify(snapshots, never()).saveAndFlush(any());
+  }
+
+  /**
+   * A newer balance finalizes the decision: it can never be reopened, so it does not block. The
+   * completion adds holdings, which the decision on the balance did not cover.
+   */
+  @Test
+  void aFinalDecisionOnAnOlderBalanceDoesNotBlockTheCompletion() {
+    AccountSnapshot snapshot = existing(new BigDecimal("1204.35"));
+    when(snapshots.findForUpdate(snapshot.getId(), account.getId()))
+        .thenReturn(Optional.of(snapshot));
+    when(snapshots.saveAndFlush(snapshot)).thenReturn(snapshot);
+    AccountSnapshot newer = new AccountSnapshot();
+    ReflectionTestUtils.setField(newer, "id", UUID.randomUUID());
+    when(snapshots.findLatestObserved(account.getId())).thenReturn(Optional.of(newer));
+    decided(snapshot);
+    ImportSnapshotPlan plan = service.plan(account, DATE, new BigDecimal("1204.35"), held(), true);
+
+    assertThat(plan.decided()).isFalse();
+    assertThat(plan.adds()).containsExactly(ImportSnapshotValues.PART_HOLDINGS);
+    assertThat(commit(plan)).isEqualTo(ImportSnapshotValues.COMPLETED);
   }
 
   @Test
@@ -198,7 +214,8 @@ class ImportSnapshotCompletionServiceTest {
     ImportSnapshotPlan completes =
         new ImportSnapshotPlan(
             ImportSnapshotValues.COMPLETES,
-            new ImportSnapshotPlan.Existing(UUID.randomUUID(), UUID.randomUUID(), null, 3),
+            new ImportSnapshotPlan.Existing(
+                UUID.randomUUID(), UUID.randomUUID(), "positionen.xlsx", null, 3, null),
             List.of(ImportSnapshotValues.PART_BALANCE),
             List.of());
     ImportSnapshotPlan created =
@@ -211,19 +228,53 @@ class ImportSnapshotCompletionServiceTest {
     assertThat(explanations.explain("COMPLETES", completes, DATE, 0, 0, false, Locale.ENGLISH))
         .isEqualTo(
             "This statement adds the cash balance to the snapshot of Dec 31, 2031 you"
-                + " imported before.");
+                + " imported before from “positionen.xlsx”.");
     // German needs the accusative after "hinzufügen" and the dative after "mit".
     assertThat(explanations.explain("COMPLETES", completes, DATE, 0, 0, false, Locale.GERMAN))
         .isEqualTo(
-            "Dieser Auszug fügt dem zuvor importierten Stand vom 31.12.2031 den Kontostand"
-                + " hinzu.");
+            "Dieser Auszug fügt dem zuvor importierten Stand vom 31.12.2031 (aus"
+                + " „positionen.xlsx“) den Kontostand hinzu.");
     assertThat(explanations.explain("NEW", created, DATE, 0, 0, false, Locale.GERMAN))
         .isEqualTo(
             "Dieser Auszug erfasst einen neuen Stand vom 31.12.2031 mit den Positionen und"
                 + " dem Kontostand.");
-    // What keeps the commit back comes first.
+    // What keeps the commit back comes first, in the singular or the plural.
     assertThat(explanations.explain("COMPLETES", completes, DATE, 0, 2, false, Locale.ENGLISH))
         .startsWith("2 positions are securities your workspace does not know yet.");
+    assertThat(explanations.explain("COMPLETES", completes, DATE, 1, 0, false, Locale.GERMAN))
+        .startsWith("Eine Zeile dieses Auszugs ist nicht lesbar.");
+    assertThat(explanations.explain("COMPLETES", completes, DATE, 0, 1, false, Locale.ENGLISH))
+        .isEqualTo(
+            "One position is a security your workspace does not know yet. Create it, then"
+                + " import the statement.");
+    ImportSnapshotPlan decided =
+        new ImportSnapshotPlan(
+            ImportSnapshotValues.COMPLETES,
+            new ImportSnapshotPlan.Existing(
+                UUID.randomUUID(), UUID.randomUUID(), null, BigDecimal.ONE, 0, UUID.randomUUID()),
+            List.of(ImportSnapshotValues.PART_HOLDINGS),
+            List.of());
+    assertThat(explanations.explain("COMPLETES", decided, DATE, 0, 0, false, Locale.ENGLISH))
+        .startsWith("A reconciliation decision covers the snapshot of Dec 31, 2031 as it is.");
+    // Without a file name, the snapshot is named by its date alone.
+    ImportSnapshotPlan conflicting =
+        new ImportSnapshotPlan(
+            ImportSnapshotValues.CONFLICTING,
+            new ImportSnapshotPlan.Existing(
+                UUID.randomUUID(), UUID.randomUUID(), null, BigDecimal.ONE, 0, null),
+            List.of(),
+            List.of(
+                new ImportSnapshotPlan.Conflict(
+                    ImportSnapshotValues.PART_BALANCE,
+                    null,
+                    null,
+                    null,
+                    BigDecimal.ONE,
+                    BigDecimal.TEN)));
+    assertThat(explanations.explain("CONFLICTING", conflicting, DATE, 0, 0, false, Locale.ENGLISH))
+        .startsWith(
+            "This statement differs from the snapshot of Dec 31, 2031 you imported before in one"
+                + " place.");
   }
 
   // --- helpers -------------------------------------------------------------------------------
@@ -246,6 +297,30 @@ class ImportSnapshotCompletionServiceTest {
         .thenReturn(Optional.of(snapshot));
     when(holdings.findBySnapshotId(snapshot.getId())).thenReturn(List.of(lines));
     return snapshot;
+  }
+
+  private ReconciliationResult decided(AccountSnapshot snapshot) {
+    ReconciliationResult accepted = new ReconciliationResult();
+    ReflectionTestUtils.setField(accepted, "id", UUID.randomUUID());
+    accepted.setStatus(ReconciliationResultValues.ACCEPTED);
+    when(results.findBySnapshotId(snapshot.getId())).thenReturn(List.of(accepted));
+    return accepted;
+  }
+
+  private String commit(ImportSnapshotPlan plan) {
+    ImportBatch batch = new ImportBatch();
+    ReflectionTestUtils.setField(batch, "id", UUID.randomUUID());
+    return service.commit(
+        batch,
+        account,
+        DATE,
+        "CHF",
+        plan,
+        new BigDecimal("1204.35"),
+        List.of(
+            new ImportSnapshotHolding(
+                CHF_SHARE, new BigDecimal("25"), null, new BigDecimal("1000.00"), "CHF")),
+        UUID.randomUUID());
   }
 
   private static SnapshotHolding holding(UUID security, String quantity) {

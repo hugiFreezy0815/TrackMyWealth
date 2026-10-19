@@ -15,9 +15,11 @@ import com.trackmywealth.backend.dto.ImportHoldingsValues;
 import com.trackmywealth.backend.dto.ImportRollbackRequest;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
 import com.trackmywealth.backend.dto.ImportSnapshotValues;
+import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
+import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingResponse;
@@ -431,7 +433,12 @@ class HoldingsImportControllerTest {
     UUID template = createCashTemplate();
 
     ImportBatchResponse statement = uploadWithTemplate(depot, CASH_STATEMENT, template);
-    assertThat(statement.statementBalance().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    ImportStatementBalanceResponse preview = statement.statementBalance();
+    assertThat(preview.snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(preview.adds()).containsExactly(ImportSnapshotValues.PART_BALANCE);
+    assertThat(preview.existingSnapshot().holdingsCount()).isEqualTo(3);
+    assertThat(preview.explanation())
+        .startsWith("This statement adds the cash balance to the snapshot of");
 
     ImportBatchResponse committed = commit(statement);
 
@@ -439,6 +446,149 @@ class HoldingsImportControllerTest {
     AccountSnapshotResponse snapshot = snapshots(depot).get(0);
     assertThat(snapshot.balance()).isEqualByComparingTo("1204.35");
     assertThat(snapshot.holdings()).hasSize(3);
+  }
+
+  @Test
+  void aHoldingsStatementCompletesACashStatementsBalanceOnlySnapshot() throws Exception {
+    createWorkbookSecurities();
+    UUID template = createCashTemplate();
+    ImportBatchResponse cash = commit(uploadWithTemplate(depot, CASH_STATEMENT, template));
+    assertThat(cash.statementBalance().snapshot()).isEqualTo(ImportBatchValues.SNAPSHOT_RECORDED);
+
+    ImportBatchResponse positions =
+        upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE);
+    ImportHoldingsResponse preview = positions.holdings();
+    assertThat(preview.snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(preview.adds()).containsExactly(ImportSnapshotValues.PART_HOLDINGS);
+    // The snapshot is named by the file of the import that recorded it.
+    assertThat(preview.existingSnapshot().importFileName()).isEqualTo("statement.csv");
+    assertThat(preview.explanation())
+        .isEqualTo(
+            "This statement adds the positions to the snapshot of Nov 30, 2031 you imported"
+                + " before from “statement.csv”.");
+
+    commit(positions);
+
+    assertThat(
+            rowsOf(
+                "SELECT import_batch_id, balance_import_batch_id, balance FROM account_snapshot"
+                    + " WHERE account_id = ?",
+                depot))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.get("import_batch_id")).isEqualTo(cash.id());
+              assertThat(row.get("balance_import_batch_id")).isEqualTo(cash.id());
+              assertThat((BigDecimal) row.get("balance")).isEqualByComparingTo("1204.35");
+            });
+    assertThat(
+            count(
+                "SELECT count(*) FROM snapshot_holding WHERE import_batch_id = ?", positions.id()))
+        .isEqualTo(3);
+  }
+
+  // --- reconciliation decisions --------------------------------------------------------------
+  // An account that holds positions is never reconciled (cash scope only, US-25-02): a decision
+  // stands on a snapshot of one only from before it held them, so these tests write it directly.
+
+  @Test
+  void aStandingDecisionKeepsTheSnapshotFromBeingCompletedUntilANewerBalanceFinalizesIt()
+      throws Exception {
+    createWorkbookSecurities();
+    commit(upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE));
+    UUID decision = dismissedResult(documentSnapshotId());
+
+    ImportBatchResponse positions =
+        upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE);
+    ImportHoldingsResponse preview = positions.holdings();
+    // The preview says beforehand what the commit then refuses.
+    assertThat(preview.snapshot()).isEqualTo(ImportSnapshotValues.COMPLETES);
+    assertThat(preview.existingSnapshot().reconciliationResultId()).isEqualTo(decision);
+    assertThat(preview.readyToCommit()).isFalse();
+    assertThat(preview.explanation())
+        .startsWith("A reconciliation decision covers the snapshot of Nov 30, 2031 as it is.");
+    expectProblem(
+        commitRequest(positions), 409, ApiErrorCode.IMPORT_SNAPSHOT_RECONCILIATION_DECIDED);
+    assertThat(count("SELECT count(*) FROM snapshot_holding")).isZero();
+
+    // A newer balance finalizes the decision: it can never be reopened, so it no longer blocks.
+    recordSnapshot(EXPORT_DATE.plusDays(10), "1300.00");
+    ImportBatchResponse again = get(depot, positions.id());
+    assertThat(again.holdings().existingSnapshot().reconciliationResultId()).isNull();
+    assertThat(again.holdings().readyToCommit()).isTrue();
+    assertThat(commit(again).holdings().snapshot()).isEqualTo(ImportSnapshotValues.COMPLETED);
+    assertThat(count("SELECT count(*) FROM snapshot_holding")).isEqualTo(3);
+  }
+
+  @Test
+  void aBalanceKeptAsHistoryLeavesTheOtherImportsPositionsInEffect() throws Exception {
+    createWorkbookSecurities();
+    ImportBatchResponse cash =
+        commit(upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), EXPORT_DATE));
+    UUID recorded = documentSnapshotId();
+    dismissedResult(recorded);
+    recordSnapshot(EXPORT_DATE.plusDays(10), "1300.00");
+    ImportBatchResponse positions =
+        commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+
+    // The positions go: the final decision covers the balance only, which stays with it.
+    ImportRollbackResponse positionsGone = rollback(get(depot, positions.id()));
+    assertThat(positionsGone.batch().holdings().snapshot()).isEqualTo(ImportSnapshotValues.REMOVED);
+    assertThat(documentSnapshotId()).isEqualTo(recorded);
+    assertThat(count("SELECT count(*) FROM snapshot_holding")).isZero();
+    assertThat(count("SELECT count(*) FROM reconciliation_result WHERE status = 'DISMISSED'"))
+        .isEqualTo(1);
+
+    // The positions again, then the cash goes: its balance is kept as history with the decision,
+    // and the positions stay in effect on a snapshot of the date that is now theirs.
+    ImportBatchResponse positionsAgain =
+        commit(upload(depot, ShippedTemplateFixtures.postfinancePositionsWorkbook(), EXPORT_DATE));
+    ImportRollbackResponse cashGone = rollback(get(depot, cash.id()));
+
+    assertThat(cashGone.batch().holdings().snapshot())
+        .isEqualTo(ImportBatchValues.SNAPSHOT_WITHDRAWN);
+    assertThat(
+            rowsOf(
+                "SELECT import_batch_id, balance, withdrawn_at FROM account_snapshot WHERE id = ?",
+                recorded))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.get("import_batch_id")).isEqualTo(cash.id());
+              assertThat((BigDecimal) row.get("balance")).isEqualByComparingTo("1204.35");
+              assertThat(row.get("withdrawn_at")).isNotNull();
+            });
+    UUID successor = documentSnapshotId();
+    assertThat(successor).isNotEqualTo(recorded);
+    assertThat(
+            rowsOf("SELECT import_batch_id, balance FROM account_snapshot WHERE id = ?", successor))
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.get("import_batch_id")).isEqualTo(positionsAgain.id());
+              assertThat(row.get("balance")).isNull();
+            });
+    assertThat(
+            count(
+                "SELECT count(*) FROM snapshot_holding WHERE snapshot_id = ? AND import_batch_id = ?",
+                successor,
+                positionsAgain.id()))
+        .isEqualTo(3);
+    assertThat(
+            count(
+                "SELECT count(*) FROM reconciliation_result WHERE snapshot_id = ?"
+                    + " AND status = 'DISMISSED'",
+                recorded))
+        .isEqualTo(1);
+
+    // The last import goes: no imported snapshot remains in effect.
+    ImportRollbackResponse last = rollback(get(depot, positionsAgain.id()));
+    assertThat(last.batch().holdings().snapshot()).isEqualTo(ImportBatchValues.SNAPSHOT_DELETED);
+    assertThat(
+            count(
+                "SELECT count(*) FROM account_snapshot WHERE source = 'DOCUMENT'"
+                    + " AND withdrawn_at IS NULL"))
+        .isZero();
   }
 
   // --- refusals ------------------------------------------------------------------------------
@@ -482,6 +632,43 @@ class HoldingsImportControllerTest {
   }
 
   // --- helpers -------------------------------------------------------------------------------
+
+  // The depot's imported snapshot of the export date in effect.
+  private UUID documentSnapshotId() {
+    return (UUID)
+        rowsOf(
+                "SELECT id FROM account_snapshot WHERE account_id = ? AND snapshot_date = ?"
+                    + " AND source = 'DOCUMENT' AND withdrawn_at IS NULL",
+                depot,
+                EXPORT_DATE)
+            .get(0)
+            .get("id");
+  }
+
+  // A member's dismissal of the snapshot's reconciliation, written as the decision would be.
+  private UUID dismissedResult(UUID snapshotId) {
+    return (UUID)
+        rowsOf(
+                "INSERT INTO reconciliation_result (workspace_id, account_id, snapshot_id,"
+                    + " difference_amount, status, resolution_note, resolved_at)"
+                    + " SELECT workspace_id, account_id, id, 12.40, 'DISMISSED', 'Checked', now()"
+                    + " FROM account_snapshot WHERE id = ? RETURNING id",
+                snapshotId)
+            .get(0)
+            .get("id");
+  }
+
+  // A snapshot recorded by hand, newer than the imported one.
+  private void recordSnapshot(LocalDate date, String balance) {
+    client()
+        .post()
+        .uri("/api/v1/accounts/" + depot + "/snapshots")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new RecordAccountSnapshotRequest(date, new BigDecimal(balance), List.of()))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+  }
 
   private void createAllSecurities() {
     createSecurity(ShippedTemplateFixtures.HOLDING_ISIN_CHF, null, "EQUITY", "CHF");
@@ -754,8 +941,8 @@ class HoldingsImportControllerTest {
     return "\"" + version + "\"";
   }
 
-  private long count(String sql) {
-    return ((Number) rowsOf(sql).get(0).values().iterator().next()).longValue();
+  private long count(String sql, Object... parameters) {
+    return ((Number) rowsOf(sql, parameters).get(0).values().iterator().next()).longValue();
   }
 
   private List<Map<String, Object>> rowsOf(String sql, Object... parameters) {

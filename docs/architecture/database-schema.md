@@ -98,7 +98,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V98` | `snapshot_holding.reported_price`/`reported_value`/`reported_currency` (US-07-13, #273): what an imported statement printed for a position, unconverted; value and currency together, the price optional |
 | `V99` | Holdings statements (US-07-13, #273): `import_template.holdings_rule` (required exactly for `SNAPSHOT`), file format `SPREADSHEET` (holdings only), `pdf_layout` for cash PDFs only; `import_batch.holdings_snapshot_date`/`holdings_date_source`/`holdings_snapshot`; `import_holding_row` (own RLS policy); `workspace_security_ticker` (own RLS policy) |
 | `V100` | Shipped holdings templates (US-07-13, #273): the Swissquote "Portfolio-Wertentwicklung" PDF (PostFinance E-Trading, Yuh), the PostFinance E-Trading positions XLSX and cash XLS |
-| `V101` | Imported snapshots completed part by part (US-07-31, #366): `account_snapshot.balance_import_batch_id`, `snapshot_holding.import_batch_id` (the batch that contributed each part; backfilled from `import_batch_id`), `import_batch_id` updatable (passes to the remaining contributor on a rollback); snapshot outcomes `COMPLETED` and `REMOVED` |
+| `V105` | Imported snapshots completed part by part (US-07-31, #366): `account_snapshot.balance_import_batch_id`, `snapshot_holding.import_batch_id` (the batch that contributed each part; backfilled from `import_batch_id`), `import_batch_id` updatable (passes to the remaining contributor on a rollback); snapshot outcomes `COMPLETED` and `REMOVED` |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a
@@ -1453,14 +1453,15 @@ the statement's cash in the account's currency (cash in other currencies is show
 each position becomes a `snapshot_holding` with its quantity and V98's reported price, value and
 currency; the account is then reconciled.
 
-**Completing a snapshot (US-07-31, V101).** An imported snapshot has two parts, its balance and its
+**Completing a snapshot (US-07-31, V105).** An imported snapshot has two parts, its balance and its
 holdings. A statement of an account and date for which an imported (`DOCUMENT`) snapshot is in
 effect meets it part by part: a part the snapshot lacks is added, a part both hold and agree on is
 kept (a balance of the same amount; the same securities in the same quantities - reported prices
 and values may differ in rounding between a PDF and a spreadsheet, the snapshot's stay), a part
 both hold and disagree on is a conflict. The preview (`ImportHoldingsResponse`, and
-`statementBalance.snapshot` of a cash statement) says beforehand: `NEW`, `COMPLETES` with `adds`,
-`ALREADY_RECORDED` (a duplicate), `CONFLICTING` with `conflicts`, or `OUT_OF_RANGE`, plus one
+`statementBalance` of a cash statement) says beforehand: `NEW`, `COMPLETES` with `adds`,
+`ALREADY_RECORDED` (a duplicate), `CONFLICTING` with `conflicts`, or `OUT_OF_RANGE`, with
+`existingSnapshot` (its id, the recording batch and its file name, its parts) and one
 `explanation` sentence in the member's language. A duplicate's commit is a 409
 `IMPORT_SNAPSHOT_ALREADY_RECORDED`, a conflict's a 409 `IMPORT_SNAPSHOT_CONFLICT` with the same
 `conflicts`; nothing is overwritten. A cash statement's balance (US-07-12) completes a holdings-only
@@ -1470,15 +1471,21 @@ position resolves.
 
 Each part records the batch that contributed it (`balance_import_batch_id`,
 `snapshot_holding.import_batch_id`); `import_batch_id` is the batch that recorded the snapshot.
-While a member's reconciliation decision stands on the snapshot, or an adjusting entry points at
-one of its results, it is not completed (409 `IMPORT_SNAPSHOT_RECONCILIATION_DECIDED`).
+While a member's reconciliation decision stands on the snapshot - it is the account's newest
+balance, so the decision can be reopened - it is not completed (409
+`IMPORT_SNAPSHOT_RECONCILIATION_DECIDED`); the preview names the result in
+`existingSnapshot.reconciliationResultId` and is not ready to commit. A final decision on an older
+balance never blocks: results compare a balance, so such a snapshot has its balance and the
+completion adds holdings, which no decision covers.
 
 **Rollback.** A batch's rollback removes only its own parts: its holdings, and its balance with the
 results that compared it. When another batch's part remains, the snapshot stays (`REMOVED` on the
 rolled-back batch) and passes to that batch if this one had recorded it; when none remains, the
 snapshot is deleted or withdrawn by US-07-12's rules. A snapshot kept as history (a final decision,
-an adjusting entry) is withdrawn as a whole, and every batch that contributed to it records
-`WITHDRAWN`.
+an adjusting entry) covers its balance only: rolling back a batch that added holdings removes
+them as above, and rolling back the batch whose balance it is withdraws the snapshot under that
+batch (`WITHDRAWN`) while the other imports' holdings move on to a new snapshot of the date that
+the first of them records, so they stay in effect.
 
 ## 5. Time-series data and partitioning
 

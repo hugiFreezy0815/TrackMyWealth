@@ -11,6 +11,7 @@ import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRollbackRequest;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
+import com.trackmywealth.backend.dto.ImportSnapshotValues;
 import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
@@ -152,6 +153,8 @@ class ImportStatementBalanceControllerTest {
     ImportBatchResponse preview = upload(statement("2.507,60"));
 
     assertThat(preview.statementBalance())
+        .usingRecursiveComparison()
+        .ignoringFields("explanation")
         .isEqualTo(
             new ImportStatementBalanceResponse(
                 ImportBatchValues.BALANCE_FOUND,
@@ -160,7 +163,14 @@ class ImportStatementBalanceControllerTest {
                 "CHF",
                 null,
                 null,
-                ImportBatchValues.SNAPSHOT_NEW));
+                ImportBatchValues.SNAPSHOT_NEW,
+                null,
+                List.of(ImportSnapshotValues.PART_BALANCE),
+                List.of(),
+                null));
+    assertThat(preview.statementBalance().explanation())
+        .startsWith("This statement records a new snapshot of")
+        .endsWith("with the cash balance.");
     assertThat(count("SELECT count(*) FROM account_snapshot")).isZero();
 
     ImportBatchResponse committed = commit(preview);

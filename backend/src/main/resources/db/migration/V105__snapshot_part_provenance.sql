@@ -1,5 +1,5 @@
 -- =============================================================================================
--- V101: an imported snapshot completed part by part (US-07-31, #366)
+-- V105: an imported snapshot completed part by part (US-07-31, #366)
 -- =============================================================================================
 -- An imported (DOCUMENT) snapshot has two parts: its balance and its holdings. A second statement
 -- of the same account and date may add the part the snapshot lacks (PostFinance's cash export

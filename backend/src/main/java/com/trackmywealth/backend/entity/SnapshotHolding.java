@@ -60,7 +60,7 @@ public class SnapshotHolding {
   @Column(name = "reported_currency", length = 3)
   private String reportedCurrency;
 
-  // US-07-31 (V101): the batch whose statement contributed the holding; null for one entered by
+  // US-07-31 (V105): the batch whose statement contributed the holding; null for one entered by
   // hand.
   @Column(name = "import_batch_id", columnDefinition = UUID_COLUMN)
   private UUID importBatchId;

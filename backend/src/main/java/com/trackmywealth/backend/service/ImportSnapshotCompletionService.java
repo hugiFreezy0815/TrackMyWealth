@@ -13,6 +13,7 @@ import com.trackmywealth.backend.entity.SnapshotHolding;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
@@ -51,10 +52,13 @@ import org.springframework.stereotype.Service;
  * sources stay apart (US-07-12).
  *
  * <p>Each part records the batch that contributed it ({@code balance_import_batch_id}, {@code
- * snapshot_holding.import_batch_id}, V101), so a rollback removes only its own parts ({@link
+ * snapshot_holding.import_batch_id}, V105), so a rollback removes only its own parts ({@link
  * ImportStatementBalanceService#rollBack}). A snapshot on which a member's reconciliation decision
- * stands, or that an adjusting entry points at, is not completed (409 {@code
- * IMPORT_SNAPSHOT_RECONCILIATION_DECIDED}): the decision covered what it held.
+ * stands - on the account's newest balance, where it can still be reopened - is not completed (409
+ * {@code IMPORT_SNAPSHOT_RECONCILIATION_DECIDED}); the preview names that result beforehand. A
+ * final decision on an older balance ({@link ReconciliationHistoryService#isFinalized}) can never
+ * be reopened, so it does not block: results compare a balance only, so the snapshot has its
+ * balance already and the completion adds holdings, which no decision or adjusting entry covers.
  *
  * <p>Runs inside the caller's transaction, after the account's import lock and the batch's lock.
  */
@@ -70,6 +74,7 @@ public class ImportSnapshotCompletionService {
   private final SnapshotHoldingRepository holdingRepository;
   private final ReconciliationResultRepository resultRepository;
   private final SecurityRepository securityRepository;
+  private final ImportBatchRepository batchRepository;
   private final ReconciliationService reconciliationService;
   private final BusinessDateService businessDates;
 
@@ -78,12 +83,14 @@ public class ImportSnapshotCompletionService {
       SnapshotHoldingRepository holdingRepository,
       ReconciliationResultRepository resultRepository,
       SecurityRepository securityRepository,
+      ImportBatchRepository batchRepository,
       ReconciliationService reconciliationService,
       BusinessDateService businessDates) {
     this.snapshotRepository = snapshotRepository;
     this.holdingRepository = holdingRepository;
     this.resultRepository = resultRepository;
     this.securityRepository = securityRepository;
+    this.batchRepository = batchRepository;
     this.reconciliationService = reconciliationService;
     this.businessDates = businessDates;
   }
@@ -152,7 +159,16 @@ public class ImportSnapshotCompletionService {
     return new ImportSnapshotPlan(
         outcome,
         new ImportSnapshotPlan.Existing(
-            snapshot.getId(), snapshot.getImportBatchId(), snapshot.getBalance(), held.size()),
+            snapshot.getId(),
+            snapshot.getImportBatchId(),
+            // A DOCUMENT snapshot from before V74 names no batch.
+            Optional.ofNullable(snapshot.getImportBatchId())
+                .flatMap(batchRepository::findById)
+                .map(ImportBatch::getSourceFileName)
+                .orElse(null),
+            snapshot.getBalance(),
+            held.size(),
+            standingDecision(account, snapshot).map(ReconciliationResult::getId).orElse(null)),
         adds,
         conflicts);
   }
@@ -200,7 +216,7 @@ public class ImportSnapshotCompletionService {
           snapshotRepository
               .findForUpdate(plan.existing().id(), account.getId())
               .orElseThrow(() -> new IllegalStateException("The planned snapshot is gone."));
-      requireNoDecision(snapshot);
+      requireNoDecision(account, snapshot);
       if (plan.adds().contains(ImportSnapshotValues.PART_BALANCE)) {
         snapshot.setImportedBalance(balance.setScale(FxRateService.MONEY_SCALE), batch.getId());
       }
@@ -254,14 +270,11 @@ public class ImportSnapshotCompletionService {
 
   /**
    * 409 {@code IMPORT_SNAPSHOT_RECONCILIATION_DECIDED} while a member's decision stands on the
-   * snapshot (or an adjusting entry points at one of its results).
+   * snapshot (see the class comment).
    */
-  void requireNoDecision(AccountSnapshot snapshot) {
-    List<ReconciliationResult> results = resultRepository.findBySnapshotId(snapshot.getId());
-    Optional<ReconciliationResult> decided =
-        results.stream().filter(result -> DECIDED.contains(result.getStatus())).findFirst();
-    List<UUID> ids = results.stream().map(ReconciliationResult::getId).toList();
-    if (decided.isEmpty() && (ids.isEmpty() || !resultRepository.existsAdjustmentOf(ids))) {
+  void requireNoDecision(Account account, AccountSnapshot snapshot) {
+    Optional<ReconciliationResult> decided = standingDecision(account, snapshot);
+    if (decided.isEmpty()) {
       return;
     }
     ApiException exception =
@@ -270,12 +283,25 @@ public class ImportSnapshotCompletionService {
             ApiErrorCode.IMPORT_SNAPSHOT_RECONCILIATION_DECIDED,
             "A reconciliation decision covers the snapshot of this date as it is; reopen it before"
                 + " the snapshot changes.");
-    exception
-        .getBody()
-        .setProperty(
-            "reconciliationResultId",
-            decided.map(ReconciliationResult::getId).orElse(results.get(0).getId()));
+    exception.getBody().setProperty("reconciliationResultId", decided.get().getId());
     throw exception;
+  }
+
+  // A decision on the snapshot while it is the account's newest balance: one a newer balance has
+  // overtaken is final (ReconciliationHistoryService#isFinalized) and can never be reopened.
+  private Optional<ReconciliationResult> standingDecision(
+      Account account, AccountSnapshot snapshot) {
+    Optional<ReconciliationResult> decided =
+        resultRepository.findBySnapshotId(snapshot.getId()).stream()
+            .filter(result -> DECIDED.contains(result.getStatus()))
+            .findFirst();
+    if (decided.isEmpty()) {
+      return decided;
+    }
+    return snapshotRepository
+        .findLatestObserved(account.getId())
+        .filter(newest -> newest.getId().equals(snapshot.getId()))
+        .flatMap(newest -> decided);
   }
 
   private Optional<AccountSnapshot> existing(Account account, LocalDate date) {

@@ -12,7 +12,8 @@ import java.util.UUID;
  * @param outcome {@code NEW}, {@code COMPLETES}, {@code ALREADY_RECORDED}, {@code CONFLICTING} or
  *     {@code OUT_OF_RANGE}; only {@code NEW} and {@code COMPLETES} can be committed
  * @param existing the imported snapshot of that date in effect, {@code null} for {@code NEW} and
- *     {@code OUT_OF_RANGE}
+ *     {@code OUT_OF_RANGE}; with the reconciliation decision that keeps a {@code COMPLETES} plan
+ *     from being committed, if one stands
  * @param adds the parts the commit would record: {@code BALANCE}, {@code HOLDINGS}
  * @param conflicts each part (or position) in which the statement differs from the snapshot
  */
@@ -35,17 +36,32 @@ public record ImportSnapshotPlan(
     conflicts = List.copyOf(conflicts);
   }
 
-  /** Whether a commit may record this plan. */
+  /** Whether a commit may record this plan, unless a decision stands ({@link #decided}). */
   public boolean committable() {
     return ImportSnapshotValues.NEW.equals(outcome)
         || ImportSnapshotValues.COMPLETES.equals(outcome);
   }
 
   /**
-   * The imported snapshot a statement meets: its id, the batch that recorded it, and which parts it
-   * has.
+   * Whether a member's reconciliation decision stands on the snapshot: completing it is then a 409
+   * {@code IMPORT_SNAPSHOT_RECONCILIATION_DECIDED}.
    */
-  public record Existing(UUID id, UUID importBatchId, BigDecimal balance, int holdingsCount) {}
+  public boolean decided() {
+    return existing != null && existing.reconciliationResultId() != null;
+  }
+
+  /**
+   * The imported snapshot a statement meets: its id, the batch that recorded it and that batch's
+   * file name, which parts it has, and the reconciliation result whose decision stands on it
+   * ({@code null} for none; a final decision on an older balance does not stand in the way).
+   */
+  public record Existing(
+      UUID id,
+      UUID importBatchId,
+      String importFileName,
+      BigDecimal balance,
+      int holdingsCount,
+      UUID reconciliationResultId) {}
 
   /**
    * One difference. For {@code BALANCE}: the two balances. For {@code HOLDING}: one security's
