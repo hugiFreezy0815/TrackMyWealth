@@ -182,6 +182,15 @@
             <version>3.0.8</version>
         </dependency>
 
+        <!-- #273: holdings statements as spreadsheets (.xlsx and the older binary .xls) are read
+             locally through POI's usermodel, within SpreadsheetImportReaderService's limits
+             (sheets, rows, cells, and ZipSecureFile's inflation ratio against a zip bomb). -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.5.1</version>
+        </dependency>
+
         <!-- PdfImportReaderService counts a PDF stream's decoded size without keeping it
              (ThresholdingOutputStream). Already on the classpath through commons-csv; declared
              because it is used directly. -->

@@ -1,6 +1,8 @@
 package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.Security;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +15,9 @@ import org.springframework.stereotype.Repository;
 public interface SecurityRepository extends JpaRepository<Security, UUID> {
 
   Optional<Security> findByIsin(String isin);
+
+  /** #273: the securities of {@code isins}, in one query however many positions a statement has. */
+  List<Security> findByIsinIn(Collection<String> isins);
 
   Optional<Security> findBySyntheticKey(String syntheticKey);
 

@@ -137,6 +137,17 @@ public class ImportBatch {
   @Column(name = "statement_balance_snapshot")
   private String statementBalanceSnapshot;
 
+  // US-07-13 (#273): a holdings statement's snapshot date, where it came from, and what the commit
+  // (and later a rollback) did with the snapshot. Null for a cash statement's batch.
+  @Column(name = "holdings_snapshot_date")
+  private LocalDate holdingsSnapshotDate;
+
+  @Column(name = "holdings_date_source")
+  private String holdingsDateSource;
+
+  @Column(name = "holdings_snapshot")
+  private String holdingsSnapshot;
+
   @Version
   @Generated(event = {EventType.INSERT, EventType.UPDATE})
   @Column(name = "version", insertable = false, updatable = false)
@@ -396,6 +407,37 @@ public class ImportBatch {
 
   public void setStatementBalanceSnapshot(String statementBalanceSnapshot) {
     this.statementBalanceSnapshot = statementBalanceSnapshot;
+  }
+
+  /**
+   * US-07-13: a parse read a holdings statement of {@code date} from {@code dateSource}; both
+   * {@code null} clear it, when the batch is parsed again as a cash statement. Only a batch before
+   * its commit is parsed, so it has no snapshot outcome yet.
+   */
+  public void recordHoldingsStatement(LocalDate date, String dateSource) {
+    this.holdingsSnapshotDate = date;
+    this.holdingsDateSource = dateSource;
+  }
+
+  /** Whether the batch holds a holdings statement (US-07-13) rather than cash rows. */
+  public boolean isHoldingsStatement() {
+    return holdingsSnapshotDate != null;
+  }
+
+  public LocalDate getHoldingsSnapshotDate() {
+    return holdingsSnapshotDate;
+  }
+
+  public String getHoldingsDateSource() {
+    return holdingsDateSource;
+  }
+
+  public String getHoldingsSnapshot() {
+    return holdingsSnapshot;
+  }
+
+  public void setHoldingsSnapshot(String holdingsSnapshot) {
+    this.holdingsSnapshot = holdingsSnapshot;
   }
 
   public Integer getVersion() {

@@ -15,7 +15,8 @@ import java.util.UUID;
  *
  * <p>{@code systemProvided} templates ({@code workspaceId IS NULL}) are shipped and read-only;
  * {@code canEdit} is false for them. {@code version} is the concurrency token to send as a strong
- * {@code If-Match} ETag on every change (ADR 0004).
+ * {@code If-Match} ETag on every change (ADR 0004). {@code holdingsRule} is set for a {@code
+ * SNAPSHOT} template only (#273).
  */
 public record ImportTemplateResponse(
     UUID id,
@@ -51,7 +52,8 @@ public record ImportTemplateResponse(
     Map<String, String> descriptionTypePatterns,
     ImportRowFilter rowFilter,
     ImportAccountIdentifierRule accountIdentifier,
-    ImportStatementBalanceRule statementBalance) {
+    ImportStatementBalanceRule statementBalance,
+    ImportHoldingsRule holdingsRule) {
 
   public ImportTemplateResponse {
     typeMapping = Collections.unmodifiableMap(new LinkedHashMap<>(typeMapping));

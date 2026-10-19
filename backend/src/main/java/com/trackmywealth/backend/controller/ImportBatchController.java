@@ -20,9 +20,11 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.Charset;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -85,6 +87,8 @@ public class ImportBatchController {
       @PathVariable UUID accountId,
       @RequestPart("file") MultipartFile file,
       @RequestParam(required = false) UUID templateId,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+          LocalDate snapshotDate,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     ImportBatchResponse created =
         importBatchService.upload(
@@ -93,6 +97,7 @@ public class ImportBatchController {
             file.getContentType(),
             bytesOf(file),
             templateId,
+            snapshotDate,
             actor);
     URI location =
         ServletUriComponentsBuilder.fromCurrentRequest()
@@ -118,7 +123,12 @@ public class ImportBatchController {
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     ImportBatchResponse batch =
         importBatchService.parse(
-            accountId, batchId, request.templateId(), IfMatchVersionParser.parse(ifMatch), actor);
+            accountId,
+            batchId,
+            request.templateId(),
+            request.snapshotDate(),
+            IfMatchVersionParser.parse(ifMatch),
+            actor);
     return VersionedResponse.ok(batch, batch.version());
   }
 
