@@ -70,6 +70,7 @@ public class PagedArgumentResolver implements HandlerMethodArgumentResolver {
     if (values == null) {
       return absent;
     }
+    // A switch, not `if (values.length > 1)`: PMD's AvoidLiteralsInIfCondition refuses the latter.
     String value =
         switch (values.length) {
           case 1 -> values[0];

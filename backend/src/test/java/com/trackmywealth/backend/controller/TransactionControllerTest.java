@@ -968,6 +968,26 @@ class TransactionControllerTest {
         .containsExactly("CHF", "EUR");
   }
 
+  // PR #388 review: amount (16 integer digits) times the rate (10) can need 26 integer digits; the
+  // generated column must hold every product the two columns allow, or the insert itself fails.
+  @Test
+  void aBookingWhoseValueInTheAccountCurrencyNeedsMoreThanSixteenIntegerDigitsIsStillRecorded() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token); // billed in CHF
+    recordPurchaseOn(token, card.id(), "-10.00", today());
+    postTransaction(
+            token,
+            card.id(),
+            foreignPurchase(
+                "-9999999999999999.9999", "EUR", "Hotel", "9999999999.9999999999", null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+
+    assertThat(listTransactions(token, card.id(), "?sort=amount,asc").content())
+        .extracting(TransactionResponse::currency)
+        .containsExactly("EUR", "CHF");
+  }
+
   @Test
   void aSortOnAnUnknownPropertyIsA400InvalidSortNotA500() {
     String token = bootstrapAdministrator();

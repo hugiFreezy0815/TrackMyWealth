@@ -133,11 +133,12 @@ public class Transaction {
 
   // #373: `amount` in the account's own currency (US-09-04: amount * rate, a missing rate is 1),
   // so a list sorts by value even when the account holds foreign-currency bookings. V108 makes it
-  // a generated column: the database computes it, and native `t.*` queries read it too.
+  // a generated column: the database computes it, and native `t.*` queries read it too. Its 26
+  // integer digits hold amount (16) times the rate (10).
   @Generated
   @Column(
       name = "amount_in_account_currency",
-      precision = 20,
+      precision = 30,
       scale = 4,
       insertable = false,
       updatable = false)

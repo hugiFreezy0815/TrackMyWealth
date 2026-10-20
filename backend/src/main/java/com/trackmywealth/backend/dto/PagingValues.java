@@ -9,6 +9,9 @@ import org.springframework.data.domain.Sort;
  * paging and the services that run the query. {@code web.PagedArgumentResolver} applies them to
  * every client request; {@link #requireBounded} makes a service refuse any other caller's {@code
  * Pageable} that breaks them, such as a future job or export asking for an unbounded page.
+ *
+ * <p>It lives in {@code dto}, beside the other {@code *Values} classes, because services must not
+ * depend on the web layer ({@code ArchitectureTest.services_do_not_depend_on_the_web_layer}).
  */
 public final class PagingValues {
 
