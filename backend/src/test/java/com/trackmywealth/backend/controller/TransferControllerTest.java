@@ -11,6 +11,7 @@ import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
@@ -978,8 +979,6 @@ class TransferControllerTest {
         .getResponseBody();
   }
 
-  record PageOf<T>(List<T> content, long totalElements) {}
-
   private List<TransactionResponse> list(String token, UUID accountId) {
     return client(token)
         .get()
@@ -987,7 +986,7 @@ class TransferControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<TransactionResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content();

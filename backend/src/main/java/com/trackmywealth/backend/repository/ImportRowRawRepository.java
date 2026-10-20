@@ -22,9 +22,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface ImportRowRawRepository extends JpaRepository<ImportRowRaw, UUID> {
 
-  Page<ImportRowRaw> findByImportBatchIdOrderByRowNumber(UUID importBatchId, Pageable pageable);
+  // #373: the order is the pageable's, from the controller's sort whitelist (row number).
+  Page<ImportRowRaw> findByImportBatchId(UUID importBatchId, Pageable pageable);
 
-  Page<ImportRowRaw> findByImportBatchIdAndParseStatusOrderByRowNumber(
+  Page<ImportRowRaw> findByImportBatchIdAndParseStatus(
       UUID importBatchId, String parseStatus, Pageable pageable);
 
   Optional<ImportRowRaw> findByImportBatchIdAndRowNumber(UUID importBatchId, int rowNumber);

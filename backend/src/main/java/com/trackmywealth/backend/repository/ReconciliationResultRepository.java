@@ -40,7 +40,8 @@ public interface ReconciliationResultRepository extends JpaRepository<Reconcilia
   /** Whether the account has the cash-scope result {@code id}, without loading it (US-25-03). */
   boolean existsByIdAndAccountIdAndAffectedSecurityIdIsNull(UUID id, UUID accountId);
 
-  Page<ReconciliationResult> findByAccountIdAndAffectedSecurityIdIsNullOrderByCreatedAtDesc(
+  // #373: the order is the pageable's, from the controller's sort whitelist and tie-breaker.
+  Page<ReconciliationResult> findByAccountIdAndAffectedSecurityIdIsNull(
       UUID accountId, Pageable pageable);
 
   /** Account ids carrying a cash-scope result in {@code status}, for batched headline warnings. */

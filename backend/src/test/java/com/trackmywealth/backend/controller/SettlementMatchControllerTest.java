@@ -12,6 +12,7 @@ import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
@@ -1265,7 +1266,7 @@ class SettlementMatchControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<TransactionResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content();
@@ -1273,8 +1274,6 @@ class SettlementMatchControllerTest {
 
   // Only the one member of Spring Data's page JSON these tests read; the rest is ignored.
   @JsonIgnoreProperties(ignoreUnknown = true)
-  record PageOf<T>(List<T> content) {}
-
   private List<SettlementMatchResponse> matches(String token, String status) {
     return client(token)
         .get()

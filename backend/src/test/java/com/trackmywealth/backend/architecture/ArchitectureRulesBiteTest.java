@@ -3,7 +3,9 @@ package com.trackmywealth.backend.architecture;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import archfixture.config.ClientCoupledConfig;
+import archfixture.controller.PageLeakingController;
 import archfixture.controller.StrayEntityController;
+import archfixture.controller.UncheckedSortController;
 import archfixture.dto.StrayEntityResponse;
 import archfixture.model.StrayEntity;
 import archfixture.service.CategoryService;
@@ -115,6 +117,29 @@ class ArchitectureRulesBiteTest {
                 ArchitectureTest.object_level_services_do_not_construct_raw_not_found.check(bypass))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("CategoryService#findCategory");
+  }
+
+  // #373: a controller answering with Spring Data's Page - even wrapped - fails the build.
+  @Test
+  void aControllerReturningASpringDataPageFailsTheBuild() {
+    JavaClasses leaking = new ClassFileImporter().importClasses(PageLeakingController.class);
+    assertThatThrownBy(
+            () -> ArchitectureTest.controllers_do_not_return_spring_data_pages.check(leaking))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("PageLeakingController.wrapped")
+        .hasMessageContaining("PageLeakingController.bare");
+  }
+
+  // #373: a Pageable or Sort parameter outside the sort whitelist fails the build.
+  @Test
+  void aPageableWithoutItsSortWhitelistFailsTheBuild() {
+    JavaClasses unchecked = new ClassFileImporter().importClasses(UncheckedSortController.class);
+    assertThatThrownBy(
+            () -> ArchitectureTest.paged_parameters_declare_their_sort_whitelist.check(unchecked))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("UncheckedSortController.pageable")
+        .hasMessageContaining("UncheckedSortController.sort")
+        .hasMessageNotContaining("UncheckedSortController.whitelisted");
   }
 
   static class WorkspaceImpersonatingService {

@@ -41,9 +41,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -168,14 +166,8 @@ public class TransactionService {
   // here, after that request-level check, so it needs the same bound applied by hand.
   private static final BigDecimal MAX_FX_RATE = BigDecimal.TEN.pow(10);
 
-  // A page is never larger than this whatever the client asks for, and its order is fixed here, not
-  // taken from the request: newest booking first, with created_at and id as tie-breakers so paging
-  // is stable across rows booked on the same day.
-  private static final int MAX_PAGE_SIZE = 200;
   // #230: how many imported rows are inserted and categorized before they are detached.
   private static final int IMPORT_CHUNK_SIZE = 500;
-  private static final Sort LEDGER_ORDER =
-      Sort.by(Sort.Order.desc("bookingDate"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
@@ -688,25 +680,22 @@ public class TransactionService {
   }
 
   /**
-   * Newest booking first. With {@code uncategorized}, only the rows in UNCATEGORIZED: the
-   * actionable list FR-CAT-013 asks for, per account (a workspace-wide list comes later).
+   * The account's rows in {@code pageable}'s order: the controller's sort whitelist, ending with
+   * the id as a unique tie-breaker (#373). With {@code uncategorized}, only the rows in
+   * UNCATEGORIZED: the actionable list FR-CAT-013 asks for, per account (a workspace-wide list
+   * comes later).
    */
   @Transactional(readOnly = true)
   public Page<TransactionResponse> listTransactions(
       UUID accountId, boolean uncategorized, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
-    Pageable bounded =
-        PageRequest.of(
-            pageable.getPageNumber(),
-            Math.min(pageable.getPageSize(), MAX_PAGE_SIZE),
-            LEDGER_ORDER);
     Page<Transaction> page =
         uncategorized
             ? transactionRepository
                 .findByAccountIdAndCategoryIdAndVoidedAtIsNullAndReplacesTransactionIdIsNull(
-                    accountId, categorizationService.uncategorizedCategoryId(), bounded)
-            : transactionRepository.findByAccountId(accountId, bounded);
+                    accountId, categorizationService.uncategorizedCategoryId(), pageable)
+            : transactionRepository.findByAccountId(accountId, pageable);
     Map<UUID, String> assignments = latestAssignments(page.getContent());
     Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(page.getContent());
     Map<UUID, String> adjustmentStates =

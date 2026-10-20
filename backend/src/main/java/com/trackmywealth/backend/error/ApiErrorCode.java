@@ -16,6 +16,12 @@ public final class ApiErrorCode {
   /** 400: the request body or parameters are malformed or fail validation. */
   public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
 
+  /**
+   * 400: a paged list was asked to sort by a field it does not offer, or in a malformed way (#373).
+   * {@code detail} names the field and the fields the list does sort by.
+   */
+  public static final String INVALID_SORT = "INVALID_SORT";
+
   /** 401: no valid access token - sign in (again). */
   public static final String UNAUTHENTICATED = "UNAUTHENTICATED";
 

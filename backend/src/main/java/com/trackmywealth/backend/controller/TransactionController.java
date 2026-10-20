@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
@@ -12,13 +13,13 @@ import com.trackmywealth.backend.service.TransactionRemovalService;
 import com.trackmywealth.backend.service.TransactionService;
 import com.trackmywealth.backend.service.TransferResolutionService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.VersionedResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -86,16 +87,27 @@ public class TransactionController {
   }
 
   /**
-   * Newest booking first; the order is fixed server-side, only {@code page}/{@code size} apply.
-   * {@code uncategorized=true} lists only the rows still in UNCATEGORIZED (FR-CAT-013).
+   * Newest booking first unless {@code sort} asks for {@code bookingDate} or {@code amount}; the
+   * order always ends with the id, so pages never overlap. {@code uncategorized=true} lists only
+   * the rows still in UNCATEGORIZED (FR-CAT-013).
    */
   @GetMapping("/transactions")
-  public Page<TransactionResponse> listTransactions(
+  public PageResponse<TransactionResponse> listTransactions(
       @PathVariable UUID accountId,
       @RequestParam(defaultValue = "false") boolean uncategorized,
-      @PageableDefault(size = 50) Pageable pageable,
+      @Paged(
+              sort = {
+                // Same-day bookings in the order they were entered.
+                @SortField(
+                    name = "bookingDate",
+                    properties = {"bookingDate", "createdAt"}),
+                @SortField(name = "amount")
+              },
+              defaultSort = "bookingDate,desc")
+          Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transactionService.listTransactions(accountId, uncategorized, pageable, actor);
+    return PageResponse.of(
+        transactionService.listTransactions(accountId, uncategorized, pageable, actor));
   }
 
   /**

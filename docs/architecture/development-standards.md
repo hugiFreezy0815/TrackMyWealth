@@ -102,6 +102,16 @@ cd backend
     the optional correlation-id request/response header and the shared RFC 9457 problem response.
     `ApiConventionsIntegrationTest` guards the generated contract so runtime serialization and
     generated clients cannot silently drift apart.
+  - **Paged lists use one contract** (#373, ADR 0006). A paged endpoint returns
+    `dto.PageResponse<T>` (`content` plus `page { number, size, totalElements, totalPages }`),
+    never Spring Data's `Page`, and annotates its `Pageable` with `web.Paged`: the sortable
+    fields under their response names, the default order and a unique tie-breaker (default
+    `id`). `PagedArgumentResolver` reads `page` (zero-based), `size` (default 50, capped at 200)
+    and `sort`; an unknown or malformed sort is a 400 `INVALID_SORT`. Services take the resolved
+    `Pageable` as it is. ArchUnit fails the build for a controller returning a `Page` and for a
+    `Pageable` or `Sort` parameter without `@Paged`; `ApiConventionsIntegrationTest` checks that
+    every operation with a `page` parameter answers a `PageResponse` schema. A small bounded list
+    returns a plain array instead.
   - **Mutable resources use optimistic HTTP preconditions** (FR-CNC-001/002, ADR 0004).
     Responses expose a numeric `version`; single-resource responses also send
     `ETag: "<version>"`. Every read-modify-write operation requires the same strong tag in

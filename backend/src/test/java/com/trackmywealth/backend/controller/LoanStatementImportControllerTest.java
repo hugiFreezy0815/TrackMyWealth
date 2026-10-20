@@ -13,6 +13,7 @@ import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportIdentificationResponse;
 import com.trackmywealth.backend.dto.ImportRowResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
@@ -371,7 +372,7 @@ class LoanStatementImportControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<ImportRowResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content();
@@ -458,13 +459,11 @@ class LoanStatementImportControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<TransactionResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content();
   }
-
-  record PageOf<T>(List<T> content, long totalElements) {}
 
   private CashFlowResponse cashFlow(String month) {
     return client()

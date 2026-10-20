@@ -18,6 +18,7 @@ import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -25,6 +26,7 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.FxRate;
+import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
@@ -918,35 +920,46 @@ class TransactionControllerTest {
   // --- Paging --------------------------------------------------------------------------------
 
   @Test
-  void theTransactionListIsPagedNewestFirstAndIgnoresAClientSuppliedSort() {
+  void theTransactionListIsPagedNewestFirstUnlessAWhitelistedSortSaysOtherwise() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(token);
     recordPurchaseOn(token, card.id(), "-10.00", today().minusDays(2));
     recordPurchaseOn(token, card.id(), "-20.00", today().minusDays(1));
     recordPurchaseOn(token, card.id(), "-30.00", today());
 
-    // sort=bookingDate,asc would put the oldest first if it were honoured.
-    PageOf<TransactionResponse> first =
+    PageResponse<TransactionResponse> first = listTransactions(token, card.id(), "?size=2");
+    PageResponse<TransactionResponse> second = listTransactions(token, card.id(), "?size=2&page=1");
+    // #373: bookingDate is on the whitelist, so the client's direction is honoured.
+    PageResponse<TransactionResponse> oldestFirst =
         listTransactions(token, card.id(), "?size=2&sort=bookingDate,asc");
-    PageOf<TransactionResponse> second =
-        listTransactions(token, card.id(), "?size=2&page=1&sort=bookingDate,asc");
 
-    assertThat(first.totalElements()).isEqualTo(3);
+    assertThat(first.page().totalElements()).isEqualTo(3);
     assertThat(first.content())
         .extracting(TransactionResponse::bookingDate)
         .containsExactly(today(), today().minusDays(1));
     assertThat(second.content())
         .extracting(TransactionResponse::bookingDate)
         .containsExactly(today().minusDays(2));
+    assertThat(oldestFirst.content())
+        .extracting(TransactionResponse::bookingDate)
+        .containsExactly(today().minusDays(2), today().minusDays(1));
   }
 
   @Test
-  void aSortOnAnUnknownPropertyIsIgnoredNotA500() {
+  void aSortOnAnUnknownPropertyIsA400InvalidSortNotA500() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(token);
     recordPurchaseOn(token, card.id(), "-10.00", today());
 
-    assertThat(listTransactions(token, card.id(), "?sort=doesNotExist,asc").content()).hasSize(1);
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + card.id() + "/transactions?sort=doesNotExist,asc")
+        .exchange()
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo(ApiErrorCode.INVALID_SORT);
   }
 
   @Test
@@ -2701,22 +2714,21 @@ class TransactionControllerTest {
         .isEqualTo(HttpStatus.CREATED);
   }
 
-  private PageOf<TransactionResponse> listTransactions(String token, UUID accountId, String query) {
+  private PageResponse<TransactionResponse> listTransactions(
+      String token, UUID accountId, String query) {
     return client(token)
         .get()
         .uri("/api/v1/accounts/" + accountId + "/transactions" + query)
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<TransactionResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
         .returnResult()
         .getResponseBody();
   }
 
   // Only the two members of Spring Data's page JSON these tests read; the rest is ignored.
   @JsonIgnoreProperties(ignoreUnknown = true)
-  record PageOf<T>(List<T> content, long totalElements) {}
-
   private void seedFxRate(String base, String quote, LocalDate date, String rate) {
     FxRate fxRate = new FxRate();
     fxRate.setBaseCurrency(base);

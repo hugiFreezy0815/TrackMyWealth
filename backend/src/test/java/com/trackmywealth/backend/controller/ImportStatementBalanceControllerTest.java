@@ -17,6 +17,7 @@ import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ReconciliationDecisionRequest;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
@@ -583,7 +584,7 @@ class ImportStatementBalanceControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<ReconciliationResultResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<ReconciliationResultResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content();
@@ -742,8 +743,6 @@ class ImportStatementBalanceControllerTest {
   private static String etag(Object version) {
     return "\"" + version + "\"";
   }
-
-  record PageOf<T>(List<T> content, long totalElements) {}
 
   // --- database helpers -------------------------------------------------------------------------
 

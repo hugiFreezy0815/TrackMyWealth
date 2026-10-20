@@ -53,8 +53,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   // US-25-03: not the adjusting entry of a reconciliation result (V63's owner link).
   String NOT_RECONCILIATION_ADJUSTMENT = " and t.reconciliationResultId is null";
 
-  // The caller supplies the sort (TransactionService fixes it): a Pageable's own sort is client
-  // input and must not decide which columns the query orders by.
+  // The pageable's sort comes from the controller's whitelist (#373, web.Paged), never straight
+  // from the request, and ends with the id as a unique tie-breaker.
   Page<Transaction> findByAccountId(UUID accountId, Pageable pageable);
 
   // FR-CAT-013: the account's rows in one category - with UNCATEGORIZED, the actionable list.

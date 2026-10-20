@@ -14,6 +14,7 @@ import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.entity.FxRate;
@@ -26,7 +27,6 @@ import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -140,7 +141,7 @@ class InstitutionControllerTest {
 
     // The V19 seed carries PostFinance, Yuh, VIAC, DKB, Sparkasse; V79 adds LBS Süd: six active
     // entries.
-    assertThat(searchCatalogue(token, null).totalElements()).isEqualTo(6);
+    assertThat(searchCatalogue(token, null).page().totalElements()).isEqualTo(6);
   }
 
   @Test
@@ -623,41 +624,24 @@ class InstitutionControllerTest {
         .noneMatch(institution -> "Bad Country Bank".equals(institution.getName()));
   }
 
-  @SuppressWarnings("unchecked")
-  private PageResult<InstitutionCatalogueEntrySummaryResponse> searchCatalogue(
+  private PageResponse<InstitutionCatalogueEntrySummaryResponse> searchCatalogue(
       String token, String query) {
     String uri =
         query != null
             ? "/api/v1/institutions/catalogue?query=" + query
             : "/api/v1/institutions/catalogue";
-    Map<String, Object> body =
-        client(token)
-            .get()
-            .uri(uri)
-            .exchange()
-            .expectStatus()
-            .isOk()
-            .expectBody(Map.class)
-            .returnResult()
-            .getResponseBody();
-    List<Map<String, Object>> content = (List<Map<String, Object>>) body.get("content");
-    List<InstitutionCatalogueEntrySummaryResponse> entries =
-        content.stream()
-            .map(
-                entry ->
-                    new InstitutionCatalogueEntrySummaryResponse(
-                        java.util.UUID.fromString((String) entry.get("id")),
-                        (String) entry.get("name"),
-                        (String) entry.get("country"),
-                        (String) entry.get("institutionType"),
-                        (String) entry.get("identifier"),
-                        (String) entry.get("logoUrl")))
-            .toList();
-    long totalElements = ((Number) body.get("totalElements")).longValue();
-    return new PageResult<>(entries, totalElements);
+    return client(token)
+        .get()
+        .uri(uri)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(
+            new ParameterizedTypeReference<
+                PageResponse<InstitutionCatalogueEntrySummaryResponse>>() {})
+        .returnResult()
+        .getResponseBody();
   }
-
-  private record PageResult<T>(List<T> content, long totalElements) {}
 
   private InstitutionSummaryResponse getSummary(String token, UUID institutionId) {
     return client(token)
