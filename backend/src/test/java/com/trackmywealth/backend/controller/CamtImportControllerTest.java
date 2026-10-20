@@ -16,6 +16,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -605,7 +606,7 @@ class CamtImportControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<TransactionResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content()
@@ -615,8 +616,6 @@ class CamtImportControllerTest {
                 .thenComparing(row -> row.amount().abs(), Comparator.reverseOrder()))
         .toList();
   }
-
-  record PageOf<T>(List<T> content, long totalElements) {}
 
   private UUID create(Object request) {
     return client()

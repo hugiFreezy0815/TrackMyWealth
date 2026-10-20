@@ -20,6 +20,7 @@ import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.ImportSameFileResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.entity.Account;
@@ -40,6 +41,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
@@ -55,7 +57,6 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -92,11 +93,9 @@ public class ImportBatchService {
   private static final String MESSAGE_PREFIX = "tmw.import.row.";
   private static final String ACTIVE = "ACTIVE";
   private static final String UPLOAD_LOCK_PREFIX = "import-upload:";
-  private static final int MAX_PAGE_SIZE = 200;
   private static final int MAX_FILE_NAME_LENGTH = 255;
+  private static final String ROW_NUMBER = "rowNumber";
   private static final Pattern CONTROL_CHARACTERS = Pattern.compile("\\p{Cntrl}");
-  private static final Sort NEWEST_FIRST =
-      Sort.by(Sort.Order.desc("uploadedAt"), Sort.Order.desc("id"));
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
@@ -350,15 +349,17 @@ public class ImportBatchService {
         });
   }
 
-  /** The account's batches, newest first. */
+  /**
+   * The account's batches in {@code pageable}'s order: the controller's sort whitelist with its
+   * unique tie-breaker (#373).
+   */
   @Transactional(readOnly = true)
   public Page<ImportBatchResponse> list(
       UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = requireEditableAccount(accountId, actor);
-    int size = Math.min(Math.max(pageable.getPageSize(), 1), MAX_PAGE_SIZE);
     Page<ImportBatch> page =
         batchRepository.findByAccountId(
-            account.getId(), PageRequest.of(pageable.getPageNumber(), size, NEWEST_FIRST));
+            account.getId(), PagingValues.requireBounded(pageable, "id"));
     Map<UUID, ImportBatchCountsResponse> counts = recheckedCounts(page.getContent());
     Map<UUID, ImportSameFileResponse> sameFiles = sameFilesImportedIn(page.getContent());
     return page.map(
@@ -385,19 +386,20 @@ public class ImportBatchService {
   }
 
   /**
-   * The batch's rows in file order, optionally only those of one {@code status} ({@code PARSED},
-   * {@code DUPLICATE}, {@code ERROR}, {@code SKIPPED}); messages in the caller's language. A {@code
-   * PARSED} batch's rows are shown as its commit would take them now ({@link ImportRecheckService},
-   * #308): a row it would treat otherwise than stored has its {@code recheck} set, and {@code
-   * status} filters by what the commit would do.
+   * The batch's rows by row number ({@code pageable}'s direction, #373), optionally only those of
+   * one {@code status} ({@code PARSED}, {@code DUPLICATE}, {@code ERROR}, {@code SKIPPED});
+   * messages in the caller's language. A {@code PARSED} batch's rows are shown as its commit would
+   * take them now ({@link ImportRecheckService}, #308): a row it would treat otherwise than stored
+   * has its {@code recheck} set, and {@code status} filters by what the commit would do.
    */
   @Transactional(readOnly = true)
   public Page<ImportRowResponse> rows(
       UUID accountId,
       UUID batchId,
       String status,
-      Pageable pageable,
+      Pageable requested,
       AuthenticatedUserPrincipal actor) {
+    Pageable pageable = PagingValues.requireBounded(requested, ROW_NUMBER);
     Account account = requireEditableAccount(accountId, actor);
     ImportBatch batch = requireBatch(account, batchId, actor);
     if (status != null && !ImportBatchValues.ROW_STATUSES.contains(status)) {
@@ -406,8 +408,6 @@ public class ImportBatchService {
           ApiErrorCode.VALIDATION_FAILED,
           "status must be one of PARSED, DUPLICATE, ERROR, SKIPPED.");
     }
-    int size = Math.min(Math.max(pageable.getPageSize(), 1), MAX_PAGE_SIZE);
-    PageRequest page = PageRequest.of(pageable.getPageNumber(), size);
     List<ImportRowRaw> readable =
         ImportBatchValues.PARSED.equals(batch.getStatus())
             ? recheckService.readableRows(batch)
@@ -417,16 +417,17 @@ public class ImportBatchService {
     if (status != null && !recheck.isEmpty() && ImportBatchValues.ROW_RECHECKED.contains(status)) {
       // A re-checked row may have moved between PARSED and DUPLICATE: filter what the commit sees.
       List<ImportRowRaw> matching =
-          readable.stream().filter(row -> status.equals(statusOf(row, recheck))).toList();
-      int from = (int) Math.min(page.getOffset(), matching.size());
-      int to = Math.min(from + size, matching.size());
-      rows = new PageImpl<>(matching.subList(from, to), page, matching.size());
+          readable.stream()
+              .filter(row -> status.equals(statusOf(row, recheck)))
+              .sorted(inRowNumberOrder(pageable.getSort()))
+              .toList();
+      int from = (int) Math.min(pageable.getOffset(), matching.size());
+      int to = Math.min(from + pageable.getPageSize(), matching.size());
+      rows = new PageImpl<>(matching.subList(from, to), pageable, matching.size());
     } else if (status == null) {
-      rows = rowRepository.findByImportBatchIdOrderByRowNumber(batch.getId(), page);
+      rows = rowRepository.findByImportBatchId(batch.getId(), pageable);
     } else {
-      rows =
-          rowRepository.findByImportBatchIdAndParseStatusOrderByRowNumber(
-              batch.getId(), status, page);
+      rows = rowRepository.findByImportBatchIdAndParseStatus(batch.getId(), status, pageable);
     }
     Set<UUID> duplicateIds =
         rows.stream()
@@ -446,6 +447,21 @@ public class ImportBatchService {
                 account,
                 duplicateOf.get(duplicateOfId(row, recheck)),
                 locale));
+  }
+
+  /**
+   * The order of the re-checked rows, which are filtered in memory: by row number, the only field
+   * the rows list sorts by. Change this together with the rows' {@code @Paged} declaration in
+   * {@code ImportBatchController} - a sort on anything else fails here instead of being ignored.
+   */
+  static Comparator<ImportRowRaw> inRowNumberOrder(Sort sort) {
+    Sort.Order order = sort.getOrderFor(ROW_NUMBER);
+    if (order == null || sort.stream().anyMatch(o -> !ROW_NUMBER.equals(o.getProperty()))) {
+      throw new IllegalStateException(
+          "The re-checked import rows sort by " + ROW_NUMBER + " only, not by " + sort);
+    }
+    Comparator<ImportRowRaw> ascending = Comparator.comparingInt(ImportRowRaw::getRowNumber);
+    return order.isDescending() ? ascending.reversed() : ascending;
   }
 
   /**

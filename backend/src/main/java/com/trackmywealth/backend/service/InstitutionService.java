@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionSummaryResponse.AccountContribution;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.entity.InstitutionCatalogue;
@@ -94,7 +95,8 @@ public class InstitutionService {
 
   @Transactional(readOnly = true)
   public Page<InstitutionCatalogueEntrySummaryResponse> searchCatalogue(
-      String query, Pageable pageable) {
+      String query, Pageable requested) {
+    Pageable pageable = PagingValues.requireBounded(requested, "id");
     Page<InstitutionCatalogue> page =
         (query == null || query.isBlank())
             ? institutionCatalogueRepository.findByActiveTrue(pageable)

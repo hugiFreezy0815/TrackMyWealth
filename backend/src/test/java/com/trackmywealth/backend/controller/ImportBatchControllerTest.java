@@ -34,6 +34,7 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
@@ -1238,7 +1239,7 @@ class ImportBatchControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<ImportRowResponse>>() {})
             .returnResult()
             .getResponseBody()
             .content();
@@ -1977,14 +1978,14 @@ class ImportBatchControllerTest {
     ImportBatchResponse newer = upload(token, simple.id(), csv("2019-01-05;-2.00;CHF;b;;"));
     ImportBatchResponse again = upload(token, simple.id(), csv("2019-01-05;-1.00;CHF;a;;"));
 
-    PageOf<ImportBatchResponse> page =
+    PageResponse<ImportBatchResponse> page =
         client()
             .get()
             .uri(imports() + "?size=10")
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<PageOf<ImportBatchResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<ImportBatchResponse>>() {})
             .returnResult()
             .getResponseBody();
 
@@ -2222,14 +2223,14 @@ class ImportBatchControllerTest {
         .getResponseBody();
   }
 
-  private PageOf<ImportRowResponse> rows(UUID batchId, String query) {
+  private PageResponse<ImportRowResponse> rows(UUID batchId, String query) {
     return client()
         .get()
         .uri(imports() + "/" + batchId + "/rows" + query)
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<ImportRowResponse>>() {})
         .returnResult()
         .getResponseBody();
   }
@@ -2570,7 +2571,7 @@ class ImportBatchControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<ImportRowResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content()
@@ -2660,7 +2661,6 @@ class ImportBatchControllerTest {
 
   // Only the two members of Spring Data's page JSON these tests read; the rest is ignored.
   @JsonIgnoreProperties(ignoreUnknown = true)
-  record PageOf<T>(List<T> content, long totalElements) {}
 
   // --- templates and files -----------------------------------------------------------------------
 

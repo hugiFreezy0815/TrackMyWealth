@@ -13,6 +13,7 @@ import com.trackmywealth.backend.dto.ImportRollbackRequest;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
 import com.trackmywealth.backend.dto.ImportRowErrorResponse;
 import com.trackmywealth.backend.dto.ImportRowResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.ShippedTemplateFixtures;
 import com.trackmywealth.backend.testsupport.AccountRequests;
@@ -398,7 +399,7 @@ class YuhStatementImportControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<ImportRowResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content()
@@ -411,8 +412,6 @@ class YuhStatementImportControllerTest {
         .map(ImportRowErrorResponse::code)
         .toList();
   }
-
-  record PageOf<T>(List<T> content, long totalElements) {}
 
   // The Yuh account's live row with this amount.
   private UUID moveId(String amount) {

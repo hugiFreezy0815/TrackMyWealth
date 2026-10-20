@@ -41,7 +41,7 @@ public interface ImportBatchRepository extends JpaRepository<ImportBatch, UUID> 
   @Query(value = "UPDATE import_batch SET version = version WHERE id = :id", nativeQuery = true)
   int touch(@Param("id") UUID id);
 
-  // The caller fixes the order (newest first): a Pageable's sort is client input.
+  // The pageable's sort comes from the controller's whitelist with its tie-breaker (#373).
   Page<ImportBatch> findByAccountId(UUID accountId, Pageable pageable);
 
   /**

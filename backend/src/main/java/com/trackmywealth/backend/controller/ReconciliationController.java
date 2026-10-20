@@ -1,15 +1,17 @@
 package com.trackmywealth.backend.controller;
 
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ReconciliationDecisionRequest;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ReconciliationDecisionService;
 import com.trackmywealth.backend.service.ReconciliationHistoryService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.VersionedResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -43,11 +45,12 @@ public class ReconciliationController {
   }
 
   @GetMapping
-  public Page<ReconciliationResultResponse> list(
+  public PageResponse<ReconciliationResultResponse> list(
       @PathVariable UUID accountId,
-      Pageable pageable,
+      @Paged(sort = @SortField(name = "createdAt"), defaultSort = "createdAt,desc")
+          Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return historyService.list(accountId, pageable, actor);
+    return PageResponse.of(historyService.list(accountId, pageable, actor));
   }
 
   @GetMapping("/{resultId}")

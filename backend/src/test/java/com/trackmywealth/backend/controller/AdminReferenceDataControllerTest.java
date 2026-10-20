@@ -8,6 +8,7 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ReferenceDataResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
@@ -168,7 +169,7 @@ class AdminReferenceDataControllerTest {
             .isOk()
             .expectBody(
                 new ParameterizedTypeReference<
-                    PageOf<InstitutionCatalogueEntrySummaryResponse>>() {})
+                    PageResponse<InstitutionCatalogueEntrySummaryResponse>>() {})
             .returnResult()
             .getResponseBody()
             .content();
@@ -190,8 +191,6 @@ class AdminReferenceDataControllerTest {
         .extracting(CategoryResponse::code)
         .contains("GROCERIES", "UNCATEGORIZED", "DINING", "FEES");
   }
-
-  record PageOf<T>(List<T> content, long totalElements) {}
 
   private UUID createStandardUser(String adminToken, String email) {
     client(adminToken)

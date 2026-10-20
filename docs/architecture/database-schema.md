@@ -99,6 +99,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V99` | Holdings statements (US-07-13, #273): `import_template.holdings_rule` (required exactly for `SNAPSHOT`), file format `SPREADSHEET` (holdings only), `pdf_layout` for cash PDFs only; `import_batch.holdings_snapshot_date`/`holdings_date_source`/`holdings_snapshot`; `import_holding_row` (own RLS policy); `workspace_security_ticker` (own RLS policy) |
 | `V100` | Shipped holdings templates (US-07-13, #273): the Swissquote "Portfolio-Wertentwicklung" PDF (PostFinance E-Trading, Yuh), the PostFinance E-Trading positions XLSX and cash XLS |
 | `V105` | Imported snapshots completed part by part (US-07-31, #366): `account_snapshot.balance_import_batch_id`, `snapshot_holding.import_batch_id` (the batch that contributed each part; backfilled from `import_batch_id`), `import_batch_id` updatable (passes to the remaining contributor on a rollback); snapshot outcomes `COMPLETED` and `REMOVED` |
+| `V108` | `transaction.amount_in_account_currency`, generated: `amount * coalesce(fx_rate_to_account_currency, 1)` rounded to 4 places as `NUMERIC(30,4)` (wide enough for any amount times any rate), the value a list sorts by when it sorts by `amount` (US-29-03, #373) |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a

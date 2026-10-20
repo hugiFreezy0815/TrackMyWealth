@@ -26,6 +26,7 @@ import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
@@ -1016,13 +1017,30 @@ class ImportRollbackControllerTest {
     ImportBatchResponse preview = upload(THREE_ROWS);
     rollback(batch, REASON);
 
-    PageOf<ImportRowResponse> second = previewPage(preview.id(), "?status=PARSED&size=2&page=1");
-    PageOf<ImportRowResponse> beyond = previewPage(preview.id(), "?status=PARSED&size=2&page=2");
+    PageResponse<ImportRowResponse> second =
+        previewPage(preview.id(), "?status=PARSED&size=2&page=1");
+    PageResponse<ImportRowResponse> beyond =
+        previewPage(preview.id(), "?status=PARSED&size=2&page=2");
 
-    assertThat(second.totalElements()).isEqualTo(3);
+    assertThat(second.page().totalElements()).isEqualTo(3);
     assertThat(second.content()).extracting(ImportRowResponse::rowNumber).containsExactly(3);
     assertThat(beyond.content()).isEmpty();
-    assertThat(previewPage(preview.id(), "?status=DUPLICATE").totalElements()).isZero();
+    assertThat(previewPage(preview.id(), "?status=DUPLICATE").page().totalElements()).isZero();
+  }
+
+  // #373: the re-checked rows are filtered in memory; they still follow the requested direction.
+  @Test
+  void theRecheckedRowsFollowTheRequestedRowNumberOrder() {
+    ImportBatchResponse batch = importFile(THREE_ROWS);
+    ImportBatchResponse preview = upload(THREE_ROWS);
+    rollback(batch, REASON);
+
+    assertThat(previewRows(preview.id(), "?status=PARSED"))
+        .extracting(ImportRowResponse::rowNumber)
+        .containsExactly(1, 2, 3);
+    assertThat(previewRows(preview.id(), "?status=PARSED&sort=rowNumber,desc&size=2"))
+        .extracting(ImportRowResponse::rowNumber)
+        .containsExactly(3, 2);
   }
 
   @Test
@@ -1553,7 +1571,7 @@ class ImportRollbackControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<ImportBatchResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<ImportBatchResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content()
@@ -1567,14 +1585,14 @@ class ImportRollbackControllerTest {
     return previewPage(batchId, query).content();
   }
 
-  private PageOf<ImportRowResponse> previewPage(UUID batchId, String query) {
+  private PageResponse<ImportRowResponse> previewPage(UUID batchId, String query) {
     return client()
         .get()
         .uri(imports() + "/" + batchId + "/rows" + query)
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<ImportRowResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<ImportRowResponse>>() {})
         .returnResult()
         .getResponseBody();
   }
@@ -1594,8 +1612,6 @@ class ImportRollbackControllerTest {
             .returnResult();
     return CurrentVersion.storedEtag(result, dataSource, "import_batch", batch.id());
   }
-
-  record PageOf<T>(List<T> content, long totalElements) {}
 
   private ImportRollbackResponse rollback(ImportBatchResponse batch, String reason) {
     return rollbackResult(batch, reason).getResponseBody();

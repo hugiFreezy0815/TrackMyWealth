@@ -7,12 +7,15 @@ import com.trackmywealth.backend.dto.ImportRollbackRequest;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
 import com.trackmywealth.backend.dto.ImportRowInclusionRequest;
 import com.trackmywealth.backend.dto.ImportRowResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportBatchService;
 import com.trackmywealth.backend.service.ImportCommitService;
 import com.trackmywealth.backend.service.ImportErrorExportService;
 import com.trackmywealth.backend.service.ImportRollbackService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
 import com.trackmywealth.backend.web.VersionedResponse;
 import jakarta.validation.Valid;
@@ -22,7 +25,6 @@ import java.net.URI;
 import java.nio.charset.Charset;
 import java.time.LocalDate;
 import java.util.UUID;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
@@ -132,13 +134,14 @@ public class ImportBatchController {
     return VersionedResponse.ok(batch, batch.version());
   }
 
-  /** The account's batches, newest first. */
+  /** The account's batches, newest upload first unless {@code sort} says otherwise. */
   @GetMapping
-  public Page<ImportBatchResponse> list(
+  public PageResponse<ImportBatchResponse> list(
       @PathVariable UUID accountId,
-      Pageable pageable,
+      @Paged(sort = @SortField(name = "uploadedAt"), defaultSort = "uploadedAt,desc")
+          Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return importBatchService.list(accountId, pageable, actor);
+    return PageResponse.of(importBatchService.list(accountId, pageable, actor));
   }
 
   @GetMapping(BY_ID)
@@ -155,13 +158,17 @@ public class ImportBatchController {
    * SKIPPED. While the batch is PARSED, each row shows what the commit will do with it now (#308).
    */
   @GetMapping(BY_ID + "/rows")
-  public Page<ImportRowResponse> rows(
+  public PageResponse<ImportRowResponse> rows(
       @PathVariable UUID accountId,
       @PathVariable UUID batchId,
       @RequestParam(required = false) String status,
-      Pageable pageable,
+      @Paged(
+              sort = @SortField(name = "rowNumber"),
+              defaultSort = "rowNumber,asc",
+              tieBreaker = "rowNumber")
+          Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return importBatchService.rows(accountId, batchId, status, pageable, actor);
+    return PageResponse.of(importBatchService.rows(accountId, batchId, status, pageable, actor));
   }
 
   /**

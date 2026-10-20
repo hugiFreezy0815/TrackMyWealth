@@ -14,6 +14,7 @@ import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -1159,8 +1160,6 @@ class CategorizationControllerTest {
         .exchange();
   }
 
-  record PageOf<T>(List<T> content, long totalElements) {}
-
   private List<TransactionResponse> list(String token, UUID accountId, boolean uncategorized) {
     return client(token)
         .get()
@@ -1168,7 +1167,7 @@ class CategorizationControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageOf<TransactionResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
         .returnResult()
         .getResponseBody()
         .content();

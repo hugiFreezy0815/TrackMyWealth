@@ -16,6 +16,8 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.SortWhitelist;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.net.URI;
@@ -42,6 +44,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -577,6 +580,112 @@ class ApiConventionsIntegrationTest {
     assertThat(problem.path("properties").path("code").path("type").asString()).isEqualTo("string");
     assertThat(problem.path("properties").path("correlationId").path("type").asString())
         .isEqualTo("string");
+  }
+
+  // #373: every paged list documents the one paging contract and answers with a PageResponse.
+  @Test
+  void openApiDocumentsEveryPagedListWithItsPageResponseAndSortWhitelist() {
+    JsonNode spec =
+        objectMapper.readTree(
+            client(bootstrapAdministrator())
+                .get()
+                .uri("/api-docs")
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody());
+
+    List<String> pagedOperations = new ArrayList<>();
+    List<String> notPageResponses = new ArrayList<>();
+    spec.path("paths")
+        .properties()
+        .forEach(
+            path ->
+                path.getValue()
+                    .properties()
+                    .forEach(
+                        operation -> {
+                          String name = operation.getKey() + " " + path.getKey();
+                          List<String> parameters =
+                              operation.getValue().path("parameters").findValuesAsString("name");
+                          assertThat(parameters).as(name).doesNotContain("pageable");
+                          if (!parameters.contains("page")) {
+                            return;
+                          }
+                          pagedOperations.add(name);
+                          String schema =
+                              operation
+                                  .getValue()
+                                  .path("responses")
+                                  .path("200")
+                                  .path("content")
+                                  .findPath("schema")
+                                  .path("$ref")
+                                  .asString();
+                          if (!schema.startsWith("#/components/schemas/PageResponse")) {
+                            notPageResponses.add(name + " -> " + schema);
+                          }
+                        }));
+    assertThat(pagedOperations).hasSize(5);
+    assertThat(notPageResponses).as("paged operations not answering a PageResponse").isEmpty();
+
+    JsonNode list =
+        spec.path("paths").path("/api/v1/accounts/{accountId}/transactions").path("get");
+    JsonNode size = parameter(list, "size").path("schema");
+    assertThat(size.path("maximum").asInt()).isEqualTo(200);
+    assertThat(size.path("default").asInt()).isEqualTo(50);
+    List<String> sortValues = new ArrayList<>();
+    parameter(list, "sort")
+        .path("schema")
+        .path("items")
+        .path("enum")
+        .forEach(value -> sortValues.add(value.asString()));
+    assertThat(sortValues)
+        .containsExactly(
+            "bookingDate",
+            "bookingDate,asc",
+            "bookingDate,desc",
+            "amount",
+            "amount,asc",
+            "amount,desc");
+    assertThat(list.path("responses").path("400").path("$ref").asString())
+        .isEqualTo("#/components/responses/ApiProblemResponse");
+
+    JsonNode schemas = spec.path("components").path("schemas");
+    JsonNode page = schemas.path("PageResponseTransactionResponse").path("properties");
+    assertThat(page.path("content").path("items").path("$ref").asString())
+        .isEqualTo("#/components/schemas/TransactionResponse");
+    assertThat(schemas.path("PageMetadata").path("properties").propertyNames())
+        .containsExactlyInAnyOrder("number", "size", "totalElements", "totalPages");
+  }
+
+  // #373: a @Paged declaration that contradicts itself would fail only on its first request.
+  @Test
+  void everyPagedDeclarationIsConsistent() {
+    List<String> paged = new ArrayList<>();
+    handlerMapping
+        .getHandlerMethods()
+        .values()
+        .forEach(
+            handler -> {
+              for (MethodParameter parameter : handler.getMethodParameters()) {
+                Paged declaration = parameter.getParameterAnnotation(Paged.class);
+                if (declaration != null) {
+                  SortWhitelist.of(declaration);
+                  paged.add(handler.getShortLogMessage());
+                }
+              }
+            });
+    assertThat(paged).hasSize(5);
+  }
+
+  private static JsonNode parameter(JsonNode operation, String name) {
+    return operation.path("parameters").findParents("name").stream()
+        .filter(parameter -> name.equals(parameter.path("name").asString()))
+        .findFirst()
+        .orElseThrow();
   }
 
   // --- helpers ---------------------------------------------------------------------------------

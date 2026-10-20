@@ -1,12 +1,15 @@
 package com.trackmywealth.backend.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaCodeUnit;
 import com.tngtech.archunit.core.domain.JavaFieldAccess;
+import com.tngtech.archunit.core.domain.JavaMethod;
+import com.tngtech.archunit.core.domain.JavaParameter;
 import com.tngtech.archunit.core.domain.properties.CanBeAnnotated;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -25,8 +28,12 @@ import com.trackmywealth.backend.security.SystemWorkspaceContext;
 import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.service.InstitutionService;
 import com.trackmywealth.backend.service.TransferRecheckService;
+import com.trackmywealth.backend.web.Paged;
 import jakarta.persistence.Entity;
 import java.util.Set;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
@@ -355,6 +362,33 @@ class ArchitectureTest {
           .because("an untrusted CAMT file is read only through CamtImportReaderService's limits")
           .allowEmptyShould(true);
 
+  // #373 (ADR 0006): a paged list answers with dto.PageResponse. Spring Data's Page (a Slice) has
+  // no stable JSON of its own - its shape changed with framework upgrades before.
+  @ArchTest
+  static final ArchRule controllers_do_not_return_spring_data_pages =
+      methods()
+          .that()
+          .areDeclaredInClassesThat()
+          .resideInAPackage("..controller..")
+          .should(notReturnASpringDataSlice())
+          .because(
+              "a paged list answers with PageResponse (#373, ADR 0006), whose shape this API owns")
+          .allowEmptyShould(true);
+
+  // #373: page, size and sort are read by web.PagedArgumentResolver only; a Pageable (or Sort)
+  // without @Paged would take any client sort property through Spring Data's own resolver.
+  @ArchTest
+  static final ArchRule paged_parameters_declare_their_sort_whitelist =
+      methods()
+          .that()
+          .areDeclaredInClassesThat()
+          .resideInAPackage("..controller..")
+          .should(declarePagingThroughPaged())
+          .because(
+              "a paged list's sort must be checked against its whitelist (#373) - annotate the"
+                  + " Pageable with @Paged")
+          .allowEmptyShould(true);
+
   @ArchTest
   static final ArchRule no_standard_streams =
       GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
@@ -366,6 +400,45 @@ class ArchitectureTest {
   @ArchTest
   static final ArchRule no_generic_exceptions =
       GeneralCodingRules.NO_CLASSES_SHOULD_THROW_GENERIC_EXCEPTIONS;
+
+  private static ArchCondition<JavaMethod> notReturnASpringDataSlice() {
+    return new ArchCondition<>("not return a Spring Data Page or Slice") {
+      @Override
+      public void check(JavaMethod method, ConditionEvents events) {
+        boolean returnsSlice =
+            method.getReturnType().getAllInvolvedRawTypes().stream()
+                .anyMatch(type -> type.isAssignableTo(Slice.class));
+        if (returnsSlice) {
+          events.add(
+              SimpleConditionEvent.violated(
+                  method, method.getFullName() + " returns " + method.getReturnType().getName()));
+        }
+      }
+    };
+  }
+
+  private static ArchCondition<JavaMethod> declarePagingThroughPaged() {
+    return new ArchCondition<>("annotate every Pageable or Sort parameter with @Paged") {
+      @Override
+      public void check(JavaMethod method, ConditionEvents events) {
+        for (JavaParameter parameter : method.getParameters()) {
+          JavaClass type = parameter.getRawType();
+          boolean paging = type.isAssignableTo(Pageable.class) || type.isAssignableTo(Sort.class);
+          boolean whitelisted =
+              type.isEquivalentTo(Pageable.class) && parameter.isAnnotatedWith(Paged.class);
+          if (paging && !whitelisted) {
+            events.add(
+                SimpleConditionEvent.violated(
+                    method,
+                    method.getFullName()
+                        + " takes "
+                        + type.getSimpleName()
+                        + " without @Paged's sort whitelist"));
+          }
+        }
+      }
+    };
+  }
 
   private static LayeredArchitecture buildLayeredArchitecture() {
     return Architectures.layeredArchitecture()

@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.entity.Account;
@@ -13,7 +14,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +29,6 @@ public class ReconciliationHistoryService {
 
   static final String RESOURCE_NAME = "reconciliation result";
   private static final String RESOURCE_LABEL = "Reconciliation result";
-  private static final int MAX_PAGE_SIZE = 200;
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
@@ -47,17 +46,19 @@ public class ReconciliationHistoryService {
     this.resultRepository = resultRepository;
   }
 
-  /** Detailed history is transaction-sensitive and therefore requires READ, not BALANCE_ONLY. */
+  /**
+   * Detailed history is transaction-sensitive and therefore requires READ, not BALANCE_ONLY. The
+   * order is {@code pageable}'s: the controller's sort whitelist with its tie-breaker (#373).
+   */
   @Transactional(readOnly = true)
   public Page<ReconciliationResultResponse> list(
       UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
-    Pageable bounded =
-        PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE));
     Optional<UUID> latest = latestSnapshotId(accountId);
     return resultRepository
-        .findByAccountIdAndAffectedSecurityIdIsNullOrderByCreatedAtDesc(accountId, bounded)
+        .findByAccountIdAndAffectedSecurityIdIsNull(
+            accountId, PagingValues.requireBounded(pageable, "id"))
         .map(result -> toResponse(result, latest));
   }
 

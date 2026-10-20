@@ -4,11 +4,13 @@ import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
 import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.InstitutionService;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.Paged.SortField;
 import jakarta.validation.Valid;
 import java.util.UUID;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,9 +39,10 @@ public class InstitutionController {
   }
 
   @GetMapping("/catalogue")
-  public Page<InstitutionCatalogueEntrySummaryResponse> searchCatalogue(
-      @RequestParam(required = false) String query, Pageable pageable) {
-    return institutionService.searchCatalogue(query, pageable);
+  public PageResponse<InstitutionCatalogueEntrySummaryResponse> searchCatalogue(
+      @RequestParam(required = false) String query,
+      @Paged(sort = @SortField(name = "name"), defaultSort = "name,asc") Pageable pageable) {
+    return PageResponse.of(institutionService.searchCatalogue(query, pageable));
   }
 
   @PostMapping

@@ -1,8 +1,12 @@
 package com.trackmywealth.backend.config;
 
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.PagedArgumentResolver;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
+import com.trackmywealth.backend.web.SortWhitelist;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.headers.Header;
@@ -16,7 +20,12 @@ import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.customizers.OperationCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
@@ -48,6 +57,9 @@ public class ApiDocumentationConfig {
       "#/components/responses/" + RETRYABLE_PROBLEM_RESPONSE;
 
   private static final String DECIMAL_FORMAT = "decimal";
+  private static final String QUERY = "query";
+  // springdoc's name for an undecorated Pageable parameter.
+  private static final String PAGEABLE_PARAMETER = "pageable";
   private static final String PROBLEM_RESPONSE_REF =
       "#/components/responses/" + API_PROBLEM_RESPONSE;
 
@@ -117,6 +129,79 @@ public class ApiDocumentationConfig {
       }
       return operation;
     };
+  }
+
+  /**
+   * A {@link Paged} list documents the one paging contract (#373): {@code page}, {@code size} with
+   * its default and cap, and {@code sort} with exactly the values its whitelist accepts - in place
+   * of springdoc's generic {@code Pageable} parameters, which would offer any property.
+   */
+  @Bean
+  OperationCustomizer pagedListParameters() {
+    return (operation, handlerMethod) -> {
+      Arrays.stream(handlerMethod.getMethodParameters())
+          .map(parameter -> parameter.getParameterAnnotation(Paged.class))
+          .filter(Objects::nonNull)
+          .findFirst()
+          .ifPresent(paged -> documentPaging(operation, SortWhitelist.of(paged)));
+      return operation;
+    };
+  }
+
+  private static void documentPaging(
+      io.swagger.v3.oas.models.Operation operation, SortWhitelist whitelist) {
+    Set<String> pagingNames =
+        Set.of(
+            PAGEABLE_PARAMETER,
+            PagedArgumentResolver.PAGE,
+            PagedArgumentResolver.SIZE,
+            PagedArgumentResolver.SORT);
+    if (operation.getParameters() != null) {
+      operation.getParameters().removeIf(parameter -> pagingNames.contains(parameter.getName()));
+    }
+    operation.addParametersItem(
+        new Parameter()
+            .name(PagedArgumentResolver.PAGE)
+            .in(QUERY)
+            .required(false)
+            .description("Zero-based page number.")
+            .schema(new IntegerSchema().format("int32").minimum(BigDecimal.ZERO)._default(0)));
+    operation.addParametersItem(
+        new Parameter()
+            .name(PagedArgumentResolver.SIZE)
+            .in(QUERY)
+            .required(false)
+            .description(
+                "Items per page; a larger value is capped to "
+                    + PagingValues.MAX_SIZE
+                    + ", and page.size in the response says the size applied.")
+            .schema(
+                new IntegerSchema()
+                    .format("int32")
+                    .minimum(BigDecimal.ONE)
+                    .maximum(BigDecimal.valueOf(PagingValues.MAX_SIZE))
+                    ._default(PagingValues.DEFAULT_SIZE)));
+    List<String> sortValues = new ArrayList<>();
+    for (String field : whitelist.fieldNames()) {
+      sortValues.add(field);
+      sortValues.add(field + ",asc");
+      sortValues.add(field + ",desc");
+    }
+    StringSchema sortValue = new StringSchema();
+    sortValue.setEnum(sortValues);
+    operation.addParametersItem(
+        new Parameter()
+            .name(PagedArgumentResolver.SORT)
+            .in(QUERY)
+            .required(false)
+            .explode(true)
+            .description(
+                "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: "
+                    + whitelist.defaultSort()
+                    + ". The order always ends with a unique tie-breaker, so pages never"
+                    + " overlap.")
+            .schema(new ArraySchema().items(sortValue)));
+    responsesOf(operation).putIfAbsent("400", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
   }
 
   private static Components componentsOf(OpenAPI openApi) {
