@@ -42,16 +42,16 @@ This edition merges the TrackMyWealth requirements baseline with a competitive s
 | Languages | English and German |
 | Product orientation | Privacy-first, open-source foundation. **Hybrid deployment: one architecture, two topologies — self-hosted or hosted service.** Client is online-only. |
 | Technology baseline | React Native + Expo (iOS, Android, web); Spring Boot REST API with JWT; PostgreSQL |
-| Target users | Individuals, beginner and advanced private investors, families/households |
+| Target users | Individuals, beginner and advanced private investors, couples and families |
 | Primary purpose | Personal finance + budgeting + investment/wealth consolidation |
 | Tax topics | Explicitly out of scope |
 | Document status | Consolidated requirements baseline, merged edition |
  
 # 1. Application Introduction
  
-TrackMyWealth is a privacy-first personal finance, portfolio and wealth-management application for private individuals and households in Switzerland and Germany. Its purpose is to bring financial data that is normally fragmented across banks, brokers, pension providers, credit-card providers and other financial institutions into one coherent, user-controlled system.
+TrackMyWealth is a privacy-first personal finance, portfolio and wealth-management application for private individuals, couples and families in Switzerland and Germany. Its purpose is to bring financial data that is normally fragmented across banks, brokers, pension providers, credit-card providers and other financial institutions into one coherent, user-controlled system.
  
-The application combines household cash-flow and budgeting functions with advanced private-investor portfolio analytics. A user shall be able to understand not only how an investment portfolio performs, but also how salary, spending, saving, investing, liabilities and long-term wealth interact.
+The application combines personal cash-flow and budgeting functions with advanced private-investor portfolio analytics. A user shall be able to understand not only how an investment portfolio performs, but also how salary, spending, saving, investing, liabilities and long-term wealth interact.
  
 **Core product promise:** one private application that shows where money is held, how it flows, how investments perform, what assets and liabilities exist, and the resulting consolidated net worth.
  
@@ -70,7 +70,7 @@ Four products define the competitive field. None occupies the position TrackMyWe
  
 - **Nobody covers both sides of the balance sheet in one coherent model.** Trackers ignore spending; budgeting apps ignore investments. The one product attempting both is visibly paying the cost of retrofitting.
  
-- **Nobody serves Switzerland and Germany equally.** The German leader has no Swiss pension competence; the Swiss leader has no securities capability. Cross-border households — CH residents with German brokers, DE residents with Swiss accounts, cross-border commuters — currently run two tools and reconcile by hand.
+- **Nobody serves Switzerland and Germany equally.** The German leader has no Swiss pension competence; the Swiss leader has no securities capability. Cross-border users — CH residents with German brokers, DE residents with Swiss accounts, cross-border commuters — currently run two tools and reconcile by hand.
  
 ## 1.2 Differentiation pillars
  
@@ -80,9 +80,9 @@ Each pillar is an architecture commitment, not a feature to be added later.
 | --- | --- | --- |
 | D1 | **Unified balance-sheet and cashflow domain model**, designed as one from day one | Retrofitting is the documented failure of the nearest competitor; the cost of doing it later is user-visible data migration |
 | D2 | **Pension folded into the whole picture** — Pillar 3a holdings counted in consolidated asset allocation and concentration analysis | No analysed product does this. For a Swiss user with a large 3a equity allocation, any concentration analysis that omits it is simply wrong. |
-| D3 | **Dual-jurisdiction CH/DE households treated as normal**, with a full multi-tier currency model | The market is structurally split; nobody serves the overlap |
+| D3 | **Dual-jurisdiction CH/DE finances treated as normal**, with a full multi-tier currency model | The market is structurally split; nobody serves the overlap |
 | D4 | **Measurement quality** — TWR and MWR side by side, currency attribution, reconciliation against provider-reported balances, standards-based classification | Trackers lose users to wrong numbers, not missing features |
-| D5 | **Deployment sovereignty** — the household may run the entire system on infrastructure it controls, with direct access to its own database | Only Ghostfolio offers self-hosting, and it has no cashflow, budgeting or pension capability. Parqet and getquin are cloud-only. |
+| D5 | **Deployment sovereignty** — the user may run the entire system on infrastructure it controls, with direct access to its own database | Only Ghostfolio offers self-hosting, and it has no cashflow, budgeting or pension capability. Parqet and getquin are cloud-only. |
  
 **Positioning caution.** D1–D5 are architecture-led and therefore slow for a competitor to copy — but also slow to demonstrate on a landing page. A feature such as a tax export would have been easier to show and is out of scope. Launch messaging must solve this deliberately (see OPEN-018).
  
@@ -90,9 +90,9 @@ Each pillar is an architecture commitment, not a feature to be added later.
  
 TrackMyWealth shall provide a single financial system of record capable of answering:
  
-- What do I or my household own?
+- What do I or my family own?
  
-- What do I or my household owe?
+- What do I or my family owe?
  
 - Where is the money held?
  
@@ -150,7 +150,7 @@ Country-specific functionality, terminology, institutions and integrations shall
  
 - Cash, securities, pensions, real estate, commodities, precious metals and custom assets
  
-- Household cash flow, budgeting, savings and financial goals
+- Personal cash flow, budgeting, savings and financial goals
  
 - Portfolio valuation, asset allocation, TWR, MWR, dividends and benchmark comparison
  
@@ -186,8 +186,8 @@ Tax functionality is out of scope. However, **tax amounts are a cash event that 
 | --- | --- |
 | Beginner / private investor | Simple overview, understandable returns, easy imports, budgeting, savings, net worth, goals |
 | Advanced private investor | Consolidated depots, master data, prices, TWR/MWR, benchmarks, GICS, asset/currency/country exposure |
-| Family / household | Multiple users and owners, shared/private accounts, mortgages, credit cards, household budget, consolidated wealth |
-| **Cross-border household** | CH resident with a German broker, DE resident with Swiss accounts, or a cross-border commuter earning CHF and spending EUR. Needs dual-currency consolidation and both markets’ institutions in one place. Currently forced to run two tools. |
+| Couple / family | Multiple users and owners, shared/private accounts, mortgages, credit cards, shared budget, consolidated wealth |
+| **Cross-border user** | CH resident with a German broker, DE resident with Swiss accounts, or a cross-border commuter earning CHF and spending EUR. Needs dual-currency consolidation and both markets’ institutions in one place. Currently forced to run two tools. |
 | **Privacy-motivated user** | Rejects cloud aggregation of financial data. Needs the ability to self-host with no dependency on the project. This persona is the reason for the self-hosted topology and must not be traded away for convenience features. |
 | **Financial-independence planner** | Models time to independence: savings rate, withdrawal scenarios, net-worth trajectory |
 | System administrator | Manage users, roles, account status and system access |
@@ -196,11 +196,11 @@ Tax functionality is out of scope. However, **tax amounts are a cash event that 
  
 **PR-001 — Privacy-first [MUST]**: Financial data shall be protected as a primary product requirement.
  
-**PR-002 — Deployment sovereignty [MUST]**: A user or household shall be able to run the entire system on infrastructure they control, with no dependency on a service operated by the project. The same application, API and schema serve both topologies; there is no reduced self-hosted variant and no separate codebase.
+**PR-002 — Deployment sovereignty [MUST]**: A user or family shall be able to run the entire system on infrastructure they control, with no dependency on a service operated by the project. The same application, API and schema serve both topologies; there is no reduced self-hosted variant and no separate codebase.
  
 *This supersedes the earlier local-first formulation. The client is an online API consumer in both topologies (section 48). Sovereignty is achieved by letting the user own the server, not by removing the server.*
  
-**PR-003 — User ownership [MUST]**: A household’s data belongs to that household. In the self-hosted topology this is achieved directly: the household controls the database. In the hosted topology it is achieved through backup, restore and the statutory portability obligation of section 31.
+**PR-003 — User ownership [MUST]**: A workspace’s data belongs to its members. In the self-hosted topology this is achieved directly: the members control the database. In the hosted topology it is achieved through backup, restore and the statutory portability obligation of section 31.
  
 *Amended: user-facing export is no longer a product requirement (OOS-008). The ownership principle is retained because it drives the deployment model and the data-protection obligations, not because of the export feature.*
  
@@ -521,11 +521,11 @@ The competitive evidence is direct. Parqet’s significant product evolution was
  
 # 13. Cash-Account Categorization and Reporting Taxonomy
  
-Cash-account transactions shall be categorized to support meaningful household reports. Standardized/source classification shall remain separate from TrackMyWealth’s reporting categories.
+Cash-account transactions shall be categorized to support meaningful spending reports. Standardized/source classification shall remain separate from TrackMyWealth’s reporting categories.
  
 **FR-CAT-001 — Hierarchical categories [MUST]**: Reporting categories shall support at least Category > Subcategory.
  
-**FR-CAT-002 — Default taxonomy [MUST]**: The application shall ship with a sensible household reporting taxonomy.
+**FR-CAT-002 — Default taxonomy [MUST]**: The application shall ship with a sensible spending-reporting taxonomy.
  
 **FR-CAT-003 — Custom taxonomy [MUST]**: Users shall create, rename, reorganize and deactivate categories.
  
@@ -551,7 +551,7 @@ Cash-account transactions shall be categorized to support meaningful household r
  
 **FR-CAT-014 — Recategorization is non-destructive [MUST]**: Re-running categorization shall never overwrite a user’s manual assignment.
  
-**FR-CAT-015 — COICOP mapping [COULD]**: Reporting categories may be mapped to COICOP, the international classification of household consumption used by national statistical offices in both target markets. This enables comparison of household spending against published national averages by category — a differentiating report that no analysed competitor offers, and cheap to add once the mapping layer exists.
+**FR-CAT-015 — COICOP mapping [COULD]**: Reporting categories may be mapped to COICOP, the international classification of private consumption used by national statistical offices in both target markets. This enables comparison of personal spending against published national averages by category — a differentiating report that no analysed competitor offers, and cheap to add once the mapping layer exists.
  
 # 14. Credit Cards
  
@@ -589,7 +589,7 @@ Cash-account transactions shall be categorized to support meaningful household r
  
 **FR-CF-005 — Two-sided transfer matching [MUST]**: An internal transfer normally appears twice — as a debit in one account and a credit in another, often on different dates and occasionally in different currencies. The system shall match the two legs into a single logical transfer, and shall handle the case where only one leg has been imported.
  
-**FR-CF-006 — Mortgage payment decomposition [SHOULD]**: A mortgage or loan payment shall be separable into interest (an expense) and principal repayment (a balance-sheet movement, not consumption). Treating the entire payment as an expense overstates spending and understates savings rate — a common and material error in household budgeting.
+**FR-CF-006 — Mortgage payment decomposition [SHOULD]**: A mortgage or loan payment shall be separable into interest (an expense) and principal repayment (a balance-sheet movement, not consumption). Treating the entire payment as an expense overstates spending and understates savings rate — a common and material error in personal budgeting.
  
 **FR-CF-007 — Pension contribution treatment [MUST]**: A contribution to a pension account is saving, not consumption, and shall be classified accordingly in cash-flow and savings-rate calculations.
  
@@ -639,7 +639,7 @@ Cash-account transactions shall be categorized to support meaningful household r
  
 **FR-NW-007 — Property net of financing [SHOULD]**: Real estate shall be presentable at gross value with the related mortgage shown separately, and also at net value. The two must never be combined in a way that double-counts the debt.
  
-**FR-NW-008 — Liquidity view [SHOULD]**: Net worth shall be viewable by accessibility — immediately available, available with notice, and locked. Pension assets are frequently the largest single component and are not spendable; presenting them without distinction overstates a household’s real flexibility.
+**FR-NW-008 — Liquidity view [SHOULD]**: Net worth shall be viewable by accessibility — immediately available, available with notice, and locked. Pension assets are frequently the largest single component and are not spendable; presenting them without distinction overstates the user’s real flexibility.
  
 # 18. Securities Accounts / Depots
  
@@ -1181,7 +1181,7 @@ One element cannot be deferred, and it is a legal obligation rather than a produ
  
 *This does not require a user-facing feature.* It may be satisfied by an operator-side administrative procedure — a documented, tested extraction run by the operator on request. That is materially cheaper than a product feature and is the recommended MVP interpretation.
  
-**FR-POR-002 — Not applicable to self-hosting [MUST]**: A self-hosting household is its own controller and has direct database access, so no portability mechanism is required from the application in that topology (NFR-DPR-008).
+**FR-POR-002 — Not applicable to self-hosting [MUST]**: A self-hosting user is their own controller and has direct database access, so no portability mechanism is required from the application in that topology (NFR-DPR-008).
  
 **FR-POR-003 — Schema documentation [MUST]**: The database schema shall be documented to a standard sufficient for the extraction in FR-POR-001 to be performed reliably. This documentation is required in any case for the architect and for self-hosting operators.
  
@@ -1199,7 +1199,7 @@ Backup is a separate concern from export and remains fully in scope.
  
 **FR-BCK-004 — Restore verification [SHOULD]**: The application shall be able to verify a backup’s integrity and completeness without performing a destructive restore.
  
-**FR-BCK-005 — Backup responsibility is explicit [MUST]**: Backup responsibility differs by topology and shall be stated in-product. In a self-hosted deployment the operator of that deployment carries the durability risk and shall be prompted, with the date of the last successful backup shown. In the hosted service, backup is the service operator’s responsibility under the targets in section 51. **With export deferred, a self-hosting household’s only protection against data loss is its own backup, which raises the importance of this requirement.**
+**FR-BCK-005 — Backup responsibility is explicit [MUST]**: Backup responsibility differs by topology and shall be stated in-product. In a self-hosted deployment the operator of that deployment carries the durability risk and shall be prompted, with the date of the last successful backup shown. In the hosted service, backup is the service operator’s responsibility under the targets in section 51. **With export deferred, a self-hosting user’s only protection against data loss is its own backup, which raises the importance of this requirement.**
  
 **FR-BCK-006 — Backup is deployment-level, not tenant-level [MUST]**: With export deferred, backup operates on the deployment as a whole rather than on an individual workspace. In a multi-tenant hosted deployment, backup and restore therefore cannot serve as a per-workspace data-retrieval mechanism, which is why FR-POR-001 exists separately.
  
@@ -1278,7 +1278,7 @@ These are engineering targets to be validated during prototyping rather than con
  
 **RULE-007 [MANDATORY]**: Internal transfers do not count as income or expenses.
  
-**RULE-008 [MANDATORY]**: Security purchases do not automatically count as household consumption.
+**RULE-008 [MANDATORY]**: Security purchases do not automatically count as consumption spending.
  
 **RULE-009 [MANDATORY]**: Credit-card purchases count as expenses once; settlement does not create a second expense.
  
@@ -1748,9 +1748,9 @@ The system shall correctly provide:
  
 # 44. Final Product Definition
  
-TrackMyWealth is a bilingual, privacy-first personal and household financial management application for Switzerland and Germany, delivered as browser and native mobile clients against a REST API, and deployable either on infrastructure the household controls or as a hosted service. It models financial institutions as currency-aware containers containing different account types; categorizes bank and credit-card transactions for household reporting; centralizes portfolio security master data and historical prices; and consolidates assets, liabilities, cash flow and investment analytics into one user-defined reporting currency.
+TrackMyWealth is a bilingual, privacy-first personal and family financial management application for Switzerland and Germany, delivered as browser and native mobile clients against a REST API, and deployable either on infrastructure the user controls or as a hosted service. It models financial institutions as currency-aware containers containing different account types; categorizes bank and credit-card transactions for spending reports; centralizes portfolio security master data and historical prices; and consolidates assets, liabilities, cash flow and investment analytics into one user-defined reporting currency.
  
-The system is designed to support both understandable household finance and advanced private-investor analysis while remaining under the user’s control. It provides information and analysis only: no payment execution, trade execution, professional financial advice, tax functionality, private-equity valuation or public social-network features.
+The system is designed to support both understandable personal finance and advanced private-investor analysis while remaining under the user’s control. It provides information and analysis only: no payment execution, trade execution, professional financial advice, tax functionality, private-equity valuation or public social-network features.
  
 Its distinguishing commitment is correctness: figures are reconciled against what institutions actually report, estimates are always marked as such, and methodology is documented and testable.
  
@@ -1765,7 +1765,7 @@ Its distinguishing commitment is correctness: figures are reconciled against wha
 | RISK-005 | **Swiss connectivity has no purchasable route.** Unlike PSD2 in Germany, Swiss access is contractual via bLink and bank agreements. | High | Treat as a long-lead item; do not place Swiss automated connectivity on the MVP critical path |
 | RISK-006 | **Scope breadth.** The specification covers what four separate products do today. | High | Enforce the MVP cut (37); treat correctness rather than feature count as the differentiator |
 | RISK-007 | **Post-launch data-model migration.** A competitor’s cash-account restructuring visibly moved user balances. | Medium–high | Cash, snapshots, ownership and weighted asset classes resolved in v1; NFR-REL-003 |
-| RISK-008 | **Self-hosted durability.** A self-hosting household loses data to disk failure with no operator-side copy, and with export deferred has no secondary recovery route. | Medium | FR-BCK-004/005 backup prompting and verification; documented in self-hosting guidance |
+| RISK-008 | **Self-hosted durability.** A self-hosting user loses data to disk failure with no operator-side copy, and with export deferred has no secondary recovery route. | Medium | FR-BCK-004/005 backup prompting and verification; documented in self-hosting guidance |
 | RISK-009 | **Single-maintainer sustainability** for an open-source financial product with recurring data-provider dependencies. | Medium | Address alongside OPEN-003 and OPEN-013 |
 | RISK-012 | **Reference data goes stale under manual-only distribution.** Pension contribution limits above all: an outdated limit produces wrong goal tracking with no visible cause. | Medium | FR-REF-010/011 staleness warnings; effective-dated data marked estimated when no current entry exists |
 | RISK-013 | **Workspace-splitting constraints erode before the feature arrives.** FR-HHL-001 to 005 are easy to violate accidentally once nobody remembers why they exist. | Medium | Automated check that no derived artefact embeds a workspace identifier; record the rationale at the ownership relation |
@@ -1827,13 +1827,13 @@ TrackMyWealth is delivered as a client application and a server API. The client 
  
 |  | **Self-hosted** | **Hosted service** |
 | --- | --- | --- |
-| Who runs the API and database | The user or household | The service operator |
+| Who runs the API and database | The user | The service operator |
 | Typical tenants per deployment | One workspace | Many workspaces |
 | Registration | Bootstrap administrator at first run, then admin-provisioned users | Per business model (OPEN-022) |
 | Market-data entitlement | Supplied by the deploying user, or manual prices | Operator’s licence, proxied |
 | Licensed classification data (GICS) | Not distributed; fallback taxonomy or the user’s own entitlement | Operator’s licence |
 | Backup | The deploying user | The operator, to section 51 targets |
-| Data protection controller | The deploying user, for their own household | The operator |
+| Data protection controller | The deploying user, for their own workspace | The operator |
  
 **NFR-DEP-001 — Single codebase [MUST]**: Both topologies shall run the identical application, API and database schema. There shall be no self-hosted-only or hosted-only code path in the domain, calculation or authorization layers.
  
@@ -2053,7 +2053,7 @@ Holding Swiss and German residents’ financial data on an operated service make
  
 **NFR-DPR-007 — Provider disclosure minimisation [MUST]**: Requests to external providers shall be aggregated across tenants so that a provider cannot attribute a security lookup to an individual workspace (NFR-SEC-006, NFR-LIC-007).
  
-**NFR-DPR-008 — Self-hosted controller guidance [SHOULD]**: Documentation shall make clear that a self-hosting household is its own controller and that the project processes none of their data.
+**NFR-DPR-008 — Self-hosted controller guidance [SHOULD]**: Documentation shall make clear that a self-hosting user is their own controller and that the project processes none of their data.
  
 **NFR-DPR-009 — Independent security assessment [SHOULD]**: A penetration test covering authentication, authorization and tenant isolation before the hosted service opens to users outside the project.
  
@@ -2286,7 +2286,7 @@ FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. N
  
 | Term | Meaning in this specification |
 | --- | --- |
-| **Workspace** | The tenant and isolation boundary (FR-TEN-001): the financial context its members share, holding their institutions, accounts, budgets and goals. Works for one person and extends to several, without implying a family relationship. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. Where this specification says *household* in lower case, it means the real-world people or the economic term (household consumption, household budget surveys), not the entity. |
+| **Workspace** | The top-level container and tenant isolation boundary (FR-TEN-001). It groups institutions with their bank accounts, portfolios and personal assets, together with budgets and goals, for one or more members. It implies no family or domestic relationship between its members. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. |
 | **Financial Institution / Container** | Grouping level for accounts held with one provider. Not itself an account. May be a bank, broker, pension provider, card issuer, asset manager, or the default Personal Assets container. |
 | **Account** | A single financial product within a container. Abstract; always of exactly one concrete type. |
 | **Capability** | Declared property determining what an account can do, independent of its type. |

@@ -18,9 +18,9 @@ This also happens to be a hard requirement of the specification itself:
   including database migration shall be part of every release, not an afterthought."
 - **NFR-TEC-004** — "Schema migrations shall be version-controlled, applied automatically on
   deployment, and never destructive to user-visible balances without in-application explanation."
-- **PR-002 (deployment sovereignty)** — a self-hosting household must be able to run the entire
+- **PR-002 (deployment sovereignty)** — a self-hosting user must be able to run the entire
   system on infrastructure it controls, with no dependency on the project's own infrastructure.
-  A manual `psql -f schema.sql` step run by a non-technical household is not compatible with that
+  A manual `psql -f schema.sql` step run by a non-technical user is not compatible with that
   goal; the application must be able to stand itself up against a bare PostgreSQL server.
 
 ## Decision
@@ -36,7 +36,7 @@ dependency is present and `ddl-auto` is not left at a mutating value.
 Requirement 1 - creating the *database itself*, not just its schema - is not something Flyway can
 do, because by the time Flyway runs, Spring Boot's own `DataSource` auto-configuration has already
 opened (or failed to open) a connection to the target database. On a bare PostgreSQL server (the
-expected starting point for a self-hosting household, per PR-002), that connection fails before
+expected starting point for a self-hosting user, per PR-002), that connection fails before
 Flyway is ever reached.
 
 `com.trackmywealth.backend.config.DatabaseBootstrapInitializer` closes that gap. It is a Spring
@@ -88,6 +88,6 @@ topologies run the identical application, database schema and migration path; NF
 - **A Testcontainers-only / Docker-Compose-`POSTGRES_DB`-only approach** (letting the Postgres
   image itself create the database via its `POSTGRES_DB` environment variable) was rejected as
   the *primary* mechanism because it only works when the operator controls how PostgreSQL itself
-  is started - which is not guaranteed in a self-hosted deployment where a household may point the
+  is started - which is not guaranteed in a self-hosted deployment where a user may point the
   application at an existing, separately-managed PostgreSQL server (see `docker-compose.yml`'s
   comment for how it interacts with `DatabaseBootstrapInitializer` in local development).

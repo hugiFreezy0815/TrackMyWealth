@@ -25,7 +25,7 @@ row in `security` was typed in by a user of this instance. So:
 - The real ISIN universe is a published, downloadable list of a few million entries, so this is
   enumerable, not a lucky guess.
 - The inference is instance-wide, not per-workspace: it identifies no user or workspace, only that
-  *one of them* holds it. On a single-household self-hosted instance - this project's stated
+  *one of them* holds it. On a single-workspace self-hosted instance - this project's stated
   deployment target - the set of "other tenants" is usually empty and the leak is vacuous.
 
 The alternative designs were considered and rejected as worse trades:
@@ -58,7 +58,7 @@ member of the instance. Bound the exposure rather than pretend it is closed:
   authenticated member. This is a known, accepted property, not a defect to be re-reported.
 - Anyone hosting this for mutually untrusting tenants must treat that as a disclosure and decide
   whether it is acceptable for their population - it is a deployment-model question, and the
-  single-household target is what makes the trade reasonable here.
+  single-workspace target is what makes the trade reasonable here.
 - If a shared multi-tenant offering ever becomes a goal, this ADR is the thing to revisit first,
   most likely by pairing a provider-sourced master (OPEN-005) - whose membership reveals nothing
   about users, because it is not user-created - with per-workspace records for manual entries only.

@@ -1,6 +1,6 @@
 # TrackMyWealth
 
-Privacy-first personal finance and wealth-management platform for individuals and households in
+Privacy-first personal finance and wealth-management platform for individuals, couples and families in
 Switzerland and Germany. This repository contains the database schema, the Spring Boot backend
 (a REST API under `/api/v1`) and the Expo client, built from the project's requirements baseline
 (`docs/requirements-personal-wealth-platform.md` and
@@ -373,7 +373,7 @@ partial run, running a single epic, and label/priority conventions.
 
 ## Status
 
-**Backend: implemented for the core household-finance scope, in active development.** What exists
+**Backend: implemented for the core personal-finance scope, in active development.** What exists
 today (closed stories on GitHub; details in `docs/architecture/database-schema.md`):
 
 - **Foundation, authentication and tenancy** (EPIC 01, 02, 28): automatic database creation and

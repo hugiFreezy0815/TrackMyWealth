@@ -28,13 +28,13 @@ Two gaps, and the revised scope sits precisely where they cross.
  
 **Gap 2 — nobody covers Switzerland and Germany properly in one product.** Parqet is the DACH leader but is functionally a German product: its depth is German broker parsing and German tax logic, neither of which transfers to Switzerland, where private capital gains are largely untaxed and the relevant outputs are the Wertschriftenverzeichnis and DA-1. BlueBudget is Swiss-only and has no securities side. getquin is broad but German-centric and thin on Swiss pension. **No analysed product handles Swiss pillar 3a and German investment tax competently in the same application.**
  
-That intersection is the opportunity, and it is larger than it looks: cross-border households are common — Swiss residents with German brokers, German residents with Swiss accounts, cross-border commuters earning CHF and spending EUR. These users are currently forced to run two tools and reconcile by hand.
+That intersection is the opportunity, and it is larger than it looks: cross-border users are common — Swiss residents with German brokers, German residents with Swiss accounts, cross-border commuters earning CHF and spending EUR. These users are currently forced to run two tools and reconcile by hand.
  
 **Effect of removing tax from scope.** Tax reporting was the highest-value-per-effort differentiator available in this market — no analysed competitor produces a Wertschriftenverzeichnis or DA-1 export. With it removed, the differentiation rests on the remaining four pillars, each still defensible:
  
 1. **Both sides of the balance sheet in one coherent model** — assets, liabilities and cashflow designed together, not merged later
 2. **Pension folded into the whole picture** — pillar 3a holdings counted in consolidated allocation and concentration analysis, which no analysed product does
-3. **Dual-currency CH/DE households treated as normal**, not as an edge case
+3. **Dual-currency CH/DE finances treated as normal**, not as an edge case
 4. **Measurement quality** — TWR and MWR side by side, currency attribution, reconciliation against provider-reported balances, standards-based classification
 These are architecture-led advantages, which makes them slower for a competitor to copy than a tax export would have been — but also slower to demonstrate in marketing. That trade-off should be made consciously (see D14).
  
@@ -55,12 +55,12 @@ These are architecture-led advantages, which makes them slower for a competitor 
 | ID | Persona | Description | Primary need |
 |---|---|---|---|
 | P1 | **Multi-broker accumulator** | 30–50, 2–5 brokers across 2 countries, ETF-heavy, buy & hold | One consolidated truth; correct performance; low maintenance |
-| P2 | **Swiss household** | CHF salary, Pillar 2 + 3a, possibly cross-border assets | Net worth incl. pension; 3a optimisation; tax-return support (Wertschriftenverzeichnis, DA-1) |
+| P2 | **Swiss resident** | CHF salary, Pillar 2 + 3a, possibly cross-border assets | Net worth incl. pension; 3a optimisation; tax-return support (Wertschriftenverzeichnis, DA-1) |
 | P3 | **Cashflow-first user** | Wants to know where money goes before optimising investments | Automatic budgets from real transactions; overspend alerts |
 | P4 | **FIRE planner** | Models time-to-independence | Withdrawal projections; savings-rate tracking; scenario modelling |
-| P2b | **Cross-border household** | CH resident with a German broker, DE resident with Swiss accounts, or a cross-border commuter earning CHF and spending EUR | Dual-currency consolidation; correct treatment under two tax regimes; currently forced to run two tools |
+| P2b | **Cross-border user** | CH resident with a German broker, DE resident with Swiss accounts, or a cross-border commuter earning CHF and spending EUR | Dual-currency consolidation; correct treatment under two tax regimes; currently forced to run two tools |
 | P5 | **Privacy-motivated user** | Rejects cloud aggregation of financial data | Local/self-hosted option; full export; no third-party data sharing |
-| P6 | **Couple / household unit** | Shared and individual finances co-existing | Shared budgets and shared portfolios with per-person visibility rules |
+| P6 | **Couple / family** | Shared and individual finances co-existing | Shared budgets and shared portfolios with per-person visibility rules |
 | S1 | *(Secondary)* Advisor / family office | Manages many client portfolios | Multi-tenant portfolio management, reporting |
 | S2 | *(Secondary)* Bank partner | White-label / multibanking integration | Embeddability, branding, compliance posture |
  
@@ -465,9 +465,9 @@ The standard the stakeholder refers to for cards is **MCC (Merchant Category Cod
 | FR-CAT-13 | Fallback categorisation from merchant name, counterparty IBAN and amount pattern where no standard code is present — necessary because MCC is frequently absent, wrong, or reflects the acquirer rather than the merchant | M |
 | FR-CAT-14 | Canonical category tree is **hierarchical, ≤3 levels, user-extensible**, with the shipped default set editable but not deletable where mappings depend on it | M |
 | FR-CAT-15 | Merchant-level rules with retroactive application (also FR-CSH-02) | M |
-| FR-CAT-16 | Transaction splitting across several categories (one supermarket receipt containing groceries and a household appliance) | S |
-| FR-CAT-17 | **L3 mapping to COICOP** (UN Classification of Individual Consumption According to Purpose). This is the closest thing to an official standard for household spending and is the basis of national household-budget surveys and CPI baskets in both target markets. | C |
-| FR-CAT-18 | Because of FR-CAT-17, spending can be benchmarked against published national household averages by category — a differentiating report no analysed competitor offers | C |
+| FR-CAT-16 | Transaction splitting across several categories (one supermarket receipt containing groceries and a kitchen appliance) | S |
+| FR-CAT-17 | **L3 mapping to COICOP** (UN Classification of Individual Consumption According to Purpose). This is the closest thing to an official standard for private consumption and is the basis of national consumer-spending surveys and CPI baskets in both target markets. | C |
+| FR-CAT-18 | Because of FR-CAT-17, spending can be benchmarked against published national averages by category — a differentiating report no analysed competitor offers | C |
 | FR-CAT-19 | Transfer/settlement detection is a classification outcome, not a category: internal transfers and card settlements are flagged and excluded from spend (FR-CSH-10, FR-CSH-21) | M |
  
 #### Instrument asset-class classification
@@ -599,7 +599,7 @@ BlueBudget's design thesis, validated: **manual expense entry fails; derive the 
 | FR-CSH-25 | Configurable alert on card utilisation or an approaching due date | C |
 | FR-CSH-12 | Group expense splitting with settlement minimisation (fewest possible payments), invite by link/QR, and support for participants who have not installed the app | C |
  
-> FR-CSH-12 is BlueBudget's strongest feature and is genuinely well designed, but it is a **separate social product** with its own network effects and abuse surface. Recommend v2 unless the household use case (P6) makes it strategic.
+> FR-CSH-12 is BlueBudget's strongest feature and is genuinely well designed, but it is a **separate social product** with its own network effects and abuse surface. Recommend v2 unless the couple/family use case (P6) makes it strategic.
  
 ### 5.8 Net worth (FR-NWO)
  

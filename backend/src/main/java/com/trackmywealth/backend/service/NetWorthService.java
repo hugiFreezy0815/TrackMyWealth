@@ -65,7 +65,7 @@ public class NetWorthService {
 
   // Access is resolved in bulk (the per-workspace sole-member count once, not per account) and each
   // distinct foreign currency's FX rate once. What remains per account is its ownership/grant
-  // lookup and its value-source query - fine at this project's household scale (self-hosted, tens
+  // lookup and its value-source query - fine at this project's single-workspace scale (self-hosted, tens
   // of accounts); revisit if a workspace ever holds enough accounts for it to show in a profile.
   @Transactional(readOnly = true)
   public NetWorthResponse getNetWorth(AuthenticatedUserPrincipal actor, String requestedCurrency) {
