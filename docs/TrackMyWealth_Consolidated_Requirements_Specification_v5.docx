@@ -296,6 +296,8 @@ There is no ownership model. Portfolios, accounts, personal assets, budgets and 
  
 **FR-HOU-008 — Created and imported data is immediately usable [MUST]**: When a member creates a portfolio or an account, it shall be created without any owner assignment or approval step. Data imported into it shall appear in all views and reports of the workspace as soon as the import is committed.
  
+**FR-HOU-009 — Workspace name [MUST]**: Every workspace shall have a name, set at first setup and changeable at any time by any member (1–60 characters, leading and trailing spaces removed). The name is how the workspace appears to users — the first tab of the overview (FR-INS-013) and the header of consolidated views carry it. The technical term “workspace” need not appear in the user interface.
+ 
 # 9. Portfolio
  
 The Portfolio is the user-named container directly below the workspace. It groups the accounts the user wants to see together — typically everything held at one bank, broker or pension provider, but equally a portfolio with no provider at all (personal assets). In banking terms it corresponds to a client’s portfolio with one provider: cash, savings, pension and securities together.
@@ -350,7 +352,7 @@ Where applicable, the summary shall aggregate:
  
 **FR-INS-SUM-004 — Summary currency transparency [MUST]**: Where the summary converts from account currencies to the portfolio currency, the applied FX rate and its date shall be inspectable.
  
-**FR-INS-013 — Tab view per portfolio [MUST]**: The workspace overview shall show one tab for the whole workspace (all portfolios aggregated) followed by one tab per portfolio and an “add portfolio” action. A portfolio tab shows the portfolio total and its value chart, followed by one section per account type it contains, each displayed in the form suited to that type: cash and savings as a balance list; Pillar 3a and pension with value and return; a depot with positions, allocation and performance sub-tabs; crypto with positions; cards with balance and due date; property with value and the linked mortgage. Sections for account types the portfolio does not contain are not shown.
+**FR-INS-013 — Tab view per portfolio [MUST]**: The workspace overview shall show one tab for the whole workspace (all portfolios aggregated), labelled with the workspace name (FR-HOU-009), followed by one tab per portfolio and an “add portfolio” action. A portfolio tab shows the portfolio total and its value chart, followed by one section per account type it contains, each displayed in the form suited to that type: cash and savings as a balance list; Pillar 3a and pension with value and return; a depot with positions, allocation and performance sub-tabs; crypto with positions; cards with balance and due date; property with value and the linked mortgage. Sections for account types the portfolio does not contain are not shown.
  
 **FR-INS-014 — Portfolio type suggested from contents [SHOULD]**: A portfolio shall carry a descriptive type — Bank, Portfolio (securities), Pillar 3a, Pension fund, Crypto, Personal assets or Mixed — that the system suggests from the account types it contains and the user may override. The type is a display badge and filter only (FR-INS-008).
  
