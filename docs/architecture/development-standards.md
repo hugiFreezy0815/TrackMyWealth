@@ -107,8 +107,11 @@ cd backend
     never Spring Data's `Page`, and annotates its `Pageable` with `web.Paged`: the sortable
     fields under their response names, the default order and a unique tie-breaker (default
     `id`). `PagedArgumentResolver` reads `page` (zero-based), `size` (default 50, capped at 200)
-    and `sort`; an unknown or malformed sort is a 400 `INVALID_SORT`. Services take the resolved
-    `Pageable` as it is. ArchUnit fails the build for a controller returning a `Page` and for a
+    and `sort` exactly as the OpenAPI enum lists it (`field`, `field,asc`, `field,desc`); any other
+    sort is a 400 `INVALID_SORT`. A blank `page`/`size` counts as not sent; one sent twice or that is
+    no valid whole number is a 400 `VALIDATION_FAILED`. The limits live in `dto.PagingValues`, and a
+    service passes its `Pageable` through `PagingValues.requireBounded` (paged, at most 200 rows,
+    tie-breaker last) before the query, so no other caller can ask for an unbounded page. ArchUnit fails the build for a controller returning a `Page` and for a
     `Pageable` or `Sort` parameter without `@Paged`; `ApiConventionsIntegrationTest` checks that
     every operation with a `page` parameter answers a `PageResponse` schema. A small bounded list
     returns a plain array instead.

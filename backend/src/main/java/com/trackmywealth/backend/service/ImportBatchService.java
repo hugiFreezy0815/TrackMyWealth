@@ -20,6 +20,7 @@ import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.ImportSameFileResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.entity.Account;
@@ -356,7 +357,9 @@ public class ImportBatchService {
   public Page<ImportBatchResponse> list(
       UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = requireEditableAccount(accountId, actor);
-    Page<ImportBatch> page = batchRepository.findByAccountId(account.getId(), pageable);
+    Page<ImportBatch> page =
+        batchRepository.findByAccountId(
+            account.getId(), PagingValues.requireBounded(pageable, "id"));
     Map<UUID, ImportBatchCountsResponse> counts = recheckedCounts(page.getContent());
     Map<UUID, ImportSameFileResponse> sameFiles = sameFilesImportedIn(page.getContent());
     return page.map(
@@ -394,8 +397,9 @@ public class ImportBatchService {
       UUID accountId,
       UUID batchId,
       String status,
-      Pageable pageable,
+      Pageable requested,
       AuthenticatedUserPrincipal actor) {
+    Pageable pageable = PagingValues.requireBounded(requested, ROW_NUMBER);
     Account account = requireEditableAccount(accountId, actor);
     ImportBatch batch = requireBatch(account, batchId, actor);
     if (status != null && !ImportBatchValues.ROW_STATUSES.contains(status)) {
@@ -445,11 +449,19 @@ public class ImportBatchService {
                 locale));
   }
 
-  // The re-checked rows are filtered in memory; the only sort the rows list offers is rowNumber.
-  private static Comparator<ImportRowRaw> inRowNumberOrder(Sort sort) {
-    Comparator<ImportRowRaw> ascending = Comparator.comparingInt(ImportRowRaw::getRowNumber);
+  /**
+   * The order of the re-checked rows, which are filtered in memory: by row number, the only field
+   * the rows list sorts by. Change this together with the rows' {@code @Paged} declaration in
+   * {@code ImportBatchController} - a sort on anything else fails here instead of being ignored.
+   */
+  static Comparator<ImportRowRaw> inRowNumberOrder(Sort sort) {
     Sort.Order order = sort.getOrderFor(ROW_NUMBER);
-    return order != null && order.isDescending() ? ascending.reversed() : ascending;
+    if (order == null || sort.stream().anyMatch(o -> !ROW_NUMBER.equals(o.getProperty()))) {
+      throw new IllegalStateException(
+          "The re-checked import rows sort by " + ROW_NUMBER + " only, not by " + sort);
+    }
+    Comparator<ImportRowRaw> ascending = Comparator.comparingInt(ImportRowRaw::getRowNumber);
+    return order.isDescending() ? ascending.reversed() : ascending;
   }
 
   /**

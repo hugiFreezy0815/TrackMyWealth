@@ -87,9 +87,10 @@ public class TransactionController {
   }
 
   /**
-   * Newest booking first unless {@code sort} asks for {@code bookingDate} or {@code amount}; the
-   * order always ends with the id, so pages never overlap. {@code uncategorized=true} lists only
-   * the rows still in UNCATEGORIZED (FR-CAT-013).
+   * Newest booking first unless {@code sort} asks for {@code bookingDate} or {@code amount} - the
+   * latter by value in the account's currency, so a foreign-currency booking sorts by what it cost
+   * the account. The order always ends with the id, so pages never overlap. {@code
+   * uncategorized=true} lists only the rows still in UNCATEGORIZED (FR-CAT-013).
    */
   @GetMapping("/transactions")
   public PageResponse<TransactionResponse> listTransactions(
@@ -101,7 +102,8 @@ public class TransactionController {
                 @SortField(
                     name = "bookingDate",
                     properties = {"bookingDate", "createdAt"}),
-                @SortField(name = "amount")
+                // By value: the amount in the account's currency, whatever the booking's.
+                @SortField(name = "amount", properties = "amountInAccountCurrency")
               },
               defaultSort = "bookingDate,desc")
           Pageable pageable,

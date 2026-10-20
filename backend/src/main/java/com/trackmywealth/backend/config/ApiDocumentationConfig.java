@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.config;
 
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
@@ -172,14 +173,14 @@ public class ApiDocumentationConfig {
             .required(false)
             .description(
                 "Items per page; a larger value is capped to "
-                    + PagedArgumentResolver.MAX_SIZE
+                    + PagingValues.MAX_SIZE
                     + ", and page.size in the response says the size applied.")
             .schema(
                 new IntegerSchema()
                     .format("int32")
                     .minimum(BigDecimal.ONE)
-                    .maximum(BigDecimal.valueOf(PagedArgumentResolver.MAX_SIZE))
-                    ._default(PagedArgumentResolver.DEFAULT_SIZE)));
+                    .maximum(BigDecimal.valueOf(PagingValues.MAX_SIZE))
+                    ._default(PagingValues.DEFAULT_SIZE)));
     List<String> sortValues = new ArrayList<>();
     for (String field : whitelist.fieldNames()) {
       sortValues.add(field);

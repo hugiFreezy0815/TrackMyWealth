@@ -3,6 +3,7 @@ package com.trackmywealth.backend.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.web.Paged.SortField;
@@ -30,7 +31,7 @@ class PagedArgumentResolverTest {
     Pageable pageable = resolve(new MockHttpServletRequest());
 
     assertThat(pageable.getPageNumber()).isZero();
-    assertThat(pageable.getPageSize()).isEqualTo(PagedArgumentResolver.DEFAULT_SIZE);
+    assertThat(pageable.getPageSize()).isEqualTo(PagingValues.DEFAULT_SIZE);
     assertThat(pageable.getSort()).containsExactly(Order.asc("name"), Order.asc("id"));
   }
 
@@ -54,11 +55,11 @@ class PagedArgumentResolverTest {
     MockHttpServletRequest request = new MockHttpServletRequest();
     request.addParameter("size", "1000");
 
-    assertThat(resolve(request).getPageSize()).isEqualTo(PagedArgumentResolver.MAX_SIZE);
+    assertThat(resolve(request).getPageSize()).isEqualTo(PagingValues.MAX_SIZE);
   }
 
   @ParameterizedTest
-  @CsvSource({"page,-1", "page,abc", "page,1.5", "size,0", "size,-3", "size,ten", "page,''"})
+  @CsvSource({"page,-1", "page,abc", "page,1.5", "size,0", "size,-3", "size,ten"})
   void aPageOrSizeThatIsNoValidWholeNumberIsRefused(String name, String value) {
     MockHttpServletRequest request = new MockHttpServletRequest();
     request.addParameter(name, value);
@@ -70,6 +71,35 @@ class PagedArgumentResolverTest {
               assertThat(e.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
               assertThat(e.getReason()).startsWith(name + " must be a whole number");
             });
+  }
+
+  // PR #388 review: a value sent twice is refused like a malformed one, never resolved to a guess.
+  @ParameterizedTest
+  @CsvSource({"page,0,3", "size,20,50"})
+  void aPageOrSizeSentTwiceIsRefused(String name, String first, String second) {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    request.addParameter(name, first, second);
+
+    assertThatThrownBy(() -> resolve(request))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+              assertThat(e.getReason()).isEqualTo(name + " must be sent at most once.");
+            });
+  }
+
+  // PR #388 review: as with Spring Data's resolver, a blank value counts as not sent.
+  @Test
+  void aBlankPageOrSizeCountsAsNotSent() throws Exception {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    request.addParameter("page", "");
+    request.addParameter("size", " ");
+
+    Pageable pageable = resolve(request);
+
+    assertThat(pageable.getPageNumber()).isZero();
+    assertThat(pageable.getPageSize()).isEqualTo(PagingValues.DEFAULT_SIZE);
   }
 
   @Test

@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccessLevelValues;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.entity.Account;
@@ -56,7 +57,8 @@ public class ReconciliationHistoryService {
     accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
     Optional<UUID> latest = latestSnapshotId(accountId);
     return resultRepository
-        .findByAccountIdAndAffectedSecurityIdIsNull(accountId, pageable)
+        .findByAccountIdAndAffectedSecurityIdIsNull(
+            accountId, PagingValues.requireBounded(pageable, "id"))
         .map(result -> toResponse(result, latest));
   }
 

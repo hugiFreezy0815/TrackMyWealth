@@ -35,11 +35,17 @@ class SortWhitelistTest {
   }
 
   @Test
-  void theDirectionIsCaseInsensitiveAndAscendingWhenLeftOut() {
-    assertThat(LEDGER.resolve(List.of("amount,DESC")))
-        .containsExactly(Order.desc("amount"), Order.desc("id"));
+  void theDirectionIsAscendingWhenLeftOut() {
     assertThat(LEDGER.resolve(List.of("amount")))
         .containsExactly(Order.asc("amount"), Order.asc("id"));
+  }
+
+  // PR #388 review: the server accepts exactly the values the OpenAPI enum lists, no more.
+  @Test
+  void onlyTheDocumentedSpellingIsAccepted() {
+    assertInvalid(List.of("amount,DESC"), "'amount,DESC'", "asc|desc");
+    assertInvalid(List.of("amount, desc"), "'amount, desc'", "asc|desc");
+    assertInvalid(List.of(" amount"), "' amount'", "bookingDate, amount");
   }
 
   @Test

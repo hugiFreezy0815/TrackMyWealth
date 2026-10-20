@@ -20,14 +20,15 @@ import org.springframework.http.HttpStatus;
 public final class SortWhitelist {
 
   private static final String SEPARATOR = ",";
+  private static final String ASC = "asc";
+  private static final String DESC = "desc";
   private static final int MAX_ECHOED_LENGTH = 60;
 
   private final Map<String, List<String>> fields;
-  private final List<String> defaultOrder;
+  private final String defaultOrder;
   private final String tieBreaker;
 
-  private SortWhitelist(
-      Map<String, List<String>> fields, List<String> defaultOrder, String tieBreaker) {
+  private SortWhitelist(Map<String, List<String>> fields, String defaultOrder, String tieBreaker) {
     this.fields = fields;
     this.defaultOrder = defaultOrder;
     this.tieBreaker = tieBreaker;
@@ -53,10 +54,9 @@ public final class SortWhitelist {
     if (fields.isEmpty() || paged.tieBreaker().isBlank()) {
       throw new IllegalStateException("@Paged needs at least one sort field and a tie-breaker");
     }
-    SortWhitelist whitelist =
-        new SortWhitelist(fields, List.of(paged.defaultSort()), paged.tieBreaker());
+    SortWhitelist whitelist = new SortWhitelist(fields, paged.defaultSort(), paged.tieBreaker());
     try {
-      whitelist.resolve(whitelist.defaultOrder);
+      whitelist.resolve(List.of(whitelist.defaultOrder));
     } catch (ApiException e) {
       throw new IllegalStateException(
           "@Paged default sort is not one of its own fields: " + paged.defaultSort(), e);
@@ -71,7 +71,7 @@ public final class SortWhitelist {
 
   /** The order without a {@code sort} parameter, as a client would write it. */
   public String defaultSort() {
-    return defaultOrder.get(0);
+    return defaultOrder;
   }
 
   /**
@@ -79,17 +79,18 @@ public final class SortWhitelist {
    * ending with the tie-breaker.
    *
    * @throws ApiException 400 {@code INVALID_SORT} for an unknown field, a field named twice or a
-   *     value that is not {@code <field>} or {@code <field>,<asc|desc>}
+   *     value that is not exactly {@code <field>}, {@code <field>,asc} or {@code <field>,desc}
    */
   public Sort resolve(List<String> requested) {
-    List<String> values = requested == null || requested.isEmpty() ? defaultOrder : requested;
+    List<String> values =
+        requested == null || requested.isEmpty() ? List.of(defaultOrder) : requested;
     List<Sort.Order> orders = new ArrayList<>();
     Set<String> named = new HashSet<>();
     Set<String> ordered = new HashSet<>();
     for (String value : values) {
       String[] parts = value.split(SEPARATOR, -1);
-      String field = parts[0].trim();
-      Sort.Direction direction = direction(value, parts);
+      String field = parts[0];
+      Sort.Direction direction = direction(parts, value);
       if (!fields.containsKey(field)) {
         throw invalid(
             "Cannot sort by '%s'. Sort by one of: %s.".formatted(echo(field), allowedFields()));
@@ -109,11 +110,16 @@ public final class SortWhitelist {
     return Sort.by(orders);
   }
 
-  private Sort.Direction direction(String value, String... parts) {
+  // Exactly the values the OpenAPI enum lists: lower-case asc/desc, no spaces.
+  private Sort.Direction direction(String[] parts, String value) {
     return switch (parts.length) {
       case 1 -> Sort.Direction.ASC;
       case 2 ->
-          Sort.Direction.fromOptionalString(parts[1].trim()).orElseThrow(() -> malformed(value));
+          switch (parts[1]) {
+            case ASC -> Sort.Direction.ASC;
+            case DESC -> Sort.Direction.DESC;
+            default -> throw malformed(value);
+          };
       default -> throw malformed(value);
     };
   }

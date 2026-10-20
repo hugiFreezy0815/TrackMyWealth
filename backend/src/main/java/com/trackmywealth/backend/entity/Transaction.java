@@ -131,6 +131,18 @@ public class Transaction {
   @Column(name = "fx_rate_to_account_currency", precision = 20, scale = 10)
   private BigDecimal fxRateToAccountCurrency;
 
+  // #373: `amount` in the account's own currency (US-09-04: amount * rate, a missing rate is 1),
+  // so a list sorts by value even when the account holds foreign-currency bookings. V108 makes it
+  // a generated column: the database computes it, and native `t.*` queries read it too.
+  @Generated
+  @Column(
+      name = "amount_in_account_currency",
+      precision = 20,
+      scale = 4,
+      insertable = false,
+      updatable = false)
+  private BigDecimal amountInAccountCurrency;
+
   // The date the rate above was resolved for - the transaction's own booking date, not "today"
   // (FR-CUR-011's valuation-date convention is for a *current* holding, not a historical rate).
   @Column(name = "fx_rate_date")
@@ -266,6 +278,11 @@ public class Transaction {
 
   public void setBookingDate(LocalDate bookingDate) {
     this.bookingDate = bookingDate;
+  }
+
+  /** {@code amount} in the account's own currency, as the database computes it (V108, #373). */
+  public BigDecimal getAmountInAccountCurrency() {
+    return amountInAccountCurrency;
   }
 
   public BigDecimal getAmount() {

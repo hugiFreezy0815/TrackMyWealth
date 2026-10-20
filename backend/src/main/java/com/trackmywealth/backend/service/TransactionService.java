@@ -8,6 +8,7 @@ import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.dto.ImportLedgerRow;
 import com.trackmywealth.backend.dto.LatestCategoryAssignment;
 import com.trackmywealth.backend.dto.LoanPaymentPlan;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.TransactionRemovalValues;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.entity.Account;
@@ -166,6 +167,8 @@ public class TransactionService {
   // here, after that request-level check, so it needs the same bound applied by hand.
   private static final BigDecimal MAX_FX_RATE = BigDecimal.TEN.pow(10);
 
+  // #373: the unique last order of every page of the ledger (the controller's @Paged tie-breaker).
+  private static final String PAGE_TIE_BREAKER = "id";
   // #230: how many imported rows are inserted and categorized before they are detached.
   private static final int IMPORT_CHUNK_SIZE = 500;
 
@@ -694,8 +697,11 @@ public class TransactionService {
         uncategorized
             ? transactionRepository
                 .findByAccountIdAndCategoryIdAndVoidedAtIsNullAndReplacesTransactionIdIsNull(
-                    accountId, categorizationService.uncategorizedCategoryId(), pageable)
-            : transactionRepository.findByAccountId(accountId, pageable);
+                    accountId,
+                    categorizationService.uncategorizedCategoryId(),
+                    PagingValues.requireBounded(pageable, PAGE_TIE_BREAKER))
+            : transactionRepository.findByAccountId(
+                accountId, PagingValues.requireBounded(pageable, PAGE_TIE_BREAKER));
     Map<UUID, String> assignments = latestAssignments(page.getContent());
     Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(page.getContent());
     Map<UUID, String> adjustmentStates =

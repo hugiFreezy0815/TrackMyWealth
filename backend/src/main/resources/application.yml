@@ -27,6 +27,15 @@ spring:
   messages:
     fallback-to-system-locale: false
 
+  # #373: paged lists are read by web.PagedArgumentResolver with dto.PagingValues' limits. Spring
+  # Data's own Pageable resolver stays registered; ArchUnit keeps controllers off it, and these
+  # keep it on the same limits should it ever answer (PagingIntegrationTest checks they match).
+  data:
+    web:
+      pageable:
+        default-page-size: 50
+        max-page-size: 200
+
   # US-07-03/04: an import file may have at most 5 MB (sprint 5 decision, 2026-10-02); a larger
   # upload is a 413 IMPORT_FILE_TOO_LARGE (GlobalExceptionHandler). The request limit leaves room
   # for the multipart envelope and a template part; raise both together.

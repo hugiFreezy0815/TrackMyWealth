@@ -945,6 +945,29 @@ class TransactionControllerTest {
         .containsExactly(today().minusDays(2), today().minusDays(1));
   }
 
+  // PR #388 review: amount sorts by value in the account's currency, not by the bare number of a
+  // booking made in another currency.
+  @Test
+  void anAmountSortComparesForeignCurrencyBookingsByTheirValueInTheAccountCurrency() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token); // billed in CHF
+    recordPurchaseOn(token, card.id(), "-105.00", today());
+    // -100 EUR at 1.1 cost the account -110 CHF: more than the CHF purchase, though -100 > -105.
+    postTransaction(
+            token,
+            card.id(),
+            foreignPurchase("-100.00", "EUR", "Hotel", "1.1000000000", null, null))
+        .expectStatus()
+        .isEqualTo(HttpStatus.CREATED);
+
+    assertThat(listTransactions(token, card.id(), "?sort=amount,asc").content())
+        .extracting(TransactionResponse::currency)
+        .containsExactly("EUR", "CHF");
+    assertThat(listTransactions(token, card.id(), "?sort=amount,desc").content())
+        .extracting(TransactionResponse::currency)
+        .containsExactly("CHF", "EUR");
+  }
+
   @Test
   void aSortOnAnUnknownPropertyIsA400InvalidSortNotA500() {
     String token = bootstrapAdministrator();

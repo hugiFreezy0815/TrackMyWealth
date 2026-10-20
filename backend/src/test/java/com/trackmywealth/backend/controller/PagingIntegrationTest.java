@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PageResponse.PageMetadata;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.error.ApiErrorCode;
@@ -26,6 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -77,6 +79,8 @@ class PagingIntegrationTest {
   @LocalServerPort int port;
 
   @Autowired ObjectMapper objectMapper;
+
+  @Autowired Environment environment;
 
   @BeforeEach
   void seedOnce() {
@@ -183,6 +187,33 @@ class PagingIntegrationTest {
 
     assertThat(problem.path("code").asString()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
     assertThat(problem.path("detail").asString()).contains("page must be a whole number");
+  }
+
+  // PR #388 review: a page or size sent twice is refused, never resolved to one of the two.
+  @ParameterizedTest
+  @CsvSource({"page=0&page=3, page", "size=20&size=50, size"})
+  void aPageOrSizeSentTwiceIsRefused(String query, String name) {
+    JsonNode problem = problem("/api/v1/accounts/" + ledger + "/transactions?" + query);
+
+    assertThat(problem.path("code").asString()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+    assertThat(problem.path("detail").asString()).isEqualTo(name + " must be sent at most once.");
+  }
+
+  // PR #388 review: clients that always send page= and size= keep working, as before #373.
+  @Test
+  void aBlankPageAndSizeCountAsNotSent() {
+    assertThat(page(ledger, "?page=&size=").page())
+        .isEqualTo(new PageMetadata(0, PagingValues.DEFAULT_SIZE, LEDGER_ROWS, 3));
+  }
+
+  // Spring Data's own Pageable resolver stays registered: it keeps the same limits
+  // (application.yml).
+  @Test
+  void springDatasOwnPageableLimitsMatchThePagingContract() {
+    assertThat(environment.getProperty("spring.data.web.pageable.default-page-size", Integer.class))
+        .isEqualTo(PagingValues.DEFAULT_SIZE);
+    assertThat(environment.getProperty("spring.data.web.pageable.max-page-size", Integer.class))
+        .isEqualTo(PagingValues.MAX_SIZE);
   }
 
   // --- helpers ---------------------------------------------------------------------------------
