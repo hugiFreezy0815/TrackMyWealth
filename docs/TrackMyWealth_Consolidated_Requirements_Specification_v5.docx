@@ -11,7 +11,7 @@ This edition merges the TrackMyWealth requirements baseline with a competitive s
 | Section | What was added in this edition |
 | --- | --- |
 | 1.1–1.2 | Market context, competitive positioning and differentiation pillars |
-| 5 | Cross-border, privacy-motivated and financial-independence personas |
+| 5 | Privacy-motivated and financial-independence personas |
 | 6 | PR-010 to PR-012 — correctness, no silent estimates, graceful degradation |
 | 9.2 | Container rules C1–C9 — empty containers, repeated account types, negative roll-ups, accounts without an institution |
 | 10.1–10.3 | Account capability model; discretionary mandates; occupational pension / vested benefits |
@@ -34,6 +34,7 @@ This edition merges the TrackMyWealth requirements baseline with a competitive s
 | 4, 31 | **User-facing export deferred (OOS-008); statutory portability obligation retained separately** |
 | 52–55 | **New sections — data lifecycle and deletion; concurrency; reference-data distribution; workspace lifecycle** |
 | 56 | Glossary (renumbered) |
+| 8, 49, 52–56 | **No ownership model and no per-account grants: every member is a System User with full access to the whole workspace**; Couple/family and cross-border personas removed |
 | 7–8, 36, 48, 52–57 | Entity *Household* renamed to **Workspace** (Workspace Member, workspace budget, workspace lifecycle); requirement IDs unchanged |
  
 | Item | Baseline |
@@ -42,14 +43,14 @@ This edition merges the TrackMyWealth requirements baseline with a competitive s
 | Languages | English and German |
 | Product orientation | Privacy-first, open-source foundation. **Hybrid deployment: one architecture, two topologies — self-hosted or hosted service.** Client is online-only. |
 | Technology baseline | React Native + Expo (iOS, Android, web); Spring Boot REST API with JWT; PostgreSQL |
-| Target users | Individuals, beginner and advanced private investors, couples and families |
+| Target users | Individuals: beginner and advanced private investors |
 | Primary purpose | Personal finance + budgeting + investment/wealth consolidation |
 | Tax topics | Explicitly out of scope |
 | Document status | Consolidated requirements baseline, merged edition |
  
 # 1. Application Introduction
  
-TrackMyWealth is a privacy-first personal finance, portfolio and wealth-management application for private individuals, couples and families in Switzerland and Germany. Its purpose is to bring financial data that is normally fragmented across banks, brokers, pension providers, credit-card providers and other financial institutions into one coherent, user-controlled system.
+TrackMyWealth is a privacy-first personal finance, portfolio and wealth-management application for private individuals in Switzerland and Germany. Its purpose is to bring financial data that is normally fragmented across banks, brokers, pension providers, credit-card providers and other financial institutions into one coherent, user-controlled system.
  
 The application combines personal cash-flow and budgeting functions with advanced private-investor portfolio analytics. A user shall be able to understand not only how an investment portfolio performs, but also how salary, spending, saving, investing, liabilities and long-term wealth interact.
  
@@ -186,8 +187,6 @@ Tax functionality is out of scope. However, **tax amounts are a cash event that 
 | --- | --- |
 | Beginner / private investor | Simple overview, understandable returns, easy imports, budgeting, savings, net worth, goals |
 | Advanced private investor | Consolidated depots, master data, prices, TWR/MWR, benchmarks, GICS, asset/currency/country exposure |
-| Couple / family | Multiple users and owners, shared/private accounts, mortgages, credit cards, shared budget, consolidated wealth |
-| **Cross-border user** | CH resident with a German broker, DE resident with Swiss accounts, or a cross-border commuter earning CHF and spending EUR. Needs dual-currency consolidation and both markets’ institutions in one place. Currently forced to run two tools. |
 | **Privacy-motivated user** | Rejects cloud aggregation of financial data. Needs the ability to self-host with no dependency on the project. This persona is the reason for the self-hosted topology and must not be traded away for convenience features. |
 | **Financial-independence planner** | Models time to independence: savings rate, withdrawal scenarios, net-worth trajectory |
 | System administrator | Manage users, roles, account status and system access |
@@ -231,7 +230,7 @@ TrackMyWealth
 |   +-- Roles / Permissions
 |
 +-- Workspace / Financial Context
-    +-- Members / Owners
+    +-- Members (System Users)
     +-- Financial Institutions (Containers)
         +-- Accounts
             +-- Transactions
@@ -250,7 +249,7 @@ A Financial Institution is a container. It is not itself a bank account. Example
  
 ## 8.1 System user versus workspace member
  
-A System User is a person who can authenticate to TrackMyWealth. A Workspace Member is a person represented in the financial model. These concepts shall be separate; a child or dependent may be represented financially without having a login.
+A System User is a person who can authenticate to TrackMyWealth. A Workspace Member is a System User assigned to a workspace. There are no members without a login.
  
 Every System User is an individual person. The normal case is one user per workspace; it shall also be possible to assign several users to one workspace, for example a couple managing shared finances.
  
@@ -268,35 +267,33 @@ Every System User is an individual person. The normal case is one user per works
  
 **FR-USR-007 — User reporting currency [MUST]**: A reporting currency shall be selected for each user profile and used for that user’s consolidated views.
  
-**FR-USR-008 — Workspace link [MUST]**: A System User may be linked to a Workspace Member.
+**FR-USR-008 — Workspace membership [MUST]**: A System User becomes a Workspace Member by being assigned to a workspace. Every member is a System User.
  
 **FR-USR-009 — RBAC [MUST]**: Administrative permissions shall be enforced through role-based authorization, not UI hiding alone.
  
 **FR-USR-010 — Financial-access separation [MUST]**: System administration rights and financial-data access shall be modeled as distinct permission concerns.
  
-**FR-USR-011 — Disabled user data retention [MUST]**: Disabling a System User shall not delete or orphan the financial data of the linked Workspace Member. Ownership records reference the Member, not the User.
+**FR-USR-011 — Disabled user data retention [MUST]**: Disabling a System User shall not delete or orphan any financial data. All financial data belongs to the workspace, not to the user who created or imported it.
  
-## 8.2 Ownership model
+## 8.2 Shared access within a workspace
  
-- Individual ownership
+There is no ownership model. Institutions, accounts, portfolios, personal assets, budgets and goals belong to the workspace. Every member has full access to all of it; no check of who owns or created a record is performed. Separation applies only between workspaces (FR-TEN-001).
  
-- Joint ownership
+**FR-HOU-001 — Workspace [MUST]**: A workspace shall support one or more members, each of them a System User.
  
-- Workspace ownership
+~~FR-HOU-002 — Ownership assignment~~: Withdrawn — no ownership model; all data belongs to the workspace (FR-HOU-007).
  
-- Child/dependent
+~~FR-HOU-003 — Ownership percentage~~: Withdrawn — no ownership model; all data belongs to the workspace (FR-HOU-007).
  
-**FR-HOU-001 — Workspace [MUST]**: The financial model shall support one or more workspace members/owners.
+~~FR-HOU-004 — Future privacy levels~~: Withdrawn — every member has full access (FR-HOU-007).
  
-**FR-HOU-002 — Ownership assignment [MUST]**: Accounts and relevant assets/liabilities shall be assignable to an owner or ownership context.
+~~FR-HOU-005 — Ownership-aware aggregation~~: Withdrawn — no ownership model; all data belongs to the workspace (FR-HOU-007). Consolidated figures count every account at its full amount, exactly once.
  
-**FR-HOU-003 — Ownership percentage [SHOULD]**: Fractional ownership should be supported where needed.
+~~FR-HOU-006 — Ownership changes are dated~~: Withdrawn — no ownership model; all data belongs to the workspace (FR-HOU-007).
  
-**FR-HOU-004 — Future privacy levels [SHOULD]**: The architecture should support no access, balance-only, read, edit and full access for future multi-user sharing.
+**FR-HOU-007 — Full access for every member [MUST]**: Every member of a workspace shall be able to view, create, edit, import and delete all data in that workspace. The system shall not check who owns or created an institution, account, portfolio or any other record.
  
-**FR-HOU-005 — Ownership-aware aggregation [MUST]**: Where fractional or joint ownership applies, consolidated figures scoped to a single person shall apply the ownership share. Workspace-scoped figures shall count the full amount exactly once, never double-counting a jointly owned account across two members.
- 
-**FR-HOU-006 — Ownership changes are dated [SHOULD]**: A change of ownership shall carry an effective date so historical reports remain reproducible.
+**FR-HOU-008 — Created and imported data is immediately usable [MUST]**: When a member creates an institution, account or portfolio, it shall be created without any owner assignment or approval step. Data imported into it shall appear in all views and reports of the workspace as soon as the import is committed.
  
 # 9. Financial Institution / Container
  
@@ -386,7 +383,7 @@ The container is a generic grouping device. It holds no balance, no behaviour an
 | Cryptocurrency Account / Wallet | Exchange, hardware/software wallet or manual wallet |
 | Custom Asset | Real estate, vehicles, precious metals, collectibles |
  
-**FR-ACC-001 — Account attributes [MUST]**: Each account shall store institution, name, account type, owner, native currency, status and optional identifiers.
+**FR-ACC-001 — Account attributes [MUST]**: Each account shall store institution, name, account type, native currency, status and optional identifiers.
  
 **FR-ACC-002 — Native account currency [MUST]**: Each account shall retain its own account currency independently of container and user reporting currencies.
  
@@ -487,7 +484,7 @@ Transactions are a central source of truth for cash-flow, budgeting and investme
  
 **FR-TRX-004 — Duplicate detection [MUST]**: Repeated imports shall detect probable duplicates.
  
-**FR-TRX-005 — Search/filter [MUST]**: Transactions shall be searchable/filterable by date, institution, account, amount, currency, category, type, merchant/description and owner.
+**FR-TRX-005 — Search/filter [MUST]**: Transactions shall be searchable/filterable by date, institution, account, amount, currency, category, type, and merchant/description.
  
 **FR-TRX-006 — Split transactions [SHOULD]**: A transaction should support multiple category allocations where required.
  
@@ -633,7 +630,7 @@ Cash-account transactions shall be categorized to support meaningful spending re
  
 **FR-NW-003 — Manual valuations [MUST]**: Custom assets shall support dated valuations.
  
-**FR-NW-004 — Scope breakdown [MUST]**: Net worth shall be analyzable by owner, institution, account, asset class and currency.
+**FR-NW-004 — Scope breakdown [MUST]**: Net worth shall be analyzable by institution, account, asset class and currency.
  
 **FR-NW-005 — Contribution versus performance [MUST]**: Change in net worth over a period shall be decomposable into money added or withdrawn versus value gained or lost. Without this, a user who saved diligently during a falling market cannot tell that they did the right thing, and the headline number actively misleads.
  
@@ -758,7 +755,7 @@ GICS shall be the canonical standard for grouping applicable corporate/equity ex
  
 **FR-GICS-001 — GICS hierarchy [MUST]**: Support Sector > Industry Group > Industry > Sub-Industry.
  
-**FR-GICS-002 — Cross-depot grouping [MUST]**: GICS analysis shall work across one depot, one institution, selected depots, a person or the workspace portfolio.
+**FR-GICS-002 — Cross-depot grouping [MUST]**: GICS analysis shall work across one depot, one institution, selected depots or the whole workspace portfolio.
  
 **FR-GICS-003 — Applicability [MUST]**: Do not assign artificial GICS classifications to assets for which GICS is not applicable. GICS classifies companies, not instruments: it says nothing about bonds, commodities, crypto, cash or property. It is a grouping dimension inside the equity sleeve, layered on top of the asset class, never a replacement for it.
  
@@ -834,7 +831,7 @@ GICS shall be the canonical standard for grouping applicable corporate/equity ex
  
 **FR-PERF-005 — Periods [MUST]**: Support YTD, 1M, 1Y, 3Y, 5Y, max and custom date ranges as applicable.
  
-**FR-PERF-006 — Scope [MUST]**: Performance shall work at position, depot, institution, selected portfolios, owner and workspace levels where meaningful.
+**FR-PERF-006 — Scope [MUST]**: Performance shall work at position, depot, institution, selected portfolios and workspace levels where meaningful.
  
 **FR-PERF-007 — Benchmarking [MUST]**: Allow comparison with selectable benchmarks.
  
@@ -882,7 +879,7 @@ GICS shall be the canonical standard for grouping applicable corporate/equity ex
  
 This is differentiation pillar D2. Swiss users routinely hold a large equity allocation inside a Pillar 3a, and no analysed competitor folds it into the overall picture. Concentration analysis that excludes it is not merely incomplete for these users — it is wrong.
  
-**FR-ALL-009 — Scope is always visible [MUST]**: The active scope of any allocation view — which accounts, which owner, whether pensions are included — shall be displayed alongside the chart. A user must never be uncertain whether a figure includes their pension.
+**FR-ALL-009 — Scope is always visible [MUST]**: The active scope of any allocation view — which accounts, whether pensions are included — shall be displayed alongside the chart. A user must never be uncertain whether a figure includes their pension.
  
 **FR-ALL-010 — Concentration analysis [SHOULD]**: Identify single-position and single-issuer concentration above configurable thresholds, computed after look-through where available, so that the same company held directly and inside three ETFs is recognised as one exposure.
  
@@ -962,7 +959,7 @@ The global Consolidated View is the top-level financial overview and shall prese
  
 **FR-CON-002 — Historical conversion [MUST]**: Historical consolidated values shall use historical FX rates.
  
-**FR-CON-003 — Global scope selector [MUST]**: Reports shall support scope by workspace, person, institution, account, selected accounts or investments only.
+**FR-CON-003 — Global scope selector [MUST]**: Reports shall support scope by workspace, institution, account, selected accounts or investments only.
  
 **FR-CON-004 — Date range [MUST]**: Relevant reports shall support date-range filtering.
  
@@ -1300,7 +1297,7 @@ These are engineering targets to be validated during prototyping rather than con
  
 **RULE-017 [MANDATORY]**: Historical security master/prices required by reports are retained after a position is sold.
  
-**RULE-018 [MANDATORY]**: System User and Workspace Member are separate concepts.
+**RULE-018 [MANDATORY]**: Every Workspace Member is a System User. Within a workspace there is no ownership and no per-record permission.
  
 **RULE-019 [MANDATORY]**: Tax functionality is completely out of scope.
  
@@ -1336,10 +1333,10 @@ SystemUser
 +-- Role / Permissions
 +-- Language
 +-- ReportingCurrency
-+-- optional link -> WorkspaceMember
++-- member of -> Workspace [1..n] (one in MVP)
  
 Workspace
-+-- WorkspaceMember / Ownership (share %, effective-dated)
++-- WorkspaceMember = SystemUser, full access [1..n]
 +-- FinancialInstitution [0..n]            <<container>>
 |   +-- ContainerCurrency
 |   +-- Account [0..n]                     <<abstract>>
@@ -1400,7 +1397,7 @@ The MVP shall establish a correct, extensible financial foundation. Priority are
  
 - User administration, authentication baseline, user language and user reporting currency
  
-- Workspace/member and ownership model
+- Workspace and member model
  
 - Financial Institution/Container model including container currency and Institution Summary
  
@@ -1476,7 +1473,7 @@ This document is the baseline from which a requirements engineer creates detaile
  
 - EPIC 02 — User Administration & Authorization
  
-- EPIC 03 — Workspace & Ownership
+- EPIC 03 — Workspace & Members
  
 - EPIC 04 — Financial Institutions / Containers
  
@@ -1594,7 +1591,7 @@ Each development-ready user story should include:
  
 - **Volumetrics** (NFR-OPS-007) — outstanding
  
-- **Confirmed workspace sharing model** (OPEN-021) — outstanding
+- **Confirmed workspace sharing model** (OPEN-021) — closed: full access for every member
  
 - **Lifecycle state machine definitions** (FR-LIF-010)
  
@@ -1626,7 +1623,7 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
  
 **OPEN-009 [TBD]**: Corporate-action and adjusted-price methodology
  
-**OPEN-010 [TBD]**: Future multi-user workspace permission semantics
+**OPEN-010 — CLOSED**: Every member has full access to the workspace (FR-HOU-007); there are no permission levels within a workspace.
  
 **OPEN-011 — CLOSED**: Self-hosting is a first-class topology from the outset (48.1). Client-server synchronisation is not required, as the client is online-only (NFR-CON-001).
  
@@ -1648,7 +1645,7 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
  
 **OPEN-020 [TBD]**: Are discretionary mandates (VIAC, frankly, True Wealth) and Pillar 2 / vested-benefit accounts confirmed in MVP scope, or deferred? Both are proposed in sections 10.2 and 10.3 as SHOULD.
  
-**OPEN-021 [TBD]**: Workspace sharing model — confirm the provisional resolution in FR-TEN-008. Strict isolation with explicit, revocable, granular grants, reconciling the “no user sees another user’s finances” requirement with workspace budgets and FR-HOU-004 privacy levels.
+**OPEN-021 — CLOSED**: No sharing model within a workspace. All members have full access (FR-HOU-007, FR-TEN-008); strict separation applies only between workspaces (FR-TEN-001).
  
 **OPEN-022 [TBD]**: Registration model for the hosted service — self-service signup, invite-only, or admin-provisioned. Section 8 currently describes admin provisioning, which suits self-hosting but not a public service.
  
@@ -1750,7 +1747,7 @@ The system shall correctly provide:
  
 # 44. Final Product Definition
  
-TrackMyWealth is a bilingual, privacy-first personal and family financial management application for Switzerland and Germany, delivered as browser and native mobile clients against a REST API, and deployable either on infrastructure the user controls or as a hosted service. It models financial institutions as currency-aware containers containing different account types; categorizes bank and credit-card transactions for spending reports; centralizes portfolio security master data and historical prices; and consolidates assets, liabilities, cash flow and investment analytics into one user-defined reporting currency.
+TrackMyWealth is a bilingual, privacy-first personal financial management application for Switzerland and Germany, delivered as browser and native mobile clients against a REST API, and deployable either on infrastructure the user controls or as a hosted service. It models financial institutions as currency-aware containers containing different account types; categorizes bank and credit-card transactions for spending reports; centralizes portfolio security master data and historical prices; and consolidates assets, liabilities, cash flow and investment analytics into one user-defined reporting currency.
  
 The system is designed to support both understandable personal finance and advanced private-investor analysis while remaining under the user’s control. It provides information and analysis only: no payment execution, trade execution, professional financial advice, tax functionality, private-equity valuation or public social-network features.
  
@@ -1766,11 +1763,11 @@ Its distinguishing commitment is correctness: figures are reconciled against wha
 | RISK-004 | **Market-data cost or terms unworkable for a free local product.** Providers generally licence to an identified operator, not to anonymous installations. | High | Resolve OPEN-013; documented degraded manual-price mode (NFR-LIC-004) |
 | RISK-005 | **Swiss connectivity has no purchasable route.** Unlike PSD2 in Germany, Swiss access is contractual via bLink and bank agreements. | High | Treat as a long-lead item; do not place Swiss automated connectivity on the MVP critical path |
 | RISK-006 | **Scope breadth.** The specification covers what four separate products do today. | High | Enforce the MVP cut (37); treat correctness rather than feature count as the differentiator |
-| RISK-007 | **Post-launch data-model migration.** A competitor’s cash-account restructuring visibly moved user balances. | Medium–high | Cash, snapshots, ownership and weighted asset classes resolved in v1; NFR-REL-003 |
+| RISK-007 | **Post-launch data-model migration.** A competitor’s cash-account restructuring visibly moved user balances. | Medium–high | Cash, snapshots and weighted asset classes resolved in v1; NFR-REL-003 |
 | RISK-008 | **Self-hosted durability.** A self-hosting user loses data to disk failure with no operator-side copy, and with export deferred has no secondary recovery route. | Medium | FR-BCK-004/005 backup prompting and verification; documented in self-hosting guidance |
 | RISK-009 | **Single-maintainer sustainability** for an open-source financial product with recurring data-provider dependencies. | Medium | Address alongside OPEN-003 and OPEN-013 |
 | RISK-012 | **Reference data goes stale under manual-only distribution.** Pension contribution limits above all: an outdated limit produces wrong goal tracking with no visible cause. | Medium | FR-REF-010/011 staleness warnings; effective-dated data marked estimated when no current entry exists |
-| RISK-013 | **Workspace-splitting constraints erode before the feature arrives.** FR-HHL-001 to 005 are easy to violate accidentally once nobody remembers why they exist. | Medium | Automated check that no derived artefact embeds a workspace identifier; record the rationale at the ownership relation |
+| RISK-013 | **Workspace-splitting constraints erode before the feature arrives.** FR-HHL-001 to 005 are easy to violate accidentally once nobody remembers why they exist. | Medium | Automated check that no derived artefact embeds a workspace identifier; record the rationale at the account-to-workspace relation |
 | RISK-014 | **Void-based correction is misread as a bug.** Users seeing a reversing entry alongside the original may report duplicated data. | Low | FR-LIF-003 presentation rules; voided items shown as voided, not duplicated |
  
 # 46. Calculation Methodology Definitions
@@ -1779,7 +1776,7 @@ To be formally specified before implementation, satisfying NFR-CALC-003. Each de
  
 | Metric | Definition to be fixed |
 | --- | --- |
-| **Net worth** | Sum of asset account values minus liability account values at a date, in the reporting currency, using valuation-date FX. Ownership share applied for person-scoped views. |
+| **Net worth** | Sum of asset account values minus liability account values at a date, in the reporting currency, using valuation-date FX. |
 | **TWR** | Geometric linking of sub-period returns bounded by external cash flows into or out of the measured scope. Definition must state what counts as external at each scope level — a transfer between two of the user’s own depots is external to each depot but internal to the workspace. |
 | **MWR** | Internal rate of return (XIRR) over dated external cash flows plus the closing value. Definition must state the convergence tolerance and the behaviour when no solution exists or several do. |
 | **Modified Dietz** | Permitted approximation where intraday valuation is unavailable; the periods where it was applied must be recorded. |
@@ -1891,7 +1888,7 @@ The controlling requirement: **an authenticated user shall see only data they ar
  
 **FR-TEN-001 — Tenant is the workspace [MUST]**: The isolation boundary shall be the workspace. Every financial record shall be attributable to exactly one workspace.
  
-**FR-TEN-002 — Deny by default [MUST]**: Access shall be denied unless an explicit grant exists. There shall be no implicit visibility derived from being in the same workspace, the same deployment, or the same database.
+**FR-TEN-002 — Deny by default [MUST]**: Access to a workspace’s data shall be denied unless the principal is a member of that workspace. There shall be no implicit visibility derived from being in the same deployment or the same database.
  
 **FR-TEN-003 — Isolation enforced at the data layer [MUST]**: Tenant isolation shall be enforced in PostgreSQL — row-level security or an equivalent mechanism that cannot be bypassed by a query written in the application. Service-layer filtering alone is insufficient: a single forgotten predicate in one query is the entire failure.
  
@@ -1903,13 +1900,13 @@ The controlling requirement: **an authenticated user shall see only data they ar
  
 **FR-TEN-007 — Administrative rights are not financial rights [MUST]**: A System Administrator can manage users, roles and system configuration. This shall confer **no** access to any workspace’s financial data. The two permission domains are separate (FR-USR-010), and this separation shall hold in a self-hosted deployment where the administrator is also a workspace member — their financial access derives from their workspace membership alone.
  
-**FR-TEN-008 — Sharing is explicit and granular [MUST]**: Where workspace members share financial visibility, it shall arise from an explicit, revocable grant at account or scope level, with the levels of FR-HOU-004 — no access, balance only, read, edit, full. Shared constructs such as workspace budgets shall be modelled as objects owned by the workspace with their own grants, not as an implied merge of members’ private data. *Provisional resolution of the contradiction noted in review; confirm as B5.*
+**FR-TEN-008 — Membership is the only access grant [MUST]**: Access to financial data is granted only by making a user a member of the workspace, and then covers all of the workspace’s data. There are no per-account or per-scope grants and no access levels. *Replaces the earlier provisional grant model (OPEN-021, closed).*
  
-**FR-TEN-009 — Grant changes are immediate and audited [MUST]**: Revoking a grant shall take effect on the next request, not on token expiry (see FR-AUT-006).
+**FR-TEN-009 — Membership changes are immediate and audited [MUST]**: Removing a member from a workspace shall take effect on the next request, not on token expiry (see FR-AUT-006).
  
 **FR-TEN-010 — Cross-tenant test suite [MUST]**: An automated test suite shall attempt cross-tenant access against every endpoint and every object type, and shall run in continuous integration. Isolation is asserted by tests, not by inspection.
  
-**FR-TEN-011 — Aggregates respect scope [MUST]**: Every aggregate, chart and export shall be computed strictly within the requesting principal’s authorized scope, with the scope visible (FR-CON-006). A shared account in a joint workspace shall be counted exactly once (FR-HOU-005).
+**FR-TEN-011 — Aggregates respect scope [MUST]**: Every aggregate, chart and export shall be computed strictly within the requesting principal’s authorized scope, with the scope visible (FR-CON-006).
  
 # 49. Authentication, Sessions and Authorization
  
@@ -1921,7 +1918,7 @@ The controlling requirement: **an authenticated user shall see only data they ar
  
 **FR-AUT-004 — Refresh tokens are opaque, stored and rotated [MUST]**: Refresh tokens shall be server-side records rather than self-contained claims, shall rotate on each use, and reuse of a consumed refresh token shall invalidate the entire token family and be treated as a suspected theft event.
  
-**FR-AUT-005 — Revocation is real [MUST]**: Logout, password change, session revocation, grant revocation, role change and user deactivation shall take effect within the access-token lifetime at worst, and immediately for security-significant events. The design shall state explicitly how this is achieved — a token version or session identifier checked per request is the usual mechanism. *JWT statelessness is not an acceptable justification for delayed revocation.*
+**FR-AUT-005 — Revocation is real [MUST]**: Logout, password change, session revocation, membership removal, role change and user deactivation shall take effect within the access-token lifetime at worst, and immediately for security-significant events. The design shall state explicitly how this is achieved — a token version or session identifier checked per request is the usual mechanism. *JWT statelessness is not an acceptable justification for delayed revocation.*
  
 **FR-AUT-006 — Token storage per platform [MUST]**: Web shall use an httpOnly, Secure, SameSite cookie for the refresh credential and shall not place tokens in localStorage. Mobile shall use iOS Keychain and Android Keystore. These are different threat models and shall be specified separately.
  
@@ -1935,9 +1932,9 @@ The controlling requirement: **an authenticated user shall see only data they ar
  
 **FR-AUT-011 — Biometric re-entry is a local unlock only [MUST]**: Mobile biometric unlock shall gate access to a stored refresh credential. It is not an authentication factor against the server and shall not be presented as one.
  
-**FR-AUT-012 — Re-authentication for sensitive operations [SHOULD]**: Changing credentials, granting financial access to another member and deleting an account shall require recent authentication.
+**FR-AUT-012 — Re-authentication for sensitive operations [SHOULD]**: Changing credentials, adding a member to a workspace and deleting an account shall require recent authentication.
  
-**FR-AUT-013 — Authentication audit [MUST]**: Successful and failed authentications, token-family invalidations, grant changes and role changes shall be recorded with timestamp, principal and source. Financial data content shall not be written to these logs.
+**FR-AUT-013 — Authentication audit [MUST]**: Successful and failed authentications, token-family invalidations, membership changes and role changes shall be recorded with timestamp, principal and source. Financial data content shall not be written to these logs.
  
 **FR-AUT-014 — Optional OIDC [COULD]**: Self-hosted deployments may benefit from delegating authentication to an existing identity provider.
  
@@ -2082,8 +2079,8 @@ This follows from three requirements already in force and is not an independent 
 | Category | Deactivate; historical assignments preserved | Only if never used |
 | Categorization rule | Delete freely; not historical data | Yes |
 | Budget / Goal | Archive; historical periods preserved | Only if never active |
-| Workspace member | Deactivate if they own or co-own anything | Only if they own nothing |
-| System user | Disable; linked member data unaffected (FR-USR-011) | Only if never linked |
+| Workspace member | Remove from the workspace; all data they created stays with the workspace | Yes |
+| System user | Disable; workspace data unaffected (FR-USR-011) | Only if never a member |
 | Security master record | Retained while referenced (FR-SMD-005) | Only if unreferenced |
 | Workspace (tenant) | **Hard delete — the erasure path** | Yes |
  
@@ -2127,7 +2124,7 @@ A flat void-everything rule is correct for imported data but poor usability for 
  
 ## 52.4 Retention and erasure
  
-**FR-LIF-020 — Tenant erasure [MUST]**: Deleting a workspace shall remove all of its data — transactions, accounts, snapshots, derived data, grants, and audit entries containing personal data — within the period stated in NFR-DPR-004, including from backups within the published retention window.
+**FR-LIF-020 — Tenant erasure [MUST]**: Deleting a workspace shall remove all of its data — transactions, accounts, snapshots, derived data, memberships, and audit entries containing personal data — within the period stated in NFR-DPR-004, including from backups within the published retention window.
  
 **FR-LIF-021 — Shared reference data survives erasure [MUST]**: Security master records, price series and FX series carry no tenant identity and are unaffected (NFR-LIC-007).
  
@@ -2137,19 +2134,19 @@ A flat void-everything rule is correct for imported data but poor usability for 
  
 # 53. Workspace Lifecycle
  
-Confirmed direction: workspace splitting is **not an MVP feature**, but the model shall not foreclose it. Anticipating it now costs four constraints and no functionality. Retrofitting it later means rewriting ownership, grants and every historical aggregate.
+Confirmed direction: workspace splitting is **not an MVP feature**, but the model shall not foreclose it. Anticipating it now costs four constraints and no functionality. Retrofitting it later means rewriting every historical aggregate.
  
 ## 53.1 Constraints enabling later splitting
  
-**FR-HHL-001 — Ownership is an effective-dated association [MUST]**: Ownership shall be a dated relationship between workspace member and account, carrying a share where fractional — never a column on the account (FR-HOU-006).
+~~FR-HHL-001 — Ownership is an effective-dated association~~: Withdrawn — no ownership model; all data belongs to the workspace (FR-HOU-007).
  
 **FR-HHL-002 — Workspace assignment is mutable [MUST]**: An account’s workspace assignment shall be changeable. No query, index, cache or derived artefact may assume it is fixed for the account’s lifetime.
  
-**FR-HHL-003 — No denormalised workspace identifier in derived data [MUST]**: Derived artefacts shall not embed a workspace identifier in a way that cannot be rebuilt from source records (FR-DAT-008). Isolation predicates shall resolve workspace membership through the ownership relation rather than a copied key.
+**FR-HHL-003 — No denormalised workspace identifier in derived data [MUST]**: Derived artefacts shall not embed a workspace identifier in a way that cannot be rebuilt from source records (FR-DAT-008). Isolation predicates shall resolve the workspace through the account rather than a copied key.
  
 **FR-HHL-004 — Membership history is retained [MUST]**: Joining and leaving shall be recorded with effective dates rather than overwriting current membership.
  
-**FR-HHL-005 — Grants are dated [MUST]**: Sharing grants (FR-TEN-008) shall carry effective dates, so a historical view can establish who had access to what and when.
+~~FR-HHL-005 — Grants are dated~~: Withdrawn — there are no per-account grants (FR-TEN-008).
  
 ## 53.2 Policy decisions recorded in advance
  
@@ -2157,7 +2154,7 @@ Confirmed direction: workspace splitting is **not an MVP feature**, but the mode
  
 **FR-HHL-011 — Retroactive change is disclosed [MUST]**: Where a structural change causes historical figures to change, affected workspaces shall be informed in-application (NFR-REL-003).
  
-**FR-HHL-012 — Member deactivation retains history [MUST]**: A departing member is deactivated; their historical ownership and the transactions of accounts they owned remain with the workspace unless and until those accounts are moved.
+**FR-HHL-012 — Member deactivation retains history [MUST]**: A departing member is deactivated; all data they created or imported remains with the workspace.
  
 **FR-HHL-013 — One workspace per person in MVP [MUST]**: Multi-workspace membership — someone managing their own and a relative’s finances — is out of MVP scope. The model shall not preclude it: the member-to-workspace relation shall be structurally many-to-many even while the application enforces one. See OPEN-032.
  
@@ -2268,7 +2265,7 @@ Formal state definitions for entities whose lifecycle is otherwise described onl
  
 **FR-STA-006 — Session [MUST]**: ACTIVE → EXPIRED or REVOKED. Revocation is immediate (FR-AUT-005).
  
-**FR-STA-007 — Workspace member [MUST]**: ACTIVE → INACTIVE, reversible. DELETED reachable only from a member who has never owned anything (FR-LIF-001).
+**FR-STA-007 — Workspace member [MUST]**: ACTIVE → INACTIVE, reversible. Removing a member never deletes workspace data (FR-LIF-001).
  
 **FR-STA-008 — Transitions are audited [MUST]**: Every transition of an account, import batch, reconciliation difference or member shall be recorded with timestamp and actor.
  
@@ -2288,7 +2285,7 @@ FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. N
  
 | Term | Meaning in this specification |
 | --- | --- |
-| **Workspace** | The top-level container and tenant isolation boundary (FR-TEN-001). It groups institutions with their bank accounts, portfolios and personal assets, together with budgets and goals, for one or more members. Every user is an individual; the normal case is one user per workspace, and several users can be assigned to the same workspace. The workspace implies no family or domestic relationship between its members. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. |
+| **Workspace** | The top-level container and tenant isolation boundary (FR-TEN-001). It groups institutions with their bank accounts, portfolios and personal assets, together with budgets and goals, for one or more members, each a System User with full access to all of it. Every user is an individual; the normal case is one user per workspace, and several users can be assigned to the same workspace. The workspace implies no family or domestic relationship between its members. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. |
 | **Financial Institution / Container** | Grouping level for accounts held with one provider. Not itself an account. May be a bank, broker, pension provider, card issuer, asset manager, or the default Personal Assets container. |
 | **Account** | A single financial product within a container. Abstract; always of exactly one concrete type. |
 | **Capability** | Declared property determining what an account can do, independent of its type. |

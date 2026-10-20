@@ -55,16 +55,13 @@ These are architecture-led advantages, which makes them slower for a competitor 
 | ID | Persona | Description | Primary need |
 |---|---|---|---|
 | P1 | **Multi-broker accumulator** | 30–50, 2–5 brokers across 2 countries, ETF-heavy, buy & hold | One consolidated truth; correct performance; low maintenance |
-| P2 | **Swiss resident** | CHF salary, Pillar 2 + 3a, possibly cross-border assets | Net worth incl. pension; 3a optimisation; tax-return support (Wertschriftenverzeichnis, DA-1) |
 | P3 | **Cashflow-first user** | Wants to know where money goes before optimising investments | Automatic budgets from real transactions; overspend alerts |
 | P4 | **FIRE planner** | Models time-to-independence | Withdrawal projections; savings-rate tracking; scenario modelling |
-| P2b | **Cross-border user** | CH resident with a German broker, DE resident with Swiss accounts, or a cross-border commuter earning CHF and spending EUR | Dual-currency consolidation; correct treatment under two tax regimes; currently forced to run two tools |
 | P5 | **Privacy-motivated user** | Rejects cloud aggregation of financial data | Local/self-hosted option; full export; no third-party data sharing |
-| P6 | **Couple / family** | Shared and individual finances co-existing | Shared budgets and shared portfolios with per-person visibility rules |
 | S1 | *(Secondary)* Advisor / family office | Manages many client portfolios | Multi-tenant portfolio management, reporting |
 | S2 | *(Secondary)* Bank partner | White-label / multibanking integration | Embeddability, branding, compliance posture |
  
-P1–P4 drive v1. P5 constrains architecture. P6 constrains the permission model. S1/S2 are business-model dependent (§9).
+P1, P3 and P4 drive v1. P5 constrains architecture. S1/S2 are business-model dependent (§9).
  
 ---
  
@@ -218,7 +215,7 @@ The subtype answers *what it is*. Capabilities answer *what it can do* — and t
 #### Entity model
  
 ```
-User ──< Workspace >── User            (P6: shared finances)
+User ──< Workspace >── User            (one user normally; several possible, all with full access)
   │
   └──< Institution >                   e.g. PostFinance, Yuh, Sparkasse, VIAC
          │  type: BANK | BROKER | PENSION_PROVIDER | PENSION_FUND |
@@ -590,7 +587,7 @@ BlueBudget's design thesis, validated: **manual expense entry fails; derive the 
 | FR-CSH-08 | Upcoming-bill reminders, including jurisdiction-specific obligations (CH: Serafe, tax instalments, insurance premiums) | S |
 | FR-CSH-09 | Savings rate as a first-class tracked metric, linking cashflow to the investment side | M |
 | FR-CSH-10 | **Internal transfers between own accounts excluded from income/expense totals** (see DM-05) | M |
-| FR-CSH-11 | Shared/workspace budgets with per-member visibility control | S |
+| FR-CSH-11 | Workspace budgets, visible to every member | S |
 | FR-CSH-20 | **Credit cards:** individual card transactions are imported and categorised like bank transactions, and the outstanding balance is carried as a liability in net worth | M |
 | FR-CSH-21 | **Card settlement must not be double-counted.** The monthly payment from the current account to the card issuer is an *internal transfer*, not an expense; the expenses are the individual card transactions. Auto-detect the settlement payment and match it to the corresponding statement. | M |
 | FR-CSH-22 | Statement cycle support: statement period, closing balance, due date, and paid/unpaid status | S |
@@ -599,7 +596,7 @@ BlueBudget's design thesis, validated: **manual expense entry fails; derive the 
 | FR-CSH-25 | Configurable alert on card utilisation or an approaching due date | C |
 | FR-CSH-12 | Group expense splitting with settlement minimisation (fewest possible payments), invite by link/QR, and support for participants who have not installed the app | C |
  
-> FR-CSH-12 is BlueBudget's strongest feature and is genuinely well designed, but it is a **separate social product** with its own network effects and abuse surface. Recommend v2 unless the couple/family use case (P6) makes it strategic.
+> FR-CSH-12 is BlueBudget's strongest feature and is genuinely well designed, but it is a **separate social product** with its own network effects and abuse surface. Recommend v2.
  
 ### 5.8 Net worth (FR-NWO)
  
@@ -652,7 +649,7 @@ Confirmed in scope. Implemented as jurisdiction rule plugins (DM-07).
 | FR-USR-02 | TOTP MFA | M |
 | FR-USR-03 | Optional OIDC/SSO (relevant for self-host and B2B; Ghostfolio's precedent) | C |
 | FR-USR-04 | App-level PIN/biometric lock on mobile | S |
-| FR-USR-05 | Shared workspace with roles: owner, member, view-only | S |
+| FR-USR-05 | Several users can be members of one workspace, all with full access (no roles or ownership within a workspace) | S |
 | FR-USR-06 | Read-only share link for a portfolio, with configurable masking of absolute values | S |
 | FR-NOT-01 | Configurable notifications: daily/weekly summary, budget threshold, dividend received, connector failure, 3a deadline | S |
 | FR-NOT-02 | Notifications must be individually disableable; no dark-pattern engagement loops | M |
