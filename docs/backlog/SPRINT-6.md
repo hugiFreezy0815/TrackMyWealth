@@ -1,7 +1,7 @@
 # Sprint 6 - Everything a frontend developer needs to start in sprint 7
 
 Sprints are the GitHub label `sprint-6` plus Iteration 6 (2026-10-27 to 2026-11-09) on Project #1.
-This file is the overview; the issues (#371-#387) hold the full story text, design and Definition of
+This file is the overview; the issues (#371-#387, #389, #390) hold the full story text, design and Definition of
 Done. The PO approved the scope on 2026-10-20. The draft names UX-01..04 and SPRINT-7 used below map
 to the issue ids in the tables.
 
@@ -10,7 +10,7 @@ anyone. The API contract is published, stable and typed; a stack full of synthet
 one command; and every screen of the first frontend sprint has an approved specification that says
 what it shows, how it looks, and which endpoint feeds it.
 
-Sprint 6 builds no product screens. The first screens (home, institutions, account detail) are the
+Sprint 6 builds no product screens. The first screens (home, portfolios, account detail) are the
 frontend developer's sprint 7 stories, written in this sprint.
 
 ## Starting point (2026-10-20)
@@ -24,7 +24,7 @@ The domain backend is far ahead of the app. What blocks frontend work is the API
 
 | Finding | Effect on a frontend developer |
 |---|---|
-| There is no collection endpoint for accounts, the workspace's institutions, workspace members or sharing grants. Only "get one by id" and "create" exist. | The app cannot build its navigation: there is no way to find out which accounts exist. |
+| There is no collection endpoint for accounts, the workspace's portfolios or workspace members. Only "get one by id" and "create" exist. | The app cannot build its navigation: there is no way to find out which accounts exist. |
 | Transactions are only listed per account. | No "all transactions", no search, no uncategorised inbox across accounts. |
 | Paged endpoints return Spring Data's `Page` serialised as is. | The JSON envelope is a framework detail, not a decision, and can change with a Spring upgrade. |
 | Controller methods share generic names such as `get`, `list`, `create`, `update`, `delete` across many controllers. | springdoc numbers the clashes (`get_1`, `get_2`) by scan order, so generated client function names change between builds. |
@@ -44,7 +44,7 @@ the screens look like:
 
 | Available | Where |
 |---|---|
-| Navigation tree: Overview, Institutions with their accounts, Investments, Cash Flow, Budget, Goals, Workspace, Settings | Spec section 27, FR-NAV-01 |
+| Navigation tree: Overview with the workspace tab and one tab per portfolio, Investments, Cash Flow, Budget, Goals, Workspace, Settings | Spec section 27, FR-NAV-01 |
 | UX rules: progressive disclosure, consistent terminology, explainable figures, a visual treatment for estimated, stale and unreconciled values, time to first insight under ten minutes | Spec section 32, NFR-UX-001..005 |
 | Scope always visible, aggregates within the authorised scope, negative totals shown as negative | FR-CON-006, FR-ALL-009, FR-TEN-011, FR-NAV-15 |
 | EN/DE, locale formatting (CHF `1'234.56`, EUR `1.234,56`), WCAG 2.2 AA, screen protection on balance screens | NFR-I18N-001..005, NFR-USE-03, FR-CLI-005 |
@@ -84,7 +84,7 @@ track (Track C) that closes these gaps for the screens of sprint 7.
      import adds rows while the user scrolls, the app reloads the list from the first page.
    - Filters are plain query parameters named after the response field (`accountId`,
      `bookingDateFrom`, `bookingDateTo`, `categoryId`, ...); several values mean "any of".
-   - Small, bounded lists (categories, institutions, accounts) are not paged and return a plain
+   - Small, bounded lists (categories, portfolios, accounts) are not paged and return a plain
      array, each with a documented upper bound.
    - Enforced in code: an ArchUnit rule forbids `Page<...>` as a controller return type, and the
      contract test checks that every operation with a `page` parameter returns a `PageResponse`.
@@ -95,9 +95,9 @@ track (Track C) that closes these gaps for the screens of sprint 7.
    `mobile/src/api/schema.d.ts` from the committed spec. The existing wrapper in `client.ts` is
    typed with the generated paths, so token refresh, timeouts and `If-Match` stay as they are.
    Decimal fields (`format: decimal`) map to `DecimalString`.
-6. **Collection endpoints respect the existing authorization.** A list returns only what the
-   caller may VIEW (row-level security plus the sharing grants). A foreign id in a filter behaves
-   like an unknown one, so a list never reveals that something exists.
+6. **Collection endpoints return the whole workspace.** Every member has full access (#389), so a
+   list returns everything in the caller's workspace; row-level security keeps workspaces apart. A
+   foreign id in a filter behaves like an unknown one, so a list never reveals that something exists.
 7. **Demo data is synthetic and goes through the public API.** A seed script creates it through
    HTTP calls, never with SQL, so it also works as an end-to-end smoke test of the contract. It
    never reads `docs/import-samples/`. The demo login with its documented TOTP secret exists only
@@ -128,10 +128,12 @@ Sizes: S up to 1 day, M 2-3 days, L 4-5 days.
 
 | Issue | Story | Pri | Size | Blocked by |
 |---|---|---|---|---|
-| #380 US-05-06 | `GET /api/v1/accounts`: the accounts the member may view, filterable by institution, account type, owner and archived; each row carries currency, `valueKnown`, the value status (estimated, stale, unreconciled) and the current balance in account and workspace currency | MUST | M | US-29-03, UX-02 draft |
-| #381 US-04-05 | `GET /api/v1/institutions`: the workspace's institutions with account count, total in workspace currency and value status, for the institution list | MUST | S | US-29-03, UX-02 draft |
-| #382 US-07-35 | `GET /api/v1/transactions`: workspace-wide list over every viewable account, filtered by accounts, date range, category, uncategorised, free text and amount range; paged per decision 3; index and explain-plan check on a large generated data set | MUST | L | US-29-03 |
-| #383 US-03-05 | `GET` collections for workspace members and sharing grants (the settings screens) | SHOULD | S | US-29-03 |
+| #380 US-05-06 | `GET /api/v1/accounts`: all accounts of the workspace, filterable by portfolio, account type and archived; each row carries currency, `valueKnown`, the value status (estimated, stale, unreconciled) and the current balance in account and workspace currency | MUST | M | US-29-03, UX-02 draft |
+| #381 US-04-05 | `GET /api/v1/portfolios`: the workspace's portfolios with type, account count, total in workspace currency and value status, for the portfolio tabs | MUST | S | US-29-03, UX-02 draft |
+| #382 US-07-35 | `GET /api/v1/transactions`: workspace-wide list over every account, filtered by accounts, date range, category, uncategorised, free text and amount range; paged per decision 3; index and explain-plan check on a large generated data set | MUST | L | US-29-03 |
+| #383 US-03-05 | `GET` collection for workspace members (the settings screens) | SHOULD | S | US-29-03 |
+| #389 US-03-06 | Every member has full access: remove account ownership and sharing grants; every member is a user with a login | MUST | L | — |
+| #390 US-04-06 | Portfolios: rename institutions to user-named portfolios, suggested portfolio type, per-account-type Portfolio View for the tabs | MUST | L | US-29-03 |
 
 ### Track C - UI specification (PO and UX work, days 1-8)
 
@@ -142,7 +144,7 @@ HTML page, reviewed and approved by the PO.
 |---|---|---|---|---|
 | #384 SPIKE OPEN-023 | Web client approach (RISK-010): build a throwaway transaction list on react-native-web against the demo data (sorting, filters, multi-column layout, keyboard navigation, 1,000+ rows). Decide Expo web or a separate React web client; record the decision as ADR 0007. Time box 2 days. | MUST | M | US-07-35 draft endpoint or a JSON fixture |
 | #376 US-01-08 (UX-01) | Information architecture and flows: the navigation tree of section 27 cut to the MVP, the layout per form factor (phone tabs, tablet and web sidebar), and the first-run journey from sign-up to the first overview in under ten minutes (NFR-UX-005) | MUST | S | - |
-| #377 US-01-09 (UX-02) | Screen specifications for sprint 7: Overview (net worth, cash-flow teaser), institution list and institution summary, account detail with transactions, transaction detail with category change. Each spec gives the purpose, every field with its source endpoint and field name, the states (loading, empty, error, offline, estimated, stale, unreconciled, archived, no permission), actions, the beginner and advanced views (NFR-UX-001), and accessibility notes | MUST | M | UX-01 |
+| #377 US-01-09 (UX-02) | Screen specifications for sprint 7: Overview (net worth, cash-flow teaser), portfolio tabs and Portfolio View, account detail with transactions, transaction detail with category change. Each spec gives the purpose, every field with its source endpoint and field name, the states (loading, empty, error, offline, estimated, stale, unreconciled, archived, no permission), actions, the beginner and advanced views (NFR-UX-001), and accessibility notes | MUST | M | UX-01 |
 | #378 US-01-10 (UX-03) | Visual foundations and component inventory: colour, type and spacing tokens for light and dark mode; amount formatting per locale and currency, including negative and estimated values; the one visual treatment for estimated, stale and unreconciled values (NFR-UX-004); the scope bar (FR-CON-006); the list of shared components (amount, value-status badge, scope bar, data table, empty state, error banner); the chosen chart library | MUST | M | UX-01 |
 | #379 US-21-01 (UX-04) | Domain glossary and UX copy EN/DE: the NFR-UX-002 terms with their Swiss and German variants (NFR-I18N-005), and the copy for the sprint-7 screens' empty states and error messages, keyed to the error-code catalogue | SHOULD | S | US-29-04 |
 
@@ -150,9 +152,9 @@ HTML page, reviewed and approved by the PO.
 
 | Issue | Story | Pri | Size | Blocked by |
 |---|---|---|---|---|
-| #385 US-01-06 | Demo workspace: `scripts/seed_demo.py` builds a synthetic workspace through the API (two invented institutions, CHF and EUR current accounts, a card, a savings account, a mortgage, about six months of categorised transactions, one import batch, a snapshot, one estimated and one stale value), idempotent, documented test login with its TOTP secret for local use only; CI runs it against the compose stack | MUST | M | US-05-06 |
+| #385 US-01-06 | Demo workspace: `scripts/seed_demo.py` builds a synthetic workspace through the API (invented portfolios, CHF and EUR current accounts, a card, a savings account, a mortgage, about six months of categorised transactions, one import batch, a snapshot, one estimated and one stale value), idempotent, documented test login with its TOTP secret for local use only; CI runs it against the compose stack | MUST | M | US-05-06 |
 | #386 US-01-07 | `docs/frontend/README.md`: run the stack, seed it, sign in and refresh, call the API with generated types, decimals, `If-Match`, errors, paging, and the screen-to-endpoint map from UX-02 | MUST | S | US-29-05, UX-02 |
-| #387 US-01-11 sprint-7 stories | Write the frontend developer's first stories (home, institutions, account detail, transaction detail and categorise) in full, each linking its UX-02 spec, and put them on Iteration 7 | MUST | S | UX-02, UX-03 |
+| #387 US-01-11 sprint-7 stories | Write the frontend developer's first stories (home, portfolio tabs, account detail, transaction detail and categorise) in full, each linking its UX-02 spec, and put them on Iteration 7 | MUST | S | UX-02, UX-03 |
 
 ## Suggested order
 
@@ -216,3 +218,7 @@ HTML page, reviewed and approved by the PO.
 - The demo login may ship with a documented TOTP secret, created only by the seed script.
 
 - Scope approved; the 17 stories are filed as #371-#387 with the `sprint-6` label and Iteration 6.
+- Later the same day: no ownership or sharing grants within a workspace, and every member is a
+  user with a login (#389). The level below the workspace is the user-named **Portfolio**, shown
+  as tabs (#390, PO input on #377). #380-#383 and #385 were adjusted; both new stories are in
+  sprint 6.
