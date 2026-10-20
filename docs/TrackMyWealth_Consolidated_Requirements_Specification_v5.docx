@@ -252,6 +252,8 @@ A Financial Institution is a container. It is not itself a bank account. Example
  
 A System User is a person who can authenticate to TrackMyWealth. A Workspace Member is a person represented in the financial model. These concepts shall be separate; a child or dependent may be represented financially without having a login.
  
+Every System User is an individual person. The normal case is one user per workspace; it shall also be possible to assign several users to one workspace, for example a couple managing shared finances.
+ 
 **FR-USR-001 — User administration [MUST]**: The system shall provide user administration for authorized administrators.
  
 **FR-USR-002 — Initial administrator [MUST]**: Initial setup shall establish at least one System Administrator.
@@ -2286,7 +2288,7 @@ FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. N
  
 | Term | Meaning in this specification |
 | --- | --- |
-| **Workspace** | The top-level container and tenant isolation boundary (FR-TEN-001). It groups institutions with their bank accounts, portfolios and personal assets, together with budgets and goals, for one or more members. It implies no family or domestic relationship between its members. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. |
+| **Workspace** | The top-level container and tenant isolation boundary (FR-TEN-001). It groups institutions with their bank accounts, portfolios and personal assets, together with budgets and goals, for one or more members. Every user is an individual; the normal case is one user per workspace, and several users can be assigned to the same workspace. The workspace implies no family or domestic relationship between its members. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. |
 | **Financial Institution / Container** | Grouping level for accounts held with one provider. Not itself an account. May be a bank, broker, pension provider, card issuer, asset manager, or the default Personal Assets container. |
 | **Account** | A single financial product within a container. Abstract; always of exactly one concrete type. |
 | **Capability** | Declared property determining what an account can do, independent of its type. |
