@@ -1,7 +1,7 @@
 # Sprint 6 - Everything a frontend developer needs to start in sprint 7
 
 Sprints are the GitHub label `sprint-6` plus Iteration 6 (2026-10-27 to 2026-11-09) on Project #1.
-This file is the overview; the issues (#371-#387, #389, #390) hold the full story text, design and Definition of
+This file is the overview; the issues (#371-#387, #389, #390, #392) hold the full story text, design and Definition of
 Done. The PO approved the scope on 2026-10-20. The draft names UX-01..04 and SPRINT-7 used below map
 to the issue ids in the tables.
 
@@ -134,6 +134,7 @@ Sizes: S up to 1 day, M 2-3 days, L 4-5 days.
 | #383 US-03-05 | `GET` collection for workspace members (the settings screens) | SHOULD | S | US-29-03 |
 | #389 US-03-06 | Every member has full access: remove account ownership and sharing grants; every member is a user with a login | MUST | L | — |
 | #390 US-04-06 | Portfolios: rename institutions to user-named portfolios, suggested portfolio type, per-account-type Portfolio View for the tabs | MUST | L | US-29-03 |
+| #392 US-03-07 | `PUT /api/v1/workspace/name`: the user-defined workspace name, shown as the first overview tab | MUST | S | — |
 
 ### Track C - UI specification (PO and UX work, days 1-8)
 
@@ -221,4 +222,4 @@ HTML page, reviewed and approved by the PO.
 - Later the same day: no ownership or sharing grants within a workspace, and every member is a
   user with a login (#389). The level below the workspace is the user-named **Portfolio**, shown
   as tabs (#390, PO input on #377). #380-#383 and #385 were adjusted; both new stories are in
-  sprint 6.
+  sprint 6. The first tab carries the workspace name, which members can change (#392).
