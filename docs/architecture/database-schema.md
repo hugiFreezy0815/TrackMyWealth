@@ -1248,7 +1248,7 @@ per workspace (`uq_account_workspace_identifier_hash`; a violation is a 409
 `ACCOUNT_IDENTIFIER_IN_USE`). That 409 does not name the other account, but it does tell a member
 with EDIT access to one account that the workspace holds this identifier, possibly on an account
 the member cannot see. This is accepted: the identifier is one the member already knows, a
-workspace is one household, and any refusal of a duplicate would say the same. Archiving an account
+workspace's members share their finances by choice, and any refusal of a duplicate would say the same. Archiving an account
 clears its identifier (no file is matched to it any more), so a successor account can register it;
 a restored account registers it again. `identifier_masked` is the display value: an IBAN's last four
 characters, or a card number masked except for at most its first 6 and last 4 digits (PCI DSS).

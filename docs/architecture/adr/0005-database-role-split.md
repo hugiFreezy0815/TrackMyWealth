@@ -14,7 +14,7 @@ workspace. V20 and `database-schema.md` named the fix - a migration-owner role a
 runtime role - but it was not wired up. #321 (PR #329) first made authentication work under such a
 runtime role (V81's `SECURITY DEFINER` lookups), which unblocked it.
 
-ADR 0001 also has to keep holding: a self-hosting household stands the system up with one
+ADR 0001 also has to keep holding: a self-hosting user stands the system up with one
 `docker compose up`, without a manual database step.
 
 ## Decision
@@ -57,7 +57,7 @@ backs up and runs `role-split.sh` (README, "Database roles"). It hands every obj
 public to the migration role object by object - `REASSIGN OWNED` fails for the bootstrap
 superuser, which also owns system objects - and grants the runtime role. It is idempotent and all
 or nothing. Rejected: converting existing volumes automatically on the next `docker compose up`
-- transparent, but it would change ownership in a household's real database without them
+- transparent, but it would change ownership in a user's real database without them
 deciding to.
 
 ## Consequences

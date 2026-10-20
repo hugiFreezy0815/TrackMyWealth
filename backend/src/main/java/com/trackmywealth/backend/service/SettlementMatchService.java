@@ -301,7 +301,7 @@ public class SettlementMatchService {
   }
 
   // The ids of the workspace's accounts the caller may EDIT - the accounts whose matches the caller
-  // may see and decide. Household scale: a workspace holds tens of accounts.
+  // may see and decide. Workspace scale: a workspace holds tens of accounts.
   private Set<UUID> editableAccountIds(AuthenticatedUserPrincipal actor) {
     UUID memberId = accessControlService.requireActingMember(actor);
     return accessControlService
