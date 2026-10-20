@@ -13,7 +13,7 @@ This edition merges the TrackMyWealth requirements baseline with a competitive s
 | 1.1–1.2 | Market context, competitive positioning and differentiation pillars |
 | 5 | Privacy-motivated and financial-independence personas |
 | 6 | PR-010 to PR-012 — correctness, no silent estimates, graceful degradation |
-| 9.2 | Container rules C1–C9 — empty containers, repeated account types, negative roll-ups, accounts without an institution |
+| 9.2 | Portfolio rules C1–C9 — empty portfolios, repeated account types, negative roll-ups, portfolios without an institution |
 | 10.1–10.3 | Account capability model; discretionary mandates; occupational pension / vested benefits |
 | 11.1 | Currency attribution (local return vs FX contribution) |
 | 12.1 | **Balance ****&**** holdings snapshots and the reconciliation engine** — the single largest addition |
@@ -34,6 +34,7 @@ This edition merges the TrackMyWealth requirements baseline with a competitive s
 | 4, 31 | **User-facing export deferred (OOS-008); statutory portability obligation retained separately** |
 | 52–55 | **New sections — data lifecycle and deletion; concurrency; reference-data distribution; workspace lifecycle** |
 | 56 | Glossary (renumbered) |
+| 7, 9, 27, 36, 58 | **Financial Institution / Container renamed to Portfolio**: a user-named container with an optional institution and a descriptive type suggested from its contents; tab view per portfolio (FR-INS-013); the investment account type is the Depot |
 | 8, 49, 52–56 | **No ownership model and no per-account grants: every member is a System User with full access to the whole workspace**; Couple/family and cross-border personas removed |
 | 7–8, 36, 48, 52–57 | Entity *Household* renamed to **Workspace** (Workspace Member, workspace budget, workspace lifecycle); requirement IDs unchanged |
  
@@ -231,7 +232,7 @@ TrackMyWealth
 |
 +-- Workspace / Financial Context
     +-- Members (System Users)
-    +-- Financial Institutions (Containers)
+    +-- Portfolios (user-named containers)
         +-- Accounts
             +-- Transactions
             +-- Holdings / Positions
@@ -243,7 +244,7 @@ TrackMyWealth
     +-- Goals
     +-- Consolidated Reporting
  
-A Financial Institution is a container. It is not itself a bank account. Examples include PostFinance, Yuh, DKB, Sparkasse and VIAC. One container may hold different account types simultaneously.
+A Portfolio is a container the user names. It is not itself an account. Examples include "PostFinance", "Yuh", "VIAC 3a" and "Home". One portfolio may hold different account types simultaneously — cash, savings, Pillar 3a, depot, crypto, cards, property and mortgage.
  
 # 8. User Administration and Workspace Model
  
@@ -277,7 +278,7 @@ Every System User is an individual person. The normal case is one user per works
  
 ## 8.2 Shared access within a workspace
  
-There is no ownership model. Institutions, accounts, portfolios, personal assets, budgets and goals belong to the workspace. Every member has full access to all of it; no check of who owns or created a record is performed. Separation applies only between workspaces (FR-TEN-001).
+There is no ownership model. Portfolios, accounts, personal assets, budgets and goals belong to the workspace. Every member has full access to all of it; no check of who owns or created a record is performed. Separation applies only between workspaces (FR-TEN-001).
  
 **FR-HOU-001 — Workspace [MUST]**: A workspace shall support one or more members, each of them a System User.
  
@@ -291,35 +292,37 @@ There is no ownership model. Institutions, accounts, portfolios, personal assets
  
 ~~FR-HOU-006 — Ownership changes are dated~~: Withdrawn — no ownership model; all data belongs to the workspace (FR-HOU-007).
  
-**FR-HOU-007 — Full access for every member [MUST]**: Every member of a workspace shall be able to view, create, edit, import and delete all data in that workspace. The system shall not check who owns or created an institution, account, portfolio or any other record.
+**FR-HOU-007 — Full access for every member [MUST]**: Every member of a workspace shall be able to view, create, edit, import and delete all data in that workspace. The system shall not check who owns or created a portfolio, account or any other record.
  
-**FR-HOU-008 — Created and imported data is immediately usable [MUST]**: When a member creates an institution, account or portfolio, it shall be created without any owner assignment or approval step. Data imported into it shall appear in all views and reports of the workspace as soon as the import is committed.
+**FR-HOU-008 — Created and imported data is immediately usable [MUST]**: When a member creates a portfolio or an account, it shall be created without any owner assignment or approval step. Data imported into it shall appear in all views and reports of the workspace as soon as the import is committed.
  
-# 9. Financial Institution / Container
+# 9. Portfolio
  
-The Financial Institution (also referred to as Institution or Container) is the grouping level for products provided by one bank, broker, pension provider or similar financial provider.
+The Portfolio is the user-named container directly below the workspace. It groups the accounts the user wants to see together — typically everything held at one bank, broker or pension provider, but equally a portfolio with no provider at all (personal assets). In banking terms it corresponds to a client’s portfolio with one provider: cash, savings, pension and securities together.
  
-**FR-INS-001 — Institution container [MUST]**: The system shall model institutions independently from accounts.
+A portfolio may be linked to an **institution** (the real bank or provider, from the catalogue or user-defined). The institution supplies logo, country, import templates and connectors; it is an optional attribute of the portfolio, not the portfolio itself. *Formerly called Financial Institution / Container; requirement IDs FR-INS-* are kept. In the current data model and API this level is still named `financial_institution`.*
  
-**FR-INS-002 — Multiple accounts [MUST]**: A container shall support zero to many accounts of different types.
+**FR-INS-001 — Portfolio container [MUST]**: The system shall model portfolios independently from accounts. The user names each portfolio freely.
  
-**FR-INS-003 — Custom institutions [MUST]**: Users shall be able to add institutions not predefined by TrackMyWealth.
+**FR-INS-002 — Multiple accounts [MUST]**: A portfolio shall support zero to many accounts of different types.
  
-**FR-INS-004 — Container currency [MUST]**: When a container is created, a container reporting currency shall be selected.
+**FR-INS-003 — Optional institution [MUST]**: A portfolio may be linked to an institution from the catalogue, to a user-defined institution not predefined by TrackMyWealth, or to none.
  
-**FR-INS-005 — No currency restriction [MUST]**: The container currency shall not restrict the currencies of accounts or securities inside the container.
+**FR-INS-004 — Portfolio currency [MUST]**: When a portfolio is created, a portfolio reporting currency shall be selected.
  
-**FR-INS-006 — Institution summary [MUST]**: Every container shall have a dedicated Institution Summary View.
+**FR-INS-005 — No currency restriction [MUST]**: The portfolio currency shall not restrict the currencies of accounts or securities inside the portfolio.
  
-**FR-INS-007 — Institution catalogue [MUST]**: A curated catalogue of Swiss and German institutions shall ship as seed data — name, country, type, identifier, logo, available import methods — searchable at container creation. The catalogue shall be maintained as configuration data and updatable without an application release.
+**FR-INS-006 — Portfolio view [MUST]**: Every portfolio shall have a dedicated Portfolio View (9.1).
  
-**FR-INS-008 — Institution type is descriptive only [MUST]**: An institution’s type (bank, broker, pension provider, card issuer, asset manager, exchange, other) is metadata for display and filtering. It shall never constrain which account types may be created beneath it. PostFinance is a bank, a broker and a 3a provider simultaneously; Yuh is a bank and a broker. Any validation rule coupling institution type to account type will break the first time a provider expands its offering, and will break for existing users.
+**FR-INS-007 — Institution catalogue [MUST]**: A curated catalogue of Swiss and German institutions shall ship as seed data — name, country, type, identifier, logo, available import methods — searchable at portfolio creation. The catalogue shall be maintained as configuration data and updatable without an application release.
  
-**FR-INS-009 — Institution reassignment [SHOULD]**: Accounts shall be movable between containers without data loss. Institutions merge, rebrand and are acquired.
+**FR-INS-008 — Types are descriptive only [MUST]**: A portfolio’s type and its institution’s type (bank, broker, pension provider, card issuer, asset manager, exchange, other) is metadata for display and filtering. It shall never constrain which account types may be created beneath it. PostFinance is a bank, a broker and a 3a provider simultaneously; Yuh is a bank and a broker. Any validation rule coupling institution type to account type will break the first time a provider expands its offering, and will break for existing users.
  
-**FR-INS-010 — Missing connector never blocks [MUST]**: Any institution may be created and fully used with manual or file-based data alone. Automated connectivity is an optional enhancement layered on top, never a precondition.
+**FR-INS-009 — Account reassignment [SHOULD]**: Accounts shall be movable between portfolios without data loss. Institutions merge, rebrand and are acquired.
  
-## 9.1 Institution Summary View
+**FR-INS-010 — Missing connector never blocks [MUST]**: Any portfolio and institution may be created and fully used with manual or file-based data alone. Automated connectivity is an optional enhancement layered on top, never a precondition.
+ 
+## 9.1 Portfolio View
  
 Where applicable, the summary shall aggregate:
  
@@ -339,33 +342,37 @@ Where applicable, the summary shall aggregate:
  
 - Investment performance, TWR, MWR and asset allocation for investment accounts
  
-**FR-INS-SUM-001 — Container summary currency [MUST]**: Aggregated values in the Institution Summary shall be displayed in the container currency.
+**FR-INS-SUM-001 — Portfolio summary currency [MUST]**: Aggregated values in the Portfolio View shall be displayed in the portfolio currency.
  
-**FR-INS-SUM-002 — Drill-down [MUST]**: Institution summary values shall drill down to contributing accounts, positions or transactions.
+**FR-INS-SUM-002 — Drill-down [MUST]**: Portfolio View values shall drill down to contributing accounts, positions or transactions.
  
-**FR-INS-SUM-003 — Mixed asset and liability display [MUST]**: Where a container holds both assets and liabilities, the summary net value may legitimately be negative — a Sparkasse container holding a current account and a mortgage is the normal case. Negative container totals shall be displayed correctly and shall not be presented as an error state.
+**FR-INS-SUM-003 — Mixed asset and liability display [MUST]**: Where a portfolio holds both assets and liabilities, the summary net value may legitimately be negative — a Sparkasse portfolio holding a current account and a mortgage is the normal case. Negative portfolio totals shall be displayed correctly and shall not be presented as an error state.
  
-**FR-INS-SUM-004 — Summary currency transparency [MUST]**: Where the summary converts from account currencies to the container currency, the applied FX rate and its date shall be inspectable.
+**FR-INS-SUM-004 — Summary currency transparency [MUST]**: Where the summary converts from account currencies to the portfolio currency, the applied FX rate and its date shall be inspectable.
  
-## 9.2 Container rules
+**FR-INS-013 — Tab view per portfolio [MUST]**: The workspace overview shall show one tab for the whole workspace (all portfolios aggregated) followed by one tab per portfolio and an “add portfolio” action. A portfolio tab shows the portfolio total and its value chart, followed by one section per account type it contains, each displayed in the form suited to that type: cash and savings as a balance list; Pillar 3a and pension with value and return; a depot with positions, allocation and performance sub-tabs; crypto with positions; cards with balance and due date; property with value and the linked mortgage. Sections for account types the portfolio does not contain are not shown.
  
-The container is a generic grouping device. It holds no balance, no behaviour and no currency of its own beyond its chosen reporting currency.
+**FR-INS-014 — Portfolio type suggested from contents [SHOULD]**: A portfolio shall carry a descriptive type — Bank, Portfolio (securities), Pillar 3a, Pension fund, Crypto, Personal assets or Mixed — that the system suggests from the account types it contains and the user may override. The type is a display badge and filter only (FR-INS-008).
+ 
+## 9.2 Portfolio rules
+ 
+The portfolio is a generic grouping device. It holds no balance, no behaviour and no currency of its own beyond its chosen reporting currency.
  
 | Rule | Statement |
 | --- | --- |
-| C1 | A container holds 0..n accounts of **heterogeneous types** in any mixture |
-| C2 | An account belongs to **exactly one** container at a time (reassignable per FR-INS-009) |
-| C3 | **Container type never constrains account type** (FR-INS-008) |
-| C4 | The **same account type may occur repeatedly** in one container — three current accounts at UBS, two Pillar 3a accounts at VIAC, which is normal Swiss practice for staggered withdrawal. Account identity is therefore never the pair (container, type). |
-| C5 | A container may hold accounts in **different currencies** simultaneously |
-| C6 | A container may mix assets and liabilities, so its roll-up may be **negative** (FR-INS-SUM-003) |
-| C7 | A container may be **empty** and remain valid |
-| C8 | All container-level figures are **derived**, never stored |
-| C9 | **A container need not be an institution.** A default *Personal Assets* container holds items held with no provider — real estate, vehicles, precious metals, collectibles. Every account has a parent; some parents are not companies. |
+| C1 | A portfolio holds 0..n accounts of **heterogeneous types** in any mixture |
+| C2 | An account belongs to **exactly one** portfolio at a time (reassignable per FR-INS-009) |
+| C3 | **Portfolio type never constrains account type** (FR-INS-008) |
+| C4 | The **same account type may occur repeatedly** in one portfolio — three current accounts at UBS, two Pillar 3a accounts at VIAC, which is normal Swiss practice for staggered withdrawal. Account identity is therefore never the pair (portfolio, type). |
+| C5 | A portfolio may hold accounts in **different currencies** simultaneously |
+| C6 | A portfolio may mix assets and liabilities, so its roll-up may be **negative** (FR-INS-SUM-003) |
+| C7 | A portfolio may be **empty** and remain valid |
+| C8 | All portfolio-level figures are **derived**, never stored |
+| C9 | **A portfolio need not have an institution.** A default *Personal Assets* portfolio holds items held with no provider — real estate, vehicles, precious metals, collectibles. Every account has a parent; some parents are not companies. |
  
-**FR-INS-011 — Personal Assets container [MUST]**: A default container shall exist for assets and liabilities not held at any institution, so that the tree remains uniform and no account is orphaned. See OPEN-012 regarding whether a privately held mortgage attaches here or to the lending institution.
+**FR-INS-011 — Personal Assets portfolio [MUST]**: A default portfolio shall exist for assets and liabilities not held at any institution, so that the tree remains uniform and no account is orphaned. See OPEN-012 regarding whether a privately held mortgage attaches here or to the lending institution.
  
-**FR-INS-012 — Extensibility verification [MUST]**: Introducing a new account type shall require no change to container logic, tree navigation or the consolidation layer. *Verification: add a new account type in a test build and confirm no consolidation code is modified.*
+**FR-INS-012 — Extensibility verification [MUST]**: Introducing a new account type shall require no change to portfolio logic, tree navigation or the consolidation layer. *Verification: add a new account type in a test build and confirm no consolidation code is modified.*
  
 # 10. Account Model
  
@@ -383,9 +390,9 @@ The container is a generic grouping device. It holds no balance, no behaviour an
 | Cryptocurrency Account / Wallet | Exchange, hardware/software wallet or manual wallet |
 | Custom Asset | Real estate, vehicles, precious metals, collectibles |
  
-**FR-ACC-001 — Account attributes [MUST]**: Each account shall store institution, name, account type, native currency, status and optional identifiers.
+**FR-ACC-001 — Account attributes [MUST]**: Each account shall store portfolio, name, account type, native currency, status and optional identifiers.
  
-**FR-ACC-002 — Native account currency [MUST]**: Each account shall retain its own account currency independently of container and user reporting currencies.
+**FR-ACC-002 — Native account currency [MUST]**: Each account shall retain its own account currency independently of portfolio and user reporting currencies.
  
 **FR-ACC-003 — Archive accounts [MUST]**: Closed accounts shall be archivable without deleting history.
  
@@ -403,7 +410,7 @@ The account **type** answers *what it is*. **Capabilities** answer *what it can 
  
 **FR-ACC-011 — Capability, not sub-type, drives variation [MUST]**: Behaviour that varies within a type shall be expressed as capability data, not as additional sub-types. **Pension is the proof case:** a VIAC Pillar 3a holds fund positions and must be performance-measurable exactly like a depot; a PostFinance Pillar 3a may be interest-bearing only; a Pillar 2 is a vested benefit with no visible positions. Creating SecuritiesPension, CashPension and OccupationalPension as separate types multiplies with every provider and jurisdiction added. One pension type with capability flags does not.
  
-**FR-ACC-012 — Uniform valuation interface [MUST]**: Every account type, whatever its internals, shall expose the same contract to the rest of the system: a signed value in its own currency at any given date, a currency, an asset/liability nature and a parent container. Consolidation, net worth, allocation and navigation shall consume only this interface and shall never branch on account type.
+**FR-ACC-012 — Uniform valuation interface [MUST]**: Every account type, whatever its internals, shall expose the same contract to the rest of the system: a signed value in its own currency at any given date, a currency, an asset/liability nature and a parent portfolio. Consolidation, net worth, allocation and navigation shall consume only this interface and shall never branch on account type.
  
 **FR-ACC-013 — Nature derived from type [MUST]**: Asset/liability nature shall be derived from account type and applied as a sign in all aggregation, so that a mortgage can never be added to rather than subtracted from net worth.
  
@@ -430,37 +437,37 @@ TrackMyWealth shall distinguish four currency concepts:
 | Level | Meaning | Example |
 | --- | --- | --- |
 | User reporting currency | Currency for the user’s global consolidated view | CHF |
-| Container currency | Currency for one institution’s summary | DKB = EUR |
+| Portfolio currency | Currency for one portfolio’s summary | DKB = EUR |
 | Account / transaction currency | Native/source currency of the underlying financial record | USD account / EUR transaction |
 | Security price/listing currency | Currency in which a market price is quoted | AAPL listing in USD |
  
 User reporting currency (e.g. CHF)
         ^
         |  FX conversion
-Container currency (e.g. EUR)
+Portfolio currency (e.g. EUR)
         ^
         |  FX conversion if required
 Account / Transaction / Price currency (source currency)
  
 **FR-CUR-001 — User reporting currency [MUST]**: A reporting currency shall be selected for the user and used by the global consolidated view.
  
-**FR-CUR-002 — Container currency [MUST]**: A container currency shall be selected when an institution is created.
+**FR-CUR-002 — Portfolio currency [MUST]**: A portfolio currency shall be selected when a portfolio is created.
  
 **FR-CUR-003 — Preserve source currency [MUST]**: Currency conversion shall never overwrite original amounts or source currencies.
  
 **FR-CUR-004 — Consolidated conversion [MUST]**: All consolidated monetary values shall be converted to the logged-in user’s reporting currency.
  
-**FR-CUR-005 — Institution conversion [MUST]**: Institution Summary values shall be converted to the container currency.
+**FR-CUR-005 — Portfolio conversion [MUST]**: Portfolio View values shall be converted to the portfolio currency.
  
 **FR-CUR-006 — Historical FX [MUST]**: Historical reports shall use historically appropriate FX rates.
  
 **FR-CUR-007 — FX provenance [MUST]**: Stored FX rates shall identify currency pair, date, rate and data source.
  
-**FR-CUR-008 — Change reporting currency [MUST]**: Changing a reporting/container currency shall recalculate derived views without modifying source data.
+**FR-CUR-008 — Change reporting currency [MUST]**: Changing a reporting/portfolio currency shall recalculate derived views without modifying source data.
  
 **FR-CUR-009 — Initial currencies [MUST]**: CHF and EUR shall be first-class; the architecture shall support USD, GBP and additional currencies needed by portfolios.
  
-**FR-CUR-010 — Single conversion step [MUST]**: Conversion from an account currency to the user reporting currency shall use the direct pair where available, and shall not chain through the container currency. Chained conversion compounds rounding error and can make a container summary and the consolidated view disagree on the same account.
+**FR-CUR-010 — Single conversion step [MUST]**: Conversion from an account currency to the user reporting currency shall use the direct pair where available, and shall not chain through the portfolio currency. Chained conversion compounds rounding error and can make a portfolio summary and the consolidated view disagree on the same account.
  
 **FR-CUR-011 — Conversion date convention [MUST]**: The methodology shall define, and document, which date’s rate applies to each figure class: transaction-date rate for realised flows, valuation-date rate for balances and holdings, period-end rate for closing positions. Mixing conventions silently is a common source of unexplainable differences.
  
@@ -484,7 +491,7 @@ Transactions are a central source of truth for cash-flow, budgeting and investme
  
 **FR-TRX-004 — Duplicate detection [MUST]**: Repeated imports shall detect probable duplicates.
  
-**FR-TRX-005 — Search/filter [MUST]**: Transactions shall be searchable/filterable by date, institution, account, amount, currency, category, type, and merchant/description.
+**FR-TRX-005 — Search/filter [MUST]**: Transactions shall be searchable/filterable by date, portfolio, account, amount, currency, category, type, and merchant/description.
  
 **FR-TRX-006 — Split transactions [SHOULD]**: A transaction should support multiple category allocations where required.
  
@@ -630,7 +637,7 @@ Cash-account transactions shall be categorized to support meaningful spending re
  
 **FR-NW-003 — Manual valuations [MUST]**: Custom assets shall support dated valuations.
  
-**FR-NW-004 — Scope breakdown [MUST]**: Net worth shall be analyzable by institution, account, asset class and currency.
+**FR-NW-004 — Scope breakdown [MUST]**: Net worth shall be analyzable by portfolio, account, asset class and currency.
  
 **FR-NW-005 — Contribution versus performance [MUST]**: Change in net worth over a period shall be decomposable into money added or withdrawn versus value gained or lost. Without this, a user who saved diligently during a falling market cannot tell that they did the right thing, and the headline number actively misleads.
  
@@ -755,7 +762,7 @@ GICS shall be the canonical standard for grouping applicable corporate/equity ex
  
 **FR-GICS-001 — GICS hierarchy [MUST]**: Support Sector > Industry Group > Industry > Sub-Industry.
  
-**FR-GICS-002 — Cross-depot grouping [MUST]**: GICS analysis shall work across one depot, one institution, selected depots or the whole workspace portfolio.
+**FR-GICS-002 — Cross-depot grouping [MUST]**: GICS analysis shall work across one depot, one portfolio, selected depots or the whole workspace.
  
 **FR-GICS-003 — Applicability [MUST]**: Do not assign artificial GICS classifications to assets for which GICS is not applicable. GICS classifies companies, not instruments: it says nothing about bonds, commodities, crypto, cash or property. It is a grouping dimension inside the equity sleeve, layered on top of the asset class, never a replacement for it.
  
@@ -831,7 +838,7 @@ GICS shall be the canonical standard for grouping applicable corporate/equity ex
  
 **FR-PERF-005 — Periods [MUST]**: Support YTD, 1M, 1Y, 3Y, 5Y, max and custom date ranges as applicable.
  
-**FR-PERF-006 — Scope [MUST]**: Performance shall work at position, depot, institution, selected portfolios and workspace levels where meaningful.
+**FR-PERF-006 — Scope [MUST]**: Performance shall work at position, depot, portfolio, selected portfolios and workspace levels where meaningful.
  
 **FR-PERF-007 — Benchmarking [MUST]**: Allow comparison with selectable benchmarks.
  
@@ -871,7 +878,7 @@ GICS shall be the canonical standard for grouping applicable corporate/equity ex
  
 **FR-ALL-005 — Currency [MUST]**: Analyze currency exposure.
  
-**FR-ALL-006 — Institution/account [MUST]**: Analyze by institution/container and depot/account.
+**FR-ALL-006 — Portfolio/account [MUST]**: Analyze by portfolio and depot/account.
  
 **FR-ALL-007 — Direct/indirect exposure [SHOULD]**: Where look-through data exists, distinguish direct holdings from indirect ETF/fund exposure.
  
@@ -889,7 +896,7 @@ This is differentiation pillar D2. Swiss users routinely hold a large equity all
  
 **FR-DIV-001 — Dividend transactions [MUST]**: Recognize dividends as a distinct investment transaction type.
  
-**FR-DIV-002 — History [MUST]**: Provide dividend history by security, account, institution and period.
+**FR-DIV-002 — History [MUST]**: Provide dividend history by security, account, portfolio and period.
  
 **FR-DIV-003 — Calendar/forecast [SHOULD]**: Expected dividend calendar/forecast may be added where reliable data exists.
  
@@ -905,7 +912,7 @@ No tax-oriented dividend analysis is in scope.
  
 Pension is in scope as a financial account category and as a savings goal. It is not in scope as tax optimisation (OOS-004).
  
-**FR-PEN-001 — Pension as account type [MUST]**: Pension accounts shall be first-class accounts within the container model, with locked-until or withdrawal-condition semantics reflected in the liquidity view (FR-NW-008).
+**FR-PEN-001 — Pension as account type [MUST]**: Pension accounts shall be first-class accounts within the portfolio model, with locked-until or withdrawal-condition semantics reflected in the liquidity view (FR-NW-008).
  
 **FR-PEN-002 — Multiple Pillar 3a accounts [MUST]**: A workspace may hold several Pillar 3a accounts, at one provider or several. This is standard Swiss practice for staggered withdrawal and is a normal case, not an edge case (rule C4).
  
@@ -959,17 +966,17 @@ The global Consolidated View is the top-level financial overview and shall prese
  
 **FR-CON-002 — Historical conversion [MUST]**: Historical consolidated values shall use historical FX rates.
  
-**FR-CON-003 — Global scope selector [MUST]**: Reports shall support scope by workspace, institution, account, selected accounts or investments only.
+**FR-CON-003 — Global scope selector [MUST]**: Reports shall support scope by workspace, portfolio, account, selected accounts or investments only.
  
 **FR-CON-004 — Date range [MUST]**: Relevant reports shall support date-range filtering.
  
-**FR-CON-005 — Drill-down [MUST]**: Users shall drill from global values to institution, account, security/category and transaction.
+**FR-CON-005 — Drill-down [MUST]**: Users shall drill from global values to portfolio, account, security/category and transaction.
  
 **FR-CON-006 — Consistent scope across views [MUST]**: The selected scope shall apply consistently across all views and remain visible at all times, so that two figures on screen are never computed over different scopes without the user knowing.
  
 **FR-CON-007 — Data-quality banner [MUST]**: Where the consolidated view includes unreconciled accounts, stale prices or estimated valuations, this shall be indicated at the level of the headline figure, not only in a detail view (PR-011).
  
-**FR-CON-008 — Reconciliation of the whole [SHOULD]**: The sum of all Institution Summary net values, converted to the reporting currency, shall equal the consolidated net worth. Any residual arising from conversion timing shall be identified rather than absorbed.
+**FR-CON-008 — Reconciliation of the whole [SHOULD]**: The sum of all Portfolio View net values, converted to the reporting currency, shall equal the consolidated net worth. Any residual arising from conversion timing shall be identified rather than absorbed.
  
 # 27. Example Application Structure
  
@@ -981,31 +988,31 @@ TrackMyWealth
 |   +-- Income / Expenses / Savings
 |   +-- Goals
 |
-+-- Institutions
-|   +-- PostFinance (Container Currency: CHF)
-|   |   +-- Institution Summary
++-- Portfolios
+|   +-- PostFinance (Portfolio Currency: CHF)
+|   |   +-- Portfolio View
 |   |   +-- Cash Account
 |   |   +-- Savings Account
 |   |   +-- Depot
 |   |   +-- Credit Card
 |   |
-|   +-- DKB (Container Currency: EUR)
-|   |   +-- Institution Summary
+|   +-- DKB (Portfolio Currency: EUR)
+|   |   +-- Portfolio View
 |   |   +-- Girokonto
 |   |   +-- Tagesgeld
 |   |   +-- Depot
 |   |
-|   +-- Broker X (Container Currency: USD)
-|   |   +-- Institution Summary
+|   +-- Broker X (Portfolio Currency: USD)
+|   |   +-- Portfolio View
 |   |   +-- USD/EUR/CHF Cash Accounts
 |   |   +-- Depot
 |   |
-|   +-- Personal Assets (Container Currency: CHF)
+|   +-- Personal Assets (Portfolio Currency: CHF)
 |       +-- Real Estate
 |       +-- Mortgage
 |
 +-- Investments
-|   +-- Portfolio
+|   +-- Positions
 |   +-- Performance / TWR / MWR
 |   +-- Asset Class
 |   +-- GICS
@@ -1022,7 +1029,7 @@ TrackMyWealth
     +-- Backup
     +-- Administration / Users
  
-*Change from the baseline: real estate and mortgage are shown inside a Personal Assets container rather than attached directly to the workspace, so that rule C2 (every account has exactly one parent container) holds without exception. See OPEN-012.*
+*Change from the baseline: real estate and mortgage are shown inside a Personal Assets portfolio rather than attached directly to the workspace, so that rule C2 (every account has exactly one parent portfolio) holds without exception. See OPEN-012.*
  
 # 28. Import and Integration Requirements
  
@@ -1216,7 +1223,7 @@ Backup is a separate concern from export and remains fully in scope.
  
 **NFR-UX-001 — Progressive disclosure [MUST]**: Advanced analytics shall not overwhelm beginner users.
  
-**NFR-UX-002 — Consistent terminology [MUST]**: Institution/Container, Account, Transaction, Security, Position, Asset, Liability and Workspace shall have consistent meanings.
+**NFR-UX-002 — Consistent terminology [MUST]**: Portfolio, Institution, Depot, Account, Transaction, Security, Position, Asset, Liability and Workspace shall have consistent meanings.
  
 **NFR-UX-003 — Explainability [SHOULD]**: Users should be able to understand the source/calculation behind important figures.
  
@@ -1244,7 +1251,7 @@ Backup is a separate concern from export and remains fully in scope.
  
 **NFR-REL-001 — Atomic updates [MUST]**: Multi-record financial operations/imports shall not leave partially committed states.
  
-**NFR-REL-002 — Integrity constraints [MUST]**: Institution/account/transaction/holding relationships shall be protected by data-integrity rules enforced at the data layer, not only in application code.
+**NFR-REL-002 — Integrity constraints [MUST]**: Portfolio/account/transaction/holding relationships shall be protected by data-integrity rules enforced at the data layer, not only in application code.
  
 **NFR-REL-003 — Schema migration safety [MUST]**: Migrations shall never silently relocate or alter user-visible balances. Where a structural change moves where a value appears, the change shall be explained in-app. A competitor’s mid-2026 restructuring of cash accounts demonstrated the cost of doing this silently.
  
@@ -1263,11 +1270,11 @@ These are engineering targets to be validated during prototyping rather than con
  
 # 35. Core Business Rules
  
-**RULE-001 [MANDATORY]**: A Financial Institution is a container, not an account.
+**RULE-001 [MANDATORY]**: A Portfolio is a container, not an account.
  
-**RULE-002 [MANDATORY]**: A container may hold multiple account types.
+**RULE-002 [MANDATORY]**: A portfolio may hold multiple account types.
  
-**RULE-003 [MANDATORY]**: Every container has a container currency and an Institution Summary.
+**RULE-003 [MANDATORY]**: Every portfolio has a portfolio currency and a Portfolio View.
  
 **RULE-004 [MANDATORY]**: Each user has a reporting currency for the global Consolidated View.
  
@@ -1301,11 +1308,11 @@ These are engineering targets to be validated during prototyping rather than con
  
 **RULE-019 [MANDATORY]**: Tax functionality is completely out of scope.
  
-**RULE-020 [MANDATORY]**: Container type never constrains which account types may exist inside it.
+**RULE-020 [MANDATORY]**: Portfolio type never constrains which account types may exist inside it.
  
-**RULE-021 [MANDATORY]**: An account belongs to exactly one container; a container may be empty; a container roll-up may be negative.
+**RULE-021 [MANDATORY]**: An account belongs to exactly one portfolio; a portfolio may be empty; a portfolio roll-up may be negative.
  
-**RULE-022 [MANDATORY]**: The same account type may occur several times within one container.
+**RULE-022 [MANDATORY]**: The same account type may occur several times within one portfolio.
  
 **RULE-023 [MANDATORY]**: Account type is immutable after creation.
  
@@ -1337,8 +1344,10 @@ SystemUser
  
 Workspace
 +-- WorkspaceMember = SystemUser, full access [1..n]
-+-- FinancialInstitution [0..n]            <<container>>
-|   +-- ContainerCurrency
++-- Portfolio [0..n]                      <<container>>, user-named
+|   +-- Institution [0..1]                 bank/broker/provider, optional
+|   +-- PortfolioType (descriptive, suggested)
+|   +-- PortfolioCurrency
 |   +-- Account [0..n]                     <<abstract>>
 |       +-- AccountType (immutable)
 |       +-- Capabilities (holds_positions, has_transactions,
@@ -1399,7 +1408,7 @@ The MVP shall establish a correct, extensible financial foundation. Priority are
  
 - Workspace and member model
  
-- Financial Institution/Container model including container currency and Institution Summary
+- Portfolio model including portfolio currency and Portfolio View
  
 - Account model for all required account types, with the capability model
  
@@ -1475,7 +1484,7 @@ This document is the baseline from which a requirements engineer creates detaile
  
 - EPIC 03 — Workspace & Members
  
-- EPIC 04 — Financial Institutions / Containers
+- EPIC 04 — Portfolios (formerly Financial Institutions / Containers)
  
 - EPIC 05 — Account Management
  
@@ -1503,7 +1512,7 @@ This document is the baseline from which a requirements engineer creates detaile
  
 - EPIC 17 — Asset Allocation / GICS / SNB
  
-- EPIC 18 — Institution Summary
+- EPIC 18 — Portfolio View
  
 - EPIC 19 — Consolidated Reporting
  
@@ -1627,13 +1636,13 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
  
 **OPEN-011 — CLOSED**: Self-hosting is a first-class topology from the outset (48.1). Client-server synchronisation is not required, as the client is online-only (NFR-CON-001).
  
-**OPEN-012 [TBD]**: Do assets held with no provider (real estate, vehicles, private loans) attach to a default *Personal Assets* container, or may an account exist with no container? The baseline structure diagram implies the latter; rule C2 assumes the former. A privately held mortgage is the awkward case — it has a lender, which is arguably an institution. *Recommendation: default container, for tree uniformity.*
+**OPEN-012 [TBD]**: Do assets held with no provider (real estate, vehicles, private loans) attach to a default *Personal Assets* portfolio, or may an account exist with no portfolio? The baseline structure diagram implies the latter; rule C2 assumes the former. A privately held mortgage is the awkward case — it has a lender, which is arguably an institution. *Recommendation: default container, for tree uniformity.*
  
 **OPEN-013 — CLOSED**: Resolved per topology (48.2). Hosted service uses the operator’s pooled licence; self-hosted uses the deploying user’s own entitlement or manual prices.
  
 **OPEN-014 — CLOSED**: One deployment, one database, concurrent independent sessions with workspace-scoped isolation (48.4, 49).
  
-**OPEN-015 [TBD]**: Is the Institution Summary displayable only in the container currency, or also switchable to the user reporting currency? The former is simpler and matches FR-INS-SUM-001; the latter is what many users will expect when comparing institutions.
+**OPEN-015 [TBD]**: Is the Portfolio View displayable only in the portfolio currency, or also switchable to the user reporting currency? The former is simpler and matches FR-INS-SUM-001; the latter is what many users will expect when comparing portfolios.
  
 **OPEN-016 [TBD]**: Which market leads — CH or DE? They require different first connectors, different institution catalogues and different launch messaging. Building both fully in parallel roughly doubles the critical path. DE is faster to reach because PSD2 connectivity is purchasable; CH is more defensible because bLink access and bank relationships are hard to replicate.
  
@@ -1683,25 +1692,25 @@ User A — Reporting Currency: CHF
  
 Workspace
 |
-+-- PostFinance (Container Currency: CHF)
++-- PostFinance (Portfolio Currency: CHF)
 |   +-- Cash Account CHF
 |   +-- Savings Account CHF
 |   +-- Depot
 |   +-- Credit Card
 |
-+-- DKB (Container Currency: EUR)
++-- DKB (Portfolio Currency: EUR)
 |   +-- Girokonto EUR
 |   +-- Tagesgeld EUR
 |   +-- Depot
 |
-+-- Broker X (Container Currency: USD)
++-- Broker X (Portfolio Currency: USD)
 |   +-- Cash USD / EUR / CHF
 |   +-- Depot with USD/EUR/CHF listings
 |
-+-- VIAC (Container Currency: CHF)
++-- VIAC (Portfolio Currency: CHF)
 |   +-- Pillar 3a (holding fund positions)
 |
-+-- Personal Assets (Container Currency: CHF)
++-- Personal Assets (Portfolio Currency: CHF)
     +-- Real Estate
     +-- Mortgage
  
@@ -1709,7 +1718,7 @@ Consolidated View -> CHF
  
 The system shall correctly provide:
  
-- Institution summaries in CHF, EUR and USD respectively
+- Portfolio summaries in CHF, EUR and USD respectively
  
 - A global consolidated overview in CHF for User A
  
@@ -1747,7 +1756,7 @@ The system shall correctly provide:
  
 # 44. Final Product Definition
  
-TrackMyWealth is a bilingual, privacy-first personal financial management application for Switzerland and Germany, delivered as browser and native mobile clients against a REST API, and deployable either on infrastructure the user controls or as a hosted service. It models financial institutions as currency-aware containers containing different account types; categorizes bank and credit-card transactions for spending reports; centralizes portfolio security master data and historical prices; and consolidates assets, liabilities, cash flow and investment analytics into one user-defined reporting currency.
+TrackMyWealth is a bilingual, privacy-first personal financial management application for Switzerland and Germany, delivered as browser and native mobile clients against a REST API, and deployable either on infrastructure the user controls or as a hosted service. It models user-named portfolios as currency-aware containers containing different account types; categorizes bank and credit-card transactions for spending reports; centralizes portfolio security master data and historical prices; and consolidates assets, liabilities, cash flow and investment analytics into one user-defined reporting currency.
  
 The system is designed to support both understandable personal finance and advanced private-investor analysis while remaining under the user’s control. It provides information and analysis only: no payment execution, trade execution, professional financial advice, tax functionality, private-equity valuation or public social-network features.
  
@@ -2075,7 +2084,7 @@ This follows from three requirements already in force and is not an independent 
 | Snapshot | Superseded by a later snapshot; retained | Never |
 | Import batch | Rollback as hard delete **only while unmodified** (52.3) | Conditionally |
 | Account | Archive once it holds any transaction, position or snapshot | Only if empty |
-| Financial institution | Delete only when it contains no accounts | Only if empty |
+| Portfolio | Delete only when it contains no accounts | Only if empty |
 | Category | Deactivate; historical assignments preserved | Only if never used |
 | Categorization rule | Delete freely; not historical data | Yes |
 | Budget / Goal | Archive; historical periods preserved | Only if never active |
@@ -2112,7 +2121,7 @@ A flat void-everything rule is correct for imported data but poor usability for 
  
 **FR-LIF-007 — Cascade is explicit and previewed [MUST]**: Any action affecting dependent records shall state what will be affected before confirmation — how many transactions, which positions, which budgets. There shall be no silent cascade.
  
-**FR-LIF-008 — No orphans [MUST]**: Referential integrity shall be enforced at the data layer: no account without a container, no transaction without an account, no position without a security.
+**FR-LIF-008 — No orphans [MUST]**: Referential integrity shall be enforced at the data layer: no account without a portfolio, no transaction without an account, no position without a security.
  
 ## 52.3 Import batch rollback
  
@@ -2206,7 +2215,7 @@ Data that must be updatable independently of application logic: the institution 
  
 **FR-REF-008 — Rollback [SHOULD]**: The previous reference-data version shall be restorable.
  
-**FR-REF-009 — Never overwrites user data [MUST]**: A package shall never overwrite user-created institutions, user-defined templates, user category customisations or user overrides (FR-CAT-014, FR-SMD-013).
+**FR-REF-009 — Never overwrites user data [MUST]**: A package shall never overwrite user-created portfolios or institutions, user-defined templates, user category customisations or user overrides (FR-CAT-014, FR-SMD-013).
  
 ## 55.3 Staleness
  
@@ -2285,9 +2294,11 @@ FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. N
  
 | Term | Meaning in this specification |
 | --- | --- |
-| **Workspace** | The top-level container and tenant isolation boundary (FR-TEN-001). It groups institutions with their bank accounts, portfolios and personal assets, together with budgets and goals, for one or more members, each a System User with full access to all of it. Every user is an individual; the normal case is one user per workspace, and several users can be assigned to the same workspace. The workspace implies no family or domestic relationship between its members. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. |
-| **Financial Institution / Container** | Grouping level for accounts held with one provider. Not itself an account. May be a bank, broker, pension provider, card issuer, asset manager, or the default Personal Assets container. |
-| **Account** | A single financial product within a container. Abstract; always of exactly one concrete type. |
+| **Workspace** | The top-level container and tenant isolation boundary (FR-TEN-001). It groups the user’s portfolios with their bank accounts, depots and personal assets, together with budgets and goals, for one or more members, each a System User with full access to all of it. Every user is an individual; the normal case is one user per workspace, and several users can be assigned to the same workspace. The workspace implies no family or domestic relationship between its members. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. |
+| **Portfolio** | User-named container directly below the workspace, grouping accounts of any type — typically everything held with one provider. Not itself an account. Optionally linked to an institution; carries a descriptive type (Bank, Portfolio, Pillar 3a, Pension fund, Crypto, Personal assets, Mixed). The default Personal Assets portfolio has no institution. Formerly *Financial Institution / Container*. |
+| **Institution** | The real bank, broker, pension provider or card issuer behind a portfolio — from the catalogue or user-defined. Supplies logo, import templates and connectors. Optional. |
+| **Depot** | Securities account: an account type holding positions in securities. Where the specification says *portfolio* in the sense of investment analytics, it means the positions across depots. |
+| **Account** | A single financial product within a portfolio. Abstract; always of exactly one concrete type. |
 | **Capability** | Declared property determining what an account can do, independent of its type. |
 | **Transaction** | A dated financial event. |
 | **Snapshot** | A provider-reported observation of state at a point in time — balance and/or holdings. Not derivable from transactions. |
@@ -2299,5 +2310,5 @@ FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. N
 | **TWR** | Time-weighted return — measures the investment strategy, removing the effect of contribution timing. |
 | **MWR** | Money-weighted return — measures the user’s actual experience, including contribution timing. |
 | **Reporting currency** | The currency of a user’s global consolidated view. |
-| **Container currency** | The currency of one institution’s summary. |
+| **Portfolio currency** | The currency of one portfolio’s summary. |
 | **Estimated value** | Any figure derived from incomplete data — always visibly marked. |
