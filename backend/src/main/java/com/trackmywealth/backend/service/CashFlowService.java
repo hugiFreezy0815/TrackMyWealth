@@ -78,7 +78,7 @@ public class CashFlowService {
   // true cost including any FX fee") is exactly this: it must show up in spending on its own. A
   // card payment typed EXPENSE or WITHDRAWAL is kept out again by settlement matching
   // (SettlementDetectionService), never here. REFUND offsets spending (US-07-18), not income.
-  // US-10-01: what the household earns. A refund is not income (it undoes spending); a DEPOSIT is
+  // US-10-01: what the workspace earns. A refund is not income (it undoes spending); a DEPOSIT is
   // money moved in, which is either a transfer or of unknown origin.
   private static final Set<String> INCOME_TYPES = Set.of("INCOME", "INTEREST", "DIVIDEND");
 

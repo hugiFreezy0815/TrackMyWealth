@@ -204,7 +204,7 @@ public class SharingGrantService {
     UUID actingMemberId = accessControlService.requireActingMember(actor);
 
     // Revoking requires the same FULL access the original grant did - not "only the original
-    // granter may revoke": household membership changes over time (a granter could themselves be
+    // granter may revoke": workspace membership changes over time (a granter could themselves be
     // deactivated later), and anyone who currently has FULL access to a scope is, by definition,
     // trusted to manage sharing for it. #122: unless the actor is the SYSTEM_ADMINISTRATOR who
     // granted this, and it is the scope's sole remaining grant - see this class's own Javadoc.

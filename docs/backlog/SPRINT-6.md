@@ -44,7 +44,7 @@ the screens look like:
 
 | Available | Where |
 |---|---|
-| Navigation tree: Overview, Institutions with their accounts, Investments, Cash Flow, Budget, Goals, Household, Settings | Spec section 27, FR-NAV-01 |
+| Navigation tree: Overview, Institutions with their accounts, Investments, Cash Flow, Budget, Goals, Workspace, Settings | Spec section 27, FR-NAV-01 |
 | UX rules: progressive disclosure, consistent terminology, explainable figures, a visual treatment for estimated, stale and unreconciled values, time to first insight under ten minutes | Spec section 32, NFR-UX-001..005 |
 | Scope always visible, aggregates within the authorised scope, negative totals shown as negative | FR-CON-006, FR-ALL-009, FR-TEN-011, FR-NAV-15 |
 | EN/DE, locale formatting (CHF `1'234.56`, EUR `1.234,56`), WCAG 2.2 AA, screen protection on balance screens | NFR-I18N-001..005, NFR-USE-03, FR-CLI-005 |

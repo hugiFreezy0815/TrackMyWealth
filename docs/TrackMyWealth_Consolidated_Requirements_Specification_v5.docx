@@ -32,8 +32,9 @@ This edition merges the TrackMyWealth requirements baseline with a competitive s
 | 48–51 | **New sections — deployment topologies and tenancy; authentication and authorization; API and client applications; operations and data protection** |
 | 30 | Local-first restated as deployment sovereignty; offline requirements replaced with online-only behaviour |
 | 4, 31 | **User-facing export deferred (OOS-008); statutory portability obligation retained separately** |
-| 52–55 | **New sections — data lifecycle and deletion; concurrency; reference-data distribution; household lifecycle** |
+| 52–55 | **New sections — data lifecycle and deletion; concurrency; reference-data distribution; workspace lifecycle** |
 | 56 | Glossary (renumbered) |
+| 7–8, 36, 48, 52–57 | Entity *Household* renamed to **Workspace** (Workspace Member, workspace budget, workspace lifecycle); requirement IDs unchanged |
  
 | Item | Baseline |
 | --- | --- |
@@ -229,7 +230,7 @@ TrackMyWealth
 |   +-- Users
 |   +-- Roles / Permissions
 |
-+-- Household / Financial Context
++-- Workspace / Financial Context
     +-- Members / Owners
     +-- Financial Institutions (Containers)
         +-- Accounts
@@ -245,11 +246,11 @@ TrackMyWealth
  
 A Financial Institution is a container. It is not itself a bank account. Examples include PostFinance, Yuh, DKB, Sparkasse and VIAC. One container may hold different account types simultaneously.
  
-# 8. User Administration and Household Model
+# 8. User Administration and Workspace Model
  
-## 8.1 System user versus household member
+## 8.1 System user versus workspace member
  
-A System User is a person who can authenticate to TrackMyWealth. A Household Member is a person represented in the financial model. These concepts shall be separate; a child or dependent may be represented financially without having a login.
+A System User is a person who can authenticate to TrackMyWealth. A Workspace Member is a person represented in the financial model. These concepts shall be separate; a child or dependent may be represented financially without having a login.
  
 **FR-USR-001 — User administration [MUST]**: The system shall provide user administration for authorized administrators.
  
@@ -265,13 +266,13 @@ A System User is a person who can authenticate to TrackMyWealth. A Household Mem
  
 **FR-USR-007 — User reporting currency [MUST]**: A reporting currency shall be selected for each user profile and used for that user’s consolidated views.
  
-**FR-USR-008 — Household link [MUST]**: A System User may be linked to a Household Member.
+**FR-USR-008 — Workspace link [MUST]**: A System User may be linked to a Workspace Member.
  
 **FR-USR-009 — RBAC [MUST]**: Administrative permissions shall be enforced through role-based authorization, not UI hiding alone.
  
 **FR-USR-010 — Financial-access separation [MUST]**: System administration rights and financial-data access shall be modeled as distinct permission concerns.
  
-**FR-USR-011 — Disabled user data retention [MUST]**: Disabling a System User shall not delete or orphan the financial data of the linked Household Member. Ownership records reference the Member, not the User.
+**FR-USR-011 — Disabled user data retention [MUST]**: Disabling a System User shall not delete or orphan the financial data of the linked Workspace Member. Ownership records reference the Member, not the User.
  
 ## 8.2 Ownership model
  
@@ -279,11 +280,11 @@ A System User is a person who can authenticate to TrackMyWealth. A Household Mem
  
 - Joint ownership
  
-- Household ownership
+- Workspace ownership
  
 - Child/dependent
  
-**FR-HOU-001 — Household [MUST]**: The financial model shall support one or more household members/owners.
+**FR-HOU-001 — Workspace [MUST]**: The financial model shall support one or more workspace members/owners.
  
 **FR-HOU-002 — Ownership assignment [MUST]**: Accounts and relevant assets/liabilities shall be assignable to an owner or ownership context.
  
@@ -291,7 +292,7 @@ A System User is a person who can authenticate to TrackMyWealth. A Household Mem
  
 **FR-HOU-004 — Future privacy levels [SHOULD]**: The architecture should support no access, balance-only, read, edit and full access for future multi-user sharing.
  
-**FR-HOU-005 — Ownership-aware aggregation [MUST]**: Where fractional or joint ownership applies, consolidated figures scoped to a single person shall apply the ownership share. Household-scoped figures shall count the full amount exactly once, never double-counting a jointly owned account across two members.
+**FR-HOU-005 — Ownership-aware aggregation [MUST]**: Where fractional or joint ownership applies, consolidated figures scoped to a single person shall apply the ownership share. Workspace-scoped figures shall count the full amount exactly once, never double-counting a jointly owned account across two members.
  
 **FR-HOU-006 — Ownership changes are dated [SHOULD]**: A change of ownership shall carry an effective date so historical reports remain reproducible.
  
@@ -598,7 +599,7 @@ Cash-account transactions shall be categorized to support meaningful household r
  
 **FR-BUD-002 — Budget progress [MUST]**: Show budgeted amount, actual amount, remaining amount and utilization.
  
-**FR-BUD-003 — Household budget [MUST]**: Support household-level budgets.
+**FR-BUD-003 — Workspace budget [MUST]**: Support workspace-level budgets.
  
 **FR-BUD-004 — Savings rate [MUST]**: Calculate a savings rate from configurable classification rules.
  
@@ -606,7 +607,7 @@ Cash-account transactions shall be categorized to support meaningful household r
  
 **FR-BUD-006 — Sankey cash flow [SHOULD]**: Provide a money-flow/Sankey visualization in a post-MVP phase.
  
-**FR-BUD-007 — Budget proposal from history [SHOULD]**: When a user first creates budgets, the system shall propose category amounts derived from that household’s own actual transaction history rather than presenting empty fields. The design thesis, validated by BlueBudget, is that budgets entered as intentions fail while budgets derived from observed behaviour hold.
+**FR-BUD-007 — Budget proposal from history [SHOULD]**: When a user first creates budgets, the system shall propose category amounts derived from that workspace’s own actual transaction history rather than presenting empty fields. The design thesis, validated by BlueBudget, is that budgets entered as intentions fail while budgets derived from observed behaviour hold.
  
 **FR-BUD-008 — Irregular and annual costs [SHOULD]**: Budgeting shall accommodate non-monthly obligations — insurance premiums, Serafe, annual subscriptions, tax instalments — by amortising them across months or flagging them as upcoming, so that a month containing one is not misread as an overspend.
  
@@ -755,7 +756,7 @@ GICS shall be the canonical standard for grouping applicable corporate/equity ex
  
 **FR-GICS-001 — GICS hierarchy [MUST]**: Support Sector > Industry Group > Industry > Sub-Industry.
  
-**FR-GICS-002 — Cross-depot grouping [MUST]**: GICS analysis shall work across one depot, one institution, selected depots, a person or the household portfolio.
+**FR-GICS-002 — Cross-depot grouping [MUST]**: GICS analysis shall work across one depot, one institution, selected depots, a person or the workspace portfolio.
  
 **FR-GICS-003 — Applicability [MUST]**: Do not assign artificial GICS classifications to assets for which GICS is not applicable. GICS classifies companies, not instruments: it says nothing about bonds, commodities, crypto, cash or property. It is a grouping dimension inside the equity sleeve, layered on top of the asset class, never a replacement for it.
  
@@ -831,7 +832,7 @@ GICS shall be the canonical standard for grouping applicable corporate/equity ex
  
 **FR-PERF-005 — Periods [MUST]**: Support YTD, 1M, 1Y, 3Y, 5Y, max and custom date ranges as applicable.
  
-**FR-PERF-006 — Scope [MUST]**: Performance shall work at position, depot, institution, selected portfolios, owner and household-investment levels where meaningful.
+**FR-PERF-006 — Scope [MUST]**: Performance shall work at position, depot, institution, selected portfolios, owner and workspace levels where meaningful.
  
 **FR-PERF-007 — Benchmarking [MUST]**: Allow comparison with selectable benchmarks.
  
@@ -907,7 +908,7 @@ Pension is in scope as a financial account category and as a savings goal. It is
  
 **FR-PEN-001 — Pension as account type [MUST]**: Pension accounts shall be first-class accounts within the container model, with locked-until or withdrawal-condition semantics reflected in the liquidity view (FR-NW-008).
  
-**FR-PEN-002 — Multiple Pillar 3a accounts [MUST]**: A household may hold several Pillar 3a accounts, at one provider or several. This is standard Swiss practice for staggered withdrawal and is a normal case, not an edge case (rule C4).
+**FR-PEN-002 — Multiple Pillar 3a accounts [MUST]**: A workspace may hold several Pillar 3a accounts, at one provider or several. This is standard Swiss practice for staggered withdrawal and is a normal case, not an edge case (rule C4).
  
 **FR-PEN-003 — Contribution limit tracking [SHOULD]**: Annual contribution progress against the applicable limit shall be trackable, with the limit held as effective-dated configuration data rather than in code. This is a savings-goal feature: it shows whether a savings target has been met, and makes no tax statement.
  
@@ -959,7 +960,7 @@ The global Consolidated View is the top-level financial overview and shall prese
  
 **FR-CON-002 — Historical conversion [MUST]**: Historical consolidated values shall use historical FX rates.
  
-**FR-CON-003 — Global scope selector [MUST]**: Reports shall support scope by household, person, institution, account, selected accounts or investments only.
+**FR-CON-003 — Global scope selector [MUST]**: Reports shall support scope by workspace, person, institution, account, selected accounts or investments only.
  
 **FR-CON-004 — Date range [MUST]**: Relevant reports shall support date-range filtering.
  
@@ -1015,14 +1016,14 @@ TrackMyWealth
 +-- Cash Flow
 +-- Budget
 +-- Goals
-+-- Household
++-- Workspace
 +-- Settings
     +-- Language
     +-- Data & Privacy
     +-- Backup
     +-- Administration / Users
  
-*Change from the baseline: real estate and mortgage are shown inside a Personal Assets container rather than attached directly to the household, so that rule C2 (every account has exactly one parent container) holds without exception. See OPEN-012.*
+*Change from the baseline: real estate and mortgage are shown inside a Personal Assets container rather than attached directly to the workspace, so that rule C2 (every account has exactly one parent container) holds without exception. See OPEN-012.*
  
 # 28. Import and Integration Requirements
  
@@ -1200,7 +1201,7 @@ Backup is a separate concern from export and remains fully in scope.
  
 **FR-BCK-005 — Backup responsibility is explicit [MUST]**: Backup responsibility differs by topology and shall be stated in-product. In a self-hosted deployment the operator of that deployment carries the durability risk and shall be prompted, with the date of the last successful backup shown. In the hosted service, backup is the service operator’s responsibility under the targets in section 51. **With export deferred, a self-hosting household’s only protection against data loss is its own backup, which raises the importance of this requirement.**
  
-**FR-BCK-006 — Backup is deployment-level, not tenant-level [MUST]**: With export deferred, backup operates on the deployment as a whole rather than on an individual household. In a multi-tenant hosted deployment, backup and restore therefore cannot serve as a per-household data-retrieval mechanism, which is why FR-POR-001 exists separately.
+**FR-BCK-006 — Backup is deployment-level, not tenant-level [MUST]**: With export deferred, backup operates on the deployment as a whole rather than on an individual workspace. In a multi-tenant hosted deployment, backup and restore therefore cannot serve as a per-workspace data-retrieval mechanism, which is why FR-POR-001 exists separately.
  
 # 32. Localization and UX
  
@@ -1216,7 +1217,7 @@ Backup is a separate concern from export and remains fully in scope.
  
 **NFR-UX-001 — Progressive disclosure [MUST]**: Advanced analytics shall not overwhelm beginner users.
  
-**NFR-UX-002 — Consistent terminology [MUST]**: Institution/Container, Account, Transaction, Security, Position, Asset, Liability and Household shall have consistent meanings.
+**NFR-UX-002 — Consistent terminology [MUST]**: Institution/Container, Account, Transaction, Security, Position, Asset, Liability and Workspace shall have consistent meanings.
  
 **NFR-UX-003 — Explainability [SHOULD]**: Users should be able to understand the source/calculation behind important figures.
  
@@ -1252,11 +1253,11 @@ Backup is a separate concern from export and remains fully in scope.
  
 | Area | Initial target |
 | --- | --- |
-| Main dashboard | Approximately < 1 second for a typical local household dataset after required data is loaded |
+| Main dashboard | Approximately < 1 second for a typical local workspace dataset after required data is loaded |
 | Transaction filtering/search | Approximately < 500 ms for ~100,000 transactions on supported hardware |
 | Common portfolio calculations | Approximately < 2 seconds for normal private-investor datasets |
 | Import preview | Approximately < 5 seconds for ~10,000 records |
-| Full historical recomputation | Approximately < 60 seconds for a large household dataset, as a background task with progress indication |
+| Full historical recomputation | Approximately < 60 seconds for a large workspace dataset, as a background task with progress indication |
 | Daily valuation series build | Incremental daily update shall not block interactive use |
  
 These are engineering targets to be validated during prototyping rather than contractual service levels.
@@ -1297,7 +1298,7 @@ These are engineering targets to be validated during prototyping rather than con
  
 **RULE-017 [MANDATORY]**: Historical security master/prices required by reports are retained after a position is sold.
  
-**RULE-018 [MANDATORY]**: System User and Household Member are separate concepts.
+**RULE-018 [MANDATORY]**: System User and Workspace Member are separate concepts.
  
 **RULE-019 [MANDATORY]**: Tax functionality is completely out of scope.
  
@@ -1333,10 +1334,10 @@ SystemUser
 +-- Role / Permissions
 +-- Language
 +-- ReportingCurrency
-+-- optional link -> HouseholdMember
++-- optional link -> WorkspaceMember
  
-Household
-+-- HouseholdMember / Ownership (share %, effective-dated)
+Workspace
++-- WorkspaceMember / Ownership (share %, effective-dated)
 +-- FinancialInstitution [0..n]            <<container>>
 |   +-- ContainerCurrency
 |   +-- Account [0..n]                     <<abstract>>
@@ -1397,7 +1398,7 @@ The MVP shall establish a correct, extensible financial foundation. Priority are
  
 - User administration, authentication baseline, user language and user reporting currency
  
-- Household/member and ownership model
+- Workspace/member and ownership model
  
 - Financial Institution/Container model including container currency and Institution Summary
  
@@ -1473,7 +1474,7 @@ This document is the baseline from which a requirements engineer creates detaile
  
 - EPIC 02 — User Administration & Authorization
  
-- EPIC 03 — Household & Ownership
+- EPIC 03 — Workspace & Ownership
  
 - EPIC 04 — Financial Institutions / Containers
  
@@ -1591,7 +1592,7 @@ Each development-ready user story should include:
  
 - **Volumetrics** (NFR-OPS-007) — outstanding
  
-- **Confirmed household sharing model** (OPEN-021) — outstanding
+- **Confirmed workspace sharing model** (OPEN-021) — outstanding
  
 - **Lifecycle state machine definitions** (FR-LIF-010)
  
@@ -1623,7 +1624,7 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
  
 **OPEN-009 [TBD]**: Corporate-action and adjusted-price methodology
  
-**OPEN-010 [TBD]**: Future multi-user household permission semantics
+**OPEN-010 [TBD]**: Future multi-user workspace permission semantics
  
 **OPEN-011 — CLOSED**: Self-hosting is a first-class topology from the outset (48.1). Client-server synchronisation is not required, as the client is online-only (NFR-CON-001).
  
@@ -1631,7 +1632,7 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
  
 **OPEN-013 — CLOSED**: Resolved per topology (48.2). Hosted service uses the operator’s pooled licence; self-hosted uses the deploying user’s own entitlement or manual prices.
  
-**OPEN-014 — CLOSED**: One deployment, one database, concurrent independent sessions with household-scoped isolation (48.4, 49).
+**OPEN-014 — CLOSED**: One deployment, one database, concurrent independent sessions with workspace-scoped isolation (48.4, 49).
  
 **OPEN-015 [TBD]**: Is the Institution Summary displayable only in the container currency, or also switchable to the user reporting currency? The former is simpler and matches FR-INS-SUM-001; the latter is what many users will expect when comparing institutions.
  
@@ -1645,7 +1646,7 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
  
 **OPEN-020 [TBD]**: Are discretionary mandates (VIAC, frankly, True Wealth) and Pillar 2 / vested-benefit accounts confirmed in MVP scope, or deferred? Both are proposed in sections 10.2 and 10.3 as SHOULD.
  
-**OPEN-021 [TBD]**: Household sharing model — confirm the provisional resolution in FR-TEN-008. Strict isolation with explicit, revocable, granular grants, reconciling the “no user sees another user’s finances” requirement with household budgets and FR-HOU-004 privacy levels.
+**OPEN-021 [TBD]**: Workspace sharing model — confirm the provisional resolution in FR-TEN-008. Strict isolation with explicit, revocable, granular grants, reconciling the “no user sees another user’s finances” requirement with workspace budgets and FR-HOU-004 privacy levels.
  
 **OPEN-022 [TBD]**: Registration model for the hosted service — self-service signup, invite-only, or admin-provisioned. Section 8 currently describes admin provisioning, which suits self-hosting but not a public service.
  
@@ -1671,17 +1672,17 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
  
 **OPEN-034 [TBD]**: Who curates and publishes reference bundles, where they are obtained, and at what cadence (FR-REF-012). Required before launch, since manual import is now the only update channel.
  
-**OPEN-035 [TBD]**: Should one person be able to belong to two households — an adult managing their own and a parent’s finances? Currently unsupported (55.2).
+**OPEN-035 [TBD]**: Should one person be able to belong to two workspaces — an adult managing their own and a parent’s finances? Currently unsupported (55.2).
  
 **OPEN-031 [TBD]**: When does user-facing export return? Three consequences follow from its deferral and should be accepted knowingly rather than discovered later: no supported topology migration (NFR-DEP-006); no route for a user or adviser to derive tax figures externally, now that tax reporting is also out of scope (OOS-004); and no user-side recovery path if a hosted account is closed or the service is discontinued. None is a defect — export is a real cost and deferring it is a reasonable MVP decision — but each is a commitment made by omission.
  
 # 43. Representative Acceptance Scenario
  
-A representative household shall be able to model the following structure and receive correct consolidated results:
+A representative workspace shall be able to model the following structure and receive correct consolidated results:
  
 User A — Reporting Currency: CHF
  
-Household
+Workspace
 |
 +-- PostFinance (Container Currency: CHF)
 |   +-- Cash Account CHF
@@ -1767,7 +1768,7 @@ Its distinguishing commitment is correctness: figures are reconciled against wha
 | RISK-008 | **Self-hosted durability.** A self-hosting household loses data to disk failure with no operator-side copy, and with export deferred has no secondary recovery route. | Medium | FR-BCK-004/005 backup prompting and verification; documented in self-hosting guidance |
 | RISK-009 | **Single-maintainer sustainability** for an open-source financial product with recurring data-provider dependencies. | Medium | Address alongside OPEN-003 and OPEN-013 |
 | RISK-012 | **Reference data goes stale under manual-only distribution.** Pension contribution limits above all: an outdated limit produces wrong goal tracking with no visible cause. | Medium | FR-REF-010/011 staleness warnings; effective-dated data marked estimated when no current entry exists |
-| RISK-013 | **Household-splitting constraints erode before the feature arrives.** FR-HHL-001 to 005 are easy to violate accidentally once nobody remembers why they exist. | Medium | Automated check that no derived artefact embeds a household identifier; record the rationale at the ownership relation |
+| RISK-013 | **Workspace-splitting constraints erode before the feature arrives.** FR-HHL-001 to 005 are easy to violate accidentally once nobody remembers why they exist. | Medium | Automated check that no derived artefact embeds a workspace identifier; record the rationale at the ownership relation |
 | RISK-014 | **Void-based correction is misread as a bug.** Users seeing a reversing entry alongside the original may report duplicated data. | Low | FR-LIF-003 presentation rules; voided items shown as voided, not duplicated |
  
 # 46. Calculation Methodology Definitions
@@ -1777,7 +1778,7 @@ To be formally specified before implementation, satisfying NFR-CALC-003. Each de
 | Metric | Definition to be fixed |
 | --- | --- |
 | **Net worth** | Sum of asset account values minus liability account values at a date, in the reporting currency, using valuation-date FX. Ownership share applied for person-scoped views. |
-| **TWR** | Geometric linking of sub-period returns bounded by external cash flows into or out of the measured scope. Definition must state what counts as external at each scope level — a transfer between two of the user’s own depots is external to each depot but internal to the household. |
+| **TWR** | Geometric linking of sub-period returns bounded by external cash flows into or out of the measured scope. Definition must state what counts as external at each scope level — a transfer between two of the user’s own depots is external to each depot but internal to the workspace. |
 | **MWR** | Internal rate of return (XIRR) over dated external cash flows plus the closing value. Definition must state the convergence tolerance and the behaviour when no solution exists or several do. |
 | **Modified Dietz** | Permitted approximation where intraday valuation is unavailable; the periods where it was applied must be recorded. |
 | **Savings rate** | Definition must fix whether employer pension contributions, mortgage principal repayment and unrealised gains are included (FR-BUD-009). |
@@ -1827,7 +1828,7 @@ TrackMyWealth is delivered as a client application and a server API. The client 
 |  | **Self-hosted** | **Hosted service** |
 | --- | --- | --- |
 | Who runs the API and database | The user or household | The service operator |
-| Typical tenants per deployment | One household | Many households |
+| Typical tenants per deployment | One workspace | Many workspaces |
 | Registration | Bootstrap administrator at first run, then admin-provisioned users | Per business model (OPEN-022) |
 | Market-data entitlement | Supplied by the deploying user, or manual prices | Operator’s licence, proxied |
 | Licensed classification data (GICS) | Not distributed; fallback taxonomy or the user’s own entitlement | Operator’s licence |
@@ -1840,11 +1841,11 @@ TrackMyWealth is delivered as a client application and a server API. The client 
  
 **NFR-DEP-003 — Client is topology-agnostic [MUST]**: The client shall be pointed at an API base URL and shall behave identically regardless of where that API runs. The mobile applications shall permit configuring the server endpoint.
  
-**NFR-DEP-004 — No trusted-deployment shortcut [MUST]**: Authorization, tenant isolation and audit shall be enforced identically in a single-household self-hosted deployment. A deployment believed to have one tenant is not permitted to relax any control; families self-host, and the multi-user requirement applies there too.
+**NFR-DEP-004 — No trusted-deployment shortcut [MUST]**: Authorization, tenant isolation and audit shall be enforced identically in a single-workspace self-hosted deployment. A deployment believed to have one tenant is not permitted to relax any control; families self-host, and the multi-user requirement applies there too.
  
 **NFR-DEP-005 — Self-hosted deployment is a first-class deliverable [MUST]**: Container images and a documented, reproducible deployment procedure including database migration shall be part of every release, not an afterthought.
  
-**NFR-DEP-006 — Migration between topologies [COULD]**: Moving a household between topologies was previously to be achieved through export and import. With export deferred (OOS-008), no supported migration path exists in the MVP other than a full database transfer between deployments, which is only viable where the source deployment holds a single household. This is a consequence of the export decision and is recorded rather than solved. See OPEN-031.
+**NFR-DEP-006 — Migration between topologies [COULD]**: Moving a workspace between topologies was previously to be achieved through export and import. With export deferred (OOS-008), no supported migration path exists in the MVP other than a full database transfer between deployments, which is only viable where the source deployment holds a single workspace. This is a consequence of the export decision and is recorded rather than solved. See OPEN-031.
  
 ## 48.2 Data entitlement per topology
  
@@ -1886,9 +1887,9 @@ The baseline recorded here supersedes the technology-neutral stance previously e
  
 The controlling requirement: **an authenticated user shall see only data they are entitled to, and by default that is only their own.**
  
-**FR-TEN-001 — Tenant is the household [MUST]**: The isolation boundary shall be the household. Every financial record shall be attributable to exactly one household.
+**FR-TEN-001 — Tenant is the workspace [MUST]**: The isolation boundary shall be the workspace. Every financial record shall be attributable to exactly one workspace.
  
-**FR-TEN-002 — Deny by default [MUST]**: Access shall be denied unless an explicit grant exists. There shall be no implicit visibility derived from being in the same household, the same deployment, or the same database.
+**FR-TEN-002 — Deny by default [MUST]**: Access shall be denied unless an explicit grant exists. There shall be no implicit visibility derived from being in the same workspace, the same deployment, or the same database.
  
 **FR-TEN-003 — Isolation enforced at the data layer [MUST]**: Tenant isolation shall be enforced in PostgreSQL — row-level security or an equivalent mechanism that cannot be bypassed by a query written in the application. Service-layer filtering alone is insufficient: a single forgotten predicate in one query is the entire failure.
  
@@ -1898,15 +1899,15 @@ The controlling requirement: **an authenticated user shall see only data they ar
  
 **FR-TEN-006 — Consistent denial [MUST]**: An unauthorized request for an existing object and a request for a non-existent object shall be indistinguishable in response and in timing, so that identifiers cannot be probed.
  
-**FR-TEN-007 — Administrative rights are not financial rights [MUST]**: A System Administrator can manage users, roles and system configuration. This shall confer **no** access to any household’s financial data. The two permission domains are separate (FR-USR-010), and this separation shall hold in a self-hosted deployment where the administrator is also a household member — their financial access derives from their household membership alone.
+**FR-TEN-007 — Administrative rights are not financial rights [MUST]**: A System Administrator can manage users, roles and system configuration. This shall confer **no** access to any workspace’s financial data. The two permission domains are separate (FR-USR-010), and this separation shall hold in a self-hosted deployment where the administrator is also a workspace member — their financial access derives from their workspace membership alone.
  
-**FR-TEN-008 — Sharing is explicit and granular [MUST]**: Where household members share financial visibility, it shall arise from an explicit, revocable grant at account or scope level, with the levels of FR-HOU-004 — no access, balance only, read, edit, full. Shared constructs such as household budgets shall be modelled as objects owned by the household with their own grants, not as an implied merge of members’ private data. *Provisional resolution of the contradiction noted in review; confirm as B5.*
+**FR-TEN-008 — Sharing is explicit and granular [MUST]**: Where workspace members share financial visibility, it shall arise from an explicit, revocable grant at account or scope level, with the levels of FR-HOU-004 — no access, balance only, read, edit, full. Shared constructs such as workspace budgets shall be modelled as objects owned by the workspace with their own grants, not as an implied merge of members’ private data. *Provisional resolution of the contradiction noted in review; confirm as B5.*
  
 **FR-TEN-009 — Grant changes are immediate and audited [MUST]**: Revoking a grant shall take effect on the next request, not on token expiry (see FR-AUT-006).
  
 **FR-TEN-010 — Cross-tenant test suite [MUST]**: An automated test suite shall attempt cross-tenant access against every endpoint and every object type, and shall run in continuous integration. Isolation is asserted by tests, not by inspection.
  
-**FR-TEN-011 — Aggregates respect scope [MUST]**: Every aggregate, chart and export shall be computed strictly within the requesting principal’s authorized scope, with the scope visible (FR-CON-006). A shared account in a joint household shall be counted exactly once (FR-HOU-005).
+**FR-TEN-011 — Aggregates respect scope [MUST]**: Every aggregate, chart and export shall be computed strictly within the requesting principal’s authorized scope, with the scope visible (FR-CON-006). A shared account in a joint workspace shall be counted exactly once (FR-HOU-005).
  
 # 49. Authentication, Sessions and Authorization
  
@@ -2002,7 +2003,7 @@ The controlling requirement: **an authenticated user shall see only data they ar
  
 **FR-JOB-006 — Backdated edits trigger targeted recomputation [MUST]**: Editing or importing a transaction dated in the past shall invalidate and rebuild only the affected derived data from that date forward. See OPEN-017 on whether the daily valuation series is stored or computed on demand.
  
-**FR-JOB-007 — Job observability [MUST]**: Job status, last successful run and failures shall be visible to a deployment administrator, and failures affecting a household’s figures shall be visible to that household as a data-quality indicator (FR-CON-007).
+**FR-JOB-007 — Job observability [MUST]**: Job status, last successful run and failures shall be visible to a deployment administrator, and failures affecting a workspace’s figures shall be visible to that workspace as a data-quality indicator (FR-CON-007).
  
 ## 51.2 Hosted service operations
  
@@ -2024,9 +2025,9 @@ These apply to the hosted topology. A self-hosted operator is responsible for th
  
 | Dimension | Required figure |
 | --- | --- |
-| Accounts per household | *to be supplied* |
-| Transactions per household per year | *to be supplied* |
-| Securities held per household | *to be supplied* |
+| Accounts per workspace | *to be supplied* |
+| Transactions per workspace per year | *to be supplied* |
+| Securities held per workspace | *to be supplied* |
 | Years of history retained | *to be supplied* |
 | Distinct securities across all tenants | *to be supplied* |
 | Tenants at launch / at 3 years | *to be supplied* |
@@ -2044,13 +2045,13 @@ Holding Swiss and German residents’ financial data on an operated service make
  
 **NFR-DPR-003 — Subject rights [MUST]**: Access, rectification, erasure and portability shall be operable within statutory deadlines. With user-facing export deferred, portability is satisfied by the operator-side procedure of FR-POR-001, which shall be documented and tested before the hosted service accepts its first external user.
  
-**NFR-DPR-004 — Deletion is real and bounded [MUST]**: Household erasure shall remove tenant data within a stated period, including from backups within the published retention window. Erasure operates at household level, not selectively within history (FR-LIF-020). Shared reference data is not tenant data and is unaffected (NFR-LIC-007).
+**NFR-DPR-004 — Deletion is real and bounded [MUST]**: Workspace erasure shall remove tenant data within a stated period, including from backups within the published retention window. Erasure operates at workspace level, not selectively within history (FR-LIF-020). Shared reference data is not tenant data and is unaffected (NFR-LIC-007).
  
 **NFR-DPR-005 — Retention policy [MUST]**: Retention periods for financial records, audit logs and backups shall be defined. See OPEN-028.
  
 **NFR-DPR-006 — Breach response [MUST]**: A documented breach detection and notification process meeting both regimes’ deadlines.
  
-**NFR-DPR-007 — Provider disclosure minimisation [MUST]**: Requests to external providers shall be aggregated across tenants so that a provider cannot attribute a security lookup to an individual household (NFR-SEC-006, NFR-LIC-007).
+**NFR-DPR-007 — Provider disclosure minimisation [MUST]**: Requests to external providers shall be aggregated across tenants so that a provider cannot attribute a security lookup to an individual workspace (NFR-SEC-006, NFR-LIC-007).
  
 **NFR-DPR-008 — Self-hosted controller guidance [SHOULD]**: Documentation shall make clear that a self-hosting household is its own controller and that the project processes none of their data.
  
@@ -2079,10 +2080,10 @@ This follows from three requirements already in force and is not an independent 
 | Category | Deactivate; historical assignments preserved | Only if never used |
 | Categorization rule | Delete freely; not historical data | Yes |
 | Budget / Goal | Archive; historical periods preserved | Only if never active |
-| Household member | Deactivate if they own or co-own anything | Only if they own nothing |
+| Workspace member | Deactivate if they own or co-own anything | Only if they own nothing |
 | System user | Disable; linked member data unaffected (FR-USR-011) | Only if never linked |
 | Security master record | Retained while referenced (FR-SMD-005) | Only if unreferenced |
-| Household (tenant) | **Hard delete — the erasure path** | Yes |
+| Workspace (tenant) | **Hard delete — the erasure path** | Yes |
  
 **FR-LIF-002 — Void semantics [MUST]**: Voiding a transaction shall create a reversing entry dated to the void, referencing the original, and shall mark the original with voided_at, voided_by and a reason. Both records remain in the ledger. Derived data shall be recalculated from the affected date forward (FR-JOB-006).
  
@@ -2124,25 +2125,25 @@ A flat void-everything rule is correct for imported data but poor usability for 
  
 ## 52.4 Retention and erasure
  
-**FR-LIF-020 — Tenant erasure [MUST]**: Deleting a household shall remove all of its data — transactions, accounts, snapshots, derived data, grants, and audit entries containing personal data — within the period stated in NFR-DPR-004, including from backups within the published retention window.
+**FR-LIF-020 — Tenant erasure [MUST]**: Deleting a workspace shall remove all of its data — transactions, accounts, snapshots, derived data, grants, and audit entries containing personal data — within the period stated in NFR-DPR-004, including from backups within the published retention window.
  
 **FR-LIF-021 — Shared reference data survives erasure [MUST]**: Security master records, price series and FX series carry no tenant identity and are unaffected (NFR-LIC-007).
  
-**FR-LIF-022 — Erasure is the only selective-deletion answer [MUST]**: The system shall not offer deletion of individual historical records to satisfy an erasure request. Erasure operates at household granularity. This shall be stated in the privacy documentation, as it is a consequence of the append-only ledger.
+**FR-LIF-022 — Erasure is the only selective-deletion answer [MUST]**: The system shall not offer deletion of individual historical records to satisfy an erasure request. Erasure operates at workspace granularity. This shall be stated in the privacy documentation, as it is a consequence of the append-only ledger.
  
 **FR-LIF-023 — Erasure is confirmed and delayed [MUST]**: Tenant erasure shall require recent authentication (FR-AUT-012), explicit confirmation, and a cancellable grace period before execution.
  
-# 53. Household Lifecycle
+# 53. Workspace Lifecycle
  
-Confirmed direction: household splitting is **not an MVP feature**, but the model shall not foreclose it. Anticipating it now costs four constraints and no functionality. Retrofitting it later means rewriting ownership, grants and every historical aggregate.
+Confirmed direction: workspace splitting is **not an MVP feature**, but the model shall not foreclose it. Anticipating it now costs four constraints and no functionality. Retrofitting it later means rewriting ownership, grants and every historical aggregate.
  
 ## 53.1 Constraints enabling later splitting
  
-**FR-HHL-001 — Ownership is an effective-dated association [MUST]**: Ownership shall be a dated relationship between household member and account, carrying a share where fractional — never a column on the account (FR-HOU-006).
+**FR-HHL-001 — Ownership is an effective-dated association [MUST]**: Ownership shall be a dated relationship between workspace member and account, carrying a share where fractional — never a column on the account (FR-HOU-006).
  
-**FR-HHL-002 — Household assignment is mutable [MUST]**: An account’s household assignment shall be changeable. No query, index, cache or derived artefact may assume it is fixed for the account’s lifetime.
+**FR-HHL-002 — Workspace assignment is mutable [MUST]**: An account’s workspace assignment shall be changeable. No query, index, cache or derived artefact may assume it is fixed for the account’s lifetime.
  
-**FR-HHL-003 — No denormalised household identifier in derived data [MUST]**: Derived artefacts shall not embed a household identifier in a way that cannot be rebuilt from source records (FR-DAT-008). Isolation predicates shall resolve household membership through the ownership relation rather than a copied key.
+**FR-HHL-003 — No denormalised workspace identifier in derived data [MUST]**: Derived artefacts shall not embed a workspace identifier in a way that cannot be rebuilt from source records (FR-DAT-008). Isolation predicates shall resolve workspace membership through the ownership relation rather than a copied key.
  
 **FR-HHL-004 — Membership history is retained [MUST]**: Joining and leaving shall be recorded with effective dates rather than overwriting current membership.
  
@@ -2150,29 +2151,29 @@ Confirmed direction: household splitting is **not an MVP feature**, but the mode
  
 ## 53.2 Policy decisions recorded in advance
  
-**FR-HHL-010 — History follows the account [MUST]**: Where an account moves to another household, its complete history moves with it, and the originating household’s historical reports change retroactively as a result. The alternative — history staying behind — leaves both parties permanently incomplete, which is worse. Recorded now so that no interim design assumes the opposite.
+**FR-HHL-010 — History follows the account [MUST]**: Where an account moves to another workspace, its complete history moves with it, and the originating workspace’s historical reports change retroactively as a result. The alternative — history staying behind — leaves both parties permanently incomplete, which is worse. Recorded now so that no interim design assumes the opposite.
  
-**FR-HHL-011 — Retroactive change is disclosed [MUST]**: Where a structural change causes historical figures to change, affected households shall be informed in-application (NFR-REL-003).
+**FR-HHL-011 — Retroactive change is disclosed [MUST]**: Where a structural change causes historical figures to change, affected workspaces shall be informed in-application (NFR-REL-003).
  
-**FR-HHL-012 — Member deactivation retains history [MUST]**: A departing member is deactivated; their historical ownership and the transactions of accounts they owned remain with the household unless and until those accounts are moved.
+**FR-HHL-012 — Member deactivation retains history [MUST]**: A departing member is deactivated; their historical ownership and the transactions of accounts they owned remain with the workspace unless and until those accounts are moved.
  
-**FR-HHL-013 — One household per person in MVP [MUST]**: Multi-household membership — someone managing their own and a relative’s finances — is out of MVP scope. The model shall not preclude it: the member-to-household relation shall be structurally many-to-many even while the application enforces one. See OPEN-032.
+**FR-HHL-013 — One workspace per person in MVP [MUST]**: Multi-workspace membership — someone managing their own and a relative’s finances — is out of MVP scope. The model shall not preclude it: the member-to-workspace relation shall be structurally many-to-many even while the application enforces one. See OPEN-032.
  
 **FR-HHL-014 — Death and inheritance out of scope [MUST]**: No estate-transfer functionality. In practice handled by deactivating the member, and later by the splitting capability.
  
-**FR-HHL-015 — Last member protection [MUST]**: A household shall always retain at least one active member with full access, by analogy with FR-USR-005.
+**FR-HHL-015 — Last member protection [MUST]**: A workspace shall always retain at least one active member with full access, by analogy with FR-USR-005.
  
 # 54. Concurrency
  
-Concurrent independent sessions (FR-AUT-001) combined with shared household objects (FR-BUD-003, FR-TEN-008) make simultaneous modification a normal occurrence, not an edge case.
+Concurrent independent sessions (FR-AUT-001) combined with shared workspace objects (FR-BUD-003, FR-TEN-008) make simultaneous modification a normal occurrence, not an edge case.
  
-**FR-CNC-001 — Optimistic locking on financial entities [MUST]**: Every mutable financial entity shall carry a version. A write shall fail if the version advanced since the client read it. Last-write-wins is not acceptable where two household members may edit a shared budget.
+**FR-CNC-001 — Optimistic locking on financial entities [MUST]**: Every mutable financial entity shall carry a version. A write shall fail if the version advanced since the client read it. Last-write-wins is not acceptable where two workspace members may edit a shared budget.
  
 **FR-CNC-002 — Conflict behaviour [MUST]**: On version conflict the API shall return a distinct error (FR-API-005); the client shall inform the user, show current state, and require explicit re-attempt. No merge interface is required in the MVP.
  
 **FR-CNC-003 — Bulk operations are transactional [MUST]**: Import commit, batch rollback, retroactive rule application and reconciliation resolution shall be atomic (NFR-REL-001).
  
-**FR-CNC-004 — Recomputation does not block reads [MUST]**: A recomputation triggered by one user shall not block another’s reads in the same household. Readers may see pre-recomputation values provided the in-progress state is indicated (FR-JOB-004).
+**FR-CNC-004 — Recomputation does not block reads [MUST]**: A recomputation triggered by one user shall not block another’s reads in the same workspace. Readers may see pre-recomputation values provided the in-progress state is indicated (FR-JOB-004).
  
 **FR-CNC-005 — Serialised derived-data writes per account [MUST]**: Two processes shall not write derived data for the same account simultaneously; rebuilds shall be serialised per account.
  
@@ -2265,17 +2266,17 @@ Formal state definitions for entities whose lifecycle is otherwise described onl
  
 **FR-STA-006 — Session [MUST]**: ACTIVE → EXPIRED or REVOKED. Revocation is immediate (FR-AUT-005).
  
-**FR-STA-007 — Household member [MUST]**: ACTIVE → INACTIVE, reversible. DELETED reachable only from a member who has never owned anything (FR-LIF-001).
+**FR-STA-007 — Workspace member [MUST]**: ACTIVE → INACTIVE, reversible. DELETED reachable only from a member who has never owned anything (FR-LIF-001).
  
 **FR-STA-008 — Transitions are audited [MUST]**: Every transition of an account, import batch, reconciliation difference or member shall be recorded with timestamp and actor.
  
 # 57. Financial Change Audit
  
-FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. Neither records who changed financial data, which matters in a shared household.
+FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. Neither records who changed financial data, which matters in a shared workspace.
  
 **FR-AUD-001 — Financial change log [MUST]**: Creation, modification, void and restore of any financial record shall be recorded with timestamp, actor, entity, and the before and after values of changed fields.
  
-**FR-AUD-002 — Visible to the household [SHOULD]**: A member with appropriate access shall be able to see the change history of a record they can view.
+**FR-AUD-002 — Visible to the workspace [SHOULD]**: A member with appropriate access shall be able to see the change history of a record they can view.
  
 **FR-AUD-003 — Audit is append-only [MUST]**: Audit records shall not be modifiable or deletable through the application, and shall be removed only by tenant erasure (FR-LIF-020).
  
@@ -2285,6 +2286,7 @@ FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. N
  
 | Term | Meaning in this specification |
 | --- | --- |
+| **Workspace** | The tenant and isolation boundary (FR-TEN-001): the financial context its members share, holding their institutions, accounts, budgets and goals. Works for one person and extends to several, without implying a family relationship. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. Where this specification says *household* in lower case, it means the real-world people or the economic term (household consumption, household budget surveys), not the entity. |
 | **Financial Institution / Container** | Grouping level for accounts held with one provider. Not itself an account. May be a bank, broker, pension provider, card issuer, asset manager, or the default Personal Assets container. |
 | **Account** | A single financial product within a container. Abstract; always of exactly one concrete type. |
 | **Capability** | Declared property determining what an account can do, independent of its type. |
