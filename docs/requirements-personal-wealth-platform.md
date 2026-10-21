@@ -649,7 +649,8 @@ Confirmed in scope. Implemented as jurisdiction rule plugins (DM-07).
 | FR-USR-02 | TOTP MFA | M |
 | FR-USR-03 | Optional OIDC/SSO (relevant for self-host and B2B; Ghostfolio's precedent) | C |
 | FR-USR-04 | App-level PIN/biometric lock on mobile | S |
-| FR-USR-05 | Several users can be members of one workspace, all with full access (no roles or ownership within a workspace) | S |
+| FR-USR-05 | One member per workspace in the MVP; later several users can be members of one workspace, all with full access (no roles or ownership within a workspace). Only the system administrator adds or removes members, on request | S |
+| FR-USR-07 | The system administrator runs the system only — users, workspace membership, feature activation per workspace, job schedules (e.g. FX import) — and is never a workspace member, so has no access to financial data | M |
 | FR-USR-06 | Read-only share link for a portfolio, with configurable masking of absolute values | S |
 | FR-NOT-01 | Configurable notifications: daily/weekly summary, budget threshold, dividend received, connector failure, 3a deadline | S |
 | FR-NOT-02 | Notifications must be individually disableable; no dark-pattern engagement loops | M |
