@@ -331,7 +331,7 @@ The System Administrator configures the system for all workspaces. None of the f
 | Spending analysis | On/off | The analysis of where money was spent, by category (sections 13 and 16, e.g. FR-BUD-006), is not available; transactions and their categories remain visible |
 
  
-**FR-ADM-002 — Default feature set [MUST]**: The deployment shall define which optional features and which limits a new workspace starts with. Unless configured otherwise, every feature is active and no limit applies. Changing this default affects only workspaces created afterwards.
+**FR-ADM-002 — Default feature set [MUST]**: The deployment shall define which optional features and which limits a new workspace starts with. In the MVP a new workspace starts with every feature active and no limit; later defaults follow the commercial model (OPEN-029). Changing this default affects only workspaces created afterwards.
  
 **FR-ADM-003 — Deactivation keeps data [MUST]**: Deactivating a feature hides it from the workspace’s members and makes the API refuse its functions. Data already recorded through the feature is kept unchanged and is available again when the feature is reactivated. Figures outside the feature shall not change because of a deactivation.
  
@@ -1737,7 +1737,7 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
  
 **OPEN-035 [TBD]**: Should one person be able to belong to two workspaces — an adult managing their own and a parent’s finances? Currently unsupported (55.2).
  
-**OPEN-036 [TBD]**: Initial feature catalogue decided (FR-ADM-001). Still open: the default state and limit values per topology (FR-ADM-002), which depend on the commercial model (OPEN-029).
+**OPEN-036 [TBD]**: Initial feature catalogue decided (FR-ADM-001). MVP default decided: all features active, no limits (FR-ADM-002). Still open: post-MVP default state and limit values per topology, which depend on the commercial model (OPEN-029).
  
 **OPEN-031 [TBD]**: When does user-facing export return? Three consequences follow from its deferral and should be accepted knowingly rather than discovered later: no supported topology migration (NFR-DEP-006); no route for a user or adviser to derive tax figures externally, now that tax reporting is also out of scope (OOS-004); and no user-side recovery path if a hosted account is closed or the service is discontinued. None is a defect — export is a real cost and deferring it is a reasonable MVP decision — but each is a commitment made by omission.
  
