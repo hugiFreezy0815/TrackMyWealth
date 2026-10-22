@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.UpdateWorkspaceCurrencyRequest;
 import com.trackmywealth.backend.entity.WorkspaceMember;
+import com.trackmywealth.backend.repository.FinancialAuditLogRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -41,7 +42,27 @@ class WorkspaceServiceTest {
           workspaceRepository,
           workspaceMemberRepository,
           accessControlService,
-          new VersionPreconditionService());
+          new VersionPreconditionService(),
+          mock(FinancialAuditLogRepository.class));
+
+  @Test
+  void aDependentMemberCannotRenameTheWorkspace() {
+    WorkspaceMember dependent = new WorkspaceMember();
+    dependent.setDependent(true);
+    when(accessControlService.requireActingMember(ACTOR)).thenReturn(MEMBER);
+    when(workspaceMemberRepository.findById(MEMBER)).thenReturn(Optional.of(dependent));
+
+    assertThatThrownBy(
+            () ->
+                service.updateName(
+                    new com.trackmywealth.backend.dto.UpdateWorkspaceNameRequest("New"),
+                    null,
+                    ACTOR))
+        .isInstanceOfSatisfying(
+            ResponseStatusException.class,
+            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+    verify(workspaceRepository, never()).findByIdForUpdate(any());
+  }
 
   // Authorization comes before the version (ADR 0004): a dependent is refused with 403 even
   // without If-Match, and the workspace row is never locked or written.

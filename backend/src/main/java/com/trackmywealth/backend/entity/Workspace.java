@@ -33,7 +33,7 @@ public class Workspace {
   @Column(columnDefinition = "uuid")
   private UUID id;
 
-  @Column(nullable = false)
+  @Column
   private String name;
 
   @Column(nullable = false)
