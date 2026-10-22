@@ -1,20 +1,27 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.WorkspaceMemberListItemResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
+import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-03-04/FR-HHL-015: a workspace must always retain at least one active member, by analogy with
+ * US-03-04/US-03-05/FR-HHL-015: list the current workspace membership and preserve at least
+ * one active member, by analogy with
  * {@link AdminUserService}'s FR-USR-005 "last active administrator" guard, which this mirrors.
  *
  * <p>Self-service only for now: {@link #deactivateMember} rejects any target other than the
@@ -28,6 +35,8 @@ public class WorkspaceMemberService {
 
   private static final String ACTIVE = "ACTIVE";
   private static final String INACTIVE = "INACTIVE";
+  private static final String STANDARD_USER = "STANDARD_USER";
+  private static final int MAX_LIST_MEMBERS = 200;
   private static final String WORKSPACE_MEMBER_ENTITY_TYPE = "WorkspaceMember";
 
   // FR-HHL-015: a workspace must always retain at least this many active members - deactivating
@@ -50,6 +59,69 @@ public class WorkspaceMemberService {
     this.workspaceMemberRepository = workspaceMemberRepository;
     this.authorizationDenialAuditService = authorizationDenialAuditService;
     this.versionPreconditionService = versionPreconditionService;
+  }
+
+  /**
+   * US-03-05: membership listing is available only to an active business user, never to the
+   * system administrator. The SQL query is bounded to one past the response limit, so oversized
+   * workspaces cannot force an unbounded fetch. The underlying tenant RLS independently enforces
+   * workspace isolation.
+   */
+  @Transactional(readOnly = true)
+  public List<WorkspaceMemberListItemResponse> listWorkspaceMembers(
+      AuthenticatedUserPrincipal actor) {
+    if (!STANDARD_USER.equals(actor.role()) || actor.workspaceId() == null) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+    }
+    UUID actingMemberId = requireActingMember(actor);
+    WorkspaceMember actingMember =
+        workspaceMemberRepository
+            .findById(actingMemberId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN));
+    if (!ACTIVE.equals(actingMember.getStatus())
+        || !actor.workspaceId().equals(actingMember.getWorkspace().getId())) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+    }
+
+    List<WorkspaceMember> members =
+        workspaceMemberRepository.findMembersForListing(
+            actor.workspaceId(), PageRequest.of(0, MAX_LIST_MEMBERS + 1));
+    if (members.size() > MAX_LIST_MEMBERS) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_ENTITY, "Workspace member list exceeds the response limit.");
+    }
+    if (members.isEmpty()) {
+      return List.of();
+    }
+
+    Map<UUID, AppUser> usersByMemberId =
+        appUserRepository
+            .findUsersLinkedToMembers(members.stream().map(WorkspaceMember::getId).toList())
+            .stream()
+            .collect(
+                Collectors.toMap(
+                    user -> user.getWorkspaceMember().getId(), Function.identity()));
+
+    return members.stream()
+        // Legacy setup links SYSTEM_ADMINISTRATOR to a member. Until FR-USR-013 is implemented,
+        // omit that record entirely rather than disclosing administrator identity to users.
+        .filter(
+            member -> {
+              AppUser user = usersByMemberId.get(member.getId());
+              return user == null || STANDARD_USER.equals(user.getRole());
+            })
+        .map(
+            member -> {
+              AppUser user = usersByMemberId.get(member.getId());
+              return new WorkspaceMemberListItemResponse(
+                  member.getId(),
+                  user == null ? null : user.getId(),
+                  member.getDisplayName(),
+                  ACTIVE.equals(member.getStatus()),
+                  VersionPreconditionService.persistedVersion(
+                      member.getVersion(), "workspace member"));
+            })
+        .toList();
   }
 
   @Transactional(readOnly = true)
