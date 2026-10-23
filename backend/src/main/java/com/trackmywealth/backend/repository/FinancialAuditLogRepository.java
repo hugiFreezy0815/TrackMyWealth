@@ -5,8 +5,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * Workspace-scoped financial audit writes. RLS restricts rows to the acting workspace; unlike
- * administrator audit records, workspace names are never exposed to the administrator domain.
+ * Workspace-scoped audit writes to {@code financial_audit_log} (V17). A member's change is a
+ * workspace event: RLS restricts its rows to the acting workspace, and tenant erasure (FR-LIF-020)
+ * removes them with it. Administrator actions belong in {@code admin_audit_log} instead.
  */
 @Repository
 public class FinancialAuditLogRepository {
@@ -26,11 +27,6 @@ public class FinancialAuditLogRepository {
   public void recordWorkspaceNameChange(
       UUID workspaceId, UUID actorUserId, String beforeName, String afterName) {
     jdbcTemplate.update(
-        INSERT_WORKSPACE_NAME_CHANGE,
-        workspaceId,
-        workspaceId,
-        actorUserId,
-        beforeName,
-        afterName);
+        INSERT_WORKSPACE_NAME_CHANGE, workspaceId, workspaceId, actorUserId, beforeName, afterName);
   }
 }

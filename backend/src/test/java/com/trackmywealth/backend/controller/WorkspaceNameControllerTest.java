@@ -78,7 +78,8 @@ class WorkspaceNameControllerTest {
     assertThat(changed.getResponseBody().name()).isEqualTo("Hugi");
     assertThat(changed.getResponseBody().version())
         .isGreaterThan(initial.getResponseBody().version());
-    assertThat(changed.getResponseHeaders().getETag()).isNotEqualTo(initial.getResponseHeaders().getETag());
+    assertThat(changed.getResponseHeaders().getETag())
+        .isNotEqualTo(initial.getResponseHeaders().getETag());
     assertThat(current(token).getResponseBody().name()).isEqualTo("Hugi");
 
     try (Connection connection = dataSource.getConnection();
@@ -96,11 +97,12 @@ class WorkspaceNameControllerTest {
       assertThat(rs.getString(5)).isEqualTo("Hugi");
       assertThat(rs.next()).isFalse();
     }
-    // Rename content is never copied into the globally visible administrator audit domain.
+    // A member's rename is a workspace event; it does not belong in the administrator audit.
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement();
-        ResultSet rs = statement.executeQuery(
-            "SELECT count(*) FROM admin_audit_log WHERE action = 'WORKSPACE_NAME_CHANGED'")) {
+        ResultSet rs =
+            statement.executeQuery(
+                "SELECT count(*) FROM admin_audit_log WHERE action = 'WORKSPACE_NAME_CHANGED'")) {
       assertThat(rs.next()).isTrue();
       assertThat(rs.getLong(1)).isZero();
     }
@@ -113,7 +115,9 @@ class WorkspaceNameControllerTest {
     rename(token, etag, "Current");
 
     requestRename(token, etag, "Stale").expectStatus().isEqualTo(HttpStatus.PRECONDITION_FAILED);
-    requestRename(token, null, "Missing").expectStatus().isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
+    requestRename(token, null, "Missing")
+        .expectStatus()
+        .isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
     assertThat(current(token).getResponseBody().name()).isEqualTo("Current");
     assertThat(auditCount()).isEqualTo(1);
   }
@@ -148,8 +152,10 @@ class WorkspaceNameControllerTest {
         .post()
         .uri("/api/v1/setup/administrator")
         .contentType(MediaType.APPLICATION_JSON)
-        .body("{\"email\":\"admin@example.com\",\"password\":\""
-            + PASSWORD + "\",\"currencyCode\":\"CHF\"}")
+        .body(
+            "{\"email\":\"admin@example.com\",\"password\":\""
+                + PASSWORD
+                + "\",\"currencyCode\":\"CHF\"}")
         .exchange()
         .expectStatus()
         .isCreated();
@@ -178,21 +184,35 @@ class WorkspaceNameControllerTest {
     assertThat(auditCount()).isZero();
   }
 
+  // Only an explicit null or blank clears the name; a body without the field must not.
   @Test
-  void businessMemberCanRenameButAdministratorCannot() {
-    String memberToken = member("Original");
-    String adminToken = login("admin@example.com");
-    client(adminToken)
+  void aMissingOrMisspelledNameFieldIsRejectedAndKeepsTheName() throws Exception {
+    String token = member("Hugi");
+    String etag = current(token).getResponseHeaders().getETag();
+    for (String body : new String[] {"{}", "{\"Name\":\"Other\"}", "{\"nmae\":null}"}) {
+      client(token)
+          .put()
+          .uri("/api/v1/workspace/name")
+          .header("If-Match", etag)
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(body)
+          .exchange()
+          .expectStatus()
+          .isBadRequest();
+    }
+    assertThat(current(token).getResponseBody().name()).isEqualTo("Hugi");
+    assertThat(auditCount()).isZero();
+
+    client(token)
         .put()
         .uri("/api/v1/workspace/name")
-        .header("If-Match", current(memberToken).getResponseHeaders().getETag())
+        .header("If-Match", etag)
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new UpdateWorkspaceNameRequest("Forbidden"))
+        .body("{\"name\":null}")
         .exchange()
         .expectStatus()
-        .isNotFound();
-    rename(memberToken, current(memberToken).getResponseHeaders().getETag(), "Allowed");
-    assertThat(current(memberToken).getResponseBody().name()).isEqualTo("Allowed");
+        .isOk();
+    assertThat(current(token).getResponseBody().name()).isNull();
   }
 
   @Test
@@ -211,11 +231,13 @@ class WorkspaceNameControllerTest {
         .expectStatus()
         .isCreated();
     try (Connection connection = dataSource.getConnection();
-        PreparedStatement workspace = connection.prepareStatement(
-            "INSERT INTO workspace (id, name, currency) VALUES (?, 'Workspace B', 'CHF')");
-        PreparedStatement move = connection.prepareStatement(
-            "UPDATE workspace_member SET workspace_id = ? WHERE id ="
-                + " (SELECT workspace_member_id FROM app_user WHERE email = 'other@example.com')")) {
+        PreparedStatement workspace =
+            connection.prepareStatement(
+                "INSERT INTO workspace (id, name, currency) VALUES (?, 'Workspace B', 'CHF')");
+        PreparedStatement move =
+            connection.prepareStatement(
+                "UPDATE workspace_member SET workspace_id = ? WHERE id ="
+                    + " (SELECT workspace_member_id FROM app_user WHERE email = 'other@example.com')")) {
       UUID workspaceB = UUID.randomUUID();
       workspace.setObject(1, workspaceB);
       workspace.executeUpdate();
@@ -257,8 +279,9 @@ class WorkspaceNameControllerTest {
   private long auditCount() throws Exception {
     try (Connection c = dataSource.getConnection();
         Statement s = c.createStatement();
-        ResultSet rs = s.executeQuery(
-            "SELECT count(*) FROM financial_audit_log WHERE entity_type = 'WORKSPACE'")) {
+        ResultSet rs =
+            s.executeQuery(
+                "SELECT count(*) FROM financial_audit_log WHERE entity_type = 'WORKSPACE'")) {
       rs.next();
       return rs.getLong(1);
     }
@@ -274,10 +297,7 @@ class WorkspaceNameControllerTest {
 
   private RestTestClient.ResponseSpec requestRename(String token, String etag, String name) {
     RestTestClient.RequestBodySpec request =
-        client(token)
-            .put()
-            .uri("/api/v1/workspace/name")
-            .contentType(MediaType.APPLICATION_JSON);
+        client(token).put().uri("/api/v1/workspace/name").contentType(MediaType.APPLICATION_JSON);
     if (etag != null) {
       request.header("If-Match", etag);
     }

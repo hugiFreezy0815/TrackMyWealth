@@ -21,9 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-06-05/US-03-07 workspace settings. The legacy dependent-member guard is shared by currency
- * and name updates until #389 removes dependents. System administrators must not rename a
- * workspace, regardless of an old membership link; #398 removes those links altogether.
+ * US-06-05/US-03-07 workspace settings. Any authenticated active member may read them; the legacy
+ * dependent-member guard is shared by the currency and name updates until #389 removes dependents.
  */
 @Service
 public class WorkspaceService {
@@ -52,7 +51,7 @@ public class WorkspaceService {
 
   @Transactional(readOnly = true)
   public WorkspaceResponse getCurrent(AuthenticatedUserPrincipal actor) {
-    requireWorkspaceSettingsMember(actor);
+    accessControlService.requireActingMember(actor);
     return toResponse(findCurrent(actor));
   }
 
@@ -125,12 +124,8 @@ public class WorkspaceService {
     return toResponse(workspace);
   }
 
+  // Authorization comes before the version (ADR 0004): a refused member never locks the row.
   private UUID requireWorkspaceSettingsMember(AuthenticatedUserPrincipal actor) {
-    // In the updated model administrators are never business members (FR-USR-013/015).
-    // Retain this guard while the old setup flow still creates their membership (#398).
-    if ("SYSTEM_ADMINISTRATOR".equals(actor.role())) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found.");
-    }
     UUID memberId = accessControlService.requireActingMember(actor);
     WorkspaceMember member =
         workspaceMemberRepository

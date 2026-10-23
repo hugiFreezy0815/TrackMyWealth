@@ -27,7 +27,8 @@ class WorkspaceNamesTest {
   void rejectsInvisibleUnicodeAndBidiOverrides() {
     assertThat(WorkspaceNames.isValid("abc\u202Edef")).isFalse();
     assertThat(WorkspaceNames.isValid("a\u200Bb")).isFalse();
-    assertThat(WorkspaceNames.isValid("a\u200Db")).isFalse();
+    assertThat(WorkspaceNames.isValid("a\u2060b")).isFalse();
+    assertThat(WorkspaceNames.isValid("a\uFEFFb")).isFalse();
     assertThat(WorkspaceNames.isValid("a\u2028b")).isFalse();
     assertThat(WorkspaceNames.isValid("a\u2029b")).isFalse();
     assertThat(WorkspaceNames.isValid("Älterer Übertrag")).isTrue();
@@ -37,5 +38,13 @@ class WorkspaceNamesTest {
   void countsUnicodeCodePointsInsteadOfUtf16Units() {
     assertThat(WorkspaceNames.isValid("🪙".repeat(60))).isTrue();
     assertThat(WorkspaceNames.isValid("🪙".repeat(61))).isFalse();
+  }
+
+  // U+200D joins emoji sequences and U+200C keeps Persian or Indic letters apart; both are text.
+  @Test
+  void keepsTheJoinersThatEmojiAndScriptsNeed() {
+    String family = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67";
+    assertThat(WorkspaceNames.isValid("Family Hug " + family)).isTrue();
+    assertThat(WorkspaceNames.isValid("\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645")).isTrue();
   }
 }
