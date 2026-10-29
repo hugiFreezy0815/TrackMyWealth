@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ReconciliationResult;
@@ -150,7 +149,7 @@ class ReconciliationDecisionServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             conflict -> assertThat(conflict.getCode()).isEqualTo(ApiErrorCode.VERSION_CONFLICT));
-    verify(accessControlService).requireAccountAccess(ACTOR, account, AccessLevelValues.EDIT);
+    verify(accessControlService).requireAccountAccess(ACTOR, account);
     assertThat(result.getStatus()).isEqualTo("OPEN");
   }
 

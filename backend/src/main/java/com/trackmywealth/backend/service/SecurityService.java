@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.SecurityCompleteness;
 import com.trackmywealth.backend.dto.SecurityCreation;
@@ -41,8 +40,8 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>The table is shared, unscoped reference data (NFR-LIC-007), so: an existing record always wins
  * and is returned unchanged whatever a later caller supplies; nothing on the row or in its
- * provenance identifies the workspace or user that caused it to exist; and creating one needs EDIT
- * on at least one active account of the caller's workspace - a member who cannot record a
+ * provenance identifies the workspace or user that caused it to exist; and creating one needs at
+ * least one active account in the caller's workspace - a member with nowhere to record a
  * transaction has no reason to add to the shared master. A ticker sent along (#273) is mapped for
  * the caller's workspace only ({@code workspace_security_ticker}), not stored on the shared row.
  */
@@ -215,9 +214,9 @@ public class SecurityService {
     }
   }
 
-  // Stops at the first batch containing an account the member may edit, so a member with many
-  // accounts does not pay for evaluating every one of them. Batches (not one call per account)
-  // keep AccessControlService's bulk sole-member optimisation.
+  // Stops at the first batch containing an account the member may use, so a member with many
+  // accounts does not pay for evaluating every one of them. Batches, not one call per account,
+  // keep it to one membership lookup per batch (AccessControlService#accountsWithAccess).
   private void requireMayCreate(AuthenticatedUserPrincipal actor) {
     UUID memberId = accessControlService.requireActingMember(actor);
     List<Account> accounts =
@@ -226,9 +225,7 @@ public class SecurityService {
     for (int from = 0; from < accounts.size(); from += ACCESS_CHECK_BATCH) {
       List<Account> batch =
           accounts.subList(from, Math.min(from + ACCESS_CHECK_BATCH, accounts.size()));
-      if (!accessControlService
-          .accountsWithAccess(memberId, batch, AccessLevelValues.EDIT)
-          .isEmpty()) {
+      if (!accessControlService.accountsWithAccess(memberId, batch).isEmpty()) {
         return;
       }
     }

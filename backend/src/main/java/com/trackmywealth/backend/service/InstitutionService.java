@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
 import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
@@ -43,10 +42,9 @@ import org.springframework.web.server.ResponseStatusException;
  * when the caller's linked {@code workspace_member} exists but isn't {@code ACTIVE} - so by the
  * time a request reaches this service, a workspace context is either absent entirely (a {@code
  * SYSTEM_ADMINISTRATOR} with no membership, handled by the {@code actorWorkspaceId == null} check
- * in {@link #createInstitution}) or genuinely active. {@link #getSummary} is the first method here
- * to gate on the fine-grained per-institution access level {@link AccessControlService} computes
- * (US-03-03, merged after this class's other methods were written) - {@code createInstitution}/
- * {@code searchCatalogue} still rely on RLS/workspace-existence alone, unchanged by this story.
+ * in {@link #createInstitution}) or genuinely active. {@link #getSummary} additionally checks
+ * workspace membership through {@link AccessControlService} - {@code createInstitution}/{@code
+ * searchCatalogue} rely on RLS/workspace-existence alone.
  *
  * <p>US-04-03: {@link #getSummary} reads only {@code institution_type} to manage the institution
  * itself, never {@code account_type} directly (the sanctioned exception this class's own Javadoc
@@ -144,8 +142,7 @@ public class InstitutionService {
       UUID institutionId, AuthenticatedUserPrincipal actor, String requestedCurrency) {
     FinancialInstitution institution =
         institutionLookupService.findInstitutionOrThrow(institutionId, actor);
-    accessControlService.requireInstitutionAccess(
-        actor, institution, AccessLevelValues.BALANCE_ONLY);
+    accessControlService.requireInstitutionAccess(actor, institution);
 
     List<Account> accounts =
         accountRepository.findByFinancialInstitutionIdAndStatusOrderByCreatedAtAsc(

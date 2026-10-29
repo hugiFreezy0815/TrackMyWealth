@@ -72,7 +72,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Idempotent and resumable like card matching: a run only adds what is missing. Runs as the
  * system; each run holds a transaction-scoped advisory lock per workspace (not the workspace row,
- * which sharing grants lock for their own purpose), so two writes racing in one workspace neither
+ * which category changes lock for their own purpose), so two writes racing in one workspace neither
  * propose the same pair twice nor both claim one leg.
  *
  * <p>A run around a date decides only pairs with a leg booked within {@value #WINDOW_DAYS} days of

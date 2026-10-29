@@ -97,8 +97,6 @@ class PdfStatementIdentificationControllerTest {
               "DELETE FROM account_snapshot",
               "DELETE FROM import_file",
               "DELETE FROM import_batch",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
               "DELETE FROM user_session",

@@ -3,7 +3,6 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
@@ -13,13 +12,11 @@ import com.trackmywealth.backend.dto.CorrectTransactionRequest;
 import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
@@ -134,8 +131,6 @@ class TransactionRemovalControllerTest {
               "DELETE FROM categorization_rule",
               // reversals first: they reference their originals
               LedgerCleanup.DELETE_ALL_TRANSACTIONS,
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_credit_card",
               "DELETE FROM account_securities",
               "DELETE FROM account",
@@ -619,9 +614,11 @@ class TransactionRemovalControllerTest {
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
     UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
     remove(token, card.id(), imported, "Duplicate import");
+    // Hours, not '29 days 23 hours': PostgreSQL counts interval days in the session time zone, so
+    // across a daylight-saving change that is 30 days 0 hours of real time - outside the window,
+    // which the service measures as an exact Duration.
     execute(
-        "UPDATE transaction SET voided_at = now() - interval '29 days 23 hours' WHERE id = ?",
-        imported);
+        "UPDATE transaction SET voided_at = now() - interval '719 hours' WHERE id = ?", imported);
 
     assertThat(restore(token, card.id(), imported).restored()).hasSize(1);
     assertThat(balance(token, card.id())).isEqualByComparingTo("85.00");
@@ -850,9 +847,9 @@ class TransactionRemovalControllerTest {
     assertThat(balance(token, card.id())).isEqualByComparingTo("102.00");
   }
 
-  // A two-sided transfer comes back whole, from either leg, and only with EDIT on both accounts.
+  // A two-sided transfer comes back whole, from either leg, restored by any member (US-03-06).
   @Test
-  void aVoidedTransferIsRestoredWithBothLegsAndNeedsEditOnBothAccounts() {
+  void aVoidedTransferIsRestoredWithBothLegsByAnotherMember() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse current = createAccount(adminToken, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(adminToken, "CASH", "CHF");
@@ -863,21 +860,9 @@ class TransactionRemovalControllerTest {
     assertThat(voided.affected())
         .extracting(TransactionResponse::id)
         .containsExactly(debit, credit);
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
-    grantAccount(adminToken, memberId, savings.id(), AccessLevelValues.EDIT);
-    grantAccount(adminToken, memberId, current.id(), AccessLevelValues.READ);
 
-    client(memberToken)
-        .post()
-        .uri(rowUri(savings.id(), credit) + "/restore")
-        .headers(CurrentVersion.ifMatch(dataSource, "transaction", credit))
-        .exchange()
-        .expectStatus()
-        .isNotFound();
-    assertThat(countRows(current.id()) + countRows(savings.id())).isEqualTo(4);
-
-    grantAccount(adminToken, memberId, current.id(), AccessLevelValues.EDIT);
     TransactionRemovalResponse restored = restore(memberToken, savings.id(), credit);
 
     assertThat(restored.restored())
@@ -986,34 +971,6 @@ class TransactionRemovalControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.PRECONDITION_FAILED);
-    assertThat(countRows(card.id())).isEqualTo(2);
-  }
-
-  @Test
-  void restoringAVoidNeedsEditOnTheAccount() {
-    String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
-    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
-    remove(adminToken, card.id(), imported, "Duplicate import");
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
-    String memberToken = login("member@example.com");
-
-    // No grant: the generic 404, also without If-Match. READ: still 404, the same as for removal.
-    client(memberToken)
-        .post()
-        .uri(rowUri(card.id(), imported) + "/restore")
-        .exchange()
-        .expectStatus()
-        .isNotFound();
-    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.READ);
-    assertThat(restorable(memberToken, card.id())).hasSize(1);
-    client(memberToken)
-        .post()
-        .uri(rowUri(card.id(), imported) + "/restore")
-        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
-        .exchange()
-        .expectStatus()
-        .isNotFound();
     assertThat(countRows(card.id())).isEqualTo(2);
   }
 
@@ -1371,33 +1328,17 @@ class TransactionRemovalControllerTest {
   // --- access ----------------------------------------------------------------------------------
 
   @Test
-  void removingAndRestoringNeedEditOnTheAccount() {
+  void anotherMemberRemovesAndRestoresARowTheFirstOneRecorded() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
     TransactionResponse typo = record(adminToken, card.id(), purchase("-85.00"));
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
-    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.READ);
 
-    client(memberToken)
-        .delete()
-        .uri(rowUri(card.id(), typo.id()))
-        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
-        .exchange()
-        .expectStatus()
-        .isNotFound();
-    // Reading the restore list needs READ only.
-    remove(adminToken, card.id(), typo.id(), null);
+    remove(memberToken, card.id(), typo.id(), null);
     assertThat(restorable(memberToken, card.id())).hasSize(1);
-    client(memberToken)
-        .post()
-        .uri(rowUri(card.id(), typo.id()) + "/restore")
-        .headers(CurrentVersion.ifMatch(dataSource, "transaction", typo.id()))
-        .exchange()
-        .expectStatus()
-        .isNotFound();
+    assertThat(list(adminToken, card.id())).isEmpty();
 
-    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.EDIT);
     restore(memberToken, card.id(), typo.id());
     assertThat(list(adminToken, card.id())).hasSize(1);
   }
@@ -1465,25 +1406,24 @@ class TransactionRemovalControllerTest {
     assertThat(list(token, card.id())).as("still deleted").isEmpty();
   }
 
-  // ADR 0004 / US-28-02: an existing row the caller cannot see is the generic 404 even without
+  // ADR 0004 / US-28-02: a row id that is not the account's is the generic 404 even without
   // If-Match - never the 428 that would confirm the row exists.
   @Test
-  void aRowTheCallerCannotSeeIsNotFoundEvenWithoutIfMatch() {
+  void aRowOfAnotherAccountIsNotFoundEvenWithoutIfMatch() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
+    AccountSummaryResponse other = createAccount(adminToken, "CREDIT_CARD", "CHF");
     TransactionResponse typo = record(adminToken, card.id(), purchase("-85.00"));
-    createSecondMember(adminToken, "member@example.com");
-    String memberToken = login("member@example.com");
 
-    client(memberToken)
+    client(adminToken)
         .delete()
-        .uri(rowUri(card.id(), typo.id()))
+        .uri(rowUri(other.id(), typo.id()))
         .exchange()
         .expectStatus()
         .isNotFound();
-    client(memberToken)
+    client(adminToken)
         .post()
-        .uri(rowUri(card.id(), typo.id()) + "/restore")
+        .uri(rowUri(other.id(), typo.id()) + "/restore")
         .exchange()
         .expectStatus()
         .isNotFound();
@@ -1887,24 +1827,19 @@ class TransactionRemovalControllerTest {
             });
   }
 
-  // Moving a row writes to the destination too: without EDIT there it is the generic 404, checked
-  // before anything is removed.
+  // Moving a row writes to the destination too: an account the caller cannot use there is the
+  // generic 404, checked before anything is removed.
   @Test
-  void aMoveToAnAccountWithoutEditChangesNothing() {
+  void aMoveToAnUnknownAccountChangesNothing() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
-    AccountSummaryResponse target = createAccount(adminToken, "CREDIT_CARD", "CHF");
     TransactionResponse original = record(adminToken, card.id(), purchase("-85.00"));
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
-    String memberToken = login("member@example.com");
-    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.EDIT);
-    grantAccount(adminToken, memberId, target.id(), AccessLevelValues.READ);
 
     correctRaw(
-            memberToken,
+            adminToken,
             card.id(),
             original.id(),
-            correction(original, "-85.00", null, null, null, target.id()),
+            correction(original, "-85.00", null, null, null, UUID.randomUUID()),
             CurrentVersion.ifMatch(dataSource, "transaction", original.id()))
         .expectStatus()
         .isNotFound();
@@ -1912,7 +1847,6 @@ class TransactionRemovalControllerTest {
     assertThat(list(adminToken, card.id()))
         .extracting(TransactionResponse::id)
         .containsExactly(original.id());
-    assertThat(list(adminToken, target.id())).isEmpty();
   }
 
   // A reversing entry goes with its void; it is never corrected on its own.
@@ -2950,19 +2884,6 @@ class TransactionRemovalControllerTest {
       statement.setObject(1, parameter);
       statement.executeUpdate();
     }
-  }
-
-  private void grantAccount(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isCreated();
   }
 
   private UUID createSecondMember(String adminToken, String email) {

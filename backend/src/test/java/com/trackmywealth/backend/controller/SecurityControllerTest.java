@@ -2,15 +2,12 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SecurityCreation;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -98,8 +95,6 @@ class SecurityControllerTest {
       statement.execute("DELETE FROM security");
       for (String table :
           List.of(
-              "sharing_grant",
-              "account_ownership",
               "custom_asset_valuation",
               "account_custom_asset",
               "account_credit_card",
@@ -413,22 +408,19 @@ class SecurityControllerTest {
         .isUnauthorized();
   }
 
+  // Creating a security needs an active account in the caller's workspace, whoever created it.
   @Test
-  void aMemberWhoCannotEditAnyAccountMayLookUpButNotCreate() {
-    String adminToken = adminWithAccount();
-    AccountSummaryResponse cash = firstAccount(adminToken);
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+  void aWorkspaceWithoutAnAccountMayLookUpButNotCreateAndAnyMemberMayOnceItHasOne() {
+    String adminToken = bootstrapAdministrator();
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
-    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.READ);
 
     post(memberToken, etf(ETF_ISIN, "iShares")).expectStatus().isNotFound();
     assertThat(count("security")).isZero();
 
-    post(adminToken, etf(ETF_ISIN, "iShares")).expectStatus().isCreated();
-    get(memberToken, ETF_ISIN).expectStatus().isOk();
-
-    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.EDIT);
-    post(memberToken, etf(EQUITY_ISIN, "Apple")).expectStatus().isCreated();
+    createCash(adminToken, "Everyday Checking");
+    post(memberToken, etf(ETF_ISIN, "iShares")).expectStatus().isCreated();
+    get(adminToken, ETF_ISIN).expectStatus().isOk();
   }
 
   // --- Review fixes: findability, idempotency, ignored values, legal name, DB backstop -------
@@ -704,23 +696,6 @@ class SecurityControllerTest {
     }
   }
 
-  @Test
-  void aMemberWhoMayEditOnlyTheLastOfManyAccountsMayStillCreate() {
-    // More accounts than one access-check batch, with EDIT only on the newest: proves the early
-    // exit still looks past the first batch.
-    String adminToken = adminWithAccount();
-    for (int i = 0; i < 24; i++) {
-      createCash(adminToken, "Cash " + i);
-    }
-    AccountSummaryResponse last = createCash(adminToken, "Last");
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
-    String memberToken = login("member@example.com");
-    post(memberToken, etf(ETF_ISIN, "iShares")).expectStatus().isNotFound();
-
-    grantOnAccount(adminToken, memberId, last.id(), AccessLevelValues.EDIT);
-    post(memberToken, etf(ETF_ISIN, "iShares")).expectStatus().isCreated();
-  }
-
   private String legalNameConfidence(UUID securityId) throws Exception {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
@@ -817,17 +792,16 @@ class SecurityControllerTest {
     try (Connection connection = dataSource.getConnection()) {
       execute(
           connection, "INSERT INTO workspace (id, name) VALUES (?, 'Workspace B')", workspaceId);
+      // One statement, so the member has its login when it commits (V110).
       execute(
           connection,
-          "INSERT INTO workspace_member (id, workspace_id, display_name) VALUES (?, ?, 'B')",
+          "WITH member AS (INSERT INTO workspace_member (id, workspace_id, display_name)"
+              + " VALUES (?, ?, 'B') RETURNING id)"
+              + " INSERT INTO app_user (id, email, password_hash, workspace_member_id)"
+              + " SELECT ?, 'b@example.com', 'x', id FROM member",
           memberId,
-          workspaceId);
-      execute(
-          connection,
-          "INSERT INTO app_user (id, email, password_hash, workspace_member_id) VALUES (?,"
-              + " 'b@example.com', 'x', ?)",
-          userId,
-          memberId);
+          workspaceId,
+          userId);
       UUID institutionId =
           jdbcUuid("SELECT id FROM financial_institution WHERE workspace_id = ?", workspaceId);
       execute(
@@ -890,19 +864,6 @@ class SecurityControllerTest {
 
   private RestTestClient.ResponseSpec get(String token, String isin) {
     return client(token).get().uri("/api/v1/securities?isin=" + isin).exchange();
-  }
-
-  private void grantOnAccount(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED);
   }
 
   private UUID createSecondMember(String adminToken, String email) {

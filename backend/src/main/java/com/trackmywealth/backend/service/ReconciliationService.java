@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.dto.ReconciliationStatusResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
@@ -11,7 +10,6 @@ import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportRowRawRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
-import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -62,7 +60,6 @@ public class ReconciliationService {
   private static final BigDecimal FX_ROUNDING_LIMIT = new BigDecimal("0.05");
   private static final BigDecimal MAX_FEE = new BigDecimal("50.00");
 
-  private final AccessControlService accessControlService;
   private final AccountSnapshotRepository snapshotRepository;
   private final TransactionRepository transactionRepository;
   private final ReconciliationResultRepository resultRepository;
@@ -70,13 +67,11 @@ public class ReconciliationService {
   private final Clock clock;
 
   public ReconciliationService(
-      AccessControlService accessControlService,
       AccountSnapshotRepository snapshotRepository,
       TransactionRepository transactionRepository,
       ReconciliationResultRepository resultRepository,
       ImportRowRawRepository importRowRawRepository,
       Clock clock) {
-    this.accessControlService = accessControlService;
     this.snapshotRepository = snapshotRepository;
     this.transactionRepository = transactionRepository;
     this.resultRepository = resultRepository;
@@ -107,12 +102,9 @@ public class ReconciliationService {
     latestSnapshot(account.getId()).ifPresent(snapshot -> reconcile(account, snapshot, changedBy));
   }
 
-  /**
-   * Account-level signal. {@code BALANCE_ONLY} sees the state and reason but not the comparison
-   * date or discrepancy amount; {@code READ} and stronger may see those details.
-   */
+  /** Account-level signal: state and reason, with the comparison date and any discrepancy. */
   @Transactional(readOnly = true)
-  public ReconciliationStatusResponse status(Account account, AuthenticatedUserPrincipal actor) {
+  public ReconciliationStatusResponse status(Account account) {
     Optional<AccountSnapshot> latest = latestSnapshot(account.getId());
     if (latest.isEmpty()) {
       return new ReconciliationStatusResponse(
@@ -123,8 +115,6 @@ public class ReconciliationService {
     Optional<AccountSnapshot> opening = applicableOpening(account, snapshot.getSnapshotDate());
     if (!cashScopeApplies(account)) {
       return statusResponse(
-          actor,
-          account,
           ReconciliationStatusValues.NOT_RECONCILABLE,
           ReconciliationStatusValues.CASH_SCOPE_NOT_APPLICABLE,
           snapshot,
@@ -132,8 +122,6 @@ public class ReconciliationService {
     }
     if (opening.isEmpty()) {
       return statusResponse(
-          actor,
-          account,
           ReconciliationStatusValues.NOT_RECONCILABLE,
           ReconciliationStatusValues.NO_OPENING_BALANCE,
           snapshot,
@@ -144,8 +132,6 @@ public class ReconciliationService {
         resultRepository.findBySnapshotIdAndAffectedSecurityIdIsNull(snapshot.getId());
     if (persisted.isPresent() && OPEN.equals(persisted.get().getStatus())) {
       return statusResponse(
-          actor,
-          account,
           ReconciliationStatusValues.OPEN_DIFFERENCE,
           null,
           snapshot,
@@ -153,8 +139,6 @@ public class ReconciliationService {
     }
     if (persisted.isPresent() && DISMISSED.equals(persisted.get().getStatus())) {
       return statusResponse(
-          actor,
-          account,
           ReconciliationStatusValues.DISMISSED_DIFFERENCE,
           null,
           snapshot,
@@ -164,16 +148,13 @@ public class ReconciliationService {
     // result as soon as it no longer does.
     if (persisted.isPresent()
         && List.of(RESOLVED, ACCEPTED).contains(persisted.get().getStatus())) {
-      return statusResponse(
-          actor, account, ReconciliationStatusValues.RECONCILED, null, snapshot, null);
+      return statusResponse(ReconciliationStatusValues.RECONCILED, null, snapshot, null);
     }
 
     // Backward-compatible read for a snapshot that predates this engine: compute the signal
     // without writing from a GET. Normal source writes persist the corresponding result.
     BigDecimal difference = difference(account, opening.get(), snapshot);
     return statusResponse(
-        actor,
-        account,
         difference.signum() == 0
             ? ReconciliationStatusValues.RECONCILED
             : ReconciliationStatusValues.OPEN_DIFFERENCE,
@@ -427,23 +408,14 @@ public class ReconciliationService {
     return snapshotRepository.findLatestObserved(accountId);
   }
 
-  private ReconciliationStatusResponse statusResponse(
-      AuthenticatedUserPrincipal actor,
-      Account account,
-      String status,
-      String reason,
-      AccountSnapshot snapshot,
-      BigDecimal difference) {
-    boolean mayReadDetails =
-        AccessLevelValues.Rank.valueOf(accessControlService.accountAccessLevel(actor, account))
-                .compareTo(AccessLevelValues.Rank.READ)
-            >= 0;
+  private static ReconciliationStatusResponse statusResponse(
+      String status, String reason, AccountSnapshot snapshot, BigDecimal difference) {
     return new ReconciliationStatusResponse(
         status,
         reason,
-        mayReadDetails ? snapshot.getSnapshotDate() : null,
-        mayReadDetails ? difference : null,
-        mayReadDetails && difference != null ? snapshot.getCurrency() : null);
+        snapshot.getSnapshotDate(),
+        difference,
+        difference != null ? snapshot.getCurrency() : null);
   }
 
   OffsetDateTime now() {

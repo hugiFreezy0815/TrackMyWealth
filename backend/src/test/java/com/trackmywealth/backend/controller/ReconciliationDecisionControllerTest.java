@@ -3,13 +3,11 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
@@ -23,7 +21,6 @@ import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
@@ -124,8 +121,6 @@ class ReconciliationDecisionControllerTest {
               "DELETE FROM reconciliation_result",
               "DELETE FROM snapshot_holding",
               "DELETE FROM account_snapshot",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_credit_card",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
@@ -970,22 +965,13 @@ class ReconciliationDecisionControllerTest {
   }
 
   @Test
-  void aReadOnlyMemberCannotDecide() {
+  void anotherMemberDecidesWithoutAnyGrant() {
     recordSnapshot(SNAPSHOT_DATE, "12345.67");
     ReconciliationResultResponse open = onlyResult();
-    UUID memberId = createSecondMember("reader@example.com");
-    grantOnAccount(memberId, AccessLevelValues.READ);
-    String readerToken = login("reader@example.com");
+    createSecondMember("reader@example.com");
+    String memberToken = login("reader@example.com");
 
-    client(readerToken)
-        .get()
-        .uri(resultUri(open))
-        .exchange()
-        .expectStatus()
-        .isOk()
-        .expectHeader()
-        .valueEquals("ETag", "\"" + open.version() + "\"");
-    client(readerToken)
+    client(memberToken)
         .post()
         .uri(resultUri(open) + "/dismiss")
         .header("If-Match", "\"" + open.version() + "\"")
@@ -993,10 +979,8 @@ class ReconciliationDecisionControllerTest {
         .body(new ReconciliationDecisionRequest(NOTE))
         .exchange()
         .expectStatus()
-        .isNotFound();
-    assertThat(onlyResult().status()).isEqualTo("OPEN");
-    // US-28-02: the 404 is an audited denial, not a bare not-found.
-    assertThat(denialLogged("reader@example.com", "Account", cash.id())).isTrue();
+        .isOk();
+    assertThat(onlyResult().status()).isEqualTo("DISMISSED");
   }
 
   @Test
@@ -1370,19 +1354,6 @@ class ReconciliationDecisionControllerTest {
         .expectBody(AccountSummaryResponse.class)
         .returnResult()
         .getResponseBody();
-  }
-
-  private void grantOnAccount(UUID memberId, String level) {
-    client()
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, cash.id(), null, level))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED);
   }
 
   private UUID createSecondMember(String email) {

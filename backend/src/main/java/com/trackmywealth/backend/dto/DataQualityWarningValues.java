@@ -15,9 +15,9 @@ public final class DataQualityWarningValues {
    * rows were entered on top of a balance that already contains them. The member confirmed this
    * when recording the opening balance, or added such rows afterwards.
    *
-   * <p>Shown at {@code BALANCE_ONLY} too: it qualifies the figure that grant sees (PR-011), so it
-   * travels with it. It says only that such rows exist - never how many, when or how much, which
-   * stay behind {@code READ} (#241 review).
+   * <p>It qualifies the account's figure (PR-011), so it travels with it wherever the figure is
+   * shown. It says only that such rows exist - never how many, when or how much: those are in the
+   * account's transactions.
    *
    * <p>A finalized reconciliation adjustment (US-25-03) left before a later-moved opening balance
    * does not raise it: the new starting point contains that correction, and the row is locked to

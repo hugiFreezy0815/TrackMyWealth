@@ -8,7 +8,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -63,12 +62,11 @@ class ImportStagingServiceTest {
     when(rowChecks.settlementSourceOf(card)).thenReturn(Optional.of(sourceId));
     when(accounts.findById(sourceId)).thenReturn(Optional.of(source));
     when(access.requireActingMember(actor)).thenReturn(member);
-    when(access.accountsWithAccess(member, List.of(source), AccessLevelValues.READ))
-        .thenReturn(List.of());
+    when(access.accountsWithAccess(member, List.of(source))).thenReturn(List.of());
 
     staging.stage(batch, card, List.of(), Map.of(), actor);
 
-    verify(access).accountsWithAccess(member, List.of(source), AccessLevelValues.READ);
+    verify(access).accountsWithAccess(member, List.of(source));
     verify(rowChecks).matchedSettlementRows(isNull(), eq("CHF"), eq(List.of()));
   }
 
@@ -87,8 +85,7 @@ class ImportStagingServiceTest {
     when(rowChecks.settlementSourceOf(card)).thenReturn(Optional.of(sourceId));
     when(accounts.findById(sourceId)).thenReturn(Optional.of(source));
     when(access.requireActingMember(actor)).thenReturn(member);
-    when(access.accountsWithAccess(member, List.of(source), AccessLevelValues.READ))
-        .thenReturn(List.of(source));
+    when(access.accountsWithAccess(member, List.of(source))).thenReturn(List.of(source));
 
     staging.stage(batch, card, List.of(), Map.of(), actor);
 
@@ -107,6 +104,6 @@ class ImportStagingServiceTest {
 
     staging.stage(batch, account, List.of(), Map.of(), actor);
 
-    verify(pockets, never()).previewWarning(any(), any());
+    verify(pockets, never()).previewWarning(any());
   }
 }

@@ -20,9 +20,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * US-09-03 (credit-card statement cycle), gated per card by {@code AccessControlService}
- * (US-03-03): configuring the cycle needs {@code EDIT}; reading it back or viewing the current
- * statement only needs {@code BALANCE_ONLY}, the same level {@link AccountBalanceController} uses.
+ * US-09-03 (credit-card statement cycle): configuring the cycle, reading it back and viewing the
+ * current statement all need membership of the card's workspace ({@code AccessControlService}).
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{cardAccountId}")

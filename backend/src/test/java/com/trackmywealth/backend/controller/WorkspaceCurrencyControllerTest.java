@@ -89,8 +89,6 @@ class WorkspaceCurrencyControllerTest {
               "transaction_category_split",
               "transaction_categorization_log",
               "transaction",
-              "sharing_grant",
-              "account_ownership",
               "custom_asset_valuation",
               "account_custom_asset",
               "account_credit_card",

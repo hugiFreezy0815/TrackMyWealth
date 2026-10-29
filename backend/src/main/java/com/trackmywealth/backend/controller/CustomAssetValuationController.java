@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** US-05-05, US-03-03 (read/write gated by {@code AccessControlService}). */
+/** US-05-05, US-03-06 (workspace membership checked by {@code AccessControlService}). */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/valuations")
 public class CustomAssetValuationController {

@@ -74,8 +74,6 @@ class AdminReferenceDataControllerTest {
           List.of(
               "DELETE FROM transaction_categorization_log",
               LedgerCleanup.DELETE_ALL_TRANSACTIONS,
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
               "DELETE FROM user_session",

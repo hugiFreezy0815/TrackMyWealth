@@ -17,11 +17,9 @@ import org.springframework.web.server.ResponseStatusException;
  * US-03-04/FR-HHL-015: a workspace must always retain at least one active member, by analogy with
  * {@link AdminUserService}'s FR-USR-005 "last active administrator" guard, which this mirrors.
  *
- * <p>Self-service only for now: {@link #deactivateMember} rejects any target other than the
- * caller's own {@code workspace_member} row. Whether a caller has {@code FULL} access to someone
- * else's membership belongs to {@code AccessControlService} (US-03-03), not reimplemented here.
- * Letting a {@code FULL}-access member deactivate another is a small follow-up: relax {@link
- * #requireSelf} through that service; nothing else about the guard below changes.
+ * <p>Self-service only: {@link #deactivateMember} rejects any target other than the caller's own
+ * {@code workspace_member} row. Members never add or remove each other; assigning and removing a
+ * membership is the administrator's job (FR-USR-014).
  */
 @Service
 public class WorkspaceMemberService {
@@ -104,7 +102,7 @@ public class WorkspaceMemberService {
     return toSummary(target);
   }
 
-  // Mirrors AccessControlService.requireActingMember (US-03-03) in spirit - resolving "who is
+  // Mirrors AccessControlService.requireActingMember in spirit - resolving "who is
   // making this request" as a workspace_member id. It predates that class and stays separate until
   // the follow-up in the class Javadoc routes this service through it. This is a narrow identity
   // lookup, not a reimplementation of access-level computation, so duplicating it here is not the
@@ -154,7 +152,6 @@ public class WorkspaceMemberService {
     return new WorkspaceMemberSummaryResponse(
         member.getId(),
         member.getDisplayName(),
-        member.isDependent(),
         member.getStatus(),
         member.getMemberSince(),
         member.getMemberUntil(),

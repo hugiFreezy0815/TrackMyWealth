@@ -101,8 +101,6 @@ class InstitutionControllerTest {
       for (String table :
           List.of(
               "fx_rate",
-              "sharing_grant",
-              "account_ownership",
               "custom_asset_valuation",
               "account_custom_asset",
               "account_mortgage",
@@ -523,9 +521,9 @@ class InstitutionControllerTest {
   }
 
   @Test
-  void aMemberWithNoGrantCannotSeeAnotherMembersInstitutionSummary() {
-    // Proves AccessControlService is actually wired in, not just compiling: once a second member
-    // exists, the admin's institution is no longer implicitly visible to them (US-03-03).
+  void anotherMemberSeesTheInstitutionSummaryWithoutAnyGrant() {
+    // Proves AccessControlService is wired in on membership alone (US-03-06): a second member of
+    // the workspace sees the first one's institution at once.
     String adminToken = bootstrapAdministrator();
     FinancialInstitutionSummaryResponse institution =
         createInstitution(
@@ -540,7 +538,7 @@ class InstitutionControllerTest {
         .uri("/api/v1/institutions/" + institution.id() + "/summary")
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND);
+        .isOk();
   }
 
   @Test

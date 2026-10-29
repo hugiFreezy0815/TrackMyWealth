@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
@@ -56,9 +55,8 @@ import org.springframework.web.server.ResponseStatusException;
  * who changed it and when. A provider-reported snapshot (any other source) is never edited through
  * the API: it is the institution's statement, not the user's transcription of it (409).
  *
- * <p>Writes need {@code EDIT}, reads {@code READ} on the account (US-03-03): a snapshot lists
- * positions, which is more than a {@code BALANCE_ONLY} grant shows. {@code is_opening_balance} is
- * always {@code false} for a snapshot recorded here. The account's opening balance (US-25-04) is a
+ * <p>Reads and writes need access to the account (US-03-06). {@code is_opening_balance} is always
+ * {@code false} for a snapshot recorded here. The account's opening balance (US-25-04) is a
  * snapshot too and is listed here, but only {@code OpeningBalanceService} writes it: replacing it
  * here is a 409, so its own rules (the earlier-transactions guard) cannot be bypassed.
  *
@@ -111,7 +109,7 @@ public class AccountSnapshotService {
   public AccountSnapshotResponse record(
       UUID accountId, RecordAccountSnapshotRequest request, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     Map<UUID, Security> securities =
         validate(account, request.snapshotDate(), request.balance(), request.holdings());
 
@@ -156,7 +154,7 @@ public class AccountSnapshotService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     AccountSnapshot snapshot =
         snapshotRepository
             .findForUpdate(snapshotId, accountId)
@@ -196,7 +194,7 @@ public class AccountSnapshotService {
   @Transactional(readOnly = true)
   public List<AccountSnapshotResponse> list(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
+    accessControlService.requireAccountAccess(actor, account);
     List<AccountSnapshot> snapshots =
         snapshotRepository.findByAccountIdAndWithdrawnAtIsNullOrderBySnapshotDateDescSourceAsc(
             accountId);
@@ -229,7 +227,7 @@ public class AccountSnapshotService {
   public AccountSnapshotResponse get(
       UUID accountId, UUID snapshotId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
+    accessControlService.requireAccountAccess(actor, account);
     AccountSnapshot snapshot =
         snapshotRepository
             .findByIdAndAccountId(snapshotId, accountId)

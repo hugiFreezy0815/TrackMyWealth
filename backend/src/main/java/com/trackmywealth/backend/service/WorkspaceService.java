@@ -3,22 +3,18 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.UpdateWorkspaceCurrencyRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.entity.Workspace;
-import com.trackmywealth.backend.entity.WorkspaceMember;
-import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-06-05 workspace settings. Any authenticated active, non-dependent member may change the
- * workspace currency; authentication already guarantees the linked member is ACTIVE.
+ * US-06-05 workspace settings. Any active member may change the workspace currency (US-03-06: every
+ * member is a user with a login and has full access to the workspace).
  */
 @Service
 public class WorkspaceService {
@@ -27,17 +23,14 @@ public class WorkspaceService {
   private static final String VERSIONED_RESOURCE = "workspace";
 
   private final WorkspaceRepository workspaceRepository;
-  private final WorkspaceMemberRepository workspaceMemberRepository;
   private final AccessControlService accessControlService;
   private final VersionPreconditionService versionPreconditionService;
 
   public WorkspaceService(
       WorkspaceRepository workspaceRepository,
-      WorkspaceMemberRepository workspaceMemberRepository,
       AccessControlService accessControlService,
       VersionPreconditionService versionPreconditionService) {
     this.workspaceRepository = workspaceRepository;
-    this.workspaceMemberRepository = workspaceMemberRepository;
     this.accessControlService = accessControlService;
     this.versionPreconditionService = versionPreconditionService;
   }
@@ -54,17 +47,6 @@ public class WorkspaceService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     UUID memberId = accessControlService.requireActingMember(actor);
-    WorkspaceMember member =
-        workspaceMemberRepository
-            .findById(memberId)
-            .orElseThrow(
-                () ->
-                    new IllegalStateException(
-                        "Authenticated workspace member no longer exists: " + memberId));
-    if (member.isDependent()) {
-      throw new ResponseStatusException(
-          HttpStatus.FORBIDDEN, "A dependent member cannot change workspace settings.");
-    }
 
     UUID workspaceId = actor.workspaceId();
     Workspace workspace =

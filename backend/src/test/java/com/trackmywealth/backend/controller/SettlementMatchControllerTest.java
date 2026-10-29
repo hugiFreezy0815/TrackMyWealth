@@ -3,17 +3,14 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
@@ -112,8 +109,6 @@ class SettlementMatchControllerTest {
       statement.execute(LedgerCleanup.DELETE_ALL_TRANSACTIONS);
       for (String table :
           List.of(
-              "sharing_grant",
-              "account_ownership",
               "custom_asset_valuation",
               "account_custom_asset",
               "account_credit_card",
@@ -697,30 +692,18 @@ class SettlementMatchControllerTest {
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
   }
 
-  // --- Authorization (US-03-03) --------------------------------------------------------------
+  // --- Authorization (US-03-06) --------------------------------------------------------------
 
   @Test
-  void decidingAMatchNeedsEditOnBothAccounts() {
+  void anotherMemberSeesAndDecidesAMatchWithoutAnyGrant() {
     String adminToken = bootstrapAdministrator();
     Accounts a = accountsWithSource(adminToken);
     purchase(adminToken, a.card(), "-1200.00", AUG_10);
     withdrawal(adminToken, a.current(), "-1200.00", SEP_3);
     UUID proposalId = matches(adminToken, null).get(0).id();
-    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
 
-    // No access at all, then EDIT on the card only: the match is invisible and undecidable.
-    assertThat(matches(bobToken, null)).isEmpty();
-    grant(adminToken, bobMemberId, a.card(), AccessLevelValues.EDIT);
-    assertThat(matches(bobToken, null)).isEmpty();
-    decide(bobToken, proposalId, "confirm", HttpStatus.NOT_FOUND);
-    decide(bobToken, proposalId, "reject", HttpStatus.NOT_FOUND);
-    // READ on the paying account is still not enough.
-    grant(adminToken, bobMemberId, a.current(), AccessLevelValues.READ);
-    decide(bobToken, proposalId, "confirm", HttpStatus.NOT_FOUND);
-
-    // EDIT on both: visible and decidable.
-    grant(adminToken, bobMemberId, a.current(), AccessLevelValues.EDIT);
     assertThat(matches(bobToken, null))
         .extracting(SettlementMatchResponse::id)
         .contains(proposalId);
@@ -728,41 +711,28 @@ class SettlementMatchControllerTest {
   }
 
   @Test
-  void choosingTheSettlementSourceNeedsEditOnBothAccountsAndNeverRevealsAHiddenSource() {
+  void anotherMemberSeesAndChangesTheSettlementSource() {
     String adminToken = bootstrapAdministrator();
     Accounts a = accountsWithSource(adminToken);
-    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    UUID savings = createAccount(adminToken, "Savings", "SAVINGS", "CHF").id();
+    createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
 
-    // Bob may see the card's balance but not its paying account: the id is withheld.
-    grant(adminToken, bobMemberId, a.card(), AccessLevelValues.BALANCE_ONLY);
-    assertThat(getSource(bobToken, a.card()).settlementSourceAccountId()).isNull();
-    // Bob cannot change it with anything less than EDIT on both.
-    setSource(bobToken, a.card(), a.current(), HttpStatus.NOT_FOUND);
-    grant(adminToken, bobMemberId, a.card(), AccessLevelValues.EDIT);
-    setSource(bobToken, a.card(), a.current(), HttpStatus.NOT_FOUND);
-    grant(adminToken, bobMemberId, a.current(), AccessLevelValues.EDIT);
-    setSource(bobToken, a.card(), a.current(), HttpStatus.OK);
     assertThat(getSource(bobToken, a.card()).settlementSourceAccountId()).isEqualTo(a.current());
+    setSource(bobToken, a.card(), savings, HttpStatus.OK);
+    assertThat(getSource(adminToken, a.card()).settlementSourceAccountId()).isEqualTo(savings);
   }
 
   @Test
-  void spendingOnlyCoversAccountsTheCallerMayRead() {
+  void everyMemberSeesTheWholeWorkspacesSpending() {
     String adminToken = bootstrapAdministrator();
     Accounts a = accountsWithSource(adminToken);
     purchase(adminToken, a.card(), "-300.00", AUG_10);
     withdrawal(adminToken, a.current(), "-100.00", AUG_10);
-    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
 
-    assertThat(cashFlow(bobToken, "2026-08").spending()).isEmpty();
-    grant(adminToken, bobMemberId, a.card(), AccessLevelValues.BALANCE_ONLY);
-    assertThat(cashFlow(bobToken, "2026-08").spending()).isEmpty(); // balance only: no detail
-    grant(adminToken, bobMemberId, a.card(), AccessLevelValues.READ);
     assertThat(cashFlow(bobToken, "2026-08").spending())
-        .singleElement()
-        .satisfies(s -> assertThat(s.amount()).isEqualByComparingTo("300.00"));
-    assertThat(cashFlow(adminToken, "2026-08").spending())
         .singleElement()
         .satisfies(s -> assertThat(s.amount()).isEqualByComparingTo("400.00"));
   }
@@ -913,51 +883,6 @@ class SettlementMatchControllerTest {
   }
 
   @Test
-  void runningMatchingNeverRevealsAnEarlierSettlementSourcesMatches() {
-    String adminToken = bootstrapAdministrator();
-    Accounts a = accountsWithSource(adminToken);
-    UUID savings = createAccount(adminToken, "Savings", "SAVINGS", "CHF").id();
-    withdrawal(adminToken, a.current(), "-1200.00", SEP_3);
-    cardCredit(adminToken, a.card(), "1200.00", SEP_3);
-    assertThat(matches(adminToken, "CONFIRMED")).hasSize(1); // a match made while the source was A
-
-    // The source changes to another account. Bob may edit the card and the new source, not the old.
-    setSource(adminToken, a.card(), savings, HttpStatus.OK);
-    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
-    String bobToken = login("bob@example.com");
-    grant(adminToken, bobMemberId, a.card(), AccessLevelValues.EDIT);
-    grant(adminToken, bobMemberId, savings, AccessLevelValues.EDIT);
-
-    assertThat(run(bobToken, a.card())).isEmpty();
-    assertThat(run(adminToken, a.card()))
-        .singleElement()
-        .satisfies(m -> assertThat(m.paymentAccountId()).isEqualTo(a.current()));
-  }
-
-  @Test
-  void anotherMembersMatchesCannotCrowdTheCallersOwnOutOfTheWorkQueue() {
-    String adminToken = bootstrapAdministrator();
-    Accounts mine = accountsWithSource(adminToken);
-    purchase(adminToken, mine.card(), "-1200.00", AUG_10);
-    withdrawal(adminToken, mine.current(), "-1200.00", SEP_3);
-    UUID bobsProposal = matches(adminToken, null).get(0).id();
-    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
-    String bobToken = login("bob@example.com");
-    grant(adminToken, bobMemberId, mine.card(), AccessLevelValues.EDIT);
-    grant(adminToken, bobMemberId, mine.current(), AccessLevelValues.EDIT);
-
-    // More proposals than one page, all newer, all on accounts Bob cannot see.
-    Accounts hidden = accountsWithoutSource(adminToken);
-    insertProposedMatches(
-        hidden.card(), hidden.current(), SettlementMatchControllerTestLimits.PAGE + 5);
-
-    assertThat(matches(bobToken, null))
-        .extracting(SettlementMatchResponse::id)
-        .contains(bobsProposal);
-    assertThat(matches(adminToken, null)).hasSize(SettlementMatchControllerTestLimits.PAGE);
-  }
-
-  @Test
   void matchesAreListedNewestFirstWithAStableTieBreak() throws Exception {
     // Rows created in one statement share created_at (now() is the transaction's start), so the
     // order among them must come from a tie-breaker, not from whatever order the database returns.
@@ -1032,11 +957,6 @@ class SettlementMatchControllerTest {
     voidWithReversal(payment.id(), a.current(), "WITHDRAWAL", "1200.00");
 
     decide(token, proposalId, "confirm", HttpStatus.CONFLICT);
-  }
-
-  // The page size of the work queue (SettlementMatchService.MAX_LISTED), spelled out for the tests.
-  private static final class SettlementMatchControllerTestLimits {
-    static final int PAGE = 200;
   }
 
   // PROPOSED one-sided matches on fresh withdrawals, made directly (as detection would), all in one
@@ -1401,19 +1321,6 @@ class SettlementMatchControllerTest {
         .expectBody(AccountValuation.class)
         .returnResult()
         .getResponseBody();
-  }
-
-  private void grant(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED);
   }
 
   private UUID createSecondMember(String adminToken, String email) {

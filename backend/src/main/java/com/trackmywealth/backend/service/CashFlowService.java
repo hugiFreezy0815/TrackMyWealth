@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
@@ -66,8 +65,7 @@ import org.springframework.transaction.annotation.Transactional;
  * rates, so it carries the carried-forward and stale marks (any day) but no single rate or date
  * (decision on #224).
  *
- * <p>Only accounts the caller may {@code READ} contribute: transaction-level detail is not shown at
- * {@code BALANCE_ONLY}.
+ * <p>Every account of the caller's workspace contributes (US-03-06).
  */
 @Service
 public class CashFlowService {
@@ -116,10 +114,7 @@ public class CashFlowService {
     String targetCurrency = CurrencyCodes.requestedOrDefault(requestedCurrency, null);
     List<UUID> accountIds =
         accessControlService
-            .accountsWithAccess(
-                memberId,
-                accountRepository.findByWorkspaceId(actor.workspaceId()),
-                AccessLevelValues.READ)
+            .accountsWithAccess(memberId, accountRepository.findByWorkspaceId(actor.workspaceId()))
             .stream()
             .map(Account::getId)
             .toList();

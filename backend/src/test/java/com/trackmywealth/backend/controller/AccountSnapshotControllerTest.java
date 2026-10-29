@@ -3,18 +3,15 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
@@ -91,8 +88,6 @@ class AccountSnapshotControllerTest {
               "security_asset_class_weight",
               "security_identifier",
               "security",
-              "sharing_grant",
-              "account_ownership",
               "account_securities",
               "account",
               "admin_audit_log",
@@ -498,31 +493,21 @@ class AccountSnapshotControllerTest {
   // --- Authorization ------------------------------------------------------------------------
 
   @Test
-  void aReadOnlyMemberCanSeeSnapshotsButOnlyAnEditorCanRecordThem() {
+  void anotherMemberRecordsAndListsSnapshotsWithoutAnyGrant() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse cash = createAccount(adminToken, "PostFinance", "CASH");
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
     record(memberToken, cash.id(), balanceOnly(today(), "1.00"))
         .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND);
-
-    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.READ);
-    record(memberToken, cash.id(), balanceOnly(today(), "1.00"))
-        .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND); // no hint the account exists, as for transactions
-    client(memberToken)
+        .isEqualTo(HttpStatus.CREATED);
+    client(adminToken)
         .get()
         .uri("/api/v1/accounts/" + cash.id() + "/snapshots")
         .exchange()
         .expectStatus()
         .isOk();
-
-    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.EDIT);
-    record(memberToken, cash.id(), balanceOnly(today(), "1.00"))
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED);
   }
 
   // --- V33 currency guard (defense-in-depth: the service never sends another currency) -------
@@ -646,19 +631,6 @@ class AccountSnapshotControllerTest {
         .expectBody(SecurityResponse.class)
         .returnResult()
         .getResponseBody();
-  }
-
-  private void grantOnAccount(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED);
   }
 
   private UUID createSecondMember(String adminToken, String email) {

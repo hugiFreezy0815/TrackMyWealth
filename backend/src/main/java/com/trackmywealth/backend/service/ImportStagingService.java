@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
@@ -122,10 +121,9 @@ public class ImportStagingService {
             .map(snapshot -> snapshot.getSnapshotDate())
             .orElse(null);
     UUID settlementSource = rowCheckService.settlementSourceOf(account).orElse(null);
-    // A card can be shared without its payment account. Only a source whose transactions the
-    // member may read influences the preview: whether the warning shows tells whether a payment of
-    // that amount exists there, so BALANCE_ONLY is not enough. A missing or revoked source never
-    // reaches the payment query.
+    // Only a source the member has access to influences the preview: whether the warning shows
+    // tells whether a payment of that amount exists there. A missing source never reaches the
+    // payment query.
     UUID visibleSource =
         settlementSource == null
             ? null
@@ -135,9 +133,7 @@ public class ImportStagingService {
                     source ->
                         !accessControlService
                             .accountsWithAccess(
-                                accessControlService.requireActingMember(actor),
-                                List.of(source),
-                                AccessLevelValues.READ)
+                                accessControlService.requireActingMember(actor), List.of(source))
                             .isEmpty())
                 .map(Account::getId)
                 .orElse(null);
@@ -146,7 +142,7 @@ public class ImportStagingService {
     // US-07-22: what the commit will do with the batch's savings pocket moves, the same for each.
     String pocketWarning =
         checked.stream().anyMatch(row -> row.isParsed() && row.canonical().savingsPocket())
-            ? savingsPocketService.previewWarning(account, actor).orElse(null)
+            ? savingsPocketService.previewWarning(account).orElse(null)
             : null;
     List<StagedImportRow> staged = new ArrayList<>(checked.size());
     int duplicateCount = 0;

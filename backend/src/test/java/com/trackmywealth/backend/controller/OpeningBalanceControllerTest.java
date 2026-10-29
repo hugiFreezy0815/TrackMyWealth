@@ -3,13 +3,11 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
@@ -20,7 +18,6 @@ import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
@@ -110,8 +107,6 @@ class OpeningBalanceControllerTest {
               "DELETE FROM snapshot_holding",
               "DELETE FROM account_snapshot",
               "DELETE FROM custom_asset_valuation",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_credit_card",
               "DELETE FROM account_securities",
               "DELETE FROM account_mortgage",
@@ -786,59 +781,17 @@ class OpeningBalanceControllerTest {
   // --- Authorization -------------------------------------------------------------------------
 
   @Test
-  void aBalanceOnlyMemberSeesTheResultingBalanceButNotTheOpeningBalance() {
+  void anotherMemberRecordsReadsAndDeletesTheOpeningBalance() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse cash = createAccount(adminToken, "PostFinance", "CASH");
-    recordOk(adminToken, cash.id(), request(openingDate, "1000.00", "CHF"));
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
-    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.BALANCE_ONLY);
-    assertThat(balance(memberToken, cash.id()).value()).isEqualByComparingTo("1000.00");
-    assertThat(balance(memberToken, cash.id(), today()).value()).isEqualByComparingTo("1000.00");
-    // A past balance needs READ: consecutive days' balances would reveal the day's transactions.
-    client(memberToken)
-        .get()
-        .uri("/api/v1/accounts/" + cash.id() + "/balance?asOf=" + openingDate)
-        .exchange()
-        .expectStatus()
-        .isNotFound();
-    client(memberToken)
-        .get()
-        .uri(openingBalanceUri(cash.id()))
-        .exchange()
-        .expectStatus()
-        .isNotFound();
-  }
-
-  @Test
-  void aReadOnlyMemberCanSeeTheOpeningBalanceButOnlyAnEditorCanRecordIt() {
-    String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse cash = createAccount(adminToken, "PostFinance", "CASH");
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
-    String memberToken = login("member@example.com");
-
-    // No grant at all: the plain NOT_FOUND an unknown id gets - never OPENING_BALANCE_NOT_RECORDED,
-    // which would confirm the account exists.
-    client(memberToken)
-        .get()
-        .uri(openingBalanceUri(cash.id()))
-        .exchange()
-        .expectStatus()
-        .isNotFound()
-        .expectBody()
-        .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.NOT_FOUND);
-    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.READ);
-    // READ may read a past balance (unknown here: no opening balance yet), BALANCE_ONLY may not.
-    assertThat(balance(memberToken, cash.id(), openingDate).valueKnown()).isFalse();
-    record(memberToken, cash.id(), request(openingDate, "1.00", "CHF"))
-        .expectStatus()
-        .isNotFound(); // no hint the account exists, as for snapshots
     OpeningBalanceResponse recorded =
-        recordOk(adminToken, cash.id(), request(openingDate, "1.00", "CHF"));
-    assertThat(get(memberToken, cash.id())).isEqualTo(recorded);
-    delete(memberToken, cash.id(), ifMatch(recorded.version())).expectStatus().isNotFound();
+        recordOk(memberToken, cash.id(), request(openingDate, "1.00", "CHF"));
+    assertThat(get(adminToken, cash.id())).isEqualTo(recorded);
+    assertThat(balance(memberToken, cash.id(), openingDate).value()).isEqualByComparingTo("1.00");
+    delete(memberToken, cash.id(), ifMatch(recorded.version())).expectStatus().isNoContent();
   }
 
   // --- Helpers ------------------------------------------------------------------------------
@@ -1096,19 +1049,6 @@ class OpeningBalanceControllerTest {
         date,
         source,
         accountId);
-  }
-
-  private void grantOnAccount(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED);
   }
 
   private UUID createSecondMember(String adminToken, String email) {
