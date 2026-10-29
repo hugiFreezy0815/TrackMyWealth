@@ -147,7 +147,7 @@ class WorkspaceNameControllerTest {
   }
 
   @Test
-  void setupAcceptsMissingAndBlankNameAndUsesSameValidation() {
+  void setupWithoutANameStoresNull() {
     client(null)
         .post()
         .uri("/api/v1/setup/administrator")
@@ -160,6 +160,40 @@ class WorkspaceNameControllerTest {
         .expectStatus()
         .isCreated();
     assertThat(workspaceNameInDatabase()).isNull();
+  }
+
+  @Test
+  void setupWithABlankNameStoresNull() {
+    client(null)
+        .post()
+        .uri("/api/v1/setup/administrator")
+        .contentType(MediaType.APPLICATION_JSON)
+        // Spaces only: a tab is a control character, which the name refuses even at its edges.
+        .body(new SetupAdministratorRequest("admin@example.com", PASSWORD, "   ", "CHF"))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+    assertThat(workspaceNameInDatabase()).isNull();
+  }
+
+  // #392: any member may rename the workspace (full access, #389), not only the first one.
+  @Test
+  void aSecondMemberOfTheSameWorkspaceRenamesIt() {
+    String first = member("Initial");
+    String adminToken = login("admin@example.com");
+    client(adminToken)
+        .post()
+        .uri("/api/v1/admin/users")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new CreateUserRequest("second@example.com", PASSWORD, "STANDARD_USER", "EN"))
+        .exchange()
+        .expectStatus()
+        .isCreated();
+    String second = login("second@example.com");
+
+    rename(second, current(second).getResponseHeaders().getETag(), "Renamed by the second");
+
+    assertThat(current(first).getResponseBody().name()).isEqualTo("Renamed by the second");
   }
 
   @Test
