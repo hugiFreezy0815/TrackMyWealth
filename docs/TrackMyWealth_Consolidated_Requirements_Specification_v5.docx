@@ -37,6 +37,7 @@ This edition merges the TrackMyWealth requirements baseline with a competitive s
 | 7, 9, 27, 36, 58 | **Financial Institution / Container renamed to Portfolio**: a user-named container with an optional institution and a descriptive type suggested from its contents; tab view per portfolio (FR-INS-013); the investment account type is the Depot |
 | 8, 49, 52–56 | **No ownership model and no per-account grants: every member is a System User with full access to the whole workspace**; Couple/family and cross-border personas removed |
 | 7–8, 36, 48, 52–57 | Entity *Household* renamed to **Workspace** (Workspace Member, workspace budget, workspace lifecycle); requirement IDs unchanged |
+| 5, 7, 8, 8.3, 48–51 | **System administration scope: the administrator runs the system only — users, feature activation and limits per workspace, job schedules — and is never a workspace member, so has no access to financial data. A user who registers gets their own workspace automatically. One member per workspace in the MVP; requesting access for another user comes later** |
  
 | Item | Baseline |
 | --- | --- |
@@ -190,7 +191,7 @@ Tax functionality is out of scope. However, **tax amounts are a cash event that 
 | Advanced private investor | Consolidated depots, master data, prices, TWR/MWR, benchmarks, GICS, asset/currency/country exposure |
 | **Privacy-motivated user** | Rejects cloud aggregation of financial data. Needs the ability to self-host with no dependency on the project. This persona is the reason for the self-hosted topology and must not be traded away for convenience features. |
 | **Financial-independence planner** | Models time to independence: savings rate, withdrawal scenarios, net-worth trajectory |
-| System administrator | Manage users, roles, account status and system access |
+| System administrator | Runs the system: manages users and their workspace membership, activates features per workspace and configures scheduled jobs. Never a workspace member and has no access to any workspace’s financial data (8.3, FR-TEN-007) |
  
 # 6. Product Principles
  
@@ -229,6 +230,9 @@ TrackMyWealth
 +-- System Administration
 |   +-- Users
 |   +-- Roles / Permissions
+|   +-- Workspace membership (post-MVP: on request)
+|   +-- Features and limits per workspace
+|   +-- Scheduled jobs
 |
 +-- Workspace / Financial Context
     +-- Members (System Users)
@@ -252,7 +256,9 @@ A Portfolio is a container the user names. It is not itself an account. Examples
  
 A System User is a person who can authenticate to TrackMyWealth. A Workspace Member is a System User assigned to a workspace. There are no members without a login.
  
-Every System User is an individual person. The normal case is one user per workspace; it shall also be possible to assign several users to one workspace, for example a couple managing shared finances.
+Every System User is an individual person. The normal case is one user per workspace, and the MVP supports only that case (FR-HOU-010). A later release may let several users share one workspace; the model shall already allow it, so that no data migration is needed then.
+ 
+A System Administrator runs the system but is not a workspace member and cannot see any workspace’s financial data (FR-USR-012 to FR-USR-015, section 8.3). A user can access only the workspace they are a member of (FR-TEN-002, FR-TEN-008).
  
 **FR-USR-001 — User administration [MUST]**: The system shall provide user administration for authorized administrators.
  
@@ -276,6 +282,16 @@ Every System User is an individual person. The normal case is one user per works
  
 **FR-USR-011 — Disabled user data retention [MUST]**: Disabling a System User shall not delete or orphan any financial data. All financial data belongs to the workspace, not to the user who created or imported it.
  
+**FR-USR-012 — Administrator scope [MUST]**: A System Administrator runs the system and does nothing else. The administrator may create, edit, disable and reactivate users (FR-USR-003); add a user to an existing workspace or remove them, on request (post-MVP, FR-USR-014); activate and deactivate features and set limits per workspace (FR-ADM-001); configure and start scheduled jobs (FR-ADM-005 to FR-ADM-007); import reference data (FR-REF-002); and view job status (FR-JOB-007). No other function is available to the administrator role.
+ 
+**FR-USR-013 — Administrators are never workspace members [MUST]**: A login holding the System Administrator role shall not be a member of any workspace, and a workspace member shall not be given the System Administrator role; the system shall refuse both. A person who runs a self-hosted deployment and also tracks their own finances uses two logins: an administrator login and a Standard User login. After first-run setup (FR-USR-002) has created the administrator, the first Standard User registers (FR-USR-016) or is created by the administrator. *Tightens FR-TEN-007, which previously allowed an administrator to be a member as well.*
+ 
+**FR-USR-014 — Access for another user is requested and assigned by the administrator [post-MVP]**: In the MVP no user can be added to an existing workspace (FR-HOU-010). A later release shall let a member of a workspace request access to it for another user. The administrator decides on the request and assigns the membership; members cannot assign or remove members themselves. The request shown to the administrator carries only the logins involved and the workspace identifier and name (FR-USR-015). The model and API shall not preclude this flow. Membership changes take effect on the next request (FR-TEN-009), are kept as history (FR-HHL-004), shall not leave a workspace without a member (FR-HHL-015) and are audited (FR-AUT-013, FR-ADM-008).
+ 
+**FR-USR-015 — Administrator sees workspace metadata only, never financial data [MUST]**: For each workspace the administrator may see only its identifier, its name (FR-HOU-009; a workspace without a name is shown by its identifier), creation date, the logins and status of its members, the features enabled for it (FR-ADM-001) and job and data-quality status (state, timestamp, error code). The name lets the administrator recognise a workspace when setting its features and limits (FR-ADM-001) and when deciding on a membership request (FR-USR-014). The administrator shall not see names of portfolios, accounts or institutions; balances, transactions, holdings, budgets or import files; or any value derived from them. Administration APIs shall not return such data, and error details shown to the administrator shall contain no account identifiers, amounts or file content. To find the workspace a request refers to, the administrator looks up the workspace name or the requesting member’s login.
+ 
+**FR-USR-016 — Registering creates the user’s own workspace [MUST]**: A person can register as a Standard User. Registration includes setting up their workspace — the name is optional (FR-HOU-009) — and the new user becomes its only member automatically, without any administrator action. Registration never adds a user to an existing workspace. Whether self-registration is open is a deployment setting (NFR-DEP-002); where it is closed, the administrator creates the user (FR-USR-003) and a new workspace is set up for that user in the same way. The new workspace starts with the default feature set (FR-ADM-002). Registration and the automatic membership are audited (FR-AUT-013).
+ 
 ## 8.2 Shared access within a workspace
  
 There is no ownership model. Portfolios, accounts, personal assets, budgets and goals belong to the workspace. Every member has full access to all of it; no check of who owns or created a record is performed. Separation applies only between workspaces (FR-TEN-001).
@@ -296,7 +312,42 @@ There is no ownership model. Portfolios, accounts, personal assets, budgets and 
  
 **FR-HOU-008 — Created and imported data is immediately usable [MUST]**: When a member creates a portfolio or an account, it shall be created without any owner assignment or approval step. Data imported into it shall appear in all views and reports of the workspace as soon as the import is committed.
  
-**FR-HOU-009 — Workspace name [MUST]**: A workspace may have a name, entered at first setup or later and changeable or removable at any time by any member (at most 60 characters, leading and trailing spaces removed; blank means no name). The name is how the workspace appears to users — the first tab of the overview (FR-INS-013) and the header of consolidated views carry it. Without a name they read “All portfolios” / “Alle Portfolios”. The technical term “workspace” shall not appear in the user interface.
+**FR-HOU-009 — Workspace name [MUST]**: A workspace may have a name, entered at first setup or later and changeable or removable at any time by any member (at most 60 characters, leading and trailing spaces removed; blank means no name). The name is how the workspace appears to users — the first tab of the overview (FR-INS-013) and the header of consolidated views carry it. Without a name they read “All portfolios” / “Alle Portfolios”. The technical term “workspace” shall not appear in the interface for workspace members; the administration interface may use it, since the administrator manages workspaces as such (8.3).
+ 
+**FR-HOU-010 — One member per workspace in the MVP [MUST]**: In the MVP the application shall allow exactly one member per workspace and refuse to add a second (FR-USR-014). The data model, access checks and APIs shall nevertheless treat membership as a set of users (FR-HOU-001, FR-HHL-013), so that a later release can allow several members without migrating data. When several members are allowed, FR-HOU-007 applies to each of them unchanged.
+ 
+## 8.3 System administration
+ 
+The System Administrator configures the system for all workspaces. None of the functions below gives access to a workspace’s financial data (FR-TEN-007, FR-USR-015).
+ 
+**FR-ADM-001 — Features and limits per workspace [MUST]**: An administrator shall be able to activate and deactivate optional features and set limits for each workspace individually. The catalogue below lists the initial features; it is maintained with the product. Core functions — at least one portfolio, accounts, transactions, imports, categorisation and the consolidated view — are always available and cannot be deactivated.
+ 
+| Catalogue entry | Kind | Effect when restricted |
+| --- | --- | --- |
+| Number of portfolios | Limit | Adding a portfolio beyond the limit is refused (FR-ADM-009) |
+| Security details | On/off | The security detail screen (master data, listings, classification — sections 19–21) is not available; positions still show name, quantity and value |
+| Security price charts | On/off | Price-history charts of securities are hidden; prices are still stored and used for valuation |
+| Spending and savings forecast | On/off | The forecast of future spending and saving (section 16, post-MVP items in 38) is not available |
+| Spending analysis | On/off | The analysis of where money was spent, by category (sections 13 and 16, e.g. FR-BUD-006), is not available; transactions and their categories remain visible |
+
+ 
+**FR-ADM-002 — Default feature set [MUST]**: The deployment shall define which optional features and which limits a new workspace starts with. In the MVP a new workspace starts with every feature active and no limit; later defaults follow the commercial model (OPEN-029). Changing this default affects only workspaces created afterwards.
+ 
+**FR-ADM-003 — Deactivation keeps data [MUST]**: Deactivating a feature hides it from the workspace’s members and makes the API refuse its functions. Data already recorded through the feature is kept unchanged and is available again when the feature is reactivated. Figures outside the feature shall not change because of a deactivation.
+ 
+**FR-ADM-004 — Feature state is enforced by the server [MUST]**: The API shall check the feature state on every request, not only hide it in the client (FR-USR-009). A change takes effect on the next request, without a restart or a new login.
+ 
+**FR-ADM-005 — Configurable job schedules [MUST]**: An administrator shall be able to change the schedule of the deployment’s scheduled jobs (FR-JOB-001) — at least FX-rate import and price refresh — by setting frequency, time of day and time zone, and to pause and resume a job. A change takes effect without a restart, and the next planned run shall be shown. Schedules apply to the whole deployment; the administrator cannot schedule or start work on a single workspace’s data.
+ 
+**FR-ADM-006 — Schedules are validated [MUST]**: A schedule that runs a job more often than its minimum interval shall be rejected, so that provider rate limits are respected (FR-JOB-005). Each job ships with a default schedule, which the administrator can restore.
+ 
+**FR-ADM-007 — Run now [SHOULD]**: An administrator should be able to start a job once outside its schedule, for example after a provider outage. A job that is already running shall not be started a second time (FR-JOB-002).
+ 
+**FR-ADM-008 — Administrative changes are audited [MUST]**: Feature activation and deactivation, schedule changes, manual job runs and membership changes shall be recorded with timestamp, administrator, workspace where applicable, and old and new value. *Raises FR-DAT-005 from SHOULD to MUST for these actions.*
+ 
+**FR-ADM-009 — Limits never remove data [MUST]**: When a limit is reached, the action that would exceed it is refused with a message telling the member that the limit is reached; the client shall not offer the action as if it were available. Lowering a limit below the current count keeps everything that exists and only prevents new additions.
+ 
+**FR-ADM-010 — Catalogue is extensible [MUST]**: Adding a feature or limit to the catalogue shall not require a database schema change; feature state and limit values are stored as data per workspace. The catalogue is prepared in the MVP so that features can later be tied to a commercial model (OPEN-029).
  
 # 9. Portfolio
  
@@ -1408,7 +1459,7 @@ The MVP shall establish a correct, extensible financial foundation. Priority are
  
 - User administration, authentication baseline, user language and user reporting currency
  
-- Workspace and member model
+- Workspace and member model — one member per workspace (FR-HOU-010); registration with the user’s own workspace (FR-USR-016); system administration: users, features and limits per workspace, job schedules (8.3)
  
 - Portfolio model including portfolio currency and Portfolio View
  
@@ -1443,6 +1494,8 @@ The MVP shall establish a correct, extensible financial foundation. Priority are
 **Sequencing note.** Items 6, 11 and 16 are the additions to the baseline MVP, and they are deliberately placed in the MVP rather than deferred. Reconciliation and the daily valuation series cannot be retrofitted without full historical recomputation, and the regression suite is what makes PR-010 enforceable rather than aspirational.
  
 # 38. Post-MVP / Future Capabilities
+ 
+- Several members per workspace: a member requests access for another user and the administrator assigns it (FR-HOU-010, FR-USR-014)
  
 - Institution-specific PDF imports
  
@@ -1658,7 +1711,7 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
  
 **OPEN-021 — CLOSED**: No sharing model within a workspace. All members have full access (FR-HOU-007, FR-TEN-008); strict separation applies only between workspaces (FR-TEN-001).
  
-**OPEN-022 [TBD]**: Registration model for the hosted service — self-service signup, invite-only, or admin-provisioned. Section 8 currently describes admin provisioning, which suits self-hosting but not a public service.
+**OPEN-022 — PARTLY CLOSED**: Self-service registration; each registration sets up the user’s own new workspace (FR-USR-016), and it can be switched off per deployment. Still open for the hosted service: e-mail verification and protection against abusive sign-ups.
  
 **OPEN-023 [TBD]**: Web client approach — Expo web via react-native-web, or a separate React web client sharing a TypeScript API and domain layer. Decide after the transaction-list spike (RISK-010).
  
@@ -1683,6 +1736,8 @@ The technology baseline in section 48.3 fixes client framework, API framework, t
 **OPEN-034 [TBD]**: Who curates and publishes reference bundles, where they are obtained, and at what cadence (FR-REF-012). Required before launch, since manual import is now the only update channel.
  
 **OPEN-035 [TBD]**: Should one person be able to belong to two workspaces — an adult managing their own and a parent’s finances? Currently unsupported (55.2).
+ 
+**OPEN-036 [TBD]**: Initial feature catalogue decided (FR-ADM-001). MVP default decided: all features active, no limits (FR-ADM-002). Still open: post-MVP default state and limit values per topology, which depend on the commercial model (OPEN-029).
  
 **OPEN-031 [TBD]**: When does user-facing export return? Three consequences follow from its deferral and should be accepted knowingly rather than discovered later: no supported topology migration (NFR-DEP-006); no route for a user or adviser to derive tax figures externally, now that tax reporting is also out of scope (OOS-004); and no user-side recovery path if a hosted account is closed or the service is discontinued. None is a defect — export is a real cost and deferring it is a reasonable MVP decision — but each is a commitment made by omission.
  
@@ -1839,7 +1894,7 @@ TrackMyWealth is delivered as a client application and a server API. The client 
 | --- | --- | --- |
 | Who runs the API and database | The user | The service operator |
 | Typical tenants per deployment | One workspace | Many workspaces |
-| Registration | Bootstrap administrator at first run, then admin-provisioned users | Per business model (OPEN-022) |
+| Registration | Bootstrap administrator at first run, then self-registration or admin-created users (FR-USR-016); whoever runs it also uses a separate Standard User login for their own data (FR-USR-013) | Self-registration (FR-USR-016); verification per OPEN-022 |
 | Market-data entitlement | Supplied by the deploying user, or manual prices | Operator’s licence, proxied |
 | Licensed classification data (GICS) | Not distributed; fallback taxonomy or the user’s own entitlement | Operator’s licence |
 | Backup | The deploying user | The operator, to section 51 targets |
@@ -1851,7 +1906,7 @@ TrackMyWealth is delivered as a client application and a server API. The client 
  
 **NFR-DEP-003 — Client is topology-agnostic [MUST]**: The client shall be pointed at an API base URL and shall behave identically regardless of where that API runs. The mobile applications shall permit configuring the server endpoint.
  
-**NFR-DEP-004 — No trusted-deployment shortcut [MUST]**: Authorization, tenant isolation and audit shall be enforced identically in a single-workspace self-hosted deployment. A deployment believed to have one tenant is not permitted to relax any control; families self-host, and the multi-user requirement applies there too.
+**NFR-DEP-004 — No trusted-deployment shortcut [MUST]**: Authorization, tenant isolation and audit shall be enforced identically in a single-workspace self-hosted deployment. A deployment believed to have one tenant is not permitted to relax any control; a self-hosted deployment may serve several users, and the separation of administrator and member (FR-USR-013) applies there too.
  
 **NFR-DEP-005 — Self-hosted deployment is a first-class deliverable [MUST]**: Container images and a documented, reproducible deployment procedure including database migration shall be part of every release, not an afterthought.
  
@@ -1909,9 +1964,9 @@ The controlling requirement: **an authenticated user shall see only data they ar
  
 **FR-TEN-006 — Consistent denial [MUST]**: An unauthorized request for an existing object and a request for a non-existent object shall be indistinguishable in response and in timing, so that identifiers cannot be probed.
  
-**FR-TEN-007 — Administrative rights are not financial rights [MUST]**: A System Administrator can manage users, roles and system configuration. This shall confer **no** access to any workspace’s financial data. The two permission domains are separate (FR-USR-010), and this separation shall hold in a self-hosted deployment where the administrator is also a workspace member — their financial access derives from their workspace membership alone.
+**FR-TEN-007 — Administrative rights are not financial rights [MUST]**: A System Administrator can manage users, roles and system configuration. This shall confer **no** access to any workspace’s financial data. The two permission domains are separate (FR-USR-010): an administrator login is never a workspace member (FR-USR-013), so no login holds both — also in a self-hosted deployment run by a single person. Administration APIs return only technical workspace metadata (FR-USR-015).
  
-**FR-TEN-008 — Membership is the only access grant [MUST]**: Access to financial data is granted only by making a user a member of the workspace, and then covers all of the workspace’s data. There are no per-account or per-scope grants and no access levels. *Replaces the earlier provisional grant model (OPEN-021, closed).*
+**FR-TEN-008 — Membership is the only access grant [MUST]**: Access to financial data is granted only by making a user a member of the workspace — automatically for the user who registers the workspace (FR-USR-016), otherwise only by an administrator (post-MVP, FR-USR-014) — and then covers all of the workspace’s data. There are no per-account or per-scope grants and no access levels. *Replaces the earlier provisional grant model (OPEN-021, closed).*
  
 **FR-TEN-009 — Membership changes are immediate and audited [MUST]**: Removing a member from a workspace shall take effect on the next request, not on token expiry (see FR-AUT-006).
  
@@ -1943,7 +1998,7 @@ The controlling requirement: **an authenticated user shall see only data they ar
  
 **FR-AUT-011 — Biometric re-entry is a local unlock only [MUST]**: Mobile biometric unlock shall gate access to a stored refresh credential. It is not an authentication factor against the server and shall not be presented as one.
  
-**FR-AUT-012 — Re-authentication for sensitive operations [SHOULD]**: Changing credentials, adding a member to a workspace and deleting an account shall require recent authentication.
+**FR-AUT-012 — Re-authentication for sensitive operations [SHOULD]**: Changing credentials, adding a member to a workspace (an administrator action, post-MVP, FR-USR-014) and deleting an account shall require recent authentication.
  
 **FR-AUT-013 — Authentication audit [MUST]**: Successful and failed authentications, token-family invalidations, membership changes and role changes shall be recorded with timestamp, principal and source. Financial data content shall not be written to these logs.
  
@@ -2013,7 +2068,7 @@ The controlling requirement: **an authenticated user shall see only data they ar
  
 **FR-JOB-006 — Backdated edits trigger targeted recomputation [MUST]**: Editing or importing a transaction dated in the past shall invalidate and rebuild only the affected derived data from that date forward. See OPEN-017 on whether the daily valuation series is stored or computed on demand.
  
-**FR-JOB-007 — Job observability [MUST]**: Job status, last successful run and failures shall be visible to a deployment administrator, and failures affecting a workspace’s figures shall be visible to that workspace as a data-quality indicator (FR-CON-007).
+**FR-JOB-007 — Job observability [MUST]**: Job status, schedule, last successful run and failures shall be visible to a deployment administrator, without financial data (FR-USR-015), and failures affecting a workspace’s figures shall be visible to that workspace as a data-quality indicator (FR-CON-007).
  
 ## 51.2 Hosted service operations
  
@@ -2296,7 +2351,8 @@ FR-DAT-005 covers administrative actions and FR-AUT-013 covers authentication. N
  
 | Term | Meaning in this specification |
 | --- | --- |
-| **Workspace** | The top-level container and tenant isolation boundary (FR-TEN-001). It groups the user’s portfolios with their bank accounts, depots and personal assets, together with budgets and goals, for one or more members, each a System User with full access to all of it. Every user is an individual; the normal case is one user per workspace, and several users can be assigned to the same workspace. The workspace implies no family or domestic relationship between its members. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. |
+| **Workspace** | The top-level container and tenant isolation boundary (FR-TEN-001). It groups the user’s portfolios with their bank accounts, depots and personal assets, together with budgets and goals, for one or more members, each a System User with full access to all of it. Every user is an individual; the normal case is one user per workspace, and several users can be assigned to the same workspace once FR-HOU-010 lifts the MVP limit of one. The workspace implies no family or domestic relationship between its members. Formerly called *Household*; requirement IDs FR-HOU-* and FR-HHL-* keep their original prefixes for traceability. |
+| **System Administrator** | A login that runs the system — users, workspace membership, features and limits, job schedules (8.3). Never a workspace member; no access to financial data (FR-USR-013, FR-TEN-007). |
 | **Portfolio** | User-named container directly below the workspace, grouping accounts of any type — typically everything held with one provider. Not itself an account. Optionally linked to an institution; carries a descriptive type (Bank, Portfolio, Pillar 3a, Pension fund, Crypto, Personal assets, Mixed). The default Personal Assets portfolio has no institution. Formerly *Financial Institution / Container*. |
 | **Institution** | The real bank, broker, pension provider or card issuer behind a portfolio — from the catalogue or user-defined. Supplies logo, import templates and connectors. Optional. |
 | **Depot** | Securities account: an account type holding positions in securities. Where the specification says *portfolio* in the sense of investment analytics, it means the positions across depots. |
