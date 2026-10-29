@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.WorkspaceMemberListItemResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
 import com.trackmywealth.backend.entity.AppUser;
@@ -8,6 +9,7 @@ import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,9 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-03-04/US-03-05/FR-HHL-015: list the current workspace membership and preserve at least
- * one active member, by analogy with
+ * US-03-04/FR-HHL-015: a workspace must always retain at least one active member, by analogy with
  * {@link AdminUserService}'s FR-USR-005 "last active administrator" guard, which this mirrors.
+ * US-03-05: {@link #listWorkspaceMembers} lists the members of the caller's own workspace.
  *
  * <p>Self-service only for now: {@link #deactivateMember} rejects any target other than the
  * caller's own {@code workspace_member} row. Whether a caller has {@code FULL} access to someone
@@ -35,8 +37,8 @@ public class WorkspaceMemberService {
 
   private static final String ACTIVE = "ACTIVE";
   private static final String INACTIVE = "INACTIVE";
-  private static final String STANDARD_USER = "STANDARD_USER";
-  private static final int MAX_LIST_MEMBERS = 200;
+  private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
+  private static final String VERSIONED_RESOURCE = "workspace member";
   private static final String WORKSPACE_MEMBER_ENTITY_TYPE = "WorkspaceMember";
 
   // FR-HHL-015: a workspace must always retain at least this many active members - deactivating
@@ -49,49 +51,44 @@ public class WorkspaceMemberService {
   private final WorkspaceMemberRepository workspaceMemberRepository;
   private final AuthorizationDenialAuditService authorizationDenialAuditService;
   private final VersionPreconditionService versionPreconditionService;
+  private final AccessControlService accessControlService;
 
   public WorkspaceMemberService(
       AppUserRepository appUserRepository,
       WorkspaceMemberRepository workspaceMemberRepository,
       AuthorizationDenialAuditService authorizationDenialAuditService,
-      VersionPreconditionService versionPreconditionService) {
+      VersionPreconditionService versionPreconditionService,
+      AccessControlService accessControlService) {
     this.appUserRepository = appUserRepository;
     this.workspaceMemberRepository = workspaceMemberRepository;
     this.authorizationDenialAuditService = authorizationDenialAuditService;
     this.versionPreconditionService = versionPreconditionService;
+    this.accessControlService = accessControlService;
   }
 
   /**
-   * US-03-05: membership listing is available only to an active business user, never to the
-   * system administrator. The SQL query is bounded to one past the response limit, so oversized
-   * workspaces cannot force an unbounded fetch. The underlying tenant RLS independently enforces
-   * workspace isolation.
+   * US-03-05: the members of the caller's own workspace, inactive ones included, ordered by display
+   * name. Any member of the workspace may list them ({@link AccessControlService}); the workspace
+   * comes from the caller's session, never from the request, and RLS confines the query to it as
+   * well. The query reads at most one row past {@link PagingValues#MAX_SIZE}, so no workspace can
+   * force an unbounded read; a workspace above the limit is refused rather than silently cut off.
+   *
+   * <p>A member linked to a {@code SYSTEM_ADMINISTRATOR} is left out: until FR-USR-013 stops it,
+   * first-run setup still makes the administrator a member, but the administrator is not one of the
+   * workspace's people (FR-TEN-007) and the list must not suggest it is.
    */
   @Transactional(readOnly = true)
   public List<WorkspaceMemberListItemResponse> listWorkspaceMembers(
       AuthenticatedUserPrincipal actor) {
-    if (!STANDARD_USER.equals(actor.role()) || actor.workspaceId() == null) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-    }
-    UUID actingMemberId = requireActingMember(actor);
-    WorkspaceMember actingMember =
-        workspaceMemberRepository
-            .findById(actingMemberId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN));
-    if (!ACTIVE.equals(actingMember.getStatus())
-        || !actor.workspaceId().equals(actingMember.getWorkspace().getId())) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-    }
+    accessControlService.requireActingMember(actor);
 
     List<WorkspaceMember> members =
         workspaceMemberRepository.findMembersForListing(
-            actor.workspaceId(), PageRequest.of(0, MAX_LIST_MEMBERS + 1));
-    if (members.size() > MAX_LIST_MEMBERS) {
+            actor.workspaceId(), PageRequest.of(0, PagingValues.MAX_SIZE + 1));
+    if (members.size() > PagingValues.MAX_SIZE) {
       throw new ResponseStatusException(
-          HttpStatus.UNPROCESSABLE_ENTITY, "Workspace member list exceeds the response limit.");
-    }
-    if (members.isEmpty()) {
-      return List.of();
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          "The workspace has more members than one list can hold.");
     }
 
     Map<UUID, AppUser> usersByMemberId =
@@ -99,29 +96,24 @@ public class WorkspaceMemberService {
             .findUsersLinkedToMembers(members.stream().map(WorkspaceMember::getId).toList())
             .stream()
             .collect(
-                Collectors.toMap(
-                    user -> user.getWorkspaceMember().getId(), Function.identity()));
+                Collectors.toMap(user -> user.getWorkspaceMember().getId(), Function.identity()));
 
-    return members.stream()
-        // Legacy setup links SYSTEM_ADMINISTRATOR to a member. Until FR-USR-013 is implemented,
-        // omit that record entirely rather than disclosing administrator identity to users.
-        .filter(
-            member -> {
-              AppUser user = usersByMemberId.get(member.getId());
-              return user == null || STANDARD_USER.equals(user.getRole());
-            })
-        .map(
-            member -> {
-              AppUser user = usersByMemberId.get(member.getId());
-              return new WorkspaceMemberListItemResponse(
-                  member.getId(),
-                  user == null ? null : user.getId(),
-                  member.getDisplayName(),
-                  ACTIVE.equals(member.getStatus()),
-                  VersionPreconditionService.persistedVersion(
-                      member.getVersion(), "workspace member"));
-            })
-        .toList();
+    List<WorkspaceMemberListItemResponse> listed = new ArrayList<>();
+    for (WorkspaceMember member : members) {
+      AppUser user = usersByMemberId.get(member.getId());
+      if (user != null && SYSTEM_ADMINISTRATOR.equals(user.getRole())) {
+        continue;
+      }
+      listed.add(
+          new WorkspaceMemberListItemResponse(
+              member.getId(),
+              user == null ? null : user.getId(),
+              member.getDisplayName(),
+              ACTIVE.equals(member.getStatus()),
+              VersionPreconditionService.persistedVersion(
+                  member.getVersion(), VERSIONED_RESOURCE)));
+    }
+    return listed;
   }
 
   @Transactional(readOnly = true)
@@ -153,7 +145,7 @@ public class WorkspaceMemberService {
             targetMemberId, actor.workspaceId());
     WorkspaceMember target = extractTargetOrThrow(lockedMembers, targetMemberId, actor.userId());
     versionPreconditionService.requireCurrent(
-        expectedVersion, target.getVersion(), "workspace member");
+        expectedVersion, target.getVersion(), VERSIONED_RESOURCE);
 
     // FR-STA-007 only lists ACTIVE -> INACTIVE as a valid transition out of ACTIVE; rejecting
     // "already not ACTIVE" here the same structured way AccountService.archiveAccount rejects an
@@ -230,6 +222,6 @@ public class WorkspaceMemberService {
         member.getStatus(),
         member.getMemberSince(),
         member.getMemberUntil(),
-        VersionPreconditionService.persistedVersion(member.getVersion(), "workspace member"));
+        VersionPreconditionService.persistedVersion(member.getVersion(), VERSIONED_RESOURCE));
   }
 }

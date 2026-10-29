@@ -315,43 +315,39 @@ class WorkspaceMemberControllerTest {
         .isEqualTo(HttpStatus.UNAUTHORIZED);
   }
 
+  // US-03-05 AC 1 and 3: every member is listed, a deactivated one with active=false. The
+  // administrator's bootstrap membership is not one of the workspace's people (FR-TEN-007).
   @Test
-  void standardUserListsOwnMembersIncludingInactiveButNotAdministrator() throws Exception {
+  void aMemberListsAllMembersOfTheWorkspaceIncludingDeactivatedOnes() throws Exception {
     bootstrapAdministrator();
-    UUID own = seedBusinessMember("active@example.com");
-    UUID other = seedBusinessMember("inactive@example.com");
-    // Fixture set-up must not use the deactivation endpoint: it requires two active members
-    // and will be removed under FR-HOU-010's one-member MVP.
-    updateMemberStatus(other, "INACTIVE");
-    String token = login("active@example.com", SECOND_MEMBER_PASSWORD);
-    WorkspaceMemberListItemResponse[] listed =
-        client(token)
-            .get()
-            .uri("/api/v1/workspace-members")
-            .exchange()
-            .expectStatus()
-            .isOk()
-            .expectBody(WorkspaceMemberListItemResponse[].class)
-            .returnResult()
-            .getResponseBody();
+    UUID anna = seedBusinessMember("anna@example.com");
+    UUID ben = seedBusinessMember("ben@example.com");
+    UUID clara = seedBusinessMember("clara@example.com");
+    // Directly, not through the deactivation endpoint: that is self-service only.
+    updateMemberStatus(clara, "INACTIVE");
 
-    assertThat(listed).extracting(WorkspaceMemberListItemResponse::id)
-        .containsExactly(own, other);
-    assertThat(listed[0].active()).isTrue();
-    assertThat(listed[1].active()).isFalse();
-    assertThat(listed[0].userId()).isEqualTo(appUserIdForEmail("active@example.com"));
-    assertThat(listed[1].userId()).isEqualTo(appUserIdForEmail("inactive@example.com"));
+    WorkspaceMemberListItemResponse[] listed =
+        listMembers(login("anna@example.com", SECOND_MEMBER_PASSWORD));
+
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::id)
+        .containsExactly(anna, ben, clara);
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::active)
+        .containsExactly(true, true, false);
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::userId)
+        .containsExactly(
+            appUserIdForEmail("anna@example.com"),
+            appUserIdForEmail("ben@example.com"),
+            appUserIdForEmail("clara@example.com"));
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::displayName)
+        .containsExactly("anna", "ben", "clara");
   }
 
   @Test
-  void listRefusesAdministratorAndAnonymousCaller() {
-    String adminToken = bootstrapAdministrator();
-    client(adminToken)
-        .get()
-        .uri("/api/v1/workspace-members")
-        .exchange()
-        .expectStatus()
-        .isForbidden();
+  void anAnonymousCallerCannotListMembers() {
     anonymousClient()
         .get()
         .uri("/api/v1/workspace-members")
@@ -384,12 +380,10 @@ class WorkspaceMemberControllerTest {
     String foreignToken = login("foreign@example.com", SECOND_MEMBER_PASSWORD);
     WorkspaceMemberListItemResponse[] ownList = listMembers(ownToken);
     WorkspaceMemberListItemResponse[] foreignList = listMembers(foreignToken);
-    assertThat(ownList).extracting(WorkspaceMemberListItemResponse::id)
-        .containsExactly(own);
-    assertThat(foreignList).extracting(WorkspaceMemberListItemResponse::id)
+    assertThat(ownList).extracting(WorkspaceMemberListItemResponse::id).containsExactly(own);
+    assertThat(foreignList)
+        .extracting(WorkspaceMemberListItemResponse::id)
         .containsExactly(foreign);
-    assertThat(ownList).extracting(WorkspaceMemberListItemResponse::id)
-        .doesNotContain(foreign);
   }
 
   // SQL fixture stays valid after #389 removes administrator-created multi-member onboarding.
