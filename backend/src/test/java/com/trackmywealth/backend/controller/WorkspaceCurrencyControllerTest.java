@@ -212,6 +212,10 @@ class WorkspaceCurrencyControllerTest {
   @Test
   void anyActiveLoginMemberUsesAndMayChangeTheSameWorkspaceCurrency() {
     String adminToken = bootstrapAdministrator("CHF");
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createStandardUser(adminToken, "first@example.com");
+    String firstToken = login("first@example.com");
     createStandardUser(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
@@ -228,8 +232,8 @@ class WorkspaceCurrencyControllerTest {
         .expectStatus()
         .isOk();
 
-    assertThat(getWorkspace(adminToken).getResponseBody().currency()).isEqualTo("USD");
-    assertThat(netWorth(adminToken, null).currency()).isEqualTo("USD");
+    assertThat(getWorkspace(firstToken).getResponseBody().currency()).isEqualTo("USD");
+    assertThat(netWorth(firstToken, null).currency()).isEqualTo("USD");
     assertThat(netWorth(memberToken, null).currency()).isEqualTo("USD");
   }
 

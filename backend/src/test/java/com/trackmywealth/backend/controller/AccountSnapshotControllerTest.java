@@ -495,14 +495,18 @@ class AccountSnapshotControllerTest {
   @Test
   void anotherMemberRecordsAndListsSnapshotsWithoutAnyGrant() {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse cash = createAccount(adminToken, "PostFinance", "CASH");
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createSecondMember(adminToken, "first@example.com");
+    String firstToken = login("first@example.com");
+    AccountSummaryResponse cash = createAccount(firstToken, "PostFinance", "CASH");
     createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
     record(memberToken, cash.id(), balanceOnly(today(), "1.00"))
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);
-    client(adminToken)
+    client(firstToken)
         .get()
         .uri("/api/v1/accounts/" + cash.id() + "/snapshots")
         .exchange()

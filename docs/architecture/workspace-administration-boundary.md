@@ -30,9 +30,18 @@
 ## Follow-up: administrator never a member (FR-USR-013, FR-USR-016)
 
 Today `SetupService` still links the bootstrap administrator to a workspace member, and
-`AdminUserService.createUser` adds every new user to the acting administrator's workspace. Until
-that changes, the bootstrap administrator is the workspace's member and has its access. The
-follow-up story changes all of it together, because each part alone leaves a deployment unusable:
+`AdminUserService.createUser` adds every new user to the acting administrator's workspace.
+
+**Interim rule (in #389).** Before #389, ownership and grants kept the administrator out of
+another member's accounts. Membership-only access would have removed that barrier, so
+`AccessControlService.requireActingMember` refuses an administrator's membership as soon as the
+workspace has a second active member. Until then the bootstrap login can set up and use a fresh
+install; afterwards it reaches none of the workspace's financial data, not even what it created
+itself, and every refusal is an audited 404 (`authorization_denial_log`).
+`AdministratorFinancialAccessTest` proves it.
+
+The follow-up story replaces this rule with the real boundary. It changes all of the following
+together, because each part alone leaves a deployment unusable:
 
 1. First-run setup creates the administrator only, with no workspace and no membership.
 2. `createUser` sets up a new workspace for each Standard User, who becomes its only member

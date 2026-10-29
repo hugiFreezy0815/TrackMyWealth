@@ -40,10 +40,11 @@ import tools.jackson.databind.ObjectMapper;
  * authenticates successfully but {@code app.current_workspace_id} never resolves for their requests
  * ({@code WorkspaceContextTransactionExecutionListener}), so every workspace-scoped table denies
  * them by default. This is not the FR-TEN-007 boundary US-02-05 protects: that story is about the
- * {@code role} column itself never granting implicit financial access beyond what workspace
- * membership already grants (an administrator who is also a member gets exactly a member's access,
- * no more) - it does not forbid an administrator from creating that membership in the first place,
- * which is the entire point of this endpoint existing.
+ * {@code role} column itself never granting financial access - it does not forbid an administrator
+ * from creating that membership in the first place, which is the entire point of this endpoint
+ * existing. The new user joins the administrator's own workspace (until FR-USR-016 gives each user
+ * a workspace of their own), and from then on the administrator's own membership no longer grants
+ * any financial access ({@link AccessControlService#requireActingMember}).
  */
 @Service
 public class AdminUserService {

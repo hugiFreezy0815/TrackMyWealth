@@ -980,7 +980,10 @@ class ReconciliationDecisionControllerTest {
         .exchange()
         .expectStatus()
         .isOk();
-    assertThat(onlyResult().status()).isEqualTo("DISMISSED");
+    // Read from the database: with a Standard User in the workspace, the administrator who set
+    // up this fixture no longer reaches its financial data (FR-TEN-007).
+    assertThat(stringValue("SELECT status FROM reconciliation_result WHERE id = ?", open.id()))
+        .isEqualTo("DISMISSED");
   }
 
   @Test

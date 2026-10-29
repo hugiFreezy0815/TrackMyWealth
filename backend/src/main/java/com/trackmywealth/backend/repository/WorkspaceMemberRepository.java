@@ -11,6 +11,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember, UUID> {
 
+  // AccessControlService's interim administrator rule (FR-TEN-007): a SYSTEM_ADMINISTRATOR linked
+  // to a member keeps that member's access only while it is the workspace's sole active member.
+  long countByWorkspaceIdAndStatus(UUID workspaceId, String status);
+
   // US-03-04/FR-HHL-015: locks the target row plus every other currently-ACTIVE member of the
   // caller's own workspace, in one statement - mirrors
   // AppUserRepository.lockTargetAndActiveAdministrators (FR-USR-005's analogous "last active

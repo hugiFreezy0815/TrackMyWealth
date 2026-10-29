@@ -801,10 +801,14 @@ class TransactionControllerTest {
   @Test
   void everyMembersNetWorthCoversTheWholeWorkspace() {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse card = createCard(adminToken);
-    AccountSummaryResponse asset = createCustomAsset(adminToken);
-    recordValuation(adminToken, asset.id(), "1000.00");
-    recordPurchaseOn(adminToken, card.id(), "-85.00", today());
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createSecondMember(adminToken, "alice@example.com");
+    String aliceToken = login("alice@example.com");
+    AccountSummaryResponse card = createCard(aliceToken);
+    AccountSummaryResponse asset = createCustomAsset(aliceToken);
+    recordValuation(aliceToken, asset.id(), "1000.00");
+    recordPurchaseOn(aliceToken, card.id(), "-85.00", today());
     createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
 
@@ -814,7 +818,7 @@ class TransactionControllerTest {
         .extracting(AccountValuation::accountId)
         .containsExactlyInAnyOrder(card.id(), asset.id());
     assertThat(bobs.netWorth()).isEqualByComparingTo("915.00");
-    assertThat(netWorth(adminToken).netWorth()).isEqualByComparingTo("915.00");
+    assertThat(netWorth(aliceToken).netWorth()).isEqualByComparingTo("915.00");
   }
 
   // --- Idempotent recording (a retried request must not double the debt) ----------------------

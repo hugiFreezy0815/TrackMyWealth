@@ -1330,17 +1330,21 @@ class TransactionRemovalControllerTest {
   @Test
   void anotherMemberRemovesAndRestoresARowTheFirstOneRecorded() {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD", "CHF");
-    TransactionResponse typo = record(adminToken, card.id(), purchase("-85.00"));
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createSecondMember(adminToken, "first@example.com");
+    String firstToken = login("first@example.com");
+    AccountSummaryResponse card = createAccount(firstToken, "CREDIT_CARD", "CHF");
+    TransactionResponse typo = record(firstToken, card.id(), purchase("-85.00"));
     createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
     remove(memberToken, card.id(), typo.id(), null);
     assertThat(restorable(memberToken, card.id())).hasSize(1);
-    assertThat(list(adminToken, card.id())).isEmpty();
+    assertThat(list(firstToken, card.id())).isEmpty();
 
     restore(memberToken, card.id(), typo.id());
-    assertThat(list(adminToken, card.id())).hasSize(1);
+    assertThat(list(firstToken, card.id())).hasSize(1);
   }
 
   @Test

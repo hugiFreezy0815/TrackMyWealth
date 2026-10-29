@@ -11,9 +11,10 @@
 --     the column itself stays nullable - a SYSTEM_ADMINISTRATOR has no membership, FR-TEN-007);
 --   * a new workspace_member without a linking app_user is refused at commit (a deferred
 --     constraint trigger), so a member and its user are still inserted in either order within one
---     transaction, as SetupService and AdminUserService do. Users are disabled, never deleted
---     (FR-USR-011), and nothing in the application unlinks a member, so the check runs on the
---     member's creation only.
+--     transaction, as SetupService and AdminUserService do;
+--   * an app_user that lets go of its member is refused at commit unless that member is removed
+--     in the same transaction, so a member can never be left without a login later either.
+--     Users are disabled, never deleted (FR-USR-011), so a DELETE of app_user is not checked.
 --
 -- The dev phase has no production data. A database that already holds a member without a login,
 -- or two logins on one member, stops here with a message rather than being silently repaired.
@@ -81,6 +82,38 @@ CREATE CONSTRAINT TRIGGER workspace_member_requires_login
 AFTER INSERT ON workspace_member
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION trg_workspace_member_requires_login();
+
+-- Same SECURITY DEFINER shape as above, from the other side of the link.
+CREATE FUNCTION public.trg_app_user_keeps_member_login() RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+SET row_security = off
+AS $$
+BEGIN
+    -- Unlinking is fine when the member itself is gone by commit.
+    IF EXISTS (SELECT 1 FROM public.workspace_member AS m WHERE m.id = OLD.workspace_member_id)
+        AND NOT EXISTS (
+            SELECT 1 FROM public.app_user AS u WHERE u.workspace_member_id = OLD.workspace_member_id
+        ) THEN
+        RAISE EXCEPTION 'workspace_member_requires_login: workspace member % would be left without a login (FR-USR-008). Remove the member in the same transaction.',
+            OLD.workspace_member_id USING ERRCODE = '23514';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.trg_app_user_keeps_member_login() FROM PUBLIC;
+
+CREATE CONSTRAINT TRIGGER app_user_keeps_member_login
+AFTER UPDATE OF workspace_member_id ON app_user
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW
+WHEN (
+    old.workspace_member_id IS NOT NULL
+    AND old.workspace_member_id IS DISTINCT FROM new.workspace_member_id
+)
+EXECUTE FUNCTION trg_app_user_keeps_member_login();
 
 COMMENT ON TABLE workspace_member IS
 'US-03-06 (#389): a user''s membership of a workspace, its only access grant; one login each.';

@@ -86,6 +86,25 @@ class WorkspaceMembershipMigrationTest {
                     + withLogin
                     + "')"))
         .isTrue();
+
+    // After V110 a member cannot lose its login later either: an unlink that leaves the member in
+    // place is refused at commit, and one that removes the member with it is not.
+    assertThatThrownBy(
+            () ->
+                execute(
+                    "UPDATE app_user SET workspace_member_id = NULL"
+                        + " WHERE email = 'member@example.com'"))
+        .hasMessageContaining("workspace_member_requires_login")
+        .hasMessageContaining(withLogin.toString());
+    connection.setAutoCommit(false);
+    try {
+      execute("UPDATE app_user SET workspace_member_id = NULL WHERE email = 'member@example.com'");
+      execute("DELETE FROM workspace_member WHERE id = '" + withLogin + "'");
+      connection.commit();
+    } finally {
+      connection.setAutoCommit(true);
+    }
+    assertThat(exists("SELECT EXISTS (SELECT 1 FROM workspace_member)")).isFalse();
   }
 
   private static UUID member(UUID workspace) throws Exception {

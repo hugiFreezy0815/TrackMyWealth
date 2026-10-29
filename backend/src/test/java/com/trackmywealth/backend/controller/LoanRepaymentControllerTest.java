@@ -630,14 +630,18 @@ class LoanRepaymentControllerTest {
   @Test
   void anotherMemberRecordsAPaymentOnTheLoanWithoutAnyGrant() {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse mortgage = createMortgage(adminToken, "500000.00", "2.0");
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createSecondMember(adminToken, "first@example.com");
+    String firstToken = login("first@example.com");
+    AccountSummaryResponse mortgage = createMortgage(firstToken, "500000.00", "2.0");
     createSecondMember(adminToken, "partner@example.com");
     String memberToken = login("partner@example.com");
     AccountSummaryResponse own = createAccount(memberToken, "CASH", "CHF");
 
     repay(memberToken, mortgage.id(), payment(own.id(), "2000.00", "800.00", null));
 
-    assertThat(repayments(adminToken, mortgage.id())).hasSize(1);
+    assertThat(repayments(firstToken, mortgage.id())).hasSize(1);
   }
 
   @Test

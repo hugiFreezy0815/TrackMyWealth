@@ -103,6 +103,7 @@ class SecurityControllerTest {
               "admin_audit_log",
               "user_session",
               "refresh_token",
+              "authorization_denial_log",
               "app_user",
               "workspace_member",
               "financial_institution",
@@ -412,15 +413,19 @@ class SecurityControllerTest {
   @Test
   void aWorkspaceWithoutAnAccountMayLookUpButNotCreateAndAnyMemberMayOnceItHasOne() {
     String adminToken = bootstrapAdministrator();
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createSecondMember(adminToken, "first@example.com");
+    String firstToken = login("first@example.com");
     createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
     post(memberToken, etf(ETF_ISIN, "iShares")).expectStatus().isNotFound();
     assertThat(count("security")).isZero();
 
-    createCash(adminToken, "Everyday Checking");
+    createCash(firstToken, "Everyday Checking");
     post(memberToken, etf(ETF_ISIN, "iShares")).expectStatus().isCreated();
-    get(adminToken, ETF_ISIN).expectStatus().isOk();
+    get(firstToken, ETF_ISIN).expectStatus().isOk();
   }
 
   // --- Review fixes: findability, idempotency, ignored values, legal name, DB backstop -------

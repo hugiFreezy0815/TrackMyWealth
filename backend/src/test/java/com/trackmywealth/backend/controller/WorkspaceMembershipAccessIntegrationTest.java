@@ -3,9 +3,11 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
+import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
@@ -17,6 +19,9 @@ import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.PageResponse;
+import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
+import com.trackmywealth.backend.dto.SecurityResponse;
+import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.testsupport.AccountRequests;
@@ -108,7 +113,13 @@ class WorkspaceMembershipAccessIntegrationTest {
               "import_row_raw",
               "import_batch",
               "import_template",
+              "snapshot_holding",
               "account_snapshot",
+              "security_field_provenance",
+              "security_asset_class_weight",
+              "security_identifier",
+              "security",
+              "account_securities",
               "account",
               "user_session",
               "refresh_token",
@@ -160,12 +171,43 @@ class WorkspaceMembershipAccessIntegrationTest {
         .exchange()
         .expectStatus()
         .isOk();
-    client(b)
-        .get()
-        .uri("/api/v1/accounts/" + account.id() + "/snapshots")
+
+    // Positions: A records a depot snapshot with a holding; B sees the holding.
+    AccountSummaryResponse depot = createAccount(a, portfolio, "Depot", "SECURITIES");
+    UUID security = createSecurity(a);
+    client(a)
+        .post()
+        .uri("/api/v1/accounts/" + depot.id() + "/snapshots")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new RecordAccountSnapshotRequest(
+                LocalDate.of(2026, 1, 31),
+                null,
+                List.of(new SnapshotHoldingRequest(security, new BigDecimal("3"), null, null))))
         .exchange()
         .expectStatus()
-        .isOk();
+        .isCreated();
+    List<AccountSnapshotResponse> snapshots =
+        client(b)
+            .get()
+            .uri("/api/v1/accounts/" + depot.id() + "/snapshots")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<List<AccountSnapshotResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+    assertThat(snapshots)
+        .singleElement()
+        .satisfies(
+            snapshot ->
+                assertThat(snapshot.holdings())
+                    .singleElement()
+                    .satisfies(
+                        holding -> {
+                          assertThat(holding.securityId()).isEqualTo(security);
+                          assertThat(holding.quantity()).isEqualByComparingTo("3");
+                        }));
   }
 
   // AC 2: B edits and deletes what A created, subject only to the usual version check.
@@ -380,12 +422,17 @@ class WorkspaceMembershipAccessIntegrationTest {
   }
 
   private AccountSummaryResponse createAccount(String token, UUID institution, String name) {
+    return createAccount(token, institution, name, "CASH");
+  }
+
+  private AccountSummaryResponse createAccount(
+      String token, UUID institution, String name, String accountType) {
     return client(token)
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            AccountRequests.account(name, "CASH", "CHF")
+            AccountRequests.account(name, accountType, "CHF")
                 .financialInstitutionId(institution)
                 .build())
         .exchange()
@@ -394,6 +441,23 @@ class WorkspaceMembershipAccessIntegrationTest {
         .expectBody(AccountSummaryResponse.class)
         .returnResult()
         .getResponseBody();
+  }
+
+  private UUID createSecurity(String token) {
+    return client(token)
+        .post()
+        .uri("/api/v1/securities")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateSecurityRequest(
+                "CH0038863350", "Nestle", "CHF", "EQUITY", "EQUITY", null, null, null, null))
+        .exchange()
+        .expectStatus()
+        .isCreated()
+        .expectBody(SecurityResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .id();
   }
 
   // Before the imported rows, so the balance is known (an account without one has no value).

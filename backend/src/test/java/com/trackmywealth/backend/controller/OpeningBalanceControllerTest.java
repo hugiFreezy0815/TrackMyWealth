@@ -783,13 +783,17 @@ class OpeningBalanceControllerTest {
   @Test
   void anotherMemberRecordsReadsAndDeletesTheOpeningBalance() {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse cash = createAccount(adminToken, "PostFinance", "CASH");
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createSecondMember(adminToken, "first@example.com");
+    String firstToken = login("first@example.com");
+    AccountSummaryResponse cash = createAccount(firstToken, "PostFinance", "CASH");
     createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
     OpeningBalanceResponse recorded =
         recordOk(memberToken, cash.id(), request(openingDate, "1.00", "CHF"));
-    assertThat(get(adminToken, cash.id())).isEqualTo(recorded);
+    assertThat(get(firstToken, cash.id())).isEqualTo(recorded);
     assertThat(balance(memberToken, cash.id(), openingDate).value()).isEqualByComparingTo("1.00");
     delete(memberToken, cash.id(), ifMatch(recorded.version())).expectStatus().isNoContent();
   }

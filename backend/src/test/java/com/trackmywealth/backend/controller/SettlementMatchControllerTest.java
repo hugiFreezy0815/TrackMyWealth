@@ -713,14 +713,18 @@ class SettlementMatchControllerTest {
   @Test
   void anotherMemberSeesAndChangesTheSettlementSource() {
     String adminToken = bootstrapAdministrator();
-    Accounts a = accountsWithSource(adminToken);
-    UUID savings = createAccount(adminToken, "Savings", "SAVINGS", "CHF").id();
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createSecondMember(adminToken, "alice@example.com");
+    String aliceToken = login("alice@example.com");
+    Accounts a = accountsWithSource(aliceToken);
+    UUID savings = createAccount(aliceToken, "Savings", "SAVINGS", "CHF").id();
     createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
 
     assertThat(getSource(bobToken, a.card()).settlementSourceAccountId()).isEqualTo(a.current());
     setSource(bobToken, a.card(), savings, HttpStatus.OK);
-    assertThat(getSource(adminToken, a.card()).settlementSourceAccountId()).isEqualTo(savings);
+    assertThat(getSource(aliceToken, a.card()).settlementSourceAccountId()).isEqualTo(savings);
   }
 
   @Test
