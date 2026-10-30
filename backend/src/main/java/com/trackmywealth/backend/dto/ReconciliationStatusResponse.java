@@ -8,11 +8,10 @@ import java.time.LocalDate;
  *
  * @param status one of {@link ReconciliationStatusValues}
  * @param reason why a {@code NOT_RECONCILABLE} account cannot currently be compared
- * @param asOf snapshot date; hidden for a {@code BALANCE_ONLY} grant
+ * @param asOf date of the snapshot the status compares against
  * @param openDifference snapshot minus derived ledger balance when the status is {@code
- *     OPEN_DIFFERENCE}, or the dismissed difference when it is {@code DISMISSED_DIFFERENCE}; hidden
- *     for a {@code BALANCE_ONLY} grant
- * @param currency ISO currency of {@code openDifference}; null when no amount is exposed
+ *     OPEN_DIFFERENCE}, or the dismissed difference when it is {@code DISMISSED_DIFFERENCE}
+ * @param currency ISO currency of {@code openDifference}; null when there is no amount
  */
 public record ReconciliationStatusResponse(
     String status, String reason, LocalDate asOf, BigDecimal openDifference, String currency) {}

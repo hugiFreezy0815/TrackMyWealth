@@ -9,7 +9,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.ValueBasisValues;
@@ -285,10 +284,8 @@ class AccountValuationServiceTest {
         .isEqualByComparingTo("9750.00");
     assertThat(service.getBalance(account.getId(), TODAY, ACTOR, null).value())
         .isEqualByComparingTo("9000.00");
-    // Today's balance needs BALANCE_ONLY; a past one READ (#241 review).
-    verify(accessControlService, times(2))
-        .requireAccountAccess(ACTOR, account, AccessLevelValues.BALANCE_ONLY);
-    verify(accessControlService).requireAccountAccess(ACTOR, account, AccessLevelValues.READ);
+    // Every read, today's or a past one, checks access to the account.
+    verify(accessControlService, times(3)).requireAccountAccess(ACTOR, account);
   }
 
   @Test

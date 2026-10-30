@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
@@ -112,8 +111,8 @@ public class TransferRecordingService {
 
   /**
    * The other account of a two-sided transfer, or {@code null} when the request names none: one of
-   * the same workspace's accounts, which the member may edit too, since the entry writes there, and
-   * one that can take this kind of transfer. Call after {@link #validateRequest}.
+   * the same workspace's accounts, which the member needs access to, since the entry writes there,
+   * and one that can take this kind of transfer. Call after {@link #validateRequest}.
    */
   Account findCounterparty(
       Account account, CreateTransactionRequest request, AuthenticatedUserPrincipal actor) {
@@ -127,7 +126,7 @@ public class TransferRecordingService {
     if (!counterparty.getWorkspace().getId().equals(account.getWorkspace().getId())) {
       throw accessControlService.denyAsNotFound(actor, "Account", request.counterpartyAccountId());
     }
-    accessControlService.requireAccountAccess(actor, counterparty, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, counterparty);
     String type = request.transactionType();
     if (counterparty.getId().equals(account.getId())) {
       throw unprocessable("A transfer needs two different accounts.");
@@ -201,9 +200,9 @@ public class TransferRecordingService {
   /**
    * US-10-02: the incoming leg of a loan payment's principal pair ({@code DEBT_REPAYMENT}) on the
    * loan, written as {@link #recordCreditLeg} does - flagged like the debit, which is not flagged
-   * while the split is unknown - but without the paying account's description and notes: a member
-   * who may read the loan but not the paying account reads the loan's ledger, and must not learn
-   * from it what the owner wrote on their own account. Both currencies are the same.
+   * while the split is unknown - but without the paying account's description and notes: the loan's
+   * ledger shows the repayment, and what was written on the paying account stays there. Both
+   * currencies are the same.
    */
   Transaction recordLoanCreditLeg(
       Transaction debit, Account loan, AuthenticatedUserPrincipal actor) {

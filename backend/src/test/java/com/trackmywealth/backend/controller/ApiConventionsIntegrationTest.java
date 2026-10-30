@@ -121,8 +121,6 @@ class ApiConventionsIntegrationTest {
               "DELETE FROM transaction_categorization_log",
               LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "DELETE FROM category WHERE workspace_id IS NOT NULL",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_securities",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",

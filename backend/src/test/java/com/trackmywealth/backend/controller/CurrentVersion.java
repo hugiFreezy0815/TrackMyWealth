@@ -33,7 +33,6 @@ final class CurrentVersion {
           "import_batch",
           "reconciliation_result",
           "settlement_match",
-          "sharing_grant",
           "transaction",
           "workspace_member");
 

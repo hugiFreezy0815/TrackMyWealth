@@ -127,8 +127,6 @@ class HoldingsImportControllerTest {
               "DELETE FROM security_asset_class_weight",
               "DELETE FROM security_field_provenance",
               "DELETE FROM security",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_securities",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",

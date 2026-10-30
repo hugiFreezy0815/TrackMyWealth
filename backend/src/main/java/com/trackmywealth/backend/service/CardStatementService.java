@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CardStatementResponse;
 import com.trackmywealth.backend.dto.SetStatementConfigRequest;
@@ -87,7 +86,7 @@ public class CardStatementService {
       SetStatementConfigRequest request,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    Account card = requireCard(cardAccountId, actor, AccessLevelValues.EDIT);
+    Account card = requireCard(cardAccountId, actor);
     if (request.statementDay() != null
         && (request.statementDay() < 1 || request.statementDay() > 31)) {
       throw new ResponseStatusException(
@@ -109,7 +108,7 @@ public class CardStatementService {
   @Transactional(readOnly = true)
   public StatementConfigResponse getStatementConfig(
       UUID cardAccountId, AuthenticatedUserPrincipal actor) {
-    Account card = requireCard(cardAccountId, actor, AccessLevelValues.BALANCE_ONLY);
+    Account card = requireCard(cardAccountId, actor);
     AccountCreditCard extension = extensionOf(card);
     return toStatementConfig(extension);
   }
@@ -150,7 +149,7 @@ public class CardStatementService {
   @Transactional(readOnly = true)
   public CardStatementResponse getCurrentStatement(
       UUID cardAccountId, AuthenticatedUserPrincipal actor) {
-    Account card = requireCard(cardAccountId, actor, AccessLevelValues.BALANCE_ONLY);
+    Account card = requireCard(cardAccountId, actor);
     AccountCreditCard extension = extensionOf(card);
     Short statementDay = extension.getStatementDay();
     Short dueDateOffsetDays = extension.getDueDateOffsetDays();
@@ -222,9 +221,9 @@ public class CardStatementService {
             m -> m.getPaymentTransaction().getAmount().negate().compareTo(closingBalance) == 0);
   }
 
-  private Account requireCard(UUID cardAccountId, AuthenticatedUserPrincipal actor, String level) {
+  private Account requireCard(UUID cardAccountId, AuthenticatedUserPrincipal actor) {
     Account card = accountLookupService.findAccountOrThrow(cardAccountId, actor);
-    accessControlService.requireAccountAccess(actor, card, level);
+    accessControlService.requireAccountAccess(actor, card);
     if (!card.isHasStatementCycle()) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "Only a credit-card account has a statement cycle.");

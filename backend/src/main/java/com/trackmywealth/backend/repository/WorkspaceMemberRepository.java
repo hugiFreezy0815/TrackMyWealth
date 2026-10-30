@@ -19,21 +19,9 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
           + " ORDER BY m.displayName ASC, m.id ASC")
   List<WorkspaceMember> findMembersForListing(@Param("workspaceId") UUID workspaceId, Limit limit);
 
-  // US-03-03/AccessControlService's bootstrap rule: the sole active, non-dependent member of a
-  // workspace has implicit FULL access to everything in it, since with only one such member no
-  // sharing_grant could possibly exist yet to grant them access to their own workspace's data
-  // (AppUser.role deliberately confers no financial-data access - see its own Javadoc - so this
-  // structural check, not the SYSTEM_ADMINISTRATOR role, is what breaks the chicken-and-egg
-  // problem). Once a second non-dependent member joins, this stops applying and access reverts to
-  // ownership/explicit grants only. Dependent members (is_dependent=true - "a person represented
-  // financially; may have no login", per WorkspaceMember's own Javadoc) never count here: they can
-  // never authenticate, so they can never be "the caller" this rule is granting access to.
-  //
-  // #122: an account has account_ownership as a second, permanent bootstrap fallback once this
-  // rule stops applying - an institution/the workspace itself has neither, which is what #122's own
-  // (narrow, role-based) SharingGrantService#tryBootstrapInstitution/#tryBootstrapWorkspace
-  // exception exists to close.
-  long countByWorkspaceIdAndStatusAndDependentFalse(UUID workspaceId, String status);
+  // AccessControlService's interim administrator rule (FR-TEN-007): a SYSTEM_ADMINISTRATOR linked
+  // to a member keeps that member's access only while it is the workspace's sole active member.
+  long countByWorkspaceIdAndStatus(UUID workspaceId, String status);
 
   // US-03-04/FR-HHL-015: locks the target row plus every other currently-ACTIVE member of the
   // caller's own workspace, in one statement - mirrors

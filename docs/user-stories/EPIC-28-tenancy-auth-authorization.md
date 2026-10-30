@@ -21,12 +21,13 @@ value to check against.
 **Acceptance criteria:**
 - Given an authenticated request for workspace A's data, when it reaches the service layer, then
   the workspace id used to set the session variable is resolved server-side from the principal's
-  own workspace membership/grants — never taken from a request path/query parameter, even if one
+  own workspace membership — never taken from a request path/query parameter, even if one
   happens to be present (prevents a client simply passing a different workspace's id).
-- Given a request spans a workspace-switch scenario (a member belonging to a workspace viewing a
-  shared grant from another workspace — see US-03-03), when the effective workspace context is
-  ambiguous, then it is resolved explicitly per-request (e.g. via an explicit "acting as workspace
-  X" selector validated against the principal's actual grants), never left implicit.
+- ~~Given a request spans a workspace-switch scenario (a member viewing a shared grant from another
+  workspace — see US-03-03), when the effective workspace context is ambiguous, then it is
+  resolved explicitly per-request.~~ Withdrawn by US-03-06 (#389): there are no sharing grants,
+  and membership of the principal's own workspace is the only access grant (FR-TEN-008), so a
+  request never has more than one workspace context.
 - Given two requests share a pooled database connection (common under connection pooling), when
   the first request's transaction commits, then its session variable does not leak into the next
   request on the same physical connection — verified because `set_config(..., true)` is

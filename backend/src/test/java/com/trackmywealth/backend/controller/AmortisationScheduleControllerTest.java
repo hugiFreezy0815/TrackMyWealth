@@ -70,7 +70,6 @@ class AmortisationScheduleControllerTest {
       for (String sql :
           List.of(
               "DELETE FROM amortisation_schedule_entry",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_mortgage",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",

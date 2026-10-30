@@ -3,15 +3,12 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -112,8 +109,6 @@ class CategoryControllerTest {
               "DELETE FROM category WHERE workspace_id IS NOT NULL",
               "DELETE FROM snapshot_holding",
               "DELETE FROM account_snapshot",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
               "DELETE FROM user_session",
@@ -469,17 +464,12 @@ class CategoryControllerTest {
   // --- authorization and isolation -------------------------------------------------------------
 
   @Test
-  void changingTheTaxonomyNeedsWorkspaceEditWhileReadingNeedsMembershipOnly() {
+  void anotherMemberReadsAndChangesTheTaxonomyWithoutAnyGrant() {
     String adminToken = bootstrapAdministrator();
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
     client(memberToken).get().uri(BASE).exchange().expectStatus().isOk();
-    create(memberToken, new CreateCategoryRequest(null, "Hobby", "Hobby"))
-        .expectStatus()
-        .isNotFound();
-
-    grantWorkspace(adminToken, memberId, AccessLevelValues.EDIT);
     create(memberToken, new CreateCategoryRequest(null, "Hobby", "Hobby"))
         .expectStatus()
         .isCreated();
@@ -683,20 +673,6 @@ class CategoryControllerTest {
   }
 
   // --- review follow-ups ---------------------------------------------------------------------
-
-  @Test
-  void canEditTellsAReadOnlyMemberWhatTheyMayNotDo() {
-    String adminToken = bootstrapAdministrator();
-    // The sole active member has FULL implicitly - only until a second member joins.
-    assertThat(list(adminToken, false)).extracting(CategoryResponse::canEdit).containsOnly(true);
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
-    String memberToken = login("member@example.com");
-
-    assertThat(list(memberToken, false)).extracting(CategoryResponse::canEdit).containsOnly(false);
-
-    grantWorkspace(adminToken, memberId, AccessLevelValues.EDIT);
-    assertThat(list(memberToken, false)).extracting(CategoryResponse::canEdit).containsOnly(true);
-  }
 
   // Without the workspace lock both moves pass their in-memory cycle check and the two categories
   // end up each other's parent, vanishing from the tree. With it, the second sees the first.
@@ -920,15 +896,15 @@ class CategoryControllerTest {
     UUID memberId = UUID.randomUUID();
     UUID userId = UUID.randomUUID();
     execute("INSERT INTO workspace (id, name) VALUES (?, 'Workspace B')", workspaceId);
+    // One statement, so the member has its login when it commits (V110).
     execute(
-        "INSERT INTO workspace_member (id, workspace_id, display_name) VALUES (?, ?, 'B')",
+        "WITH member AS (INSERT INTO workspace_member (id, workspace_id, display_name)"
+            + " VALUES (?, ?, 'B') RETURNING id)"
+            + " INSERT INTO app_user (id, email, password_hash, workspace_member_id)"
+            + " SELECT ?, 'b@example.com', 'x', id FROM member",
         memberId,
-        workspaceId);
-    execute(
-        "INSERT INTO app_user (id, email, password_hash, workspace_member_id) VALUES (?,"
-            + " 'b@example.com', 'x', ?)",
-        userId,
-        memberId);
+        workspaceId,
+        userId);
     return new AuthenticatedUserPrincipal(
         userId, "STANDARD_USER", workspaceId, UUID.randomUUID(), "EN");
   }
@@ -975,17 +951,6 @@ class CategoryControllerTest {
     } catch (SQLException e) {
       throw new IllegalStateException(e);
     }
-  }
-
-  private void grantWorkspace(String token, UUID memberId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateSharingGrantRequest(memberId, ScopeTypeValues.WORKSPACE, null, null, level))
-        .exchange()
-        .expectStatus()
-        .isCreated();
   }
 
   private UUID createSecondMember(String adminToken, String email) {

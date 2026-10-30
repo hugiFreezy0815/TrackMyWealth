@@ -61,9 +61,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>US-04-04: reassign an account to a different institution without losing history - the DoD's
  * test is {@link #reassigningInstitutionMovesTheAccountAndBothSummariesRecomputeCorrectly}; {@link
  * #reassigningADeletedAccountIsRejectedWithAStructuredConflict} covers FR-STA-001's terminal
- * status. The "requires EDIT on the destination institution" half of the story's
- * Authorization/privacy line lives in {@code SharingGrantControllerTest} instead, alongside every
- * other {@code AccessControlService}-gated endpoint that needs a second workspace member to test.
+ * status. Membership-only access (US-03-06) for accounts, reassignment included, is proven with two
+ * real members in {@code WorkspaceMembershipAccessIntegrationTest}.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -104,7 +103,6 @@ class AccountControllerTest {
               "account_pension",
               "account_vested_benefits",
               "account_custom_asset",
-              "account_ownership",
               "account",
               "admin_audit_log",
               "user_session",

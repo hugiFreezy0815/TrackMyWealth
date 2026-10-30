@@ -113,9 +113,9 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
       @Param("to") LocalDate to);
 
   // The work queue: matches of one status - and of one kind, unless matchKind is null - whose
-  // card (credit) AND payment (debit) account are both in accountIds, the accounts the caller may
-  // EDIT. Filtering here, before the page is cut, is what keeps another member's matches from
-  // crowding the caller's own out of the page. RLS confines the rows to the caller's workspace.
+  // card (credit) AND payment (debit) account are both in accountIds, the caller's accounts.
+  // Filtering here, before the page is cut, keeps the page to the accounts the caller asked about.
+  // RLS confines the rows to the caller's workspace.
   // accountIds must not be empty.
   @Query(
       "SELECT m FROM SettlementMatch m JOIN FETCH m.cardAccount JOIN FETCH m.paymentTransaction p"

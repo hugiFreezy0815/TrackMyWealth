@@ -419,11 +419,21 @@ class WorkspaceMemberControllerTest {
             Stream.of(first, second).sorted(Comparator.comparing(UUID::toString)).toList());
   }
 
-  // SQL fixture stays valid after #389 removes administrator-created multi-member onboarding.
+  // SQL fixture stays valid after #389 removes administrator-created multi-member onboarding. One
+  // transaction: V110 refuses, at commit, a member without a login.
   private UUID seedBusinessMember(String email) throws Exception {
     UUID memberId = UUID.randomUUID();
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement member =
+    try (Connection connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      insertMemberWithLogin(connection, memberId, email);
+      connection.commit();
+    }
+    return memberId;
+  }
+
+  private static void insertMemberWithLogin(Connection connection, UUID memberId, String email)
+      throws Exception {
+    try (PreparedStatement member =
             connection.prepareStatement(
                 "INSERT INTO workspace_member (id, workspace_id, display_name)"
                     + " SELECT ?, w.workspace_id, ? FROM workspace_member w"
@@ -441,7 +451,6 @@ class WorkspaceMemberControllerTest {
       user.setObject(2, memberId);
       assertThat(user.executeUpdate()).isEqualTo(1);
     }
-    return memberId;
   }
 
   private WorkspaceMemberListItemResponse[] listMembers(String token) {

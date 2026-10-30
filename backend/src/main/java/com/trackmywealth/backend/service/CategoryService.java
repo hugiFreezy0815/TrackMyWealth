@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
@@ -63,9 +62,8 @@ import org.springframework.web.server.ResponseStatusException;
  * read ({@link CategoryResponse#version()}) through HTTP {@code If-Match}; a stale read is a 412
  * VERSION_CONFLICT rather than a silent overwrite of another member's change.
  *
- * <p>Reads need workspace membership; changes need EDIT on the workspace, because the taxonomy is
- * shared by every member and reshapes everyone's reports. {@link CategoryResponse#canEdit()} tells
- * a client which of the two the caller has, so it can hide the actions that would be refused.
+ * <p>Reads and changes both need workspace membership, nothing more (US-03-06): the taxonomy is
+ * shared by every member and reshapes everyone's reports, and every member may change it.
  */
 @Service
 public class CategoryService {
@@ -99,24 +97,24 @@ public class CategoryService {
   /** The taxonomy in tree order (parents first, siblings by English label). */
   @Transactional(readOnly = true)
   public List<CategoryResponse> list(boolean includeInactive, AuthenticatedUserPrincipal actor) {
-    boolean canEdit = canEdit(actor);
+    accessControlService.requireActingMember(actor);
     Map<UUID, Category> categories = loadCategories(actor.workspaceId());
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(actor.workspaceId());
     Map<UUID, List<Category>> children = childrenOf(categories, overrides);
 
     List<CategoryResponse> result = new ArrayList<>();
     for (Category root : children.getOrDefault(null, List.of())) {
-      appendInTreeOrder(root, children, categories, overrides, includeInactive, canEdit, result);
+      appendInTreeOrder(root, children, categories, overrides, includeInactive, result);
     }
     return result;
   }
 
   @Transactional(readOnly = true)
   public CategoryResponse get(UUID id, AuthenticatedUserPrincipal actor) {
-    boolean canEdit = canEdit(actor);
+    accessControlService.requireActingMember(actor);
     Map<UUID, Category> categories = loadCategories(actor.workspaceId());
     Map<UUID, WorkspaceCategoryOverride> overrides = loadOverrides(actor.workspaceId());
-    return toResponse(requireForActor(categories, id, actor), categories, overrides, canEdit);
+    return toResponse(requireForActor(categories, id, actor), categories, overrides);
   }
 
   @Transactional
@@ -149,7 +147,7 @@ public class CategoryService {
     category.setNameDe(request.nameDe());
     Category saved = categoryRepository.saveAndFlush(category);
     categories.put(saved.getId(), saved);
-    return toResponse(saved, categories, overrides, true);
+    return toResponse(saved, categories, overrides);
   }
 
   /**
@@ -193,7 +191,7 @@ public class CategoryService {
       category.setNameDe(request.nameDe());
       categoryRepository.saveAndFlush(category);
     }
-    return toResponse(category, categories, overrides, true);
+    return toResponse(category, categories, overrides);
   }
 
   /**
@@ -222,7 +220,7 @@ public class CategoryService {
         setActive(member, false, workspaceId, overrides);
       }
     }
-    return toResponse(category, categories, overrides, true);
+    return toResponse(category, categories, overrides);
   }
 
   /**
@@ -245,7 +243,7 @@ public class CategoryService {
       }
       setActive(category, true, workspaceId, overrides);
     }
-    return toResponse(category, categories, overrides, true);
+    return toResponse(category, categories, overrides);
   }
 
   /**
@@ -355,21 +353,14 @@ public class CategoryService {
 
   // --- rules ---------------------------------------------------------------------------------
 
-  // EDIT on the workspace, then the workspace row lock that serializes every taxonomy change of
+  // Workspace membership, then the workspace row lock that serializes every taxonomy change of
   // this workspace until the transaction ends (see the class comment).
   private UUID requireEditor(AuthenticatedUserPrincipal actor) {
-    accessControlService.requireWorkspaceAccess(actor, actor.workspaceId(), AccessLevelValues.EDIT);
+    accessControlService.requireWorkspaceAccess(actor, actor.workspaceId());
     workspaceRepository
         .findByIdForUpdate(actor.workspaceId())
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
     return actor.workspaceId();
-  }
-
-  private boolean canEdit(AuthenticatedUserPrincipal actor) {
-    UUID memberId = accessControlService.requireActingMember(actor);
-    String level = accessControlService.workspaceAccessLevel(memberId, actor.workspaceId());
-    return level != null
-        && AccessLevelValues.Rank.valueOf(level).compareTo(AccessLevelValues.Rank.EDIT) >= 0;
   }
 
   private void requireMayHoldChildren(
@@ -507,14 +498,13 @@ public class CategoryService {
       Map<UUID, Category> categories,
       Map<UUID, WorkspaceCategoryOverride> overrides,
       boolean includeInactive,
-      boolean canEdit,
       List<CategoryResponse> into) {
     if (!includeInactive && !isOwnActive(category, overrides)) {
       return; // and so is everything below it: an inactive ancestor makes a category inactive
     }
-    into.add(toResponse(category, categories, overrides, canEdit));
+    into.add(toResponse(category, categories, overrides));
     for (Category child : children.getOrDefault(category.getId(), List.of())) {
-      appendInTreeOrder(child, children, categories, overrides, includeInactive, canEdit, into);
+      appendInTreeOrder(child, children, categories, overrides, includeInactive, into);
     }
   }
 
@@ -639,8 +629,7 @@ public class CategoryService {
   private static CategoryResponse toResponse(
       Category category,
       Map<UUID, Category> categories,
-      Map<UUID, WorkspaceCategoryOverride> overrides,
-      boolean canEdit) {
+      Map<UUID, WorkspaceCategoryOverride> overrides) {
     return new CategoryResponse(
         category.getId(),
         category.getParentCategoryId(),
@@ -654,8 +643,7 @@ public class CategoryService {
         category.isShared()
             && overrides.get(category.getId()) != null
             && !overrides.get(category.getId()).isEmpty(),
-        versionOf(category, overrides),
-        canEdit);
+        versionOf(category, overrides));
   }
 
   private static ResponseStatusException unprocessable(String detail) {

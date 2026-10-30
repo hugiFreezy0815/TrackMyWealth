@@ -4,12 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
 import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
@@ -29,7 +27,6 @@ import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
@@ -150,8 +147,6 @@ class ImportRollbackControllerTest {
               "DELETE FROM import_template",
               "DELETE FROM snapshot_holding",
               "DELETE FROM account_snapshot",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
               "DELETE FROM user_session",
@@ -1275,13 +1270,12 @@ class ImportRollbackControllerTest {
   }
 
   @Test
-  void aMemberWhoMayOnlyReadTheAccountGetsTheAuditedNotFound() throws Exception {
+  void anotherMemberRollsBackAnImportTheFirstOneCommitted() {
     ImportBatchResponse batch = importFile(THREE_ROWS);
-    UUID member = createSecondMember("reader@example.com");
-    grantOnAccount(member, account, AccessLevelValues.READ);
-    String reader = login("reader@example.com");
+    createSecondMember("member@example.com");
+    String member = login("member@example.com");
 
-    client(reader)
+    client(member)
         .post()
         .uri(imports() + "/" + batch.id() + "/rollback")
         .header(HttpHeaders.IF_MATCH, etag(batch.version()))
@@ -1289,10 +1283,10 @@ class ImportRollbackControllerTest {
         .body(new ImportRollbackRequest(REASON))
         .exchange()
         .expectStatus()
-        .isNotFound();
+        .isOk();
 
     assertThat(single("SELECT status FROM import_batch WHERE id = ?", batch.id()))
-        .isEqualTo("COMMITTED");
+        .isEqualTo("ROLLED_BACK");
   }
 
   // --- modifications
@@ -1800,19 +1794,6 @@ class ImportRollbackControllerTest {
         .isCreated()
         .expectBody(UserSummaryResponse.class);
     return (UUID) single("SELECT workspace_member_id FROM app_user WHERE email = ?", email);
-  }
-
-  private void grantOnAccount(UUID memberId, UUID accountId, String level) {
-    client()
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isCreated();
   }
 
   private String login(String email) {
