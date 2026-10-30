@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
+import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
@@ -158,6 +159,20 @@ class AdministratorFinancialAccessTest {
         .exchange()
         .expectStatus()
         .isNotFound();
+    client(adminToken)
+        .post()
+        .uri("/api/v1/institutions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            new CreateFinancialInstitutionRequest(
+                null, "Sneaky Bank", "CH", "BANK", null, null, "CHF"))
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    assertThat(
+            (Long)
+                query("SELECT count(*) FROM financial_institution WHERE name = ?", "Sneaky Bank"))
+        .isZero();
 
     // Every refusal is audited, and administration itself still works (FR-TEN-007).
     assertThat(

@@ -100,7 +100,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V100` | Shipped holdings templates (US-07-13, #273): the Swissquote "Portfolio-Wertentwicklung" PDF (PostFinance E-Trading, Yuh), the PostFinance E-Trading positions XLSX and cash XLS |
 | `V105` | Imported snapshots completed part by part (US-07-31, #366): `account_snapshot.balance_import_batch_id`, `snapshot_holding.import_batch_id` (the batch that contributed each part; backfilled from `import_batch_id`), `import_batch_id` updatable (passes to the remaining contributor on a rollback); snapshot outcomes `COMPLETED` and `REMOVED` |
 | `V108` | `transaction.amount_in_account_currency`, generated: `amount * coalesce(fx_rate_to_account_currency, 1)` rounded to 4 places as `NUMERIC(30,4)` (wide enough for any amount times any rate), the value a list sorts by when it sorts by `amount` (US-29-03, #373) |
-| `V110` | Membership is the only access grant (US-03-06, #389): `account_ownership` and `sharing_grant` dropped, `workspace_member.is_dependent` dropped; every member has exactly one login (unique `app_user.workspace_member_id`, deferred constraint trigger `workspace_member_requires_login`); stops with a message on a database holding a member without a login or with two |
+| `V110` | Membership is the only access grant (US-03-06, #389): `account_ownership` and `sharing_grant` dropped, `workspace_member.is_dependent` dropped; every member has exactly one login (unique `app_user.workspace_member_id`, deferred constraint triggers `workspace_member_requires_login` on a new member and `app_user_keeps_member_login` on an unlink that leaves the member in place); stops with a message on a database holding a member without a login or with two |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a
@@ -234,13 +234,15 @@ deactivated member is refused on the next request (`JwtAuthenticationFilter`, an
 workspace (FR-USR-011).
 
 Every member is a user with a login (FR-USR-008). `app_user.workspace_member_id` is unique, so a
-member has at most one login, and V110's deferred constraint trigger refuses, at commit, a new
-`workspace_member` no `app_user` links to - member and user are written in one transaction in
-either order (`SetupService`, `AdminUserService`). The column stays nullable: a
+member has at most one login. Two deferred constraint triggers in V110 keep it that way at commit:
+`workspace_member_requires_login` refuses a new `workspace_member` no `app_user` links to - member
+and user are written in one transaction in either order (`SetupService`, `AdminUserService`) - and
+`app_user_keeps_member_login` refuses an `UPDATE` of `app_user.workspace_member_id` that lets go of
+a member unless that member is removed in the same transaction. The column stays nullable: a
 `SYSTEM_ADMINISTRATOR` needs no membership (FR-TEN-007). Users are disabled, never deleted
-(FR-USR-011), and the application never unlinks a member, so the check runs on creation only. The
-trigger function is `SECURITY DEFINER` with `row_security = off` for the same reason as V81's
-functions; it needs no `EXECUTE` grant, because firing a trigger checks none.
+(FR-USR-011), so a `DELETE` of `app_user` is not checked. Both trigger functions are `SECURITY
+DEFINER` with `row_security = off` for the same reason as V81's functions; they need no `EXECUTE`
+grant, because firing a trigger checks none.
 
 ### Authentication lookup with a hardened runtime role (#321)
 

@@ -41,10 +41,10 @@ import org.springframework.web.server.ResponseStatusException;
  * workspace; {@code JwtAuthenticationFilter} additionally refuses to authenticate a request at all
  * when the caller's linked {@code workspace_member} exists but isn't {@code ACTIVE} - so by the
  * time a request reaches this service, a workspace context is either absent entirely (a {@code
- * SYSTEM_ADMINISTRATOR} with no membership, handled by the {@code actorWorkspaceId == null} check
- * in {@link #createInstitution}) or genuinely active. {@link #getSummary} additionally checks
- * workspace membership through {@link AccessControlService} - {@code createInstitution}/{@code
- * searchCatalogue} rely on RLS/workspace-existence alone.
+ * SYSTEM_ADMINISTRATOR} with no membership) or genuinely active. {@link #createInstitution} and
+ * {@link #getSummary} additionally check workspace membership through {@link AccessControlService},
+ * so an administrator who may not act as a member (FR-TEN-007) is refused here like anywhere else;
+ * {@code searchCatalogue} reads only the shared catalogue and relies on authentication alone.
  *
  * <p>US-04-03: {@link #getSummary} reads only {@code institution_type} to manage the institution
  * itself, never {@code account_type} directly (the sanctioned exception this class's own Javadoc
@@ -105,12 +105,14 @@ public class InstitutionService {
 
   @Transactional
   public FinancialInstitutionSummaryResponse createInstitution(
-      CreateFinancialInstitutionRequest request, UUID actorWorkspaceId) {
-    // Reachable for a SYSTEM_ADMINISTRATOR with no linked workspace_member - see the class
-    // Javadoc. Anyone with an active membership always has a non-null workspaceId by the time
-    // JwtAuthenticationFilter authenticates the request.
+      CreateFinancialInstitutionRequest request, AuthenticatedUserPrincipal actor) {
+    // Only an active member creates institutions, as for accounts: a principal without a
+    // membership, or an administrator once the workspace has another member (FR-TEN-007, audited),
+    // is refused with the same 404 as any other workspace-scoped request, before anything is
+    // written.
+    accessControlService.requireActingMember(actor);
     Workspace workspace =
-        workspaceAccessService.requireWorkspace(actorWorkspaceId, "an institution");
+        workspaceAccessService.requireWorkspace(actor.workspaceId(), "an institution");
 
     FinancialInstitution institution = new FinancialInstitution();
     institution.setWorkspace(workspace);

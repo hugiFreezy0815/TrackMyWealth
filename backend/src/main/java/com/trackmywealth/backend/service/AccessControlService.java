@@ -62,6 +62,8 @@ public class AccessControlService {
   // Non-throwing, bulk counterpart of requireAccountAccess, for an aggregation (e.g. net worth)
   // that must silently leave out the accounts the member cannot see rather than 404 the whole
   // request. One membership lookup for the whole collection, never one query per account.
+  // memberId must come from requireActingMember for the same request: only that applies the
+  // administrator rule (FR-TEN-007), which a bare member id cannot.
   @Transactional(readOnly = true)
   public List<Account> accountsWithAccess(UUID memberId, Collection<Account> accounts) {
     UUID workspaceId = activeMemberWorkspaceId(memberId);

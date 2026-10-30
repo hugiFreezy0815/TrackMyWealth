@@ -105,8 +105,10 @@ public class WorkspaceMemberService {
   // Mirrors AccessControlService.requireActingMember in spirit - resolving "who is
   // making this request" as a workspace_member id. It predates that class and stays separate until
   // the follow-up in the class Javadoc routes this service through it. This is a narrow identity
-  // lookup, not a reimplementation of access-level computation, so duplicating it here is not the
-  // per-service authorization reimplementation AccessControlService exists to prevent. Not routed
+  // lookup, not a reimplementation of the membership check, so duplicating it here is not the
+  // per-service authorization reimplementation AccessControlService exists to prevent. It does not
+  // apply AccessControlService's administrator rule (FR-TEN-007), and need not: every operation
+  // here is limited to the caller's own membership (requireSelf). Not routed
   // through AuthorizationDenialAuditService below: that service's own Javadoc scopes it to a
   // caller-supplied id that doesn't resolve to a row the caller is entitled to - this is the
   // caller's own identity failing to resolve at all, a different situation (mirrored by

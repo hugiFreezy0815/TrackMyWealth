@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -111,6 +112,39 @@ class AccessControlServiceMembershipTest {
     assertThat(access.accountsWithAccess(null, List.of(accountIn(workspaceId)))).isEmpty();
   }
 
+  // FR-TEN-007, interim rule until FR-USR-013: an administrator's membership counts only while it
+  // is the workspace's sole active member.
+  @Test
+  void anAdministratorWhoIsTheSoleActiveMemberActsAsAMember() {
+    AuthenticatedUserPrincipal administrator = administratorLinkedToTheMember();
+    when(members.countByWorkspaceIdAndStatus(workspaceId, "ACTIVE")).thenReturn(1L);
+
+    assertThat(access.requireActingMember(administrator)).isEqualTo(memberId);
+    assertThatCode(() -> access.requireAccountAccess(administrator, accountIn(workspaceId)))
+        .doesNotThrowAnyException();
+    verify(denials, never()).denyAsNotFound(any(AuthenticatedUserPrincipal.class), any(), any());
+  }
+
+  @Test
+  void anAdministratorIsTheAuditedNotFoundOnceAnotherMemberIsActive() {
+    AuthenticatedUserPrincipal administrator = administratorLinkedToTheMember();
+    when(members.countByWorkspaceIdAndStatus(workspaceId, "ACTIVE")).thenReturn(2L);
+
+    assertNotFound(() -> access.requireActingMember(administrator));
+    assertNotFound(() -> access.requireAccountAccess(administrator, accountIn(workspaceId)));
+    assertNotFound(() -> access.requireWorkspaceAccess(administrator, workspaceId));
+    verify(denials, times(3)).denyAsNotFound(administrator, "Workspace", workspaceId);
+  }
+
+  // A Standard User never pays for the count: the rule is the administrator's alone.
+  @Test
+  void aStandardUserIsNeverCountedAgainstOtherMembers() {
+    when(members.countByWorkspaceIdAndStatus(workspaceId, "ACTIVE")).thenReturn(2L);
+
+    assertThat(access.requireActingMember(actor)).isEqualTo(memberId);
+    verify(members, never()).countByWorkspaceIdAndStatus(any(), any());
+  }
+
   @Test
   void aUserWithoutALinkedMemberHasNoMembership() {
     AppUser unlinked = mock(AppUser.class);
@@ -124,6 +158,16 @@ class AccessControlServiceMembershipTest {
         .isInstanceOfSatisfying(
             ResponseStatusException.class,
             e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+  }
+
+  private AuthenticatedUserPrincipal administratorLinkedToTheMember() {
+    UUID administratorId = UUID.randomUUID();
+    AppUser administrator = mock(AppUser.class);
+    when(administrator.getWorkspaceMember()).thenReturn(member);
+    when(administrator.getRole()).thenReturn("SYSTEM_ADMINISTRATOR");
+    when(users.findById(administratorId)).thenReturn(Optional.of(administrator));
+    return new AuthenticatedUserPrincipal(
+        administratorId, "SYSTEM_ADMINISTRATOR", workspaceId, UUID.randomUUID(), "EN");
   }
 
   private static Workspace workspace(UUID id) {
