@@ -26,6 +26,12 @@ updates:
       - dependency-name: react-native
       - dependency-name: react-native-worklets
       - dependency-name: react-native-reanimated
+      # Same for react and react-dom (SDK 58 pins 19.3.0; #406 moved react-dom to 19.3.1 and broke
+      # the check). react-native-gesture-handler is pinned to ~3.2.1, so patches still come through.
+      - dependency-name: react
+      - dependency-name: react-dom
+      - dependency-name: react-native-gesture-handler
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
   - package-ecosystem: docker
     directory: /backend
