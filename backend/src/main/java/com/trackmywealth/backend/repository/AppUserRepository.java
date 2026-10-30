@@ -23,7 +23,6 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   String USER_ID = "userId";
 
   // US-03-05: resolve member-to-user links without exposing emails or credentials.
-  // A left join at service level permits legacy unlinked member rows until #389 lands.
   @Query("SELECT u FROM AppUser u WHERE u.workspaceMember.id IN :memberIds")
   List<AppUser> findUsersLinkedToMembers(@Param("memberIds") List<UUID> memberIds);
 

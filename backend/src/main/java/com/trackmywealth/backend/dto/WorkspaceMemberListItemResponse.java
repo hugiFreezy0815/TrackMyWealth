@@ -5,7 +5,7 @@ import java.util.UUID;
 /**
  * A member visible to their own workspace, without global user profile or authentication details.
  *
- * @param userId linked login user, or null for legacy members without a login (removed in #389)
+ * @param userId the member's login; every member has exactly one (FR-USR-008, V110)
  * @param active true when the workspace membership is active (independent of login status)
  */
 public record WorkspaceMemberListItemResponse(

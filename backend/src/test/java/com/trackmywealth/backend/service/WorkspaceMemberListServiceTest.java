@@ -113,18 +113,18 @@ class WorkspaceMemberListServiceTest {
         .containsExactly(person.getId());
   }
 
-  // Until #389 every member has a login; a legacy member without one is still listed.
+  // V110 refuses a member without a login, so one can only come from a corrupted database: the
+  // list fails rather than answering a member without its user.
   @Test
-  void aMemberWithoutALoginIsListedWithoutAUser() {
+  void aMemberWithoutALoginIsACorruptedDatabase() {
     WorkspaceMember person = member("Anna", "ACTIVE", 1);
-    WorkspaceMember legacy = member("Child", "ACTIVE", 3);
-    givenMembers(person, legacy);
-    givenLogins(List.of(person, legacy), login(person, "STANDARD_USER"));
+    WorkspaceMember loginless = member("Ben", "ACTIVE", 3);
+    givenMembers(person, loginless);
+    givenLogins(List.of(person, loginless), login(person, "STANDARD_USER"));
 
-    List<WorkspaceMemberListItemResponse> listed = service.listWorkspaceMembers(actor);
-
-    assertThat(listed).extracting(WorkspaceMemberListItemResponse::id).contains(legacy.getId());
-    assertThat(listed.get(1).userId()).isNull();
+    assertThatThrownBy(() -> service.listWorkspaceMembers(actor))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(loginless.getId().toString());
   }
 
   @Test

@@ -95,8 +95,9 @@ public class WorkspaceMemberService {
           "The workspace has more members than one list can hold.");
     }
 
-    // One login per member: V110 (#389) makes app_user.workspace_member_id unique, so toMap's
-    // duplicate-key failure can only mean a corrupted database.
+    // Exactly one login per member: V110 (#389) makes app_user.workspace_member_id unique and
+    // refuses a member without a login, so toMap's duplicate-key failure and a missing login below
+    // can only mean a corrupted database.
     Map<UUID, AppUser> usersByMemberId =
         appUserRepository
             .findUsersLinkedToMembers(members.stream().map(WorkspaceMember::getId).toList())
@@ -107,13 +108,17 @@ public class WorkspaceMemberService {
     List<WorkspaceMemberListItemResponse> listed = new ArrayList<>();
     for (WorkspaceMember member : members) {
       AppUser user = usersByMemberId.get(member.getId());
-      if (user != null && UserRoleValues.SYSTEM_ADMINISTRATOR.equals(user.getRole())) {
+      if (user == null) {
+        throw new IllegalStateException(
+            "Workspace member " + member.getId() + " has no login, which V110 forbids.");
+      }
+      if (UserRoleValues.SYSTEM_ADMINISTRATOR.equals(user.getRole())) {
         continue;
       }
       listed.add(
           new WorkspaceMemberListItemResponse(
               member.getId(),
-              user == null ? null : user.getId(),
+              user.getId(),
               member.getDisplayName(),
               ACTIVE.equals(member.getStatus()),
               VersionPreconditionService.persistedVersion(
@@ -175,8 +180,8 @@ public class WorkspaceMemberService {
   }
 
   // Mirrors AccessControlService.requireActingMember in spirit - resolving "who is
-  // making this request" as a workspace_member id. It predates that class and stays separate until
-  // the follow-up in the class Javadoc routes this service through it. This is a narrow identity
+  // making this request" as a workspace_member id. It predates that class. This is a narrow
+  // identity
   // lookup, not a reimplementation of the membership check, so duplicating it here is not the
   // per-service authorization reimplementation AccessControlService exists to prevent. It does not
   // apply AccessControlService's administrator rule (FR-TEN-007), and need not: the operations
