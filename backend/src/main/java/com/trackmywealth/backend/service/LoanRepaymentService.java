@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
 import com.trackmywealth.backend.dto.LoanPaymentPlan;
 import com.trackmywealth.backend.dto.LoanPaymentSplit;
@@ -64,16 +63,16 @@ import org.springframework.web.server.ResponseStatusException;
  *       pending review until the member removes it and records it again with the split.
  * </ol>
  *
- * <p><b>Rules</b>, in the order they are checked: {@code EDIT} on the loan and on the paying
- * account, another account of the same workspace; then the loan's row is locked, so payments to one
- * loan are recorded one after another - an estimate always reads the balance the previous payment
- * left, and a concurrent retry waits for the first and replays it; a retry with the same {@code
- * externalId} replays the first payment, as {@code POST /transactions} does - before the remaining
- * checks, so an archived loan does not turn a successful request into an error on retry; the loan
- * has {@code hasAmortisation} (422) and is active (409 {@code ACCOUNT_ARCHIVED}); the paying
- * account takes an {@code EXPENSE} (an ordinary cash account: not a card, loan, pension or depot -
- * the ledger's own rule, {@link TransactionService#requireRecordable}); the amount is positive, in
- * the currency both accounts share; a stated interest lies within [0, amount].
+ * <p><b>Rules</b>, in the order they are checked: access to the loan and to the paying account,
+ * another account of the same workspace; then the loan's row is locked, so payments to one loan are
+ * recorded one after another - an estimate always reads the balance the previous payment left, and
+ * a concurrent retry waits for the first and replays it; a retry with the same {@code externalId}
+ * replays the first payment, as {@code POST /transactions} does - before the remaining checks, so
+ * an archived loan does not turn a successful request into an error on retry; the loan has {@code
+ * hasAmortisation} (422) and is active (409 {@code ACCOUNT_ARCHIVED}); the paying account takes an
+ * {@code EXPENSE} (an ordinary cash account: not a card, loan, pension or depot - the ledger's own
+ * rule, {@link TransactionService#requireRecordable}); the amount is positive, in the currency both
+ * accounts share; a stated interest lies within [0, amount].
  */
 @Service
 public class LoanRepaymentService {
@@ -120,7 +119,7 @@ public class LoanRepaymentService {
   public LoanRepaymentResponse record(
       UUID loanAccountId, CreateLoanRepaymentRequest request, AuthenticatedUserPrincipal actor) {
     Account loan = accountLookupService.findAccountOrThrow(loanAccountId, actor);
-    accessControlService.requireAccountAccess(actor, loan, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, loan);
     // Check the paying account before replaying an idempotency key: the key must never
     // be an oracle for a payment on an account whose access has since been revoked.
     Account paying = findPayingAccount(loan, request.payingAccountId(), actor);
@@ -208,21 +207,19 @@ public class LoanRepaymentService {
   @Transactional(readOnly = true)
   public List<LoanRepaymentResponse> list(UUID loanAccountId, AuthenticatedUserPrincipal actor) {
     Account loan = accountLookupService.findAccountOrThrow(loanAccountId, actor);
-    accessControlService.requireAccountAccess(actor, loan, AccessLevelValues.READ);
+    accessControlService.requireAccountAccess(actor, loan);
     List<LoanPayment> payments = loanPaymentRepository.findInEffectByLoanAccountId(loan.getId());
     if (payments.isEmpty()) {
       return List.of();
     }
-    // Loan READ does not imply READ on the paying account: a workspace member might be allowed
-    // to see a shared mortgage but not the owner's cash account. Never serialize its transaction
-    // details, notes or id through this endpoint without its own object-level READ permission.
+    // Access to the loan is checked on the loan; the paying account is checked on its own, so a
+    // paying account outside the caller's workspace never has its transaction details, notes or
+    // id serialized through this endpoint.
     UUID memberId = accessControlService.requireActingMember(actor);
     Set<UUID> readablePayerIds =
         accessControlService
             .accountsWithAccess(
-                memberId,
-                payments.stream().map(LoanPayment::getPayingAccount).distinct().toList(),
-                AccessLevelValues.READ)
+                memberId, payments.stream().map(LoanPayment::getPayingAccount).distinct().toList())
             .stream()
             .map(Account::getId)
             .collect(Collectors.toSet());
@@ -351,7 +348,7 @@ public class LoanRepaymentService {
     if (!paying.getWorkspace().getId().equals(loan.getWorkspace().getId())) {
       throw accessControlService.denyAsNotFound(actor, "Account", payingAccountId);
     }
-    accessControlService.requireAccountAccess(actor, paying, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, paying);
     if (paying.getId().equals(loan.getId())) {
       throw unprocessable("A loan cannot pay itself: payingAccountId must be another account.");
     }

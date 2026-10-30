@@ -127,8 +127,6 @@ class LoanStatementImportControllerTest {
               "DELETE FROM import_file",
               "DELETE FROM import_batch",
               "DELETE FROM savings_rate_methodology",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_loan",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",

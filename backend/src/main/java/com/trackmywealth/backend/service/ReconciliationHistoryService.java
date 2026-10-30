@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
@@ -47,14 +46,14 @@ public class ReconciliationHistoryService {
   }
 
   /**
-   * Detailed history is transaction-sensitive and therefore requires READ, not BALANCE_ONLY. The
-   * order is {@code pageable}'s: the controller's sort whitelist with its tie-breaker (#373).
+   * Detailed history of one account, for a member of its workspace. The order is {@code
+   * pageable}'s: the controller's sort whitelist with its tie-breaker (#373).
    */
   @Transactional(readOnly = true)
   public Page<ReconciliationResultResponse> list(
       UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
+    accessControlService.requireAccountAccess(actor, account);
     Optional<UUID> latest = latestSnapshotId(accountId);
     return resultRepository
         .findByAccountIdAndAffectedSecurityIdIsNull(
@@ -67,7 +66,7 @@ public class ReconciliationHistoryService {
   public ReconciliationResultResponse get(
       UUID accountId, UUID resultId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
+    accessControlService.requireAccountAccess(actor, account);
     return toResponse(findResultOrThrow(account, resultId, actor));
   }
 

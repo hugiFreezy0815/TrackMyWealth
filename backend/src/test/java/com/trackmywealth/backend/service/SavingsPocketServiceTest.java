@@ -9,99 +9,92 @@ import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.entity.Account;
-import com.trackmywealth.backend.entity.AccountOwnership;
-import com.trackmywealth.backend.entity.WorkspaceMember;
-import com.trackmywealth.backend.repository.AccountOwnershipRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
-import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * US-07-22 (#325): who may have an account's savings pocket created, and what the preview says. The
- * pocket gets the account's owners, so a member who edits the account only through a sharing grant
- * must not create it: they could neither use it nor roll their import back.
+ * US-07-22 (#325): when an account's savings pocket is created or used, and what the preview says.
+ * The pocket belongs to the workspace like every account (US-03-06), so whichever member commits
+ * has it created - there is no owner to ask.
  */
 class SavingsPocketServiceTest {
 
   private final AccountRepository accounts = mock(AccountRepository.class);
   private final AccountService accountService = mock(AccountService.class);
-  private final AccessControlService access = mock(AccessControlService.class);
-  private final AccountOwnershipRepository ownerships = mock(AccountOwnershipRepository.class);
-  private final SavingsPocketService pockets =
-      new SavingsPocketService(accounts, accountService, access, ownerships);
+  private final SavingsPocketService pockets = new SavingsPocketService(accounts, accountService);
 
   private final UUID accountId = UUID.randomUUID();
-  private final UUID member = UUID.randomUUID();
+  private final UUID pocketId = UUID.randomUUID();
   private final Account account = mock(Account.class);
-  private final AuthenticatedUserPrincipal actor = mock(AuthenticatedUserPrincipal.class);
 
   @BeforeEach
   void anOrdinaryAccountWithoutAPocket() {
     when(account.getId()).thenReturn(accountId);
     when(account.getNativeCurrency()).thenReturn("CHF");
     when(account.isHasTransactions()).thenReturn(true);
-    when(access.requireActingMember(actor)).thenReturn(member);
     when(accounts.findSavingsPocketAccountId(accountId)).thenReturn(Optional.empty());
   }
 
   @Test
-  void anOwnerHasThePocketCreated() {
-    ownedBy(member, UUID.randomUUID());
+  void anyMemberHasThePocketCreated() {
     Account created = mock(Account.class);
-    when(accountService.createSavingsPocket(account, "CHF", actor)).thenReturn(created);
+    when(accountService.createSavingsPocket(account, "CHF")).thenReturn(created);
 
-    assertThat(pockets.previewWarning(account, actor))
+    assertThat(pockets.previewWarning(account))
         .contains(ImportBatchValues.WARNING_SAVINGS_POCKET_CREATED);
-    assertThat(pockets.pocketFor(account, actor)).contains(created);
+    assertThat(pockets.pocketFor(account)).contains(created);
   }
 
   @Test
-  void anyMemberHasThePocketOfAnUnownedAccountCreated() {
-    ownedBy();
-    Account created = mock(Account.class);
-    when(accountService.createSavingsPocket(account, "CHF", actor)).thenReturn(created);
+  void anExistingPocketIsUsedWithoutAWarning() {
+    Account pocket = pocket("ACTIVE", "CHF");
+    when(account.getSavingsPocketAccountId()).thenReturn(pocketId);
+    when(accounts.findSavingsPocketAccountId(accountId)).thenReturn(Optional.of(pocketId));
 
-    assertThat(pockets.pocketFor(account, actor)).contains(created);
+    assertThat(pockets.previewWarning(account)).isEmpty();
+    assertThat(pockets.pocketFor(account)).contains(pocket);
+    verify(accountService, never()).createSavingsPocket(any(), any());
   }
 
   @Test
-  void aMemberWhoIsNoOwnerCreatesNoPocketAndIsWarned() {
-    ownedBy(UUID.randomUUID());
+  void anArchivedPocketTakesNoMoveAndNoSecondPocketIsCreated() {
+    pocket("ARCHIVED", "CHF");
+    when(account.getSavingsPocketAccountId()).thenReturn(pocketId);
+    when(accounts.findSavingsPocketAccountId(accountId)).thenReturn(Optional.of(pocketId));
 
-    assertThat(pockets.previewWarning(account, actor))
+    assertThat(pockets.previewWarning(account))
         .contains(ImportBatchValues.WARNING_SAVINGS_POCKET_UNAVAILABLE);
-    assertThat(pockets.pocketFor(account, actor)).isEmpty();
-    verify(accountService, never()).createSavingsPocket(any(), any(), any());
+    assertThat(pockets.pocketFor(account)).isEmpty();
+    verify(accountService, never()).createSavingsPocket(any(), any());
+  }
+
+  @Test
+  void aPocketInAnotherCurrencyTakesNoMove() {
+    pocket("ACTIVE", "EUR");
+    when(accounts.findSavingsPocketAccountId(accountId)).thenReturn(Optional.of(pocketId));
+
+    assertThat(pockets.pocketFor(account)).isEmpty();
   }
 
   @Test
   void aCardHasNoPocket() {
     when(account.isHasStatementCycle()).thenReturn(true);
-    ownedBy(member);
 
-    assertThat(pockets.previewWarning(account, actor))
+    assertThat(pockets.previewWarning(account))
         .contains(ImportBatchValues.WARNING_SAVINGS_POCKET_UNAVAILABLE);
-    assertThat(pockets.pocketFor(account, actor)).isEmpty();
-    verify(accountService, never()).createSavingsPocket(any(), any(), any());
+    assertThat(pockets.pocketFor(account)).isEmpty();
+    verify(accountService, never()).createSavingsPocket(any(), any());
   }
 
-  private void ownedBy(UUID... members) {
-    List<AccountOwnership> owners =
-        Arrays.stream(members)
-            .map(
-                id -> {
-                  WorkspaceMember owner = mock(WorkspaceMember.class);
-                  when(owner.getId()).thenReturn(id);
-                  AccountOwnership ownership = mock(AccountOwnership.class);
-                  when(ownership.getWorkspaceMember()).thenReturn(owner);
-                  return ownership;
-                })
-            .toList();
-    when(ownerships.findByAccountIdAndEffectiveToIsNull(accountId)).thenReturn(owners);
+  private Account pocket(String status, String currency) {
+    Account pocket = mock(Account.class);
+    when(pocket.getStatus()).thenReturn(status);
+    when(pocket.isHasTransactions()).thenReturn(true);
+    when(pocket.getNativeCurrency()).thenReturn(currency);
+    when(accounts.findById(pocketId)).thenReturn(Optional.of(pocket));
+    return pocket;
   }
 }

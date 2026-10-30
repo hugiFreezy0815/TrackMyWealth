@@ -27,7 +27,7 @@
         <archunit.version>1.5.1</archunit.version>
         <spotless-maven-plugin.version>3.10.4</spotless-maven-plugin.version>
         <maven-pmd-plugin.version>3.28.0</maven-pmd-plugin.version>
-        <spotbugs-maven-plugin.version>4.10.4.1</spotbugs-maven-plugin.version>
+        <spotbugs-maven-plugin.version>4.10.5.0</spotbugs-maven-plugin.version>
         <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
 
         <!-- JaCoCo coverage gate (#193), measured with ./mvnw clean verify (839 tests):
@@ -140,7 +140,7 @@
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
-            <version>3.3.0</version>
+            <version>3.3.1</version>
         </dependency>
 
         <!-- OpenAPI contract - FR-API-001: the spec is generated from and validated

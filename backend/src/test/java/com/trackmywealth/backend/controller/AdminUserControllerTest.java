@@ -160,12 +160,21 @@ class AdminUserControllerTest {
     String adminToken = bootstrapAdministrator();
     AppUser admin = onlyAppUser();
 
-    try (Connection connection = dataSource.getConnection();
-        PreparedStatement statement =
-            connection.prepareStatement(
-                "UPDATE app_user SET workspace_member_id = NULL WHERE id = ?")) {
-      statement.setObject(1, admin.getId());
-      statement.executeUpdate();
+    // A member never stays without its login (V110), so the link and the member go together.
+    UUID member = admin.getWorkspaceMember().getId();
+    try (Connection connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      try (PreparedStatement unlink =
+              connection.prepareStatement(
+                  "UPDATE app_user SET workspace_member_id = NULL WHERE id = ?");
+          PreparedStatement delete =
+              connection.prepareStatement("DELETE FROM workspace_member WHERE id = ?")) {
+        unlink.setObject(1, admin.getId());
+        unlink.executeUpdate();
+        delete.setObject(1, member);
+        delete.executeUpdate();
+      }
+      connection.commit();
     }
 
     adminClient(adminToken)

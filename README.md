@@ -381,8 +381,8 @@ today (closed stories on GitHub; details in `docs/architecture/database-schema.m
   rotating refresh tokens, session management, TOTP MFA; per-transaction workspace context with
   row-level security, object-level authorization with audited, non-enumerating 404s, and a
   cross-tenant test suite.
-- **Workspace, institutions and accounts** (EPIC 03-05): fractional/joint ownership, sharing grants,
-  last-member protection; institutions with summaries; every account type, archive/restore,
+- **Workspace, institutions and accounts** (EPIC 03-05): membership as the only access grant (every
+  member sees and changes everything in the workspace), last-member protection; institutions with summaries; every account type, archive/restore,
   institution reassignment, custom assets with dated valuations.
 - **Currency** (EPIC 06): dated FX rates, conversion between any two currencies (direct pair,
   inverted, or via the euro), and an import of the ECB's euro reference rates every two hours

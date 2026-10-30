@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportBatchCountsResponse;
@@ -71,9 +70,8 @@ import org.springframework.web.server.ResponseStatusException;
  * do, adjusts it and commits it ({@link ImportCommitService}) or discards it. Nothing reaches the
  * ledger before the commit.
  *
- * <p>Every endpoint needs {@code EDIT} access to the account - an import is a write, and its rows
- * are raw bank data - so a {@code BALANCE_ONLY} or {@code READ} grant, or another workspace's
- * account, is the audited 404. A batch id outside the account is the same 404.
+ * <p>Every endpoint needs the caller to be a member of the account's workspace; another workspace's
+ * account is the audited 404. A batch id outside the account is the same 404.
  *
  * <p>A file is read by the parser outside any database transaction (as template detection and dry
  * runs are, #267 review): a PDF statement can take seconds and must not hold a pooled connection.
@@ -569,8 +567,8 @@ public class ImportBatchService {
   // -------------------------------
 
   /**
-   * The account, if {@code actor} may import into it: {@code EDIT} access (else the audited 404),
-   * an active account (409 {@code ACCOUNT_ARCHIVED}) that holds transactions (422).
+   * The account, if {@code actor} may import into it: a member of its workspace (else the audited
+   * 404), an active account (409 {@code ACCOUNT_ARCHIVED}) that holds transactions (422).
    */
   /** What parsing a file for {@code account} depends on, read from its capability flags. */
   static ImportAccountContext accountContext(Account account) {
@@ -597,7 +595,7 @@ public class ImportBatchService {
   // imports stay readable.
   Account requireEditableAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     return account;
   }
 

@@ -4,9 +4,7 @@ import com.trackmywealth.backend.dto.UpdateWorkspaceCurrencyRequest;
 import com.trackmywealth.backend.dto.UpdateWorkspaceNameRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.entity.Workspace;
-import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.FinancialAuditLogRepository;
-import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.validation.CurrencyCodes;
@@ -15,14 +13,12 @@ import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-06-05/US-03-07 workspace settings. Any authenticated active member may read them; the legacy
- * dependent-member guard is shared by the currency and name updates until #389 removes dependents.
+ * US-06-05/US-03-07 workspace settings. Any active member may change the workspace currency and
+ * name (US-03-06: every member is a user with a login and has full access to the workspace).
  */
 @Service
 public class WorkspaceService {
@@ -31,19 +27,16 @@ public class WorkspaceService {
   private static final String VERSIONED_RESOURCE = "workspace";
 
   private final WorkspaceRepository workspaceRepository;
-  private final WorkspaceMemberRepository workspaceMemberRepository;
   private final AccessControlService accessControlService;
   private final VersionPreconditionService versionPreconditionService;
   private final FinancialAuditLogRepository financialAuditLogRepository;
 
   public WorkspaceService(
       WorkspaceRepository workspaceRepository,
-      WorkspaceMemberRepository workspaceMemberRepository,
       AccessControlService accessControlService,
       VersionPreconditionService versionPreconditionService,
       FinancialAuditLogRepository financialAuditLogRepository) {
     this.workspaceRepository = workspaceRepository;
-    this.workspaceMemberRepository = workspaceMemberRepository;
     this.accessControlService = accessControlService;
     this.versionPreconditionService = versionPreconditionService;
     this.financialAuditLogRepository = financialAuditLogRepository;
@@ -64,7 +57,8 @@ public class WorkspaceService {
       UpdateWorkspaceNameRequest request,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    requireWorkspaceSettingsMember(actor);
+    // Authorization comes before the version (ADR 0004): a refused caller never locks the row.
+    accessControlService.requireActingMember(actor);
 
     UUID workspaceId = actor.workspaceId();
     Workspace workspace =
@@ -97,7 +91,7 @@ public class WorkspaceService {
       UpdateWorkspaceCurrencyRequest request,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    UUID memberId = requireWorkspaceSettingsMember(actor);
+    UUID memberId = accessControlService.requireActingMember(actor);
 
     UUID workspaceId = actor.workspaceId();
     Workspace workspace =
@@ -122,23 +116,6 @@ public class WorkspaceService {
         oldCurrency,
         newCurrency);
     return toResponse(workspace);
-  }
-
-  // Authorization comes before the version (ADR 0004): a refused member never locks the row.
-  private UUID requireWorkspaceSettingsMember(AuthenticatedUserPrincipal actor) {
-    UUID memberId = accessControlService.requireActingMember(actor);
-    WorkspaceMember member =
-        workspaceMemberRepository
-            .findById(memberId)
-            .orElseThrow(
-                () ->
-                    new IllegalStateException(
-                        "Authenticated workspace member no longer exists: " + memberId));
-    if (member.isDependent()) {
-      throw new ResponseStatusException(
-          HttpStatus.FORBIDDEN, "A dependent member cannot change workspace settings.");
-    }
-    return memberId;
   }
 
   private Workspace findCurrent(AuthenticatedUserPrincipal actor) {

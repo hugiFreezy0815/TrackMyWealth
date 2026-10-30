@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
@@ -34,8 +33,8 @@ import org.springframework.web.server.ResponseStatusException;
  * seeing what needs a decision, and confirming or rejecting a match (FR-CC-007, FR-CF-004). The
  * matching itself is {@link SettlementDetectionService}.
  *
- * <p>Deciding a match affects two accounts, so it needs {@code EDIT} on <em>both</em> the card and
- * the paying account; a caller who lacks either sees the match as nonexistent (404), the same
+ * <p>Deciding a match affects two accounts, so it needs access to <em>both</em> the card and the
+ * paying account; a caller who lacks either sees the match as nonexistent (404), the same
  * deny-as-not-found convention as {@link AccessControlService}. A match is only ever listed to a
  * caller who could act on it, so the list cannot reveal an account the caller has no access to.
  *
@@ -88,8 +87,8 @@ public class SettlementMatchService {
    * matches what is already in the ledger. The source must be an active, ordinary account in the
    * card's own currency - a card cannot be paid by a card, and cross-currency settlement (the
    * *payment* itself in a different currency than the card) is not built - and the caller needs
-   * {@code EDIT} on both accounts. Not to be confused with US-09-04's foreign-currency card
-   * *purchases*, a different leg entirely.
+   * access to both accounts. Not to be confused with US-09-04's foreign-currency card *purchases*,
+   * a different leg entirely.
    */
   @Transactional
   public SettlementSourceResponse setSettlementSource(
@@ -97,14 +96,14 @@ public class SettlementMatchService {
       SetSettlementSourceRequest request,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    Account card = requireCard(cardAccountId, actor, AccessLevelValues.EDIT);
+    Account card = requireCard(cardAccountId, actor);
     settlementDetectionService.lockCard(cardAccountId);
     AccountCreditCard extension = extensionOf(card);
 
     UUID sourceId = request.settlementSourceAccountId();
     if (sourceId != null) {
       Account source = accountLookupService.findAccountOrThrow(sourceId, actor);
-      accessControlService.requireAccountAccess(actor, source, AccessLevelValues.EDIT);
+      accessControlService.requireAccountAccess(actor, source);
       validateSource(card, source);
     }
     versionPreconditionService.requireCurrent(
@@ -119,7 +118,7 @@ public class SettlementMatchService {
   @Transactional(readOnly = true)
   public SettlementSourceResponse getSettlementSource(
       UUID cardAccountId, AuthenticatedUserPrincipal actor) {
-    Account card = requireCard(cardAccountId, actor, AccessLevelValues.BALANCE_ONLY);
+    Account card = requireCard(cardAccountId, actor);
     AccountCreditCard extension = extensionOf(card);
     UUID sourceId = extension.getSettlementSourceAccountId();
     if (sourceId == null) {
@@ -128,29 +127,26 @@ public class SettlementMatchService {
     // An account id the caller cannot see is not revealed through this card.
     UUID memberId = accessControlService.requireActingMember(actor);
     Account source = accountLookupService.findAccountOrThrow(sourceId, actor);
-    boolean visible =
-        !accessControlService
-            .accountsWithAccess(memberId, List.of(source), AccessLevelValues.BALANCE_ONLY)
-            .isEmpty();
+    boolean visible = !accessControlService.accountsWithAccess(memberId, List.of(source)).isEmpty();
     return settlementSourceResponse(extension, visible ? sourceId : null);
   }
 
   /**
    * Runs matching for one card on demand and returns the card's matches (any status) that the
    * caller may act on, newest first. Idempotent: running it again changes nothing. A match whose
-   * payment account the caller cannot edit is left out - a card's settlement source can change, and
-   * an earlier source's matches must not be revealed through the new one.
+   * payment account the caller has no access to is left out - a card's settlement source can
+   * change, and an earlier source's matches must not be revealed through the new one.
    */
   @Transactional
   public List<SettlementMatchResponse> run(UUID cardAccountId, AuthenticatedUserPrincipal actor) {
-    Account card = requireCard(cardAccountId, actor, AccessLevelValues.EDIT);
+    Account card = requireCard(cardAccountId, actor);
     UUID sourceId = extensionOf(card).getSettlementSourceAccountId();
     if (sourceId == null) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "This card has no settlement source account set.");
     }
     accessControlService.requireAccountAccess(
-        actor, accountLookupService.findAccountOrThrow(sourceId, actor), AccessLevelValues.EDIT);
+        actor, accountLookupService.findAccountOrThrow(sourceId, actor));
 
     settlementDetectionService.detectForCard(cardAccountId);
     Set<UUID> editable = editableAccountIds(actor);
@@ -293,22 +289,18 @@ public class SettlementMatchService {
             .findByIdForUpdate(matchId)
             .orElseThrow(() -> matchNotFound(actor, matchId));
     Set<Account> both = Set.of(match.getCardAccount(), match.getPaymentTransaction().getAccount());
-    if (accessControlService.accountsWithAccess(memberId, both, AccessLevelValues.EDIT).size()
-        != both.size()) {
+    if (accessControlService.accountsWithAccess(memberId, both).size() != both.size()) {
       throw matchNotFound(actor, matchId);
     }
     return match;
   }
 
-  // The ids of the workspace's accounts the caller may EDIT - the accounts whose matches the caller
-  // may see and decide. Workspace scale: a workspace holds tens of accounts.
+  // The ids of the workspace's accounts the caller has access to - the accounts whose matches the
+  // caller may see and decide. Workspace scale: a workspace holds tens of accounts.
   private Set<UUID> editableAccountIds(AuthenticatedUserPrincipal actor) {
     UUID memberId = accessControlService.requireActingMember(actor);
     return accessControlService
-        .accountsWithAccess(
-            memberId,
-            accountRepository.findByWorkspaceId(actor.workspaceId()),
-            AccessLevelValues.EDIT)
+        .accountsWithAccess(memberId, accountRepository.findByWorkspaceId(actor.workspaceId()))
         .stream()
         .map(Account::getId)
         .collect(Collectors.toSet());
@@ -319,9 +311,9 @@ public class SettlementMatchService {
         || (match.getCardTransaction() != null && match.getCardTransaction().getVoidedAt() != null);
   }
 
-  private Account requireCard(UUID cardAccountId, AuthenticatedUserPrincipal actor, String level) {
+  private Account requireCard(UUID cardAccountId, AuthenticatedUserPrincipal actor) {
     Account card = accountLookupService.findAccountOrThrow(cardAccountId, actor);
-    accessControlService.requireAccountAccess(actor, card, level);
+    accessControlService.requireAccountAccess(actor, card);
     if (!card.isHasStatementCycle()) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "Only a credit-card account has a settlement source.");

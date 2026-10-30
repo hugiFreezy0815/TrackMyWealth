@@ -48,7 +48,7 @@ line), not an arbitrary priority call:
 |---|---|---|---|---|
 | 01 | Application Foundation & Configuration | V19, V20, ADR-0001 | 4 | 3 MUST, 1 SHOULD |
 | 02 | User Administration & Authorization | V2, V16 | 5 | 5 MUST |
-| 03 | Workspace & Ownership | V2, V6 | 4 | 4 MUST |
+| 03 | Workspace & Membership | V2, V6, V110 | 5 (3 withdrawn) | 2 MUST active |
 | 04 | Financial Institutions | V3 | 4 | 3 MUST, 1 SHOULD |
 | 05 | Account Management | V4, V5 | 5 | 5 MUST |
 | 06 | Currency & FX Management | V8 | 3 | 3 MUST |

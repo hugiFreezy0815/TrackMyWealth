@@ -6,13 +6,11 @@ import static org.assertj.core.api.Assertions.within;
 import static org.assertj.core.groups.Tuple.tuple;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountIdentifierFromImportRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
@@ -36,7 +34,6 @@ import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
@@ -161,8 +158,6 @@ class ImportBatchControllerTest {
               "DELETE FROM import_template",
               "DELETE FROM snapshot_holding",
               "DELETE FROM account_snapshot",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_credit_card",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
@@ -288,19 +283,18 @@ class ImportBatchControllerTest {
     assertThat(masked.kind()).isEqualTo("MASKED_CARD");
     assertThat(masked.identifierMasked()).isEqualTo("123456******7890");
 
-    // Only a member who may edit the account sees or sets its identifier.
-    UUID reader = createSecondMember("reader@example.com");
-    grantOnAccount(reader, account, "READ");
-    String readerToken = login("reader@example.com");
-    client(readerToken)
+    // Every member of the workspace sees and sets it (US-03-06).
+    createSecondMember("member@example.com");
+    String memberToken = login("member@example.com");
+    client(memberToken)
         .get()
         .uri("/api/v1/accounts/" + account + "/identifier")
         .exchange()
         .expectStatus()
-        .isNotFound();
-    putIdentifier(readerToken, account, OTHER_IBAN, "\"" + accountVersion(account) + "\"")
+        .isOk();
+    putIdentifier(memberToken, account, OTHER_IBAN, "\"" + accountVersion(account) + "\"")
         .expectStatus()
-        .isNotFound();
+        .isOk();
   }
 
   // #323: a contract number is registered beside the IBAN, in its own keyed hash, and is unique in
@@ -527,19 +521,17 @@ class ImportBatchControllerTest {
 
   /** Another account is proposed only to a member who may import into it. */
   @Test
-  void anAccountTheMemberMayNotImportIntoIsNeverProposed() throws Exception {
+  void anotherMembersUploadIsProposedTheWorkspacesAccountTheFileNames() throws Exception {
     UUID savings = createAccount("Sparkonto", "CHF");
     registerIdentifier(savings, EXAMPLE_IBAN);
     UUID template = createTemplate(preambleTemplate()).id();
-    UUID member = createSecondMember("member@example.com");
-    grantOnAccount(member, account, "EDIT");
-    grantOnAccount(member, savings, "READ");
+    createSecondMember("member@example.com");
     String memberToken = login("member@example.com");
 
     ImportBatchResponse batch = upload(memberToken, template, preambleFile(EXAMPLE_IBAN));
 
     assertThat(batch.accountIdentification())
-        .isEqualTo(new ImportIdentificationResponse("NO_MATCH", null, true, false));
+        .isEqualTo(new ImportIdentificationResponse("OTHER_ACCOUNT", savings, true, false));
   }
 
   /** A masked card number fits several cards: a match on it still needs a yes. */
@@ -681,29 +673,6 @@ class ImportBatchControllerTest {
     commit(account, named.id(), confirmed.version());
     proposalStatus(imports() + "/" + named.id() + "/account-proposal", null)
         .isEqualTo(HttpStatus.CONFLICT);
-  }
-
-  @Test
-  void aMemberWithoutEditAccessToTheBatchsAccountGetsNeitherProposalNorIdentifier()
-      throws Exception {
-    UUID template = createTemplate(preambleTemplate()).id();
-    ImportBatchResponse batch = upload(token, template, preambleFile(EXAMPLE_IBAN));
-    UUID own = createAccount("Eigenes Konto", "CHF");
-    UUID member = createSecondMember("member@example.com");
-    grantOnAccount(member, account, "READ");
-    grantOnAccount(member, own, "EDIT");
-    String memberToken = login("member@example.com");
-
-    client(memberToken)
-        .post()
-        .uri(imports() + "/" + batch.id() + "/account-proposal")
-        .exchange()
-        .expectStatus()
-        .isNotFound();
-    fromImport(memberToken, own, account, batch.id(), "\"" + accountVersion(own) + "\"")
-        .expectStatus()
-        .isNotFound();
-    assertThat(single("SELECT identifier_hash FROM account WHERE id = ?", own)).isNull();
   }
 
   @Test
@@ -1909,35 +1878,9 @@ class ImportBatchControllerTest {
   }
 
   @Test
-  void anAccountTheCallerCannotWriteToIsTheAuditedNotFound() throws Exception {
+  void aBatchUnderAnotherAccountOrAnUnknownAccountIsTheAuditedNotFound() throws Exception {
     ImportTemplateResponse simple = createTemplate(simpleTemplate("Simple", SIMPLE_COLUMNS));
     ImportBatchResponse batch = upload(token, simple.id(), csv("2019-01-05;-12.40;CHF;Bakery;R1;"));
-    UUID memberId = createSecondMember("member@example.com");
-    String memberToken = login("member@example.com");
-    grantOnAccount(memberId, account, AccessLevelValues.BALANCE_ONLY);
-
-    upload(memberToken, account, csv("2019-01-05;-1.00;CHF;x;;"), simple.id())
-        .expectStatus()
-        .isNotFound();
-    client(memberToken)
-        .get()
-        .uri(imports() + "/" + batch.id())
-        .exchange()
-        .expectStatus()
-        .isNotFound();
-    // READ is not enough either: the rows are raw bank data, and an import is a write.
-    UUID readerId = createSecondMember("reader@example.com");
-    String readerToken = login("reader@example.com");
-    grantOnAccount(readerId, account, AccessLevelValues.READ);
-    client(readerToken)
-        .get()
-        .uri(imports() + "/" + batch.id() + "/rows")
-        .exchange()
-        .expectStatus()
-        .isNotFound();
-    upload(readerToken, account, csv("2019-01-05;-1.00;CHF;x;;"), simple.id())
-        .expectStatus()
-        .isNotFound();
     // A batch id under another account of the caller's own, and an unknown account.
     UUID other = createAccount("Other", "CHF");
     client()
@@ -1953,7 +1896,6 @@ class ImportBatchControllerTest {
         .expectStatus()
         .isNotFound();
 
-    awaitDenials("Account", account, 4);
     awaitDenials("ImportBatch", batch.id(), 1);
   }
 
@@ -2508,9 +2450,9 @@ class ImportBatchControllerTest {
   }
 
   // Whether the warning shows tells whether the payment account holds a payment of that amount:
-  // only a member who may read that account's transactions gets the lookup.
+  // every member of the workspace gets the lookup, whoever recorded the payment (US-03-06).
   @Test
-  void theUnmatchedSettlementWarningDoesNotRevealABalanceOnlyPaymentAccount() throws Exception {
+  void anotherMembersCardImportFindsThePaymentOnTheSourceAccount() throws Exception {
     UUID card =
         client()
             .post()
@@ -2544,16 +2486,8 @@ class ImportBatchControllerTest {
                 + "2031-06-02;30,00;CHF;Monthly card payment;CARD-P;;;\n")
             .getBytes(StandardCharsets.UTF_8);
 
-    UUID balanceOnlyId = createSecondMember("balance@example.com");
-    grantOnAccount(balanceOnlyId, card, AccessLevelValues.EDIT);
-    grantOnAccount(balanceOnlyId, account, AccessLevelValues.BALANCE_ONLY);
-    assertThat(settlementWarnings(login("balance@example.com"), card, file, template.id()))
-        .containsExactly("IMPORT_ROW_CARD_SETTLEMENT_UNMATCHED");
-
-    UUID readerId = createSecondMember("payments-reader@example.com");
-    grantOnAccount(readerId, card, AccessLevelValues.EDIT);
-    grantOnAccount(readerId, account, AccessLevelValues.READ);
-    assertThat(settlementWarnings(login("payments-reader@example.com"), card, file, template.id()))
+    createSecondMember("member@example.com");
+    assertThat(settlementWarnings(login("member@example.com"), card, file, template.id()))
         .isEmpty();
   }
 
@@ -2594,19 +2528,6 @@ class ImportBatchControllerTest {
         .isCreated()
         .expectBody(UserSummaryResponse.class);
     return (UUID) single("SELECT workspace_member_id FROM app_user WHERE email = ?", email);
-  }
-
-  private void grantOnAccount(UUID memberId, UUID accountId, String level) {
-    client()
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isCreated();
   }
 
   private String login(String email) {

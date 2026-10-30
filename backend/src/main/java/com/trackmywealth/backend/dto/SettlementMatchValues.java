@@ -5,7 +5,7 @@ import java.util.Set;
 /**
  * The closed value sets of {@code settlement_match} (V30): its lifecycle {@code status} and the
  * {@code match_basis} that produced it. Kept as constants alongside the DB {@code CHECK}s they
- * mirror, same as {@link AccessLevelValues}.
+ * mirror, same as {@link ReconciliationResultValues}.
  */
 public final class SettlementMatchValues {
 

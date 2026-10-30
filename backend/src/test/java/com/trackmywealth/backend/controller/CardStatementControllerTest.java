@@ -2,16 +2,13 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CardStatementResponse;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetStatementConfigRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -100,8 +97,6 @@ class CardStatementControllerTest {
       statement.execute(LedgerCleanup.DELETE_ALL_TRANSACTIONS);
       for (String table :
           List.of(
-              "sharing_grant",
-              "account_ownership",
               "custom_asset_valuation",
               "account_custom_asset",
               "account_credit_card",
@@ -374,25 +369,14 @@ class CardStatementControllerTest {
   // -------------------------------------------------------------------
 
   @Test
-  void readingTheCycleNeedsBalanceOnlyButSettingItNeedsEdit() {
+  void anotherMemberReadsAndSetsTheCycleWithoutAnyGrant() {
     String adminToken = bootstrapAdministrator();
     UUID card = createCard(adminToken);
     setConfig(adminToken, card, 5, 20, HttpStatus.OK);
-    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
 
-    client(bobToken)
-        .get()
-        .uri("/api/v1/accounts/" + card + "/statement-config")
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND); // no grant at all: deny-as-not-found
-
-    grant(adminToken, bobMemberId, card, AccessLevelValues.BALANCE_ONLY);
     assertThat(getConfig(bobToken, card)).isEqualTo(new StatementConfigResponse(card, 5, 20, 1));
-    setConfig(bobToken, card, 6, 15, HttpStatus.NOT_FOUND); // BALANCE_ONLY is not enough to write
-
-    grant(adminToken, bobMemberId, card, AccessLevelValues.EDIT);
     assertThat(setConfig(bobToken, card, 6, 15, HttpStatus.OK))
         .isEqualTo(new StatementConfigResponse(card, 6, 15, 2));
   }
@@ -559,19 +543,6 @@ class CardStatementControllerTest {
     return expected == HttpStatus.OK
         ? response.expectBody(CardStatementResponse.class).returnResult().getResponseBody()
         : null;
-  }
-
-  private void grant(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED);
   }
 
   private UUID createSecondMember(String adminToken, String email) {

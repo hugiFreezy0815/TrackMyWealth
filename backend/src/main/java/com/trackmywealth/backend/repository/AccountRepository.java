@@ -21,8 +21,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
       UUID workspaceId, String contractIdentifierHash);
 
   // Same SELECT ... FOR UPDATE pattern as AppUserRepository.findByIdForUpdate - serializes any
-  // read-modify-write sequence keyed off this account (see AccountOwnershipService.assignOwnership,
-  // the first caller) so a second concurrent writer blocks here until the first commits, rather
+  // read-modify-write sequence keyed off this account (e.g. LoanRepaymentService, a card's
+  // settlement detection) so a second concurrent writer blocks here until the first commits, rather
   // than both reading the same pre-change state and committing incompatible results neither one's
   // own single-request validation could have caught.
   @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -63,16 +63,4 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
   // month's spending on an account archived since must still count (FR-LIF-005 only excludes an
   // archived account from *current* totals).
   List<Account> findByWorkspaceId(UUID workspaceId);
-
-  /**
-   * #207: ownership is a full-replacement aggregate whose concurrency token is the parent account.
-   * The ownership rows themselves are dated history and there may legitimately be zero current
-   * rows, so no child row can carry the aggregate revision. This UPDATE changes no column itself;
-   * its BEFORE UPDATE triggers advance the account's database-owned version (trg_bump_version) and,
-   * as a side effect, set {@code updated_at} to now (trg_set_updated_at) - an ownership change
-   * counts as a change of the account (ADR 0004).
-   */
-  @Modifying(clearAutomatically = true, flushAutomatically = true)
-  @Query(value = "UPDATE account SET updated_at = updated_at WHERE id = :id", nativeQuery = true)
-  int bumpOwnershipAggregateVersion(@Param("id") UUID id);
 }

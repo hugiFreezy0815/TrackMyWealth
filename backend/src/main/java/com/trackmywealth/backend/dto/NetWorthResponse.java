@@ -24,9 +24,8 @@ import java.util.List;
  * @param warnings every data-quality warning ({@link DataQualityWarningValues}) carried by at least
  *     one of {@link #accounts}, each once and sorted - the headline must show them, not only the
  *     account they come from (PR-011, FR-CON-007)
- * @param accounts every active account the caller may see (at least {@code BALANCE_ONLY}), present
- *     even when its value is unknown so a caller can see which accounts are excluded from the
- *     totals
+ * @param accounts every active account of the caller's workspace, present even when its value is
+ *     unknown so a caller can see which accounts are excluded from the totals
  */
 public record NetWorthResponse(
     String currency,
