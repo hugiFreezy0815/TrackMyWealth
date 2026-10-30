@@ -14,9 +14,9 @@ import org.springframework.stereotype.Repository;
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
 
   // Same SELECT ... FOR UPDATE pattern as AccountRepository/AppUserRepository's own
-  // findByIdForUpdate - #122: serializes SharingGrantService's bootstrap check-then-insert for
-  // WORKSPACE scope, so two concurrent grant() calls can't both observe "no existing grant" and
-  // both bypass the FULL-access requirement.
+  // findByIdForUpdate - serializes a read-modify-write sequence keyed off the whole workspace (e.g.
+  // CategoryService's taxonomy changes), so a second concurrent writer waits for the first to
+  // commit instead of both acting on the same pre-change state.
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("SELECT w FROM Workspace w WHERE w.id = :id")
   Optional<Workspace> findByIdForUpdate(@Param("id") UUID id);

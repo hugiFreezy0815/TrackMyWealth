@@ -1,11 +1,14 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.UpdateWorkspaceCurrencyRequest;
+import com.trackmywealth.backend.dto.UpdateWorkspaceNameRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.WorkspaceService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** US-06-05: current workspace settings and its default display currency. */
 @RestController
 @RequestMapping("/api/v1/workspace")
+@Tag(name = "Workspace")
 public class WorkspaceController {
 
   private final WorkspaceService workspaceService;
@@ -31,6 +35,17 @@ public class WorkspaceController {
   public ResponseEntity<WorkspaceResponse> getCurrent(
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     WorkspaceResponse response = workspaceService.getCurrent(actor);
+    return VersionedResponse.ok(response, response.version());
+  }
+
+  @Operation(operationId = "updateWorkspaceName", summary = "Rename or clear the workspace name")
+  @PutMapping("/name")
+  public ResponseEntity<WorkspaceResponse> updateName(
+      @Valid @RequestBody UpdateWorkspaceNameRequest request,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    WorkspaceResponse response =
+        workspaceService.updateName(request, IfMatchVersionParser.parse(ifMatch), actor);
     return VersionedResponse.ok(response, response.version());
   }
 

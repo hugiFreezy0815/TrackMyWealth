@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.entity.Account;
@@ -29,8 +28,7 @@ import org.springframework.web.server.ResponseStatusException;
  * <p>Rules, in the order they are checked:
  *
  * <ul>
- *   <li>Writes need {@code EDIT}, reads {@code READ} on the account (as for snapshots, US-25-01): a
- *       {@code BALANCE_ONLY} grant sees the resulting balance, not the opening balance itself.
+ *   <li>Reads and writes need access to the account (as for snapshots, US-25-01).
  *   <li>An account with a value source of its own takes none - {@code hasAmortisation} (loans,
  *       mortgages) and {@code manualValuation} (custom assets): 422 {@code
  *       OPENING_BALANCE_NOT_APPLICABLE}. Decided by capability flag, never by {@code account_type}.
@@ -93,7 +91,7 @@ public class OpeningBalanceService {
   @Transactional(readOnly = true)
   public OpeningBalanceResponse get(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
+    accessControlService.requireAccountAccess(actor, account);
     return toResponse(findOrThrow(accountId));
   }
 
@@ -101,7 +99,7 @@ public class OpeningBalanceService {
   public OpeningBalanceResponse record(
       UUID accountId, OpeningBalanceRequest request, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     snapshotRepository
         .findByAccountIdAndOpeningBalanceTrue(accountId)
         .ifPresent(
@@ -134,7 +132,7 @@ public class OpeningBalanceService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     AccountSnapshot snapshot = findOrThrow(accountId);
     versionPreconditionService.requireCurrent(
         expectedVersion, snapshot.getVersion(), RESOURCE_NAME);
@@ -160,7 +158,7 @@ public class OpeningBalanceService {
   @Transactional
   public void delete(UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     AccountSnapshot snapshot = findOrThrow(accountId);
     versionPreconditionService.requireCurrent(
         expectedVersion, snapshot.getVersion(), RESOURCE_NAME);

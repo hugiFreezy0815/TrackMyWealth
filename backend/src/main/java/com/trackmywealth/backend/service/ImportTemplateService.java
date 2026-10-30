@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
@@ -375,7 +374,7 @@ public class ImportTemplateService {
         readOnlyTransaction.execute(
             status -> {
               Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-              accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+              accessControlService.requireAccountAccess(actor, account);
               return ImportBatchService.accountContext(account);
             });
     return parser.parseForAccount(content, definition, context);

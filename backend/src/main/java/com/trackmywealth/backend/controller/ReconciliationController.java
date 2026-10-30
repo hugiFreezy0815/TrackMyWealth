@@ -24,8 +24,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * US-25-02: detailed reconciliation history. A {@code BALANCE_ONLY} grant gets the account-level
- * status through {@code GET /accounts/{id}}; this endpoint requires {@code READ}.
+ * US-25-02: detailed reconciliation history; the account-level status comes with {@code GET
+ * /accounts/{id}}.
  *
  * <p>US-25-03: a member accepts, dismisses or reopens one result; rules in {@link
  * ReconciliationDecisionService}.

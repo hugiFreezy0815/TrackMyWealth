@@ -29,8 +29,8 @@ representative scenario in specification section 43).
 **Data requirements:** Outputs of every prior epic.
 **Error/edge cases:** A currency with no direct FX pair available for the requested date — falls
 back per FR-CUR-010/012 rules (EPIC 06), visibly flagged.
-**Authorization/privacy:** Workspace-scoped, respects per-member sharing grants for person-scoped
-consolidated views (FR-TEN-011).
+**Authorization/privacy:** Workspace-scoped: every member sees the same consolidated views
+(US-03-06, FR-TEN-008); there are no person-scoped views.
 **Dependencies:** All prior epics (01-18).
 **Priority:** MUST.
 **Definition of Done:** End-to-end integration test reproduces specification section 43's

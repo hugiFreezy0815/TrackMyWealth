@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportRollbackModifiedResponse;
 import com.trackmywealth.backend.dto.ImportRollbackResponse;
@@ -124,7 +123,7 @@ public class ImportRollbackService {
 
   /**
    * {@code COMMITTED -> ROLLED_BACK} or {@code VOIDED}, whichever applies (see the class comment).
-   * Needs the same access as an import: {@code EDIT} on an active account.
+   * Needs the same access as an import: an active account of the caller's workspace.
    *
    * @param reason why, already validated (1 to 500 characters); recorded on the batch and the void
    *     reason of every voided row
@@ -188,13 +187,13 @@ public class ImportRollbackService {
       String reason,
       AuthenticatedUserPrincipal actor) {
     // US-07-22: the legs the commit booked on the savings pocket go too; as for a void, the member
-    // must be able to edit that account, checked before anything is deleted.
+    // needs access to that account, checked before anything is deleted.
     Map<UUID, LocalDate> otherAccounts =
         rollbackRepository.findEarliestBookingDatesOnOtherAccounts(batch.getId(), account.getId());
     List<Account> others = new ArrayList<>(otherAccounts.size());
     for (UUID otherId : otherAccounts.keySet()) {
       Account other = accountRepository.findById(otherId).orElseThrow();
-      accessControlService.requireAccountAccess(actor, other, AccessLevelValues.EDIT);
+      accessControlService.requireAccountAccess(actor, other);
       others.add(other);
     }
     SortedSet<UUID> unmatched = new TreeSet<>();

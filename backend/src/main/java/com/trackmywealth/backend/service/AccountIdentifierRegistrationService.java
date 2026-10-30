@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountIdentifierFromImportRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierResponse;
@@ -17,7 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * US-07-10: registers, shows and removes an account's identifier under EDIT access to the account.
+ * US-07-10: registers, shows and removes an account's identifier, for a member with access to it.
  * Only the keyed hash and the masked display value are stored ({@link AccountIdentifierService}).
  * Besides its IBAN, an account other than a credit card can have a contract number (#323).
  */
@@ -80,7 +79,7 @@ public class AccountIdentifierRegistrationService {
   /**
    * US-07-11: registers the identifier the file of an open import batch names (typically one that
    * matched no account), so the member does not type it again after creating the account from the
-   * file. The plain identifier stays on the server. Needs EDIT access to both accounts.
+   * file. The plain identifier stays on the server. Needs access to both accounts.
    *
    * @throws ApiException 422 {@code ACCOUNT_IDENTIFIER_NOT_IN_FILE} when the file names none the
    *     template's rule reads, or one of another kind than this account takes; otherwise as {@link
@@ -193,7 +192,7 @@ public class AccountIdentifierRegistrationService {
 
   private Account requireEditable(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = lookup.findAccountOrThrow(accountId, actor);
-    access.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    access.requireAccountAccess(actor, account);
     return account;
   }
 

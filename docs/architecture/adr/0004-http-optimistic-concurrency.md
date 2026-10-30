@@ -128,6 +128,11 @@ legitimately be empty, so it uses the parent `account.version` as its token
 - `GET`/`PUT .../ownership` answer an object (`accountId`, `version`, `owners`) instead of a bare
   list - a wire change made while no client consumed the endpoint yet.
 
+*Update 2026-10-23 (US-03-06, #389):* account ownership and sharing grants are withdrawn - every
+member of a workspace has full access to all of it (FR-TEN-008). Their endpoints, the ownership
+aggregate token above and the `sharing_grant` table (V110) are gone; the rest of this decision is
+unchanged.
+
 Automatic recategorization (a rule change re-running categorization) writes the transaction row
 too, so it advances `transaction.version` like a user's edit does. A client holding an ETag from
 before such a run gets a 412 on its next edit and must reload - deliberate: the category it saw is

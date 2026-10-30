@@ -137,7 +137,6 @@ class ImportTemplateControllerTest {
           List.of(
               "DELETE FROM import_batch",
               "DELETE FROM import_template",
-              "DELETE FROM account_ownership",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
               "DELETE FROM user_session",

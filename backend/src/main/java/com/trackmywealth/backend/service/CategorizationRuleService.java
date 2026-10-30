@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CategorizationRuleResponse;
 import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
 import com.trackmywealth.backend.entity.CategorizationRule;
@@ -18,9 +17,9 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * US-08-01/FR-CAT-007: a workspace's categorization rules, applied by {@link CategorizationService}
  * to every newly recorded cash or card transaction before the shipped mappings. Rules are shared by
- * the workspace like its taxonomy, so reading needs membership and creating or deactivating needs
- * EDIT on the workspace. A rule is never edited - its log rows must keep meaning what they meant -
- * only deactivated (idempotent) and replaced.
+ * the workspace like its taxonomy, so reading, creating and deactivating all need membership of the
+ * workspace. A rule is never edited - its log rows must keep meaning what they meant - only
+ * deactivated (idempotent) and replaced.
  */
 @Service
 public class CategorizationRuleService {
@@ -127,7 +126,7 @@ public class CategorizationRuleService {
   }
 
   private UUID requireEditor(AuthenticatedUserPrincipal actor) {
-    accessControlService.requireWorkspaceAccess(actor, actor.workspaceId(), AccessLevelValues.EDIT);
+    accessControlService.requireWorkspaceAccess(actor, actor.workspaceId());
     return actor.workspaceId();
   }
 

@@ -101,8 +101,6 @@ class YuhStatementImportControllerTest {
             "DELETE FROM account_snapshot",
             "DELETE FROM import_file",
             "DELETE FROM import_batch",
-            "DELETE FROM sharing_grant",
-            "DELETE FROM account_ownership",
             "DELETE FROM account",
             "DELETE FROM admin_audit_log",
             "DELETE FROM user_session",
@@ -155,20 +153,6 @@ class YuhStatementImportControllerTest {
     assertThat(pocketAccount.countsAsSaving()).isTrue();
     assertThat(pocketAccount.financialInstitutionId())
         .isEqualTo(account(yuh).financialInstitutionId());
-    assertThat(
-            jdbc.queryForList(
-                "SELECT workspace_member_id::TEXT || ':' || ownership_share || ':' || effective_from FROM account_ownership"
-                    + " WHERE account_id = ? AND effective_to IS NULL ORDER BY 1",
-                String.class,
-                pocket))
-        .as("the pocket has the Yuh account's owners and shares, from the same day")
-        .isEqualTo(
-            jdbc.queryForList(
-                "SELECT workspace_member_id::TEXT || ':' || ownership_share || ':' || effective_from FROM account_ownership"
-                    + " WHERE account_id = ? AND effective_to IS NULL ORDER BY 1",
-                String.class,
-                yuh));
-
     // The pocket's leg: the opposite amount, a row of the same batch, linked to the move.
     Map<String, Object> leg =
         jdbc.queryForMap(

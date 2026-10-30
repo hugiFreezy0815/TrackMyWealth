@@ -23,8 +23,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * US-09-02 (credit-card settlement matching), gated per account by {@code AccessControlService}
- * (US-03-03): deciding a match needs {@code EDIT} on both the card and its paying account.
+ * US-09-02 (credit-card settlement matching): deciding a match needs membership of the workspace of
+ * both the card and its paying account ({@code AccessControlService}).
  */
 @RestController
 @RequestMapping("/api/v1")

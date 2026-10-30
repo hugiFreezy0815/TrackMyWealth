@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalValues;
@@ -61,7 +60,7 @@ import org.springframework.web.server.ResponseStatusException;
  * or auto-confirm the pair the member rejected. Match queries leave a match out while one of its
  * legs is deleted.
  *
- * <p>Needs EDIT on the account, the same as recording there. An accepted reconciliation
+ * <p>Needs access to the account, the same as recording there. An accepted reconciliation
  * difference's adjusting entry is neither removed nor restored here: its result's reopen does that
  * (US-25-03). Every removal reconciles the accounts it touched again (T3, US-25-02), and an import
  * batch's rollback (US-07-05, {@code ImportRollbackService}) voids through {@link #voidRows}.
@@ -600,7 +599,7 @@ public class TransactionRemovalService {
   public List<TransactionResponse> listRestorable(
       UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
+    accessControlService.requireAccountAccess(actor, account);
     return transactionService.toResponses(
         transactionRepository.findRestorableByAccountIdSince(accountId, restoreWindowStart()));
   }
@@ -675,20 +674,20 @@ public class TransactionRemovalService {
         && (isTransferLeg(row) || TransactionService.isLoanInterest(row));
   }
 
-  // The other leg of a two-sided transfer sits on another account, which the member must be able to
-  // edit too - the same rule as recording it.
+  // The other leg of a two-sided transfer sits on another account, which the member needs access
+  // to as well - the same rule as recording it.
   void requireEditOnOtherAccounts(
       List<Transaction> rows, Account account, AuthenticatedUserPrincipal actor) {
     for (Transaction row : rows) {
       if (!row.getAccount().getId().equals(account.getId())) {
-        accessControlService.requireAccountAccess(actor, row.getAccount(), AccessLevelValues.EDIT);
+        accessControlService.requireAccountAccess(actor, row.getAccount());
       }
     }
   }
 
   private Account requireEditable(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     return account;
   }
 
@@ -697,8 +696,8 @@ public class TransactionRemovalService {
   // or the duplicate stays out pointing at a void, or a restored booking comes in twice. Before the
   // cards, the order the commit and the rollback take them; every account the row's removal group
   // or restore can reach (a two-sided transfer's other leg), in id order (ImportLockService). Only
-  // the ids are read,
-  // so no access is checked here: the caller checks EDIT on each account the write touches.
+  // the ids are read, so no access is checked here: the caller checks each account the write
+  // touches.
   private void lockImports(Account account, UUID transactionId) {
     List<UUID> accounts = new ArrayList<>(List.of(account.getId()));
     transactionRepository
@@ -728,7 +727,7 @@ public class TransactionRemovalService {
 
   // A restore may bring back a transfer's other leg, on another account whose cards' matching it
   // takes part in too. That account is read before any row is locked (cards before rows); the
-  // caller must be able to edit it anyway, which requireEditOnOtherAccounts checks again.
+  // caller needs access to it anyway, which requireEditOnOtherAccounts checks again.
   private List<Account> accountsToLockForRestore(
       Account account, UUID transactionId, AuthenticatedUserPrincipal actor) {
     return transactionRepository

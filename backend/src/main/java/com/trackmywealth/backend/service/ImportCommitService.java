@@ -192,7 +192,7 @@ public class ImportCommitService {
     // US-07-22: the pocket is resolved, or created, only for a batch that moves money into it.
     UUID pocketId =
         canonicals.stream().anyMatch(CanonicalImportRow::savingsPocket)
-            ? savingsPocketService.pocketFor(account, actor).map(Account::getId).orElse(null)
+            ? savingsPocketService.pocketFor(account).map(Account::getId).orElse(null)
             : null;
     ImportTransferPlan plan = ImportTransferLinkService.plan(account, canonicals, pocketId);
     List<Transaction> recorded =

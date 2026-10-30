@@ -34,7 +34,7 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V3` | `institution_catalogue` (shared seed data) and `financial_institution` (the container) |
 | `V4` | `account` — the class-table-inheritance parent, capability flags, generated `nature` column |
 | `V5` | Account subtype extension tables: securities, credit card, mortgage, loan, pension, vested benefits, custom asset |
-| `V6` | `account_ownership` (dated, fractional) and `sharing_grant` (explicit, revocable) |
+| `V6` | `account_ownership` (dated, fractional) and `sharing_grant` (explicit, revocable) - both dropped by V110 |
 | `V7` | Security Master: `issuer`, `security`, `security_identifier`, `security_asset_class_weight`, provenance and per-workspace overrides |
 | `V8` | `listing` (Security ≠ Listing, DM-26), `price` and `fx_rate` — both range-partitioned by date |
 | `V9` | `corporate_action` and successor linkage |
@@ -100,6 +100,8 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V100` | Shipped holdings templates (US-07-13, #273): the Swissquote "Portfolio-Wertentwicklung" PDF (PostFinance E-Trading, Yuh), the PostFinance E-Trading positions XLSX and cash XLS |
 | `V105` | Imported snapshots completed part by part (US-07-31, #366): `account_snapshot.balance_import_batch_id`, `snapshot_holding.import_batch_id` (the batch that contributed each part; backfilled from `import_batch_id`), `import_batch_id` updatable (passes to the remaining contributor on a rollback); snapshot outcomes `COMPLETED` and `REMOVED` |
 | `V108` | `transaction.amount_in_account_currency`, generated: `amount * coalesce(fx_rate_to_account_currency, 1)` rounded to 4 places as `NUMERIC(30,4)` (wide enough for any amount times any rate), the value a list sorts by when it sorts by `amount` (US-29-03, #373) |
+| `V109` | US-03-07: `workspace.name` becomes nullable; existing names are trimmed (blank → NULL) and `chk_workspace_name_not_blank` refuses a blank one. The service normalizes blank names to NULL; a missing name displays as All portfolios. Name and currency changes are audited by the service in `financial_audit_log` (already defined in V17). |
+| `V110` | Membership is the only access grant (US-03-06, #389): `account_ownership` and `sharing_grant` dropped, `workspace_member.is_dependent` dropped; every member has exactly one login (unique `app_user.workspace_member_id`, deferred constraint triggers `workspace_member_requires_login` on a new member and `app_user_keeps_member_login` on an unlink that leaves the member in place); stops with a message on a database holding a member without a login or with two |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a
@@ -134,7 +136,6 @@ erDiagram
     ACCOUNT ||--o| ACCOUNT_PENSION : "extends (PENSION)"
     ACCOUNT ||--o| ACCOUNT_VESTED_BENEFITS : "extends (VESTED_BENEFITS)"
     ACCOUNT ||--o| ACCOUNT_CUSTOM_ASSET : "extends (CUSTOM_ASSET)"
-    ACCOUNT ||--o{ ACCOUNT_OWNERSHIP : "owned via"
     ACCOUNT ||--o{ TRANSACTION : has
     ACCOUNT ||--o{ ACCOUNT_SNAPSHOT : "reported via"
     ACCOUNT ||--o{ POSITION : holds
@@ -222,6 +223,27 @@ function must revoke `EXECUTE` from `PUBLIC` and pin `search_path` (`SchemaConve
 automated cross-tenant suite `FR-TEN-010` requires (`CrossTenantIsolationTest`, US-28-04) runs as
 a `NOSUPERUSER NOBYPASSRLS` role too, because a superuser bypasses RLS unconditionally and the
 suite would pass for the wrong reason; keep any new isolation test on such a role.
+
+### Membership as the only access grant (US-03-06, #389)
+
+Every `ACTIVE` member of a workspace may see and change everything in it; nobody else may see any
+of it (FR-TEN-008, FR-HOU-007). There is no account ownership, no per-account or per-scope grant
+and no access level: `AccessControlService` answers one question, "is the caller an active member
+of this resource's workspace?", and RLS (above) enforces the same boundary in the database. A
+deactivated member is refused on the next request (`JwtAuthenticationFilter`, and
+`AccessControlService.requireActingMember` for every other caller); what they created stays in the
+workspace (FR-USR-011).
+
+Every member is a user with a login (FR-USR-008). `app_user.workspace_member_id` is unique, so a
+member has at most one login. Two deferred constraint triggers in V110 keep it that way at commit:
+`workspace_member_requires_login` refuses a new `workspace_member` no `app_user` links to - member
+and user are written in one transaction in either order (`SetupService`, `AdminUserService`) - and
+`app_user_keeps_member_login` refuses an `UPDATE` of `app_user.workspace_member_id` that lets go of
+a member unless that member is removed in the same transaction. The column stays nullable: a
+`SYSTEM_ADMINISTRATOR` needs no membership (FR-TEN-007). Users are disabled, never deleted
+(FR-USR-011), so a `DELETE` of `app_user` is not checked. Both trigger functions are `SECURITY
+DEFINER` with `row_security = off` for the same reason as V81's functions; they need no `EXECUTE`
+grant, because firing a trigger checks none.
 
 ### Authentication lookup with a hardened runtime role (#321)
 
@@ -1519,9 +1541,9 @@ Post-MVP list (section 38) and open decisions (section 42):
   is present as free-text columns pending **OPEN-007/D12** (exact SNB taxonomy TBD).
 - **GICS/constituent look-through data licensing** (OPEN-006/OPEN-019) — the schema supports it
   (`gics_sub_industry_code`, `fallback_sector_taxonomy`) but no license is assumed.
-- **Workspace splitting** (section 53) is not built, but `account_ownership`/`sharing_grant` are
-  already dated relations rather than static columns specifically so it can be added later
-  without rewriting history (FR-HHL-001..005).
+- **Workspace splitting** (section 53) is not built. Ownership and grants were withdrawn (V110,
+  OPEN-021); a split would move whole accounts between workspaces, dated by
+  `workspace_member.member_since`/`member_until` (FR-HHL-004).
 - **User-facing data export** (OOS-008) is out of scope per the specification; the schema
   satisfies FR-DAT-008 (everything derived is rebuildable from source) so it costs nothing to add
   later if that decision reverses (OPEN-031).

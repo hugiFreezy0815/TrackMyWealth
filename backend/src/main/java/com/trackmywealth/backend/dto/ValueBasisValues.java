@@ -4,7 +4,7 @@ package com.trackmywealth.backend.dto;
  * Where an {@link AccountValuation#value()} came from, so a consumer can tell a figure that is
  * exactly what the source says from one that is an approximation or an assumption. Plain {@code
  * String} constants, matching every other type/status value set in this codebase (see {@link
- * AccessLevelValues}).
+ * AccountTypeValues}).
  */
 public final class ValueBasisValues {
 

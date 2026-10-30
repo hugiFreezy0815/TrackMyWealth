@@ -2,17 +2,14 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -95,8 +92,6 @@ class TransferControllerTest {
               "DELETE FROM fx_rate",
               "DELETE FROM transaction_categorization_log",
               LedgerCleanup.DELETE_ALL_TRANSACTIONS,
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_securities",
               "DELETE FROM account_credit_card",
               "DELETE FROM account_pension",
@@ -841,20 +836,13 @@ class TransferControllerTest {
   // --- access and removal ------------------------------------------------------------------------
 
   @Test
-  void aTransferNeedsEditOnBothAccounts() {
+  void anotherMemberRecordsATransferBetweenTheWorkspacesAccounts() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse current = createAccount(adminToken, "CASH", "CHF");
     AccountSummaryResponse savings = createAccount(adminToken, "SAVINGS", "CHF");
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
-    grantAccount(adminToken, memberId, current.id(), AccessLevelValues.EDIT);
-    grantAccount(adminToken, memberId, savings.id(), AccessLevelValues.READ);
 
-    post(memberToken, current.id(), transfer("-100.00", savings.id(), null))
-        .expectStatus()
-        .isNotFound();
-
-    grantAccount(adminToken, memberId, savings.id(), AccessLevelValues.EDIT);
     post(memberToken, current.id(), transfer("-100.00", savings.id(), null))
         .expectStatus()
         .isCreated();
@@ -1153,19 +1141,6 @@ class TransferControllerTest {
       }
       statement.executeUpdate();
     }
-  }
-
-  private void grantAccount(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isCreated();
   }
 
   private UUID createSecondMember(String adminToken, String email) {

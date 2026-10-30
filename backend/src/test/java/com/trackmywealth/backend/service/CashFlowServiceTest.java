@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse.CurrencyAmount;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
@@ -70,7 +69,7 @@ class CashFlowServiceTest {
     when(account.getId()).thenReturn(UUID.randomUUID());
     when(accessControlService.requireActingMember(ACTOR)).thenReturn(MEMBER);
     when(accountRepository.findByWorkspaceId(WORKSPACE)).thenReturn(List.of(account));
-    when(accessControlService.accountsWithAccess(MEMBER, List.of(account), AccessLevelValues.READ))
+    when(accessControlService.accountsWithAccess(MEMBER, List.of(account)))
         .thenReturn(List.of(account));
     // Real arithmetic, so the expected figures below can be worked out by hand.
     when(fxRateService.applyRate(any(), any()))

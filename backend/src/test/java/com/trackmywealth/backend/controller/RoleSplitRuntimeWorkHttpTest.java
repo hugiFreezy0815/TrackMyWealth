@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.controller;
 
+import static com.trackmywealth.backend.controller.HardenedRuntimeAuthenticationScenario.RUNTIME_PASSWORD;
 import static com.trackmywealth.backend.controller.HardenedRuntimeAuthenticationScenario.SUPERUSER;
 import static com.trackmywealth.backend.controller.HardenedRuntimeAuthenticationScenario.SUPERUSER_PASSWORD;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,9 +17,12 @@ import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
+import com.trackmywealth.backend.dto.UpdateWorkspaceNameRequest;
+import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.service.FxRateImportService;
 import com.trackmywealth.backend.service.TransferRecheckService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.RoleSplitScripts;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -49,6 +53,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -69,7 +74,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *   <li>the FX import, which has no workspace: it writes the shared, partitioned {@code fx_rate}
  *       and derives cross rates from the trigger-kept currencies in use (V52, V54);
  *   <li>the transfer re-check, which reads its queue outside RLS and re-runs detection inside each
- *       workspace ({@code SystemWorkspaceContext}).
+ *       workspace ({@code SystemWorkspaceContext});
+ *   <li>a workspace rename, whose audit entry is the application's write to {@code
+ *       financial_audit_log} (US-03-07).
  * </ul>
  */
 @Testcontainers
@@ -105,9 +112,12 @@ class RoleSplitRuntimeWorkHttpTest {
   @Autowired FxRateImportService fxRateImportService;
   @Autowired TransferRecheckService transferRecheckService;
 
+  // First-run setup works once per database, so the tests of this class share its login.
+  private static String setupToken;
+
   @Test
   void importsFxRatesAndTransferRechecksWorkAsTheRuntimeRole() throws Exception {
-    String token = setUpAdministrator();
+    String token = token();
     UUID current = createAccount(token, "Privatkonto");
     UUID savings = createAccount(token, "Sparkonto");
     TransactionResponse incoming = recordDeposit(token, savings);
@@ -146,6 +156,55 @@ class RoleSplitRuntimeWorkHttpTest {
         latestRate);
     assertThat(transferRecheckService.recheckPending()).isEqualTo(1);
     assertThat(singleValue("SELECT count(*) FROM transfer_detection_fx_pending")).isEqualTo(0L);
+  }
+
+  @Test
+  void aWorkspaceRenameIsAuditedInsideItsWorkspaceAsTheRuntimeRole() throws Exception {
+    String token = token();
+    EntityExchangeResult<WorkspaceResponse> before =
+        client(token)
+            .get()
+            .uri("/api/v1/workspace")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(WorkspaceResponse.class)
+            .returnResult();
+    UUID workspace = before.getResponseBody().id();
+
+    client(token)
+        .put()
+        .uri("/api/v1/workspace/name")
+        .header("If-Match", before.getResponseHeaders().getETag())
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new UpdateWorkspaceNameRequest("Renamed at runtime"))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    assertThat(
+            singleValue(
+                "SELECT after_data ->> 'name' FROM financial_audit_log"
+                    + " WHERE entity_type = 'WORKSPACE' AND workspace_id = ?",
+                workspace))
+        .isEqualTo("Renamed at runtime");
+    // Outside a workspace context the runtime role sees no audit entry at all.
+    try (Connection runtime =
+            DriverManager.getConnection(
+                postgres.getJdbcUrl(), RoleSplitScripts.RUNTIME_ROLE, RUNTIME_PASSWORD);
+        PreparedStatement query =
+            runtime.prepareStatement("SELECT count(*) FROM financial_audit_log");
+        ResultSet result = query.executeQuery()) {
+      assertThat(result.next()).isTrue();
+      assertThat(result.getLong(1)).isZero();
+    }
+  }
+
+  private String token() {
+    if (setupToken == null) {
+      setupToken = setUpAdministrator();
+    }
+    return setupToken;
   }
 
   private String setUpAdministrator() {

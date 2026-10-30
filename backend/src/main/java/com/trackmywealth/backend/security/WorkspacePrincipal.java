@@ -15,10 +15,8 @@ import java.util.UUID;
  * exist yet, so it is simply denied - see {@code SecurityConfig}).
  *
  * <p>Deliberately a single {@code workspaceId}, not a set of accessible workspaces plus an "acting
- * as" selector: US-28-01's second acceptance criterion (a member resolving a shared grant from
- * another workspace) is an explicitly deferred sub-decision, out of scope until EPIC-03's {@code
- * sharing_grant} stories exist. This interface will need to grow a way to express that choice at
- * that point - see the story's own tracking note on GitHub issue #37.
+ * as" selector: membership is the only access grant (FR-TEN-008) and a user is a member of one
+ * workspace (FR-HOU-010), so there is never a second workspace to choose between.
  */
 @FunctionalInterface
 public interface WorkspacePrincipal {

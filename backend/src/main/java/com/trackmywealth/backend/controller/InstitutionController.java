@@ -50,7 +50,7 @@ public class InstitutionController {
       @Valid @RequestBody CreateFinancialInstitutionRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return ResponseEntity.status(HttpStatus.CREATED)
-        .body(institutionService.createInstitution(request, actor.workspaceId()));
+        .body(institutionService.createInstitution(request, actor));
   }
 
   @GetMapping("/{institutionId}/summary")

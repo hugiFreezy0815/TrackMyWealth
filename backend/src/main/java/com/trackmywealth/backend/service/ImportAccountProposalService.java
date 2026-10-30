@@ -76,7 +76,7 @@ public class ImportAccountProposalService {
 
   /**
    * The proposal for the file of open batch {@code batchId} of account {@code accountId}, which
-   * needs EDIT access to that account, as reading its rows does.
+   * needs access to that account, as reading its rows does.
    *
    * @throws com.trackmywealth.backend.error.ApiException 409 {@code IMPORT_BATCH_STATE} unless the
    *     batch is {@code UPLOADED} or {@code PARSED} with a template and its file

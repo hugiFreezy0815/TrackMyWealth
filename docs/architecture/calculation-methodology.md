@@ -194,7 +194,7 @@ foreign-currency rows (amount in the original currency); at that point the balan
 account-currency figure instead, or it would silently mix currencies.
 
 **Net worth (partial, until US-11-01)** is `Σ value(ASSET) − Σ value(LIABILITY)` over every active
-account the caller may see at `BALANCE_ONLY` or above. US-06-05 makes the workspace's
+account of the caller's workspace - every member sees the same figure (US-03-06). US-06-05 makes the workspace's
 `workspace.currency` the default display currency for this workspace-level figure; a read may
 override it with `currency=...`. Each account's foreign currency is converted at the valuation
 date's rate, resolved once per native currency per request. The member's
@@ -222,19 +222,15 @@ value(D) = opening balance + Σ amount of live ledger rows with  opening date < 
   booked after the opening balance was last stated (see *Reconciliation* below).
 - **Before the opening date the value is unknown, not zero** (PR-011): `valueKnown = false` for any
   read with `asOf` earlier than the opening date (`GET .../balance?asOf=`).
-- **A past balance needs `READ`.** Today's balance is visible at `BALANCE_ONLY`; a read with
-  `asOf` before today needs `READ` on the account, because balances on consecutive days differ by
-  that day's transactions, which a `BALANCE_ONLY` grant does not show (#241 review). "Today" is
-  the server's business date (`app.business-zone`), so a client asks for the current balance by
-  omitting `asOf`, never by sending its own local date.
+- **"Today" is the server's business date** (`app.business-zone`), so a client asks for the
+  current balance by omitting `asOf`, never by sending its own local date.
 - **Rows before the opening date are left out.** They predate the starting point. Recording an
   opening balance after existing live rows is refused (409 `OPENING_BALANCE_AFTER_FIRST_TRANSACTION`,
   with their count and earliest booking date) unless the member confirms
   `acknowledgeEarlierTransactions`. While such rows exist, the account, its valuation and the
   net-worth and institution-summary headlines carry `TRANSACTIONS_BEFORE_OPENING_BALANCE`
-  (FR-CON-007) - never a silent double count. A `BALANCE_ONLY` grant sees the warning with the
-  figure it qualifies, but not the rows' count or dates (those come with the 409, which needs
-  `EDIT`). The acknowledgement is not stored: every replace is checked again.
+  (FR-CON-007) - never a silent double count. The warning travels with the figure it qualifies;
+  the rows' count and dates come with the 409. The acknowledgement is not stored: every replace is checked again.
 - **Removed rows don't count**, as everywhere: a soft-deleted row is gone, and a void pair nets to
   zero on every date (see above), wherever its two rows fall relative to the opening date.
 - **Sign.** The balance follows the snapshot convention: a liability's is the positive amount
@@ -302,9 +298,8 @@ State is reproducible from source data:
   longer reopened, their adjusting rows keep counting, and corrections go into the newest
   comparison as new visible entries;
 - account reads expose `NEVER`, `RECONCILED` (also for an accepted difference),
-  `OPEN_DIFFERENCE`, `DISMISSED_DIFFERENCE`, or `NOT_RECONCILABLE`.
-  A `BALANCE_ONLY` grant sees the state and reason but not the comparison date or amount; those
-  details, and the reconciliation history endpoint, require `READ`.
+  `OPEN_DIFFERENCE`, `DISMISSED_DIFFERENCE`, or `NOT_RECONCILABLE`, with the comparison date and
+  any difference; the reconciliation history endpoint lists every comparison.
 
 An open difference adds `OPEN_RECONCILIATION_DIFFERENCE` to the account's data-quality warnings,
 which means the existing valuation aggregation also surfaces it at institution and net-worth
@@ -419,8 +414,8 @@ one card and its source account to guard that.
   against its original. A voided payment is therefore never "awaiting a decision" - a proposal on a
   row voided since is moot, and a voided payment stays in the sum where its reversing row cancels it
   (excluding the original while counting the reversal would understate spending by the payment).
-  Confirming a proposal on a voided payment or credit is a 409. Only accounts the caller may
-  `READ` contribute (transaction-level detail is not shown at `BALANCE_ONLY`). Without a
+  Confirming a proposal on a voided payment or credit is a 409. Every account of the caller's
+  workspace contributes (US-03-06). Without a
   `currency` query parameter, the response remains grouped in the transactions' original
   currencies. With `currency=...`, each contributing amount is converted using its own booking
   date (the realised-flow rule above) before aggregation. For performance, rows are first grouped

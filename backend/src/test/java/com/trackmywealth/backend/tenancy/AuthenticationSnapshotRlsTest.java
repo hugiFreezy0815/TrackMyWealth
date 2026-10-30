@@ -67,6 +67,8 @@ class AuthenticationSnapshotRlsTest {
         statement.execute(
             "GRANT EXECUTE ON FUNCTION public.auth_workspace_member_status(UUID) TO " + ROLE);
       }
+      // One transaction, so each member has its login when it commits (V110).
+      admin.setAutoCommit(false);
       workspace = insertWorkspace(admin);
       member = insertMember(admin, workspace);
       user = insertUser(admin, "synthetic@example.invalid", member);
@@ -75,6 +77,7 @@ class AuthenticationSnapshotRlsTest {
       otherUser = insertUser(admin, "other@example.invalid", insertMember(admin, otherWorkspace));
       otherSession = insertSession(admin, otherUser);
       userWithoutMembership = insertUser(admin, "admin-only@example.invalid", null);
+      admin.commit();
     }
   }
 
