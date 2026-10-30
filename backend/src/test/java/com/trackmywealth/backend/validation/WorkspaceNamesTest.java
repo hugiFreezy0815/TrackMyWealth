@@ -13,6 +13,30 @@ class WorkspaceNamesTest {
     assertThat(WorkspaceNames.normalize("  Hugi  ")).isEqualTo("Hugi");
   }
 
+  // String.strip() keeps no-break spaces; a name of them would look empty but not be NULL.
+  @Test
+  void treatsNoBreakAndIdeographicSpacesAsBlank() {
+    assertThat(WorkspaceNames.normalize(" ")).isNull();
+    assertThat(WorkspaceNames.normalize("   　")).isNull();
+    assertThat(WorkspaceNames.normalize(" Hugi ")).isEqualTo("Hugi");
+    assertThat(WorkspaceNames.normalize("Family Hug")).isEqualTo("Family Hug");
+    assertThat(WorkspaceNames.isValid(" ")).isTrue();
+  }
+
+  @Test
+  void rejectsCharactersThatRenderAsNothing() {
+    assertThat(WorkspaceNames.isValid("ㅤ")).isFalse();
+    assertThat(WorkspaceNames.isValid("ᅟᅠ")).isFalse();
+    assertThat(WorkspaceNames.isValid("ﾠ")).isFalse();
+    assertThat(WorkspaceNames.isValid("⠀")).isFalse();
+  }
+
+  @Test
+  void rejectsLoneSurrogates() {
+    assertThat(WorkspaceNames.isValid("Hugi\uD800")).isFalse();
+    assertThat(WorkspaceNames.isValid("\uDC00Hugi")).isFalse();
+  }
+
   @Test
   void enforcesLengthAndRejectsControlCharacters() {
     assertThat(WorkspaceNames.isValid(null)).isTrue();

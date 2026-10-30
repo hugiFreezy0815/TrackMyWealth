@@ -133,13 +133,17 @@ class WorkspaceNameControllerTest {
     EntityExchangeResult<WorkspaceResponse> cleared =
         rename(token, current(token).getResponseHeaders().getETag(), null);
     assertThat(cleared.getResponseBody().name()).isNull();
+    rename(token, cleared.getResponseHeaders().getETag(), "New");
+    EntityExchangeResult<WorkspaceResponse> noBreakSpaces =
+        rename(token, current(token).getResponseHeaders().getETag(), "  ");
+    assertThat(noBreakSpaces.getResponseBody().name()).isNull();
   }
 
   @Test
   void invalidNamesAreRejectedWithoutChangingTheWorkspace() throws Exception {
     String token = member("Valid");
     String etag = current(token).getResponseHeaders().getETag();
-    for (String invalid : new String[] {"x".repeat(61), "a\nb", "bad\u0000name"}) {
+    for (String invalid : new String[] {"x".repeat(61), "a\nb", "bad\u0000name", "ㅤ"}) {
       requestRename(token, etag, invalid).expectStatus().isBadRequest();
     }
     assertThat(current(token).getResponseBody().name()).isEqualTo("Valid");
