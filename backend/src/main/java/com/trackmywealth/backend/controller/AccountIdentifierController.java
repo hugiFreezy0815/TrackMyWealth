@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * US-07-10: the account identifier an import file is matched to, under EDIT access to the account.
+ * US-07-10: the account identifier an import file is matched to, for a member with access to it.
  * The identifier is sent once; responses show only its masked display value. Every change requires
  * the account's version in {@code If-Match} and answers with its new {@code ETag}.
  */

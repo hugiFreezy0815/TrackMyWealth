@@ -8,7 +8,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
 import com.trackmywealth.backend.dto.ImportIdentificationResponse;
@@ -176,7 +175,7 @@ class ImportAccountIdentificationServiceTest {
   private void namesOther(boolean mayImport) {
     when(identifiers.match(workspace.getId(), IBAN, ImportTemplateValues.IDENTIFIER_IBAN))
         .thenReturn(Optional.of(other));
-    when(access.accountsWithAccess(eq(MEMBER), anyCollection(), eq(AccessLevelValues.EDIT)))
+    when(access.accountsWithAccess(eq(MEMBER), anyCollection()))
         .thenAnswer(
             invocation ->
                 mayImport

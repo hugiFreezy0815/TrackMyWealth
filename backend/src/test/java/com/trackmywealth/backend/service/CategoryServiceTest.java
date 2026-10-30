@@ -11,7 +11,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
 import com.trackmywealth.backend.dto.UpdateCategoryRequest;
@@ -86,8 +85,6 @@ class CategoryServiceTest {
     // which answers with the generic 404 (the audit itself is AuthorizationDenialAuditService's).
     when(accessControlService.denyAsNotFound(any(), any(), any()))
         .thenAnswer(inv -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
-    when(accessControlService.workspaceAccessLevel(MEMBER, WORKSPACE))
-        .thenReturn(AccessLevelValues.EDIT);
     when(workspaceRepository.findByIdForUpdate(WORKSPACE)).thenReturn(Optional.of(new Workspace()));
     // Writes land in the fixture lists, so a later call in the same test sees them, as it would
     // see the database.
@@ -208,7 +205,7 @@ class CategoryServiceTest {
     void aMemberWithoutWorkspaceEditChangesNothing() {
       doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace not found."))
           .when(accessControlService)
-          .requireWorkspaceAccess(ACTOR, WORKSPACE, AccessLevelValues.EDIT);
+          .requireWorkspaceAccess(ACTOR, WORKSPACE);
 
       assertStatus(
           () -> service.create(new CreateCategoryRequest(null, "Hobby", "Hobby"), ACTOR),
@@ -526,7 +523,7 @@ class CategoryServiceTest {
     void aMemberWithoutEditNeverTakesTheLock() {
       doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace not found."))
           .when(accessControlService)
-          .requireWorkspaceAccess(ACTOR, WORKSPACE, AccessLevelValues.EDIT);
+          .requireWorkspaceAccess(ACTOR, WORKSPACE);
 
       assertStatus(
           () -> service.create(new CreateCategoryRequest(null, "Pets", "Haustiere"), ACTOR),
@@ -685,34 +682,6 @@ class CategoryServiceTest {
       service.requireAssignable(List.of(), WORKSPACE, ACTOR);
 
       verify(categoryRepository, never()).findVisibleTo(any());
-    }
-  }
-
-  @Nested
-  class Capability {
-
-    @Test
-    void aReadOnlyMemberSeesCanEditFalse() {
-      when(accessControlService.workspaceAccessLevel(MEMBER, WORKSPACE))
-          .thenReturn(AccessLevelValues.READ);
-
-      assertThat(service.list(false, ACTOR))
-          .extracting(CategoryResponse::canEdit)
-          .containsOnly(false);
-      assertThat(service.get(leisure.getId(), ACTOR).canEdit()).isFalse();
-    }
-
-    @Test
-    void anEditorSeesCanEditTrue() {
-      when(accessControlService.workspaceAccessLevel(MEMBER, WORKSPACE))
-          .thenReturn(AccessLevelValues.FULL);
-
-      assertThat(service.list(false, ACTOR))
-          .extracting(CategoryResponse::canEdit)
-          .containsOnly(true);
-      assertThat(
-              service.create(new CreateCategoryRequest(null, "Pets", "Haustiere"), ACTOR).canEdit())
-          .isTrue();
     }
   }
 

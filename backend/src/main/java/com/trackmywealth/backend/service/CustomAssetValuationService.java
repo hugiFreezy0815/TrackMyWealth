@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
 import com.trackmywealth.backend.entity.Account;
@@ -28,11 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
  * applies as of a given date" question for tests and has no {@link AccessControlService} check of
  * its own; a caller exposing it must check access first.
  *
- * <p>US-03-03 follow-up: {@link #recordValuation}/{@link #listValuations} are now gated via {@code
- * AccessControlService} ({@code EDIT}/{@code READ} respectively) - a dollar-valued valuation is
- * exactly the kind of account-scoped financial data the story's own "visibility is never an
- * implicit merge of another member's private data" line is about, the same as any other
- * account-scoped read/write.
+ * <p>{@link #recordValuation}/{@link #listValuations} check access to the account through {@code
+ * AccessControlService}, the same as any other account-scoped read/write.
  */
 @Service
 public class CustomAssetValuationService {
@@ -54,7 +50,7 @@ public class CustomAssetValuationService {
   public CustomAssetValuationResponse recordValuation(
       UUID accountId, CreateCustomAssetValuationRequest request, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
 
     CustomAssetValuation valuation = new CustomAssetValuation();
     valuation.setAccount(account);
@@ -78,7 +74,7 @@ public class CustomAssetValuationService {
   public List<CustomAssetValuationResponse> listValuations(
       UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
+    accessControlService.requireAccountAccess(actor, account);
     return customAssetValuationRepository
         .findByAccountIdOrderByValuationDateDesc(accountId)
         .stream()

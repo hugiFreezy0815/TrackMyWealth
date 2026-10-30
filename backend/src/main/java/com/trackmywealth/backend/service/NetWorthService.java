@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
@@ -33,9 +32,8 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>Signs come from each account's {@code nature} (the DB {@code GENERATED ALWAYS AS} column,
  * DB-12), never from application-side type logic: an {@code ASSET}'s value adds, a {@code
- * LIABILITY}'s value subtracts. Only accounts the caller may see at {@code BALANCE_ONLY} or above
- * take part (US-03-03) - an aggregation must not leak another member's private account through its
- * total.
+ * LIABILITY}'s value subtracts. Every active account of the caller's workspace takes part
+ * (US-03-06): all of them belong to the workspace, not to one member.
  */
 @Service
 public class NetWorthService {
@@ -63,11 +61,10 @@ public class NetWorthService {
     this.businessDateService = businessDateService;
   }
 
-  // Access is resolved in bulk (the per-workspace sole-member count once, not per account) and each
-  // distinct foreign currency's FX rate once. What remains per account is its ownership/grant
-  // lookup and its value-source query - fine at this project's single-workspace scale (self-hosted,
-  // tens of accounts); revisit if a workspace ever holds enough accounts for it to show in a
-  // profile.
+  // Access is resolved in bulk (one membership lookup, not one per account) and each distinct
+  // foreign currency's FX rate once. What remains per account is its value-source query - fine at
+  // this project's single-workspace scale (self-hosted, tens of accounts); revisit if a workspace
+  // ever holds enough accounts for it to show in a profile.
   @Transactional(readOnly = true)
   public NetWorthResponse getNetWorth(AuthenticatedUserPrincipal actor, String requestedCurrency) {
     // 404 for a caller with no workspace membership (a SYSTEM_ADMINISTRATOR with no linked
@@ -84,8 +81,7 @@ public class NetWorthService {
         accessControlService.accountsWithAccess(
             memberId,
             accountRepository.findByWorkspaceIdAndStatusOrderByCreatedAtAsc(
-                actor.workspaceId(), ACTIVE),
-            AccessLevelValues.BALANCE_ONLY);
+                actor.workspaceId(), ACTIVE));
     List<AccountValuation> valuations = accountValuationService.valueAll(visible, currency, asOf);
 
     BigDecimal totalAssets = BigDecimal.ZERO;

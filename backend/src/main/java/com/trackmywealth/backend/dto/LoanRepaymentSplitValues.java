@@ -3,7 +3,7 @@ package com.trackmywealth.backend.dto;
 /**
  * Where a loan payment's interest/principal split came from (US-10-02, {@code
  * loan_payment.split_source}). Plain {@code String} constants, matching every other value set in
- * this codebase (see {@link AccessLevelValues}).
+ * this codebase (see {@link AccountTypeValues}).
  */
 public final class LoanRepaymentSplitValues {
 

@@ -13,11 +13,10 @@ import com.trackmywealth.backend.dto.UpdateWorkspaceCurrencyRequest;
 import com.trackmywealth.backend.dto.UpdateWorkspaceNameRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.entity.Workspace;
-import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.FinancialAuditLogRepository;
-import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -26,9 +25,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-06-05 and US-03-07: who may change the workspace currency and name, and what a rename writes.
- * A dependent has no login today, so the controller tests cannot reach that branch over HTTP; it is
- * checked here with the repositories mocked.
+ * US-06-05 and US-03-07: what a rename writes, and that a refused caller changes nothing. Every
+ * active member may change both settings (US-03-06); who counts as one is {@link
+ * AccessControlService}'s decision, mocked here.
  */
 class WorkspaceServiceTest {
 
@@ -39,15 +38,12 @@ class WorkspaceServiceTest {
           UUID.randomUUID(), "STANDARD_USER", WORKSPACE, UUID.randomUUID(), "EN");
 
   private final WorkspaceRepository workspaceRepository = mock(WorkspaceRepository.class);
-  private final WorkspaceMemberRepository workspaceMemberRepository =
-      mock(WorkspaceMemberRepository.class);
   private final AccessControlService accessControlService = mock(AccessControlService.class);
   private final FinancialAuditLogRepository financialAuditLogRepository =
       mock(FinancialAuditLogRepository.class);
   private final WorkspaceService service =
       new WorkspaceService(
           workspaceRepository,
-          workspaceMemberRepository,
           accessControlService,
           new VersionPreconditionService(),
           financialAuditLogRepository);
@@ -104,53 +100,29 @@ class WorkspaceServiceTest {
     verifyNoInteractions(financialAuditLogRepository);
   }
 
+  // Authorization comes before the version (ADR 0004): a refused caller gets the 404 even without
+  // If-Match, and the workspace row is never locked or written.
   @Test
-  void aDependentMemberCannotRenameTheWorkspace() {
-    WorkspaceMember dependent = new WorkspaceMember();
-    dependent.setDependent(true);
-    when(accessControlService.requireActingMember(ACTOR)).thenReturn(MEMBER);
-    when(workspaceMemberRepository.findById(MEMBER)).thenReturn(Optional.of(dependent));
+  void aRefusedCallerNeverLocksOrWritesTheWorkspace() {
+    when(accessControlService.requireActingMember(ACTOR))
+        .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
 
-    assertThatThrownBy(() -> service.updateName(new UpdateWorkspaceNameRequest("New"), null, ACTOR))
-        .isInstanceOfSatisfying(
-            ResponseStatusException.class,
-            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
-    verify(workspaceRepository, never()).findByIdForUpdate(any());
-    verifyNoInteractions(financialAuditLogRepository);
-  }
-
-  // Reading the settings is not changing them: a dependent may read the workspace.
-  @Test
-  void aDependentMemberCanReadTheWorkspace() {
-    Workspace workspace = workspace("Hugi");
-    when(accessControlService.requireActingMember(ACTOR)).thenReturn(MEMBER);
-    when(workspaceRepository.findById(WORKSPACE)).thenReturn(Optional.of(workspace));
-
-    assertThat(service.getCurrent(ACTOR).name()).isEqualTo("Hugi");
-    verifyNoInteractions(workspaceMemberRepository);
-  }
-
-  // Authorization comes before the version (ADR 0004): a dependent is refused with 403 even
-  // without If-Match, and the workspace row is never locked or written.
-  @Test
-  void aDependentMemberCannotChangeTheWorkspaceCurrency() {
-    WorkspaceMember dependent = new WorkspaceMember();
-    dependent.setDependent(true);
-    when(accessControlService.requireActingMember(ACTOR)).thenReturn(MEMBER);
-    when(workspaceMemberRepository.findById(MEMBER)).thenReturn(Optional.of(dependent));
-
-    assertThatThrownBy(
-            () -> service.updateCurrency(new UpdateWorkspaceCurrencyRequest("USD"), null, ACTOR))
-        .isInstanceOfSatisfying(
-            ResponseStatusException.class,
-            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
+    for (Runnable update :
+        List.<Runnable>of(
+            () -> service.updateName(new UpdateWorkspaceNameRequest("New"), null, ACTOR),
+            () -> service.updateCurrency(new UpdateWorkspaceCurrencyRequest("USD"), null, ACTOR))) {
+      assertThatThrownBy(update::run)
+          .isInstanceOfSatisfying(
+              ResponseStatusException.class,
+              e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
     verify(workspaceRepository, never()).findByIdForUpdate(any());
     verify(workspaceRepository, never()).saveAndFlush(any());
+    verifyNoInteractions(financialAuditLogRepository);
   }
 
   private Workspace actingMembersWorkspace(String name) {
     when(accessControlService.requireActingMember(ACTOR)).thenReturn(MEMBER);
-    when(workspaceMemberRepository.findById(MEMBER)).thenReturn(Optional.of(new WorkspaceMember()));
     Workspace workspace = workspace(name);
     when(workspaceRepository.findByIdForUpdate(WORKSPACE)).thenReturn(Optional.of(workspace));
     return workspace;

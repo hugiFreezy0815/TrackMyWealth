@@ -34,7 +34,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * US-09-01 (credit-card purchases), gated per account by {@code AccessControlService} (US-03-03).
+ * US-09-01 (credit-card purchases), checked per account by {@code AccessControlService} (US-03-06).
  * The resulting balance is read from {@link AccountBalanceController}.
  */
 @RestController
@@ -69,9 +69,10 @@ public class TransactionController {
   /**
    * US-07-06: corrects one ledger row. Financial changes never update committed financial fields:
    * the original is removed according to provenance and a linked replacement is inserted. A
-   * merchant-description/notes-only change stays on the row. Needs EDIT and the current ETag. The
-   * response and its ETag describe the effective row - after a financial correction that is the
-   * replacement, which has a new id (see {@link TransactionCorrectionResponse}).
+   * merchant-description/notes-only change stays on the row. Needs access to the account and the
+   * current ETag. The response and its ETag describe the effective row - after a financial
+   * correction that is the replacement, which has a new id (see {@link
+   * TransactionCorrectionResponse}).
    */
   @PutMapping("/transactions/{transactionId}")
   public ResponseEntity<TransactionCorrectionResponse> correctTransaction(
@@ -114,7 +115,7 @@ public class TransactionController {
 
   /**
    * US-08-02: the member's own category for this transaction, which no automatic run replaces.
-   * Needs EDIT on the account.
+   * Needs access to the account.
    */
   @PutMapping("/transactions/{transactionId}/category")
   public ResponseEntity<TransactionResponse> overrideCategory(
@@ -149,7 +150,7 @@ public class TransactionController {
   /**
    * US-07-02: removes the transaction the way its provenance requires - a manual one is
    * soft-deleted (restorable for 30 days), an imported one voided and reversed, which needs a
-   * {@code reason}. Each row's {@code removal} says which applies. Needs EDIT on the account.
+   * {@code reason}. Each row's {@code removal} says which applies. Needs access to the account.
    */
   @DeleteMapping("/transactions/{transactionId}")
   public ResponseEntity<TransactionRemovalResponse> removeTransaction(
@@ -194,7 +195,7 @@ public class TransactionController {
 
   /**
    * US-10-01: confirms a one-sided transfer leg as money moved to or from an own account not
-   * tracked here - it then counts as neither income nor spending. Needs EDIT on the account.
+   * tracked here - it then counts as neither income nor spending. Needs access to the account.
    */
   @PostMapping("/transactions/{transactionId}/untracked-transfer")
   public ResponseEntity<TransactionResponse> confirmUntrackedTransfer(

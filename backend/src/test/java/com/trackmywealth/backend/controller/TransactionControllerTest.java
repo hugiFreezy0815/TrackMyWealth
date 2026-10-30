@@ -4,14 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
@@ -19,7 +17,6 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
@@ -110,8 +107,6 @@ class TransactionControllerTest {
       statement.execute("DELETE FROM category WHERE code = '" + TEST_CATEGORY_CODE + "'");
       for (String table :
           List.of(
-              "sharing_grant",
-              "account_ownership",
               "custom_asset_valuation",
               "account_custom_asset",
               "account_credit_card",
@@ -764,7 +759,7 @@ class TransactionControllerTest {
   // --- Authorization (US-03-03) ---------------------------------------------------------------
 
   @Test
-  void aMemberWithNoGrantCannotSeeOrRecordAnything() {
+  void anotherMemberSeesAndRecordsOnTheFirstMembersCard() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(adminToken);
     recordPurchaseOn(adminToken, card.id(), "-85.00", today());
@@ -773,51 +768,25 @@ class TransactionControllerTest {
 
     recordPurchase(bobToken, card.id(), "-1.00", null, null)
         .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND);
-    client(bobToken)
-        .get()
-        .uri("/api/v1/accounts/" + card.id() + "/transactions")
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND);
+        .isEqualTo(HttpStatus.CREATED);
     client(bobToken)
         .get()
         .uri("/api/v1/accounts/" + card.id() + "/balance")
         .exchange()
         .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND);
-    assertThat(countTransactions(card.id())).isEqualTo(1);
+        .isOk();
+    assertThat(countTransactions(card.id())).isEqualTo(2);
   }
 
   @Test
-  void balanceOnlyMaySeeTheBalanceButNeitherTheTransactionsNorRecord() {
+  void anotherMemberListsAndRecordsOnTheCardWithoutAnyGrant() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(adminToken);
     recordPurchaseOn(adminToken, card.id(), "-85.00", today());
-    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
-    grantOnAccount(adminToken, bobMemberId, card.id(), AccessLevelValues.BALANCE_ONLY);
 
     assertThat(balance(bobToken, card.id()).value()).isEqualByComparingTo("85.00");
-    client(bobToken)
-        .get()
-        .uri("/api/v1/accounts/" + card.id() + "/transactions")
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND);
-    recordPurchase(bobToken, card.id(), "-1.00", null, null)
-        .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND);
-  }
-
-  @Test
-  void readMayListButNotRecordAndEditMayRecord() {
-    String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse card = createCard(adminToken);
-    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
-    String bobToken = login("bob@example.com");
-
-    grantOnAccount(adminToken, bobMemberId, card.id(), AccessLevelValues.READ);
     client(bobToken)
         .get()
         .uri("/api/v1/accounts/" + card.id() + "/transactions")
@@ -826,32 +795,30 @@ class TransactionControllerTest {
         .isOk();
     recordPurchase(bobToken, card.id(), "-1.00", null, null)
         .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND);
-
-    grantOnAccount(adminToken, bobMemberId, card.id(), AccessLevelValues.EDIT);
-    recordPurchase(bobToken, card.id(), "-1.00", null, null)
-        .expectStatus()
         .isEqualTo(HttpStatus.CREATED);
   }
 
   @Test
-  void netWorthLeavesOutAccountsTheCallerMayNotSee() {
+  void everyMembersNetWorthCoversTheWholeWorkspace() {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse card = createCard(adminToken);
-    AccountSummaryResponse asset = createCustomAsset(adminToken);
-    recordValuation(adminToken, asset.id(), "1000.00");
-    recordPurchaseOn(adminToken, card.id(), "-85.00", today());
-    UUID bobMemberId = createSecondMember(adminToken, "bob@example.com");
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createSecondMember(adminToken, "alice@example.com");
+    String aliceToken = login("alice@example.com");
+    AccountSummaryResponse card = createCard(aliceToken);
+    AccountSummaryResponse asset = createCustomAsset(aliceToken);
+    recordValuation(aliceToken, asset.id(), "1000.00");
+    recordPurchaseOn(aliceToken, card.id(), "-85.00", today());
+    createSecondMember(adminToken, "bob@example.com");
     String bobToken = login("bob@example.com");
-    grantOnAccount(adminToken, bobMemberId, card.id(), AccessLevelValues.BALANCE_ONLY);
 
     NetWorthResponse bobs = netWorth(bobToken);
 
-    // Bob sees only the card he was granted - the 1000.00 asset must not leak into his total.
-    assertThat(bobs.accounts()).extracting(AccountValuation::accountId).containsExactly(card.id());
-    assertThat(bobs.totalAssets()).isEqualByComparingTo("0");
-    assertThat(bobs.netWorth()).isEqualByComparingTo("-85.00");
-    assertThat(netWorth(adminToken).netWorth()).isEqualByComparingTo("915.00");
+    assertThat(bobs.accounts())
+        .extracting(AccountValuation::accountId)
+        .containsExactlyInAnyOrder(card.id(), asset.id());
+    assertThat(bobs.netWorth()).isEqualByComparingTo("915.00");
+    assertThat(netWorth(aliceToken).netWorth()).isEqualByComparingTo("915.00");
   }
 
   // --- Idempotent recording (a retried request must not double the debt) ----------------------
@@ -1381,22 +1348,16 @@ class TransactionControllerTest {
   }
 
   @Test
-  void aReadOnlyMemberCannotRecordACashEntryButAnEditorCan() {
+  void anotherMemberRecordsACashEntry() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse cash = createCashAccount(adminToken);
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
-    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.READ);
-    postTransaction(memberToken, cash.id(), cashTransaction("EXPENSE", "-5.00", "CHF"))
-        .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND); // same as the card endpoints: no hint the account exists
-    assertThat(countTransactions(cash.id())).isZero();
-
-    grantOnAccount(adminToken, memberId, cash.id(), AccessLevelValues.EDIT);
     postTransaction(memberToken, cash.id(), cashTransaction("EXPENSE", "-5.00", "CHF"))
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);
+    assertThat(countTransactions(cash.id())).isEqualTo(1);
   }
 
   private CreateTransactionRequest cashTransaction(String type, String amount, String currency) {
@@ -1736,20 +1697,13 @@ class TransactionControllerTest {
   }
 
   @Test
-  void aReadOnlyMemberCannotTradeButAnEditorCan() {
+  void anotherMemberTradesInTheDepot() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse depot = createDepot(adminToken, "CHF");
     UUID security = createSecurity(adminToken);
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
 
-    grantOnAccount(adminToken, memberId, depot.id(), AccessLevelValues.READ);
-    postTransaction(memberToken, depot.id(), trade("BUY", security, "10", "100", null, "-1000.00"))
-        .expectStatus()
-        .isEqualTo(HttpStatus.NOT_FOUND); // no hint the account exists, as for cash entries
-    assertThat(countTransactions(depot.id())).isZero();
-
-    grantOnAccount(adminToken, memberId, depot.id(), AccessLevelValues.EDIT);
     postTransaction(memberToken, depot.id(), trade("BUY", security, "10", "100", null, "-1000.00"))
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);
@@ -2675,19 +2629,6 @@ class TransactionControllerTest {
         .uri("/api/v1/accounts/" + accountId + "/valuations")
         .contentType(MediaType.APPLICATION_JSON)
         .body(new CreateCustomAssetValuationRequest(today(), new BigDecimal(value)))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CREATED);
-  }
-
-  private void grantOnAccount(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED);

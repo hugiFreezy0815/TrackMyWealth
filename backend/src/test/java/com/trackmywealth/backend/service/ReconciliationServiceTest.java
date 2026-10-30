@@ -9,7 +9,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
@@ -48,7 +47,6 @@ class ReconciliationServiceTest {
       new AuthenticatedUserPrincipal(
           UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID(), "EN");
 
-  private final AccessControlService accessControlService = mock(AccessControlService.class);
   private final AccountSnapshotRepository snapshotRepository =
       mock(AccountSnapshotRepository.class);
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
@@ -57,7 +55,6 @@ class ReconciliationServiceTest {
   private final ImportRowRawRepository importRowRawRepository = mock(ImportRowRawRepository.class);
   private final ReconciliationService service =
       new ReconciliationService(
-          accessControlService,
           snapshotRepository,
           transactionRepository,
           resultRepository,
@@ -86,8 +83,6 @@ class ReconciliationServiceTest {
     when(transactionRepository.sumAmountByAccountIdBookedAfter(
             account.getId(), OPENING_DATE, OPENING_STATED_AT, SNAPSHOT_DATE))
         .thenReturn(Optional.of(new BigDecimal("2300.00")));
-    when(accessControlService.accountAccessLevel(ACTOR, account))
-        .thenReturn(AccessLevelValues.FULL);
     when(resultRepository.saveAndFlush(any(ReconciliationResult.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
   }
@@ -147,7 +142,7 @@ class ReconciliationServiceTest {
         .thenReturn(Optional.empty());
 
     service.reconcileLatest(account, ACTOR.userId());
-    var status = service.status(account, ACTOR);
+    var status = service.status(account);
 
     assertThat(status.status()).isEqualTo(ReconciliationStatusValues.NOT_RECONCILABLE);
     assertThat(status.reason()).isEqualTo(ReconciliationStatusValues.NO_OPENING_BALANCE);
@@ -307,19 +302,17 @@ class ReconciliationServiceTest {
   }
 
   @Test
-  void balanceOnlySeesTheSignalButNotDateOrAmount() {
+  void theSignalCarriesTheComparisonDateAndAmount() {
     ReconciliationResult existing = result("OPEN", "45.67", snapshot);
     when(resultRepository.findBySnapshotIdAndAffectedSecurityIdIsNull(snapshot.getId()))
         .thenReturn(Optional.of(existing));
-    when(accessControlService.accountAccessLevel(ACTOR, account))
-        .thenReturn(AccessLevelValues.BALANCE_ONLY);
 
-    var status = service.status(account, ACTOR);
+    var status = service.status(account);
 
     assertThat(status.status()).isEqualTo(ReconciliationStatusValues.OPEN_DIFFERENCE);
-    assertThat(status.asOf()).isNull();
-    assertThat(status.openDifference()).isNull();
-    assertThat(status.currency()).isNull();
+    assertThat(status.asOf()).isEqualTo(SNAPSHOT_DATE);
+    assertThat(status.openDifference()).isEqualByComparingTo("45.67");
+    assertThat(status.currency()).isEqualTo(snapshot.getCurrency());
   }
 
   @Test
@@ -474,7 +467,7 @@ class ReconciliationServiceTest {
   void aDismissedDifferenceIsDocumentedNotOpen() {
     decided("DISMISSED", "45.67", null);
 
-    var status = service.status(account, ACTOR);
+    var status = service.status(account);
 
     assertThat(status.status()).isEqualTo(ReconciliationStatusValues.DISMISSED_DIFFERENCE);
     assertThat(status.openDifference()).isEqualByComparingTo("45.67");
@@ -485,7 +478,7 @@ class ReconciliationServiceTest {
   void anAcceptedDifferenceShowsTheAccountReconciled() {
     decided("ACCEPTED", "45.67", UUID.randomUUID());
 
-    var status = service.status(account, ACTOR);
+    var status = service.status(account);
 
     assertThat(status.status()).isEqualTo(ReconciliationStatusValues.RECONCILED);
     assertThat(status.openDifference()).isNull();

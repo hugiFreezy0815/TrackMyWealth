@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.ForeignCurrencyResolution;
@@ -293,7 +292,7 @@ public class TransactionService {
       UUID correctsTransactionId,
       boolean allowReplay) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
 
     // Before validate(): a replay must answer with the original row even if the account has been
     // archived since, rather than turn a successful earlier request into a 409 on retry.
@@ -692,7 +691,7 @@ public class TransactionService {
   public Page<TransactionResponse> listTransactions(
       UUID accountId, boolean uncategorized, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.READ);
+    accessControlService.requireAccountAccess(actor, account);
     Page<Transaction> page =
         uncategorized
             ? transactionRepository
@@ -743,7 +742,7 @@ public class TransactionService {
    * US-08-02: a member's own category for one transaction, which no automatic run replaces
    * (RULE-031, FR-CAT-014). Any type but a reconciliation adjustment may be overridden; the
    * category must be assignable for the workspace and cannot be UNCATEGORIZED ({@link
-   * #resetCategory} is the way back). Needs EDIT on the account. Idempotent: overriding with the
+   * #resetCategory} is the way back). Needs access to the account. Idempotent: overriding with the
    * category already overridden writes nothing.
    */
   @Transactional
@@ -795,7 +794,7 @@ public class TransactionService {
   private Transaction requireCategorizable(
       UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     Transaction transaction =
         transactionRepository
             .findByIdForUpdate(transactionId)

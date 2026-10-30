@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
@@ -97,7 +96,7 @@ public class TransactionCorrectionService {
         desired.targetAccountId() == null ? sourceAccount.getId() : desired.targetAccountId();
     if (!targetAccountId.equals(sourceAccount.getId())) {
       Account targetAccount = accountLookupService.findAccountOrThrow(targetAccountId, actor);
-      accessControlService.requireAccountAccess(actor, targetAccount, AccessLevelValues.EDIT);
+      accessControlService.requireAccountAccess(actor, targetAccount);
       if (!targetAccount.getWorkspace().getId().equals(sourceAccount.getWorkspace().getId())) {
         throw accessControlService.denyAsNotFound(actor, "Account", targetAccountId);
       }

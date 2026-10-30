@@ -21,7 +21,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * US-06-05: V59 gives every existing workspace the reporting currency of its oldest member with a
- * login, else CHF. Migrates to just before V59, seeds workspaces, then runs the rest.
+ * login, else CHF. Migrates to just before V59, seeds workspaces, then runs the rest up to V110,
+ * which refuses the login-less members this fixture needs (FR-USR-008).
  */
 @Testcontainers
 class WorkspaceCurrencyMigrationTest {
@@ -62,7 +63,7 @@ class WorkspaceCurrencyMigrationTest {
     noLogin = insertWorkspace("No login");
     insertMember(noLogin, JANUARY);
 
-    flyway(null).migrate();
+    flyway(lastVersionBefore("110")).migrate();
   }
 
   @AfterAll

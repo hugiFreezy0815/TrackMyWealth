@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
 import com.trackmywealth.backend.dto.NativeAccountValue;
@@ -102,12 +101,10 @@ public class AccountValuationService {
 
   /**
    * US-09-01/FR-CC-001/003: the account's balance as of {@code asOf} (today when {@code null}) -
-   * for a credit card, the outstanding amount owed, a {@code LIABILITY}. The current balance is
-   * gated at {@code BALANCE_ONLY} (US-03-03), the weakest level that may see a figure at all. A
-   * past date needs {@code READ}: two consecutive days' balances differ by that day's transactions,
-   * which a {@code BALANCE_ONLY} grant must not reveal (#241 review). A date in the future is a
-   * 422: a balance is recorded history, not a forecast. Past, today and future are judged against
-   * {@link BusinessDateService#today}, never the client's date.
+   * for a credit card, the outstanding amount owed, a {@code LIABILITY}. Needs access to the
+   * account, for today and any past date alike (US-03-06). A date in the future is a 422: a balance
+   * is recorded history, not a forecast. Past, today and future are judged against {@link
+   * BusinessDateService#today}, never the client's date.
    *
    * <p>US-06-05: in the account's own currency, or in {@code requestedCurrency} when given,
    * converted at the valuation date's rate. Both {@code asOf} and the currency are validated only
@@ -119,9 +116,7 @@ public class AccountValuationService {
       UUID accountId, LocalDate asOf, AuthenticatedUserPrincipal actor, String requestedCurrency) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     LocalDate today = businessDateService.today();
-    boolean historical = asOf != null && asOf.isBefore(today);
-    accessControlService.requireAccountAccess(
-        actor, account, historical ? AccessLevelValues.READ : AccessLevelValues.BALANCE_ONLY);
+    accessControlService.requireAccountAccess(actor, account);
     if (asOf != null && asOf.isAfter(today)) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_CONTENT, "asOf cannot be in the future.");
@@ -139,9 +134,9 @@ public class AccountValuationService {
    * unresolvable account degrades to a visible gap instead of failing a whole aggregation.
    *
    * <p><b>Performs no access check.</b> The caller must already have established that the acting
-   * member may see {@code account} at {@code BALANCE_ONLY} or above (as {@link #getBalance}, {@code
+   * member has access to {@code account} (as {@link #getBalance}, {@code
    * InstitutionService#getSummary} and {@code NetWorthService#getNetWorth} each do) - otherwise a
-   * figure leaks to a member who has no grant on the account.
+   * figure leaks to a caller outside the account's workspace.
    */
   @Transactional(readOnly = true)
   public AccountValuation valueIn(Account account, String targetCurrency, LocalDate asOf) {

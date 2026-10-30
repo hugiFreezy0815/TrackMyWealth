@@ -7,7 +7,6 @@ import java.util.UUID;
 public record WorkspaceMemberSummaryResponse(
     UUID id,
     String displayName,
-    boolean dependent,
     String status,
     LocalDate memberSince,
     LocalDate memberUntil,

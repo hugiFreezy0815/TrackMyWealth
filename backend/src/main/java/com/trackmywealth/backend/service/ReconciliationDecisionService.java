@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.entity.Account;
@@ -44,11 +43,11 @@ import org.springframework.transaction.annotation.Transactional;
  * RECONCILIATION_FINALIZED}, and its adjusting row stays; a correction goes into the newest
  * comparison as a new, visible entry.
  *
- * <p>Each needs {@code EDIT} on the account, as recording a transaction there does, and the
- * result's version in {@code If-Match} (ADR 0004). Only the account's newest comparison can be
- * decided on: a result a newer snapshot superseded, or one not in the state the decision applies
- * to, is a 409 {@code RECONCILIATION_STALE} carrying the current figure. Accept and dismiss first
- * re-evaluate the comparison, so a member never confirms a figure that is no longer true.
+ * <p>Each needs access to the account, as recording a transaction there does, and the result's
+ * version in {@code If-Match} (ADR 0004). Only the account's newest comparison can be decided on: a
+ * result a newer snapshot superseded, or one not in the state the decision applies to, is a 409
+ * {@code RECONCILIATION_STALE} carrying the current figure. Accept and dismiss first re-evaluate
+ * the comparison, so a member never confirms a figure that is no longer true.
  *
  * <p>Every check that can answer {@code RECONCILIATION_STALE} or {@code RECONCILIATION_FINALIZED}
  * runs before the decision writes anything, so such a 409 commits ({@code noRollbackFor}) only the
@@ -207,7 +206,7 @@ public class ReconciliationDecisionService {
     // the audited 404 before any lock is taken. After that, use the same lock order as an ordinary
     // ledger write: affected cards -> transfer-detection workspace -> snapshot, so a decision and
     // a write cannot deadlock. The result, and so its version, is read only under those locks.
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     historyService.requireResultExists(account, resultId, actor);
     settlementDetectionService.lockAffectedCards(account);
     transferDetectionService.lockForWrite(account);

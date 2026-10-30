@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * US-05-01, US-05-02, US-05-03, US-04-04, US-03-03 (read/edit gated by {@code
+ * US-05-01, US-05-02, US-05-03, US-04-04, US-03-06 (workspace membership checked by {@code
  * AccessControlService}).
  */
 @RestController

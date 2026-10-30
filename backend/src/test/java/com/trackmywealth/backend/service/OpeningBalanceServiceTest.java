@@ -6,10 +6,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.entity.Account;
@@ -112,7 +112,7 @@ class OpeningBalanceServiceTest {
     assertThat(response.balance().scale()).isEqualTo(4);
     assertThat(response.currency()).isEqualTo("CHF");
     assertThat(response.version()).isZero();
-    verify(accessControlService).requireAccountAccess(ACTOR, account, AccessLevelValues.EDIT);
+    verify(accessControlService).requireAccountAccess(ACTOR, account);
     verify(snapshotRepository)
         .saveAndFlush(
             argThat(
@@ -280,7 +280,7 @@ class OpeningBalanceServiceTest {
         .isInstanceOfSatisfying(
             ResponseStatusException.class,
             e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
-    verify(accessControlService).requireAccountAccess(ACTOR, account, AccessLevelValues.READ);
+    verify(accessControlService, times(2)).requireAccountAccess(ACTOR, account);
   }
 
   @Test

@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.ReassignAccountInstitutionRequest;
@@ -10,7 +9,6 @@ import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.AccountCustomAsset;
 import com.trackmywealth.backend.entity.AccountLoan;
 import com.trackmywealth.backend.entity.AccountMortgage;
-import com.trackmywealth.backend.entity.AccountOwnership;
 import com.trackmywealth.backend.entity.AccountPension;
 import com.trackmywealth.backend.entity.AccountSecurities;
 import com.trackmywealth.backend.entity.AccountVestedBenefits;
@@ -20,19 +18,14 @@ import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.AccountCustomAssetRepository;
 import com.trackmywealth.backend.repository.AccountLoanRepository;
 import com.trackmywealth.backend.repository.AccountMortgageRepository;
-import com.trackmywealth.backend.repository.AccountOwnershipRepository;
 import com.trackmywealth.backend.repository.AccountPensionRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.AccountSecuritiesRepository;
 import com.trackmywealth.backend.repository.AccountVestedBenefitsRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
-import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
-import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -59,13 +52,8 @@ import org.springframework.web.server.ResponseStatusException;
  * workspace_member} exists but isn't {@code ACTIVE} - no local "active member" check is needed here
  * either.
  *
- * <p>US-03-03 follow-up: {@link #createAccount} now gives the creating member immediate {@code
- * FULL} ownership of the new account (an {@code account_ownership} row, share 1.0) in the same
- * transaction - closing the gap {@link AccessControlService}'s own Javadoc used to document as a
- * "known interaction, not a bug": an account left unowned became inaccessible to everyone,
- * including its own creator, the moment the workspace gained a second active member. This is a
- * default, not a guarantee - a later full-replacement call to {@code AccountOwnershipController}'s
- * {@code PUT .../ownership} can still reassign or remove it, same as for any other account.
+ * <p>US-03-06: an account belongs to its workspace, not to a member - every active member of the
+ * workspace can see and change it (FR-HOU-007), and creating one records no owner.
  *
  * <p>US-04-04: {@link #reassignInstitution} moves an account between institution containers - see
  * its own Javadoc.
@@ -109,8 +97,6 @@ public class AccountService {
   private final InstitutionLookupService institutionLookupService;
   private final FinancialInstitutionRepository financialInstitutionRepository;
   private final AccountRepository accountRepository;
-  private final AccountOwnershipRepository accountOwnershipRepository;
-  private final WorkspaceMemberRepository workspaceMemberRepository;
   private final AccountSecuritiesRepository accountSecuritiesRepository;
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final AccountMortgageRepository accountMortgageRepository;
@@ -129,8 +115,6 @@ public class AccountService {
       InstitutionLookupService institutionLookupService,
       FinancialInstitutionRepository financialInstitutionRepository,
       AccountRepository accountRepository,
-      AccountOwnershipRepository accountOwnershipRepository,
-      WorkspaceMemberRepository workspaceMemberRepository,
       AccountSecuritiesRepository accountSecuritiesRepository,
       AccountCreditCardRepository accountCreditCardRepository,
       AccountMortgageRepository accountMortgageRepository,
@@ -147,8 +131,6 @@ public class AccountService {
     this.institutionLookupService = institutionLookupService;
     this.financialInstitutionRepository = financialInstitutionRepository;
     this.accountRepository = accountRepository;
-    this.accountOwnershipRepository = accountOwnershipRepository;
-    this.workspaceMemberRepository = workspaceMemberRepository;
     this.accountSecuritiesRepository = accountSecuritiesRepository;
     this.accountCreditCardRepository = accountCreditCardRepository;
     this.accountMortgageRepository = accountMortgageRepository;
@@ -168,18 +150,20 @@ public class AccountService {
     // instead of paying for an institution SELECT and an account INSERT+refresh it will never
     // keep.
     validateExtensionFields(request);
+    // Only an active member creates accounts: a principal without a membership is refused here
+    // with the same 404 as any other workspace-scoped request, before anything is written.
+    accessControlService.requireActingMember(actor);
     Workspace workspace =
         workspaceAccessService.requireWorkspace(actor.workspaceId(), "an account");
     FinancialInstitution institution = resolveInstitution(request.financialInstitutionId(), actor);
 
     Account account = insertAccount(workspace, institution, request);
-    assignInitialOwnershipToCreator(account, actor);
 
-    return toSummary(account, actor);
+    return toSummary(account);
   }
 
-  // The account of a validated request, with its capability defaults and extension row - every
-  // account's creation, whoever owns it afterwards.
+  // The account of a validated request, with its capability defaults and extension row - shared
+  // by createAccount and createSavingsPocket.
   private Account insertAccount(
       Workspace workspace, FinancialInstitution institution, CreateAccountRequest request) {
     Account account = new Account();
@@ -203,15 +187,11 @@ public class AccountService {
    * US-07-22 (#325): creates the savings pocket of {@code parent} - a {@code SAVINGS} account in
    * {@code currency} at the same institution, named after it - and links it as the parent's pocket.
    * The import commit that first books a pocket move calls this, in its own transaction, under the
-   * parent's import lock, so a parent never gains two pockets. The pocket has the parent's current
-   * owners and shares, each from the day it owns the parent, so the pocket's past bookings have an
-   * owner too; an unowned parent's pocket goes to the committing member, as {@link #createAccount}
-   * does, so it is never left without an owner. The link is written on its own, not by saving
-   * {@code parent}: the entity was loaded before the import lock and may be stale.
+   * parent's import lock, so a parent never gains two pockets. The link is written on its own, not
+   * by saving {@code parent}: the entity was loaded before the import lock and may be stale.
    */
   @Transactional
-  public Account createSavingsPocket(
-      Account parent, String currency, AuthenticatedUserPrincipal actor) {
+  public Account createSavingsPocket(Account parent, String currency) {
     CreateAccountRequest request =
         new CreateAccountRequest(
             parent.getFinancialInstitution().getId(),
@@ -229,50 +209,15 @@ public class AccountService {
     Account pocket =
         insertAccount(parent.getWorkspace(), parent.getFinancialInstitution(), request);
 
-    List<AccountOwnership> owners =
-        accountOwnershipRepository.findByAccountIdAndEffectiveToIsNull(parent.getId());
-    if (owners.isEmpty()) {
-      assignInitialOwnershipToCreator(pocket, actor);
-    }
-    for (AccountOwnership owner : owners) {
-      AccountOwnership ownership = new AccountOwnership();
-      ownership.setAccount(pocket);
-      ownership.setWorkspaceMember(owner.getWorkspaceMember());
-      ownership.setOwnershipShare(owner.getOwnershipShare());
-      ownership.setEffectiveFrom(owner.getEffectiveFrom());
-      accountOwnershipRepository.saveAndFlush(ownership);
-    }
-
     accountRepository.linkSavingsPocket(parent.getId(), pocket.getId());
     return pocket;
   }
 
-  // US-03-03: see this class's own Javadoc for why this exists - share 1.0, effective today,
-  // mirrors AccountOwnershipController's own "assign full ownership to oneself" shape.
-  private void assignInitialOwnershipToCreator(Account account, AuthenticatedUserPrincipal actor) {
-    UUID creatorMemberId = accessControlService.requireActingMember(actor);
-    AccountOwnership ownership = new AccountOwnership();
-    ownership.setAccount(account);
-    ownership.setWorkspaceMember(workspaceMemberRepository.getReferenceById(creatorMemberId));
-    ownership.setOwnershipShare(BigDecimal.ONE);
-    ownership.setEffectiveFrom(LocalDate.now());
-    accountOwnershipRepository.saveAndFlush(ownership);
-  }
-
-  // US-03-03: read-only access, gated at BALANCE_ONLY - not READ. AccountSummaryResponse carries
-  // no monetary figures yet (no balance/valuation field exists anywhere in this codebase - that's
-  // EPIC 11/16), so a BALANCE_ONLY grant would otherwise be indistinguishable from NO_ACCESS: both
-  // returned 404 here, since READ was the floor. Gating at BALANCE_ONLY - the weakest tier above
-  // NO_ACCESS - makes the level meaningful today (its holder can at least see this basic summary)
-  // without granting it anything READ-specific doesn't already cover, since there's no
-  // finer-grained data on this endpoint yet to withhold from a BALANCE_ONLY caller; a future
-  // endpoint that actually exposes transaction-level detail is where the two levels would first
-  // diverge in practice.
   @Transactional(readOnly = true)
   public AccountSummaryResponse getAccount(UUID accountId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.BALANCE_ONLY);
-    return toSummary(account, actor);
+    accessControlService.requireAccountAccess(actor, account);
+    return toSummary(account);
   }
 
   // US-05-02: full-replacement update over the account's ordinary mutable attributes (see
@@ -284,7 +229,7 @@ public class AccountService {
   // level, translated to a clean 409 by GlobalExceptionHandler - the same "let the DB enforce the
   // invariant, translate its rejection" pattern createAccount's own extension-row triggers rely on.
   //
-  // US-03-03: gated at EDIT - the AC's "B can view it but not edit it" half. Checked after
+  // US-03-06: any member of the account's workspace may change it. Checked after
   // findAccountOrThrow (so a nonexistent/cross-workspace id still degrades to the same 404 it
   // always has) but before any field is mutated.
   @Transactional
@@ -294,7 +239,7 @@ public class AccountService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     versionPreconditionService.requireCurrent(
         expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
 
@@ -308,7 +253,7 @@ public class AccountService {
     // inside this method, rather than deferred to end-of-transaction commit.
     account = accountRepository.saveAndFlush(account);
 
-    return toSummary(account, actor);
+    return toSummary(account);
   }
 
   // US-05-03/FR-STA-001: ACTIVE -> ARCHIVED is the only transition out of ACTIVE this method
@@ -319,7 +264,7 @@ public class AccountService {
   public AccountSummaryResponse archiveAccount(
       UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     versionPreconditionService.requireCurrent(
         expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     // Checking specifically for "not ACTIVE" rather than "already ARCHIVED": status also admits
@@ -343,7 +288,7 @@ public class AccountService {
     account.setContractIdentifierMasked(null);
     account = accountRepository.saveAndFlush(account);
 
-    return toSummary(account, actor);
+    return toSummary(account);
   }
 
   // US-05-03/FR-LIF-006: the 30-day restore window is enforced here, not just left to the UI to
@@ -354,7 +299,7 @@ public class AccountService {
   public AccountSummaryResponse restoreAccount(
       UUID accountId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     versionPreconditionService.requireCurrent(
         expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     if (!ARCHIVED.equals(account.getStatus())) {
@@ -374,7 +319,7 @@ public class AccountService {
     account.setArchivedAt(null);
     account = accountRepository.saveAndFlush(account);
 
-    return toSummary(account, actor);
+    return toSummary(account);
   }
 
   // US-04-04/FR-INS-009/C2: moves the account to a different container - the FK update is the
@@ -384,7 +329,7 @@ public class AccountService {
   // computed live from current account state on every read, so both institutions' summaries are
   // correct "on the next read" purely as a consequence of this update - no cache to invalidate.
   //
-  // Gated at EDIT on both the account and the destination institution (the story's own
+  // Checked on both the account and the destination institution (the story's own
   // "Authorization/privacy" line - reassignment is as sensitive as editing either side of it).
   // Cross-workspace reassignment is already excluded by RLS alone (resolveInstitution's own
   // comment: a cross-workspace id simply isn't found) since both lookups run under the same
@@ -399,8 +344,8 @@ public class AccountService {
   // are both allowed: unlike archive/restore, this isn't a lifecycle transition, so an archived
   // account's mismodelled institution is still worth fixing.
   //
-  // Currently the only account write with this guard (updateAccount, ownership and valuations
-  // don't check) - deliberately not centralised yet, since nothing can produce a DELETED account
+  // Currently the only account write with this guard (updateAccount and valuations don't
+  // check) - deliberately not centralised yet, since nothing can produce a DELETED account
   // until account soft-delete exists; enforcing it across every write in one shared place is
   // tracked under EPIC 31 in docs/user-stories/BACKLOG-remaining-epics.md.
   @Transactional
@@ -410,7 +355,7 @@ public class AccountService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     versionPreconditionService.requireCurrent(
         expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     if (DELETED.equals(account.getStatus())) {
@@ -421,7 +366,7 @@ public class AccountService {
 
     FinancialInstitution destination =
         institutionLookupService.findInstitutionOrThrow(request.financialInstitutionId(), actor);
-    accessControlService.requireInstitutionAccess(actor, destination, AccessLevelValues.EDIT);
+    accessControlService.requireInstitutionAccess(actor, destination);
 
     if (!account.getWorkspace().getId().equals(destination.getWorkspace().getId())) {
       throw accessControlService.denyAsNotFound(
@@ -431,7 +376,7 @@ public class AccountService {
     account.setFinancialInstitution(destination);
     account = accountRepository.saveAndFlush(account);
 
-    return toSummary(account, actor);
+    return toSummary(account);
   }
 
   private OffsetDateTime now() {
@@ -444,7 +389,7 @@ public class AccountService {
   // tenant_isolation_read policy already confines the SELECT to the caller's own workspace - a
   // cross-workspace id simply isn't found, degrading safely to 404 rather than needing a
   // separate equality check (same reasoning as AdminUserService/InstitutionService) - delegated to
-  // InstitutionLookupService, shared with reassignInstitution/SharingGrantService.
+  // InstitutionLookupService, shared with reassignInstitution.
   private FinancialInstitution resolveInstitution(
       UUID financialInstitutionId, AuthenticatedUserPrincipal actor) {
     if (financialInstitutionId != null) {
@@ -630,7 +575,7 @@ public class AccountService {
     }
   }
 
-  private AccountSummaryResponse toSummary(Account account, AuthenticatedUserPrincipal actor) {
+  private AccountSummaryResponse toSummary(Account account) {
     return new AccountSummaryResponse(
         account.getId(),
         account.getFinancialInstitution().getId(),
@@ -652,6 +597,6 @@ public class AccountService {
         VersionPreconditionService.persistedVersion(account.getVersion(), VERSIONED_RESOURCE),
         // PR-011/FR-CON-007: the warning is shown on the account, not only on its figures.
         accountDataQualityService.warningsFor(account.getId()),
-        reconciliationService.status(account, actor));
+        reconciliationService.status(account));
   }
 }

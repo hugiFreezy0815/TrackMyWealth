@@ -77,7 +77,6 @@ class CrossTenantIsolationTest {
           "workspace_member",
           "financial_institution",
           "account",
-          "sharing_grant",
           "transaction",
           "settlement_match",
           "account_snapshot",
@@ -106,8 +105,6 @@ class CrossTenantIsolationTest {
   private UUID settlementMatchAId;
   private UUID settlementMatchBId;
   private UUID accountBId;
-  private UUID sharingGrantAId;
-  private UUID sharingGrantBId;
   private UUID snapshotAId;
   private UUID snapshotBId;
   private UUID sharedCategoryId;
@@ -142,7 +139,7 @@ class CrossTenantIsolationTest {
         Statement statement = admin.createStatement()) {
       statement.execute(
           LedgerCleanup.withGuardsOff(
-              "TRUNCATE TABLE account_snapshot, settlement_match, transaction, sharing_grant, account, financial_institution,"
+              "TRUNCATE TABLE account_snapshot, settlement_match, transaction, account, financial_institution,"
                   + " workspace_member, workspace RESTART IDENTITY CASCADE"));
       // The CASCADE above also empties `category` (it references workspace), shipped defaults
       // included, so this suite seeds its own shared default: only a superuser can, since V20's
@@ -169,7 +166,6 @@ class CrossTenantIsolationTest {
       transactionAId = insertTransaction(connection, workspaceAId, accountAId);
       settlementMatchAId =
           insertSettlementMatch(connection, workspaceAId, accountAId, transactionAId);
-      sharingGrantAId = insertSharingGrant(connection, workspaceAId, memberAId);
       snapshotAId = insertSnapshot(connection, workspaceAId, accountAId);
       categoryAId = insertCategory(connection, workspaceAId, "WS_A", sharedCategoryId);
       categoryOverrideAId = insertCategoryOverride(connection, workspaceAId, sharedCategoryId);
@@ -184,7 +180,6 @@ class CrossTenantIsolationTest {
       transactionBId = insertTransaction(connection, workspaceBId, accountBId);
       settlementMatchBId =
           insertSettlementMatch(connection, workspaceBId, accountBId, transactionBId);
-      sharingGrantBId = insertSharingGrant(connection, workspaceBId, memberBId);
       snapshotBId = insertSnapshot(connection, workspaceBId, accountBId);
       categoryBId = insertCategory(connection, workspaceBId, "WS_B", sharedCategoryId);
       categoryOverrideBId = insertCategoryOverride(connection, workspaceBId, sharedCategoryId);
@@ -218,15 +213,6 @@ class CrossTenantIsolationTest {
   void accountRowIsInvisibleAcrossWorkspaces() throws Exception {
     assertThat(rowVisibleUnderContext(workspaceAId, "account", accountBId)).isFalse();
     assertThat(rowVisibleUnderContext(workspaceBId, "account", accountAId)).isFalse();
-  }
-
-  // US-03-03: sharing_grant is RLS-protected the same way account/financial_institution are
-  // (carries its own workspace_id, see V20) - a workspace must never see another workspace's
-  // grants, the same isolation boundary the grant/revoke mechanism itself relies on.
-  @Test
-  void sharingGrantRowIsInvisibleAcrossWorkspaces() throws Exception {
-    assertThat(rowVisibleUnderContext(workspaceAId, "sharing_grant", sharingGrantBId)).isFalse();
-    assertThat(rowVisibleUnderContext(workspaceBId, "sharing_grant", sharingGrantAId)).isFalse();
   }
 
   // US-09-01: transaction carries its own workspace_id and is RLS-protected the same way (V20) - a
@@ -640,7 +626,6 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceAId, "financial_institution", institutionAId))
         .isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "account", accountAId)).isTrue();
-    assertThat(rowVisibleUnderContext(workspaceAId, "sharing_grant", sharingGrantAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "transaction", transactionAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "settlement_match", settlementMatchAId))
         .isTrue();
@@ -656,7 +641,6 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceBId, "financial_institution", institutionBId))
         .isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "account", accountBId)).isTrue();
-    assertThat(rowVisibleUnderContext(workspaceBId, "sharing_grant", sharingGrantBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "transaction", transactionBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "settlement_match", settlementMatchBId))
         .isTrue();
@@ -744,6 +728,8 @@ class CrossTenantIsolationTest {
     }
   }
 
+  // Every member is a user with a login (V110): the member and its app_user are inserted in the
+  // same transaction, which V110's deferred check sees at commit.
   private UUID insertMember(Connection connection, UUID workspaceId, String displayName)
       throws Exception {
     UUID memberId = UUID.randomUUID();
@@ -753,6 +739,14 @@ class CrossTenantIsolationTest {
       statement.setObject(1, memberId);
       statement.setObject(2, workspaceId);
       statement.setString(3, displayName);
+      statement.executeUpdate();
+    }
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO app_user (email, password_hash, workspace_member_id) VALUES (?, ?, ?)")) {
+      statement.setString(1, memberId + "@cross-tenant.example");
+      statement.setString(2, "not-a-real-hash");
+      statement.setObject(3, memberId);
       statement.executeUpdate();
     }
     return memberId;
@@ -988,27 +982,6 @@ class CrossTenantIsolationTest {
       connection.commit();
     }
     return snapshotId;
-  }
-
-  // WORKSPACE scope needs no scope_account_id/scope_institution_id (V6's own CHECK constraint) -
-  // the simplest shape that still exercises sharing_grant's own workspace_id RLS policy, which is
-  // all this suite cares about; granting a member access to their own workspace isn't meaningful
-  // product behaviour, just a minimal valid row.
-  private UUID insertSharingGrant(Connection connection, UUID workspaceId, UUID memberId)
-      throws Exception {
-    UUID grantId = UUID.randomUUID();
-    try (PreparedStatement statement =
-        connection.prepareStatement(
-            "INSERT INTO sharing_grant (id, workspace_id, granted_to_member_id, scope_type,"
-                + " access_level, granted_by_member_id) VALUES (?, ?, ?, 'WORKSPACE', 'READ',"
-                + " ?)")) {
-      statement.setObject(1, grantId);
-      statement.setObject(2, workspaceId);
-      statement.setObject(3, memberId);
-      statement.setObject(4, memberId);
-      statement.executeUpdate();
-    }
-    return grantId;
   }
 
   // `table` only ever comes from this class's own small set of hardcoded constant call sites

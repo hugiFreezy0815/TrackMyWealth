@@ -48,8 +48,9 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 /**
  * US-07-04: upload a bank file for one account, preview what its import would do, adjust it, and
  * commit or discard it; US-07-05: roll a committed one back. Rules in {@link ImportBatchService},
- * {@link ImportCommitService} and {@link ImportRollbackService}. Every endpoint needs {@code EDIT}
- * access to the account; the batch's {@code version} is its {@code If-Match} revision (ADR 0004).
+ * {@link ImportCommitService} and {@link ImportRollbackService}. Every endpoint needs the caller to
+ * be a member of the account's workspace; the batch's {@code version} is its {@code If-Match}
+ * revision (ADR 0004).
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/imports")
