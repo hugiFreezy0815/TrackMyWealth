@@ -16,8 +16,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -384,6 +386,37 @@ class WorkspaceMemberControllerTest {
     assertThat(foreignList)
         .extracting(WorkspaceMemberListItemResponse::id)
         .containsExactly(foreign);
+  }
+
+  // FR-USR-07: the administrator is not one of the workspace's people, even while setup still
+  // makes it the sole member (until FR-USR-013) - so it gets the generic 404, not an empty list.
+  @Test
+  void theAdministratorCannotListMembers() {
+    String adminToken = bootstrapAdministrator();
+
+    client(adminToken)
+        .get()
+        .uri("/api/v1/workspace-members")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+  }
+
+  // The id tie-break makes the order stable when display names repeat. PostgreSQL orders uuid
+  // bytewise, which is the order of their lower-case text form.
+  @Test
+  void membersWithTheSameDisplayNameAreOrderedById() throws Exception {
+    bootstrapAdministrator();
+    UUID first = seedBusinessMember("sam@one.example.com");
+    UUID second = seedBusinessMember("sam@two.example.com");
+
+    WorkspaceMemberListItemResponse[] listed =
+        listMembers(login("sam@one.example.com", SECOND_MEMBER_PASSWORD));
+
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::id)
+        .containsExactlyElementsOf(
+            Stream.of(first, second).sorted(Comparator.comparing(UUID::toString)).toList());
   }
 
   // SQL fixture stays valid after #389 removes administrator-created multi-member onboarding.

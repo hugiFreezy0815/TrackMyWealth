@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.UserRoleValues;
 import com.trackmywealth.backend.entity.AppUser;
 import com.trackmywealth.backend.entity.FinancialInstitution;
 import com.trackmywealth.backend.entity.Workspace;
@@ -117,7 +118,7 @@ public class SetupService {
     AppUser administrator = new AppUser();
     administrator.setEmail(request.email());
     administrator.setPasswordHash(passwordEncoder.encode(request.password()));
-    administrator.setRole("SYSTEM_ADMINISTRATOR");
+    administrator.setRole(UserRoleValues.SYSTEM_ADMINISTRATOR);
     administrator.setReportingCurrency(request.currencyCode());
     administrator.setWorkspaceMember(administratorMember);
     administrator = appUserRepository.save(administrator);

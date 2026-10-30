@@ -19,7 +19,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Limit;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -30,7 +30,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 class WorkspaceMemberListServiceTest {
 
-  private static final PageRequest BOUNDED = PageRequest.of(0, PagingValues.MAX_SIZE + 1);
+  private static final Limit BOUNDED = Limit.of(PagingValues.MAX_SIZE + 1);
 
   private final AppUserRepository users = mock(AppUserRepository.class);
   private final WorkspaceMemberRepository members = mock(WorkspaceMemberRepository.class);
@@ -75,6 +75,23 @@ class WorkspaceMemberListServiceTest {
         .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
 
     assertThatThrownBy(() -> service.listWorkspaceMembers(actor))
+        .isInstanceOfSatisfying(
+            ResponseStatusException.class,
+            error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+    verify(members, never()).findMembersForListing(any(), any());
+  }
+
+  // FR-USR-07: the bootstrap membership passes requireActingMember, but the administrator is not
+  // one of the workspace's people and is refused like any other caller it does not concern.
+  @Test
+  void theAdministratorIsRefusedAndNoMemberIsRead() {
+    AuthenticatedUserPrincipal administrator =
+        new AuthenticatedUserPrincipal(
+            UUID.randomUUID(), "SYSTEM_ADMINISTRATOR", workspaceId, UUID.randomUUID(), "EN");
+    when(accessControlService.denyAsNotFound(administrator, "Workspace", workspaceId))
+        .thenReturn(new ResponseStatusException(HttpStatus.NOT_FOUND, "Not found."));
+
+    assertThatThrownBy(() -> service.listWorkspaceMembers(administrator))
         .isInstanceOfSatisfying(
             ResponseStatusException.class,
             error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));

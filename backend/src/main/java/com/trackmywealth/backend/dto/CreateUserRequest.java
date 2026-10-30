@@ -16,5 +16,5 @@ public record CreateUserRequest(
     // FR-AUT-007: minimum-length-led policy, not composition rules - same minimum as
     // SetupAdministratorRequest, for the same reasoning.
     @NotBlank @Size(min = 12) String password,
-    @NotBlank @Pattern(regexp = "SYSTEM_ADMINISTRATOR|STANDARD_USER") String role,
+    @NotBlank @Pattern(regexp = UserRoleValues.PATTERN) String role,
     @NotBlank @Pattern(regexp = "EN|DE") String language) {}

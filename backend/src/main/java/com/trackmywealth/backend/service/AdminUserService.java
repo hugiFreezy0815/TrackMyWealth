@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.EditUserRequest;
+import com.trackmywealth.backend.dto.UserRoleValues;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.entity.AdminAuditLog;
 import com.trackmywealth.backend.entity.AppUser;
@@ -51,7 +52,6 @@ public class AdminUserService {
   // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
   private static final String VERSIONED_RESOURCE = "user";
 
-  private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
   private static final String ACTIVE = "ACTIVE";
 
   // FR-USR-005: a workspace/deployment must always retain at least this many active
@@ -151,7 +151,7 @@ public class AdminUserService {
       target.setLanguage(request.language());
     }
     if (request.role() != null && !request.role().equals(target.getRole())) {
-      if (SYSTEM_ADMINISTRATOR.equals(target.getRole())) {
+      if (UserRoleValues.SYSTEM_ADMINISTRATOR.equals(target.getRole())) {
         // Demoting away from SYSTEM_ADMINISTRATOR - the same guard as disable (FR-USR-005).
         assertNotLastActiveAdministrator(target, "demote");
       }
@@ -270,7 +270,8 @@ public class AdminUserService {
   }
 
   private boolean isCurrentlyActiveAdministrator(AppUser user) {
-    return SYSTEM_ADMINISTRATOR.equals(user.getRole()) && ACTIVE.equals(user.getStatus());
+    return UserRoleValues.SYSTEM_ADMINISTRATOR.equals(user.getRole())
+        && ACTIVE.equals(user.getStatus());
   }
 
   // editUser's demote path: no pre-locked active-administrator count is available here (editUser

@@ -3,7 +3,7 @@ package com.trackmywealth.backend.repository;
 import com.trackmywealth.backend.entity.WorkspaceMember;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,8 +17,7 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
   @Query(
       "SELECT m FROM WorkspaceMember m WHERE m.workspace.id = :workspaceId"
           + " ORDER BY m.displayName ASC, m.id ASC")
-  List<WorkspaceMember> findMembersForListing(
-      @Param("workspaceId") UUID workspaceId, Pageable pageable);
+  List<WorkspaceMember> findMembersForListing(@Param("workspaceId") UUID workspaceId, Limit limit);
 
   // US-03-03/AccessControlService's bootstrap rule: the sole active, non-dependent member of a
   // workspace has implicit FULL access to everything in it, since with only one such member no

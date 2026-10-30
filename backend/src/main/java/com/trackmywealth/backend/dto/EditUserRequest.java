@@ -15,5 +15,5 @@ import jakarta.validation.constraints.Pattern;
  */
 public record EditUserRequest(
     @Email String email,
-    @Pattern(regexp = "SYSTEM_ADMINISTRATOR|STANDARD_USER") String role,
+    @Pattern(regexp = UserRoleValues.PATTERN) String role,
     @Pattern(regexp = "EN|DE") String language) {}

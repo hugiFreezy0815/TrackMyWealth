@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.PagingValues;
+import com.trackmywealth.backend.dto.UserRoleValues;
 import com.trackmywealth.backend.dto.WorkspaceMemberListItemResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
 import com.trackmywealth.backend.entity.AppUser;
@@ -15,7 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Limit;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,9 +38,9 @@ public class WorkspaceMemberService {
 
   private static final String ACTIVE = "ACTIVE";
   private static final String INACTIVE = "INACTIVE";
-  private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
   private static final String VERSIONED_RESOURCE = "workspace member";
   private static final String WORKSPACE_MEMBER_ENTITY_TYPE = "WorkspaceMember";
+  private static final String WORKSPACE_ENTITY_TYPE = "Workspace";
 
   // FR-HHL-015: a workspace must always retain at least this many active members - deactivating
   // one is only rejected when it would drop below this. Named for the same reason
@@ -73,24 +74,31 @@ public class WorkspaceMemberService {
    * well. The query reads at most one row past {@link PagingValues#MAX_SIZE}, so no workspace can
    * force an unbounded read; a workspace above the limit is refused rather than silently cut off.
    *
-   * <p>A member linked to a {@code SYSTEM_ADMINISTRATOR} is left out: until FR-USR-013 stops it,
-   * first-run setup still makes the administrator a member, but the administrator is not one of the
-   * workspace's people (FR-TEN-007) and the list must not suggest it is.
+   * <p>Until FR-USR-013 stops it, first-run setup still makes the administrator a member, but the
+   * administrator is not one of the workspace's people (FR-USR-07, FR-TEN-007): it may not list
+   * them (the audited 404 every other denial gets), and its membership is left out of the list.
    */
   @Transactional(readOnly = true)
   public List<WorkspaceMemberListItemResponse> listWorkspaceMembers(
       AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
+    if (UserRoleValues.SYSTEM_ADMINISTRATOR.equals(actor.role())) {
+      throw accessControlService.denyAsNotFound(actor, WORKSPACE_ENTITY_TYPE, actor.workspaceId());
+    }
 
+    // Not PagingValues.requireBounded: this is a plain array, not a page, and the one row past the
+    // limit only tells a full workspace from an overfull one.
     List<WorkspaceMember> members =
         workspaceMemberRepository.findMembersForListing(
-            actor.workspaceId(), PageRequest.of(0, PagingValues.MAX_SIZE + 1));
+            actor.workspaceId(), Limit.of(PagingValues.MAX_SIZE + 1));
     if (members.size() > PagingValues.MAX_SIZE) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_ENTITY,
           "The workspace has more members than one list can hold.");
     }
 
+    // One login per member: V110 (#389) makes app_user.workspace_member_id unique, so toMap's
+    // duplicate-key failure can only mean a corrupted database.
     Map<UUID, AppUser> usersByMemberId =
         appUserRepository
             .findUsersLinkedToMembers(members.stream().map(WorkspaceMember::getId).toList())
@@ -101,7 +109,7 @@ public class WorkspaceMemberService {
     List<WorkspaceMemberListItemResponse> listed = new ArrayList<>();
     for (WorkspaceMember member : members) {
       AppUser user = usersByMemberId.get(member.getId());
-      if (user != null && SYSTEM_ADMINISTRATOR.equals(user.getRole())) {
+      if (user != null && UserRoleValues.SYSTEM_ADMINISTRATOR.equals(user.getRole())) {
         continue;
       }
       listed.add(
