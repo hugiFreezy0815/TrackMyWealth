@@ -31,6 +31,22 @@ class WorkspaceNamesTest {
     assertThat(WorkspaceNames.isValid("⠀")).isFalse();
   }
 
+  // Tag characters are invisible: only a complete subdivision flag may use them.
+  @Test
+  void acceptsSubdivisionFlagsButNoOtherTagCharacters() {
+    String scotland = "🏴󠁧󠁢󠁳󠁣󠁴󠁿";
+    assertThat(WorkspaceNames.isValid("Hugi " + scotland)).isTrue();
+    assertThat(WorkspaceNames.isValid(scotland + scotland)).isTrue();
+    assertThat(WorkspaceNames.isValid("🏴 Pirates")).isTrue();
+    // Hidden "hi" after an ordinary name, the way tag characters smuggle text.
+    assertThat(WorkspaceNames.isValid("Hugi󠁨󠁩")).isFalse();
+    // A flag without its cancel tag, and a cancel tag on its own.
+    assertThat(WorkspaceNames.isValid("🏴󠁧󠁢")).isFalse();
+    assertThat(WorkspaceNames.isValid("Hugi󠁿")).isFalse();
+    // Upper-case tags are not part of a flag.
+    assertThat(WorkspaceNames.isValid("🏴󠁇󠁂󠁿")).isFalse();
+  }
+
   @Test
   void rejectsLoneSurrogates() {
     assertThat(WorkspaceNames.isValid("Hugi\uD800")).isFalse();

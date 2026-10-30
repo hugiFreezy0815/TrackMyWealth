@@ -13,6 +13,11 @@ public final class WorkspaceNames {
   // Letters and symbols that render as nothing: the Hangul fillers and the blank braille pattern.
   // A name made of them would look empty but bypass the "All portfolios" fallback.
   private static final Set<Integer> BLANK_LOOKING = Set.of(0x115F, 0x1160, 0x3164, 0xFFA0, 0x2800);
+  // Subdivision flags (England, Scotland, Wales) are a black flag followed by tag letters or digits
+  // and a cancel tag. Tags are invisible, so they are accepted only in that exact shape; anywhere
+  // else they could carry hidden text.
+  private static final int BLACK_FLAG = 0x1F3F4;
+  private static final int CANCEL_TAG = 0xE007F;
 
   private WorkspaceNames() {}
 
@@ -40,11 +45,35 @@ public final class WorkspaceNames {
     if (value == null) {
       return true;
     }
-    if (value.codePoints().anyMatch(WorkspaceNames::isUnsafeCodePoint)) {
-      return false;
+    int[] codePoints = value.codePoints().toArray();
+    int i = 0;
+    while (i < codePoints.length) {
+      if (codePoints[i] == BLACK_FLAG) {
+        i = endOfFlagTags(codePoints, i + 1);
+      } else if (isUnsafeCodePoint(codePoints[i])) {
+        return false;
+      } else {
+        i++;
+      }
     }
     String normalized = normalize(value);
     return normalized == null || normalized.codePointCount(0, normalized.length()) <= MAX_LENGTH;
+  }
+
+  // Returns the index after a complete tag sequence starting at {@code start}, or {@code start}
+  // when none follows, so that a stray or unterminated tag is checked (and refused) on its own.
+  private static int endOfFlagTags(int[] codePoints, int start) {
+    int i = start;
+    while (i < codePoints.length && isFlagTag(codePoints[i])) {
+      i++;
+    }
+    boolean complete = i > start && i < codePoints.length && codePoints[i] == CANCEL_TAG;
+    return complete ? i + 1 : start;
+  }
+
+  private static boolean isFlagTag(int codePoint) {
+    return (codePoint >= 0xE0030 && codePoint <= 0xE0039)
+        || (codePoint >= 0xE0061 && codePoint <= 0xE007A);
   }
 
   private static boolean isSpace(int codePoint) {
@@ -52,9 +81,9 @@ public final class WorkspaceNames {
   }
 
   // Controls, line breaks, bidi overrides and other invisible format characters can be deceptive
-  // in UI labels; only the two joiners above are kept. A lone surrogate is not text at all: the
-  // database driver would store it as "?". Check the original, not only the trimmed
-  // representation.
+  // in UI labels; only the two joiners and complete flag tags above are kept. A lone surrogate is
+  // not text at all: the database driver would store it as "?". Check the original, not only the
+  // trimmed representation.
   private static boolean isUnsafeCodePoint(int codePoint) {
     int type = Character.getType(codePoint);
     if (type == Character.FORMAT) {

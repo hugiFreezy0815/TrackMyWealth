@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.trackmywealth.backend.dto.UpdateWorkspaceCurrencyRequest;
 import com.trackmywealth.backend.dto.UpdateWorkspaceNameRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
 import com.trackmywealth.backend.entity.Workspace;
@@ -22,7 +23,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
-/** US-03-07: what a rename writes, and what a stale or unchanged rename leaves alone. */
+/**
+ * US-03-07 and US-06-05: what a rename or currency change writes to the audit, and what a stale or
+ * unchanged request leaves alone.
+ */
 class WorkspaceServiceTest {
 
   private static final UUID WORKSPACE = UUID.randomUUID();
@@ -90,6 +94,31 @@ class WorkspaceServiceTest {
             ResponseStatusException.class,
             e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.PRECONDITION_FAILED));
     assertThat(workspace.getName()).isEqualTo("Initial");
+    verify(workspaceRepository, never()).saveAndFlush(any());
+    verifyNoInteractions(financialAuditLogRepository);
+  }
+
+  @Test
+  void aCurrencyChangeAuditsBothValues() {
+    Workspace workspace = actingMembersWorkspace("Hugi");
+    when(workspaceRepository.saveAndFlush(workspace)).thenReturn(workspace);
+
+    WorkspaceResponse response =
+        service.updateCurrency(new UpdateWorkspaceCurrencyRequest("USD"), 3, ACTOR);
+
+    assertThat(response.currency()).isEqualTo("USD");
+    verify(financialAuditLogRepository)
+        .recordWorkspaceCurrencyChange(WORKSPACE, ACTOR.userId(), "CHF", "USD");
+  }
+
+  @Test
+  void anUnchangedCurrencyWritesNothing() {
+    actingMembersWorkspace("Hugi");
+
+    WorkspaceResponse response =
+        service.updateCurrency(new UpdateWorkspaceCurrencyRequest("CHF"), 3, ACTOR);
+
+    assertThat(response.version()).isEqualTo(3);
     verify(workspaceRepository, never()).saveAndFlush(any());
     verifyNoInteractions(financialAuditLogRepository);
   }

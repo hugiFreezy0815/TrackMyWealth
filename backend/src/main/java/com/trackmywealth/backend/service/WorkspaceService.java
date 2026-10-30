@@ -106,8 +106,14 @@ public class WorkspaceService {
 
     String newCurrency = CurrencyCodes.requireMonetary(request.currency(), "currency");
     String oldCurrency = workspace.getCurrency();
+    if (newCurrency.equals(oldCurrency)) {
+      return toResponse(workspace);
+    }
     workspace.setCurrency(newCurrency);
     workspace = workspaceRepository.saveAndFlush(workspace);
+    // Audited like a rename (US-03-07): in the same transaction, so it cannot outlive a rollback.
+    financialAuditLogRepository.recordWorkspaceCurrencyChange(
+        workspaceId, actor.userId(), oldCurrency, newCurrency);
 
     LOG.info(
         "Workspace currency changed workspaceId={} memberId={} from={} to={}",

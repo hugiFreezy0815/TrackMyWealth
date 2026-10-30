@@ -129,6 +129,18 @@ class WorkspaceNameControllerTest {
         rename(token, current(token).getResponseHeaders().getETag(), "  ");
     assertThat(blank.getResponseBody().name()).isNull();
     assertThat(current(token).getResponseBody().name()).isNull();
+    // The app falls back to "All portfolios" on an explicit null: the field must not be omitted.
+    String json =
+        client(token)
+            .get()
+            .uri("/api/v1/workspace")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(String.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(json).contains("\"name\":null");
     rename(token, blank.getResponseHeaders().getETag(), "New");
     EntityExchangeResult<WorkspaceResponse> cleared =
         rename(token, current(token).getResponseHeaders().getETag(), null);
