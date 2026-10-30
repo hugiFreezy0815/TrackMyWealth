@@ -11,6 +11,7 @@ import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
+import com.trackmywealth.backend.validation.WorkspaceNames;
 import jakarta.persistence.EntityManager;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -92,7 +93,7 @@ public class SetupService {
 
     Workspace workspace = new Workspace();
     workspace.setId(workspaceId);
-    workspace.setName(request.workspaceName());
+    workspace.setName(WorkspaceNames.normalize(request.workspaceName()));
     workspace.setCurrency(request.currencyCode());
     // Must flush now, not defer to end-of-transaction: V19's AFTER INSERT trigger creates the
     // Personal Assets container as a side effect invisible to Hibernate's change tracking, and

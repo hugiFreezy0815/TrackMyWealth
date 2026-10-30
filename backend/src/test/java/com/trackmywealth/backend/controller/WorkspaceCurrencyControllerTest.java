@@ -97,6 +97,7 @@ class WorkspaceCurrencyControllerTest {
               "account_securities",
               "account_pension",
               "account",
+              "financial_audit_log",
               "admin_audit_log",
               "user_session",
               "refresh_token",
@@ -180,6 +181,36 @@ class WorkspaceCurrencyControllerTest {
         .expectStatus()
         .isBadRequest();
     assertThat(getWorkspace(token).getResponseBody().currency()).isEqualTo("USD");
+  }
+
+  // US-03-07: a currency change is audited like a rename; an unchanged currency writes nothing.
+  @Test
+  void aCurrencyChangeIsAuditedAndAnUnchangedOneIsNot() throws Exception {
+    String token = bootstrapAdministrator("CHF");
+    EntityExchangeResult<WorkspaceResponse> initial = getWorkspace(token);
+    EntityExchangeResult<WorkspaceResponse> updated =
+        changeCurrency(token, initial.getResponseHeaders().getETag(), "USD");
+    EntityExchangeResult<WorkspaceResponse> unchanged =
+        changeCurrency(token, updated.getResponseHeaders().getETag(), "USD");
+    assertThat(unchanged.getResponseBody().version())
+        .isEqualTo(updated.getResponseBody().version());
+
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement();
+        ResultSet rs =
+            statement.executeQuery(
+                "SELECT workspace_id, entity_id, action, actor_user_id,"
+                    + " before_data ->> 'currency', after_data ->> 'currency'"
+                    + " FROM financial_audit_log WHERE entity_type = 'WORKSPACE'")) {
+      assertThat(rs.next()).isTrue();
+      assertThat(rs.getObject(1)).isEqualTo(initial.getResponseBody().id());
+      assertThat(rs.getObject(2)).isEqualTo(initial.getResponseBody().id());
+      assertThat(rs.getString(3)).isEqualTo("UPDATE");
+      assertThat(rs.getObject(4)).isNotNull();
+      assertThat(rs.getString(5)).isEqualTo("CHF");
+      assertThat(rs.getString(6)).isEqualTo("USD");
+      assertThat(rs.next()).isFalse();
+    }
   }
 
   // #223: the workspace currency is a currency figures are shown in, so the FX import must store
@@ -439,6 +470,21 @@ class WorkspaceCurrencyControllerTest {
     return client(token)
         .get()
         .uri("/api/v1/workspace")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(WorkspaceResponse.class)
+        .returnResult();
+  }
+
+  private EntityExchangeResult<WorkspaceResponse> changeCurrency(
+      String token, String etag, String currency) {
+    return client(token)
+        .put()
+        .uri("/api/v1/workspace/currency")
+        .header("If-Match", etag)
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new UpdateWorkspaceCurrencyRequest(currency))
         .exchange()
         .expectStatus()
         .isOk()
