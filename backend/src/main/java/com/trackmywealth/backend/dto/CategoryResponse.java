@@ -11,9 +11,7 @@ import java.util.UUID;
  * (UNCATEGORIZED, TRANSFER_INTERNAL), which can never be deactivated, deleted or given children.
  *
  * <p>{@code version} is the concurrency token to send as a strong {@code If-Match} ETag on every
- * state-changing request for this category (ADR 0004). {@code canEdit} tells whether the caller may
- * change the taxonomy at all (EDIT on the workspace); it is the same for every category in one
- * response, and a client uses it to hide the actions that would be refused.
+ * state-changing request for this category (ADR 0004).
  */
 public record CategoryResponse(
     UUID id,
@@ -26,5 +24,4 @@ public record CategoryResponse(
     boolean systemDefault,
     boolean protectedCategory,
     boolean customised,
-    int version,
-    boolean canEdit) {}
+    int version) {}

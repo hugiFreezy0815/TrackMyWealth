@@ -44,7 +44,7 @@ public class ImportAccountProposalController {
 
   /**
    * The proposal for an open import batch's file, typically one whose file names no account of the
-   * workspace ({@code accountIdentification} {@code NO_MATCH}); EDIT access to its account.
+   * workspace ({@code accountIdentification} {@code NO_MATCH}); needs access to its account.
    */
   @RetryableWhenBusy
   @PostMapping("/api/v1/accounts/{accountId}/imports/{batchId}/account-proposal")

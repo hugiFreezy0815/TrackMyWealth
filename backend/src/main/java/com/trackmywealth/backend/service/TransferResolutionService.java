@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
@@ -19,7 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
  * transfer ({@code is_internal_transfer}) with no counterpart account, so it counts as neither
  * income nor spending and leaves pending review; a counterpart recorded later still pairs with it
  * ({@link TransferDetectionService} treats it as a candidate). Undoing the confirmation puts it
- * back in pending review. Both need EDIT on the account and are idempotent. US-07-21: a loan's
+ * back in pending review. Both need access to the account and are idempotent. US-07-21: a loan's
  * imported instalment ({@code DEBT_REPAYMENT}) is such a leg too, paid from an untracked account.
  *
  * <p>The confirmation is not remembered apart from the flag. If the leg is later matched with a
@@ -105,7 +104,7 @@ public class TransferResolutionService {
   private Transaction requireOneSidedLeg(
       UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, AccessLevelValues.EDIT);
+    accessControlService.requireAccountAccess(actor, account);
     Transaction leg =
         transactionRepository
             .findByIdForUpdate(transactionId)

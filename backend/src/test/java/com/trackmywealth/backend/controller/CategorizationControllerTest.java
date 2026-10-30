@@ -2,20 +2,17 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CategorizationRuleResponse;
 import com.trackmywealth.backend.dto.CategoryResponse;
 import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
 import com.trackmywealth.backend.dto.CreateCategoryRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
@@ -113,8 +110,6 @@ class CategorizationControllerTest {
               "DELETE FROM category WHERE workspace_id IS NOT NULL AND parent_category_id IN"
                   + " (SELECT id FROM category WHERE workspace_id IS NOT NULL)",
               "DELETE FROM category WHERE workspace_id IS NOT NULL",
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_credit_card",
               "DELETE FROM account",
               "DELETE FROM admin_audit_log",
@@ -623,17 +618,14 @@ class CategorizationControllerTest {
   }
 
   @Test
-  void changingRulesNeedsWorkspaceEditWhileReadingNeedsMembershipOnly() {
+  void anotherMemberReadsAndChangesTheRulesWithoutAnyGrant() {
     String adminToken = bootstrapAdministrator();
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
     CreateCategorizationRuleRequest request =
         new CreateCategorizationRuleRequest("MERCHANT", "migros", defaultId("GROCERIES"), null);
 
     client(memberToken).get().uri(RULES).exchange().expectStatus().isOk();
-    postRule(memberToken, request).expectStatus().isNotFound();
-
-    grantWorkspace(adminToken, memberId, AccessLevelValues.EDIT);
     postRule(memberToken, request).expectStatus().isCreated();
   }
 
@@ -824,25 +816,13 @@ class CategorizationControllerTest {
   }
 
   @Test
-  void changingACategoryNeedsEditOnTheAccount() {
+  void anotherMemberChangesTheCategoryOfARowTheFirstOneRecorded() {
     String adminToken = bootstrapAdministrator();
     AccountSummaryResponse card = createAccount(adminToken, "CREDIT_CARD");
     TransactionResponse recorded = record(adminToken, card.id(), PURCHASE, "COOP PRONTO", "5411");
-    UUID memberId = createSecondMember(adminToken, "member@example.com");
+    createSecondMember(adminToken, "member@example.com");
     String memberToken = login("member@example.com");
-    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.READ);
 
-    putCategory(memberToken, card.id(), recorded.id(), defaultId("SHOPPING"))
-        .expectStatus()
-        .isNotFound();
-    client(memberToken)
-        .delete()
-        .uri(categoryUri(card.id(), recorded.id()))
-        .exchange()
-        .expectStatus()
-        .isNotFound();
-
-    grantAccount(adminToken, memberId, card.id(), AccessLevelValues.EDIT);
     putCategory(memberToken, card.id(), recorded.id(), defaultId("SHOPPING")).expectStatus().isOk();
   }
 
@@ -1091,19 +1071,6 @@ class CategorizationControllerTest {
     return jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", accountId);
   }
 
-  private void grantAccount(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isCreated();
-  }
-
   // A row as an import (EPIC 07) would leave it, with ISO 20022 codes the API cannot carry yet.
   private UUID insertImportedRow(UUID accountId, String type, String rawSourceData)
       throws Exception {
@@ -1279,17 +1246,6 @@ class CategorizationControllerTest {
       throw new IllegalStateException(e);
     }
     return assignments;
-  }
-
-  private void grantWorkspace(String token, UUID memberId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateSharingGrantRequest(memberId, ScopeTypeValues.WORKSPACE, null, null, level))
-        .exchange()
-        .expectStatus()
-        .isCreated();
   }
 
   private UUID createSecondMember(String adminToken, String email) {

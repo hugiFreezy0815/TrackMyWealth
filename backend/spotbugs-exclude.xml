@@ -26,28 +26,19 @@ holds itself to for its own exemption list.
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
-    <!-- AssignAccountOwnershipRequest's compact constructor already defensively copies owners via
+    <!-- InstitutionSummaryResponse's compact constructor already defensively copies accounts via
          List.copyOf (an immutable list) before the field is ever set - SpotBugs' EI_EXPOSE_REP
          doesn't do the dataflow analysis to see that, and flags the record's auto-generated
          accessor as if it returned the caller's own mutable list directly. There is no unsafe
          mutability here to fix; List.copyOf is the safe alternative SpotBugs is normally pointing
          toward, already applied. -->
     <Match>
-        <Class name="com.trackmywealth.backend.dto.AssignAccountOwnershipRequest"/>
-        <Method name="owners"/>
-        <Bug pattern="EI_EXPOSE_REP"/>
-    </Match>
-
-    <!-- Same false positive as AssignAccountOwnershipRequest above: InstitutionSummaryResponse's
-         compact constructor already defensively copies accounts via List.copyOf before the field
-         is ever set. -->
-    <Match>
         <Class name="com.trackmywealth.backend.dto.InstitutionSummaryResponse"/>
         <Method name="accounts"/>
         <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
 
-    <!-- Same false positive as AssignAccountOwnershipRequest above (US-07-03): both compact
+    <!-- Same false positive as InstitutionSummaryResponse above (US-07-03): both compact
          constructors copy headerColumns into an unmodifiable list before the field is set. The
          copy sits behind a null check because null is meaningful (a PUT keeps the stored header
          columns; a template for a file without a header row has none), and SpotBugs does not

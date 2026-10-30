@@ -17,7 +17,7 @@ reduces net worth rather than being accidentally added.
 - Given CHF 50,000 in cash/investment accounts and a CHF 300,000 mortgage, when net worth is
   computed, then it correctly shows CHF -250,000, using each account's `nature` (generated
   column, V4) as the sign — never a hand-rolled sign computation in application code.
-- Given the computation, when scoped by owner/institution/account/asset-class/currency
+- Given the computation, when scoped by portfolio/institution/account/asset-class/currency
   (FR-NW-004), then each scope produces internally consistent totals that sum correctly to the
   workspace-wide figure.
 **Applicable business rules:** FR-NW-001/004, DM-12, RULE-012 (net worth summing).
@@ -25,7 +25,8 @@ reduces net worth rather than being accidentally added.
 valuation interface (EPIC 05's US-05-04).
 **Error/edge cases:** An account with no resolvable value (e.g. a custom asset never valuated) —
 excluded with a visible flag, not treated as zero (see US-05-05).
-**Authorization/privacy:** Workspace-scoped, respects sharing grants for person-scoped views.
+**Authorization/privacy:** Workspace-scoped: every member sees the whole workspace (US-03-06,
+FR-TEN-008); there are no owner scopes or person-scoped views.
 **Dependencies:** EPIC 05, EPIC 06.
 **Priority:** MUST.
 **Definition of Done:** Integration test with a realistic multi-account workspace matching the

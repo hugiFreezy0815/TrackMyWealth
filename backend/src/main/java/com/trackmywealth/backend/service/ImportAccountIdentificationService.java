@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
 import com.trackmywealth.backend.dto.ImportIdentificationResponse;
@@ -138,8 +137,6 @@ public class ImportAccountIdentificationService {
     UUID memberId = accessControlService.requireActingMember(actor);
     return ACTIVE.equals(account.getStatus())
         && account.isHasTransactions()
-        && !accessControlService
-            .accountsWithAccess(memberId, List.of(account), AccessLevelValues.EDIT)
-            .isEmpty();
+        && !accessControlService.accountsWithAccess(memberId, List.of(account)).isEmpty();
   }
 }

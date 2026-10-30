@@ -26,7 +26,6 @@ public final class IfMatchExceptions {
           Map.entry("InstitutionController#createInstitution", "create"),
           Map.entry("LoanRepaymentController#recordRepayment", "create (append-only ledger)"),
           Map.entry("OpeningBalanceController#recordOpeningBalance", "create"),
-          Map.entry("SharingGrantController#grant", "create"),
           Map.entry("TransactionController#recordTransaction", "create (append-only ledger)"),
           Map.entry("SecurityController#findOrCreate", "idempotent find-or-create of shared data"),
           // Batch: re-runs matching for a card; idempotent, no client-held state.

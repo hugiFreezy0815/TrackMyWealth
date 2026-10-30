@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
 import com.trackmywealth.backend.entity.Account;
@@ -32,8 +31,8 @@ import org.springframework.web.server.ResponseStatusException;
  * <p>Rules, in the order they are checked:
  *
  * <ul>
- *   <li>Writes need {@code EDIT}, reads {@code READ} on the account, like any account-scoped data
- *       (US-03-03); an entry of another account is the one generic 404 (US-28-02).
+ *   <li>Reads and writes need membership of the account's workspace, like any account-scoped data
+ *       (US-03-06); an entry of another account is the one generic 404 (US-28-02).
  *   <li>Only an account with {@code hasAmortisation} (a loan or mortgage) has a schedule: 422
  *       otherwise. Decided by capability flag, never by {@code account_type}.
  *   <li>An archived loan's schedule is read-only (409 {@code ACCOUNT_ARCHIVED}), as the loan takes
@@ -74,7 +73,7 @@ public class AmortisationScheduleService {
   @Transactional(readOnly = true)
   public List<AmortisationScheduleEntryResponse> list(
       UUID accountId, AuthenticatedUserPrincipal actor) {
-    Account account = requireLoan(accountId, AccessLevelValues.READ, actor);
+    Account account = requireLoan(accountId, false, actor);
     return entryRepository.findByAccountIdOrderByDueDateAsc(account.getId()).stream()
         .map(AmortisationScheduleService::toResponse)
         .toList();
@@ -83,7 +82,7 @@ public class AmortisationScheduleService {
   @Transactional
   public AmortisationScheduleEntryResponse create(
       UUID accountId, AmortisationScheduleEntryRequest request, AuthenticatedUserPrincipal actor) {
-    Account account = requireLoan(accountId, AccessLevelValues.EDIT, actor);
+    Account account = requireLoan(accountId, true, actor);
     validate(request);
     requireDueDateFree(account, request.dueDate(), null);
     AmortisationScheduleEntry entry = new AmortisationScheduleEntry();
@@ -101,7 +100,7 @@ public class AmortisationScheduleService {
       AmortisationScheduleEntryRequest request,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    Account account = requireLoan(accountId, AccessLevelValues.EDIT, actor);
+    Account account = requireLoan(accountId, true, actor);
     AmortisationScheduleEntry entry = findOrThrow(account, entryId, actor);
     versionPreconditionService.requireCurrent(expectedVersion, entry.getVersion(), RESOURCE_NAME);
     validate(request);
@@ -113,7 +112,7 @@ public class AmortisationScheduleService {
   @Transactional
   public void delete(
       UUID accountId, UUID entryId, Integer expectedVersion, AuthenticatedUserPrincipal actor) {
-    Account account = requireLoan(accountId, AccessLevelValues.EDIT, actor);
+    Account account = requireLoan(accountId, true, actor);
     AmortisationScheduleEntry entry = findOrThrow(account, entryId, actor);
     versionPreconditionService.requireCurrent(expectedVersion, entry.getVersion(), RESOURCE_NAME);
     entryRepository.delete(entry);
@@ -148,14 +147,15 @@ public class AmortisationScheduleService {
         accountId, YearMonth.from(bookingDate).atDay(1));
   }
 
-  private Account requireLoan(
-      UUID accountId, String accessLevel, AuthenticatedUserPrincipal actor) {
+  // forChange: the schedule is about to be written, which an archived loan refuses; reading it
+  // stays possible.
+  private Account requireLoan(UUID accountId, boolean forChange, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
-    accessControlService.requireAccountAccess(actor, account, accessLevel);
+    accessControlService.requireAccountAccess(actor, account);
     if (!account.isHasAmortisation()) {
       throw unprocessable("Only a loan or mortgage has an amortisation schedule.");
     }
-    if (AccessLevelValues.EDIT.equals(accessLevel) && !ACTIVE.equals(account.getStatus())) {
+    if (forChange && !ACTIVE.equals(account.getStatus())) {
       throw new ApiException(
           HttpStatus.CONFLICT,
           ApiErrorCode.ACCOUNT_ARCHIVED,

@@ -16,7 +16,11 @@ import java.util.UUID;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
-/** Maps {@code workspace_member} (V2) - a person represented financially; may have no login. */
+/**
+ * Maps {@code workspace_member} (V2) - a user's membership of a workspace, which is what gives them
+ * access to its financial data (FR-TEN-008). Every member is a user with a login (FR-USR-008,
+ * enforced by V110): exactly one {@code app_user} links to each member.
+ */
 @Entity
 @Table(name = "workspace_member")
 public class WorkspaceMember {
@@ -32,9 +36,6 @@ public class WorkspaceMember {
 
   @Column(name = "display_name", nullable = false)
   private String displayName;
-
-  @Column(name = "is_dependent", nullable = false)
-  private boolean dependent;
 
   @Column(nullable = false)
   private String status = "ACTIVE";
@@ -66,7 +67,6 @@ public class WorkspaceMember {
     WorkspaceMember member = new WorkspaceMember();
     member.setWorkspace(workspace);
     member.setDisplayName(email.split("@", 2)[0]);
-    member.setDependent(false);
     return member;
   }
 
@@ -88,14 +88,6 @@ public class WorkspaceMember {
 
   public void setDisplayName(String displayName) {
     this.displayName = displayName;
-  }
-
-  public boolean isDependent() {
-    return dependent;
-  }
-
-  public void setDependent(boolean dependent) {
-    this.dependent = dependent;
   }
 
   public String getStatus() {

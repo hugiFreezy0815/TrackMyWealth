@@ -3,7 +3,6 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.dto.AccessLevelValues;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
@@ -11,7 +10,6 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CorrectTransactionRequest;
 import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
-import com.trackmywealth.backend.dto.CreateSharingGrantRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
 import com.trackmywealth.backend.dto.LoanRepaymentSplitValues;
@@ -19,7 +17,6 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.ScopeTypeValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -102,8 +99,6 @@ class LoanRepaymentControllerTest {
               "DELETE FROM settlement_match",
               "DELETE FROM transaction_categorization_log",
               LedgerCleanup.DELETE_ALL_TRANSACTIONS,
-              "DELETE FROM sharing_grant",
-              "DELETE FROM account_ownership",
               "DELETE FROM account_credit_card",
               "DELETE FROM account_mortgage",
               "DELETE FROM account_loan",
@@ -633,22 +628,24 @@ class LoanRepaymentControllerTest {
   }
 
   @Test
-  void aMemberWhoMayOnlyReadTheLoanCannotRecordAPaymentOnIt() {
+  void anotherMemberRecordsAPaymentOnTheLoanWithoutAnyGrant() {
     String adminToken = bootstrapAdministrator();
-    AccountSummaryResponse mortgage = createMortgage(adminToken, "500000.00", "2.0");
-    UUID memberId = createSecondMember(adminToken, "partner@example.com");
-    grantAccount(adminToken, memberId, mortgage.id(), AccessLevelValues.READ);
+    // The first member is a Standard User: once anyone else joins, the administrator's own
+    // membership no longer reaches financial data (FR-TEN-007, AccessControlService).
+    createSecondMember(adminToken, "first@example.com");
+    String firstToken = login("first@example.com");
+    AccountSummaryResponse mortgage = createMortgage(firstToken, "500000.00", "2.0");
+    createSecondMember(adminToken, "partner@example.com");
     String memberToken = login("partner@example.com");
     AccountSummaryResponse own = createAccount(memberToken, "CASH", "CHF");
 
-    postRepayment(memberToken, mortgage.id(), payment(own.id(), "2000.00", "800.00", null))
-        .expectStatus()
-        .isNotFound();
-    assertThat(repayments(memberToken, mortgage.id())).isEmpty();
+    repay(memberToken, mortgage.id(), payment(own.id(), "2000.00", "800.00", null));
+
+    assertThat(repayments(firstToken, mortgage.id())).hasSize(1);
   }
 
   @Test
-  void aSharedLoanNeverExposesAnUnsharedPayingAccountsRepayments() {
+  void anotherMemberSeesTheRepaymentsAndTheLoanLedgerKeepsThePayingAccountsText() {
     String ownerToken = bootstrapAdministrator();
     AccountSummaryResponse paying = createAccount(ownerToken, "CASH", "CHF");
     AccountSummaryResponse loan = createMortgage(ownerToken, "500000.00", "2.0");
@@ -666,13 +663,13 @@ class LoanRepaymentControllerTest {
                 "private note",
                 "private-key"));
 
-    UUID partnerId = createSecondMember(ownerToken, "reader@example.com");
-    grantAccount(ownerToken, partnerId, loan.id(), AccessLevelValues.READ);
+    createSecondMember(ownerToken, "reader@example.com");
     String readerToken = login("reader@example.com");
 
-    // Shared loan does not confer transaction-level READ on the paying account.
-    assertThat(repayments(readerToken, loan.id())).isEmpty();
-    // Nor does the loan's own ledger tell what the owner wrote on the paying account.
+    assertThat(repayments(readerToken, loan.id()))
+        .extracting(LoanRepaymentResponse::id)
+        .containsExactly(original.id());
+    // The loan's own ledger shows the repayment, not what was written on the paying account.
     assertThat(list(readerToken, loan.id()))
         .singleElement()
         .satisfies(
@@ -681,19 +678,6 @@ class LoanRepaymentControllerTest {
               assertThat(inflow.merchantDescription()).isNull();
               assertThat(inflow.notes()).isNull();
             });
-    postRepayment(readerToken, loan.id(), payment(paying.id(), "2000.00", "800.00", "private-key"))
-        .expectStatus()
-        .isNotFound();
-
-    grantAccount(ownerToken, partnerId, paying.id(), AccessLevelValues.BALANCE_ONLY);
-    assertThat(repayments(readerToken, loan.id())).isEmpty();
-
-    UUID fullReaderId = createSecondMember(ownerToken, "full-reader@example.com");
-    grantAccount(ownerToken, fullReaderId, loan.id(), AccessLevelValues.READ);
-    grantAccount(ownerToken, fullReaderId, paying.id(), AccessLevelValues.READ);
-    assertThat(repayments(login("full-reader@example.com"), loan.id()))
-        .extracting(LoanRepaymentResponse::id)
-        .containsExactly(original.id());
   }
 
   @Test
@@ -708,16 +692,11 @@ class LoanRepaymentControllerTest {
     // silently.
     assertThat(netWorth(ownerToken).complete()).isFalse();
 
-    UUID partnerId = createSecondMember(ownerToken, "payer-reader@example.com");
-    grantAccount(ownerToken, partnerId, paying.id(), AccessLevelValues.READ);
-    String readerToken = login("payer-reader@example.com");
-    CashFlowResponse flow = cashFlow(readerToken);
+    // Another member sees both legs; the same payment still counts only once.
+    createSecondMember(ownerToken, "payer-reader@example.com");
+    CashFlowResponse flow = cashFlow(login("payer-reader@example.com"));
     assertThat(chf(flow.pendingReview())).isEqualByComparingTo("500.00");
     assertThat(flow.complete()).isFalse();
-
-    // When both legs are visible, the same payment still counts only once.
-    grantAccount(ownerToken, partnerId, loan.id(), AccessLevelValues.READ);
-    assertThat(chf(cashFlow(readerToken).pendingReview())).isEqualByComparingTo("500.00");
   }
 
   // --- card settlements
@@ -1087,19 +1066,6 @@ class LoanRepaymentControllerTest {
       }
       statement.executeUpdate();
     }
-  }
-
-  private void grantAccount(String token, UUID memberId, UUID accountId, String level) {
-    client(token)
-        .post()
-        .uri("/api/v1/sharing-grants")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateSharingGrantRequest(
-                memberId, ScopeTypeValues.ACCOUNT, accountId, null, level))
-        .exchange()
-        .expectStatus()
-        .isCreated();
   }
 
   private UUID createSecondMember(String adminToken, String email) {
