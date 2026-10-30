@@ -17,8 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * US-06-05/US-03-07 workspace settings. Any active member may change the workspace currency and
- * name (US-03-06: every member is a user with a login and has full access to the workspace).
+ * US-06-05/US-03-07 workspace settings. Any active member may read them and change the workspace
+ * currency and name (US-03-06: every member is a user with a login and has full access to the
+ * workspace).
  */
 @Service
 public class WorkspaceService {
@@ -57,7 +58,7 @@ public class WorkspaceService {
       UpdateWorkspaceNameRequest request,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
-    // Authorization comes before the version (ADR 0004): a refused caller never locks the row.
+    // Authorization comes before the version (ADR 0004): a refused member never locks the row.
     accessControlService.requireActingMember(actor);
 
     UUID workspaceId = actor.workspaceId();

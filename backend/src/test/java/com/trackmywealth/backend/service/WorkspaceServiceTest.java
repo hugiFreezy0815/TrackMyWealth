@@ -16,6 +16,7 @@ import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.repository.FinancialAuditLogRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -24,8 +25,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-03-07 and US-06-05: what a rename or currency change writes to the audit, and what a stale or
- * unchanged request leaves alone.
+ * US-06-05 and US-03-07: what a rename or currency change writes to the audit, what a stale or
+ * unchanged request leaves alone, and that a refused caller changes nothing. Every active member
+ * may change both settings (US-03-06); who counts as one is {@link AccessControlService}'s
+ * decision, mocked here.
  */
 class WorkspaceServiceTest {
 
@@ -94,6 +97,27 @@ class WorkspaceServiceTest {
             ResponseStatusException.class,
             e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.PRECONDITION_FAILED));
     assertThat(workspace.getName()).isEqualTo("Initial");
+    verify(workspaceRepository, never()).saveAndFlush(any());
+    verifyNoInteractions(financialAuditLogRepository);
+  }
+
+  // Authorization comes before the version (ADR 0004): a refused caller gets the 404 even without
+  // If-Match, and the workspace row is never locked or written.
+  @Test
+  void aRefusedCallerNeverLocksOrWritesTheWorkspace() {
+    when(accessControlService.requireActingMember(ACTOR))
+        .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+    for (Runnable update :
+        List.<Runnable>of(
+            () -> service.updateName(new UpdateWorkspaceNameRequest("New"), null, ACTOR),
+            () -> service.updateCurrency(new UpdateWorkspaceCurrencyRequest("USD"), null, ACTOR))) {
+      assertThatThrownBy(update::run)
+          .isInstanceOfSatisfying(
+              ResponseStatusException.class,
+              e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+    verify(workspaceRepository, never()).findByIdForUpdate(any());
     verify(workspaceRepository, never()).saveAndFlush(any());
     verifyNoInteractions(financialAuditLogRepository);
   }
