@@ -22,6 +22,10 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   // flags the same string literal appearing 4+ times in one file.
   String USER_ID = "userId";
 
+  // US-03-05: resolve member-to-user links without exposing emails or credentials.
+  @Query("SELECT u FROM AppUser u WHERE u.workspaceMember.id IN :memberIds")
+  List<AppUser> findUsersLinkedToMembers(@Param("memberIds") List<UUID> memberIds);
+
   // A derived `email = ?` query is NOT case-insensitive here despite the column being citext:
   // JDBC binds the parameter as `text`, and Postgres's operator resolution then picks the exact
   // `text = text` match (silently casting the citext column down to text) over the citext

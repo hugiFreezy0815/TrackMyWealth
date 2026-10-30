@@ -9,14 +9,17 @@ import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.dto.WorkspaceMemberListItemResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -312,6 +315,164 @@ class WorkspaceMemberControllerTest {
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.UNAUTHORIZED);
+  }
+
+  // US-03-05 AC 1 and 3: every member is listed, a deactivated one with active=false. The
+  // administrator's bootstrap membership is not one of the workspace's people (FR-TEN-007).
+  @Test
+  void aMemberListsAllMembersOfTheWorkspaceIncludingDeactivatedOnes() throws Exception {
+    bootstrapAdministrator();
+    UUID anna = seedBusinessMember("anna@example.com");
+    UUID ben = seedBusinessMember("ben@example.com");
+    UUID clara = seedBusinessMember("clara@example.com");
+    // Directly, not through the deactivation endpoint: that is self-service only.
+    updateMemberStatus(clara, "INACTIVE");
+
+    WorkspaceMemberListItemResponse[] listed =
+        listMembers(login("anna@example.com", SECOND_MEMBER_PASSWORD));
+
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::id)
+        .containsExactly(anna, ben, clara);
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::active)
+        .containsExactly(true, true, false);
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::userId)
+        .containsExactly(
+            appUserIdForEmail("anna@example.com"),
+            appUserIdForEmail("ben@example.com"),
+            appUserIdForEmail("clara@example.com"));
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::displayName)
+        .containsExactly("anna", "ben", "clara");
+  }
+
+  @Test
+  void anAnonymousCallerCannotListMembers() {
+    anonymousClient()
+        .get()
+        .uri("/api/v1/workspace-members")
+        .exchange()
+        .expectStatus()
+        .isUnauthorized();
+  }
+
+  @Test
+  void listNeverReturnsMembersOfAnotherWorkspace() throws Exception {
+    bootstrapAdministrator();
+    UUID own = seedBusinessMember("own@example.com");
+    UUID foreign = seedBusinessMember("foreign@example.com");
+    UUID otherWorkspace = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement createWorkspace =
+            connection.prepareStatement(
+                "INSERT INTO workspace (id, name, currency) VALUES (?, 'Foreign', 'CHF')");
+        PreparedStatement moveMember =
+            connection.prepareStatement(
+                "UPDATE workspace_member SET workspace_id = ? WHERE id = ?")) {
+      createWorkspace.setObject(1, otherWorkspace);
+      createWorkspace.executeUpdate();
+      moveMember.setObject(1, otherWorkspace);
+      moveMember.setObject(2, foreign);
+      moveMember.executeUpdate();
+    }
+
+    String ownToken = login("own@example.com", SECOND_MEMBER_PASSWORD);
+    String foreignToken = login("foreign@example.com", SECOND_MEMBER_PASSWORD);
+    WorkspaceMemberListItemResponse[] ownList = listMembers(ownToken);
+    WorkspaceMemberListItemResponse[] foreignList = listMembers(foreignToken);
+    assertThat(ownList).extracting(WorkspaceMemberListItemResponse::id).containsExactly(own);
+    assertThat(foreignList)
+        .extracting(WorkspaceMemberListItemResponse::id)
+        .containsExactly(foreign);
+  }
+
+  // FR-USR-07: the administrator is not one of the workspace's people, even while setup still
+  // makes it the sole member (until FR-USR-013) - so it gets the generic 404, not an empty list.
+  @Test
+  void theAdministratorCannotListMembers() {
+    String adminToken = bootstrapAdministrator();
+
+    client(adminToken)
+        .get()
+        .uri("/api/v1/workspace-members")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+  }
+
+  // The id tie-break makes the order stable when display names repeat. PostgreSQL orders uuid
+  // bytewise, which is the order of their lower-case text form.
+  @Test
+  void membersWithTheSameDisplayNameAreOrderedById() throws Exception {
+    bootstrapAdministrator();
+    UUID first = seedBusinessMember("sam@one.example.com");
+    UUID second = seedBusinessMember("sam@two.example.com");
+
+    WorkspaceMemberListItemResponse[] listed =
+        listMembers(login("sam@one.example.com", SECOND_MEMBER_PASSWORD));
+
+    assertThat(listed)
+        .extracting(WorkspaceMemberListItemResponse::id)
+        .containsExactlyElementsOf(
+            Stream.of(first, second).sorted(Comparator.comparing(UUID::toString)).toList());
+  }
+
+  // SQL fixture stays valid after #389 removes administrator-created multi-member onboarding. One
+  // transaction: V110 refuses, at commit, a member without a login.
+  private UUID seedBusinessMember(String email) throws Exception {
+    UUID memberId = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      insertMemberWithLogin(connection, memberId, email);
+      connection.commit();
+    }
+    return memberId;
+  }
+
+  private static void insertMemberWithLogin(Connection connection, UUID memberId, String email)
+      throws Exception {
+    try (PreparedStatement member =
+            connection.prepareStatement(
+                "INSERT INTO workspace_member (id, workspace_id, display_name)"
+                    + " SELECT ?, w.workspace_id, ? FROM workspace_member w"
+                    + " JOIN app_user a ON a.workspace_member_id = w.id"
+                    + " WHERE a.email = 'admin@example.com'");
+        PreparedStatement user =
+            connection.prepareStatement(
+                "INSERT INTO app_user (email, password_hash, role, workspace_member_id)"
+                    + " SELECT ?, password_hash, 'STANDARD_USER', ?"
+                    + " FROM app_user WHERE email = 'admin@example.com'")) {
+      member.setObject(1, memberId);
+      member.setString(2, email.split("@", 2)[0]);
+      assertThat(member.executeUpdate()).isEqualTo(1);
+      user.setString(1, email);
+      user.setObject(2, memberId);
+      assertThat(user.executeUpdate()).isEqualTo(1);
+    }
+  }
+
+  private WorkspaceMemberListItemResponse[] listMembers(String token) {
+    return client(token)
+        .get()
+        .uri("/api/v1/workspace-members")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(WorkspaceMemberListItemResponse[].class)
+        .returnResult()
+        .getResponseBody();
+  }
+
+  private void updateMemberStatus(UUID memberId, String status) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("UPDATE workspace_member SET status = ? WHERE id = ?")) {
+      statement.setString(1, status);
+      statement.setObject(2, memberId);
+      statement.executeUpdate();
+    }
   }
 
   private RestTestClient.ResponseSpec deactivateWith(String token, UUID memberId, String ifMatch) {
