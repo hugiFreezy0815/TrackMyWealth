@@ -134,8 +134,10 @@ public class PortfolioService {
    * no other portfolio can be given that type ({@link PortfolioType#SELECTABLE_PATTERN}).
    *
    * <p>The row is locked before it is read, as {@link AccountService#refreshPortfolioTypes} locks
-   * it, so a suggested type computed here counts every account a concurrent request added.
-   * Authorization comes first (ADR 0004): a refused member never locks the row.
+   * it, so a suggested type computed here counts every account a concurrent request added. Only
+   * {@code requireActingMember} runs before the lock; RLS already confines the lock to the caller's
+   * own workspace, and the portfolio-level check follows before the version check (ADR 0004). A
+   * principal refused there holds the lock only until its transaction rolls back.
    */
   @Transactional
   public PortfolioResponse updatePortfolio(

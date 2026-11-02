@@ -23,7 +23,8 @@ import java.util.UUID;
  * @param asOf the business date every value is taken on
  * @param valueStatus the worst {@link ValueStatus} of the portfolio's accounts, in either total's
  *     currency - like {@code complete}, it covers both totals
- * @param warnings every data-quality warning one of the accounts carries, each once and sorted
+ * @param warnings every data-quality warning one of the accounts carries in either total's
+ *     currency, each once and sorted
  * @param sections only the sections holding at least one active account, in {@link
  *     PortfolioSection} order
  */

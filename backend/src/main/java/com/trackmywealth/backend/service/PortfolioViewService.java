@@ -138,9 +138,12 @@ public class PortfolioViewService {
 
     List<AccountValuation> allInPortfolio = valuationsOf(accounts, inPortfolio);
     List<AccountValuation> allInWorkspace = valuationsOf(accounts, inWorkspace);
-    // PR-011/FR-CON-007: an account's warning is shown at the portfolio's headline too.
+    // PR-011/FR-CON-007: an account's warning is shown at the portfolio's headline too, from both
+    // totals - a rate missing only into the workspace currency explains why that total is
+    // incomplete.
     Set<String> warnings = new TreeSet<>();
     allInPortfolio.forEach(valuation -> warnings.addAll(valuation.warnings()));
+    allInWorkspace.forEach(valuation -> warnings.addAll(valuation.warnings()));
 
     return new PortfolioViewResponse(
         portfolio.getId(),

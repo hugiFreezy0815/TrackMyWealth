@@ -196,12 +196,15 @@ public class AccountService {
     Portfolio portfolio = resolvePortfolio(request.portfolioId(), actor);
 
     Account account = insertAccount(workspace, portfolio, request);
+    refreshPortfolioTypes(List.of(portfolio));
 
     return toSummary(account);
   }
 
   // The account of a validated request, with its capability defaults and extension row - shared
-  // by createAccount and createSavingsPocket.
+  // by createAccount and createSavingsPocket. It does not refresh the portfolio's type: each caller
+  // does that as its last step, so the portfolio row is always locked after any account row
+  // (see refreshPortfolioTypes).
   private Account insertAccount(
       Workspace workspace, Portfolio portfolio, CreateAccountRequest request) {
     Account account = new Account();
@@ -218,8 +221,6 @@ public class AccountService {
     // support issue its post-insert refresh SELECT.
     account = accountRepository.saveAndFlush(account);
     createExtensionRowIfNeeded(account, request);
-    // After the extension row: a pension's section depends on its scheme.
-    refreshPortfolioTypes(List.of(portfolio));
     return account;
   }
 
@@ -249,6 +250,9 @@ public class AccountService {
     Account pocket = insertAccount(parent.getWorkspace(), parent.getPortfolio(), request);
 
     accountRepository.linkSavingsPocket(parent.getId(), pocket.getId());
+    // Last, after the parent's row is locked by the link: archiving or moving the parent locks it
+    // before the portfolio too, so the two cannot deadlock.
+    refreshPortfolioTypes(List.of(parent.getPortfolio()));
     return pocket;
   }
 
@@ -470,7 +474,12 @@ public class AccountService {
    * accounts are read only once no other refresh of it is in flight: two members adding accounts to
    * one portfolio at the same time both end up counted. Portfolios are locked in id order, so two
    * moves in opposite directions cannot deadlock. A portfolio whose type the member has set is only
-   * locked, not recomputed.
+   * locked, not recomputed. The workspace's Personal Assets default is skipped altogether: it is
+   * always {@code PERSONAL_ASSETS}, so neither the lock nor the recomputation can change anything.
+   *
+   * <p>Call it as the last write of the transaction, after every account row it touched: every
+   * caller then locks account rows before portfolio rows, the one order that cannot deadlock
+   * against another account write.
    */
   @Transactional
   public void refreshPortfolioTypes(Collection<Portfolio> portfolios) {
@@ -479,6 +488,9 @@ public class AccountService {
       byId.put(portfolio.getId(), portfolio);
     }
     for (Portfolio portfolio : byId.values()) {
+      if (portfolio.isPersonalAssetsDefault()) {
+        continue;
+      }
       boolean overridden = portfolioRepository.lockForTypeRefresh(portfolio.getId()).orElse(true);
       if (overridden) {
         // The member's type is kept as set: nothing to compute. Read under the lock, so a
