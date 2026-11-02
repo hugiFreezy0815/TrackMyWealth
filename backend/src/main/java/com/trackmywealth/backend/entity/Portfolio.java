@@ -74,14 +74,12 @@ public class Portfolio {
   @Column(name = "is_personal_assets_default", nullable = false)
   private boolean personalAssetsDefault;
 
-  // V112, US-04-06: descriptive only (FR-INS-008). Recomputed from the active accounts by
-  // AccountService#refreshPortfolioTypes while portfolioTypeOverridden is false.
+  // V112, US-04-06: the type the member set (FR-INS-006), descriptive only (FR-INS-008). Null
+  // while the type is suggested from the active accounts, which happens on every read and is
+  // never stored (PortfolioService#typeOf).
   @Enumerated(EnumType.STRING)
-  @Column(name = "portfolio_type", nullable = false)
-  private PortfolioType portfolioType = PortfolioType.BANK;
-
-  @Column(name = "portfolio_type_overridden", nullable = false)
-  private boolean portfolioTypeOverridden;
+  @Column(name = "portfolio_type_override")
+  private PortfolioType portfolioTypeOverride;
 
   @Column(nullable = false)
   private String status = "ACTIVE";
@@ -175,20 +173,13 @@ public class Portfolio {
     this.personalAssetsDefault = personalAssetsDefault;
   }
 
-  public PortfolioType getPortfolioType() {
-    return portfolioType;
+  /** The type the member set; {@code null} while it is suggested from the accounts. */
+  public PortfolioType getPortfolioTypeOverride() {
+    return portfolioTypeOverride;
   }
 
-  public void setPortfolioType(PortfolioType portfolioType) {
-    this.portfolioType = portfolioType;
-  }
-
-  public boolean isPortfolioTypeOverridden() {
-    return portfolioTypeOverridden;
-  }
-
-  public void setPortfolioTypeOverridden(boolean portfolioTypeOverridden) {
-    this.portfolioTypeOverridden = portfolioTypeOverridden;
+  public void setPortfolioTypeOverride(PortfolioType portfolioTypeOverride) {
+    this.portfolioTypeOverride = portfolioTypeOverride;
   }
 
   public String getStatus() {

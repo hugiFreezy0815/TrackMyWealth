@@ -2,9 +2,11 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountPositionCount;
 import com.trackmywealth.backend.dto.AccountValuation;
+import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.PortfolioAccountDetails;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
 import com.trackmywealth.backend.dto.PortfolioSection;
+import com.trackmywealth.backend.dto.PortfolioType;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.AccountRow;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.Section;
@@ -24,12 +26,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,9 +40,9 @@ import org.springframework.transaction.annotation.Transactional;
  * of account, for the getquin-style overview (#377).
  *
  * <p>No new aggregation path: every figure is an {@link AccountValuation} from {@link
- * AccountValuationService#valueAll}, the calculation the portfolio summary and net worth use, taken
- * once in the portfolio's currency, once in the workspace's (skipped when they are the same) and
- * once per other own currency of its accounts. Which section an account belongs to is {@link
+ * AccountValuationService#valueAllIn}, the calculation the portfolio summary and net worth use:
+ * each account's value is resolved once and converted into the portfolio's currency, the
+ * workspace's and its own. Which section an account belongs to is {@link
  * AccountService#portfolioPlacementsOf}'s decision; this class only reads capability flags.
  *
  * <p>The number of queries does not grow with the number of accounts beyond what {@code valueAll}
@@ -98,15 +100,12 @@ public class PortfolioViewService {
     String portfolioCurrency = portfolio.getPortfolioCurrency();
     String workspaceCurrency = portfolio.getWorkspace().getCurrency();
 
-    Map<UUID, AccountValuation> inPortfolio =
-        byAccount(accountValuationService.valueAll(accounts, portfolioCurrency, asOf));
-    Map<UUID, AccountValuation> inWorkspace =
-        workspaceCurrency.equals(portfolioCurrency)
-            ? inPortfolio
-            : byAccount(accountValuationService.valueAll(accounts, workspaceCurrency, asOf));
-    Map<UUID, AccountValuation> inOwn =
-        inOwnCurrency(
-            accounts, inPortfolio, portfolioCurrency, inWorkspace, workspaceCurrency, asOf);
+    MultiCurrencyValuations valuations =
+        accountValuationService.valueAllIn(
+            accounts, Stream.of(portfolioCurrency, workspaceCurrency).distinct().toList(), asOf);
+    Map<UUID, AccountValuation> inPortfolio = byAccount(valuations.in(portfolioCurrency));
+    Map<UUID, AccountValuation> inWorkspace = byAccount(valuations.in(workspaceCurrency));
+    Map<UUID, AccountValuation> inOwn = byAccount(valuations.inOwnCurrency());
     Map<UUID, PortfolioPlacement> placements = accountService.portfolioPlacementsOf(accounts);
     PortfolioAccountDetails details = details(accounts, placements);
 
@@ -148,8 +147,12 @@ public class PortfolioViewService {
     return new PortfolioViewResponse(
         portfolio.getId(),
         portfolio.getName(),
-        portfolio.getPortfolioType(),
-        portfolio.isPortfolioTypeOverridden(),
+        // From the placements already at hand, not by reading the accounts a second time.
+        PortfolioType.of(
+            portfolio.getPortfolioTypeOverride(),
+            portfolio.isPersonalAssetsDefault(),
+            placements.values().stream().map(PortfolioPlacement::section).toList()),
+        portfolio.getPortfolioTypeOverride() != null,
         portfolio.isPersonalAssetsDefault(),
         portfolioCurrency,
         workspaceCurrency,
@@ -190,34 +193,6 @@ public class PortfolioViewService {
         null,
         details.dueDates().get(id),
         details.linkedProperties().get(id));
-  }
-
-  // The account's value in its own currency: reused from a pass already taken when that currency
-  // is the portfolio's or the workspace's, one valueAll per other currency otherwise.
-  private Map<UUID, AccountValuation> inOwnCurrency(
-      List<Account> accounts,
-      Map<UUID, AccountValuation> inPortfolio,
-      String portfolioCurrency,
-      Map<UUID, AccountValuation> inWorkspace,
-      String workspaceCurrency,
-      LocalDate asOf) {
-    Map<UUID, AccountValuation> own = new HashMap<>();
-    Map<String, List<Account>> others = new LinkedHashMap<>();
-    for (Account account : accounts) {
-      String ownCurrency = inPortfolio.get(account.getId()).nativeCurrency();
-      if (ownCurrency.equals(portfolioCurrency)) {
-        own.put(account.getId(), inPortfolio.get(account.getId()));
-      } else if (ownCurrency.equals(workspaceCurrency)) {
-        own.put(account.getId(), inWorkspace.get(account.getId()));
-      } else {
-        others.computeIfAbsent(ownCurrency, key -> new ArrayList<>()).add(account);
-      }
-    }
-    for (Map.Entry<String, List<Account>> entry : others.entrySet()) {
-      own.putAll(
-          byAccount(accountValuationService.valueAll(entry.getValue(), entry.getKey(), asOf)));
-    }
-    return own;
   }
 
   private PortfolioAccountDetails details(

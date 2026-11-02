@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.NativeAccountValue;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
@@ -18,8 +19,10 @@ import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -162,8 +165,19 @@ public class AccountValuationService {
   @Transactional(readOnly = true)
   public List<AccountValuation> valueAll(
       Collection<Account> accounts, String targetCurrency, LocalDate asOf) {
-    Function<String, Optional<CurrencyConversionResult>> lookup = rateLookup(targetCurrency, asOf);
-    Map<String, Optional<CurrencyConversionResult>> resolved = new HashMap<>();
+    return valueAllIn(accounts, List.of(targetCurrency), asOf).in(targetCurrency);
+  }
+
+  /**
+   * US-04-06: {@link #valueAll} in several target currencies at once, plus each account's own
+   * currency. Each account's value (and its opening balance and warnings) is resolved once, then
+   * only converted per currency, each distinct rate looked up once - the same figures {@link
+   * #valueAll} gives per currency, without repeating the value lookups. Same no-access-check
+   * contract as {@link #valueIn}.
+   */
+  @Transactional(readOnly = true)
+  public MultiCurrencyValuations valueAllIn(
+      Collection<Account> accounts, Collection<String> targetCurrencies, LocalDate asOf) {
     List<UUID> eligible =
         accounts.stream()
             .filter(AccountValuationService::takesOpeningBalance)
@@ -183,17 +197,48 @@ public class AccountValuationService {
                 .collect(
                     Collectors.toMap(
                         Map.Entry::getKey, entry -> entry.getValue().getSnapshotDate())));
-    return accounts.stream()
-        .map(
-            account ->
-                valueIn(
+
+    // Per target currency, one rate per native currency, looked up on first use.
+    Map<String, Function<String, Optional<CurrencyConversionResult>>> rates = new LinkedHashMap<>();
+    Map<String, List<AccountValuation>> byCurrency = new LinkedHashMap<>();
+    for (String target : targetCurrencies) {
+      Function<String, Optional<CurrencyConversionResult>> lookup = rateLookup(target, asOf);
+      Map<String, Optional<CurrencyConversionResult>> resolved = new HashMap<>();
+      rates.put(target, nativeCurrency -> resolved.computeIfAbsent(nativeCurrency, lookup));
+      byCurrency.put(target, new ArrayList<>());
+    }
+    List<AccountValuation> inOwnCurrency = new ArrayList<>();
+
+    for (Account account : accounts) {
+      String ownCurrency = accountCurrencyService.ownCurrency(account);
+      Optional<NativeAccountValue> nativeValue =
+          resolveNativeAccountValue(
+              account, Optional.ofNullable(openingBalances.get(account.getId())), asOf);
+      List<String> accountWarnings = warnings.getOrDefault(account.getId(), List.of());
+      for (Map.Entry<String, Function<String, Optional<CurrencyConversionResult>>> rate :
+          rates.entrySet()) {
+        byCurrency
+            .get(rate.getKey())
+            .add(
+                inCurrency(
                     account,
-                    targetCurrency,
-                    asOf,
-                    nativeCurrency -> resolved.computeIfAbsent(nativeCurrency, lookup),
-                    Optional.ofNullable(openingBalances.get(account.getId())),
-                    warnings.getOrDefault(account.getId(), List.of())))
-        .toList();
+                    ownCurrency,
+                    rate.getKey(),
+                    nativeValue,
+                    rate.getValue(),
+                    accountWarnings));
+      }
+      // Its own currency needs no rate.
+      inOwnCurrency.add(
+          inCurrency(
+              account,
+              ownCurrency,
+              ownCurrency,
+              nativeValue,
+              nativeCurrency -> Optional.empty(),
+              accountWarnings));
+    }
+    return new MultiCurrencyValuations(byCurrency, inOwnCurrency);
   }
 
   // An account with a value source of its own takes no opening balance (OpeningBalanceService),
@@ -225,8 +270,24 @@ public class AccountValuationService {
     // AccountCurrencyService. Every other account type's own currency is simply its
     // nativeCurrency.
     String ownCurrency = accountCurrencyService.ownCurrency(account);
-    Optional<NativeAccountValue> nativeValue =
-        resolveNativeAccountValue(account, openingBalance, asOf);
+    return inCurrency(
+        account,
+        ownCurrency,
+        targetCurrency,
+        resolveNativeAccountValue(account, openingBalance, asOf),
+        rateForNativeCurrency,
+        warnings);
+  }
+
+  // An account's resolved value (or none) as a valuation in targetCurrency: unconverted in its own
+  // currency, otherwise at the rate rateForNativeCurrency gives, unknown without one.
+  private AccountValuation inCurrency(
+      Account account,
+      String ownCurrency,
+      String targetCurrency,
+      Optional<NativeAccountValue> nativeValue,
+      Function<String, Optional<CurrencyConversionResult>> rateForNativeCurrency,
+      List<String> warnings) {
     if (nativeValue.isEmpty()) {
       return unknown(account, ownCurrency, targetCurrency, warnings);
     }

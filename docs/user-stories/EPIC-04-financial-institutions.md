@@ -153,10 +153,13 @@ crypto) are each shown the way their contents need.
   portfolio is a follow-up story.
 - **Name:** a portfolio linked to a catalogue entry may still be named by the member ("VIAC 3a");
   the catalogue's name is the default.
-- **Portfolio type** (V112, `portfolio_type` + `portfolio_type_overridden`): descriptive only,
-  never restricts account types (FR-INS-008). Recomputed whenever an account is added, moved,
-  archived or restored, while the member has not set it; `portfolioType: null` in the update goes
-  back to the suggestion. Account type → section → type family:
+- **Portfolio type** (V112, `portfolio_type_override`): descriptive only, never restricts account
+  types (FR-INS-006/008). Only a type the member sets is stored; otherwise the type is suggested
+  from the active accounts each time the portfolio is read (`PortfolioType#of`), never stored.
+  An account write therefore never touches the portfolio row: it changes neither the portfolio's
+  version (an open rename still saves with its ETag) nor locks it. `portfolioType: null` in the
+  update clears the member's type. The API is unchanged: responses carry `portfolioType` and
+  `portfolioTypeOverridden`. Account type → section → type family:
 
   | Account | Section | Family |
   |---|---|---|

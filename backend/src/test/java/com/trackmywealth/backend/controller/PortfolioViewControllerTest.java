@@ -305,7 +305,7 @@ class PortfolioViewControllerTest {
   // --- Type follows the accounts --------------------------------------------------------------
 
   @Test
-  void movingArchivingAndRestoringAnAccountRefreshesTheTypesOfBothPortfolios() {
+  void movingArchivingAndRestoringAnAccountChangesTheTypesOfBothPortfolios() {
     String token = bootstrapAdministrator();
     PortfolioResponse bank = createPortfolio(token, "Bank", "CHF");
     PortfolioResponse broker = createPortfolio(token, "Broker", "CHF");
@@ -337,6 +337,56 @@ class PortfolioViewControllerTest {
 
     lifecycle(token, moved.id(), "restore", archived.version());
     assertThat(typeOf(token, broker.id())).isEqualTo(PortfolioType.PORTFOLIO);
+  }
+
+  // The suggested type is derived on read: an account write changes neither portfolio's row, so a
+  // member who opened the rename before it still saves with the ETag read then - no 412 for a
+  // change nobody made to the portfolio.
+  @Test
+  void accountWritesLeaveThePortfolioVersionSoAnOpenRenameStillSaves() {
+    String token = bootstrapAdministrator();
+    PortfolioResponse bank = createPortfolio(token, "Bank", "CHF");
+    PortfolioResponse broker = createPortfolio(token, "Broker", "CHF");
+    String bankEtag = getPortfolio(token, bank.id()).getResponseHeaders().getETag();
+    String brokerEtag = getPortfolio(token, broker.id()).getResponseHeaders().getETag();
+
+    AccountSummaryResponse depot =
+        createAccount(
+            token,
+            AccountRequests.account("Depot", "SECURITIES", "CHF").portfolioId(bank.id()).build());
+    AccountSummaryResponse moved =
+        client(token)
+            .post()
+            .uri("/api/v1/accounts/" + depot.id() + "/reassign-portfolio")
+            .header("If-Match", "\"" + depot.version() + "\"")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(new ReassignAccountPortfolioRequest(broker.id()))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(AccountSummaryResponse.class)
+            .returnResult()
+            .getResponseBody();
+    lifecycle(token, moved.id(), "archive", moved.version());
+
+    EntityExchangeResult<PortfolioResponse> brokerNow = getPortfolio(token, broker.id());
+    assertThat(brokerNow.getResponseHeaders().getETag()).isEqualTo(brokerEtag);
+    assertThat(getPortfolio(token, bank.id()).getResponseHeaders().getETag()).isEqualTo(bankEtag);
+    PortfolioResponse renamed =
+        client(token)
+            .put()
+            .uri("/api/v1/portfolios/" + broker.id())
+            .header("If-Match", brokerEtag)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(new UpdatePortfolioRequest("Broker AG", null, null, null))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(PortfolioResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(renamed.name()).isEqualTo("Broker AG");
+    assertThat(renamed.portfolioType()).isEqualTo(PortfolioType.BANK);
   }
 
   // --- Contract details ------------------------------------------------------------------------
@@ -801,8 +851,8 @@ class PortfolioViewControllerTest {
         cash.get();
         depot.get();
 
-        // Either refresh alone would have seen one account (BANK or PORTFOLIO): the lock makes
-        // the later one wait for the earlier one's commit and count both.
+        // Derived on read, after both committed: both accounts count, whatever order the two
+        // requests ran in. A stored type would need a lock for this.
         assertThat(typeOf(token, portfolio.id())).isEqualTo(PortfolioType.MIXED);
       }
     } finally {

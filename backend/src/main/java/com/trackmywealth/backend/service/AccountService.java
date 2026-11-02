@@ -4,7 +4,6 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
 import com.trackmywealth.backend.dto.PortfolioSection;
-import com.trackmywealth.backend.dto.PortfolioType;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.entity.Account;
@@ -34,7 +33,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
@@ -196,15 +194,12 @@ public class AccountService {
     Portfolio portfolio = resolvePortfolio(request.portfolioId(), actor);
 
     Account account = insertAccount(workspace, portfolio, request);
-    refreshPortfolioTypes(List.of(portfolio));
 
     return toSummary(account);
   }
 
   // The account of a validated request, with its capability defaults and extension row - shared
-  // by createAccount and createSavingsPocket. It does not refresh the portfolio's type: each caller
-  // does that as its last step, so the portfolio row is always locked after any account row
-  // (see refreshPortfolioTypes).
+  // by createAccount and createSavingsPocket.
   private Account insertAccount(
       Workspace workspace, Portfolio portfolio, CreateAccountRequest request) {
     Account account = new Account();
@@ -250,9 +245,6 @@ public class AccountService {
     Account pocket = insertAccount(parent.getWorkspace(), parent.getPortfolio(), request);
 
     accountRepository.linkSavingsPocket(parent.getId(), pocket.getId());
-    // Last, after the parent's row is locked by the link: archiving or moving the parent locks it
-    // before the portfolio too, so the two cannot deadlock.
-    refreshPortfolioTypes(List.of(parent.getPortfolio()));
     return pocket;
   }
 
@@ -330,7 +322,6 @@ public class AccountService {
     account.setContractIdentifierHash(null);
     account.setContractIdentifierMasked(null);
     account = accountRepository.saveAndFlush(account);
-    refreshPortfolioTypes(List.of(account.getPortfolio()));
 
     return toSummary(account);
   }
@@ -362,7 +353,6 @@ public class AccountService {
     account.setStatus(ACTIVE);
     account.setArchivedAt(null);
     account = accountRepository.saveAndFlush(account);
-    refreshPortfolioTypes(List.of(account.getPortfolio()));
 
     return toSummary(account);
   }
@@ -416,10 +406,8 @@ public class AccountService {
       throw accessControlService.denyAsNotFound(actor, "Portfolio", request.portfolioId());
     }
 
-    Portfolio source = account.getPortfolio();
     account.setPortfolio(destination);
     account = accountRepository.saveAndFlush(account);
-    refreshPortfolioTypes(List.of(source, destination));
 
     return toSummary(account);
   }
@@ -462,61 +450,6 @@ public class AccountService {
               account.getAccountType(), sectionOf(account, pillar3a, realEstate)));
     }
     return placements;
-  }
-
-  /**
-   * US-04-06/FR-INS-006: recomputes the suggested type of each of {@code portfolios} from its
-   * active accounts ({@link PortfolioType#suggestedFor}) and stores it unless the member has set
-   * one. Runs inside the caller's transaction, after an account was added, moved, archived or
-   * restored.
-   *
-   * <p>Each portfolio is locked first ({@link PortfolioRepository#lockForTypeRefresh}), so its
-   * accounts are read only once no other refresh of it is in flight: two members adding accounts to
-   * one portfolio at the same time both end up counted. Portfolios are locked in id order, so two
-   * moves in opposite directions cannot deadlock. A portfolio whose type the member has set is only
-   * locked, not recomputed. The workspace's Personal Assets default is skipped altogether: it is
-   * always {@code PERSONAL_ASSETS}, so neither the lock nor the recomputation can change anything.
-   *
-   * <p>Call it as the last write of the transaction, after every account row it touched: every
-   * caller then locks account rows before portfolio rows, the one order that cannot deadlock
-   * against another account write.
-   */
-  @Transactional
-  public void refreshPortfolioTypes(Collection<Portfolio> portfolios) {
-    Map<UUID, Portfolio> byId = new TreeMap<>();
-    for (Portfolio portfolio : portfolios) {
-      byId.put(portfolio.getId(), portfolio);
-    }
-    for (Portfolio portfolio : byId.values()) {
-      if (portfolio.isPersonalAssetsDefault()) {
-        continue;
-      }
-      boolean overridden = portfolioRepository.lockForTypeRefresh(portfolio.getId()).orElse(true);
-      if (overridden) {
-        // The member's type is kept as set: nothing to compute. Read under the lock, so a
-        // concurrent update clearing it has either committed (and is seen here) or computes the
-        // suggestion itself, under the same lock, after this transaction.
-        continue;
-      }
-      List<Account> active =
-          accountRepository.findByPortfolioIdAndStatusOrderByCreatedAtAsc(
-              portfolio.getId(), ACTIVE);
-      PortfolioType suggested = suggestedTypeOf(portfolio, active);
-      portfolioRepository.applySuggestedType(portfolio.getId(), suggested.name());
-    }
-  }
-
-  /**
-   * US-04-06: the type {@code portfolio} would be suggested with {@code activeAccounts} as its
-   * active accounts ({@link PortfolioType#suggestedFor}). Performs no access check.
-   */
-  @Transactional(readOnly = true)
-  public PortfolioType suggestedTypeOf(Portfolio portfolio, Collection<Account> activeAccounts) {
-    return PortfolioType.suggestedFor(
-        portfolio.isPersonalAssetsDefault(),
-        portfolioPlacementsOf(activeAccounts).values().stream()
-            .map(PortfolioPlacement::section)
-            .toList());
   }
 
   private static List<UUID> idsOfType(Collection<Account> accounts, String accountType) {

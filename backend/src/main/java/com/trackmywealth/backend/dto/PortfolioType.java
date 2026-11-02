@@ -7,11 +7,11 @@ import java.util.Set;
 /**
  * What a portfolio holds, for display only (US-04-06, FR-INS-006/008). It never restricts which
  * account types a portfolio may contain (RULE-020): a depot under a {@link #PILLAR_3A} portfolio is
- * as valid as any other combination. Stored in {@code portfolio.portfolio_type} (V112).
+ * as valid as any other combination. Only a type the member sets is stored, in {@code
+ * portfolio.portfolio_type_override} (V112).
  *
- * <p>Unless the member has set it ({@code portfolio_type_overridden}), it is the type {@link
- * #suggestedFor} returns for the portfolio's active accounts, recomputed whenever one is added,
- * moved, archived or restored.
+ * <p>Unless the member has set it ({@code portfolio_type_override}), it is the type {@link
+ * #suggestedFor} returns for the portfolio's active accounts at the time it is read ({@link #of}).
  */
 public enum PortfolioType {
   BANK,
@@ -29,6 +29,18 @@ public enum PortfolioType {
    */
   public static final String SELECTABLE_PATTERN =
       "BANK|PORTFOLIO|PILLAR_3A|PENSION_FUND|CRYPTO|MIXED";
+
+  /**
+   * A portfolio's type as shown (FR-INS-006): {@code override}, the type the member set, when there
+   * is one; otherwise the type {@link #suggestedFor} its active accounts. Derived on every read,
+   * never stored, so an account write never touches the portfolio's row or version.
+   */
+  public static PortfolioType of(
+      PortfolioType override,
+      boolean personalAssetsDefault,
+      Collection<PortfolioSection> sections) {
+    return override != null ? override : suggestedFor(personalAssetsDefault, sections);
+  }
 
   /**
    * The suggested type of a portfolio whose active accounts fall into {@code sections}, one entry

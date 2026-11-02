@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.db;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -20,10 +21,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * US-04-06 (#390): V111 renames {@code financial_institution} to {@code portfolio}, V112 adds the
- * suggested portfolio type and backfills it. Migrates to V110, seeds containers whose accounts
- * cover every type family under the old names, then runs the rest - the backfill is the one place
- * the suggestion rule exists in SQL, so it is checked against the same cases as {@code
- * PortfolioType#suggestedFor}.
+ * column for a portfolio type the member sets. Migrates to V110, seeds containers with accounts
+ * under the old names, then runs the rest. The suggested type is derived on read and never stored,
+ * so there is no backfill: the rule exists only in {@code PortfolioType#suggestedFor}, covered by
+ * {@code PortfolioViewControllerTest}.
  */
 @Testcontainers
 class PortfolioMigrationTest {
@@ -39,11 +40,6 @@ class PortfolioMigrationTest {
   private static UUID workspace;
   private static UUID pillar3a;
   private static UUID cashAndDepot;
-  private static UUID cashAndCard;
-  private static UUID empty;
-  private static UUID cryptoWithArchivedDepot;
-  private static UUID mortgageOnly;
-  private static UUID vestedBenefits;
 
   @BeforeAll
   static void migrateSeedAndRename() throws Exception {
@@ -64,27 +60,6 @@ class PortfolioMigrationTest {
     account(cashAndDepot, "CASH");
     account(cashAndDepot, "SECURITIES");
 
-    cashAndCard = container("UBS");
-    account(cashAndCard, "CASH");
-    account(cashAndCard, "CREDIT_CARD");
-
-    empty = container("Not used yet");
-
-    cryptoWithArchivedDepot = container("Yuh");
-    account(cryptoWithArchivedDepot, "CRYPTO");
-    UUID archived = account(cryptoWithArchivedDepot, "SECURITIES");
-    update("UPDATE account SET status = 'ARCHIVED', archived_at = now() WHERE id = ?", archived);
-
-    mortgageOnly = container("Hypothek");
-    account(mortgageOnly, "MORTGAGE");
-
-    vestedBenefits = container("Freizuegigkeit");
-    account(vestedBenefits, "VESTED_BENEFITS");
-    UUID otherPension = account(vestedBenefits, "PENSION");
-    update(
-        "INSERT INTO account_pension (account_id, pension_scheme) VALUES (?, 'DE_RIESTER')",
-        otherPension);
-
     flyway(null).migrate();
   }
 
@@ -103,29 +78,49 @@ class PortfolioMigrationTest {
   }
 
   @Test
-  void theBackfillSuggestsTheTypeFromTheActiveAccounts() throws Exception {
-    assertThat(typeOf(pillar3a)).isEqualTo("PILLAR_3A");
-    assertThat(typeOf(cashAndDepot)).isEqualTo("MIXED");
-    assertThat(typeOf(cashAndCard)).isEqualTo("BANK");
-    assertThat(typeOf(empty)).isEqualTo("BANK");
-    // The archived depot does not count.
-    assertThat(typeOf(cryptoWithArchivedDepot)).isEqualTo("CRYPTO");
-    // A mortgage belongs to no family.
-    assertThat(typeOf(mortgageOnly)).isEqualTo("MIXED");
-    // Vested benefits and every pension other than 3a are one family.
-    assertThat(typeOf(vestedBenefits)).isEqualTo("PENSION_FUND");
+  void existingPortfoliosHaveNoTypeSetSoTheirTypeIsSuggested() throws Exception {
     assertThat(
             queryString(
-                "SELECT portfolio_type FROM portfolio"
-                    + " WHERE workspace_id = ? AND is_personal_assets_default",
+                "SELECT count(*)::TEXT FROM portfolio"
+                    + " WHERE workspace_id = ? AND portfolio_type_override IS NOT NULL",
                 workspace))
-        .isEqualTo("PERSONAL_ASSETS");
-    assertThat(
+        .isEqualTo("0");
+  }
+
+  @Test
+  void onlyASelectableTypeCanBeSetAndNeverOnPersonalAssets() throws Exception {
+    // A workspace of its own, so the fixture's portfolios keep no type set for the other tests.
+    UUID own = queryUuid("INSERT INTO workspace (name) VALUES ('Types') RETURNING id");
+    UUID portfolio = portfolioIn(own);
+    update("UPDATE portfolio SET portfolio_type_override = 'PILLAR_3A' WHERE id = ?", portfolio);
+    assertThat(queryString("SELECT portfolio_type_override FROM portfolio WHERE id = ?", portfolio))
+        .isEqualTo("PILLAR_3A");
+
+    assertThatThrownBy(
+            () ->
+                update(
+                    "UPDATE portfolio SET portfolio_type_override = 'PERSONAL_ASSETS' WHERE id = ?",
+                    portfolio))
+        .isInstanceOf(SQLException.class)
+        .hasMessageContaining("portfolio_type_override");
+    assertThatThrownBy(
+            () ->
+                update(
+                    "UPDATE portfolio SET portfolio_type_override = 'SAVINGS' WHERE id = ?",
+                    portfolio))
+        .isInstanceOf(SQLException.class);
+    UUID personalAssets =
+        UUID.fromString(
             queryString(
-                "SELECT bool_or(portfolio_type_overridden)::TEXT FROM portfolio"
-                    + " WHERE workspace_id = ?",
-                workspace))
-        .isEqualTo("false");
+                "SELECT id::TEXT FROM portfolio WHERE workspace_id = ? AND is_personal_assets_default",
+                own));
+    assertThatThrownBy(
+            () ->
+                update(
+                    "UPDATE portfolio SET portfolio_type_override = 'BANK' WHERE id = ?",
+                    personalAssets))
+        .isInstanceOf(SQLException.class)
+        .hasMessageContaining("chk_portfolio_personal_assets_type_not_overridden");
   }
 
   @Test
@@ -145,15 +140,16 @@ class PortfolioMigrationTest {
   }
 
   @Test
-  void aNewWorkspaceGetsItsPersonalAssetsPortfolioWithItsType() throws Exception {
+  void aNewWorkspaceStillGetsItsPersonalAssetsPortfolio() throws Exception {
     UUID another = queryUuid("INSERT INTO workspace (name) VALUES ('After V112') RETURNING id");
 
     assertThat(
             queryString(
-                "SELECT name || ':' || portfolio_type FROM portfolio"
+                "SELECT name || ':' || portfolio_currency || ':'"
+                    + " || (portfolio_type_override IS NULL)::TEXT FROM portfolio"
                     + " WHERE workspace_id = ? AND is_personal_assets_default",
                 another))
-        .isEqualTo("Personal Assets:PERSONAL_ASSETS");
+        .isEqualTo("Personal Assets:CHF:true");
   }
 
   @Test
@@ -169,8 +165,15 @@ class PortfolioMigrationTest {
         .containsExactly("JPY");
   }
 
-  private static String typeOf(UUID portfolio) throws SQLException {
-    return queryString("SELECT portfolio_type FROM portfolio WHERE id = ?", portfolio);
+  // Under the current schema.
+  private static UUID portfolioIn(UUID workspaceId) throws SQLException {
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO portfolio (workspace_id, name, portfolio_currency)"
+                + " VALUES (?, 'Vorsorge', 'CHF') RETURNING id")) {
+      statement.setObject(1, workspaceId);
+      return single(statement);
+    }
   }
 
   // Under the V110 schema: the old table and column names.

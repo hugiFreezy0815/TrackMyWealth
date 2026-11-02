@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
+import com.trackmywealth.backend.dto.PortfolioPlacement;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse.AccountContribution;
@@ -111,9 +112,6 @@ public class PortfolioService {
     } else {
       applyCustomEntry(portfolio, request);
     }
-    // A new portfolio has no accounts yet: BANK, the type V112 suggests for an empty one.
-    portfolio.setPortfolioType(PortfolioType.suggestedFor(false, List.of()));
-
     // saveAndFlush: the response carries the version the row was stored with (@Generated).
     portfolio = portfolioRepository.saveAndFlush(portfolio);
     return toResponse(portfolio);
@@ -128,16 +126,11 @@ public class PortfolioService {
 
   /**
    * US-04-06: full replacement of the portfolio's name, country, logo and type ({@link
-   * UpdatePortfolioRequest}), under {@code If-Match} (ADR 0004). A type the member sets is kept as
-   * set (FR-INS-006); none goes back to the type suggested from the portfolio's active accounts.
-   * The Personal Assets default keeps {@code PERSONAL_ASSETS}: setting a type on it is a 409, and
-   * no other portfolio can be given that type ({@link PortfolioType#SELECTABLE_PATTERN}).
-   *
-   * <p>The row is locked before it is read, as {@link AccountService#refreshPortfolioTypes} locks
-   * it, so a suggested type computed here counts every account a concurrent request added. Only
-   * {@code requireActingMember} runs before the lock; RLS already confines the lock to the caller's
-   * own workspace, and the portfolio-level check follows before the version check (ADR 0004). A
-   * principal refused there holds the lock only until its transaction rolls back.
+   * UpdatePortfolioRequest}), under {@code If-Match} (ADR 0004). A type the member sets is stored
+   * and kept as set (FR-INS-006); none clears it, and the type is suggested from the portfolio's
+   * active accounts again ({@link #typeOf}). The Personal Assets default keeps {@code
+   * PERSONAL_ASSETS}: setting a type on it is a 409, and no other portfolio can be given that type
+   * ({@link PortfolioType#SELECTABLE_PATTERN}).
    */
   @Transactional
   public PortfolioResponse updatePortfolio(
@@ -146,9 +139,6 @@ public class PortfolioService {
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     accessControlService.requireActingMember(actor);
-    // RLS hides another workspace's portfolio, so nothing of it is locked; the lookup below then
-    // answers the same audited 404 as for an unknown id.
-    portfolioRepository.lockForTypeRefresh(portfolioId);
     Portfolio portfolio = portfolioLookupService.findPortfolioOrThrow(portfolioId, actor);
     accessControlService.requirePortfolioAccess(actor, portfolio);
     versionPreconditionService.requireCurrent(
@@ -165,15 +155,9 @@ public class PortfolioService {
     portfolio.setCountry(request.country());
     portfolio.setLogoUrl(request.logoUrl());
     if (request.portfolioType() == null) {
-      portfolio.setPortfolioTypeOverridden(false);
-      portfolio.setPortfolioType(
-          accountService.suggestedTypeOf(
-              portfolio,
-              accountRepository.findByPortfolioIdAndStatusOrderByCreatedAtAsc(
-                  portfolioId, ACTIVE)));
+      portfolio.setPortfolioTypeOverride(null);
     } else {
-      portfolio.setPortfolioTypeOverridden(true);
-      portfolio.setPortfolioType(PortfolioType.valueOf(request.portfolioType()));
+      portfolio.setPortfolioTypeOverride(PortfolioType.valueOf(request.portfolioType()));
     }
 
     // flush, not a plain save: the response's version is the one the row was stored with.
@@ -315,7 +299,26 @@ public class PortfolioService {
     portfolio.setPortfolioCurrency(request.portfolioCurrency());
   }
 
-  private static PortfolioResponse toResponse(Portfolio portfolio) {
+  /**
+   * US-04-06/FR-INS-006: the portfolio's type, by the rule of {@link PortfolioType#of} - the one
+   * the member set, else the one suggested from its active accounts' sections ({@link
+   * AccountService#portfolioPlacementsOf}). Reads the accounts only when there is no type set.
+   * Performs no access check.
+   */
+  private PortfolioType typeOf(Portfolio portfolio) {
+    if (portfolio.getPortfolioTypeOverride() != null) {
+      return portfolio.getPortfolioTypeOverride();
+    }
+    List<Account> active =
+        accountRepository.findByPortfolioIdAndStatusOrderByCreatedAtAsc(portfolio.getId(), ACTIVE);
+    return PortfolioType.suggestedFor(
+        portfolio.isPersonalAssetsDefault(),
+        accountService.portfolioPlacementsOf(active).values().stream()
+            .map(PortfolioPlacement::section)
+            .toList());
+  }
+
+  private PortfolioResponse toResponse(Portfolio portfolio) {
     return new PortfolioResponse(
         portfolio.getId(),
         portfolio.getCatalogueInstitution() != null
@@ -327,8 +330,8 @@ public class PortfolioService {
         portfolio.getIdentifier(),
         portfolio.getLogoUrl(),
         portfolio.getPortfolioCurrency(),
-        portfolio.getPortfolioType(),
-        portfolio.isPortfolioTypeOverridden(),
+        typeOf(portfolio),
+        portfolio.getPortfolioTypeOverride() != null,
         portfolio.isPersonalAssetsDefault(),
         portfolio.getStatus(),
         VersionPreconditionService.persistedVersion(portfolio.getVersion(), VERSIONED_RESOURCE));
