@@ -16,9 +16,10 @@ import java.util.UUID;
  * institution behind it, FR-INS-003), {@code name} and {@code portfolioCurrency} are both required
  * - there is no catalogue country to derive a currency default from.
  *
- * <p>{@code name} and {@code logoUrl} are bounded ({@link #MAX_NAME_LENGTH}, {@link
- * #MAX_LOGO_URL_LENGTH}): both columns are {@code TEXT}. A logo is an {@code https} URL the client
- * loads, never a script or an inline {@code data:} payload ({@link #LOGO_URL_PATTERN}).
+ * <p>{@code name}, {@code identifier} and {@code logoUrl} are bounded ({@link #MAX_NAME_LENGTH},
+ * {@link #MAX_IDENTIFIER_LENGTH}, {@link #MAX_LOGO_URL_LENGTH}): all three columns are {@code
+ * TEXT}. A logo is an {@code https} URL the client loads, never a script or an inline {@code data:}
+ * payload ({@link #LOGO_URL_PATTERN}).
  *
  * <p>Every optional {@code String} field is normalized blank-to-{@code null} in the compact
  * constructor via {@link RequestStrings#blankToNull} - see its Javadoc for why.
@@ -37,12 +38,15 @@ public record CreatePortfolioRequest(
                 "BANK|BROKER|PENSION_PROVIDER|PENSION_FUND|ASSET_MANAGER|CARD_ISSUER"
                     + "|CRYPTO_EXCHANGE|INSURER|PLATFORM|OTHER")
         String institutionType,
-    String identifier,
+    @Size(max = MAX_IDENTIFIER_LENGTH) String identifier,
     @Size(max = MAX_LOGO_URL_LENGTH) @Pattern(regexp = LOGO_URL_PATTERN) String logoUrl,
     @ValidCurrencyCode String portfolioCurrency) {
 
   /** The longest portfolio name a member may give, e.g. "PostFinance Vorsorge 3a". */
   public static final int MAX_NAME_LENGTH = 100;
+
+  /** The longest provider identifier accepted, e.g. a BIC or a clearing number. */
+  public static final int MAX_IDENTIFIER_LENGTH = 100;
 
   /** The longest logo URL accepted. */
   public static final int MAX_LOGO_URL_LENGTH = 2048;

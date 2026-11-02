@@ -35,6 +35,11 @@ public interface PortfolioRepository extends JpaRepository<Portfolio, UUID> {
    * US-04-06: stores {@code type} as the portfolio's suggested type unless the member has set one
    * or it already has it - so an unchanged type does not bump the portfolio's version. Call it
    * under {@link #lockForTypeRefresh}.
+   *
+   * <p>A native update: a {@code Portfolio} already loaded in the same transaction keeps its old
+   * {@code portfolioType} and {@code version}. The persistence context is deliberately not cleared
+   * (that would detach the caller's other entities); re-read the portfolio before relying on either
+   * after this call, and never save that stale instance.
    */
   @Modifying(flushAutomatically = true)
   @Query(

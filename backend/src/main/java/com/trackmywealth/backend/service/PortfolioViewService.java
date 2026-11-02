@@ -132,7 +132,7 @@ public class PortfolioViewService {
               signedSum(sectionInPortfolio),
               signedSum(sectionInWorkspace),
               allKnown(sectionInPortfolio) && allKnown(sectionInWorkspace),
-              worstStatus(sectionInPortfolio),
+              worstStatus(sectionInPortfolio, sectionInWorkspace),
               rows));
     }
 
@@ -154,7 +154,7 @@ public class PortfolioViewService {
         signedSum(allInPortfolio),
         signedSum(allInWorkspace),
         allKnown(allInPortfolio) && allKnown(allInWorkspace),
-        worstStatus(allInPortfolio),
+        worstStatus(allInPortfolio, allInWorkspace),
         List.copyOf(warnings),
         sections);
   }
@@ -301,7 +301,14 @@ public class PortfolioViewService {
     return valuations.stream().allMatch(AccountValuation::valueKnown);
   }
 
-  private static ValueStatus worstStatus(List<AccountValuation> valuations) {
-    return ValueStatus.worstOf(valuations.stream().map(ValueStatus::of).toList());
+  // The worst status across both totals, so it agrees with `complete`: an account whose value is
+  // known in the portfolio currency but not in the workspace's (no rate) is left out of the
+  // workspace total, and the status must say so too.
+  private static ValueStatus worstStatus(
+      List<AccountValuation> inPortfolio, List<AccountValuation> inWorkspace) {
+    List<ValueStatus> statuses = new ArrayList<>();
+    inPortfolio.forEach(valuation -> statuses.add(ValueStatus.of(valuation)));
+    inWorkspace.forEach(valuation -> statuses.add(ValueStatus.of(valuation)));
+    return ValueStatus.worstOf(statuses);
   }
 }

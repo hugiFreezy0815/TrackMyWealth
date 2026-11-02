@@ -9,6 +9,7 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.UpdatePortfolioRequest;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.sql.Connection;
@@ -141,16 +142,31 @@ class AdministratorFinancialAccessTest {
         client(memberToken).get().uri(path).exchange().expectStatus().isOk();
       }
     }
-    UUID institution = membersAccount.portfolioId();
+    UUID portfolio = membersAccount.portfolioId();
     for (String path :
         List.of(
             "/api/v1/net-worth",
             "/api/v1/cash-flow?month=2026-09",
             "/api/v1/categories",
-            "/api/v1/portfolios/" + institution + "/summary")) {
+            "/api/v1/portfolios/" + portfolio,
+            "/api/v1/portfolios/" + portfolio + "/summary",
+            "/api/v1/portfolios/" + portfolio + "/view")) {
       client(adminToken).get().uri(path).exchange().expectStatus().isNotFound();
       client(memberToken).get().uri(path).exchange().expectStatus().isOk();
     }
+    client(adminToken)
+        .put()
+        .uri("/api/v1/portfolios/" + portfolio)
+        .header(
+            "If-Match",
+            "\"" + query("SELECT version FROM portfolio WHERE id = ?", portfolio) + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new UpdatePortfolioRequest("Taken over", null, null, null))
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    assertThat((Long) query("SELECT count(*) FROM portfolio WHERE name = ?", "Taken over"))
+        .isZero();
     client(adminToken)
         .post()
         .uri("/api/v1/accounts")

@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
+import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSection;
 import com.trackmywealth.backend.dto.PortfolioType;
@@ -484,6 +485,95 @@ class PortfolioViewControllerTest {
     assertThat(view.totalInWorkspaceCurrency()).isEqualByComparingTo("1120");
   }
 
+  // FR-CON-008: the portfolio tabs and the workspace tab show the same money. Every portfolio's
+  // total in the workspace currency - the empty Personal Assets one included - adds up to net
+  // worth.
+  @Test
+  void thePortfolioTotalsInTheWorkspaceCurrencyAddUpToNetWorth() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse postFinance = createPortfolio(token, "PostFinance", "CHF");
+    PortfolioResponse dkb = createPortfolio(token, "DKB", "EUR");
+    UUID cash = createAccount(token, cash("Privatkonto", postFinance.id())).id();
+    UUID giro =
+        createAccount(
+                token, AccountRequests.account("Giro", "CASH", "EUR").portfolioId(dkb.id()).build())
+            .id();
+    createAccount(
+        token,
+        AccountRequests.account("Kredit", "LOAN", "CHF")
+            .portfolioId(dkb.id())
+            .originalPrincipal(new BigDecimal("10000"))
+            .build());
+    seedSnapshot(cash, today().minusDays(3), "5000.0000", true);
+    seedSnapshot(giro, today().minusDays(3), "1000.0000", true);
+    seedFxRate("EUR", "CHF", "0.9500000000");
+    UUID personalAssets =
+        UUID.fromString(
+            queryString(
+                "SELECT id::TEXT FROM portfolio WHERE is_personal_assets_default"
+                    + " AND workspace_id = (SELECT workspace_id FROM portfolio WHERE id = ?)",
+                postFinance.id()));
+
+    BigDecimal sumOfPortfolios =
+        Stream.of(personalAssets, postFinance.id(), dkb.id())
+            .map(id -> getView(token, id).totalInWorkspaceCurrency())
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    NetWorthResponse netWorth =
+        client(token)
+            .get()
+            .uri("/api/v1/net-worth")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(NetWorthResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(netWorth.complete()).isTrue();
+    assertThat(sumOfPortfolios)
+        .isEqualByComparingTo(netWorth.netWorth())
+        .isEqualByComparingTo("-4050");
+  }
+
+  // A value without an FX rate into one of the two total currencies is left out of that total; the
+  // value status says so as `complete` does, and a row still shows its balance in its own currency.
+  @Test
+  void aMissingRateMarksTheTotalItIsLeftOutOfAndKeepsTheOwnBalance() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse dkb = createPortfolio(token, "DKB", "EUR");
+    UUID giro =
+        createAccount(
+                token, AccountRequests.account("Giro", "CASH", "EUR").portfolioId(dkb.id()).build())
+            .id();
+    PortfolioResponse postFinance = createPortfolio(token, "PostFinance", "CHF");
+    UUID dollar =
+        createAccount(
+                token,
+                AccountRequests.account("USD", "CASH", "USD").portfolioId(postFinance.id()).build())
+            .id();
+    seedSnapshot(giro, today().minusDays(3), "1000.0000", true);
+    seedSnapshot(dollar, today().minusDays(3), "200.0000", true);
+    // No rate at all: EUR has none into the workspace's CHF, USD none into the portfolio's CHF.
+
+    PortfolioViewResponse euroView = getView(token, dkb.id());
+    AccountRow giroRow = euroView.sections().get(0).accounts().get(0);
+    assertThat(giroRow.valueKnown()).isTrue();
+    assertThat(giroRow.valueStatus()).isNotEqualTo(ValueStatus.UNKNOWN);
+    assertThat(euroView.total()).isEqualByComparingTo("1000");
+    assertThat(euroView.totalInWorkspaceCurrency()).isEqualByComparingTo("0");
+    assertThat(euroView.complete()).isFalse();
+    assertThat(euroView.valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+    assertThat(euroView.sections().get(0).complete()).isFalse();
+    assertThat(euroView.sections().get(0).valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+
+    AccountRow dollarRow = getView(token, postFinance.id()).sections().get(0).accounts().get(0);
+    assertThat(dollarRow.valueKnown()).isFalse();
+    assertThat(dollarRow.valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+    assertThat(dollarRow.valueInPortfolioCurrency()).isNull();
+    assertThat(dollarRow.currency()).isEqualTo("USD");
+    assertThat(dollarRow.balance()).isEqualByComparingTo("200");
+  }
+
   @Test
   void depotAndCardRowsCarryTheirOwnDetails() throws Exception {
     String token = bootstrapAdministrator();
@@ -569,13 +659,21 @@ class PortfolioViewControllerTest {
   }
 
   @Test
-  void aPortfolioNameAndLogoAreBoundedAndTheLogoIsAnHttpsUrl() {
+  void aPortfolioNameIdentifierAndLogoAreBoundedAndTheLogoIsAnHttpsUrl() {
     String token = bootstrapAdministrator();
     String tooLong = "x".repeat(CreatePortfolioRequest.MAX_NAME_LENGTH + 1);
 
     for (CreatePortfolioRequest refused :
         List.of(
             new CreatePortfolioRequest(null, tooLong, null, null, null, null, "CHF"),
+            new CreatePortfolioRequest(
+                null,
+                "Yuh",
+                null,
+                null,
+                "x".repeat(CreatePortfolioRequest.MAX_IDENTIFIER_LENGTH + 1),
+                null,
+                "CHF"),
             new CreatePortfolioRequest(null, "Yuh", null, null, null, "javascript:alert(1)", "CHF"),
             new CreatePortfolioRequest(
                 null, "Yuh", null, null, null, "data:image/png;base64,AAAA", "CHF"),

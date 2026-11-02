@@ -21,7 +21,8 @@ import java.util.UUID;
  * @param portfolioCurrency the currency of {@code total} and of each section's {@code subtotal}
  * @param workspaceCurrency the workspace's currency (US-06-05), the one net worth is shown in
  * @param asOf the business date every value is taken on
- * @param valueStatus the worst {@link ValueStatus} of the portfolio's accounts
+ * @param valueStatus the worst {@link ValueStatus} of the portfolio's accounts, in either total's
+ *     currency - like {@code complete}, it covers both totals
  * @param warnings every data-quality warning one of the accounts carries, each once and sorted
  * @param sections only the sections holding at least one active account, in {@link
  *     PortfolioSection} order
@@ -53,7 +54,8 @@ public record PortfolioViewResponse(
    *
    * @param subtotal the signed sum of the section's known values, in the portfolio's currency; the
    *     subtotals add up to the portfolio's {@code total}
-   * @param valueStatus the worst {@link ValueStatus} of the section's accounts
+   * @param valueStatus the worst {@link ValueStatus} of the section's accounts, in either total's
+   *     currency - like {@code complete}, it covers both subtotals
    * @param accounts the section's active accounts, oldest first
    */
   public record Section(
@@ -74,10 +76,14 @@ public record PortfolioViewResponse(
    * {@code null} for every other.
    *
    * @param currency the account's own currency: its native currency, or a card's billing currency
-   * @param balance the account's signed value in {@code currency}; {@code null} when {@code
-   *     valueKnown} is {@code false}
+   * @param balance the account's signed value in {@code currency}; {@code null} only when it has no
+   *     value even in its own currency. It may be set while {@code valueKnown} is {@code false}: an
+   *     account whose value has no FX rate into the portfolio's currency still shows its own
+   *     balance
    * @param valueInPortfolioCurrency the same value in the portfolio's currency; {@code null} when
    *     {@code valueKnown} is {@code false}
+   * @param valueKnown whether the account has a value in the portfolio's currency, i.e. counts
+   *     towards the section's {@code subtotal}; {@code valueStatus} describes that same value
    * @param valueSourceDate the date of the snapshot or valuation the value rests on, {@code null}
    *     when it is derived from the ledger or the loan terms ({@link AccountValuation})
    * @param positionsCount for an account holding positions: the number of positions in its newest
