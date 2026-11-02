@@ -102,6 +102,8 @@ base). Requirement IDs below refer to the consolidated v5 specification unless n
 | `V108` | `transaction.amount_in_account_currency`, generated: `amount * coalesce(fx_rate_to_account_currency, 1)` rounded to 4 places as `NUMERIC(30,4)` (wide enough for any amount times any rate), the value a list sorts by when it sorts by `amount` (US-29-03, #373) |
 | `V109` | US-03-07: `workspace.name` becomes nullable; existing names are trimmed (blank → NULL) and `chk_workspace_name_not_blank` refuses a blank one. The service normalizes blank names to NULL; a missing name displays as All portfolios. Name and currency changes are audited by the service in `financial_audit_log` (already defined in V17). |
 | `V110` | Membership is the only access grant (US-03-06, #389): `account_ownership` and `sharing_grant` dropped, `workspace_member.is_dependent` dropped; every member has exactly one login (unique `app_user.workspace_member_id`, deferred constraint triggers `workspace_member_requires_login` on a new member and `app_user_keeps_member_login` on an unlink that leaves the member in place); stops with a message on a database holding a member without a login or with two |
+| `V111` | US-04-06 (#390): `financial_institution` renamed to `portfolio`, `container_currency` to `portfolio_currency`, `account.financial_institution_id` to `account.portfolio_id`; constraint, index and trigger names follow; `trg_workspace_create_personal_assets_container` and the currency-in-use trigger (V54) rewritten for the new names. RLS policies, grants and foreign keys carry over unchanged |
+| `V112` | US-04-06 (#390): `portfolio.portfolio_type` (`BANK`, `PORTFOLIO`, `PILLAR_3A`, `PENSION_FUND`, `CRYPTO`, `PERSONAL_ASSETS`, `MIXED`; default `BANK`) and `portfolio_type_overridden`. Descriptive only (FR-INS-008); the application recomputes the suggested type from the active accounts (`AccountService#refreshPortfolioTypes`) unless the member set one. Backfilled for existing portfolios with the same rule; the Personal Assets default is created as `PERSONAL_ASSETS` |
 
 All twenty of the original migrations have been applied end-to-end against a real PostgreSQL 16
 instance as part of this design (including a positive/negative row-level-security test as a
@@ -828,8 +830,8 @@ the default only serves direct SQL inserts such as test fixtures. The per-user
 `reporting_currency` remains a personal client preference and is not used by the server as the
 workspace-total default.
 
-Container-level figures default independently to
-`financial_institution.container_currency`, while an account balance defaults to the account's
+Portfolio-level figures default independently to
+`portfolio.portfolio_currency` (V3's `financial_institution.container_currency`, renamed by V111), while an account balance defaults to the account's
 own native (or credit-card billing) currency. Read endpoints may request another ISO 4217
 `currency` for presentation; this never rewrites the underlying account, transaction or
 valuation data.

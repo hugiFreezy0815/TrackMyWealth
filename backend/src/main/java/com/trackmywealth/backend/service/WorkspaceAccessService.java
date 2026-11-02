@@ -9,8 +9,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Shared guard for every workspace-scoped write service (first extracted from {@code
- * InstitutionService} and {@code AccountService}, which had each independently reimplemented the
- * same check). {@code actorWorkspaceId} is {@code null} for a {@code SYSTEM_ADMINISTRATOR} with no
+ * PortfolioService} and {@code AccountService}, which had each independently reimplemented the same
+ * check). {@code actorWorkspaceId} is {@code null} for a {@code SYSTEM_ADMINISTRATOR} with no
  * linked {@code workspace_member} - a normal state (see {@code AuthenticatedUserPrincipal}'s
  * Javadoc) that such a caller nonetheless cannot create workspace-scoped data in. Centralizing this
  * keeps the rejection wording and reasoning from drifting as more workspace-scoped write services

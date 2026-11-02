@@ -39,7 +39,7 @@ public record NetWorthResponse(
     List<AccountValuation> accounts) {
 
   public NetWorthResponse {
-    // Defensive/immutable copy (SpotBugs EI_EXPOSE_REP), same as InstitutionSummaryResponse.
+    // Defensive/immutable copy (SpotBugs EI_EXPOSE_REP), same as PortfolioSummaryResponse.
     warnings = List.copyOf(warnings);
     accounts = List.copyOf(accounts);
   }

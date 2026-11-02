@@ -6,11 +6,11 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Response for {@code GET /api/v1/institutions/{institutionId}/summary} (US-04-03).
+ * Response for {@code GET /api/v1/portfolios/{institutionId}/summary} (US-04-03).
  *
- * @param containerCurrency the institution's own container currency, whatever the summary is shown
+ * @param portfolioCurrency the institution's own container currency, whatever the summary is shown
  *     in
- * @param currency the currency every figure below is in: {@code containerCurrency} by default, or
+ * @param currency the currency every figure below is in: {@code portfolioCurrency} by default, or
  *     the caller's ad hoc {@code currency} (US-06-05)
  * @param netValue {@code totalAssets - totalLiabilities} - may be negative (FR-INS-SUM-001), never
  *     suppressed or clamped to zero
@@ -24,9 +24,9 @@ import java.util.UUID;
  *     - present even when {@code valueKnown} is {@code false}, so a caller can see which accounts
  *     are excluded from the totals, not just that the totals might be incomplete
  */
-public record InstitutionSummaryResponse(
+public record PortfolioSummaryResponse(
     UUID institutionId,
-    String containerCurrency,
+    String portfolioCurrency,
     String currency,
     BigDecimal totalAssets,
     BigDecimal totalLiabilities,
@@ -35,8 +35,8 @@ public record InstitutionSummaryResponse(
     List<String> warnings,
     List<AccountContribution> accounts) {
 
-  public InstitutionSummaryResponse {
-    // Defensive/immutable copy - InstitutionService builds this from its own freshly-created
+  public PortfolioSummaryResponse {
+    // Defensive/immutable copy - PortfolioService builds this from its own freshly-created
     // ArrayList, but a record must never expose a caller-mutable reference to its own field
     // regardless of who happens to hold the only other reference today (SpotBugs EI_EXPOSE_REP).
     warnings = List.copyOf(warnings);

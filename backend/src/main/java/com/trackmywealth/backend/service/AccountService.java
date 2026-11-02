@@ -2,7 +2,10 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
-import com.trackmywealth.backend.dto.ReassignAccountInstitutionRequest;
+import com.trackmywealth.backend.dto.PortfolioPlacement;
+import com.trackmywealth.backend.dto.PortfolioSection;
+import com.trackmywealth.backend.dto.PortfolioType;
+import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
@@ -12,7 +15,7 @@ import com.trackmywealth.backend.entity.AccountMortgage;
 import com.trackmywealth.backend.entity.AccountPension;
 import com.trackmywealth.backend.entity.AccountSecurities;
 import com.trackmywealth.backend.entity.AccountVestedBenefits;
-import com.trackmywealth.backend.entity.FinancialInstitution;
+import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.AccountCustomAssetRepository;
@@ -22,19 +25,25 @@ import com.trackmywealth.backend.repository.AccountPensionRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.AccountSecuritiesRepository;
 import com.trackmywealth.backend.repository.AccountVestedBenefitsRepository;
-import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
+import com.trackmywealth.backend.repository.PortfolioRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-05-01: create an account of any supported type under a container, applying the correct {@code
+ * US-05-01: create an account of any supported type in a portfolio, applying the correct {@code
  * account_type}-driven capability defaults and (where the type has one) the matching extension
  * table row - both in the same transaction.
  *
@@ -47,7 +56,7 @@ import org.springframework.web.server.ResponseStatusException;
  * allocation, net worth, navigation) must branch only on the capability flags this method computes,
  * never on {@code accountType} again (DM-17, US-05-04).
  *
- * <p>Like {@code InstitutionService}, relies on RLS for workspace isolation and on {@code
+ * <p>Like {@code PortfolioService}, relies on RLS for workspace isolation and on {@code
  * JwtAuthenticationFilter} having already refused to authenticate a request whose linked {@code
  * workspace_member} exists but isn't {@code ACTIVE} - no local "active member" check is needed here
  * either.
@@ -55,8 +64,8 @@ import org.springframework.web.server.ResponseStatusException;
  * <p>US-03-06: an account belongs to its workspace, not to a member - every active member of the
  * workspace can see and change it (FR-HOU-007), and creating one records no owner.
  *
- * <p>US-04-04: {@link #reassignInstitution} moves an account between institution containers - see
- * its own Javadoc.
+ * <p>US-04-04: {@link #reassignPortfolio} moves an account between portfolios - see its own
+ * Javadoc.
  */
 @Service
 public class AccountService {
@@ -68,13 +77,16 @@ public class AccountService {
   private static final String PENSION = "PENSION";
   private static final String CUSTOM_ASSET = "CUSTOM_ASSET";
   private static final String SAVINGS = "SAVINGS";
+  private static final String SECURITIES = "SECURITIES";
+  private static final String MANAGED_MANDATE = "MANAGED_MANDATE";
+  private static final String VESTED_BENEFITS = "VESTED_BENEFITS";
   // US-07-22: what the bank calls the pocket; the member may rename it.
   private static final String SAVINGS_POCKET_NAME_SUFFIX = " \u2013 Sparkonto";
   private static final String ACTIVE = "ACTIVE";
   // US-10-01: the types whose accounts count as saving by default (the type -> capability mapping
   // lives in this service, like every other capability default).
   private static final Set<String> SAVING_ACCOUNT_TYPES =
-      Set.of("SAVINGS", "SECURITIES", "MANAGED_MANDATE", "CRYPTO", PENSION, "VESTED_BENEFITS");
+      Set.of("SAVINGS", SECURITIES, MANAGED_MANDATE, "CRYPTO", PENSION, VESTED_BENEFITS);
   private static final String ARCHIVED = "ARCHIVED";
   private static final String DELETED = "DELETED";
   // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
@@ -90,12 +102,38 @@ public class AccountService {
   private static final Set<String> OCCUPATIONAL_PENSION_SCHEMES =
       Set.of("CH_PILLAR_2_VESTED_BENEFITS", "DE_BAV");
 
+  // US-04-06: the Portfolio View section of every account type that needs nothing else to decide
+  // it (PO decision on #390, 2026-11-02). PENSION and CUSTOM_ASSET depend on their extension row,
+  // see sectionOf.
+  private static final Map<String, PortfolioSection> SECTION_BY_ACCOUNT_TYPE =
+      Map.of(
+          "CASH",
+          PortfolioSection.CASH_AND_SAVINGS,
+          SAVINGS,
+          PortfolioSection.CASH_AND_SAVINGS,
+          SECURITIES,
+          PortfolioSection.DEPOT,
+          MANAGED_MANDATE,
+          PortfolioSection.DEPOT,
+          "CRYPTO",
+          PortfolioSection.CRYPTO,
+          "CREDIT_CARD",
+          PortfolioSection.CARDS,
+          VESTED_BENEFITS,
+          PortfolioSection.PENSION,
+          MORTGAGE,
+          PortfolioSection.PROPERTY_AND_MORTGAGE,
+          LOAN,
+          PortfolioSection.OTHER);
+  private static final String PILLAR_3A_SCHEME = "CH_PILLAR_3A";
+  private static final String REAL_ESTATE = "REAL_ESTATE";
+
   private final WorkspaceAccessService workspaceAccessService;
   private final AccessControlService accessControlService;
   private final AccountLookupService accountLookupService;
   private final VersionPreconditionService versionPreconditionService;
-  private final InstitutionLookupService institutionLookupService;
-  private final FinancialInstitutionRepository financialInstitutionRepository;
+  private final PortfolioLookupService portfolioLookupService;
+  private final PortfolioRepository portfolioRepository;
   private final AccountRepository accountRepository;
   private final AccountSecuritiesRepository accountSecuritiesRepository;
   private final AccountCreditCardRepository accountCreditCardRepository;
@@ -112,8 +150,8 @@ public class AccountService {
       AccessControlService accessControlService,
       AccountLookupService accountLookupService,
       VersionPreconditionService versionPreconditionService,
-      InstitutionLookupService institutionLookupService,
-      FinancialInstitutionRepository financialInstitutionRepository,
+      PortfolioLookupService portfolioLookupService,
+      PortfolioRepository portfolioRepository,
       AccountRepository accountRepository,
       AccountSecuritiesRepository accountSecuritiesRepository,
       AccountCreditCardRepository accountCreditCardRepository,
@@ -128,8 +166,8 @@ public class AccountService {
     this.accessControlService = accessControlService;
     this.accountLookupService = accountLookupService;
     this.versionPreconditionService = versionPreconditionService;
-    this.institutionLookupService = institutionLookupService;
-    this.financialInstitutionRepository = financialInstitutionRepository;
+    this.portfolioLookupService = portfolioLookupService;
+    this.portfolioRepository = portfolioRepository;
     this.accountRepository = accountRepository;
     this.accountSecuritiesRepository = accountSecuritiesRepository;
     this.accountCreditCardRepository = accountCreditCardRepository;
@@ -145,9 +183,9 @@ public class AccountService {
   @Transactional
   public AccountSummaryResponse createAccount(
       CreateAccountRequest request, AuthenticatedUserPrincipal actor) {
-    // Validated first, before any DB write (or the institution lookup below) - none of these
+    // Validated first, before any DB write (or the portfolio lookup below) - none of these
     // checks need anything from either, so a request that's going to be rejected fails fast
-    // instead of paying for an institution SELECT and an account INSERT+refresh it will never
+    // instead of paying for a portfolio SELECT and an account INSERT+refresh it will never
     // keep.
     validateExtensionFields(request);
     // Only an active member creates accounts: a principal without a membership is refused here
@@ -155,9 +193,9 @@ public class AccountService {
     accessControlService.requireActingMember(actor);
     Workspace workspace =
         workspaceAccessService.requireWorkspace(actor.workspaceId(), "an account");
-    FinancialInstitution institution = resolveInstitution(request.financialInstitutionId(), actor);
+    Portfolio portfolio = resolvePortfolio(request.portfolioId(), actor);
 
-    Account account = insertAccount(workspace, institution, request);
+    Account account = insertAccount(workspace, portfolio, request);
 
     return toSummary(account);
   }
@@ -165,10 +203,10 @@ public class AccountService {
   // The account of a validated request, with its capability defaults and extension row - shared
   // by createAccount and createSavingsPocket.
   private Account insertAccount(
-      Workspace workspace, FinancialInstitution institution, CreateAccountRequest request) {
+      Workspace workspace, Portfolio portfolio, CreateAccountRequest request) {
     Account account = new Account();
     account.setWorkspace(workspace);
-    account.setFinancialInstitution(institution);
+    account.setPortfolio(portfolio);
     account.setName(request.name());
     account.setAccountType(request.accountType());
     account.setNativeCurrency(request.nativeCurrency());
@@ -180,12 +218,14 @@ public class AccountService {
     // support issue its post-insert refresh SELECT.
     account = accountRepository.saveAndFlush(account);
     createExtensionRowIfNeeded(account, request);
+    // After the extension row: a pension's section depends on its scheme.
+    refreshPortfolioTypes(List.of(portfolio));
     return account;
   }
 
   /**
    * US-07-22 (#325): creates the savings pocket of {@code parent} - a {@code SAVINGS} account in
-   * {@code currency} at the same institution, named after it - and links it as the parent's pocket.
+   * {@code currency} in the same portfolio, named after it - and links it as the parent's pocket.
    * The import commit that first books a pocket move calls this, in its own transaction, under the
    * parent's import lock, so a parent never gains two pockets. The link is written on its own, not
    * by saving {@code parent}: the entity was loaded before the import lock and may be stale.
@@ -194,7 +234,7 @@ public class AccountService {
   public Account createSavingsPocket(Account parent, String currency) {
     CreateAccountRequest request =
         new CreateAccountRequest(
-            parent.getFinancialInstitution().getId(),
+            parent.getPortfolio().getId(),
             parent.getName() + SAVINGS_POCKET_NAME_SUFFIX,
             SAVINGS,
             currency,
@@ -206,8 +246,7 @@ public class AccountService {
             null,
             null);
     validateExtensionFields(request);
-    Account pocket =
-        insertAccount(parent.getWorkspace(), parent.getFinancialInstitution(), request);
+    Account pocket = insertAccount(parent.getWorkspace(), parent.getPortfolio(), request);
 
     accountRepository.linkSavingsPocket(parent.getId(), pocket.getId());
     return pocket;
@@ -221,7 +260,7 @@ public class AccountService {
   }
 
   // US-05-02: full-replacement update over the account's ordinary mutable attributes (see
-  // UpdateAccountRequest's own Javadoc for exactly which fields, and why financialInstitutionId/
+  // UpdateAccountRequest's own Javadoc for exactly which fields, and why portfolioId/
   // status/the capability flags are deliberately excluded - each has its own story). accountType
   // and nativeCurrency are written unconditionally too, same as every other field here: when the
   // caller's value matches what's already persisted this is a no-op UPDATE, and when it doesn't,
@@ -287,6 +326,7 @@ public class AccountService {
     account.setContractIdentifierHash(null);
     account.setContractIdentifierMasked(null);
     account = accountRepository.saveAndFlush(account);
+    refreshPortfolioTypes(List.of(account.getPortfolio()));
 
     return toSummary(account);
   }
@@ -318,20 +358,21 @@ public class AccountService {
     account.setStatus(ACTIVE);
     account.setArchivedAt(null);
     account = accountRepository.saveAndFlush(account);
+    refreshPortfolioTypes(List.of(account.getPortfolio()));
 
     return toSummary(account);
   }
 
-  // US-04-04/FR-INS-009/C2: moves the account to a different container - the FK update is the
+  // US-04-04/FR-INS-009/C2: moves the account to a different portfolio - the FK update is the
   // entire change. Nothing else about the account is touched, and nothing links
-  // transactions/positions/snapshots to an institution rather than to the account itself, so they
-  // stay attached to account.id with no separate migration step; InstitutionService.getSummary is
-  // computed live from current account state on every read, so both institutions' summaries are
+  // transactions/positions/snapshots to a portfolio rather than to the account itself, so they
+  // stay attached to account.id with no separate migration step; PortfolioService.getSummary is
+  // computed live from current account state on every read, so both portfolios' summaries are
   // correct "on the next read" purely as a consequence of this update - no cache to invalidate.
   //
-  // Checked on both the account and the destination institution (the story's own
+  // Checked on both the account and the destination portfolio (the story's own
   // "Authorization/privacy" line - reassignment is as sensitive as editing either side of it).
-  // Cross-workspace reassignment is already excluded by RLS alone (resolveInstitution's own
+  // Cross-workspace reassignment is already excluded by RLS alone (resolvePortfolio's own
   // comment: a cross-workspace id simply isn't found) since both lookups run under the same
   // request's app.current_workspace_id - but the story's error/edge-case text asks for this
   // explicitly as a named service-layer check, not just implicit isolation, so it's asserted here
@@ -342,16 +383,16 @@ public class AccountService {
   // there (the same principle archiveAccount's own status check documents) - so a DELETED account
   // is rejected here, the one status this method doesn't otherwise care about. ACTIVE and ARCHIVED
   // are both allowed: unlike archive/restore, this isn't a lifecycle transition, so an archived
-  // account's mismodelled institution is still worth fixing.
+  // account's mismodelled portfolio is still worth fixing.
   //
   // Currently the only account write with this guard (updateAccount and valuations don't
   // check) - deliberately not centralised yet, since nothing can produce a DELETED account
   // until account soft-delete exists; enforcing it across every write in one shared place is
   // tracked under EPIC 31 in docs/user-stories/BACKLOG-remaining-epics.md.
   @Transactional
-  public AccountSummaryResponse reassignInstitution(
+  public AccountSummaryResponse reassignPortfolio(
       UUID accountId,
-      ReassignAccountInstitutionRequest request,
+      ReassignAccountPortfolioRequest request,
       Integer expectedVersion,
       AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
@@ -360,47 +401,149 @@ public class AccountService {
         expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
     if (DELETED.equals(account.getStatus())) {
       throw new ResponseStatusException(
-          HttpStatus.CONFLICT,
-          "A deleted account cannot be reassigned to a different institution.");
+          HttpStatus.CONFLICT, "A deleted account cannot be moved to a different portfolio.");
     }
 
-    FinancialInstitution destination =
-        institutionLookupService.findInstitutionOrThrow(request.financialInstitutionId(), actor);
-    accessControlService.requireInstitutionAccess(actor, destination);
+    Portfolio destination =
+        portfolioLookupService.findPortfolioOrThrow(request.portfolioId(), actor);
+    accessControlService.requirePortfolioAccess(actor, destination);
 
     if (!account.getWorkspace().getId().equals(destination.getWorkspace().getId())) {
-      throw accessControlService.denyAsNotFound(
-          actor, "FinancialInstitution", request.financialInstitutionId());
+      throw accessControlService.denyAsNotFound(actor, "Portfolio", request.portfolioId());
     }
 
-    account.setFinancialInstitution(destination);
+    Portfolio source = account.getPortfolio();
+    account.setPortfolio(destination);
     account = accountRepository.saveAndFlush(account);
+    refreshPortfolioTypes(List.of(source, destination));
 
     return toSummary(account);
+  }
+
+  /**
+   * US-04-06/FR-INS-013: the Portfolio View placement of each of {@code accounts}, by account id:
+   * its type, for the client to label it, and its section. A Pillar 3a is a {@code PENSION} account
+   * with scheme {@code CH_PILLAR_3A}, property a {@code CUSTOM_ASSET} of type {@code REAL_ESTATE};
+   * every other type has a fixed section. This is the one place outside the capability flags that
+   * reads {@code account_type} (US-05-04), so the view and the suggested portfolio type never
+   * branch on it themselves.
+   *
+   * <p>Two queries at most, however many accounts: the pension and custom-asset extension rows of
+   * the accounts that need one. Performs no access check - pass only accounts the caller may see.
+   */
+  @Transactional(readOnly = true)
+  public Map<UUID, PortfolioPlacement> portfolioPlacementsOf(Collection<Account> accounts) {
+    List<UUID> pensionIds = idsOfType(accounts, PENSION);
+    List<UUID> customAssetIds = idsOfType(accounts, CUSTOM_ASSET);
+    Set<UUID> pillar3a =
+        pensionIds.isEmpty()
+            ? Set.of()
+            : accountPensionRepository.findAllById(pensionIds).stream()
+                .filter(pension -> PILLAR_3A_SCHEME.equals(pension.getPensionScheme()))
+                .map(AccountPension::getAccountId)
+                .collect(Collectors.toUnmodifiableSet());
+    Set<UUID> realEstate =
+        customAssetIds.isEmpty()
+            ? Set.of()
+            : accountCustomAssetRepository.findAllById(customAssetIds).stream()
+                .filter(asset -> REAL_ESTATE.equals(asset.getCustomAssetType()))
+                .map(AccountCustomAsset::getAccountId)
+                .collect(Collectors.toUnmodifiableSet());
+
+    Map<UUID, PortfolioPlacement> placements = new HashMap<>();
+    for (Account account : accounts) {
+      placements.put(
+          account.getId(),
+          new PortfolioPlacement(
+              account.getAccountType(), sectionOf(account, pillar3a, realEstate)));
+    }
+    return placements;
+  }
+
+  /**
+   * US-04-06/FR-INS-006: recomputes the suggested type of each of {@code portfolios} from its
+   * active accounts ({@link PortfolioType#suggestedFor}) and stores it unless the member has set
+   * one. Runs inside the caller's transaction, after an account was added, moved, archived or
+   * restored.
+   *
+   * <p>Each portfolio is locked first ({@link PortfolioRepository#lockForTypeRefresh}), so its
+   * accounts are read only once no other refresh of it is in flight: two members adding accounts to
+   * one portfolio at the same time both end up counted. Portfolios are locked in id order, so two
+   * moves in opposite directions cannot deadlock.
+   */
+  @Transactional
+  public void refreshPortfolioTypes(Collection<Portfolio> portfolios) {
+    Map<UUID, Portfolio> byId = new TreeMap<>();
+    for (Portfolio portfolio : portfolios) {
+      byId.put(portfolio.getId(), portfolio);
+    }
+    for (Portfolio portfolio : byId.values()) {
+      portfolioRepository.lockForTypeRefresh(portfolio.getId());
+      List<Account> active =
+          accountRepository.findByPortfolioIdAndStatusOrderByCreatedAtAsc(
+              portfolio.getId(), ACTIVE);
+      PortfolioType suggested = suggestedTypeOf(portfolio, active);
+      portfolioRepository.applySuggestedType(portfolio.getId(), suggested.name());
+    }
+  }
+
+  /**
+   * US-04-06: the type {@code portfolio} would be suggested with {@code activeAccounts} as its
+   * active accounts ({@link PortfolioType#suggestedFor}). Performs no access check.
+   */
+  @Transactional(readOnly = true)
+  public PortfolioType suggestedTypeOf(Portfolio portfolio, Collection<Account> activeAccounts) {
+    return PortfolioType.suggestedFor(
+        portfolio.isPersonalAssetsDefault(),
+        portfolioPlacementsOf(activeAccounts).values().stream()
+            .map(PortfolioPlacement::section)
+            .toList());
+  }
+
+  private static List<UUID> idsOfType(Collection<Account> accounts, String accountType) {
+    return accounts.stream()
+        .filter(account -> accountType.equals(account.getAccountType()))
+        .map(Account::getId)
+        .toList();
+  }
+
+  private static PortfolioSection sectionOf(
+      Account account, Set<UUID> pillar3a, Set<UUID> realEstate) {
+    String accountType = account.getAccountType();
+    if (PENSION.equals(accountType)) {
+      return pillar3a.contains(account.getId())
+          ? PortfolioSection.PILLAR_3A
+          : PortfolioSection.PENSION;
+    }
+    if (CUSTOM_ASSET.equals(accountType)) {
+      return realEstate.contains(account.getId())
+          ? PortfolioSection.PROPERTY_AND_MORTGAGE
+          : PortfolioSection.OTHER;
+    }
+    return SECTION_BY_ACCOUNT_TYPE.getOrDefault(accountType, PortfolioSection.OTHER);
   }
 
   private OffsetDateTime now() {
     return OffsetDateTime.now(ZoneOffset.UTC);
   }
 
-  // C2/FR-INS-011: every account has exactly one container; when the caller hasn't chosen one,
-  // fall back to the workspace's own default Personal Assets container (guaranteed to exist by
+  // C2/FR-INS-011: every account has exactly one portfolio; when the caller hasn't chosen one,
+  // fall back to the workspace's own default Personal Assets portfolio (guaranteed to exist by
   // V19's workspace_create_personal_assets_container trigger). When an id IS supplied, RLS's
   // tenant_isolation_read policy already confines the SELECT to the caller's own workspace - a
   // cross-workspace id simply isn't found, degrading safely to 404 rather than needing a
-  // separate equality check (same reasoning as AdminUserService/InstitutionService) - delegated to
-  // InstitutionLookupService, shared with reassignInstitution.
-  private FinancialInstitution resolveInstitution(
-      UUID financialInstitutionId, AuthenticatedUserPrincipal actor) {
-    if (financialInstitutionId != null) {
-      return institutionLookupService.findInstitutionOrThrow(financialInstitutionId, actor);
+  // separate equality check (same reasoning as AdminUserService/PortfolioService) - delegated to
+  // PortfolioLookupService, shared with reassignPortfolio.
+  private Portfolio resolvePortfolio(UUID portfolioId, AuthenticatedUserPrincipal actor) {
+    if (portfolioId != null) {
+      return portfolioLookupService.findPortfolioOrThrow(portfolioId, actor);
     }
-    return financialInstitutionRepository
+    return portfolioRepository
         .findByWorkspaceIdAndPersonalAssetsDefaultTrue(actor.workspaceId())
         .orElseThrow(
             () ->
                 new ResponseStatusException(
-                    HttpStatus.CONFLICT, "Workspace has no Personal Assets container."));
+                    HttpStatus.CONFLICT, "Workspace has no Personal Assets portfolio."));
   }
 
   // Extension-table-required fields that have no type-wide default (see CreateAccountRequest's
@@ -445,11 +588,11 @@ public class AccountService {
         holdsPositions = false;
         hasTransactions = true;
       }
-      case "SECURITIES" -> {
+      case SECURITIES -> {
         holdsPositions = true;
         hasTransactions = true;
       }
-      case "MANAGED_MANDATE" -> {
+      case MANAGED_MANDATE -> {
         holdsPositions = true;
         hasTransactions = true;
         discretionary = true;
@@ -459,7 +602,7 @@ public class AccountService {
         hasTransactions = true;
         hasContributionLimit = true;
       }
-      case "VESTED_BENEFITS" -> {
+      case VESTED_BENEFITS -> {
         holdsPositions = false;
         hasTransactions = false;
       }
@@ -514,7 +657,7 @@ public class AccountService {
   // persisted - none are repeated here.
   private void createExtensionRowIfNeeded(Account account, CreateAccountRequest request) {
     switch (account.getAccountType()) {
-      case "SECURITIES", "MANAGED_MANDATE" -> {
+      case SECURITIES, MANAGED_MANDATE -> {
         AccountSecurities extension = new AccountSecurities();
         extension.setAccount(account);
         accountSecuritiesRepository.save(extension);
@@ -551,7 +694,7 @@ public class AccountService {
         extension.setOccupational(OCCUPATIONAL_PENSION_SCHEMES.contains(request.pensionScheme()));
         accountPensionRepository.save(extension);
       }
-      case "VESTED_BENEFITS" -> {
+      case VESTED_BENEFITS -> {
         AccountVestedBenefits extension = new AccountVestedBenefits();
         extension.setAccount(account);
         accountVestedBenefitsRepository.save(extension);
@@ -578,7 +721,7 @@ public class AccountService {
   private AccountSummaryResponse toSummary(Account account) {
     return new AccountSummaryResponse(
         account.getId(),
-        account.getFinancialInstitution().getId(),
+        account.getPortfolio().getId(),
         account.getName(),
         account.getAccountType(),
         account.getNativeCurrency(),

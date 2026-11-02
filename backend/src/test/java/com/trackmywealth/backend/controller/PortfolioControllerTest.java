@@ -6,20 +6,20 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
-import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
+import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
-import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.InstitutionCatalogueEntrySummaryResponse;
-import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
+import com.trackmywealth.backend.dto.PortfolioResponse;
+import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.entity.FxRate;
-import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
 import com.trackmywealth.backend.repository.FxRateRepository;
+import com.trackmywealth.backend.repository.PortfolioRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -53,14 +53,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>US-04-03's DoD scenario ({@link #summaryAggregatesAssetsAndLiabilitiesIntoANegativeNetValue})
  * substitutes a {@code CUSTOM_ASSET} for the story's own "current account" example and a {@code
  * MORTGAGE} for its liability, since neither cash-account balances (EPIC 07) nor amortized loan
- * balances (EPIC 10) exist in this codebase yet - see {@code InstitutionService.getSummary}'s own
+ * balances (EPIC 10) exist in this codebase yet - see {@code PortfolioService.getSummary}'s own
  * Javadoc. The numbers (EUR 2,000 asset, EUR 300,000 liability, EUR -298,000 net) are the story's
  * own, so this is still the literal scenario, just backed by the two account types that actually
  * have a real value source today.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class InstitutionControllerTest {
+class PortfolioControllerTest {
 
   @Container
   static PostgreSQLContainer<?> postgres =
@@ -81,7 +81,7 @@ class InstitutionControllerTest {
 
   @LocalServerPort int port;
 
-  @Autowired FinancialInstitutionRepository financialInstitutionRepository;
+  @Autowired PortfolioRepository portfolioRepository;
   @Autowired FxRateRepository fxRateRepository;
   @Autowired DataSource dataSource;
 
@@ -111,7 +111,7 @@ class InstitutionControllerTest {
               "authorization_denial_log",
               "app_user",
               "workspace_member",
-              "financial_institution",
+              "portfolio",
               "workspace")) {
         statement.execute("DELETE FROM " + table);
       }
@@ -147,19 +147,34 @@ class InstitutionControllerTest {
     String token = bootstrapAdministrator();
     var postFinance = searchCatalogue(token, "Post").content().get(0);
 
-    FinancialInstitutionSummaryResponse created =
-        createInstitution(
+    PortfolioResponse created =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
-                postFinance.id(), null, null, null, null, null, null));
+            new CreatePortfolioRequest(postFinance.id(), null, null, null, null, null, null));
 
     assertThat(created.catalogueInstitutionId()).isEqualTo(postFinance.id());
     assertThat(created.name()).isEqualTo("PostFinance");
     assertThat(created.country()).isEqualTo("CH");
     // FR-INS-004: CH's default per the country->currency map (US-04-01), not user-supplied.
-    assertThat(created.containerCurrency()).isEqualTo("CHF");
+    assertThat(created.portfolioCurrency()).isEqualTo("CHF");
     assertThat(created.personalAssetsDefault()).isFalse();
     assertThat(created.status()).isEqualTo("ACTIVE");
+  }
+
+  @Test
+  void aPortfolioLinkedToACatalogueEntryKeepsTheNameTheMemberGaveIt() {
+    // US-04-06/FR-INS-001: portfolios are named by the member, e.g. "VIAC 3a"; the institution
+    // behind it still comes from the catalogue.
+    String token = bootstrapAdministrator();
+    var viac = searchCatalogue(token, "VIAC").content().get(0);
+
+    PortfolioResponse created =
+        createPortfolio(
+            token, new CreatePortfolioRequest(viac.id(), "VIAC 3a", null, null, null, null, null));
+
+    assertThat(created.name()).isEqualTo("VIAC 3a");
+    assertThat(created.catalogueInstitutionId()).isEqualTo(viac.id());
+    assertThat(created.logoUrl()).isEqualTo(viac.logoUrl());
   }
 
   @Test
@@ -167,40 +182,38 @@ class InstitutionControllerTest {
     String token = bootstrapAdministrator();
     var postFinance = searchCatalogue(token, "Post").content().get(0);
 
-    FinancialInstitutionSummaryResponse created =
-        createInstitution(
+    PortfolioResponse created =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
-                postFinance.id(), null, null, null, null, null, "USD"));
+            new CreatePortfolioRequest(postFinance.id(), null, null, null, null, null, "USD"));
 
-    assertThat(created.containerCurrency()).isEqualTo("USD");
+    assertThat(created.portfolioCurrency()).isEqualTo("USD");
   }
 
   @Test
   void creatingACustomInstitutionWithNoCatalogueLinkSucceeds() {
     String token = bootstrapAdministrator();
 
-    FinancialInstitutionSummaryResponse created =
-        createInstitution(
+    PortfolioResponse created =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
+            new CreatePortfolioRequest(
                 null, "My Local Credit Union", "US", "BANK", null, null, "USD"));
 
     assertThat(created.catalogueInstitutionId()).isNull();
     assertThat(created.name()).isEqualTo("My Local Credit Union");
     assertThat(created.institutionType()).isEqualTo("BANK");
-    assertThat(created.containerCurrency()).isEqualTo("USD");
+    assertThat(created.portfolioCurrency()).isEqualTo("USD");
   }
 
   @Test
   void customInstitutionDefaultsInstitutionTypeToOtherWhenNotChosen() {
     String token = bootstrapAdministrator();
 
-    FinancialInstitutionSummaryResponse created =
-        createInstitution(
+    PortfolioResponse created =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
-                null, "Unlabelled Provider", null, null, null, null, "CHF"));
+            new CreatePortfolioRequest(null, "Unlabelled Provider", null, null, null, null, "CHF"));
 
     assertThat(created.institutionType()).isEqualTo("OTHER");
   }
@@ -211,9 +224,9 @@ class InstitutionControllerTest {
 
     client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateFinancialInstitutionRequest(null, null, null, null, null, null, "CHF"))
+        .body(new CreatePortfolioRequest(null, null, null, null, null, null, "CHF"))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.BAD_REQUEST);
@@ -225,11 +238,9 @@ class InstitutionControllerTest {
 
     client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateFinancialInstitutionRequest(
-                null, "No Currency Bank", null, null, null, null, null))
+        .body(new CreatePortfolioRequest(null, "No Currency Bank", null, null, null, null, null))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.BAD_REQUEST);
@@ -241,16 +252,14 @@ class InstitutionControllerTest {
 
     client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateFinancialInstitutionRequest(
-                null, "Bad Currency Bank", null, null, null, null, "ZZZ"))
+        .body(new CreatePortfolioRequest(null, "Bad Currency Bank", null, null, null, null, "ZZZ"))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.BAD_REQUEST);
 
-    assertThat(financialInstitutionRepository.findAll())
+    assertThat(portfolioRepository.findAll())
         .noneMatch(institution -> "Bad Currency Bank".equals(institution.getName()));
   }
 
@@ -262,10 +271,10 @@ class InstitutionControllerTest {
 
     client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateFinancialInstitutionRequest(
+            new CreatePortfolioRequest(
                 null, "Sneaky Personal Assets", null, "PERSONAL_ASSETS", null, null, "CHF"))
         .exchange()
         .expectStatus()
@@ -278,10 +287,10 @@ class InstitutionControllerTest {
 
     client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateFinancialInstitutionRequest(
+            new CreatePortfolioRequest(
                 java.util.UUID.randomUUID(), null, null, null, null, null, null))
         .exchange()
         .expectStatus()
@@ -292,13 +301,11 @@ class InstitutionControllerTest {
   void summaryOfAnInstitutionWithNoAccountsIsValidAndAllZero() {
     // C7: a container with zero accounts must show a valid, empty summary, not an error.
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institution =
-        createInstitution(
-            token,
-            new CreateFinancialInstitutionRequest(
-                null, "Empty Bank", null, null, null, null, "CHF"));
+    PortfolioResponse institution =
+        createPortfolio(
+            token, new CreatePortfolioRequest(null, "Empty Bank", null, null, null, null, "CHF"));
 
-    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+    PortfolioSummaryResponse summary = getSummary(token, institution.id());
 
     assertThat(summary.totalAssets()).isEqualByComparingTo("0");
     assertThat(summary.totalLiabilities()).isEqualByComparingTo("0");
@@ -312,16 +319,14 @@ class InstitutionControllerTest {
     // The story's own DoD scenario, exact numbers - see this class's own Javadoc for why a
     // CUSTOM_ASSET and a MORTGAGE stand in for its "current account" and "mortgage" examples.
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institution =
-        createInstitution(
-            token,
-            new CreateFinancialInstitutionRequest(
-                null, "Sparkasse", "DE", "BANK", null, null, "EUR"));
+    PortfolioResponse institution =
+        createPortfolio(
+            token, new CreatePortfolioRequest(null, "Sparkasse", "DE", "BANK", null, null, "EUR"));
     AccountSummaryResponse asset =
         createAccount(
             token,
             AccountRequests.account("Family Home", "CUSTOM_ASSET", "EUR")
-                .financialInstitutionId(institution.id())
+                .portfolioId(institution.id())
                 .customAssetType("REAL_ESTATE")
                 .build());
     recordValuation(
@@ -329,12 +334,12 @@ class InstitutionControllerTest {
     createAccount(
         token,
         AccountRequests.account("Home Mortgage", "MORTGAGE", "EUR")
-            .financialInstitutionId(institution.id())
+            .portfolioId(institution.id())
             .originalPrincipal(new BigDecimal("300000"))
             .interestRatePercent(new BigDecimal("1.5"))
             .build());
 
-    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+    PortfolioSummaryResponse summary = getSummary(token, institution.id());
 
     assertThat(summary.totalAssets()).isEqualByComparingTo("2000");
     assertThat(summary.totalLiabilities()).isEqualByComparingTo("300000");
@@ -347,16 +352,14 @@ class InstitutionControllerTest {
   void foreignCurrencyAccountsConvertUsingTheDirectPairAndExposeTheRateUsed() {
     // AC #2: FR-INS-SUM-004/FR-CUR-011 - the rate/date used must be inspectable.
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institution =
-        createInstitution(
-            token,
-            new CreateFinancialInstitutionRequest(
-                null, "US Broker", null, null, null, null, "CHF"));
+    PortfolioResponse institution =
+        createPortfolio(
+            token, new CreatePortfolioRequest(null, "US Broker", null, null, null, null, "CHF"));
     AccountSummaryResponse account =
         createAccount(
             token,
             AccountRequests.account("US Property", "CUSTOM_ASSET", "USD")
-                .financialInstitutionId(institution.id())
+                .portfolioId(institution.id())
                 .customAssetType("REAL_ESTATE")
                 .build());
     recordValuation(
@@ -365,10 +368,10 @@ class InstitutionControllerTest {
         new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
     seedFxRate("USD", "CHF", today(), "0.9000000000");
 
-    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+    PortfolioSummaryResponse summary = getSummary(token, institution.id());
 
     assertThat(summary.totalAssets()).isEqualByComparingTo("900.0000");
-    InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
+    PortfolioSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
     assertThat(contribution.value()).isEqualByComparingTo("900.0000");
     assertThat(contribution.conversionRate()).isEqualByComparingTo("0.9000000000");
     assertThat(contribution.conversionRateDate()).isEqualTo(today());
@@ -382,16 +385,14 @@ class InstitutionControllerTest {
     // carry-forward, but the summary must say so, not present the resulting figure identically to
     // one backed by an exact same-day rate.
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institution =
-        createInstitution(
-            token,
-            new CreateFinancialInstitutionRequest(
-                null, "US Broker", null, null, null, null, "CHF"));
+    PortfolioResponse institution =
+        createPortfolio(
+            token, new CreatePortfolioRequest(null, "US Broker", null, null, null, null, "CHF"));
     AccountSummaryResponse account =
         createAccount(
             token,
             AccountRequests.account("US Property", "CUSTOM_ASSET", "USD")
-                .financialInstitutionId(institution.id())
+                .portfolioId(institution.id())
                 .customAssetType("REAL_ESTATE")
                 .build());
     recordValuation(
@@ -400,9 +401,9 @@ class InstitutionControllerTest {
         new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
     seedFxRate("USD", "CHF", today().minusWeeks(1), "0.9000000000");
 
-    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+    PortfolioSummaryResponse summary = getSummary(token, institution.id());
 
-    InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
+    PortfolioSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
     assertThat(contribution.value()).isEqualByComparingTo("900.0000");
     assertThat(contribution.conversionRateCarriedForward()).isTrue();
   }
@@ -410,27 +411,25 @@ class InstitutionControllerTest {
   @Test
   void accountsWithNoValueSourceAreExcludedFromTotalsAndMarkTheSummaryIncomplete() {
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institution =
-        createInstitution(
-            token,
-            new CreateFinancialInstitutionRequest(
-                null, "Mixed Bank", null, null, null, null, "CHF"));
+    PortfolioResponse institution =
+        createPortfolio(
+            token, new CreatePortfolioRequest(null, "Mixed Bank", null, null, null, null, "CHF"));
     createAccount(
         token,
         AccountRequests.account("Everyday Checking", "CASH", "CHF")
-            .financialInstitutionId(institution.id())
+            .portfolioId(institution.id())
             .build());
     AccountSummaryResponse asset =
         createAccount(
             token,
             AccountRequests.account("Watch Collection", "CUSTOM_ASSET", "CHF")
-                .financialInstitutionId(institution.id())
+                .portfolioId(institution.id())
                 .customAssetType("COLLECTIBLE")
                 .build());
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("5000")));
 
-    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+    PortfolioSummaryResponse summary = getSummary(token, institution.id());
 
     assertThat(summary.complete()).isFalse();
     assertThat(summary.totalAssets()).isEqualByComparingTo("5000");
@@ -447,16 +446,15 @@ class InstitutionControllerTest {
   @Test
   void archivedAccountsAreExcludedFromTheSummaryEntirely() {
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institution =
-        createInstitution(
+    PortfolioResponse institution =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
-                null, "Archiving Bank", null, null, null, null, "CHF"));
+            new CreatePortfolioRequest(null, "Archiving Bank", null, null, null, null, "CHF"));
     AccountSummaryResponse asset =
         createAccount(
             token,
             AccountRequests.account("Old Watch", "CUSTOM_ASSET", "CHF")
-                .financialInstitutionId(institution.id())
+                .portfolioId(institution.id())
                 .customAssetType("COLLECTIBLE")
                 .build());
     recordValuation(
@@ -467,7 +465,7 @@ class InstitutionControllerTest {
         .header("If-Match", "\"" + asset.version() + "\"")
         .exchange();
 
-    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+    PortfolioSummaryResponse summary = getSummary(token, institution.id());
 
     assertThat(summary.accounts()).isEmpty();
     assertThat(summary.totalAssets()).isEqualByComparingTo("0");
@@ -480,30 +478,30 @@ class InstitutionControllerTest {
     // or chained rate exists at all (not merely stale), and getSummary() is itself @Transactional
     // - catching that 404 does not stop Spring marking the shared transaction rollback-only, so
     // this request must never reach a try/catch around getConversionRate() in the first place
-    // (InstitutionService now calls tryGetConversionRate() instead). Before the fix this 500'd
+    // (PortfolioService now calls tryGetConversionRate() instead). Before the fix this 500'd
     // with UnexpectedRollbackException instead of returning the degraded contribution below.
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institution =
-        createInstitution(
+    PortfolioResponse institution =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
+            new CreatePortfolioRequest(
                 null, "Foreign Currency Bank", "DE", "BANK", null, null, "CHF"));
     AccountSummaryResponse asset =
         createAccount(
             token,
             AccountRequests.account("Foreign Collectible", "CUSTOM_ASSET", "USD")
-                .financialInstitutionId(institution.id())
+                .portfolioId(institution.id())
                 .customAssetType("COLLECTIBLE")
                 .build());
     recordValuation(
         token, asset.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("1000")));
     // Deliberately no seedFxRate call - USD/CHF has no rate at all, not even a stale one.
 
-    InstitutionSummaryResponse summary = getSummary(token, institution.id());
+    PortfolioSummaryResponse summary = getSummary(token, institution.id());
 
     assertThat(summary.complete()).isFalse();
     assertThat(summary.totalAssets()).isEqualByComparingTo("0");
-    InstitutionSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
+    PortfolioSummaryResponse.AccountContribution contribution = summary.accounts().get(0);
     assertThat(contribution.valueKnown()).isFalse();
     assertThat(contribution.value()).isNull();
   }
@@ -514,7 +512,7 @@ class InstitutionControllerTest {
 
     client(token)
         .get()
-        .uri("/api/v1/institutions/" + UUID.randomUUID() + "/summary")
+        .uri("/api/v1/portfolios/" + UUID.randomUUID() + "/summary")
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
@@ -525,17 +523,16 @@ class InstitutionControllerTest {
     // Proves AccessControlService is wired in on membership alone (US-03-06): a second member of
     // the workspace sees the first one's institution at once.
     String adminToken = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institution =
-        createInstitution(
+    PortfolioResponse institution =
+        createPortfolio(
             adminToken,
-            new CreateFinancialInstitutionRequest(
-                null, "Admin's Bank", null, null, null, null, "CHF"));
+            new CreatePortfolioRequest(null, "Admin's Bank", null, null, null, null, "CHF"));
     createSecondMember(adminToken, "partner@example.com");
     String partnerToken = login("partner@example.com", SECOND_MEMBER_PASSWORD);
 
     client(partnerToken)
         .get()
-        .uri("/api/v1/institutions/" + institution.id() + "/summary")
+        .uri("/api/v1/portfolios/" + institution.id() + "/summary")
         .exchange()
         .expectStatus()
         .isOk();
@@ -577,10 +574,10 @@ class InstitutionControllerTest {
 
     client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            new CreateFinancialInstitutionRequest(
+            new CreatePortfolioRequest(
                 null, "Should Not Be Created", null, null, null, null, "CHF"))
         .exchange()
         .expectStatus()
@@ -594,13 +591,13 @@ class InstitutionControllerTest {
     String token = bootstrapAdministrator();
     var postFinance = searchCatalogue(token, "Post").content().get(0);
 
-    FinancialInstitutionSummaryResponse created =
-        createInstitution(
-            token, new CreateFinancialInstitutionRequest(postFinance.id(), "", "", "", "", "", ""));
+    PortfolioResponse created =
+        createPortfolio(
+            token, new CreatePortfolioRequest(postFinance.id(), "", "", "", "", "", ""));
 
     assertThat(created.name()).isEqualTo("PostFinance");
-    // containerCurrency="" normalizes to null too, so the country-derived default still applies.
-    assertThat(created.containerCurrency()).isEqualTo("CHF");
+    // portfolioCurrency="" normalizes to null too, so the country-derived default still applies.
+    assertThat(created.portfolioCurrency()).isEqualTo("CHF");
   }
 
   @Test
@@ -609,16 +606,14 @@ class InstitutionControllerTest {
 
     client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateFinancialInstitutionRequest(
-                null, "Bad Country Bank", "USA", null, null, null, "CHF"))
+        .body(new CreatePortfolioRequest(null, "Bad Country Bank", "USA", null, null, null, "CHF"))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.BAD_REQUEST);
 
-    assertThat(financialInstitutionRepository.findAll())
+    assertThat(portfolioRepository.findAll())
         .noneMatch(institution -> "Bad Country Bank".equals(institution.getName()));
   }
 
@@ -641,14 +636,14 @@ class InstitutionControllerTest {
         .getResponseBody();
   }
 
-  private InstitutionSummaryResponse getSummary(String token, UUID institutionId) {
+  private PortfolioSummaryResponse getSummary(String token, UUID institutionId) {
     return client(token)
         .get()
-        .uri("/api/v1/institutions/" + institutionId + "/summary")
+        .uri("/api/v1/portfolios/" + institutionId + "/summary")
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(InstitutionSummaryResponse.class)
+        .expectBody(PortfolioSummaryResponse.class)
         .returnResult()
         .getResponseBody();
   }
@@ -728,17 +723,16 @@ class InstitutionControllerTest {
         .accessToken();
   }
 
-  private FinancialInstitutionSummaryResponse createInstitution(
-      String token, CreateFinancialInstitutionRequest request) {
+  private PortfolioResponse createPortfolio(String token, CreatePortfolioRequest request) {
     return client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
         .body(request)
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
-        .expectBody(FinancialInstitutionSummaryResponse.class)
+        .expectBody(PortfolioResponse.class)
         .returnResult()
         .getResponseBody();
   }

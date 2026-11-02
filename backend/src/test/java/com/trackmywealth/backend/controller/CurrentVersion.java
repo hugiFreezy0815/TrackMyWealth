@@ -31,6 +31,7 @@ final class CurrentVersion {
           "fx_import_setting",
           "import_template",
           "import_batch",
+          "portfolio",
           "reconciliation_result",
           "settlement_match",
           "transaction",

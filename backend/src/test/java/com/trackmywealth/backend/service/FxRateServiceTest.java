@@ -36,7 +36,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * fetch job.
  *
  * <p>US-06-02's Definition of Done: {@link
- * #directPairIsUsedEvenWhenChainingThroughTheContainerCurrencyWouldGiveADifferentAnswer} is the
+ * #directPairIsUsedEvenWhenChainingThroughThePortfolioCurrencyWouldGiveADifferentAnswer} is the
  * three-currency (USD account, EUR container, CHF user) scenario the story's own DoD names,
  * re-scoped to the primitive level per the standing project decision to defer real institution
  * summary/consolidated reporting integration to EPIC-18/19 (neither exists yet): it proves {@link
@@ -259,7 +259,7 @@ class FxRateServiceTest {
   }
 
   @Test
-  void directPairIsUsedEvenWhenChainingThroughTheContainerCurrencyWouldGiveADifferentAnswer() {
+  void directPairIsUsedEvenWhenChainingThroughThePortfolioCurrencyWouldGiveADifferentAnswer() {
     // US-06-02/FR-CUR-010's DoD scenario: a USD account inside a EUR container, reported in CHF.
     // Deliberately seeded so the direct USD/CHF rate and the naive USD->EUR->CHF chain disagree
     // (0.8850 vs 0.92 * 0.96 = 0.8832) - real-world triangulation is never perfectly consistent,
@@ -429,7 +429,7 @@ class FxRateServiceTest {
 
   @Test
   void applyRateGivesTheSameResultAsConvertWithoutReResolvingTheRate() {
-    // InstitutionService's own case: a caller that already called getConversionRate for its
+    // PortfolioService's own case: a caller that already called getConversionRate for its
     // metadata (carriedForward/direct/intermediateCurrency) applies the same resolution's rate
     // via applyRate instead of calling convert() a second time - must agree exactly with what
     // convert() itself would have produced from scratch.

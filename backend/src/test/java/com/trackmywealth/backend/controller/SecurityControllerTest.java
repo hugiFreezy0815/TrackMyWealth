@@ -106,7 +106,7 @@ class SecurityControllerTest {
               "authorization_denial_log",
               "app_user",
               "workspace_member",
-              "financial_institution",
+              "portfolio",
               "workspace")) {
         statement.execute("DELETE FROM " + table);
       }
@@ -807,11 +807,10 @@ class SecurityControllerTest {
           memberId,
           workspaceId,
           userId);
-      UUID institutionId =
-          jdbcUuid("SELECT id FROM financial_institution WHERE workspace_id = ?", workspaceId);
+      UUID institutionId = jdbcUuid("SELECT id FROM portfolio WHERE workspace_id = ?", workspaceId);
       execute(
           connection,
-          "INSERT INTO account (id, workspace_id, financial_institution_id, account_type, name,"
+          "INSERT INTO account (id, workspace_id, portfolio_id, account_type, name,"
               + " native_currency) VALUES (?, ?, ?, 'CASH', 'B cash', 'CHF')",
           UUID.randomUUID(),
           workspaceId,

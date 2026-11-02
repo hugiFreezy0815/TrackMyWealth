@@ -9,13 +9,13 @@ import java.util.UUID;
 /**
  * Request body for {@code POST /api/v1/accounts} (US-05-01).
  *
- * <p>{@code financialInstitutionId} is optional - omitted, it defaults to the workspace's own
- * "Personal Assets" container (FR-INS-011). {@code holdsPositions} is an optional override of the
- * {@code account_type}-driven default - meaningful for any type, but the one case that actually
- * needs it today is {@code PENSION}: whether a Pillar 3a account holds positions depends on the
- * provider (a VIAC account does, a PostFinance one may not), not on the type alone (US-05-04).
- * {@code countsAsSaving} (US-10-01) likewise overrides whether money moved into the account counts
- * as saving in cash flow - on by default for savings, depot, mandate, crypto and pension accounts.
+ * <p>{@code portfolioId} is optional - omitted, it defaults to the workspace's own "Personal
+ * Assets" container (FR-INS-011). {@code holdsPositions} is an optional override of the {@code
+ * account_type}-driven default - meaningful for any type, but the one case that actually needs it
+ * today is {@code PENSION}: whether a Pillar 3a account holds positions depends on the provider (a
+ * VIAC account does, a PostFinance one may not), not on the type alone (US-05-04). {@code
+ * countsAsSaving} (US-10-01) likewise overrides whether money moved into the account counts as
+ * saving in cash flow - on by default for savings, depot, mandate, crypto and pension accounts.
  *
  * <p>The remaining fields are extension-table attributes that are only required for specific {@code
  * account_type}s, because their underlying columns are {@code NOT NULL} with no sensible type-wide
@@ -31,7 +31,7 @@ import java.util.UUID;
  * constructor via {@link RequestStrings#blankToNull} - see its Javadoc for why.
  */
 public record CreateAccountRequest(
-    UUID financialInstitutionId,
+    UUID portfolioId,
     @NotBlank String name,
     // See AccountTypeValues' Javadoc for the full list of places a 12th account type touches.
     @NotBlank @Pattern(regexp = AccountTypeValues.PATTERN) String accountType,

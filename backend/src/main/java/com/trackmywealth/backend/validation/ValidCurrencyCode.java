@@ -11,8 +11,8 @@ import java.lang.annotation.Target;
  * A non-null value must be a real ISO 4217 currency code recognized by {@link
  * java.util.Currency#getInstance(String)}. {@code null} passes - pair with {@code @NotNull}/
  * {@code @NotBlank} where the field is unconditionally required; several currency-code fields in
- * this codebase (e.g. {@code CreateFinancialInstitutionRequest.containerCurrency}) are optional
- * because the service layer can derive a default.
+ * this codebase (e.g. {@code CreatePortfolioRequest.portfolioCurrency}) are optional because the
+ * service layer can derive a default.
  */
 @Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)

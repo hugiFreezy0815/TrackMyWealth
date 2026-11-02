@@ -80,7 +80,7 @@ class CustomAssetValuationControllerTest {
 
   @BeforeEach
   void cleanDatabase() throws Exception {
-    // See InstitutionControllerTest's identical method for why this is plain per-table DELETEs,
+    // See PortfolioControllerTest's identical method for why this is plain per-table DELETEs,
     // not TRUNCATE ... CASCADE.
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
@@ -95,7 +95,7 @@ class CustomAssetValuationControllerTest {
               "authorization_denial_log",
               "app_user",
               "workspace_member",
-              "financial_institution",
+              "portfolio",
               "workspace")) {
         statement.execute("DELETE FROM " + table);
       }

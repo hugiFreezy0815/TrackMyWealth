@@ -1,7 +1,7 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.entity.FinancialInstitution;
-import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
+import com.trackmywealth.backend.entity.Portfolio;
+import com.trackmywealth.backend.repository.PortfolioRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -12,23 +12,22 @@ import org.springframework.stereotype.Service;
  * by US-28-02.
  */
 @Service
-public class InstitutionLookupService {
+public class PortfolioLookupService {
 
-  private static final String INSTITUTION_ENTITY_TYPE = "FinancialInstitution";
+  private static final String INSTITUTION_ENTITY_TYPE = "Portfolio";
 
-  private final FinancialInstitutionRepository financialInstitutionRepository;
+  private final PortfolioRepository portfolioRepository;
   private final AuthorizationDenialAuditService authorizationDenialAuditService;
 
-  public InstitutionLookupService(
-      FinancialInstitutionRepository financialInstitutionRepository,
+  public PortfolioLookupService(
+      PortfolioRepository portfolioRepository,
       AuthorizationDenialAuditService authorizationDenialAuditService) {
-    this.financialInstitutionRepository = financialInstitutionRepository;
+    this.portfolioRepository = portfolioRepository;
     this.authorizationDenialAuditService = authorizationDenialAuditService;
   }
 
-  public FinancialInstitution findInstitutionOrThrow(
-      UUID institutionId, AuthenticatedUserPrincipal actor) {
-    return financialInstitutionRepository
+  public Portfolio findPortfolioOrThrow(UUID institutionId, AuthenticatedUserPrincipal actor) {
+    return portfolioRepository
         .findById(institutionId)
         .orElseThrow(
             () ->

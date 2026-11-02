@@ -6,7 +6,7 @@ import { api } from '@/api/client';
  */
 export type AccountProposal = {
   templateId: string;
-  /** The template's institution catalogue entry, not one of the workspace's institutions. */
+  /** The template's institution catalogue entry, not one of the workspace's portfolios. */
   institutionCatalogueId: string | null;
   institutionName: string | null;
   suggestedAccountType: string | null;
@@ -34,7 +34,7 @@ export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
 /** The fields of `POST /api/v1/accounts` the member has confirmed. */
 export type ConfirmedAccountDraft = {
-  financialInstitutionId: string;
+  portfolioId: string;
   name: string;
   accountType: AccountType;
   nativeCurrency: string;
@@ -45,25 +45,25 @@ export function isAccountType(value: string): value is AccountType {
 }
 
 /**
- * The create-account request the member confirmed. The institution is one of the workspace's,
+ * The create-account request the member confirmed. The portfolio is one of the workspace's,
  * chosen by the member: a catalogue entry is not one. The identifier is not part of it; it is
  * registered from the file once the account exists ({@link registerIdentifierFromImport}).
  */
 export function prepareAccountDraft(
-  selectedInstitutionId: string,
+  selectedPortfolioId: string,
   name: string,
   approvedType: string,
   approvedCurrency: string,
 ): ConfirmedAccountDraft {
-  if (!selectedInstitutionId.trim() || !name.trim()) {
-    throw new Error('Choose an institution and enter an account name.');
+  if (!selectedPortfolioId.trim() || !name.trim()) {
+    throw new Error('Choose a portfolio and enter an account name.');
   }
   const currency = approvedCurrency.trim().toUpperCase();
   if (!isAccountType(approvedType) || !/^[A-Z]{3}$/.test(currency)) {
     throw new Error('Choose an account type and enter a three-letter currency code.');
   }
   return {
-    financialInstitutionId: selectedInstitutionId,
+    portfolioId: selectedPortfolioId,
     name: name.trim(),
     accountType: approvedType,
     nativeCurrency: currency,

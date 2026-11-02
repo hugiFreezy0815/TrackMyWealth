@@ -6,19 +6,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
-import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
+import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
-import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.ImportBatchResponse;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
-import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.PageResponse;
+import com.trackmywealth.backend.dto.PortfolioResponse;
+import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
@@ -126,7 +126,7 @@ class WorkspaceMembershipAccessIntegrationTest {
               "authorization_denial_log",
               "app_user",
               "workspace_member",
-              "financial_institution",
+              "portfolio",
               "workspace")) {
         // V68 refuses a plain DELETE of transactions outside an import rollback.
         statement.execute(
@@ -147,7 +147,7 @@ class WorkspaceMembershipAccessIntegrationTest {
   // AC 1: what A creates and imports, B sees in every list, detail and report without a step.
   @Test
   void whatOneMemberCreatesAndImportsTheOtherSeesEverywhere() {
-    UUID portfolio = createInstitution(a, "Synthetic Bank");
+    UUID portfolio = createPortfolio(a, "Synthetic Bank");
     AccountSummaryResponse account = createAccount(a, portfolio, "Everyday account");
     openingBalance(a, account.id(), "0.00");
     importRows(a, account.id(), "2026-01-05;-12.40;CHF;Bakery;R1", "2026-01-06;100.00;CHF;Pay;R2");
@@ -160,8 +160,8 @@ class WorkspaceMembershipAccessIntegrationTest {
     assertThat(
             get(b, "/api/v1/accounts/" + account.id() + "/balance", AccountValuation.class).value())
         .isEqualByComparingTo("87.60");
-    InstitutionSummaryResponse summary =
-        get(b, "/api/v1/institutions/" + portfolio + "/summary", InstitutionSummaryResponse.class);
+    PortfolioSummaryResponse summary =
+        get(b, "/api/v1/portfolios/" + portfolio + "/summary", PortfolioSummaryResponse.class);
     assertThat(summary.netValue()).isEqualByComparingTo("87.60");
     assertThat(get(b, "/api/v1/net-worth", NetWorthResponse.class).netWorth())
         .isEqualByComparingTo("87.60");
@@ -213,7 +213,7 @@ class WorkspaceMembershipAccessIntegrationTest {
   // AC 2: B edits and deletes what A created, subject only to the usual version check.
   @Test
   void theOtherMemberChangesAndDeletesWhatTheFirstCreated() {
-    UUID portfolio = createInstitution(a, "Synthetic Bank");
+    UUID portfolio = createPortfolio(a, "Synthetic Bank");
     AccountSummaryResponse account = createAccount(a, portfolio, "Everyday account");
     importRows(a, account.id(), "2026-01-05;-12.40;CHF;Bakery;R1");
     TransactionResponse imported = transactions(a, account.id()).get(0);
@@ -257,7 +257,7 @@ class WorkspaceMembershipAccessIntegrationTest {
   // AC 3: another workspace's ids answer exactly like unknown ones.
   @Test
   void aMemberOfAnotherWorkspaceGetsTheNotFoundOfAnUnknownId() {
-    UUID portfolio = createInstitution(a, "Synthetic Bank");
+    UUID portfolio = createPortfolio(a, "Synthetic Bank");
     AccountSummaryResponse account = createAccount(a, portfolio, "Everyday account");
 
     for (String uri :
@@ -265,7 +265,7 @@ class WorkspaceMembershipAccessIntegrationTest {
             "/api/v1/accounts/" + account.id(),
             "/api/v1/accounts/" + account.id() + "/transactions",
             "/api/v1/accounts/" + account.id() + "/balance",
-            "/api/v1/institutions/" + portfolio + "/summary",
+            "/api/v1/portfolios/" + portfolio + "/summary",
             "/api/v1/accounts/" + UUID.randomUUID())) {
       client(c).get().uri(uri).exchange().expectStatus().isNotFound();
     }
@@ -275,7 +275,7 @@ class WorkspaceMembershipAccessIntegrationTest {
   // AC 4: an account is created without an owner and none is returned.
   @Test
   void anAccountHasNoOwner() throws Exception {
-    UUID portfolio = createInstitution(a, "Synthetic Bank");
+    UUID portfolio = createPortfolio(a, "Synthetic Bank");
     UUID account = createAccount(a, portfolio, "Everyday account").id();
 
     Map<String, Object> json =
@@ -295,7 +295,7 @@ class WorkspaceMembershipAccessIntegrationTest {
   // AC 5: a deactivated member is refused on the next request; what they created stays.
   @Test
   void aDeactivatedMemberIsRefusedAndTheirDataStaysInTheWorkspace() {
-    AccountSummaryResponse bs = createAccount(b, createInstitution(b, "B's Bank"), "Created by B");
+    AccountSummaryResponse bs = createAccount(b, createPortfolio(b, "B's Bank"), "Created by B");
 
     client(b)
         .post()
@@ -313,7 +313,7 @@ class WorkspaceMembershipAccessIntegrationTest {
   // AC 6: no ownership or sharing-grant endpoint is left.
   @Test
   void noOwnershipOrGrantEndpointExists() {
-    UUID account = createAccount(a, createInstitution(a, "Synthetic Bank"), "Everyday").id();
+    UUID account = createAccount(a, createPortfolio(a, "Synthetic Bank"), "Everyday").id();
 
     client(a).get().uri("/api/v1/sharing-grants").exchange().expectStatus().isNotFound();
     client(a)
@@ -406,16 +406,16 @@ class WorkspaceMembershipAccessIntegrationTest {
     }
   }
 
-  private UUID createInstitution(String token, String name) {
+  private UUID createPortfolio(String token, String name) {
     return client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new CreateFinancialInstitutionRequest(null, name, "CH", "BANK", null, null, "CHF"))
+        .body(new CreatePortfolioRequest(null, name, "CH", "BANK", null, null, "CHF"))
         .exchange()
         .expectStatus()
         .isCreated()
-        .expectBody(FinancialInstitutionSummaryResponse.class)
+        .expectBody(PortfolioResponse.class)
         .returnResult()
         .getResponseBody()
         .id();
@@ -431,10 +431,7 @@ class WorkspaceMembershipAccessIntegrationTest {
         .post()
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            AccountRequests.account(name, accountType, "CHF")
-                .financialInstitutionId(institution)
-                .build())
+        .body(AccountRequests.account(name, accountType, "CHF").portfolioId(institution).build())
         .exchange()
         .expectStatus()
         .isCreated()

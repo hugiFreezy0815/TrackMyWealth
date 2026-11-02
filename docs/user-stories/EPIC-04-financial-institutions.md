@@ -1,7 +1,14 @@
-# EPIC 04 — Financial Institutions / Containers
+# EPIC 04 — Portfolios (formerly Financial Institutions / Containers)
 
-Covers `institution_catalogue`, `financial_institution` (V3). Section 9, FR-INS-*, RULE-001..003,
-RULE-020..022, C1-C9.
+Covers `institution_catalogue` and `portfolio` (V3 as `financial_institution`, renamed by V111 in
+US-04-06). Section 9, FR-INS-*, RULE-001..003, RULE-020..022, C1-C9.
+
+**Terminology (PO decision 2026-10-20, US-04-06):** the container below the workspace is a
+**Portfolio** the member names freely (`/api/v1/portfolios`). "Institution" means only the real
+bank or broker behind a portfolio: the shared catalogue (`/api/v1/institutions/catalogue`),
+`portfolio.catalogue_institution_id` and `portfolio.institution_type`. The stories below were
+written before the rename; read "institution" in them as "portfolio" wherever the container is
+meant.
 
 ---
 
@@ -110,7 +117,7 @@ without losing the account's transaction history.
 **Preconditions:** Two institutions exist in the workspace; an account exists under the first.
 **Acceptance criteria:**
 - Given an account under Institution A, when it is reassigned to Institution B, then
-  `account.financial_institution_id` is updated, all of its transactions/positions/snapshots
+  `account.financial_institution_id` (now `account.portfolio_id`) is updated, all of its transactions/positions/snapshots
   remain unchanged and attached to the same `account.id`, and both institutions' summaries
   recompute correctly on the next read.
 **Applicable business rules:** FR-INS-009, C2.
@@ -125,3 +132,57 @@ institution.
 **Definition of Done:** Integration test reassigns an account with transaction history and
 confirms both institutions' summaries are correct before and after.
 **Data-quality behaviour:** N/A.
+
+---
+
+## US-04-06 — Portfolios: user-named, a suggested type and the Portfolio View (#390)
+
+**Actor:** Member.
+**Objective:** FR-INS-001/003/006/008/013/014, glossary "Portfolio" and "Depot" (spec v5).
+**Story:** As a member, I want to create freely named portfolios and see each one as a tab with a
+section per account type, so that PostFinance (cash, savings, 3a, depot) and Yuh (cash, depot,
+crypto) are each shown the way their contents need.
+
+**Implemented (PO decisions on #390, 2026-11-02):**
+- **Rename:** `financial_institution` → `portfolio`, `container_currency` → `portfolio_currency`,
+  `account.financial_institution_id` → `account.portfolio_id` (V111). API `/api/v1/portfolios`
+  with operations `createPortfolio`, `getPortfolio`, `updatePortfolio` (`PUT`, full replacement
+  under `If-Match`), `getPortfolioSummary` and `getPortfolioView`; account DTOs carry
+  `portfolioId`, the move is `POST /api/v1/accounts/{id}/reassign-portfolio`. Only the catalogue
+  search stays under `/api/v1/institutions`. `listPortfolios` is US-04-05 (#381); archiving a
+  portfolio is a follow-up story.
+- **Name:** a portfolio linked to a catalogue entry may still be named by the member ("VIAC 3a");
+  the catalogue's name is the default.
+- **Portfolio type** (V112, `portfolio_type` + `portfolio_type_overridden`): descriptive only,
+  never restricts account types (FR-INS-008). Recomputed whenever an account is added, moved,
+  archived or restored, while the member has not set it; `portfolioType: null` in the update goes
+  back to the suggestion. Account type → section → type family:
+
+  | Account | Section | Family |
+  |---|---|---|
+  | `CASH`, `SAVINGS` | cash & savings | `BANK` |
+  | `PENSION` with scheme `CH_PILLAR_3A` | Pillar 3a | `PILLAR_3A` |
+  | other `PENSION`, `VESTED_BENEFITS` | pension | `PENSION_FUND` |
+  | `SECURITIES`, `MANAGED_MANDATE` | depot | `PORTFOLIO` |
+  | `CRYPTO` | crypto | `CRYPTO` |
+  | `CREDIT_CARD` | cards | `BANK` |
+  | `CUSTOM_ASSET`/`REAL_ESTATE`, `MORTGAGE` | property & mortgage | none |
+  | `LOAN`, other `CUSTOM_ASSET` | other | none |
+
+  All active accounts in one family → that family; any account without a family, or several
+  families → `MIXED`; no account → `BANK`; the Personal Assets default → `PERSONAL_ASSETS`.
+- **Portfolio View** `GET /api/v1/portfolios/{id}/view`: signed total in portfolio and workspace
+  currency, `complete`, `valueStatus`, warnings, and the non-empty sections in the order above,
+  each with signed subtotals and its accounts (own-currency balance, value in portfolio currency,
+  value status, positions count for accounts holding positions, `totalReturn` (always `null` until
+  EPIC 15), card due date, mortgage's linked property). Same valuation as the summary and net
+  worth.
+- **Value status** (`CURRENT`, `ESTIMATED`, `STALE`, `UNRECONCILED`, `UNKNOWN`) is derived from the
+  existing valuation result; a total takes the worst of its accounts. #380/#381 reuse it.
+
+**Acceptance criteria:** see #390; covered by `PortfolioViewControllerTest`,
+`PortfolioControllerTest`, `PortfolioMigrationTest`, `PortfolioTypeTest` and `ValueStatusTest`.
+**Authorization:** every member of the workspace has full access (US-03-06); RLS keeps workspaces
+apart, and another workspace's portfolio answers the same audited 404 as an unknown id.
+**Priority:** MUST. **Size:** L.
+

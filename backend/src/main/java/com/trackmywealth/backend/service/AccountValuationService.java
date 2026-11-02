@@ -34,7 +34,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * DM-17's uniform valuation interface: "what is this account worth, in this currency, as of this
- * date". First extracted from {@code InstitutionService} (US-04-03) once a second consumer - the
+ * date". First extracted from {@code PortfolioService} (US-04-03) once a second consumer - the
  * account balance and net-worth reads of US-09-01 - needed the same resolution and FX handling, so
  * that every aggregation reads an account's value from one place rather than each re-deciding which
  * source applies.
@@ -135,7 +135,7 @@ public class AccountValuationService {
    *
    * <p><b>Performs no access check.</b> The caller must already have established that the acting
    * member has access to {@code account} (as {@link #getBalance}, {@code
-   * InstitutionService#getSummary} and {@code NetWorthService#getNetWorth} each do) - otherwise a
+   * PortfolioService#getSummary} and {@code NetWorthService#getNetWorth} each do) - otherwise a
    * figure leaks to a caller outside the account's workspace.
    */
   @Transactional(readOnly = true)

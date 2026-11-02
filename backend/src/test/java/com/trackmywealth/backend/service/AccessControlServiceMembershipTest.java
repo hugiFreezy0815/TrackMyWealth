@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AppUser;
-import com.trackmywealth.backend.entity.FinancialInstitution;
+import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AppUserRepository;
@@ -66,7 +66,7 @@ class AccessControlServiceMembershipTest {
     assertThat(access.requireActingMember(actor)).isEqualTo(memberId);
     assertThatCode(() -> access.requireAccountAccess(actor, accountIn(workspaceId)))
         .doesNotThrowAnyException();
-    assertThatCode(() -> access.requireInstitutionAccess(actor, institutionIn(workspaceId)))
+    assertThatCode(() -> access.requirePortfolioAccess(actor, institutionIn(workspaceId)))
         .doesNotThrowAnyException();
     assertThatCode(() -> access.requireWorkspaceAccess(actor, workspaceId))
         .doesNotThrowAnyException();
@@ -78,7 +78,7 @@ class AccessControlServiceMembershipTest {
     Account foreign = accountIn(otherWorkspaceId);
 
     assertNotFound(() -> access.requireAccountAccess(actor, foreign));
-    assertNotFound(() -> access.requireInstitutionAccess(actor, institutionIn(otherWorkspaceId)));
+    assertNotFound(() -> access.requirePortfolioAccess(actor, institutionIn(otherWorkspaceId)));
     assertNotFound(() -> access.requireWorkspaceAccess(actor, otherWorkspaceId));
     verify(denials).denyAsNotFound(actor, "Account", foreign.getId());
     verify(denials).denyAsNotFound(actor, "Workspace", otherWorkspaceId);
@@ -184,8 +184,8 @@ class AccessControlServiceMembershipTest {
     return account;
   }
 
-  private static FinancialInstitution institutionIn(UUID workspace) {
-    FinancialInstitution institution = mock(FinancialInstitution.class);
+  private static Portfolio institutionIn(UUID workspace) {
+    Portfolio institution = mock(Portfolio.class);
     when(institution.getId()).thenReturn(UUID.randomUUID());
     Workspace owning = workspace(workspace);
     when(institution.getWorkspace()).thenReturn(owning);

@@ -10,12 +10,12 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
-import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
+import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -120,7 +120,7 @@ class OpeningBalanceControllerTest {
               "DELETE FROM authorization_denial_log",
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
-              "DELETE FROM financial_institution",
+              "DELETE FROM portfolio",
               "DELETE FROM workspace")) {
         statement.execute(sql);
       }
@@ -176,7 +176,7 @@ class OpeningBalanceControllerTest {
     assertThat(netWorth.approximate()).isFalse();
     assertThat(netWorth.warnings()).isEmpty();
 
-    InstitutionSummaryResponse summary = institutionSummary(token, cash.financialInstitutionId());
+    PortfolioSummaryResponse summary = institutionSummary(token, cash.portfolioId());
     assertThat(summary.totalAssets()).isEqualByComparingTo("8765.45");
     assertThat(summary.complete()).isTrue();
     assertThat(summary.accounts())
@@ -313,7 +313,7 @@ class OpeningBalanceControllerTest {
     NetWorthResponse netWorth = netWorth(token);
     assertThat(netWorth.warnings()).containsExactly(warning);
     assertThat(netWorth.accounts().get(0).warnings()).containsExactly(warning);
-    InstitutionSummaryResponse summary = institutionSummary(token, cash.financialInstitutionId());
+    PortfolioSummaryResponse summary = institutionSummary(token, cash.portfolioId());
     assertThat(summary.warnings()).containsExactly(warning);
     assertThat(summary.accounts().get(0).warnings()).containsExactly(warning);
   }
@@ -914,14 +914,14 @@ class OpeningBalanceControllerTest {
         .getResponseBody();
   }
 
-  private InstitutionSummaryResponse institutionSummary(String token, UUID institutionId) {
+  private PortfolioSummaryResponse institutionSummary(String token, UUID institutionId) {
     return client(token)
         .get()
-        .uri("/api/v1/institutions/" + institutionId + "/summary")
+        .uri("/api/v1/portfolios/" + institutionId + "/summary")
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(InstitutionSummaryResponse.class)
+        .expectBody(PortfolioSummaryResponse.class)
         .returnResult()
         .getResponseBody();
   }

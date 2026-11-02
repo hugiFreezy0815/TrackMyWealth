@@ -67,7 +67,7 @@ class CurrentUserControllerTest {
       statement.execute(
           LedgerCleanup.withGuardsOff(
               "TRUNCATE TABLE admin_audit_log, user_session, refresh_token, app_user,"
-                  + " workspace_member, financial_institution, workspace RESTART IDENTITY CASCADE"));
+                  + " workspace_member, portfolio, workspace RESTART IDENTITY CASCADE"));
     }
   }
 

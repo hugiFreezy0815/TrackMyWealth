@@ -42,8 +42,8 @@ public class Account {
   private Workspace workspace;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
-  @JoinColumn(name = "financial_institution_id", nullable = false)
-  private FinancialInstitution financialInstitution;
+  @JoinColumn(name = "portfolio_id", nullable = false)
+  private Portfolio portfolio;
 
   @Column(name = "account_type", nullable = false)
   private String accountType;
@@ -151,12 +151,12 @@ public class Account {
     this.workspace = workspace;
   }
 
-  public FinancialInstitution getFinancialInstitution() {
-    return financialInstitution;
+  public Portfolio getPortfolio() {
+    return portfolio;
   }
 
-  public void setFinancialInstitution(FinancialInstitution financialInstitution) {
-    this.financialInstitution = financialInstitution;
+  public void setPortfolio(Portfolio portfolio) {
+    this.portfolio = portfolio;
   }
 
   public String getAccountType() {

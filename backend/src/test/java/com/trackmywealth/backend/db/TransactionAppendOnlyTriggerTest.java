@@ -61,13 +61,13 @@ class TransactionAppendOnlyTriggerTest {
         insertReturningId("INSERT INTO workspace(name) VALUES (?) RETURNING id", "Test Workspace");
     UUID institutionId =
         insertReturningId(
-            "INSERT INTO financial_institution(workspace_id, name, container_currency) VALUES (?, ?, ?) RETURNING id",
+            "INSERT INTO portfolio(workspace_id, name, portfolio_currency) VALUES (?, ?, ?) RETURNING id",
             workspaceId,
             "Test Bank",
             "CHF");
     UUID accountId =
         insertReturningId(
-            "INSERT INTO account(workspace_id, financial_institution_id, account_type, name, native_currency) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO account(workspace_id, portfolio_id, account_type, name, native_currency) VALUES (?, ?, ?, ?, ?) RETURNING id",
             workspaceId,
             institutionId,
             "CASH",

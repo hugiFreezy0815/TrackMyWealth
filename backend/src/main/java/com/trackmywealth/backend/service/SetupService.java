@@ -4,11 +4,11 @@ import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UserRoleValues;
 import com.trackmywealth.backend.entity.AppUser;
-import com.trackmywealth.backend.entity.FinancialInstitution;
+import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AppUserRepository;
-import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
+import com.trackmywealth.backend.repository.PortfolioRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.validation.WorkspaceNames;
@@ -33,8 +33,8 @@ import org.springframework.web.server.ResponseStatusException;
  *   <li>{@code SELECT set_config('app.current_workspace_id', ?, true)} - transaction-local, so it
  *       cannot leak into any other request sharing a pooled connection.
  *   <li>Insert the workspace. This fires V19's {@code workspace_create_personal_assets_container}
- *       trigger, which inserts the default "Personal Assets" {@link FinancialInstitution} - its own
- *       {@code INSERT} satisfies that table's RLS policy only because step 2 already ran.
+ *       trigger, which inserts the default "Personal Assets" {@link Portfolio} - its own {@code
+ *       INSERT} satisfies that table's RLS policy only because step 2 already ran.
  *   <li>Insert the workspace member and the administrator's {@link AppUser}, and correct the
  *       Personal Assets container's placeholder {@code CHF} currency to the one requested.
  * </ol>
@@ -57,7 +57,7 @@ public class SetupService {
   private final EntityManager entityManager;
   private final WorkspaceRepository workspaceRepository;
   private final WorkspaceMemberRepository workspaceMemberRepository;
-  private final FinancialInstitutionRepository financialInstitutionRepository;
+  private final PortfolioRepository portfolioRepository;
   private final AppUserRepository appUserRepository;
   private final PasswordEncoder passwordEncoder;
   private final TokenIssuanceService tokenIssuanceService;
@@ -66,14 +66,14 @@ public class SetupService {
       EntityManager entityManager,
       WorkspaceRepository workspaceRepository,
       WorkspaceMemberRepository workspaceMemberRepository,
-      FinancialInstitutionRepository financialInstitutionRepository,
+      PortfolioRepository portfolioRepository,
       AppUserRepository appUserRepository,
       PasswordEncoder passwordEncoder,
       TokenIssuanceService tokenIssuanceService) {
     this.entityManager = entityManager;
     this.workspaceRepository = workspaceRepository;
     this.workspaceMemberRepository = workspaceMemberRepository;
-    this.financialInstitutionRepository = financialInstitutionRepository;
+    this.portfolioRepository = portfolioRepository;
     this.appUserRepository = appUserRepository;
     this.passwordEncoder = passwordEncoder;
     this.tokenIssuanceService = tokenIssuanceService;
@@ -98,11 +98,11 @@ public class SetupService {
     // Must flush now, not defer to end-of-transaction: V19's AFTER INSERT trigger creates the
     // Personal Assets container as a side effect invisible to Hibernate's change tracking, and
     // the very next line reads it back through a query Hibernate has no reason to auto-flush for
-    // (its pending dirty state is on Workspace, not FinancialInstitution).
+    // (its pending dirty state is on Workspace, not Portfolio).
     workspaceRepository.saveAndFlush(workspace);
 
-    FinancialInstitution personalAssets =
-        financialInstitutionRepository
+    Portfolio personalAssets =
+        portfolioRepository
             .findByWorkspaceIdAndPersonalAssetsDefaultTrue(workspaceId)
             .orElseThrow(
                 () ->
@@ -110,8 +110,8 @@ public class SetupService {
                         "V19's workspace_create_personal_assets_container trigger did not create"
                             + " a Personal Assets container for workspace "
                             + workspaceId));
-    personalAssets.setContainerCurrency(request.currencyCode());
-    financialInstitutionRepository.save(personalAssets);
+    personalAssets.setPortfolioCurrency(request.currencyCode());
+    portfolioRepository.save(personalAssets);
 
     WorkspaceMember administratorMember =
         workspaceMemberRepository.save(WorkspaceMember.newLoginMember(workspace, request.email()));

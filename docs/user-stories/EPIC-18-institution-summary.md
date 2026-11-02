@@ -1,6 +1,9 @@
 # EPIC 18 — Institution Summary
 
-Covers investment-specific aggregation within `financial_institution` (V3) summaries. Section 9.1.
+Covers investment-specific aggregation within portfolio summaries (`portfolio`, V3 as
+`financial_institution`, renamed by V111 in US-04-06). Section 9.1. The Portfolio View
+(`GET /api/v1/portfolios/{id}/view`, US-04-06) already carries a `totalReturn` per account that
+holds positions; it stays `null` until this epic computes performance.
 Balance/liability/net-value aggregation and currency conversion are covered by **EPIC 04's
 US-04-03** — this epic covers the investment-performance and allocation portion of the same
 summary view, which depends on EPIC 15/16/17 being built first.

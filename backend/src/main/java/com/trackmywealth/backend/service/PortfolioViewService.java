@@ -1,0 +1,302 @@
+package com.trackmywealth.backend.service;
+
+import com.trackmywealth.backend.dto.AccountPositionCount;
+import com.trackmywealth.backend.dto.AccountValuation;
+import com.trackmywealth.backend.dto.PortfolioAccountDetails;
+import com.trackmywealth.backend.dto.PortfolioPlacement;
+import com.trackmywealth.backend.dto.PortfolioSection;
+import com.trackmywealth.backend.dto.PortfolioViewResponse;
+import com.trackmywealth.backend.dto.PortfolioViewResponse.AccountRow;
+import com.trackmywealth.backend.dto.PortfolioViewResponse.Section;
+import com.trackmywealth.backend.dto.ValueStatus;
+import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.AccountCreditCard;
+import com.trackmywealth.backend.entity.AccountMortgage;
+import com.trackmywealth.backend.entity.Portfolio;
+import com.trackmywealth.backend.repository.AccountCreditCardRepository;
+import com.trackmywealth.backend.repository.AccountMortgageRepository;
+import com.trackmywealth.backend.repository.AccountRepository;
+import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * US-04-06/FR-INS-013: the Portfolio View - one portfolio tab with its total and a section per kind
+ * of account, for the getquin-style overview (#377).
+ *
+ * <p>No new aggregation path: every figure is an {@link AccountValuation} from {@link
+ * AccountValuationService#valueAll}, the calculation the portfolio summary and net worth use, taken
+ * once in the portfolio's currency, once in the workspace's (skipped when they are the same) and
+ * once per other own currency of its accounts. Which section an account belongs to is {@link
+ * AccountService#portfolioPlacementsOf}'s decision; this class only reads capability flags.
+ *
+ * <p>The number of queries does not grow with the number of accounts beyond what {@code valueAll}
+ * itself runs per account: placements, positions, card and mortgage details are each one query for
+ * the whole portfolio.
+ */
+@Service
+public class PortfolioViewService {
+
+  private static final String ACTIVE = "ACTIVE";
+  private static final String LIABILITY = "LIABILITY";
+
+  private final AccessControlService accessControlService;
+  private final PortfolioLookupService portfolioLookupService;
+  private final AccountRepository accountRepository;
+  private final AccountService accountService;
+  private final AccountValuationService accountValuationService;
+  private final BusinessDateService businessDateService;
+  private final SnapshotHoldingRepository snapshotHoldingRepository;
+  private final AccountCreditCardRepository accountCreditCardRepository;
+  private final AccountMortgageRepository accountMortgageRepository;
+  private final CardStatementService cardStatementService;
+
+  public PortfolioViewService(
+      AccessControlService accessControlService,
+      PortfolioLookupService portfolioLookupService,
+      AccountRepository accountRepository,
+      AccountService accountService,
+      AccountValuationService accountValuationService,
+      BusinessDateService businessDateService,
+      SnapshotHoldingRepository snapshotHoldingRepository,
+      AccountCreditCardRepository accountCreditCardRepository,
+      AccountMortgageRepository accountMortgageRepository,
+      CardStatementService cardStatementService) {
+    this.accessControlService = accessControlService;
+    this.portfolioLookupService = portfolioLookupService;
+    this.accountRepository = accountRepository;
+    this.accountService = accountService;
+    this.accountValuationService = accountValuationService;
+    this.businessDateService = businessDateService;
+    this.snapshotHoldingRepository = snapshotHoldingRepository;
+    this.accountCreditCardRepository = accountCreditCardRepository;
+    this.accountMortgageRepository = accountMortgageRepository;
+    this.cardStatementService = cardStatementService;
+  }
+
+  @Transactional(readOnly = true)
+  public PortfolioViewResponse getView(UUID portfolioId, AuthenticatedUserPrincipal actor) {
+    Portfolio portfolio = portfolioLookupService.findPortfolioOrThrow(portfolioId, actor);
+    accessControlService.requirePortfolioAccess(actor, portfolio);
+
+    List<Account> accounts =
+        accountRepository.findByPortfolioIdAndStatusOrderByCreatedAtAsc(portfolioId, ACTIVE);
+    LocalDate asOf = businessDateService.today();
+    String portfolioCurrency = portfolio.getPortfolioCurrency();
+    String workspaceCurrency = portfolio.getWorkspace().getCurrency();
+
+    Map<UUID, AccountValuation> inPortfolio =
+        byAccount(accountValuationService.valueAll(accounts, portfolioCurrency, asOf));
+    Map<UUID, AccountValuation> inWorkspace =
+        workspaceCurrency.equals(portfolioCurrency)
+            ? inPortfolio
+            : byAccount(accountValuationService.valueAll(accounts, workspaceCurrency, asOf));
+    Map<UUID, AccountValuation> inOwn =
+        inOwnCurrency(
+            accounts, inPortfolio, portfolioCurrency, inWorkspace, workspaceCurrency, asOf);
+    Map<UUID, PortfolioPlacement> placements = accountService.portfolioPlacementsOf(accounts);
+    PortfolioAccountDetails details = details(accounts, placements);
+
+    Map<PortfolioSection, List<Account>> bySection = new EnumMap<>(PortfolioSection.class);
+    for (Account account : accounts) {
+      bySection
+          .computeIfAbsent(placements.get(account.getId()).section(), key -> new ArrayList<>())
+          .add(account);
+    }
+
+    List<Section> sections = new ArrayList<>();
+    for (Map.Entry<PortfolioSection, List<Account>> entry : bySection.entrySet()) {
+      List<AccountRow> rows = new ArrayList<>();
+      for (Account account : entry.getValue()) {
+        UUID id = account.getId();
+        rows.add(toRow(account, placements.get(id), inPortfolio.get(id), inOwn.get(id), details));
+      }
+      List<AccountValuation> sectionInPortfolio = valuationsOf(entry.getValue(), inPortfolio);
+      List<AccountValuation> sectionInWorkspace = valuationsOf(entry.getValue(), inWorkspace);
+      sections.add(
+          new Section(
+              entry.getKey(),
+              signedSum(sectionInPortfolio),
+              signedSum(sectionInWorkspace),
+              allKnown(sectionInPortfolio) && allKnown(sectionInWorkspace),
+              worstStatus(sectionInPortfolio),
+              rows));
+    }
+
+    List<AccountValuation> allInPortfolio = valuationsOf(accounts, inPortfolio);
+    List<AccountValuation> allInWorkspace = valuationsOf(accounts, inWorkspace);
+    // PR-011/FR-CON-007: an account's warning is shown at the portfolio's headline too.
+    Set<String> warnings = new TreeSet<>();
+    allInPortfolio.forEach(valuation -> warnings.addAll(valuation.warnings()));
+
+    return new PortfolioViewResponse(
+        portfolio.getId(),
+        portfolio.getName(),
+        portfolio.getPortfolioType(),
+        portfolio.isPortfolioTypeOverridden(),
+        portfolio.isPersonalAssetsDefault(),
+        portfolioCurrency,
+        workspaceCurrency,
+        asOf,
+        signedSum(allInPortfolio),
+        signedSum(allInWorkspace),
+        allKnown(allInPortfolio) && allKnown(allInWorkspace),
+        worstStatus(allInPortfolio),
+        List.copyOf(warnings),
+        sections);
+  }
+
+  private static AccountRow toRow(
+      Account account,
+      PortfolioPlacement placement,
+      AccountValuation portfolioValue,
+      AccountValuation ownValue,
+      PortfolioAccountDetails details) {
+    UUID id = account.getId();
+    Integer positionsCount = account.isHoldsPositions() ? details.positionsCount().get(id) : null;
+    return new AccountRow(
+        id,
+        account.getName(),
+        placement.accountType(),
+        portfolioValue.nature(),
+        ownValue.currency(),
+        signed(ownValue),
+        signed(portfolioValue),
+        portfolioValue.valueKnown(),
+        ValueStatus.of(portfolioValue),
+        portfolioValue.valueSourceDate(),
+        portfolioValue.warnings(),
+        positionsCount,
+        // EPIC 15: no performance calculation exists yet (PO decision on #390).
+        null,
+        details.dueDates().get(id),
+        details.linkedProperties().get(id));
+  }
+
+  // The account's value in its own currency: reused from a pass already taken when that currency
+  // is the portfolio's or the workspace's, one valueAll per other currency otherwise.
+  private Map<UUID, AccountValuation> inOwnCurrency(
+      List<Account> accounts,
+      Map<UUID, AccountValuation> inPortfolio,
+      String portfolioCurrency,
+      Map<UUID, AccountValuation> inWorkspace,
+      String workspaceCurrency,
+      LocalDate asOf) {
+    Map<UUID, AccountValuation> own = new HashMap<>();
+    Map<String, List<Account>> others = new LinkedHashMap<>();
+    for (Account account : accounts) {
+      String ownCurrency = inPortfolio.get(account.getId()).nativeCurrency();
+      if (ownCurrency.equals(portfolioCurrency)) {
+        own.put(account.getId(), inPortfolio.get(account.getId()));
+      } else if (ownCurrency.equals(workspaceCurrency)) {
+        own.put(account.getId(), inWorkspace.get(account.getId()));
+      } else {
+        others.computeIfAbsent(ownCurrency, key -> new ArrayList<>()).add(account);
+      }
+    }
+    for (Map.Entry<String, List<Account>> entry : others.entrySet()) {
+      own.putAll(
+          byAccount(accountValuationService.valueAll(entry.getValue(), entry.getKey(), asOf)));
+    }
+    return own;
+  }
+
+  private PortfolioAccountDetails details(
+      List<Account> accounts, Map<UUID, PortfolioPlacement> placements) {
+    List<UUID> withPositions =
+        accounts.stream().filter(Account::isHoldsPositions).map(Account::getId).toList();
+    Map<UUID, Integer> positionsCount = new HashMap<>();
+    if (!withPositions.isEmpty()) {
+      for (AccountPositionCount count :
+          snapshotHoldingRepository.countPositionsInNewestHoldingsSnapshot(withPositions)) {
+        positionsCount.put(count.getAccountId(), Math.toIntExact(count.getPositions()));
+      }
+    }
+
+    List<UUID> cards =
+        accounts.stream().filter(Account::isHasStatementCycle).map(Account::getId).toList();
+    Map<UUID, LocalDate> dueDates = new HashMap<>();
+    if (!cards.isEmpty()) {
+      for (AccountCreditCard card : accountCreditCardRepository.findAllById(cards)) {
+        cardStatementService
+            .currentDueDate(card)
+            .ifPresent(dueDate -> dueDates.put(card.getAccountId(), dueDate));
+      }
+    }
+
+    List<UUID> propertyAndMortgage =
+        idsInSection(accounts, placements, PortfolioSection.PROPERTY_AND_MORTGAGE);
+    Map<UUID, UUID> linkedProperties = new HashMap<>();
+    if (!propertyAndMortgage.isEmpty()) {
+      for (AccountMortgage mortgage : accountMortgageRepository.findAllById(propertyAndMortgage)) {
+        if (mortgage.getLinkedAssetAccountId() != null) {
+          linkedProperties.put(mortgage.getAccountId(), mortgage.getLinkedAssetAccountId());
+        }
+      }
+    }
+    return new PortfolioAccountDetails(positionsCount, dueDates, linkedProperties);
+  }
+
+  private static List<UUID> idsInSection(
+      Collection<Account> accounts,
+      Map<UUID, PortfolioPlacement> placements,
+      PortfolioSection section) {
+    return accounts.stream()
+        .map(Account::getId)
+        .filter(id -> placements.get(id).section() == section)
+        .toList();
+  }
+
+  private static Map<UUID, AccountValuation> byAccount(List<AccountValuation> valuations) {
+    Map<UUID, AccountValuation> byAccount = new HashMap<>();
+    for (AccountValuation valuation : valuations) {
+      byAccount.put(valuation.accountId(), valuation);
+    }
+    return byAccount;
+  }
+
+  // Assets positive, liabilities negative (PortfolioViewResponse); null for an unknown value.
+  private static BigDecimal signed(AccountValuation valuation) {
+    if (!valuation.valueKnown()) {
+      return null;
+    }
+    return LIABILITY.equals(valuation.nature()) ? valuation.value().negate() : valuation.value();
+  }
+
+  private static List<AccountValuation> valuationsOf(
+      List<Account> accounts, Map<UUID, AccountValuation> byAccount) {
+    return accounts.stream().map(account -> byAccount.get(account.getId())).toList();
+  }
+
+  // The signed sum of the known values; an unknown one is left out, not counted as zero (PR-011).
+  private static BigDecimal signedSum(List<AccountValuation> valuations) {
+    BigDecimal sum = BigDecimal.ZERO;
+    for (AccountValuation valuation : valuations) {
+      if (valuation.valueKnown()) {
+        sum = sum.add(signed(valuation));
+      }
+    }
+    return sum;
+  }
+
+  private static boolean allKnown(List<AccountValuation> valuations) {
+    return valuations.stream().allMatch(AccountValuation::valueKnown);
+  }
+
+  private static ValueStatus worstStatus(List<AccountValuation> valuations) {
+    return ValueStatus.worstOf(valuations.stream().map(ValueStatus::of).toList());
+  }
+}

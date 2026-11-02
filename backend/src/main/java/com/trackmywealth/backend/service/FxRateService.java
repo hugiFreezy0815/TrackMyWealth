@@ -145,7 +145,7 @@ public class FxRateService {
    *     the enclosing transaction if the caller shares it (the two run in the same physical
    *     transaction by default, {@code REQUIRED} propagation) - the caller's own commit then fails
    *     with {@code UnexpectedRollbackException} regardless of the catch (confirmed against
-   *     InstitutionService.getSummary, which hit exactly this - see #78's follow-up fix).
+   *     PortfolioService.getSummary, which hit exactly this - see #78's follow-up fix).
    */
   @Transactional(readOnly = true)
   public CurrencyConversionResult getConversionRate(
@@ -217,7 +217,7 @@ public class FxRateService {
    * #getConversionRate}'s direct-pair-first resolution, rounded per this class's documented
    * NFR-CALC-007 money policy - applied once, here, never accumulated through the rate resolution
    * itself. A caller that also needs the resolution's own metadata (whether it was carried-forward
-   * or chained, PR-011) alongside the converted amount - as {@code InstitutionService.getSummary}
+   * or chained, PR-011) alongside the converted amount - as {@code PortfolioService.getSummary}
    * does - should call {@link #getConversionRate} once and pass its result to {@link #applyRate}
    * instead, rather than calling this method a second time and re-resolving the same rate.
    */

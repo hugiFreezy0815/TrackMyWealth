@@ -13,6 +13,7 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -182,6 +183,21 @@ public class CardStatementService {
         closingBalance,
         card.getNativeCurrency(),
         paid);
+  }
+
+  /**
+   * US-04-06: the due date of the card's current statement, as {@link #getCurrentStatement} reports
+   * it; empty while {@code statementDay} or {@code dueDateOffsetDays} is not configured. Performs
+   * no access check: the caller has already cleared the card's account.
+   */
+  public Optional<LocalDate> currentDueDate(AccountCreditCard extension) {
+    Short statementDay = extension.getStatementDay();
+    Short dueDateOffsetDays = extension.getDueDateOffsetDays();
+    if (statementDay == null || dueDateOffsetDays == null) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        closingOnOrBefore(businessDateService.today(), statementDay).plusDays(dueDateOffsetDays));
   }
 
   // The most recent closing date that is on or before `today` - this cycle's own close if today has

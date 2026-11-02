@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.AccountPositionCount;
 import com.trackmywealth.backend.entity.SnapshotHolding;
 import java.util.Collection;
 import java.util.List;
@@ -31,4 +32,24 @@ public interface SnapshotHoldingRepository extends JpaRepository<SnapshotHolding
           + " :batchId")
   void deleteBySnapshotIdAndImportBatchId(
       @Param("snapshotId") UUID snapshotId, @Param("batchId") UUID batchId);
+
+  /**
+   * US-04-06: per account, the number of positions in its newest snapshot that lists any - newest
+   * by snapshot date, then by when it was recorded, withdrawn snapshots (US-07-12) left out. An
+   * account without such a snapshot has no row.
+   */
+  @Query(
+      value =
+          """
+          SELECT DISTINCT ON (snapshot.account_id)
+              snapshot.account_id AS account_id, count(holding.id) AS positions
+          FROM account_snapshot AS snapshot
+          JOIN snapshot_holding AS holding ON holding.snapshot_id = snapshot.id
+          WHERE snapshot.account_id IN (:accountIds) AND snapshot.withdrawn_at IS NULL
+          GROUP BY snapshot.account_id, snapshot.id, snapshot.snapshot_date, snapshot.created_at
+          ORDER BY snapshot.account_id, snapshot.snapshot_date DESC, snapshot.created_at DESC
+          """,
+      nativeQuery = true)
+  List<AccountPositionCount> countPositionsInNewestHoldingsSnapshot(
+      @Param("accountIds") Collection<UUID> accountIds);
 }

@@ -7,13 +7,13 @@ import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
-import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
+import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
-import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
-import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.PortfolioResponse;
+import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateWorkspaceCurrencyRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
@@ -104,7 +104,7 @@ class WorkspaceCurrencyControllerTest {
               "authorization_denial_log",
               "app_user",
               "workspace_member",
-              "financial_institution",
+              "portfolio",
               "workspace")) {
         // V68 refuses a plain DELETE of transactions outside an import rollback.
         statement.execute(
@@ -295,16 +295,16 @@ class WorkspaceCurrencyControllerTest {
     assertThat(adHoc.currency()).isEqualTo("USD");
     assertThat(adHoc.netWorth()).isEqualByComparingTo("120.0000");
 
-    InstitutionSummaryResponse institutionDefault =
-        institutionSummary(token, asset.financialInstitutionId(), null);
-    assertThat(institutionDefault.containerCurrency()).isEqualTo("CHF");
+    PortfolioSummaryResponse institutionDefault =
+        institutionSummary(token, asset.portfolioId(), null);
+    assertThat(institutionDefault.portfolioCurrency()).isEqualTo("CHF");
     assertThat(institutionDefault.currency()).isEqualTo("CHF");
     assertThat(institutionDefault.netValue()).isEqualByComparingTo("110.0000");
 
-    InstitutionSummaryResponse institutionAdHoc =
-        institutionSummary(token, asset.financialInstitutionId(), "USD");
+    PortfolioSummaryResponse institutionAdHoc =
+        institutionSummary(token, asset.portfolioId(), "USD");
     // The container's own currency stays visible; only the display currency changes.
-    assertThat(institutionAdHoc.containerCurrency()).isEqualTo("CHF");
+    assertThat(institutionAdHoc.portfolioCurrency()).isEqualTo("CHF");
     assertThat(institutionAdHoc.currency()).isEqualTo("USD");
     assertThat(institutionAdHoc.netValue()).isEqualByComparingTo("120.0000");
     assertThat(institutionAdHoc.accounts())
@@ -323,14 +323,14 @@ class WorkspaceCurrencyControllerTest {
   @Test
   void aContainerDefaultsToItsOwnCurrencyNotTheWorkspaces() {
     String token = bootstrapAdministrator("CHF");
-    UUID euroBank = createInstitution(token, "Euro Bank", "EUR");
+    UUID euroBank = createPortfolio(token, "Euro Bank", "EUR");
     AccountSummaryResponse asset = createCustomAsset(token, "USD", euroBank);
     recordValuation(token, asset.id(), "100.00");
     seedFxRate("EUR", "USD", today(), "1.2500000000");
     seedFxRate("EUR", "CHF", today(), "1.1000000000");
 
-    InstitutionSummaryResponse summary = institutionSummary(token, euroBank, null);
-    assertThat(summary.containerCurrency()).isEqualTo("EUR");
+    PortfolioSummaryResponse summary = institutionSummary(token, euroBank, null);
+    assertThat(summary.portfolioCurrency()).isEqualTo("EUR");
     assertThat(summary.currency()).isEqualTo("EUR");
     // USD 100 at EUR/USD 1.25 is EUR 80.
     assertThat(summary.netValue()).isEqualByComparingTo("80.0000");
@@ -364,8 +364,7 @@ class WorkspaceCurrencyControllerTest {
               assertThat(account.value()).isNull();
             });
 
-    InstitutionSummaryResponse summary =
-        institutionSummary(token, euro.financialInstitutionId(), "EUR");
+    PortfolioSummaryResponse summary = institutionSummary(token, euro.portfolioId(), "EUR");
     assertThat(summary.complete()).isFalse();
     assertThat(summary.netValue()).isEqualByComparingTo("100.00");
     assertThat(summary.accounts())
@@ -505,16 +504,16 @@ class WorkspaceCurrencyControllerTest {
         .getResponseBody();
   }
 
-  private InstitutionSummaryResponse institutionSummary(
+  private PortfolioSummaryResponse institutionSummary(
       String token, UUID institutionId, String currency) {
     String query = currency == null ? "" : "?currency=" + currency;
     return client(token)
         .get()
-        .uri("/api/v1/institutions/" + institutionId + "/summary" + query)
+        .uri("/api/v1/portfolios/" + institutionId + "/summary" + query)
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(InstitutionSummaryResponse.class)
+        .expectBody(PortfolioSummaryResponse.class)
         .returnResult()
         .getResponseBody();
   }
@@ -559,7 +558,7 @@ class WorkspaceCurrencyControllerTest {
         .body(
             AccountRequests.account("Vintage Car " + currency, "CUSTOM_ASSET", currency)
                 .customAssetType("VEHICLE")
-                .financialInstitutionId(institutionId)
+                .portfolioId(institutionId)
                 .build())
         .exchange()
         .expectStatus()
@@ -569,18 +568,16 @@ class WorkspaceCurrencyControllerTest {
         .getResponseBody();
   }
 
-  private UUID createInstitution(String token, String name, String containerCurrency) {
+  private UUID createPortfolio(String token, String name, String portfolioCurrency) {
     return client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateFinancialInstitutionRequest(
-                null, name, "DE", "BANK", null, null, containerCurrency))
+        .body(new CreatePortfolioRequest(null, name, "DE", "BANK", null, null, portfolioCurrency))
         .exchange()
         .expectStatus()
         .isCreated()
-        .expectBody(FinancialInstitutionSummaryResponse.class)
+        .expectBody(PortfolioResponse.class)
         .returnResult()
         .getResponseBody()
         .id();

@@ -15,7 +15,7 @@ import java.util.UUID;
  */
 public record AccountSummaryResponse(
     UUID id,
-    UUID financialInstitutionId,
+    UUID portfolioId,
     String name,
     String accountType,
     String nativeCurrency,
