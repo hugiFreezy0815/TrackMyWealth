@@ -31,9 +31,17 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -43,6 +51,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.test.web.servlet.client.StatusAssertions;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -429,6 +438,8 @@ class PortfolioViewControllerTest {
     }
     assertThat(queryString("SELECT name FROM portfolio WHERE id = ?", foreign))
         .isEqualTo("Personal Assets");
+    // US-28-02: each refusal is the audited 404, for the foreign id as for the unknown one.
+    assertThat(deniedPortfolioLookups(foreign)).isPositive();
   }
 
   @Test
@@ -497,6 +508,8 @@ class PortfolioViewControllerTest {
     }
     holding(newer);
     holding(newer);
+    // A later balance-only snapshot says nothing about positions: the count stays, with its date.
+    seedSnapshot(depot, today().minusDays(1), "100.0000", false);
     client(token)
         .put()
         .uri("/api/v1/accounts/" + card + "/statement-config")
@@ -512,6 +525,7 @@ class PortfolioViewControllerTest {
     AccountRow depotRow = view.sections().get(0).accounts().get(0);
     assertThat(view.sections().get(0).section()).isEqualTo(PortfolioSection.DEPOT);
     assertThat(depotRow.positionsCount()).isEqualTo(2);
+    assertThat(depotRow.positionsAsOf()).isEqualTo(today().minusDays(5));
     assertThat(depotRow.totalReturn()).isNull();
     assertThat(depotRow.dueDate()).isNull();
     AccountRow cardRow = view.sections().get(1).accounts().get(0);
@@ -519,7 +533,183 @@ class PortfolioViewControllerTest {
     // Closed today: the current statement is due 20 days from now.
     assertThat(cardRow.dueDate()).isEqualTo(today().plusDays(20));
     assertThat(cardRow.positionsCount()).isNull();
+    assertThat(cardRow.positionsAsOf()).isNull();
     assertThat(cardRow.balance()).isEqualByComparingTo("0");
+  }
+
+  // --- Review of #438 ------------------------------------------------------------------------
+
+  @Test
+  void thePersonalAssetsPortfolioAlwaysKeepsItsType() throws Exception {
+    String token = bootstrapAdministrator();
+    // No portfolio given: the account lands in the Personal Assets portfolio.
+    UUID personalAssets =
+        createAccount(token, AccountRequests.account("Bargeld", "CASH", "CHF").build())
+            .portfolioId();
+
+    for (String type : List.of("BANK", "CRYPTO", "MIXED")) {
+      putPortfolio(
+              token,
+              personalAssets,
+              Map.<String, Object>of("name", "Personal Assets", "portfolioType", type))
+          .isEqualTo(HttpStatus.CONFLICT);
+    }
+    PortfolioResponse renamed = updatePortfolio(token, personalAssets, "Privat", null);
+    assertThat(renamed.name()).isEqualTo("Privat");
+    assertThat(renamed.portfolioType()).isEqualTo(PortfolioType.PERSONAL_ASSETS);
+    assertThat(renamed.portfolioTypeOverridden()).isFalse();
+
+    PortfolioResponse ordinary = createPortfolio(token, "Yuh", "CHF");
+    putPortfolio(
+            token,
+            ordinary.id(),
+            Map.<String, Object>of("name", "Yuh", "portfolioType", "PERSONAL_ASSETS"))
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+    assertThat(typeOf(token, ordinary.id())).isEqualTo(PortfolioType.BANK);
+  }
+
+  @Test
+  void aPortfolioNameAndLogoAreBoundedAndTheLogoIsAnHttpsUrl() {
+    String token = bootstrapAdministrator();
+    String tooLong = "x".repeat(CreatePortfolioRequest.MAX_NAME_LENGTH + 1);
+
+    for (CreatePortfolioRequest refused :
+        List.of(
+            new CreatePortfolioRequest(null, tooLong, null, null, null, null, "CHF"),
+            new CreatePortfolioRequest(null, "Yuh", null, null, null, "javascript:alert(1)", "CHF"),
+            new CreatePortfolioRequest(
+                null, "Yuh", null, null, null, "data:image/png;base64,AAAA", "CHF"),
+            new CreatePortfolioRequest(
+                null, "Yuh", null, null, null, "http://example.com/logo.png", "CHF"),
+            new CreatePortfolioRequest(
+                null,
+                "Yuh",
+                null,
+                null,
+                null,
+                "https://example.com/" + "a".repeat(CreatePortfolioRequest.MAX_LOGO_URL_LENGTH),
+                "CHF"))) {
+      client(token)
+          .post()
+          .uri("/api/v1/portfolios")
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(refused)
+          .exchange()
+          .expectStatus()
+          .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    PortfolioResponse created =
+        client(token)
+            .post()
+            .uri("/api/v1/portfolios")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(
+                new CreatePortfolioRequest(
+                    null,
+                    "x".repeat(CreatePortfolioRequest.MAX_NAME_LENGTH),
+                    null,
+                    null,
+                    null,
+                    "https://example.com/logo.png",
+                    "CHF"))
+            .exchange()
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(PortfolioResponse.class)
+            .returnResult()
+            .getResponseBody();
+    assertThat(created.logoUrl()).isEqualTo("https://example.com/logo.png");
+
+    putPortfolio(
+            token, created.id(), Map.<String, Object>of("name", tooLong, "portfolioType", "BANK"))
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+    putPortfolio(
+            token,
+            created.id(),
+            Map.<String, Object>of(
+                "name", "Yuh", "logoUrl", "javascript:alert(1)", "portfolioType", "BANK"))
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+  }
+
+  static Stream<Arguments> accountsOfEveryOtherKind() {
+    return Stream.of(
+        Arguments.of(
+            AccountRequests.account("Mandat", "MANAGED_MANDATE", "CHF"),
+            PortfolioSection.DEPOT,
+            PortfolioType.PORTFOLIO),
+        Arguments.of(
+            AccountRequests.account("Bitcoin", "CRYPTO", "CHF"),
+            PortfolioSection.CRYPTO,
+            PortfolioType.CRYPTO),
+        Arguments.of(
+            AccountRequests.account("Freizuegigkeit", "VESTED_BENEFITS", "CHF"),
+            PortfolioSection.PENSION,
+            PortfolioType.PENSION_FUND),
+        Arguments.of(
+            AccountRequests.account("Riester", "PENSION", "EUR").pensionScheme("DE_RIESTER"),
+            PortfolioSection.PENSION,
+            PortfolioType.PENSION_FUND),
+        Arguments.of(
+            AccountRequests.account("Kredit", "LOAN", "CHF")
+                .originalPrincipal(new BigDecimal("10000")),
+            PortfolioSection.OTHER,
+            PortfolioType.MIXED),
+        Arguments.of(
+            AccountRequests.account("Auto", "CUSTOM_ASSET", "CHF").customAssetType("VEHICLE"),
+            PortfolioSection.OTHER,
+            PortfolioType.MIXED));
+  }
+
+  @ParameterizedTest
+  @MethodSource("accountsOfEveryOtherKind")
+  void everyKindOfAccountHasItsSectionAndFamily(
+      AccountRequests.Builder account, PortfolioSection section, PortfolioType type) {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "Alone", "CHF");
+    createAccount(token, account.portfolioId(portfolio.id()).build());
+
+    PortfolioViewResponse view = getView(token, portfolio.id());
+
+    assertThat(view.sections()).extracting(Section::section).containsExactly(section);
+    assertThat(view.portfolioType()).isEqualTo(type);
+  }
+
+  @Test
+  void accountsAddedAtTheSameTimeAreAllCountedInTheSuggestedType() throws Exception {
+    String token = bootstrapAdministrator();
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      for (int round = 0; round < 5; round++) {
+        PortfolioResponse portfolio = createPortfolio(token, "Race " + round, "CHF");
+        CountDownLatch start = new CountDownLatch(1);
+        Future<?> cash =
+            pool.submit(
+                () -> {
+                  start.await();
+                  return createAccount(token, cash("Konto", portfolio.id()));
+                });
+        Future<?> depot =
+            pool.submit(
+                () -> {
+                  start.await();
+                  return createAccount(
+                      token,
+                      AccountRequests.account("Depot", "SECURITIES", "CHF")
+                          .portfolioId(portfolio.id())
+                          .build());
+                });
+        start.countDown();
+        cash.get();
+        depot.get();
+
+        // Either refresh alone would have seen one account (BANK or PORTFOLIO): the lock makes
+        // the later one wait for the earlier one's commit and count both.
+        assertThat(typeOf(token, portfolio.id())).isEqualTo(PortfolioType.MIXED);
+      }
+    } finally {
+      pool.shutdownNow();
+    }
   }
 
   // --- Helpers ---------------------------------------------------------------------------------
@@ -593,6 +783,32 @@ class PortfolioViewControllerTest {
         .expectBody(PortfolioResponse.class)
         .returnResult()
         .getResponseBody();
+  }
+
+  private StatusAssertions putPortfolio(String token, UUID portfolioId, Map<String, Object> body) {
+    int version = getPortfolio(token, portfolioId).getResponseBody().version();
+    return client(token)
+        .put()
+        .uri("/api/v1/portfolios/" + portfolioId)
+        .header("If-Match", "\"" + version + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(body)
+        .exchange()
+        .expectStatus();
+  }
+
+  private long deniedPortfolioLookups(UUID portfolioId) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT count(*) FROM authorization_denial_log"
+                    + " WHERE requested_entity_type = 'Portfolio' AND requested_entity_id = ?")) {
+      statement.setObject(1, portfolioId);
+      try (ResultSet result = statement.executeQuery()) {
+        assertThat(result.next()).isTrue();
+        return result.getLong(1);
+      }
+    }
   }
 
   private PortfolioViewResponse getView(String token, UUID portfolioId) {

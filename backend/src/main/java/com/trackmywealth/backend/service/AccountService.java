@@ -469,7 +469,8 @@ public class AccountService {
    * <p>Each portfolio is locked first ({@link PortfolioRepository#lockForTypeRefresh}), so its
    * accounts are read only once no other refresh of it is in flight: two members adding accounts to
    * one portfolio at the same time both end up counted. Portfolios are locked in id order, so two
-   * moves in opposite directions cannot deadlock.
+   * moves in opposite directions cannot deadlock. A portfolio whose type the member has set is only
+   * locked, not recomputed.
    */
   @Transactional
   public void refreshPortfolioTypes(Collection<Portfolio> portfolios) {
@@ -478,7 +479,13 @@ public class AccountService {
       byId.put(portfolio.getId(), portfolio);
     }
     for (Portfolio portfolio : byId.values()) {
-      portfolioRepository.lockForTypeRefresh(portfolio.getId());
+      boolean overridden = portfolioRepository.lockForTypeRefresh(portfolio.getId()).orElse(true);
+      if (overridden) {
+        // The member's type is kept as set: nothing to compute. Read under the lock, so a
+        // concurrent update clearing it has either committed (and is seen here) or computes the
+        // suggestion itself, under the same lock, after this transaction.
+        continue;
+      }
       List<Account> active =
           accountRepository.findByPortfolioIdAndStatusOrderByCreatedAtAsc(
               portfolio.getId(), ACTIVE);

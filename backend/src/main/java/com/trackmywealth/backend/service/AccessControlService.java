@@ -37,7 +37,8 @@ public class AccessControlService {
   private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
   private static final long SOLE_MEMBER = 1;
   private static final String ACCOUNT_ENTITY_TYPE = "Account";
-  private static final String INSTITUTION_ENTITY_TYPE = "Portfolio";
+  // As PortfolioLookupService's: "FinancialInstitution" in denials logged before V111.
+  private static final String PORTFOLIO_ENTITY_TYPE = "Portfolio";
   private static final String WORKSPACE_ENTITY_TYPE = "Workspace";
 
   private final AppUserRepository appUserRepository;
@@ -76,9 +77,9 @@ public class AccessControlService {
   }
 
   @Transactional(readOnly = true)
-  public void requirePortfolioAccess(AuthenticatedUserPrincipal actor, Portfolio institution) {
+  public void requirePortfolioAccess(AuthenticatedUserPrincipal actor, Portfolio portfolio) {
     requireWorkspaceMembership(
-        actor, institution.getWorkspace().getId(), INSTITUTION_ENTITY_TYPE, institution.getId());
+        actor, portfolio.getWorkspace().getId(), PORTFOLIO_ENTITY_TYPE, portfolio.getId());
   }
 
   @Transactional(readOnly = true)

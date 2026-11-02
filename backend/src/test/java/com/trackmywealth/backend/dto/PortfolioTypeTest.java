@@ -62,10 +62,13 @@ class PortfolioTypeTest {
   }
 
   @Test
-  void thePatternListsEveryType() {
-    assertThat(PortfolioType.PATTERN)
+  void thePatternListsEveryTypeButPersonalAssets() {
+    assertThat(PortfolioType.SELECTABLE_PATTERN)
         .isEqualTo(
-            Arrays.stream(PortfolioType.values()).map(Enum::name).collect(Collectors.joining("|")));
+            Arrays.stream(PortfolioType.values())
+                .filter(type -> type != PortfolioType.PERSONAL_ASSETS)
+                .map(Enum::name)
+                .collect(Collectors.joining("|")));
   }
 
   @Test

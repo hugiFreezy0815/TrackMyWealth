@@ -166,7 +166,9 @@ public class PortfolioViewService {
       AccountValuation ownValue,
       PortfolioAccountDetails details) {
     UUID id = account.getId();
-    Integer positionsCount = account.isHoldsPositions() ? details.positionsCount().get(id) : null;
+    boolean holdsPositions = account.isHoldsPositions();
+    Integer positionsCount = holdsPositions ? details.positionsCount().get(id) : null;
+    LocalDate positionsAsOf = holdsPositions ? details.positionsAsOf().get(id) : null;
     return new AccountRow(
         id,
         account.getName(),
@@ -180,6 +182,7 @@ public class PortfolioViewService {
         portfolioValue.valueSourceDate(),
         portfolioValue.warnings(),
         positionsCount,
+        positionsAsOf,
         // EPIC 15: no performance calculation exists yet (PO decision on #390).
         null,
         details.dueDates().get(id),
@@ -219,10 +222,12 @@ public class PortfolioViewService {
     List<UUID> withPositions =
         accounts.stream().filter(Account::isHoldsPositions).map(Account::getId).toList();
     Map<UUID, Integer> positionsCount = new HashMap<>();
+    Map<UUID, LocalDate> positionsAsOf = new HashMap<>();
     if (!withPositions.isEmpty()) {
       for (AccountPositionCount count :
           snapshotHoldingRepository.countPositionsInNewestHoldingsSnapshot(withPositions)) {
         positionsCount.put(count.getAccountId(), Math.toIntExact(count.getPositions()));
+        positionsAsOf.put(count.getAccountId(), count.getPositionsAsOf());
       }
     }
 
@@ -247,7 +252,7 @@ public class PortfolioViewService {
         }
       }
     }
-    return new PortfolioAccountDetails(positionsCount, dueDates, linkedProperties);
+    return new PortfolioAccountDetails(positionsCount, positionsAsOf, dueDates, linkedProperties);
   }
 
   private static List<UUID> idsInSection(

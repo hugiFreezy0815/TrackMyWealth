@@ -22,9 +22,13 @@ public enum PortfolioType {
   PERSONAL_ASSETS,
   MIXED;
 
-  /** Every value, for a request field's {@code @Pattern}; {@code PortfolioTypeTest} keeps it so. */
-  public static final String PATTERN =
-      "BANK|PORTFOLIO|PILLAR_3A|PENSION_FUND|CRYPTO|PERSONAL_ASSETS|MIXED";
+  /**
+   * Every type a member may set, for a request field's {@code @Pattern}: all but {@link
+   * #PERSONAL_ASSETS}, which belongs to the workspace's default portfolio alone (V19) and which
+   * that portfolio always has. {@code PortfolioTypeTest} keeps the list complete.
+   */
+  public static final String SELECTABLE_PATTERN =
+      "BANK|PORTFOLIO|PILLAR_3A|PENSION_FUND|CRYPTO|MIXED";
 
   /**
    * The suggested type of a portfolio whose active accounts fall into {@code sections}, one entry

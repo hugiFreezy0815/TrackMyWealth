@@ -22,9 +22,14 @@ public interface PortfolioRepository extends JpaRepository<Portfolio, UUID> {
    * each add an account cannot both compute the type without the other's account. {@code FOR NO KEY
    * UPDATE}, not {@code FOR UPDATE}: it must not wait for the {@code KEY SHARE} lock the
    * foreign-key check of a concurrent account insert holds on the same row until it commits.
+   *
+   * @return whether the member has set the portfolio's type ({@code portfolio_type_overridden}),
+   *     read under the lock; empty when RLS hides the row or it does not exist
    */
-  @Query(value = "SELECT id FROM portfolio WHERE id = :id FOR NO KEY UPDATE", nativeQuery = true)
-  Optional<UUID> lockForTypeRefresh(@Param("id") UUID id);
+  @Query(
+      value = "SELECT portfolio_type_overridden FROM portfolio WHERE id = :id FOR NO KEY UPDATE",
+      nativeQuery = true)
+  Optional<Boolean> lockForTypeRefresh(@Param("id") UUID id);
 
   /**
    * US-04-06: stores {@code type} as the portfolio's suggested type unless the member has set one

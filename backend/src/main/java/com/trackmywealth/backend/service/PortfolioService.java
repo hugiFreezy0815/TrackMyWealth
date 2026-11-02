@@ -130,6 +130,8 @@ public class PortfolioService {
    * US-04-06: full replacement of the portfolio's name, country, logo and type ({@link
    * UpdatePortfolioRequest}), under {@code If-Match} (ADR 0004). A type the member sets is kept as
    * set (FR-INS-006); none goes back to the type suggested from the portfolio's active accounts.
+   * The Personal Assets default keeps {@code PERSONAL_ASSETS}: setting a type on it is a 409, and
+   * no other portfolio can be given that type ({@link PortfolioType#SELECTABLE_PATTERN}).
    *
    * <p>The row is locked before it is read, as {@link AccountService#refreshPortfolioTypes} locks
    * it, so a suggested type computed here counts every account a concurrent request added.
@@ -149,6 +151,13 @@ public class PortfolioService {
     accessControlService.requirePortfolioAccess(actor, portfolio);
     versionPreconditionService.requireCurrent(
         expectedVersion, portfolio.getVersion(), VERSIONED_RESOURCE);
+
+    if (portfolio.isPersonalAssetsDefault() && request.portfolioType() != null) {
+      // PO decision on #390: the Personal Assets default is always PERSONAL_ASSETS.
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "The type of the Personal Assets portfolio cannot be set; send portfolioType null.");
+    }
 
     portfolio.setName(request.name());
     portfolio.setCountry(request.country());

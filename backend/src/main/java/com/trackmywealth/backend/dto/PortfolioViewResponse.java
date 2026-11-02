@@ -70,7 +70,7 @@ public record PortfolioViewResponse(
   }
 
   /**
-   * One account of a section. The last four fields apply to some kinds of account only and are
+   * One account of a section. The last five fields apply to some kinds of account only and are
    * {@code null} for every other.
    *
    * @param currency the account's own currency: its native currency, or a card's billing currency
@@ -82,6 +82,8 @@ public record PortfolioViewResponse(
    *     when it is derived from the ledger or the loan terms ({@link AccountValuation})
    * @param positionsCount for an account holding positions: the number of positions in its newest
    *     holdings snapshot; {@code null} when it has none yet
+   * @param positionsAsOf the date of that snapshot, so a client can show how old the count is: a
+   *     later snapshot without holdings (a balance-only statement) does not replace it
    * @param totalReturn for an account holding positions: its return. Always {@code null} until
    *     performance is calculated (EPIC 15, PO decision on #390); part of the contract already so a
    *     client can show it once it is
@@ -102,6 +104,7 @@ public record PortfolioViewResponse(
       LocalDate valueSourceDate,
       List<String> warnings,
       Integer positionsCount,
+      LocalDate positionsAsOf,
       BigDecimal totalReturn,
       LocalDate dueDate,
       UUID linkedPropertyAccountId) {

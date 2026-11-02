@@ -171,11 +171,15 @@ crypto) are each shown the way their contents need.
 
   All active accounts in one family → that family; any account without a family, or several
   families → `MIXED`; no account → `BANK`; the Personal Assets default → `PERSONAL_ASSETS`.
+  A member may set any type but `PERSONAL_ASSETS`; the Personal Assets default always keeps its
+  type, so setting one there is a 409. A portfolio name is at most 100 characters and a logo an
+  `https` URL of at most 2048.
 - **Portfolio View** `GET /api/v1/portfolios/{id}/view`: signed total in portfolio and workspace
   currency, `complete`, `valueStatus`, warnings, and the non-empty sections in the order above,
   each with signed subtotals and its accounts (own-currency balance, value in portfolio currency,
-  value status, positions count for accounts holding positions, `totalReturn` (always `null` until
-  EPIC 15), card due date, mortgage's linked property). Same valuation as the summary and net
+  value status, positions count and its snapshot date (`positionsAsOf`) for accounts holding
+  positions, `totalReturn` (always `null` until EPIC 15), card due date, mortgage's linked
+  property). Same valuation as the summary and net
   worth.
 - **Value status** (`CURRENT`, `ESTIMATED`, `STALE`, `UNRECONCILED`, `UNKNOWN`) is derived from the
   existing valuation result; a total takes the worst of its accounts. #380/#381 reuse it.
