@@ -29,6 +29,7 @@ class ImportLedgerRowServiceTest {
     assertThat(request.amount()).isEqualByComparingTo("-85.00");
     assertThat(request.currency()).isEqualTo("EUR");
     assertThat(request.merchantDescription()).isEqualTo("Strom Januar");
+    assertThat(request.counterpartyName()).isEqualTo("Stadtwerke");
     assertThat(request.mcc()).isEqualTo("4900");
     assertThat(request.notes()).isEqualTo("note");
     assertThat(request.externalId()).isEqualTo("REF-1");
@@ -70,6 +71,46 @@ class ImportLedgerRowServiceTest {
   void withoutADescriptionTheCounterpartyDescribesTheRow() {
     assertThat(service.request(row(null, "Stadtwerke")).merchantDescription())
         .isEqualTo("Stadtwerke");
+  }
+
+  @Test
+  void theCounterpartyIsKeptAsItsOwnFieldEvenWhenItAlsoDescribesTheRow() {
+    // US-07-35: the search finds the row by its counterparty either way.
+    CreateTransactionRequest request = service.request(row(null, "Stadtwerke"));
+
+    assertThat(request.counterpartyName()).isEqualTo("Stadtwerke");
+  }
+
+  @Test
+  void aCounterpartyLongerThanARequestMaySendIsCutSoTheRowStaysCorrectable() {
+    int max = CreateTransactionRequest.COUNTERPARTY_NAME_MAX_LENGTH;
+    String exact = "a".repeat(max);
+    String tooLong = "b".repeat(max + 40);
+
+    assertThat(service.request(row(null, exact)).counterpartyName()).isEqualTo(exact);
+    assertThat(service.request(row(null, tooLong)).counterpartyName()).isEqualTo("b".repeat(max));
+    // The source data keeps what the file said.
+    JsonNode data =
+        objectMapper.readTree(service.toLedgerRow(row(null, tooLong), Map.of()).rawSourceData());
+    assertThat(data.path("counterpartyName").stringValue()).isEqualTo(tooLong);
+  }
+
+  @Test
+  void theCutNeverSplitsACharacterOutsideTheBasicPlane() {
+    int max = CreateTransactionRequest.COUNTERPARTY_NAME_MAX_LENGTH;
+    // U+1F3E6 (bank) is two UTF-16 units; cutting by units at 255 would leave half of one.
+    String bank = new String(Character.toChars(0x1F3E6));
+    String name = "x" + bank.repeat(max);
+
+    String stored = service.request(row(null, name)).counterpartyName();
+
+    assertThat(stored.codePointCount(0, stored.length())).isEqualTo(max);
+    assertThat(stored).isEqualTo("x" + bank.repeat(max - 1));
+  }
+
+  @Test
+  void aRowWithoutACounterpartyHasNone() {
+    assertThat(service.request(row("Strom Januar", null)).counterpartyName()).isNull();
   }
 
   @Test

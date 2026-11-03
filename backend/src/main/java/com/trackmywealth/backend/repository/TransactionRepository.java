@@ -2,25 +2,149 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
+import com.trackmywealth.backend.dto.TransactionSearchFilter;
+import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Path;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
+public interface TransactionRepository
+    extends JpaRepository<Transaction, UUID>, JpaSpecificationExecutor<Transaction> {
+
+  /** The escape character of {@link #searchedBy}'s LIKE pattern. */
+  char LIKE_ESCAPE = '\\';
+
+  /** The characters LIKE gives a meaning: its two wildcards and the escape character itself. */
+  String LIKE_SPECIAL_CHARACTERS = "\\%_";
+
+  /**
+   * US-07-35 (#382): the rows of the workspace-wide list - {@code workspaceId}'s rows matching
+   * {@code filter} (see {@link TransactionSearchFilter}). Soft-deleted rows are left out by the
+   * entity's own restriction. The workspace is matched explicitly as well as by row-level security,
+   * so the query also uses the workspace's indexes (V114). {@code uncategorizedCategoryId} is
+   * UNCATEGORIZED's id when {@code filter.uncategorized()}, otherwise ignored. The page's rows
+   * fetch their account with them (the response names it); the count query does not.
+   */
+  static Specification<Transaction> searchedBy(
+      UUID workspaceId, TransactionSearchFilter filter, UUID uncategorizedCategoryId) {
+    return (root, query, builder) -> {
+      if (!isCount(query)) {
+        root.fetch("account");
+      }
+      List<Predicate> where = new ArrayList<>();
+      where.add(builder.equal(root.get("workspace").get("id"), workspaceId));
+      Path<UUID> accountId = root.get("account").get("id");
+      if (!filter.accountIds().isEmpty()) {
+        where.add(accountId.in(filter.accountIds()));
+      }
+      if (!filter.portfolioIds().isEmpty()) {
+        Subquery<UUID> inPortfolios = query.subquery(UUID.class);
+        Root<Account> account = inPortfolios.from(Account.class);
+        inPortfolios
+            .select(account.get("id"))
+            .where(account.get("portfolio").get("id").in(filter.portfolioIds()));
+        where.add(accountId.in(inPortfolios));
+      }
+      if (!filter.categoryIds().isEmpty()) {
+        where.add(root.get("categoryId").in(filter.categoryIds()));
+      }
+      if (filter.uncategorized()) {
+        where.add(builder.equal(root.get("categoryId"), uncategorizedCategoryId));
+        where.add(builder.isNull(root.get("voidedAt")));
+        where.add(builder.isNull(root.get("replacesTransactionId")));
+      }
+      addRanges(where, root, builder, filter);
+      if (filter.currency() != null) {
+        where.add(builder.equal(root.get("currency"), filter.currency()));
+      }
+      if (filter.q() != null) {
+        where.add(matchesSearch(root, builder, filter.q()));
+      }
+      return builder.and(where.toArray(new Predicate[0]));
+    };
+  }
+
+  private static boolean isCount(CriteriaQuery<?> query) {
+    return Long.class.equals(query.getResultType()) || long.class.equals(query.getResultType());
+  }
+
+  private static void addRanges(
+      List<Predicate> where,
+      Root<Transaction> root,
+      CriteriaBuilder builder,
+      TransactionSearchFilter filter) {
+    if (filter.bookingDateFrom() != null) {
+      where.add(
+          builder.greaterThanOrEqualTo(
+              root.<LocalDate>get("bookingDate"), filter.bookingDateFrom()));
+    }
+    if (filter.bookingDateTo() != null) {
+      where.add(
+          builder.lessThanOrEqualTo(root.<LocalDate>get("bookingDate"), filter.bookingDateTo()));
+    }
+    if (filter.amountMin() != null) {
+      where.add(
+          builder.greaterThanOrEqualTo(
+              root.<BigDecimal>get("amountInAccountCurrency"), filter.amountMin()));
+    }
+    if (filter.amountMax() != null) {
+      where.add(
+          builder.lessThanOrEqualTo(
+              root.<BigDecimal>get("amountInAccountCurrency"), filter.amountMax()));
+    }
+  }
+
+  // The same expression V114's trigram index is built on, so the index serves the LIKE; q is
+  // folded by the database's own function, so both sides fold alike.
+  private static Predicate matchesSearch(
+      Root<Transaction> root, CriteriaBuilder builder, String q) {
+    Expression<String> searchText =
+        builder.function(
+            "transaction_search_text",
+            String.class,
+            root.get("merchantDescription"),
+            root.get("counterpartyName"));
+    Expression<String> folded =
+        builder.function("search_fold", String.class, builder.literal(escapeLike(q)));
+    return builder.like(searchText, builder.concat(builder.concat("%", folded), "%"), LIKE_ESCAPE);
+  }
+
+  /** {@code q} with LIKE's wildcards and the escape character taken literally. */
+  static String escapeLike(String q) {
+    StringBuilder escaped = new StringBuilder(q.length() + 8);
+    for (int i = 0; i < q.length(); i++) {
+      char c = q.charAt(i);
+      if (LIKE_SPECIAL_CHARACTERS.indexOf(c) >= 0) {
+        escaped.append(LIKE_ESCAPE);
+      }
+      escaped.append(c);
+    }
+    return escaped.toString();
+  }
 
   String ACCOUNT_ID = "accountId";
   String CURRENCY = "currency";

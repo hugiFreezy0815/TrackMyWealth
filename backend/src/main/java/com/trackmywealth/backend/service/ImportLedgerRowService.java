@@ -18,9 +18,13 @@ import tools.jackson.databind.node.ObjectNode;
  * here, so what is previewed is what is committed. Stateless.
  *
  * <p>{@code merchant_description} is the row's description, or its counterparty when it has none;
- * the counterparty, value date, bank transaction code and every raw cell go to {@code
- * raw_source_data} ({@code CategorizationService} reads {@code bankTransactionCode} from there, and
- * the MCC is added by the ledger as for a manual row).
+ * the counterparty is also the ledger's {@code counterparty_name} (US-07-35, see {@link
+ * #ledgerCounterpartyName}). A row without a description therefore shows its counterparty in both
+ * fields: the fallback stays, because the duplicate rule pairs matches by the description and rows
+ * imported before keep it; a client hides the description when it equals the counterparty. The
+ * counterparty, value date, bank transaction code and every raw cell go to {@code raw_source_data}
+ * as well ({@code CategorizationService} reads {@code bankTransactionCode} from there, and the MCC
+ * is added by the ledger as for a manual row).
  */
 @Service
 public class ImportLedgerRowService {
@@ -99,7 +103,8 @@ public class ImportLedgerRowService {
         null,
         null,
         null,
-        null);
+        null,
+        ledgerCounterpartyName(row));
   }
 
   /** The ledger amount and currency, shared with duplicate matching for foreign card purchases. */
@@ -119,6 +124,21 @@ public class ImportLedgerRowService {
 
   public static String ledgerCurrency(CanonicalImportRow row) {
     return isOriginalCurrencyPurchase(row) ? row.originalCurrency() : row.currency();
+  }
+
+  /**
+   * The row's counterparty as the ledger stores it (US-07-35): at most {@value
+   * CreateTransactionRequest#COUNTERPARTY_NAME_MAX_LENGTH} characters, so a member can still
+   * correct the row with the request it read; the full text stays in {@code raw_source_data}. Cut
+   * at a code point, never inside a surrogate pair.
+   */
+  public static String ledgerCounterpartyName(CanonicalImportRow row) {
+    String name = row.counterpartyName();
+    int max = CreateTransactionRequest.COUNTERPARTY_NAME_MAX_LENGTH;
+    if (name == null || name.codePointCount(0, name.length()) <= max) {
+      return name;
+    }
+    return name.substring(0, name.offsetByCodePoints(0, max));
   }
 
   /**

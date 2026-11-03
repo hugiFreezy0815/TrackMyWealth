@@ -20,12 +20,12 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * US-07-06 / FR-LIF-004: corrects a transaction without rewriting committed financial history.
  *
- * <p>A text-only edit changes {@code merchantDescription}/{@code notes} in place. Any immutable
- * financial difference uses the existing lifecycle rules atomically: T1 is soft-deleted, T2 is
- * voided and reversed, then a validated replacement is inserted with an immutable correction link.
- * A member's current category override is carried to the replacement after ordinary automatic
- * categorization has run, as long as the replacement's type is categorized and the category is
- * still assignable.
+ * <p>A text-only edit changes {@code merchantDescription}/{@code counterpartyName}/{@code notes} in
+ * place. Any immutable financial difference uses the existing lifecycle rules atomically: T1 is
+ * soft-deleted, T2 is voided and reversed, then a validated replacement is inserted with an
+ * immutable correction link. A member's current category override is carried to the replacement
+ * after ordinary automatic categorization has run, as long as the replacement's type is categorized
+ * and the category is still assignable.
  */
 @Service
 public class TransactionCorrectionService {
@@ -153,8 +153,8 @@ public class TransactionCorrectionService {
   /**
    * US-10-02: a loan payment's rows were split as one entry, so a replacement of one of them could
    * not keep the split - the interest and both principal legs must add up to the payment. Only its
-   * description and notes are edited in place; any financial change is a 409 pointing the member at
-   * removing the payment (which takes all its rows) and recording it again.
+   * description, counterparty name and notes are edited in place; any financial change is a 409
+   * pointing the member at removing the payment (which takes all its rows) and recording it again.
    */
   private TransactionCorrectionResponse editLoanPaymentText(
       Transaction original,
@@ -223,9 +223,12 @@ public class TransactionCorrectionService {
     boolean descriptionChanged =
         !Objects.equals(transaction.getMerchantDescription(), request.merchantDescription());
     boolean changed =
-        descriptionChanged || !Objects.equals(transaction.getNotes(), request.notes());
+        descriptionChanged
+            || !Objects.equals(transaction.getCounterpartyName(), request.counterpartyName())
+            || !Objects.equals(transaction.getNotes(), request.notes());
     if (changed) {
       transaction.setMerchantDescription(request.merchantDescription());
+      transaction.setCounterpartyName(request.counterpartyName());
       transaction.setNotes(request.notes());
       transactionRepository.saveAndFlush(transaction);
     }

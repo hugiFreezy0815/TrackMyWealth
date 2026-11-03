@@ -1134,6 +1134,72 @@ class TransactionControllerTest {
     assertThat(listed).extracting(TransactionResponse::id).containsExactly(created.id());
   }
 
+  // --- US-07-35: the counterparty name ----------------------------------------------------------
+
+  @Test
+  void aManualEntryKeepsItsCounterpartyNameApartFromItsDescription() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+    CreateTransactionRequest groceries =
+        TransactionRequests.withCounterpartyName(
+            cashTransaction("EXPENSE", "-45.00", "CHF"), "Migros Zürich");
+
+    TransactionResponse created =
+        postTransaction(token, cash.id(), groceries)
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(created.counterpartyName()).isEqualTo("Migros Zürich");
+    assertThat(created.merchantDescription()).isNull();
+    assertThat(listTransactions(token, cash.id(), "").content())
+        .singleElement()
+        .extracting(TransactionResponse::counterpartyName)
+        .isEqualTo("Migros Zürich");
+  }
+
+  @Test
+  void aBlankCounterpartyNameIsStoredAsNone() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+
+    TransactionResponse created =
+        postTransaction(
+                token,
+                cash.id(),
+                TransactionRequests.withCounterpartyName(
+                    cashTransaction("EXPENSE", "-5.00", "CHF"), "   "))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(created.counterpartyName()).isNull();
+  }
+
+  @Test
+  void aCounterpartyNameLongerThan255CharactersIsA400NamingTheField() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+
+    postTransaction(
+            token,
+            cash.id(),
+            TransactionRequests.withCounterpartyName(
+                cashTransaction("EXPENSE", "-5.00", "CHF"), "x".repeat(256)))
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VALIDATION_FAILED")
+        .jsonPath("$.errors[0].field")
+        .isEqualTo("counterpartyName");
+    assertThat(countTransactions(cash.id())).isZero();
+  }
+
   @Test
   void everyCashTypeIsAcceptedWithItsOwnSignAndRejectedWithTheOpposite() {
     String token = bootstrapAdministrator();
@@ -2291,6 +2357,7 @@ class TransactionControllerTest {
         null,
         null,
         null,
+        null,
         null);
   }
 
@@ -2325,6 +2392,7 @@ class TransactionControllerTest {
         settlementDate,
         decimal(grossAmount),
         decimal(taxWithheldAmount),
+        null,
         null,
         null);
   }
@@ -2381,6 +2449,7 @@ class TransactionControllerTest {
         null,
         null,
         null,
+        null,
         null);
   }
 
@@ -2405,6 +2474,7 @@ class TransactionControllerTest {
         request.settlementDate(),
         request.grossAmount(),
         request.taxWithheldAmount(),
+        null,
         null,
         null);
   }

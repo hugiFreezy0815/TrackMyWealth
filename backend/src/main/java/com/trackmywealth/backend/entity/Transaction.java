@@ -96,6 +96,11 @@ public class Transaction {
   @Column(name = "merchant_description")
   private String merchantDescription;
 
+  // US-07-35 (V113): the payee/payer the source names, or what the member entered. Descriptive
+  // text like merchantDescription - not frozen by the append-only trigger.
+  @Column(name = "counterparty_name")
+  private String counterpartyName;
+
   private String notes;
 
   @Column(nullable = false)
@@ -308,6 +313,14 @@ public class Transaction {
 
   public void setMerchantDescription(String merchantDescription) {
     this.merchantDescription = merchantDescription;
+  }
+
+  public String getCounterpartyName() {
+    return counterpartyName;
+  }
+
+  public void setCounterpartyName(String counterpartyName) {
+    this.counterpartyName = counterpartyName;
   }
 
   public String getNotes() {

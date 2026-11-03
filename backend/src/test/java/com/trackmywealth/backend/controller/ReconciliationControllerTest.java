@@ -494,7 +494,8 @@ class ReconciliationControllerTest {
         null,
         null,
         null,
-        "Amount was mistyped");
+        "Amount was mistyped",
+        null);
   }
 
   private void insertCardPurchase(

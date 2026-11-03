@@ -271,6 +271,87 @@ class TransactionRemovalControllerTest {
   }
 
   @Test
+  void aTextOnlyCorrectionEditsTheCounterpartyNameInPlace() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original =
+        record(
+            token,
+            card.id(),
+            TransactionRequests.withCounterpartyName(purchase("-85.00"), "Migros"));
+
+    TransactionCorrectionResponse renamed =
+        correct(
+            token,
+            card.id(),
+            original.id(),
+            correction(
+                original, "-85.00", null, original.merchantDescription(), null, null, "Coop"));
+
+    assertThat(renamed.removal()).isNull();
+    assertThat(renamed.transaction().id()).isEqualTo(original.id());
+    assertThat(renamed.transaction().counterpartyName()).isEqualTo("Coop");
+    assertThat(renamed.transaction().version()).isGreaterThan(original.version());
+
+    // The correction is the row's whole desired state: leaving the name out clears it.
+    TransactionCorrectionResponse cleared =
+        correct(
+            token,
+            card.id(),
+            original.id(),
+            correction(
+                renamed.transaction(),
+                "-85.00",
+                null,
+                original.merchantDescription(),
+                null,
+                null,
+                " "));
+
+    assertThat(cleared.transaction().id()).isEqualTo(original.id());
+    assertThat(cleared.transaction().counterpartyName()).isNull();
+    assertThat(countRows(card.id())).isEqualTo(1);
+  }
+
+  @Test
+  void aFinancialCorrectionCarriesTheCounterpartyNameToTheReplacement() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original =
+        record(
+            token,
+            card.id(),
+            TransactionRequests.withCounterpartyName(purchase("-85.00"), "Migros"));
+
+    TransactionCorrectionResponse corrected =
+        correct(token, card.id(), original, "-80.00", "Wrong amount", "Shop", null, null);
+
+    assertThat(corrected.removal()).isNotNull();
+    assertThat(corrected.transaction().correctsTransactionId()).isEqualTo(original.id());
+    assertThat(corrected.transaction().counterpartyName()).isEqualTo("Migros");
+  }
+
+  @Test
+  void aVoidsReversalAndItsRestoredCopyKeepTheCounterpartyName() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID imported = insertImported(card.id(), PURCHASE, "-85.00", today());
+    setCounterpartyName(imported, "Migros");
+
+    TransactionRemovalResponse voided = remove(token, card.id(), imported, "Duplicate import");
+    TransactionRemovalResponse restored = restore(token, card.id(), imported);
+
+    assertThat(voided.reversals())
+        .singleElement()
+        .extracting(TransactionResponse::counterpartyName)
+        .isEqualTo("Migros");
+    assertThat(restored.restored())
+        .singleElement()
+        .extracting(TransactionResponse::counterpartyName)
+        .isEqualTo("Migros");
+  }
+
+  @Test
   void aUserCategoryOverrideCarriesToTheReplacement() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
@@ -2169,6 +2250,7 @@ class TransactionRemovalControllerTest {
                 null,
                 null,
                 null,
+                null,
                 null));
 
     assertThat(corrected.removal()).isNotNull();
@@ -2335,7 +2417,8 @@ class TransactionRemovalControllerTest {
         row.taxWithheldAmount(),
         counterpartyAccountId,
         null,
-        reason);
+        reason,
+        null);
   }
 
   // A card purchase's response carries neither its fee (a row of its own) nor, once estimated, an
@@ -2363,7 +2446,8 @@ class TransactionRemovalControllerTest {
         request.taxWithheldAmount(),
         request.counterpartyAccountId(),
         request.counterpartyAmount(),
-        request.reason());
+        request.reason(),
+        null);
   }
 
   private static CreateTransactionRequest eurPurchase(String amount, BigDecimal fxRate) {
@@ -2402,6 +2486,7 @@ class TransactionRemovalControllerTest {
         null,
         null,
         counterparty,
+        null,
         null);
   }
 
@@ -2452,6 +2537,18 @@ class TransactionRemovalControllerTest {
       String merchant,
       String notes,
       UUID targetAccountId) {
+    return correction(
+        original, amount, reason, merchant, notes, targetAccountId, original.counterpartyName());
+  }
+
+  private static CorrectTransactionRequest correction(
+      TransactionResponse original,
+      String amount,
+      String reason,
+      String merchant,
+      String notes,
+      UUID targetAccountId,
+      String counterpartyName) {
     return new CorrectTransactionRequest(
         targetAccountId,
         original.transactionType(),
@@ -2473,7 +2570,8 @@ class TransactionRemovalControllerTest {
         original.taxWithheldAmount(),
         original.counterpartyAccountId(),
         null,
-        reason);
+        reason,
+        counterpartyName);
   }
 
   private TransactionRemovalResponse remove(
@@ -2694,6 +2792,19 @@ class TransactionRemovalControllerTest {
   }
 
   // An imported row as a CSV import (EPIC 07) would leave it: source CSV, so its removal is a void.
+  private void setCounterpartyName(UUID transactionId, String name) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "UPDATE transaction SET counterparty_name = ? WHERE id = ?")) {
+      statement.setString(1, name);
+      statement.setObject(2, transactionId);
+      statement.executeUpdate();
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
   private UUID insertImported(UUID accountId, String type, String amount, LocalDate bookedOn) {
     UUID id = UUID.randomUUID();
     try (Connection connection = dataSource.getConnection();

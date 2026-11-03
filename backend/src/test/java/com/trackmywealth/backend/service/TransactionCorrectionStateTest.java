@@ -259,6 +259,7 @@ class TransactionCorrectionStateTest {
             null,
             null,
             null,
+            null,
             null));
   }
 
@@ -329,7 +330,8 @@ class TransactionCorrectionStateTest {
           grossAmount,
           taxWithheldAmount,
           counterparty,
-          counterpartyAmount);
+          counterpartyAmount,
+          null);
     }
   }
 }

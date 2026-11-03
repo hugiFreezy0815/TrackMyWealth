@@ -182,6 +182,7 @@ class TransactionServiceTest {
               null,
               null,
               null,
+              null,
               null);
 
       rejects(zeroSale, "A zero amount implies no rate");
@@ -448,6 +449,7 @@ class TransactionServiceTest {
         null,
         null,
         null,
+        null,
         null);
   }
 
@@ -473,6 +475,7 @@ class TransactionServiceTest {
         r.grossAmount(),
         r.taxWithheldAmount(),
         null,
+        null,
         null);
   }
 
@@ -497,6 +500,7 @@ class TransactionServiceTest {
         r.settlementDate(),
         decimal(grossAmount),
         decimal(taxWithheldAmount),
+        null,
         null,
         null);
   }

@@ -15,7 +15,8 @@ import java.util.UUID;
  *
  * <p>This request is separate from {@link CreateTransactionRequest}: callers cannot change source
  * provenance or supply a new source idempotency key. The body supplies the desired financial state.
- * Merchant description and notes may be edited in place; financial changes create a replacement.
+ * Merchant description, counterparty name and notes may be edited in place; financial changes
+ * create a replacement.
  *
  * <p>Target account is optional and defaults to the current account. Reason is required only when
  * the original is imported (T2), because that correction voids the original. The body is the
@@ -52,7 +53,8 @@ public record CorrectTransactionRequest(
     @Digits(integer = 16, fraction = 4) BigDecimal taxWithheldAmount,
     UUID counterpartyAccountId,
     @Digits(integer = 16, fraction = 4) BigDecimal counterpartyAmount,
-    @Size(max = 500) String reason) {
+    @Size(max = 500) String reason,
+    @Size(max = CreateTransactionRequest.COUNTERPARTY_NAME_MAX_LENGTH) String counterpartyName) {
 
   public CorrectTransactionRequest {
     transactionType = RequestStrings.blankToNull(transactionType);
@@ -61,6 +63,7 @@ public record CorrectTransactionRequest(
     mcc = RequestStrings.blankToNull(mcc);
     notes = RequestStrings.blankToNull(notes);
     reason = RequestStrings.blankToNull(reason);
+    counterpartyName = RequestStrings.blankToNull(counterpartyName);
   }
 
   /** The replacement goes through exactly the same request validation as a new transaction. */
@@ -85,7 +88,8 @@ public record CorrectTransactionRequest(
         grossAmount,
         taxWithheldAmount,
         counterpartyAccountId,
-        counterpartyAmount);
+        counterpartyAmount,
+        counterpartyName);
   }
 
   /** The same desired state with no FX rate: "let the server derive it". */
@@ -111,6 +115,7 @@ public record CorrectTransactionRequest(
         taxWithheldAmount,
         counterpartyAccountId,
         counterpartyAmount,
-        reason);
+        reason,
+        counterpartyName);
   }
 }

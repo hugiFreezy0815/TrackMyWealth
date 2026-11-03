@@ -536,6 +536,7 @@ public class TransactionRemovalService {
     copy.setAmount(original.getAmount());
     copy.setCurrency(original.getCurrency());
     copy.setMerchantDescription(original.getMerchantDescription());
+    copy.setCounterpartyName(original.getCounterpartyName());
     copy.setNotes(original.getNotes());
     // Provenance and source data describe the same real-world transaction; the idempotency key
     // stays with the original, which an import's de-duplication still finds.
@@ -787,6 +788,7 @@ public class TransactionRemovalService {
     reversal.setFxRateDate(original.getFxRateDate());
     reversal.setFxRateEstimated(original.isFxRateEstimated());
     reversal.setMerchantDescription(original.getMerchantDescription());
+    reversal.setCounterpartyName(original.getCounterpartyName());
     reversal.setSecurityId(original.getSecurityId());
     reversal.setQuantity(negate(original.getQuantity()));
     reversal.setUnitPrice(original.getUnitPrice());
