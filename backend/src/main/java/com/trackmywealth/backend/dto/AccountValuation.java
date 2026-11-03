@@ -48,13 +48,15 @@ import java.util.UUID;
  *     missing) are approximations a client should surface as such, see {@link
  *     ValueBasisValues#isApproximate}
  * @param valueSourceDate the date of the observation {@code value} rests on - the snapshot's date
- *     for {@code LATEST_SNAPSHOT}, the valuation's date for {@code MANUAL_VALUATION} - so a client
- *     can show how old it is; {@code null} for a value derived from the ledger or the loan terms,
- *     and when {@code valueKnown} is {@code false}
- * @param valueSourceStale {@code true} when {@code valueSourceDate} is older than {@code
- *     app.valuation.snapshot-stale-after} before the valuation date (#380): the snapshot or manual
- *     valuation the value rests on is out of date, so {@link ValueStatus} calls it {@code STALE}.
- *     Always {@code false} when {@code valueSourceDate} is {@code null}
+ *     for {@code LATEST_SNAPSHOT}, the valuation's date for {@code MANUAL_VALUATION}, the
+ *     statement's date for {@code LEDGER_FROM_STATEMENT_BALANCE} (#445) - so a client can show how
+ *     old it is; {@code null} for a value derived from the ledger alone or the loan terms, and when
+ *     {@code valueKnown} is {@code false}
+ * @param valueSourceStale {@code true} when the value was last confirmed longer than {@code
+ *     app.valuation.snapshot-stale-after} before the valuation date (#380): a snapshot or manual
+ *     valuation by its own date; a loan statement by the newer of its date and the loan's latest
+ *     ledger row, so instalments keep it current (#445). {@link ValueStatus} then calls it {@code
+ *     STALE}. Always {@code false} when {@code valueSourceDate} is {@code null}
  * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), empty
  *     when there are none - independent of {@code valueKnown}, a client shows them on the account
  *     (PR-011, FR-CON-007)

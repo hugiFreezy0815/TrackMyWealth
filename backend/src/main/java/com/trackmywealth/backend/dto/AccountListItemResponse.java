@@ -30,10 +30,10 @@ import java.util.UUID;
  * @param valueStatus how far that value can be trusted ({@link ValueStatus}): {@code UNKNOWN}
  *     without one, {@code STALE} when its snapshot or rate is out of date
  * @param asOf the business date the value is taken on
- * @param valueSourceDate the date of the snapshot or valuation {@code balance} rests on, so a
- *     client can show how old it is - set whenever {@code balance} is, even while {@code
- *     valueKnown} is {@code false} for want of an FX rate; {@code null} when the value is derived
- *     from the ledger or the loan terms
+ * @param valueSourceDate the date of the snapshot, valuation or loan statement {@code balance}
+ *     rests on, so a client can show how old it is - set whenever {@code balance} is, even while
+ *     {@code valueKnown} is {@code false} for want of an FX rate; {@code null} when the value is
+ *     derived from the ledger or the loan terms
  * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), sorted
  */
 public record AccountListItemResponse(

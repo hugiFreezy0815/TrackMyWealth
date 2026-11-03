@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -25,6 +26,8 @@ import java.util.UUID;
  *     balance and each card without an opening balance
  * @param ledgerSumsAfterSnapshot keyed by <b>snapshot</b> id: the account's ledger after that
  *     snapshot (an opening balance or a loan statement) up to the valuation date
+ * @param latestLedgerDates for each loan with a statement balance: the booking date of its latest
+ *     live ledger row on or before the valuation date (#445); no entry without one
  */
 public record AccountValueSources(
     Map<UUID, String> ownCurrencies,
@@ -34,7 +37,8 @@ public record AccountValueSources(
     Set<UUID> unresolvedLoanRepayments,
     Map<UUID, BigDecimal> originalPrincipals,
     Map<UUID, BigDecimal> ledgerSums,
-    Map<UUID, BigDecimal> ledgerSumsAfterSnapshot) {
+    Map<UUID, BigDecimal> ledgerSumsAfterSnapshot,
+    Map<UUID, LocalDate> latestLedgerDates) {
 
   public AccountValueSources {
     // Defensive/immutable copies (SpotBugs EI_EXPOSE_REP).
@@ -46,5 +50,6 @@ public record AccountValueSources(
     originalPrincipals = Map.copyOf(originalPrincipals);
     ledgerSums = Map.copyOf(ledgerSums);
     ledgerSumsAfterSnapshot = Map.copyOf(ledgerSumsAfterSnapshot);
+    latestLedgerDates = Map.copyOf(latestLedgerDates);
   }
 }

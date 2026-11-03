@@ -19,6 +19,7 @@ import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -91,11 +92,13 @@ class AccountListControllerTest {
   @BeforeEach
   void cleanDatabase() throws Exception {
     // Plain DELETEs in FK order, as PortfolioControllerTest explains: a TRUNCATE ... CASCADE
-    // would reach the shared institution catalogue. No test here books a transaction.
+    // would reach the shared institution catalogue. The ledger only through LedgerCleanup.
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       for (String table :
           List.of(
+              "DELETE FROM transaction_categorization_log",
+              LedgerCleanup.DELETE_ALL_TRANSACTIONS,
               "fx_rate",
               "account_snapshot",
               "custom_asset_valuation",
@@ -115,7 +118,8 @@ class AccountListControllerTest {
               "workspace_member",
               "portfolio",
               "workspace")) {
-        statement.execute("DELETE FROM " + table);
+        // A bare table name, or a whole statement (the ledger's, which needs its guards off).
+        statement.execute(table.contains(" ") ? table : "DELETE FROM " + table);
       }
     }
   }
@@ -290,6 +294,30 @@ class AccountListControllerTest {
     assertThat(row.balanceInWorkspaceCurrency()).isNull();
     assertThat(row.valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
     assertThat(row.valueSourceDate()).isEqualTo(longAgo);
+  }
+
+  // #445: a mortgage's yearly statement is kept current by its instalments; one nothing has been
+  // booked on since an old statement goes stale.
+  @Test
+  void aMortgageWhoseLedgerHasGoneQuietSinceAnOldStatementIsStale() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID paying = mortgage(token, "Paying");
+    UUID forgotten = mortgage(token, "Forgotten");
+    LocalDate statementDate = today().minusDays(400);
+    seedSnapshot(paying, statementDate, "300000.0000", false);
+    seedSnapshot(forgotten, statementDate, "300000.0000", false);
+    seedLedgerRow(paying, today().minusDays(20), "1500.0000");
+
+    Map<UUID, AccountListItemResponse> byId = byId(list(token, ""));
+
+    AccountListItemResponse current = byId.get(paying);
+    assertThat(current.valueStatus()).isEqualTo(ValueStatus.CURRENT);
+    assertThat(current.balance()).isEqualByComparingTo("-298500");
+    assertThat(current.valueSourceDate()).isEqualTo(statementDate);
+    AccountListItemResponse stale = byId.get(forgotten);
+    assertThat(stale.valueStatus()).isEqualTo(ValueStatus.STALE);
+    assertThat(stale.valueKnown()).isTrue();
+    assertThat(stale.valueSourceDate()).isEqualTo(statementDate);
   }
 
   @Test
@@ -523,6 +551,27 @@ class AccountListControllerTest {
         date,
         new BigDecimal(balance),
         opening,
+        accountId);
+  }
+
+  private UUID mortgage(String token, String name) {
+    return createAccount(
+            token,
+            AccountRequests.account(name, "MORTGAGE", "CHF")
+                .originalPrincipal(new BigDecimal("400000"))
+                .interestRatePercent(new BigDecimal("1.5"))
+                .build())
+        .id();
+  }
+
+  // A plain incoming row on the account's ledger, e.g. a loan instalment's principal.
+  private void seedLedgerRow(UUID accountId, LocalDate date, String amount) throws Exception {
+    execute(
+        "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+            + " amount, currency) SELECT workspace_id, id, 'INCOME', ?, ?, native_currency"
+            + " FROM account WHERE id = ?",
+        date,
+        new BigDecimal(amount),
         accountId);
   }
 

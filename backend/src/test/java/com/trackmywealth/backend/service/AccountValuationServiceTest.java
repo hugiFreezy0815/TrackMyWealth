@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.KeyedAmount;
+import com.trackmywealth.backend.dto.KeyedDate;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountLoan;
@@ -342,27 +343,70 @@ class AccountValuationServiceTest {
 
     assertThat(valuation.value()).isEqualByComparingTo("198500.00");
     assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE);
-    // Statement plus ledger is not a dated observation: it cannot go stale.
-    assertThat(valuation.valueSourceDate()).isNull();
+    // #445: it rests on the statement, and says so.
+    assertThat(valuation.valueSourceDate()).isEqualTo(TODAY.minusDays(20));
+    assertThat(valuation.valueSourceStale()).isFalse();
     // With a statement, neither the principal nor the whole ledger is read.
     verify(mortgageRepository, never()).findAllById(any());
     verify(loanRepository, never()).findAllById(any());
     verify(transactionRepository, never()).sumAmountByAccountIdsAsOf(any(), any());
   }
 
-  // PO decision on #380 (US-05-06): a value the ledger carries forward from a snapshot never goes
-  // stale, however old that snapshot - an opening balance's (above) or a loan statement's alike.
+  // --- A loan whose ledger has gone quiet (#445) ----------------------------------------------
+
   @Test
-  void aLoanValuedFromATwoYearOldStatementWithoutLaterRowsIsNotStale() {
-    account = account("LIABILITY");
-    account.setHasAmortisation(true);
-    withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY.minusYears(2), "300000.00"));
+  void aMortgageWithAnOldStatementAndARecentInstalmentIsNotStale() {
+    UUID statementId = withLoanStatement(TODAY.minusDays(400));
+    withLatestLedgerDate(TODAY.minusDays(20));
 
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
 
-    assertThat(valuation.value()).isEqualByComparingTo("300000.00");
-    assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE);
     assertThat(valuation.valueSourceStale()).isFalse();
+    assertThat(valuation.valueSourceDate()).isEqualTo(TODAY.minusDays(400));
+    verify(transactionRepository).sumAmountBookedAfterSnapshots(List.of(statementId), TODAY);
+  }
+
+  @Test
+  void aMortgageWithAnOldStatementAndNothingBookedSinceIsStale() {
+    withLoanStatement(TODAY.minusDays(400));
+    // Its last row predates the statement: the statement is still the latest confirmation.
+    withLatestLedgerDate(TODAY.minusDays(500));
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.valueKnown()).isTrue();
+    assertThat(valuation.valueSourceStale()).isTrue();
+    assertThat(valuation.valueSourceDate()).isEqualTo(TODAY.minusDays(400));
+  }
+
+  @Test
+  void aLoanWithARecentStatementAndNoLedgerRowsIsNotStale() {
+    withLoanStatement(TODAY.minusDays(10));
+
+    assertThat(service.valueIn(account, "CHF", TODAY).valueSourceStale()).isFalse();
+  }
+
+  @Test
+  void aQuietLoanLedgerIsJudgedAgainstTheValuationDateAndTheConfiguredPeriod() {
+    withLoanStatement(TODAY.minusDays(400));
+    LocalDate lastInstalment = TODAY.minus(STALE_AFTER);
+    withLatestLedgerDate(lastInstalment);
+    // Exactly the configured period ago: not yet stale; a day later it is.
+    assertThat(service.valueIn(account, "CHF", TODAY).valueSourceStale()).isFalse();
+    when(transactionRepository.findLatestLiveBookingDates(anyCollection(), eq(TODAY.plusDays(1))))
+        .thenReturn(List.of(new KeyedDate(account.getId(), lastInstalment)));
+    assertThat(service.valueIn(account, "CHF", TODAY.plusDays(1)).valueSourceStale()).isTrue();
+  }
+
+  @Test
+  void aLoanWithoutAStatementNeverReadsItsLatestLedgerDate() {
+    account = account("LIABILITY");
+    account.setHasAmortisation(true);
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.valueSourceStale()).isFalse();
+    verify(transactionRepository, never()).findLatestLiveBookingDates(any(), any());
   }
 
   @Test
@@ -464,6 +508,8 @@ class AccountValuationServiceTest {
     verify(transactionRepository, times(1)).sumAmountByAccountIdsAsOf(anyCollection(), eq(TODAY));
     verify(transactionRepository, times(1))
         .sumAmountBookedAfterSnapshots(anyCollection(), eq(TODAY));
+    verify(transactionRepository, times(1))
+        .findLatestLiveBookingDates(List.of(accounts.get(2).getId()), TODAY);
     verify(mortgageRepository, times(1)).findAllById(anyCollection());
     verify(loanRepository, times(1)).findAllById(anyCollection());
     verify(accountCurrencyService, times(1)).ownCurrencies(anyCollection());
@@ -538,6 +584,20 @@ class AccountValuationServiceTest {
     ReflectionTestUtils.setField(snapshot, "createdAt", OPENING_STATED_AT);
     when(snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(anyCollection()))
         .thenReturn(List.of(snapshot));
+  }
+
+  // A liability with amortisation valued from a statement dated statementDate; returns its id.
+  private UUID withLoanStatement(LocalDate statementDate) {
+    account = account("LIABILITY");
+    account.setHasAmortisation(true);
+    UUID statementId = UUID.randomUUID();
+    withLatestSnapshot(snapshot(account, statementId, statementDate, "1000.00"));
+    return statementId;
+  }
+
+  private void withLatestLedgerDate(LocalDate bookingDate) {
+    when(transactionRepository.findLatestLiveBookingDates(anyCollection(), eq(TODAY)))
+        .thenReturn(List.of(new KeyedDate(account.getId(), bookingDate)));
   }
 
   private void withLatestSnapshot(AccountSnapshot snapshot) {

@@ -3,6 +3,7 @@ package com.trackmywealth.backend.repository;
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
 import com.trackmywealth.backend.dto.KeyedAmount;
+import com.trackmywealth.backend.dto.KeyedDate;
 import com.trackmywealth.backend.dto.TransactionSearchFilter;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
@@ -744,6 +745,19 @@ public interface TransactionRepository
           + NOT_VOIDED_OR_REVERSAL)
   boolean existsUnresolvedLoanRepaymentAsOf(
       @Param(ACCOUNT_ID) UUID accountId, @Param(AS_OF) LocalDate asOf);
+
+  /**
+   * #445: the booking date of each account's latest live row (neither voided nor a reversal) on or
+   * before {@code asOf}, in one query for all of them. An account without such a row has no entry.
+   * A loan whose ledger has gone quiet for longer than a statement may age goes stale by it.
+   */
+  @Query(
+      "select new com.trackmywealth.backend.dto.KeyedDate(t.account.id, max(t.bookingDate))"
+          + " from Transaction t where t.account.id in :accountIds and t.bookingDate <= :asOf"
+          + NOT_VOIDED_OR_REVERSAL
+          + " group by t.account.id")
+  List<KeyedDate> findLatestLiveBookingDates(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds, @Param(AS_OF) LocalDate asOf);
 
   /** #380: {@link #existsUnresolvedLoanRepaymentAsOf} for several accounts in one query. */
   @Query(
