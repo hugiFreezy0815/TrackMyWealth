@@ -15,13 +15,16 @@ import java.util.UUID;
  *
  * <p>This request is separate from {@link CreateTransactionRequest}: callers cannot change source
  * provenance or supply a new source idempotency key. The body supplies the desired financial state.
- * Merchant description and notes may be edited in place; financial changes create a replacement.
+ * Merchant description, counterparty name and notes may be edited in place; financial changes
+ * create a replacement.
  *
  * <p>Target account is optional and defaults to the current account. Reason is required only when
  * the original is imported (T2), because that correction voids the original. The body is the
  * desired state: an omitted FX rate, fee or counterparty means "none" (or "derive it", for the FX
- * rate), not "unchanged". The one exception is {@code mcc}: omitted keeps the original's MCC, which
+ * rate), not "unchanged". The exceptions are {@code mcc}: omitted keeps the original's MCC, which
  * is source data; a different MCC is corrected like a financial field (a replacement carries it).
+ * And {@code counterpartyName} (US-07-35): omitted keeps the original's, so a client that predates
+ * the field does not erase an imported counterparty; an empty or blank one removes it.
  *
  * <p>An FX rate equal to the server's estimate counts as omitted: a client sending back the row it
  * read echoes that estimate, which is no disclosed rate. So a correction cannot confirm an estimate
@@ -52,7 +55,8 @@ public record CorrectTransactionRequest(
     @Digits(integer = 16, fraction = 4) BigDecimal taxWithheldAmount,
     UUID counterpartyAccountId,
     @Digits(integer = 16, fraction = 4) BigDecimal counterpartyAmount,
-    @Size(max = 500) String reason) {
+    @Size(max = 500) String reason,
+    @Size(max = CreateTransactionRequest.COUNTERPARTY_NAME_MAX_LENGTH) String counterpartyName) {
 
   public CorrectTransactionRequest {
     transactionType = RequestStrings.blankToNull(transactionType);
@@ -61,6 +65,20 @@ public record CorrectTransactionRequest(
     mcc = RequestStrings.blankToNull(mcc);
     notes = RequestStrings.blankToNull(notes);
     reason = RequestStrings.blankToNull(reason);
+    // Not blankToNull: null is "keep the original's", blank is "remove it" (see the class doc).
+    counterpartyName =
+        counterpartyName == null || !counterpartyName.isBlank() ? counterpartyName : "";
+  }
+
+  /**
+   * This request with {@code counterpartyName} resolved against the original's {@code current} one:
+   * omitted keeps it, blank removes it (null). Only a resolved request may be applied.
+   */
+  public CorrectTransactionRequest withCounterpartyNameResolved(String current) {
+    if (counterpartyName == null) {
+      return withCounterpartyName(current);
+    }
+    return counterpartyName.isEmpty() ? withCounterpartyName(null) : this;
   }
 
   /** The replacement goes through exactly the same request validation as a new transaction. */
@@ -85,7 +103,34 @@ public record CorrectTransactionRequest(
         grossAmount,
         taxWithheldAmount,
         counterpartyAccountId,
-        counterpartyAmount);
+        counterpartyAmount,
+        counterpartyName);
+  }
+
+  private CorrectTransactionRequest withCounterpartyName(String name) {
+    return new CorrectTransactionRequest(
+        targetAccountId,
+        transactionType,
+        bookingDate,
+        amount,
+        currency,
+        merchantDescription,
+        mcc,
+        notes,
+        fxRateToAccountCurrency,
+        billedAmount,
+        feeAmount,
+        securityId,
+        quantity,
+        unitPrice,
+        tradeDate,
+        settlementDate,
+        grossAmount,
+        taxWithheldAmount,
+        counterpartyAccountId,
+        counterpartyAmount,
+        reason,
+        name);
   }
 
   /** The same desired state with no FX rate: "let the server derive it". */
@@ -111,6 +156,7 @@ public record CorrectTransactionRequest(
         taxWithheldAmount,
         counterpartyAccountId,
         counterpartyAmount,
-        reason);
+        reason,
+        counterpartyName);
   }
 }

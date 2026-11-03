@@ -797,7 +797,8 @@ class LoanRepaymentControllerTest {
         null,
         null,
         null,
-        "typo");
+        "typo",
+        null);
   }
 
   private static TransactionResponse row(

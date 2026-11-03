@@ -29,6 +29,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Currency;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -39,8 +40,10 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -528,6 +531,7 @@ public class TransactionService {
         null,
         null,
         counterpartyAccountId,
+        null,
         null);
   }
 
@@ -642,6 +646,7 @@ public class TransactionService {
     transaction.setAmount(request.amount());
     transaction.setCurrency(request.currency());
     transaction.setMerchantDescription(request.merchantDescription());
+    transaction.setCounterpartyName(request.counterpartyName());
     transaction.setNotes(request.notes());
     transaction.setSource(source);
     // FR-CC-002/RULE-011: the MCC is source data, kept in raw_source_data - category_id is a
@@ -701,17 +706,8 @@ public class TransactionService {
                     PagingValues.requireBounded(pageable, PAGE_TIE_BREAKER))
             : transactionRepository.findByAccountId(
                 accountId, PagingValues.requireBounded(pageable, PAGE_TIE_BREAKER));
-    Map<UUID, String> assignments = latestAssignments(page.getContent());
-    Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(page.getContent());
-    Map<UUID, String> adjustmentStates =
-        reconciliationAdjustmentService.adjustmentStates(page.getContent());
-    return page.map(
-        transaction ->
-            toResponse(
-                transaction,
-                assignments.get(transaction.getId()),
-                openingBalanceDates,
-                adjustmentStates));
+    return new PageImpl<>(
+        toResponses(page.getContent()), page.getPageable(), page.getTotalElements());
   }
 
   // How each row got its category, for a whole page in one query.
@@ -1382,22 +1378,26 @@ public class TransactionService {
         transaction,
         categoryAssignedBy,
         openingBalanceDates(List.of(transaction)),
-        reconciliationAdjustmentService.adjustmentStates(List.of(transaction)));
+        reconciliationAdjustmentService.adjustmentStates(List.of(transaction)),
+        accountNames(List.of(transaction)));
   }
 
   private TransactionResponse toResponse(
       Transaction transaction,
       String categoryAssignedBy,
       Map<UUID, LocalDate> openingBalanceDates,
-      Map<UUID, String> adjustmentStates) {
+      Map<UUID, String> adjustmentStates,
+      Map<UUID, String> accountNames) {
     return new TransactionResponse(
         transaction.getId(),
         transaction.getAccount().getId(),
+        accountNames.get(transaction.getAccount().getId()),
         transaction.getTransactionType(),
         transaction.getBookingDate(),
         transaction.getAmount(),
         transaction.getCurrency(),
         transaction.getMerchantDescription(),
+        transaction.getCounterpartyName(),
         extractMcc(transaction.getRawSourceData()),
         transaction.getNotes(),
         transaction.getSource(),
@@ -1465,6 +1465,7 @@ public class TransactionService {
     Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(transactions);
     Map<UUID, String> adjustmentStates =
         reconciliationAdjustmentService.adjustmentStates(transactions);
+    Map<UUID, String> accountNames = accountNames(transactions);
     return transactions.stream()
         .map(
             transaction ->
@@ -1472,8 +1473,33 @@ public class TransactionService {
                     transaction,
                     assignments.get(transaction.getId()),
                     openingBalanceDates,
-                    adjustmentStates))
+                    adjustmentStates,
+                    accountNames))
         .toList();
+  }
+
+  // US-07-35: every row names its account, so one list serves the per-account and the
+  // workspace-wide ledger. An account this transaction has loaded already answers from memory;
+  // the others are read in one query for the whole batch, never one per row.
+  private Map<UUID, String> accountNames(Collection<Transaction> transactions) {
+    Map<UUID, String> names = new HashMap<>();
+    Set<UUID> unloaded = new HashSet<>();
+    for (Transaction transaction : transactions) {
+      Account account = transaction.getAccount();
+      if (Hibernate.isInitialized(account)) {
+        names.put(account.getId(), account.getName());
+      } else {
+        unloaded.add(account.getId());
+      }
+    }
+    if (!unloaded.isEmpty()) {
+      entityManager
+          .createQuery("SELECT a.id, a.name FROM Account a WHERE a.id IN :ids", Object[].class)
+          .setParameter("ids", unloaded)
+          .getResultList()
+          .forEach(row -> names.put((UUID) row[0], (String) row[1]));
+    }
+    return names;
   }
 
   // A correction keeps the original's raw_source_data (US-07-06) and sets a corrected MCC in it;

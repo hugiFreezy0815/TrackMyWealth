@@ -146,6 +146,7 @@ class AdministratorFinancialAccessTest {
     for (String path :
         List.of(
             "/api/v1/net-worth",
+            "/api/v1/transactions",
             "/api/v1/cash-flow?month=2026-09",
             "/api/v1/categories",
             "/api/v1/portfolios/" + portfolio,

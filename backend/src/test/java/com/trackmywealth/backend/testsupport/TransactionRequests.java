@@ -46,6 +46,34 @@ public final class TransactionRequests {
         null,
         null,
         null,
+        null,
         null);
+  }
+
+  /** {@code request} with its {@code counterpartyName} (US-07-35) set to {@code name}. */
+  public static CreateTransactionRequest withCounterpartyName(
+      CreateTransactionRequest request, String name) {
+    return new CreateTransactionRequest(
+        request.transactionType(),
+        request.bookingDate(),
+        request.amount(),
+        request.currency(),
+        request.merchantDescription(),
+        request.mcc(),
+        request.notes(),
+        request.externalId(),
+        request.fxRateToAccountCurrency(),
+        request.billedAmount(),
+        request.feeAmount(),
+        request.securityId(),
+        request.quantity(),
+        request.unitPrice(),
+        request.tradeDate(),
+        request.settlementDate(),
+        request.grossAmount(),
+        request.taxWithheldAmount(),
+        request.counterpartyAccountId(),
+        request.counterpartyAmount(),
+        name);
   }
 }

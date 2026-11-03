@@ -158,12 +158,14 @@ class CamtImportControllerTest {
         .extracting(
             TransactionResponse::bookingDate,
             TransactionResponse::transactionType,
-            row -> row.amount().toPlainString())
+            row -> row.amount().toPlainString(),
+            // US-07-35: the creditor a payment names is the row's counterparty.
+            TransactionResponse::counterpartyName)
         .containsExactly(
-            tuple(LocalDate.of(2026, 9, 1), "INCOME", "2500.0000"),
-            tuple(LocalDate.of(2026, 9, 2), "EXPENSE", "-45.1000"),
-            tuple(LocalDate.of(2026, 9, 3), "EXPENSE", "-50.0000"),
-            tuple(LocalDate.of(2026, 9, 3), "EXPENSE", "-20.0000"));
+            tuple(LocalDate.of(2026, 9, 1), "INCOME", "2500.0000", null),
+            tuple(LocalDate.of(2026, 9, 2), "EXPENSE", "-45.1000", null),
+            tuple(LocalDate.of(2026, 9, 3), "EXPENSE", "-50.0000", "Vermieter AG"),
+            tuple(LocalDate.of(2026, 9, 3), "EXPENSE", "-20.0000", "Stadtwerke Muster"));
     ReconciliationStatusResponse reconciliation = summary(account).reconciliation();
     assertThat(reconciliation.status()).isEqualTo(ReconciliationStatusValues.RECONCILED);
     assertThat(reconciliation.asOf()).isEqualTo(LocalDate.of(2026, 9, 30));

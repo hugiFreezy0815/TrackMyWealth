@@ -86,6 +86,13 @@ import java.util.UUID;
  * accounts' currencies differ and rejected otherwise. A {@code TRANSFER} without a counterparty is
  * one leg of a transfer whose other side is not recorded (yet): it is matched later, or confirmed
  * as a transfer to an account not tracked here.
+ *
+ * <p><b>US-07-35</b>: {@code counterpartyName} - optional, the payee or payer of the booking
+ * ("Migros", "Employer AG"), kept apart from {@code merchantDescription} (what the booking was
+ * for). An import fills it from the statement's counterparty column, cut to {@value
+ * #COUNTERPARTY_NAME_MAX_LENGTH} characters (the full text stays in the row's source data), and
+ * still uses it as the description when the row has none. It is plain text, not a link to an
+ * account (that is {@code counterpartyAccountId}).
  */
 public record CreateTransactionRequest(
     @NotBlank String transactionType,
@@ -107,7 +114,11 @@ public record CreateTransactionRequest(
     @Digits(integer = 16, fraction = 4) BigDecimal grossAmount,
     @Digits(integer = 16, fraction = 4) BigDecimal taxWithheldAmount,
     UUID counterpartyAccountId,
-    @Digits(integer = 16, fraction = 4) BigDecimal counterpartyAmount) {
+    @Digits(integer = 16, fraction = 4) BigDecimal counterpartyAmount,
+    @Size(max = CreateTransactionRequest.COUNTERPARTY_NAME_MAX_LENGTH) String counterpartyName) {
+
+  /** The longest {@code counterpartyName} a request may send, and an import stores (US-07-35). */
+  public static final int COUNTERPARTY_NAME_MAX_LENGTH = 255;
 
   public CreateTransactionRequest {
     transactionType = RequestStrings.blankToNull(transactionType);
@@ -116,5 +127,6 @@ public record CreateTransactionRequest(
     mcc = RequestStrings.blankToNull(mcc);
     notes = RequestStrings.blankToNull(notes);
     externalId = RequestStrings.blankToNull(externalId);
+    counterpartyName = RequestStrings.blankToNull(counterpartyName);
   }
 }

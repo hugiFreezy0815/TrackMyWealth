@@ -911,7 +911,8 @@ class TransferControllerTest {
         null,
         null,
         counterparty,
-        counterpartyAmount == null ? null : new BigDecimal(counterpartyAmount));
+        counterpartyAmount == null ? null : new BigDecimal(counterpartyAmount),
+        null);
   }
 
   private static CreateTransactionRequest typed(String type, String amount, UUID counterparty) {
@@ -935,6 +936,7 @@ class TransferControllerTest {
         null,
         null,
         counterparty,
+        null,
         null);
   }
 

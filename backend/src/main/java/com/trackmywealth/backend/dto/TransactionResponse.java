@@ -52,15 +52,22 @@ import java.util.UUID;
  * DataQualityWarningValues}), empty when there are none - {@code BOOKED_BEFORE_OPENING_BALANCE}
  * when it is booked before its account's opening balance and therefore left out of the account's
  * value.
+ *
+ * <p>US-07-35 ({@code counterpartyName}): the payee or payer the source named, or what the member
+ * entered; {@code null} when unknown. Plain text, unlike {@code counterpartyAccountId}. {@code
+ * accountName} is the name of the account the row is booked on, so the workspace-wide list and the
+ * per-account list share one row shape.
  */
 public record TransactionResponse(
     UUID id,
     UUID accountId,
+    String accountName,
     String transactionType,
     LocalDate bookingDate,
     BigDecimal amount,
     String currency,
     String merchantDescription,
+    String counterpartyName,
     String mcc,
     String notes,
     String source,

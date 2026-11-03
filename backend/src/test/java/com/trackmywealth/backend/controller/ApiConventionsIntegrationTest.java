@@ -646,7 +646,8 @@ class ApiConventionsIntegrationTest {
                             notPageResponses.add(name + " -> " + schema);
                           }
                         }));
-    assertThat(pagedOperations).hasSize(5);
+    // Six since US-07-35 (#382) added GET /api/v1/transactions.
+    assertThat(pagedOperations).hasSize(6);
     assertThat(notPageResponses).as("paged operations not answering a PageResponse").isEmpty();
 
     JsonNode list =
@@ -696,7 +697,7 @@ class ApiConventionsIntegrationTest {
                 }
               }
             });
-    assertThat(paged).hasSize(5);
+    assertThat(paged).hasSize(6);
   }
 
   private static JsonNode parameter(JsonNode operation, String name) {

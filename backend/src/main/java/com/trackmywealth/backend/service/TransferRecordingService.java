@@ -219,6 +219,8 @@ public class TransferRecordingService {
       Transaction booked, Account pocket, UUID importBatchId, AuthenticatedUserPrincipal actor) {
     Transaction leg = creditLeg(booked, pocket, booked.getAmount().negate(), actor);
     leg.setMerchantDescription(booked.getMerchantDescription());
+    // Unlike a transfer's credit leg, the pocket's row mirrors the same booking (US-07-35).
+    leg.setCounterpartyName(booked.getCounterpartyName());
     leg.setImportBatchId(importBatchId);
     return save(leg);
   }
