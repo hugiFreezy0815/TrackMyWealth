@@ -16,6 +16,19 @@ public final class LedgerCleanup {
   /** One statement: removes every transaction, whatever references it. */
   public static final String DELETE_ALL_TRANSACTIONS = withGuardsOff("DELETE FROM transaction");
 
+  /**
+   * #441: run after the cleanup (its own statement, outside a transaction) where a test measures a
+   * large write. The cleanup leaves the deleted rows behind as dead tuples and as changes since the
+   * last ANALYZE; autovacuum then vacuums or analyzes the table in the middle of the next import.
+   * Both count the import's still uncommitted rows as not live and store 0 rows over hundreds of
+   * pages, so every later query of that import plans for a 1-row table: transfer detection's
+   * per-date candidate query then took minutes instead of seconds (5,000 rows: 4-9 minutes instead
+   * of 6 s). Vacuuming and analyzing here leaves autovacuum nothing to do.
+   */
+  public static final String SETTLE_LEDGER_STATISTICS =
+      "VACUUM (ANALYZE) transaction, transaction_categorization_log, settlement_match,"
+          + " import_row_raw";
+
   private LedgerCleanup() {}
 
   /** {@code statement} (no {@code $$} inside) as one statement run with triggers off. */
