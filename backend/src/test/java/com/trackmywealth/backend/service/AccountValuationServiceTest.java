@@ -357,7 +357,7 @@ class AccountValuationServiceTest {
   @Test
   void aMortgageWithAnOldStatementAndARecentInstalmentIsNotStale() {
     UUID statementId = withLoanStatement(TODAY.minusDays(400));
-    withLatestLedgerDate(TODAY.minusDays(20));
+    withPaymentAfterStatement(statementId, TODAY.minusDays(20));
 
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
 
@@ -368,9 +368,9 @@ class AccountValuationServiceTest {
 
   @Test
   void aMortgageWithAnOldStatementAndNothingBookedSinceIsStale() {
+    // No payment since the statement (the query only returns payments after it): the statement is
+    // its latest confirmation.
     withLoanStatement(TODAY.minusDays(400));
-    // Its last row predates the statement: the statement is still the latest confirmation.
-    withLatestLedgerDate(TODAY.minusDays(500));
 
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
 
@@ -388,25 +388,26 @@ class AccountValuationServiceTest {
 
   @Test
   void aQuietLoanLedgerIsJudgedAgainstTheValuationDateAndTheConfiguredPeriod() {
-    withLoanStatement(TODAY.minusDays(400));
+    UUID statementId = withLoanStatement(TODAY.minusDays(400));
     LocalDate lastInstalment = TODAY.minus(STALE_AFTER);
-    withLatestLedgerDate(lastInstalment);
+    withPaymentAfterStatement(statementId, lastInstalment);
     // Exactly the configured period ago: not yet stale; a day later it is.
     assertThat(service.valueIn(account, "CHF", TODAY).valueSourceStale()).isFalse();
-    when(transactionRepository.findLatestLiveBookingDates(anyCollection(), eq(TODAY.plusDays(1))))
-        .thenReturn(List.of(new KeyedDate(account.getId(), lastInstalment)));
+    when(transactionRepository.findLatestLoanPaymentDatesAfterStatements(
+            List.of(statementId), TODAY.plusDays(1)))
+        .thenReturn(List.of(new KeyedDate(statementId, lastInstalment)));
     assertThat(service.valueIn(account, "CHF", TODAY.plusDays(1)).valueSourceStale()).isTrue();
   }
 
   @Test
-  void aLoanWithoutAStatementNeverReadsItsLatestLedgerDate() {
+  void aLoanWithoutAStatementNeverLooksUpItsPayments() {
     account = account("LIABILITY");
     account.setHasAmortisation(true);
 
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
 
     assertThat(valuation.valueSourceStale()).isFalse();
-    verify(transactionRepository, never()).findLatestLiveBookingDates(any(), any());
+    verify(transactionRepository, never()).findLatestLoanPaymentDatesAfterStatements(any(), any());
   }
 
   @Test
@@ -493,7 +494,8 @@ class AccountValuationServiceTest {
     opening.setOpeningBalance(true);
     when(snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(anyCollection()))
         .thenReturn(List.of(opening));
-    withLatestSnapshot(snapshot(accounts.get(2), UUID.randomUUID(), TODAY, "1.00"));
+    UUID statementId = UUID.randomUUID();
+    withLatestSnapshot(snapshot(accounts.get(2), statementId, TODAY, "1.00"));
 
     List<AccountValuation> valuations = service.valueAll(accounts, "CHF", TODAY);
 
@@ -509,7 +511,7 @@ class AccountValuationServiceTest {
     verify(transactionRepository, times(1))
         .sumAmountBookedAfterSnapshots(anyCollection(), eq(TODAY));
     verify(transactionRepository, times(1))
-        .findLatestLiveBookingDates(List.of(accounts.get(2).getId()), TODAY);
+        .findLatestLoanPaymentDatesAfterStatements(List.of(statementId), TODAY);
     verify(mortgageRepository, times(1)).findAllById(anyCollection());
     verify(loanRepository, times(1)).findAllById(anyCollection());
     verify(accountCurrencyService, times(1)).ownCurrencies(anyCollection());
@@ -595,9 +597,11 @@ class AccountValuationServiceTest {
     return statementId;
   }
 
-  private void withLatestLedgerDate(LocalDate bookingDate) {
-    when(transactionRepository.findLatestLiveBookingDates(anyCollection(), eq(TODAY)))
-        .thenReturn(List.of(new KeyedDate(account.getId(), bookingDate)));
+  // The latest payment on the loan after its statement, as the batched lookup reports it.
+  private void withPaymentAfterStatement(UUID statementId, LocalDate bookingDate) {
+    when(transactionRepository.findLatestLoanPaymentDatesAfterStatements(
+            List.of(statementId), TODAY))
+        .thenReturn(List.of(new KeyedDate(statementId, bookingDate)));
   }
 
   private void withLatestSnapshot(AccountSnapshot snapshot) {

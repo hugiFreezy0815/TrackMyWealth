@@ -14,8 +14,8 @@ import java.time.LocalDate;
  *     valuation or a loan statement), {@code null} for a value derived from the ledger alone or the
  *     loan terms
  * @param confirmedOn the latest date the value was confirmed by anything recorded - the observation
- *     itself, or for a loan statement also a later ledger row (#445) - which its staleness is
- *     judged by; {@code null} for a value that never goes stale
+ *     itself, or for a loan statement also a later payment on the loan (#445) - which its staleness
+ *     is judged by; {@code null} for a value that never goes stale
  */
 public record NativeAccountValue(
     BigDecimal amount, String basis, LocalDate sourceDate, LocalDate confirmedOn) {

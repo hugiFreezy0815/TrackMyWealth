@@ -26,8 +26,9 @@ import java.util.UUID;
  *     balance and each card without an opening balance
  * @param ledgerSumsAfterSnapshot keyed by <b>snapshot</b> id: the account's ledger after that
  *     snapshot (an opening balance or a loan statement) up to the valuation date
- * @param latestLedgerDates for each loan with a statement balance: the booking date of its latest
- *     live ledger row on or before the valuation date (#445); no entry without one
+ * @param paymentsAfterStatement keyed by <b>loan statement</b> (snapshot) id: the booking date of
+ *     the latest payment on the loan after the statement, up to the valuation date (#445); no entry
+ *     without one
  */
 public record AccountValueSources(
     Map<UUID, String> ownCurrencies,
@@ -38,7 +39,7 @@ public record AccountValueSources(
     Map<UUID, BigDecimal> originalPrincipals,
     Map<UUID, BigDecimal> ledgerSums,
     Map<UUID, BigDecimal> ledgerSumsAfterSnapshot,
-    Map<UUID, LocalDate> latestLedgerDates) {
+    Map<UUID, LocalDate> paymentsAfterStatement) {
 
   public AccountValueSources {
     // Defensive/immutable copies (SpotBugs EI_EXPOSE_REP).
@@ -50,6 +51,6 @@ public record AccountValueSources(
     originalPrincipals = Map.copyOf(originalPrincipals);
     ledgerSums = Map.copyOf(ledgerSums);
     ledgerSumsAfterSnapshot = Map.copyOf(ledgerSumsAfterSnapshot);
-    latestLedgerDates = Map.copyOf(latestLedgerDates);
+    paymentsAfterStatement = Map.copyOf(paymentsAfterStatement);
   }
 }

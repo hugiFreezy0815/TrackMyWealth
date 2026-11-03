@@ -37,6 +37,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -331,7 +332,7 @@ public class AccountValuationService {
     // The ledger after each opening balance that values its account by then, and after each loan
     // statement.
     List<UUID> snapshotIds = new ArrayList<>();
-    List<UUID> loansWithStatement = new ArrayList<>();
+    List<UUID> statementIds = new ArrayList<>();
     for (Account account : accounts) {
       SnapshotBalance opening = openingBalances.get(account.getId());
       if (opening != null
@@ -344,7 +345,7 @@ public class AccountValuationService {
       SnapshotBalance statement = latestSnapshots.get(loan);
       if (statement != null) {
         snapshotIds.add(statement.snapshotId());
-        loansWithStatement.add(loan);
+        statementIds.add(statement.snapshotId());
       }
     }
     Map<UUID, BigDecimal> ledgerSumsAfterSnapshot =
@@ -352,14 +353,16 @@ public class AccountValuationService {
             ? Map.of()
             : byKey(transactionRepository.sumAmountBookedAfterSnapshots(snapshotIds, asOf));
 
-    // #445: how recently each loan's ledger confirmed its statement balance.
-    Map<UUID, LocalDate> latestLedgerDates = new HashMap<>();
-    if (!loansWithStatement.isEmpty()) {
-      for (KeyedDate row :
-          transactionRepository.findLatestLiveBookingDates(loansWithStatement, asOf)) {
-        latestLedgerDates.put(row.key(), row.date());
-      }
-    }
+    // #445: the latest payment on each loan since its statement, which keeps the statement
+    // current. Its rows are not all on the loan's ledger (a payment's interest is on the paying
+    // account), so it cannot ride along with the ledger sum above.
+    Map<UUID, LocalDate> paymentsAfterStatement =
+        statementIds.isEmpty()
+            ? Map.of()
+            : transactionRepository
+                .findLatestLoanPaymentDatesAfterStatements(statementIds, asOf)
+                .stream()
+                .collect(Collectors.toMap(KeyedDate::key, KeyedDate::date));
 
     return new AccountValueSources(
         accountCurrencyService.ownCurrencies(accounts),
@@ -370,7 +373,7 @@ public class AccountValuationService {
         originalPrincipals,
         ledgerSums,
         ledgerSumsAfterSnapshot,
-        latestLedgerDates);
+        paymentsAfterStatement);
   }
 
   // A loan is either a mortgage or a loan, never both: the loan table is read only for the ids
@@ -486,8 +489,9 @@ public class AccountValuationService {
 
   // #380: a value last confirmed longer than app.valuation.snapshot-stale-after before the
   // valuation date - a snapshot or manual valuation by its own date (LATEST_SNAPSHOT,
-  // MANUAL_VALUATION), and since #445 a loan statement by the newer of its date and the loan's
-  // latest ledger row: instalments keep it current, a ledger gone quiet does not. An opening
+  // MANUAL_VALUATION), and since #445 a loan statement by its latest payment since, or else its
+  // own date: instalments or interest payments keep it current, a loan gone quiet does not. An
+  // opening
   // balance plus the ledger after it never goes stale (PO decision on #380, see US-05-06).
   private boolean isStale(LocalDate confirmedOn, LocalDate asOf) {
     return confirmedOn != null && confirmedOn.isBefore(asOf.minus(snapshotStaleAfter));
@@ -512,7 +516,7 @@ public class AccountValuationService {
       }
       SnapshotBalance statement = sources.latestSnapshots().get(accountId);
       if (statement != null) {
-        return Optional.of(loanValueFromStatement(accountId, statement, sources));
+        return Optional.of(loanValueFromStatement(statement, sources));
       }
       return Optional.ofNullable(sources.originalPrincipals().get(accountId))
           .map(principal -> loanValue(accountId, principal, sources));
@@ -570,24 +574,21 @@ public class AccountValuationService {
    * (negative) raises it. Rows on the snapshot's date are contained in it. An exact figure, unlike
    * the original principal less repayments it replaces.
    *
-   * <p>#445: it rests on the statement's date, and was last confirmed by the newer of that date and
-   * the loan's latest ledger row - so regular instalments keep it current, while a loan nothing has
-   * been booked on since an old statement goes stale.
+   * <p>#445: it rests on the statement's date, and was last confirmed by the latest payment on the
+   * loan since then (an instalment or a payment's interest), or else by the statement itself - so
+   * regular payments keep it current, while a loan nothing has been paid on since an old statement
+   * goes stale.
    */
   private static NativeAccountValue loanValueFromStatement(
-      UUID accountId, SnapshotBalance statement, AccountValueSources sources) {
+      SnapshotBalance statement, AccountValueSources sources) {
+    UUID statementId = statement.snapshotId();
     BigDecimal ledger =
-        sources.ledgerSumsAfterSnapshot().getOrDefault(statement.snapshotId(), BigDecimal.ZERO);
-    LocalDate confirmedOn = statement.snapshotDate();
-    LocalDate latestRow = sources.latestLedgerDates().get(accountId);
-    if (latestRow != null && latestRow.isAfter(confirmedOn)) {
-      confirmedOn = latestRow;
-    }
+        sources.ledgerSumsAfterSnapshot().getOrDefault(statementId, BigDecimal.ZERO);
     return new NativeAccountValue(
         statement.balance().subtract(ledger),
         ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE,
         statement.snapshotDate(),
-        confirmedOn);
+        sources.paymentsAfterStatement().getOrDefault(statementId, statement.snapshotDate()));
   }
 
   /**

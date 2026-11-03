@@ -54,9 +54,10 @@ import java.util.UUID;
  *     {@code valueKnown} is {@code false}
  * @param valueSourceStale {@code true} when the value was last confirmed longer than {@code
  *     app.valuation.snapshot-stale-after} before the valuation date (#380): a snapshot or manual
- *     valuation by its own date; a loan statement by the newer of its date and the loan's latest
- *     ledger row, so instalments keep it current (#445). {@link ValueStatus} then calls it {@code
- *     STALE}. Always {@code false} when {@code valueSourceDate} is {@code null}
+ *     valuation by its own date; a loan statement by the latest payment on the loan since (an
+ *     instalment, or a payment's interest on the paying account), else its own date, so regular
+ *     payments keep it current (#445). {@link ValueStatus} then calls it {@code STALE}. Always
+ *     {@code false} when {@code valueSourceDate} is {@code null}
  * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), empty
  *     when there are none - independent of {@code valueKnown}, a client shows them on the account
  *     (PR-011, FR-CON-007)

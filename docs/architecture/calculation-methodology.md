@@ -168,8 +168,23 @@ exact one:
 | `ORIGINAL_PRINCIPAL_LESS_REPAYMENTS` | a loan's/mortgage's original principal less the principal repaid on its ledger by the as-of date (US-10-02); repayments from before tracking began are missing | **no** - approximation |
 
 `valueBasis` is `null` when `valueKnown` is `false`. `AccountValuation.valueSourceDate` is the date
-of the observation a `LATEST_SNAPSHOT` or `MANUAL_VALUATION` figure rests on, so a client can show
-how old it is; it is `null` for a figure derived from the ledger or the loan terms.
+of the observation a `LATEST_SNAPSHOT`, `MANUAL_VALUATION` or `LEDGER_FROM_STATEMENT_BALANCE`
+figure rests on (the snapshot, the valuation, the loan statement), so a client can show how old it
+is; it is `null` for a figure derived from the ledger alone (`LEDGER`,
+`LEDGER_FROM_OPENING_BALANCE`) or the loan terms.
+
+**When a value is out of date (`valueSourceStale`, value status `STALE`).** A value is stale when
+it was last confirmed longer than `app.valuation.snapshot-stale-after` (default `P45D`) before the
+valuation date (#380). A snapshot or manual valuation is confirmed by its own date only. A loan
+statement (`LEDGER_FROM_STATEMENT_BALANCE`, #445) is confirmed by the newer of its date and the
+latest *payment* on the loan after it, up to the valuation date: an instalment's principal on the
+loan (`DEBT_REPAYMENT`, positive) or a loan payment's interest on the paying account (an `EXPENSE`
+naming the loan, not an internal transfer), neither voided nor a reversal. Interest or fees
+charged onto the loan and reconciliation adjustments are not payments and confirm nothing. So a
+yearly mortgage statement stays current while instalments or interest payments are booked, and
+goes stale once they stop. For a stale loan, `valueSourceDate` is still the statement's date - it
+says what the figure rests on, not when it was last confirmed. A figure derived from the ledger
+alone or from the loan terms never goes stale this way.
 `NetWorthResponse.approximate` is `true` when any included account has an approximate basis. It
 is independent of `complete`: an approximate account is still *known* (counted in the totals), but
 the figure must not be presented as exact.
