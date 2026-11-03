@@ -38,6 +38,7 @@ public class AccountListService {
 
   // Oldest first, as in the Portfolio View; the id makes the order unique.
   private static final Sort LIST_ORDER = Sort.by("createdAt", "id");
+  private static final String ARCHIVED = "ARCHIVED";
 
   private final AccessControlService accessControlService;
   private final AccountRepository accountRepository;
@@ -90,7 +91,6 @@ public class AccountListService {
               placements.get(account.getId()),
               inWorkspace.get(i),
               inOwn.get(i),
-              filter.archived(),
               workspaceCurrency,
               asOf));
     }
@@ -111,7 +111,6 @@ public class AccountListService {
       PortfolioPlacement placement,
       AccountValuation inWorkspace,
       AccountValuation inOwn,
-      boolean archived,
       String workspaceCurrency,
       LocalDate asOf) {
     return new AccountListItemResponse(
@@ -123,15 +122,16 @@ public class AccountListService {
         account.getPortfolio().getId(),
         account.getPortfolio().getName(),
         inOwn.currency(),
-        // Every row has the status the filter asked for.
-        archived,
+        ARCHIVED.equals(account.getStatus()),
         SignedAmounts.of(inOwn),
         workspaceCurrency,
         SignedAmounts.of(inWorkspace),
         inWorkspace.valueKnown(),
         ValueStatus.of(inWorkspace),
         asOf,
-        inWorkspace.valueSourceDate(),
+        // The value's own date, which converting it does not change: set as long as balance is,
+        // even when no FX rate gives it a value in the workspace's currency.
+        inOwn.valueSourceDate(),
         inWorkspace.warnings().stream().sorted().toList());
   }
 }

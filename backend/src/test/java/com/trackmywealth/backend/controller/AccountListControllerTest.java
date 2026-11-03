@@ -268,6 +268,30 @@ class AccountListControllerTest {
     assertThat(unknown.balanceInWorkspaceCurrency()).isNull();
   }
 
+  // #380 review: without an FX rate the row still shows the balance in the account's own currency,
+  // and how old the valuation behind that balance is.
+  @Test
+  void aBalanceWithoutAnFxRateStillCarriesTheDateItRestsOn() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID car =
+        createAccount(
+                token,
+                AccountRequests.account("Car", "CUSTOM_ASSET", "EUR")
+                    .customAssetType("VEHICLE")
+                    .build())
+            .id();
+    LocalDate longAgo = today().minusDays(200);
+    seedValuation(car, longAgo, "50000.0000");
+
+    AccountListItemResponse row = byId(list(token, "")).get(car);
+
+    assertThat(row.balance()).isEqualByComparingTo("50000");
+    assertThat(row.valueKnown()).isFalse();
+    assertThat(row.balanceInWorkspaceCurrency()).isNull();
+    assertThat(row.valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
+    assertThat(row.valueSourceDate()).isEqualTo(longAgo);
+  }
+
   @Test
   void fiftyAccountsAreListedWithTheSameNumberOfQueriesAsSix() throws Exception {
     String token = bootstrapAdministrator();
@@ -338,6 +362,8 @@ class AccountListControllerTest {
         .extracting(AccountListItemResponse::id)
         .containsExactly(cash);
     assertThat(list(token, "?accountType=CREDIT_CARD")).isEmpty();
+    // An empty parameter is a filter left unset, as client query builders often send it.
+    assertThat(list(token, "?accountType=")).hasSize(2);
     for (String invalid : List.of("cash", "CHECKING", "CASH|SAVINGS")) {
       client(token)
           .get()

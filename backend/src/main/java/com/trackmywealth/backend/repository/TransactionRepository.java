@@ -149,7 +149,7 @@ public interface TransactionRepository
   String NOT_VOIDED_OR_REVERSAL = " and t.voidedAt is null and t.replacesTransactionId is null";
 
   // A balance's sum: in the account's own currency, a void pair counted as zero (see
-  // sumAmountByAccountIdAsOf).
+  // sumAmountByAccountIdAsOf). Every ledger balance sums with it, one account's or a batch's.
   String LEDGER_SUM =
       "sum(case when t.voidedAt is null and t.replacesTransactionId is null"
           + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)";
@@ -373,8 +373,8 @@ public interface TransactionRepository
    * has history (a measured zero, not "no rows").
    */
   @Query(
-      "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
-          + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
+      "select "
+          + LEDGER_SUM
           + " from Transaction t where t.account.id = :accountId and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdAsOf(
       @Param(ACCOUNT_ID) UUID accountId, @Param(AS_OF) LocalDate asOf);
@@ -396,8 +396,8 @@ public interface TransactionRepository
    * the application's clock and the database's can reorder them.
    */
   @Query(
-      "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
-          + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
+      "select "
+          + LEDGER_SUM
           + " from Transaction t where t.account.id = :accountId"
           + " and (t.bookingDate > :after"
           + " or (t.bookingDate = :after and t.reconciliationResultId is not null"
@@ -455,20 +455,6 @@ public interface TransactionRepository
           + " and t.bookingDate < :before"
           + NOT_VOIDED_OR_REVERSAL)
   long countLiveBookedBefore(@Param(ACCOUNT_ID) UUID accountId, @Param("before") LocalDate before);
-
-  /**
-   * US-25-04: whether the account has a live row booked before {@code before} - the opening date,
-   * when the caller already holds the opening balance (one query less per account in a valuation).
-   * A reconciliation adjustment (US-25-03) does not count: see {@link
-   * #existsLiveBookedBeforeOpeningBalance}.
-   */
-  @Query(
-      "select count(t) > 0 from Transaction t where t.account.id = :accountId"
-          + " and t.bookingDate < :before"
-          + NOT_VOIDED_OR_REVERSAL
-          + NOT_RECONCILIATION_ADJUSTMENT)
-  boolean existsLiveBookedBefore(
-      @Param(ACCOUNT_ID) UUID accountId, @Param("before") LocalDate before);
 
   /**
    * US-25-04: whether the account has a live row booked before its opening balance - {@code false}

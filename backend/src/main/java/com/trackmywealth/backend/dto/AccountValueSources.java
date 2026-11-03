@@ -12,14 +12,17 @@ import java.util.UUID;
  * source. Internal to valuation: never part of an API response.
  *
  * @param ownCurrencies each account's own currency ({@code AccountCurrencyService#ownCurrencies})
- * @param openingBalances the opening balance of each account that can take one (US-25-04)
- * @param latestSnapshots for loans and accounts without a ledger: the newest snapshot with a
- *     balance on or before the valuation date
+ * @param openingBalances the opening balance of each account with a ledger that can take one
+ *     (US-25-04)
+ * @param latestSnapshots for loans and accounts without a ledger (except one holding positions):
+ *     the newest snapshot with a balance on or before the valuation date
  * @param latestValuations for custom assets: the latest manual valuation on or before that date,
  *     already resolved to a value
  * @param unresolvedLoanRepayments the loans with a payment whose split is still unknown (US-10-02)
- * @param originalPrincipals each mortgage's or loan's original principal
- * @param ledgerSums each account's ledger sum up to the valuation date
+ * @param originalPrincipals the original principal of each mortgage or loan without a statement
+ *     balance
+ * @param ledgerSums the ledger sum up to the valuation date of each loan without a statement
+ *     balance and each card without an opening balance
  * @param ledgerSumsAfterSnapshot keyed by <b>snapshot</b> id: the account's ledger after that
  *     snapshot (an opening balance or a loan statement) up to the valuation date
  */

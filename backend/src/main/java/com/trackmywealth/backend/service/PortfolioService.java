@@ -228,7 +228,8 @@ public class PortfolioService {
   }
 
   // AccountValuation is the shared DM-17 result; AccountContribution is this endpoint's own
-  // (FR-INS-SUM-002) wire shape, kept field-for-field so the response contract is unchanged.
+  // (FR-INS-SUM-002) wire shape. #380 added the value source's date and staleness, so this
+  // endpoint flags an out-of-date snapshot or valuation as the other value reads do.
   private static AccountContribution toContribution(AccountValuation valuation) {
     return new AccountContribution(
         valuation.accountId(),
@@ -241,6 +242,8 @@ public class PortfolioService {
         valuation.conversionRateCarriedForward(),
         valuation.conversionRateStale(),
         valuation.valueKnown(),
+        valuation.valueSourceDate(),
+        valuation.valueSourceStale(),
         valuation.warnings());
   }
 

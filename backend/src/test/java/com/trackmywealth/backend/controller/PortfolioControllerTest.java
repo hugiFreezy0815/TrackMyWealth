@@ -27,7 +27,10 @@ import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -441,6 +444,46 @@ class PortfolioControllerTest {
               assertThat(contribution.valueKnown()).isFalse();
               assertThat(contribution.value()).isNull();
             });
+  }
+
+  // #380 review: the summary flags an out-of-date valuation as the account list and the Portfolio
+  // View do, rather than presenting it as fresh.
+  @Test
+  void aContributionRestingOnAnOldValuationSaysHowOldAndThatItIsStale() {
+    String token = bootstrapAdministrator();
+    PortfolioResponse institution =
+        createPortfolio(
+            token, new CreatePortfolioRequest(null, "Collectibles", null, null, null, null, "CHF"));
+    AccountSummaryResponse old =
+        createAccount(
+            token,
+            AccountRequests.account("Old Watch", "CUSTOM_ASSET", "CHF")
+                .portfolioId(institution.id())
+                .customAssetType("COLLECTIBLE")
+                .build());
+    AccountSummaryResponse fresh =
+        createAccount(
+            token,
+            AccountRequests.account("New Watch", "CUSTOM_ASSET", "CHF")
+                .portfolioId(institution.id())
+                .customAssetType("COLLECTIBLE")
+                .build());
+    LocalDate longAgo = today().minusDays(100);
+    recordValuation(
+        token, old.id(), new CreateCustomAssetValuationRequest(longAgo, new BigDecimal("1000")));
+    recordValuation(
+        token, fresh.id(), new CreateCustomAssetValuationRequest(today(), new BigDecimal("2000")));
+
+    Map<String, PortfolioSummaryResponse.AccountContribution> byName =
+        getSummary(token, institution.id()).accounts().stream()
+            .collect(
+                Collectors.toMap(
+                    PortfolioSummaryResponse.AccountContribution::name, Function.identity()));
+
+    assertThat(byName.get("Old Watch").valueSourceDate()).isEqualTo(longAgo);
+    assertThat(byName.get("Old Watch").valueSourceStale()).isTrue();
+    assertThat(byName.get("New Watch").valueSourceDate()).isEqualTo(today());
+    assertThat(byName.get("New Watch").valueSourceStale()).isFalse();
   }
 
   @Test

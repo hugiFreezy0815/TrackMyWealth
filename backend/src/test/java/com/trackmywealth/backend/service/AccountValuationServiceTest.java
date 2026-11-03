@@ -130,6 +130,8 @@ class AccountValuationServiceTest {
 
     assertThat(valuation.value()).isEqualByComparingTo("600.00");
     assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LEDGER_FROM_OPENING_BALANCE);
+    // ...so it is not even read.
+    verify(transactionRepository, never()).sumAmountByAccountIdsAsOf(any(), any());
   }
 
   @Test
@@ -198,7 +200,6 @@ class AccountValuationServiceTest {
     verify(snapshotRepository, times(1)).findByAccountIdInAndOpeningBalanceTrue(anyCollection());
     verify(snapshotRepository, never()).findByAccountIdAndOpeningBalanceTrue(any());
     verify(accountDataQualityService, times(1)).warningsForAll(anyCollection(), any());
-    verify(accountDataQualityService, never()).warningsFor(any(Account.class), any());
     verify(accountDataQualityService, never()).warningsFor(any(UUID.class));
   }
 
@@ -246,6 +247,19 @@ class AccountValuationServiceTest {
     withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY, "1.00"));
 
     assertThat(service.valueIn(account, "CHF", TODAY).valueKnown()).isFalse();
+    verify(snapshotRepository, never()).findLatestWithBalance(any(), any());
+  }
+
+  @Test
+  void anAccountWithoutALedgerReadsNoOpeningBalanceNorALedgerAfterIt() {
+    account.setHasTransactions(false);
+    withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY, "1.00"));
+
+    service.valueIn(account, "CHF", TODAY);
+
+    verify(snapshotRepository, never()).findByAccountIdInAndOpeningBalanceTrue(any());
+    verify(transactionRepository, never()).sumAmountBookedAfterSnapshots(any(), any());
+    verify(transactionRepository, never()).sumAmountByAccountIdsAsOf(any(), any());
   }
 
   // --- Snapshot age (#380) -----------------------------------------------------------------------
@@ -330,6 +344,25 @@ class AccountValuationServiceTest {
     assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE);
     // Statement plus ledger is not a dated observation: it cannot go stale.
     assertThat(valuation.valueSourceDate()).isNull();
+    // With a statement, neither the principal nor the whole ledger is read.
+    verify(mortgageRepository, never()).findAllById(any());
+    verify(loanRepository, never()).findAllById(any());
+    verify(transactionRepository, never()).sumAmountByAccountIdsAsOf(any(), any());
+  }
+
+  // PO decision on #380 (US-05-06): a value the ledger carries forward from a snapshot never goes
+  // stale, however old that snapshot - an opening balance's (above) or a loan statement's alike.
+  @Test
+  void aLoanValuedFromATwoYearOldStatementWithoutLaterRowsIsNotStale() {
+    account = account("LIABILITY");
+    account.setHasAmortisation(true);
+    withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY.minusYears(2), "300000.00"));
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.value()).isEqualByComparingTo("300000.00");
+    assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE);
+    assertThat(valuation.valueSourceStale()).isFalse();
   }
 
   @Test
@@ -347,6 +380,8 @@ class AccountValuationServiceTest {
     assertThat(valuation.value()).isEqualByComparingTo("480000.00");
     assertThat(valuation.valueBasis())
         .isEqualTo(ValueBasisValues.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS);
+    // Found as a mortgage, so the loan table is not read.
+    verify(loanRepository, never()).findAllById(any());
   }
 
   @Test
@@ -362,6 +397,7 @@ class AccountValuationServiceTest {
 
     assertThat(valuation.value()).isEqualByComparingTo("15000.00");
     assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.ORIGINAL_PRINCIPAL);
+    verify(loanRepository).findAllById(List.of(account.getId()));
   }
 
   @Test
@@ -419,6 +455,7 @@ class AccountValuationServiceTest {
 
     assertThat(valuations).hasSize(50);
     assertThat(valuations.get(0).value()).isEqualByComparingTo("10.00");
+    assertThat(valuations.get(2).value()).isEqualByComparingTo("1.00");
     verify(snapshotRepository, times(1)).findByAccountIdInAndOpeningBalanceTrue(anyCollection());
     verify(snapshotRepository, times(1)).findLatestWithBalance(anyCollection(), eq(TODAY));
     verify(valuationRepository, times(1)).findLatestOnOrBefore(anyCollection(), eq(TODAY));

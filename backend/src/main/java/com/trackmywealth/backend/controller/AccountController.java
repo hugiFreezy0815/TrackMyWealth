@@ -18,6 +18,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,7 +31,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * US-05-01, US-05-02, US-05-03, US-04-04, US-03-06 (workspace membership checked by {@code
- * AccessControlService}), and the account list of US-05-06 (#380).
+ * AccessControlService}), and the account list of US-05-06 (#380). Every operation here is under
+ * the Accounts tag, as each controller's operations are under one tag (#380 moved them there from
+ * springdoc's default {@code account-controller}).
  */
 @RestController
 @RequestMapping("/api/v1/accounts")
@@ -62,8 +65,10 @@ public class AccountController {
       @RequestParam(required = false) String accountType,
       @RequestParam(defaultValue = "false") boolean archived,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    // An empty parameter (?accountType=) is a filter left unset, not an unknown type.
+    String type = StringUtils.hasText(accountType) ? accountType : null;
     return accountListService.listAccounts(
-        new AccountListFilter(portfolioId, accountType, archived), actor);
+        new AccountListFilter(portfolioId, type, archived), actor);
   }
 
   @PostMapping

@@ -174,16 +174,23 @@ that I can find an account and see where my money is.
 **Implemented (PO decisions on #380, 2026-11-03):**
 - `GET /api/v1/accounts`, operation `listAccounts`, tag Accounts: a bounded list (plain array,
   not paged; a workspace holds tens of accounts), oldest first. Filters `portfolioId`,
-  `accountType` (an unknown type is a 400) and `archived` (default `false`).
+  `accountType` (an unknown type is a 400, an empty one counts as unset) and `archived` (default
+  `false`). The tag is set on the whole controller, as for Portfolios and Transactions, so the
+  existing account operations (create, get, update, archive, restore, reassign) move from
+  springdoc's default `account-controller` to Accounts too.
 - Each row: id, version, name, account type, nature, portfolio id and name, own currency,
   archived, the **signed** balance in its own currency and in the workspace currency (assets
   positive, liabilities negative, as in the Portfolio View), `valueKnown`, value status, `asOf`,
   `valueSourceDate` and warnings. Same valuation as net worth: each `balanceInWorkspaceCurrency`
-  is the account's net worth contribution.
+  is the account's net worth contribution. Without an FX rate into the workspace currency, the
+  row is `UNKNOWN` but still shows `balance` and the `valueSourceDate` it rests on.
 - **Value status `STALE`** now also means an out-of-date snapshot or manual valuation: older than
   `app.valuation.snapshot-stale-after` (`VALUATION_SNAPSHOT_STALE_AFTER`, default `P45D`) before
-  the valuation date. A value derived from the ledger never goes stale this way. It applies
-  everywhere value status is shown (Portfolio View, net worth's `ValueStatus`).
+  the valuation date. A value derived from the ledger never goes stale this way, including one
+  the ledger carries forward from a snapshot: an opening balance or a loan statement plus the
+  ledger after it. It applies everywhere value status is shown (Portfolio View, net worth's
+  `ValueStatus`), and the portfolio summary's account contributions carry `valueSourceDate` and
+  `valueSourceStale`.
 - **Valuation is batched:** `AccountValuationService` reads every value source in one query for
   all accounts, so the list, net worth and the Portfolio View run the same number of queries for
   50 accounts as for one.
