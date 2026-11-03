@@ -1,11 +1,16 @@
 package com.trackmywealth.backend.repository;
 
+import com.trackmywealth.backend.dto.AccountListFilter;
 import com.trackmywealth.backend.entity.Account;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.criteria.Predicate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -13,7 +18,30 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface AccountRepository extends JpaRepository<Account, UUID> {
+public interface AccountRepository
+    extends JpaRepository<Account, UUID>, JpaSpecificationExecutor<Account> {
+
+  /**
+   * #380: the workspace's accounts matching {@code filter}, for the account list. The portfolio and
+   * the workspace are fetched in the same query, so a row's portfolio name and the workspace's
+   * currency cost nothing per account. The caller orders them.
+   */
+  static Specification<Account> listedBy(UUID workspaceId, AccountListFilter filter) {
+    return (root, query, builder) -> {
+      root.fetch("portfolio");
+      root.fetch("workspace");
+      List<Predicate> where = new ArrayList<>();
+      where.add(builder.equal(root.get("workspace").get("id"), workspaceId));
+      where.add(builder.equal(root.get("status"), filter.archived() ? "ARCHIVED" : "ACTIVE"));
+      if (filter.portfolioId() != null) {
+        where.add(builder.equal(root.get("portfolio").get("id"), filter.portfolioId()));
+      }
+      if (filter.accountType() != null) {
+        where.add(builder.equal(root.get("accountType"), filter.accountType()));
+      }
+      return builder.and(where.toArray(Predicate[]::new));
+    };
+  }
 
   Optional<Account> findByWorkspaceIdAndIdentifierHash(UUID workspaceId, String identifierHash);
 

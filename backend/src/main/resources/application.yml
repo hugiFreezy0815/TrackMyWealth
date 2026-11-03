@@ -233,6 +233,11 @@ app:
     # at its booking-date FX rate for separately imported cross-currency transfer legs. Such a
     # match is only proposed, never auto-confirmed.
     transfer-match-tolerance: ${FX_TRANSFER_MATCH_TOLERANCE:0.02}
+  valuation:
+    # #380: a value resting on a snapshot or a manual valuation older than this before the
+    # valuation date has the value status STALE. One missed monthly statement plus some slack; a
+    # value derived from the ledger is never stale this way. A java.time.Period.
+    snapshot-stale-after: ${VALUATION_SNAPSHOT_STALE_AFTER:P45D}
   categorization:
     # US-08-01 FALLBACK_MATCH: the minimum pg_trgm similarity (0..1) between a new merchant
     # description and an earlier rule- or user-categorized one before its category is copied. The

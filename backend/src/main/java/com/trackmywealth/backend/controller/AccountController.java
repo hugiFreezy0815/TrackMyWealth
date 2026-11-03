@@ -1,13 +1,19 @@
 package com.trackmywealth.backend.controller;
 
+import com.trackmywealth.backend.dto.AccountListFilter;
+import com.trackmywealth.backend.dto.AccountListItemResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.AccountListService;
 import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,20 +25,45 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * US-05-01, US-05-02, US-05-03, US-04-04, US-03-06 (workspace membership checked by {@code
- * AccessControlService}).
+ * AccessControlService}), and the account list of US-05-06 (#380).
  */
 @RestController
 @RequestMapping("/api/v1/accounts")
+@Tag(name = "Accounts")
 public class AccountController {
 
   private final AccountService accountService;
+  private final AccountListService accountListService;
 
-  public AccountController(AccountService accountService) {
+  public AccountController(AccountService accountService, AccountListService accountListService) {
     this.accountService = accountService;
+    this.accountListService = accountListService;
+  }
+
+  /**
+   * US-05-06 (#380): every account of the workspace with its current value, oldest first. A bounded
+   * list, deliberately not paged: a workspace holds tens of accounts, not thousands.
+   */
+  @Operation(
+      operationId = "listAccounts",
+      summary = "List the workspace's accounts with their current value",
+      description =
+          "Every active account of the workspace, or every archived one with archived=true, oldest"
+              + " first. Not paged: a workspace holds tens of accounts. Amounts are signed (assets"
+              + " positive, liabilities negative) and come from the same valuation as net worth.")
+  @GetMapping
+  public List<AccountListItemResponse> listAccounts(
+      @RequestParam(required = false) UUID portfolioId,
+      @RequestParam(required = false) String accountType,
+      @RequestParam(defaultValue = "false") boolean archived,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return accountListService.listAccounts(
+        new AccountListFilter(portfolioId, accountType, archived), actor);
   }
 
   @PostMapping

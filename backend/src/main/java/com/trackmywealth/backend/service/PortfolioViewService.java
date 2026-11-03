@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.PortfolioType;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.AccountRow;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.Section;
+import com.trackmywealth.backend.dto.SignedAmounts;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
@@ -53,7 +54,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class PortfolioViewService {
 
   private static final String ACTIVE = "ACTIVE";
-  private static final String LIABILITY = "LIABILITY";
 
   private final AccessControlService accessControlService;
   private final PortfolioLookupService portfolioLookupService;
@@ -181,8 +181,8 @@ public class PortfolioViewService {
         placement.accountType(),
         portfolioValue.nature(),
         ownValue.currency(),
-        signed(ownValue),
-        signed(portfolioValue),
+        SignedAmounts.of(ownValue),
+        SignedAmounts.of(portfolioValue),
         portfolioValue.valueKnown(),
         ValueStatus.of(portfolioValue),
         portfolioValue.valueSourceDate(),
@@ -251,14 +251,6 @@ public class PortfolioViewService {
     return byAccount;
   }
 
-  // Assets positive, liabilities negative (PortfolioViewResponse); null for an unknown value.
-  private static BigDecimal signed(AccountValuation valuation) {
-    if (!valuation.valueKnown()) {
-      return null;
-    }
-    return LIABILITY.equals(valuation.nature()) ? valuation.value().negate() : valuation.value();
-  }
-
   private static List<AccountValuation> valuationsOf(
       List<Account> accounts, Map<UUID, AccountValuation> byAccount) {
     return accounts.stream().map(account -> byAccount.get(account.getId())).toList();
@@ -269,7 +261,7 @@ public class PortfolioViewService {
     BigDecimal sum = BigDecimal.ZERO;
     for (AccountValuation valuation : valuations) {
       if (valuation.valueKnown()) {
-        sum = sum.add(signed(valuation));
+        sum = sum.add(SignedAmounts.of(valuation));
       }
     }
     return sum;

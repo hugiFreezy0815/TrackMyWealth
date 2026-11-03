@@ -3,6 +3,11 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,5 +45,25 @@ public class AccountCurrencyService {
         // Defensive only: trg_extension_type_guard (V5) means a CREDIT_CARD account always has
         // this row in practice.
         .orElseGet(account::getNativeCurrency);
+  }
+
+  /**
+   * #380: {@link #ownCurrency} for several accounts, reading the cards' billing currencies in one
+   * query rather than one per card.
+   */
+  @Transactional(readOnly = true)
+  public Map<UUID, String> ownCurrencies(Collection<Account> accounts) {
+    Map<UUID, String> currencies = new HashMap<>();
+    for (Account account : accounts) {
+      currencies.put(account.getId(), account.getNativeCurrency());
+    }
+    List<UUID> cards =
+        accounts.stream().filter(Account::isHasStatementCycle).map(Account::getId).toList();
+    if (!cards.isEmpty()) {
+      for (AccountCreditCard card : accountCreditCardRepository.findAllById(cards)) {
+        currencies.put(card.getAccountId(), card.getBillingCurrency());
+      }
+    }
+    return currencies;
   }
 }
