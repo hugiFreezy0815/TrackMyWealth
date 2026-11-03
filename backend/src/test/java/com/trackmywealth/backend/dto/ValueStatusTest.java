@@ -7,7 +7,10 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-/** US-04-06: one account's {@link ValueStatus}, and a total's as the worst of its parts. */
+/**
+ * US-04-06: one account's {@link ValueStatus}, and a total's as the worst of its parts; #380 adds
+ * an out-of-date snapshot or valuation as a second reason for {@code STALE}.
+ */
 class ValueStatusTest {
 
   @Test
@@ -34,6 +37,31 @@ class ValueStatusTest {
   void aStaleRateOutranksAnApproximation() {
     assertThat(ValueStatus.of(valuation(true, ValueBasisValues.LEDGER_EMPTY, true, List.of())))
         .isEqualTo(ValueStatus.STALE);
+  }
+
+  @Test
+  void anOutOfDateSnapshotIsStaleLikeAnOutOfDateRate() {
+    assertThat(
+            ValueStatus.of(
+                valuation(true, ValueBasisValues.LATEST_SNAPSHOT, false, true, List.of())))
+        .isEqualTo(ValueStatus.STALE);
+    // An old manual valuation outranks it being an approximation of its own kind.
+    assertThat(
+            ValueStatus.of(valuation(true, ValueBasisValues.LEDGER_EMPTY, false, true, List.of())))
+        .isEqualTo(ValueStatus.STALE);
+  }
+
+  @Test
+  void anOpenReconciliationDifferenceOutranksAnOutOfDateSnapshot() {
+    assertThat(
+            ValueStatus.of(
+                valuation(
+                    true,
+                    ValueBasisValues.LATEST_SNAPSHOT,
+                    false,
+                    true,
+                    List.of(DataQualityWarningValues.OPEN_RECONCILIATION_DIFFERENCE))))
+        .isEqualTo(ValueStatus.UNRECONCILED);
   }
 
   @Test
@@ -71,6 +99,15 @@ class ValueStatusTest {
 
   private static AccountValuation valuation(
       boolean known, String valueBasis, boolean rateStale, List<String> warnings) {
+    return valuation(known, valueBasis, rateStale, false, warnings);
+  }
+
+  private static AccountValuation valuation(
+      boolean known,
+      String valueBasis,
+      boolean rateStale,
+      boolean sourceStale,
+      List<String> warnings) {
     return new AccountValuation(
         UUID.randomUUID(),
         "Account",
@@ -85,6 +122,7 @@ class ValueStatusTest {
         known,
         valueBasis,
         null,
+        sourceStale,
         warnings);
   }
 }

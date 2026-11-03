@@ -185,7 +185,8 @@ crypto) are each shown the way their contents need.
   property). Same valuation as the summary and net
   worth.
 - **Value status** (`CURRENT`, `ESTIMATED`, `STALE`, `UNRECONCILED`, `UNKNOWN`) is derived from the
-  existing valuation result; a total takes the worst of its accounts. #380/#381 reuse it.
+  existing valuation result; a total takes the worst of its accounts. #380/#381 reuse it; #380
+  added an out-of-date snapshot or valuation (`app.valuation.snapshot-stale-after`) to `STALE`.
 
 **Acceptance criteria:** see #390; covered by `PortfolioViewControllerTest`,
 `PortfolioControllerTest`, `PortfolioMigrationTest`, `PortfolioTypeTest` and `ValueStatusTest`.

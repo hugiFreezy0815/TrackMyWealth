@@ -3,6 +3,8 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -11,9 +13,13 @@ import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
+import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.entity.AccountLoan;
+import com.trackmywealth.backend.entity.AccountMortgage;
 import com.trackmywealth.backend.entity.AccountSnapshot;
+import com.trackmywealth.backend.entity.CustomAssetValuation;
 import com.trackmywealth.backend.repository.AccountLoanRepository;
 import com.trackmywealth.backend.repository.AccountMortgageRepository;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
@@ -23,9 +29,12 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.Period;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,10 +43,12 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * US-25-04: the "ledger from opening balance" value source of {@link AccountValuationService}, with
- * the repositories mocked - the arithmetic, the sign convention for a liability, the
- * before-the-opening-date and holding-account rules, and the {@code asOf} parameter. {@code
- * OpeningBalanceControllerTest} covers the same against PostgreSQL, through every consumer.
+ * {@link AccountValuationService} with the repositories mocked: the value sources (US-25-04's
+ * "ledger from opening balance", a ledger-less account's latest snapshot, a custom asset's
+ * valuation, a loan's statement or principal, a card's ledger), the sign convention for a
+ * liability, the {@code asOf} parameter, the snapshot-age staleness of #380, and that a batch reads
+ * every source once, not once per account (#380). {@code OpeningBalanceControllerTest} and {@code
+ * AccountListControllerTest} cover the same against PostgreSQL.
  */
 class AccountValuationServiceTest {
 
@@ -45,12 +56,19 @@ class AccountValuationServiceTest {
   private static final LocalDate OPENING_DATE = LocalDate.of(2024, 10, 1);
   private static final OffsetDateTime OPENING_STATED_AT =
       OffsetDateTime.parse("2026-02-01T09:00:00Z");
+  private static final UUID OPENING_ID = UUID.randomUUID();
+  private static final Period STALE_AFTER = Period.ofDays(45);
   private static final AuthenticatedUserPrincipal ACTOR =
       new AuthenticatedUserPrincipal(
           UUID.randomUUID(), "STANDARD_USER", UUID.randomUUID(), UUID.randomUUID(), "EN");
 
   private final AccountLookupService accountLookupService = mock(AccountLookupService.class);
   private final AccessControlService accessControlService = mock(AccessControlService.class);
+  private final AccountMortgageRepository mortgageRepository =
+      mock(AccountMortgageRepository.class);
+  private final AccountLoanRepository loanRepository = mock(AccountLoanRepository.class);
+  private final CustomAssetValuationRepository valuationRepository =
+      mock(CustomAssetValuationRepository.class);
   private final AccountSnapshotRepository snapshotRepository =
       mock(AccountSnapshotRepository.class);
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
@@ -59,37 +77,35 @@ class AccountValuationServiceTest {
       mock(AccountDataQualityService.class);
   private final FxRateService fxRateService = mock(FxRateService.class);
   private final BusinessDateService businessDateService = mock(BusinessDateService.class);
-  private final AccountValuationService service =
-      new AccountValuationService(
-          accountLookupService,
-          accessControlService,
-          mock(AccountMortgageRepository.class),
-          mock(AccountLoanRepository.class),
-          mock(CustomAssetValuationRepository.class),
-          snapshotRepository,
-          transactionRepository,
-          accountCurrencyService,
-          accountDataQualityService,
-          fxRateService,
-          businessDateService,
-          "ECB");
+  private final AccountValuationService service = service(STALE_AFTER);
 
   private Account account;
 
   @BeforeEach
   void setUp() {
     account = account("ASSET");
+    // Every account's own currency is CHF unless a test says otherwise.
+    when(accountCurrencyService.ownCurrencies(anyCollection()))
+        .thenAnswer(
+            invocation -> {
+              Map<UUID, String> currencies = new HashMap<>();
+              for (Account each : invocation.<Collection<Account>>getArgument(0)) {
+                currencies.put(each.getId(), "CHF");
+              }
+              return currencies;
+            });
+    // getBalance's default target currency.
     when(accountCurrencyService.ownCurrency(any())).thenReturn("CHF");
-    when(accountDataQualityService.warningsFor(any(Account.class), any())).thenReturn(List.of());
+    when(accountDataQualityService.warningsForAll(anyCollection(), any())).thenReturn(Map.of());
     when(businessDateService.today()).thenReturn(TODAY);
-    when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(any()))
-        .thenReturn(Optional.empty());
   }
+
+  // --- Ledger from the opening balance (US-25-04) --------------------------------------------
 
   @Test
   void anAssetIsWorthItsOpeningBalancePlusTheLedgerAfterIt() {
     withOpeningBalance("10000.00");
-    withLedgerAfterOpening(TODAY, "-1234.55");
+    withLedgerAfterSnapshot(OPENING_ID, TODAY, "-1234.55");
 
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
 
@@ -106,22 +122,21 @@ class AccountValuationServiceTest {
     account.setHasStatementCycle(true);
     withOpeningBalance("500.00");
     // Purchases are negative on the ledger and increase what is owed; a payment reduces it.
-    withLedgerAfterOpening(TODAY, "-100.00");
+    withLedgerAfterSnapshot(OPENING_ID, TODAY, "-100.00");
+    // The card's own ledger-only source is superseded, not added on top.
+    withLedgerSum(account.getId(), TODAY, "-9999.00");
 
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
 
     assertThat(valuation.value()).isEqualByComparingTo("600.00");
     assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LEDGER_FROM_OPENING_BALANCE);
-    // The card's own ledger-only source is superseded, not added on top.
-    verify(transactionRepository, never()).sumAmountByAccountIdAsOf(any(), any());
+    // ...so it is not even read.
+    verify(transactionRepository, never()).sumAmountByAccountIdsAsOf(any(), any());
   }
 
   @Test
   void withNoRowsAfterTheOpeningDateTheValueIsTheOpeningBalance() {
     withOpeningBalance("84000.00");
-    when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, OPENING_STATED_AT, TODAY))
-        .thenReturn(Optional.empty());
 
     assertThat(service.valueIn(account, "CHF", TODAY).value()).isEqualByComparingTo("84000.00");
   }
@@ -140,7 +155,6 @@ class AccountValuationServiceTest {
   @Test
   void onTheOpeningDateTheValueIsTheOpeningBalanceAlone() {
     withOpeningBalance("10000.00");
-    withLedgerAfterOpening(OPENING_DATE, null);
 
     assertThat(service.valueIn(account, "CHF", OPENING_DATE).value())
         .isEqualByComparingTo("10000.00");
@@ -159,16 +173,17 @@ class AccountValuationServiceTest {
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
 
     assertThat(valuation.valueKnown()).isFalse();
-    verify(transactionRepository, never())
-        .sumAmountByAccountIdBookedAfter(any(), any(), any(), any());
+    assertThat(valuation.valueSourceStale()).isFalse();
+    verify(transactionRepository, never()).sumAmountBookedAfterSnapshots(any(), any());
   }
 
   @Test
   void theAccountsWarningsTravelWithItsValuationKnownOrNot() {
     List<String> warnings = List.of(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
-    when(accountDataQualityService.warningsFor(account, OPENING_DATE)).thenReturn(warnings);
+    when(accountDataQualityService.warningsForAll(
+            anyCollection(), eq(Map.of(account.getId(), OPENING_DATE))))
+        .thenReturn(Map.of(account.getId(), warnings));
     withOpeningBalance("1.00");
-    withLedgerAfterOpening(TODAY, null);
 
     // Known on the date, unknown before it - the warnings are the same either way.
     assertThat(service.valueIn(account, "CHF", TODAY).warnings()).isEqualTo(warnings);
@@ -177,48 +192,15 @@ class AccountValuationServiceTest {
   }
 
   @Test
-  void theOpeningBalanceIsReadOnceAndAWarningNeedsNoSecondLookup() {
+  void aSingleValuationTakesTheBatchPathWithNoPerAccountLookups() {
     withOpeningBalance("1.00");
-    withLedgerAfterOpening(TODAY, null);
 
     service.valueIn(account, "CHF", TODAY);
 
-    verify(snapshotRepository, times(1)).findByAccountIdAndOpeningBalanceTrue(account.getId());
-    verify(accountDataQualityService).warningsFor(account, OPENING_DATE);
-    verify(accountDataQualityService, never()).warningsFor(any(UUID.class));
-  }
-
-  @Test
-  void aBatchReadsOpeningBalancesAndWarningsOnceNotPerAccount() {
-    Account withOpening = account;
-    Account withoutOpening = account("ASSET");
-    Account loan = account("LIABILITY");
-    loan.setHasAmortisation(true);
-    AccountSnapshot opening = new AccountSnapshot();
-    opening.setAccount(withOpening);
-    opening.setSnapshotDate(OPENING_DATE);
-    opening.setBalance(new BigDecimal("10000.00"));
-    opening.setOpeningBalance(true);
-    ReflectionTestUtils.setField(opening, "createdAt", OPENING_STATED_AT);
-    // Only the accounts that can take one are looked up - not the loan.
-    when(snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(
-            List.of(withOpening.getId(), withoutOpening.getId())))
-        .thenReturn(List.of(opening));
-    String warning = DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE;
-    List<Account> accounts = List.of(withOpening, withoutOpening, loan);
-    when(accountDataQualityService.warningsForAll(
-            accounts, Map.of(withOpening.getId(), OPENING_DATE)))
-        .thenReturn(Map.of(withOpening.getId(), List.of(warning)));
-    withLedgerAfterOpening(TODAY, "-500.00");
-
-    List<AccountValuation> valuations = service.valueAll(accounts, "CHF", TODAY);
-
-    assertThat(valuations.get(0).value()).isEqualByComparingTo("9500.00");
-    assertThat(valuations.get(0).warnings()).containsExactly(warning);
-    assertThat(valuations.get(1).valueKnown()).isFalse();
-    assertThat(valuations.get(1).warnings()).isEmpty();
+    verify(snapshotRepository, times(1)).findByAccountIdInAndOpeningBalanceTrue(anyCollection());
     verify(snapshotRepository, never()).findByAccountIdAndOpeningBalanceTrue(any());
-    verify(accountDataQualityService, never()).warningsFor(any(Account.class), any());
+    verify(accountDataQualityService, times(1)).warningsForAll(anyCollection(), any());
+    verify(accountDataQualityService, never()).warningsFor(any(UUID.class));
   }
 
   @Test
@@ -227,17 +209,16 @@ class AccountValuationServiceTest {
 
     service.valueIn(account, "CHF", TODAY);
 
-    verify(snapshotRepository, never()).findByAccountIdAndOpeningBalanceTrue(any());
-    verify(accountDataQualityService).warningsFor(account, null);
+    verify(snapshotRepository, never()).findByAccountIdInAndOpeningBalanceTrue(any());
   }
+
+  // --- An account without a ledger (#232 review) ---------------------------------------------
 
   @Test
   void anAccountWithoutALedgerIsWorthItsLatestSnapshotWithThatSnapshotsDate() {
     account.setHasTransactions(false);
-    LocalDate snapshotDate = TODAY.minusMonths(3);
-    AccountSnapshot latest = snapshot(snapshotDate, "91000.00");
-    when(snapshotRepository.findLatestWithBalance(account.getId(), TODAY))
-        .thenReturn(Optional.of(latest));
+    LocalDate snapshotDate = TODAY.minusDays(30);
+    withLatestSnapshot(snapshot(account, UUID.randomUUID(), snapshotDate, "91000.00"));
     withOpeningBalance("84000.00");
 
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
@@ -246,14 +227,12 @@ class AccountValuationServiceTest {
     assertThat(valuation.value()).isEqualByComparingTo("91000.00");
     assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LATEST_SNAPSHOT);
     assertThat(valuation.valueSourceDate()).isEqualTo(snapshotDate);
-    verify(transactionRepository, never())
-        .sumAmountByAccountIdBookedAfter(any(), any(), any(), any());
+    assertThat(valuation.valueSourceStale()).isFalse();
   }
 
   @Test
   void anAccountWithoutALedgerAndWithoutASnapshotByThenIsUnknown() {
     account.setHasTransactions(false);
-    when(snapshotRepository.findLatestWithBalance(any(), any())).thenReturn(Optional.empty());
 
     AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
 
@@ -265,18 +244,254 @@ class AccountValuationServiceTest {
   void anAccountWithoutALedgerThatHoldsPositionsStaysUnknown() {
     account.setHasTransactions(false);
     account.setHoldsPositions(true);
+    withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY, "1.00"));
 
     assertThat(service.valueIn(account, "CHF", TODAY).valueKnown()).isFalse();
     verify(snapshotRepository, never()).findLatestWithBalance(any(), any());
   }
 
   @Test
+  void anAccountWithoutALedgerReadsNoOpeningBalanceNorALedgerAfterIt() {
+    account.setHasTransactions(false);
+    withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY, "1.00"));
+
+    service.valueIn(account, "CHF", TODAY);
+
+    verify(snapshotRepository, never()).findByAccountIdInAndOpeningBalanceTrue(any());
+    verify(transactionRepository, never()).sumAmountBookedAfterSnapshots(any(), any());
+    verify(transactionRepository, never()).sumAmountByAccountIdsAsOf(any(), any());
+  }
+
+  // --- Snapshot age (#380) -----------------------------------------------------------------------
+
+  @Test
+  void aSnapshotOlderThanTheConfiguredPeriodIsStaleAndOneExactlyThatOldIsNot() {
+    account.setHasTransactions(false);
+    withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY.minus(STALE_AFTER), "1.00"));
+    assertThat(service.valueIn(account, "CHF", TODAY).valueSourceStale()).isFalse();
+
+    withLatestSnapshot(
+        snapshot(account, UUID.randomUUID(), TODAY.minus(STALE_AFTER).minusDays(1), "1.00"));
+    AccountValuation stale = service.valueIn(account, "CHF", TODAY);
+    assertThat(stale.valueSourceStale()).isTrue();
+    // Still a known value, with the date that makes it stale.
+    assertThat(stale.valueKnown()).isTrue();
+    assertThat(stale.valueSourceDate()).isEqualTo(TODAY.minus(STALE_AFTER).minusDays(1));
+  }
+
+  @Test
+  void stalenessIsJudgedAgainstTheValuationDateNotToday() {
+    account.setHasTransactions(false);
+    LocalDate snapshotDate = TODAY.minusDays(100);
+    withLatestSnapshot(snapshot(account, UUID.randomUUID(), snapshotDate, "1.00"));
+
+    assertThat(service.valueIn(account, "CHF", snapshotDate.plusDays(10)).valueSourceStale())
+        .isFalse();
+  }
+
+  @Test
+  void aValueFromTheLedgerIsNeverStaleHoweverOldItsOpeningBalance() {
+    // The opening balance is two years old; the ledger after it keeps the value current.
+    withOpeningBalance("100.00");
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.valueSourceDate()).isNull();
+    assertThat(valuation.valueSourceStale()).isFalse();
+  }
+
+  @Test
+  void aNonPositiveStalenessPeriodFailsStartup() {
+    assertThatThrownBy(() -> service(Period.ZERO))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("app.valuation.snapshot-stale-after");
+    assertThatThrownBy(() -> service(Period.ofDays(-1)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  // --- Custom assets, loans and cards ----------------------------------------------------------
+
+  @Test
+  void aCustomAssetIsWorthItsLatestValuationWhichAgesLikeASnapshot() {
+    account.setManualValuation(true);
+    LocalDate valuedOn = TODAY.minusMonths(6);
+    CustomAssetValuation valuation = new CustomAssetValuation();
+    valuation.setAccount(account);
+    valuation.setValuationDate(valuedOn);
+    valuation.setValue(new BigDecimal("750000.00"));
+    when(valuationRepository.findLatestOnOrBefore(anyCollection(), eq(TODAY)))
+        .thenReturn(List.of(valuation));
+
+    AccountValuation value = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(value.value()).isEqualByComparingTo("750000.00");
+    assertThat(value.valueBasis()).isEqualTo(ValueBasisValues.MANUAL_VALUATION);
+    assertThat(value.valueSourceDate()).isEqualTo(valuedOn);
+    assertThat(value.valueSourceStale()).isTrue();
+  }
+
+  @Test
+  void aLoanWithAStatementOwesItsBalanceLessTheInstalmentsBookedAfterIt() {
+    account = account("LIABILITY");
+    account.setHasAmortisation(true);
+    UUID statementId = UUID.randomUUID();
+    withLatestSnapshot(snapshot(account, statementId, TODAY.minusDays(20), "200000.00"));
+    withLedgerAfterSnapshot(statementId, TODAY, "1500.00");
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.value()).isEqualByComparingTo("198500.00");
+    assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE);
+    // Statement plus ledger is not a dated observation: it cannot go stale.
+    assertThat(valuation.valueSourceDate()).isNull();
+    // With a statement, neither the principal nor the whole ledger is read.
+    verify(mortgageRepository, never()).findAllById(any());
+    verify(loanRepository, never()).findAllById(any());
+    verify(transactionRepository, never()).sumAmountByAccountIdsAsOf(any(), any());
+  }
+
+  // PO decision on #380 (US-05-06): a value the ledger carries forward from a snapshot never goes
+  // stale, however old that snapshot - an opening balance's (above) or a loan statement's alike.
+  @Test
+  void aLoanValuedFromATwoYearOldStatementWithoutLaterRowsIsNotStale() {
+    account = account("LIABILITY");
+    account.setHasAmortisation(true);
+    withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY.minusYears(2), "300000.00"));
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.value()).isEqualByComparingTo("300000.00");
+    assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE);
+    assertThat(valuation.valueSourceStale()).isFalse();
+  }
+
+  @Test
+  void aMortgageWithoutAStatementOwesItsPrincipalLessTheRepaymentsOnItsLedger() {
+    account = account("LIABILITY");
+    account.setHasAmortisation(true);
+    AccountMortgage mortgage = new AccountMortgage();
+    ReflectionTestUtils.setField(mortgage, "accountId", account.getId());
+    mortgage.setOriginalPrincipal(new BigDecimal("500000.00"));
+    when(mortgageRepository.findAllById(anyCollection())).thenReturn(List.of(mortgage));
+    withLedgerSum(account.getId(), TODAY, "20000.00");
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.value()).isEqualByComparingTo("480000.00");
+    assertThat(valuation.valueBasis())
+        .isEqualTo(ValueBasisValues.ORIGINAL_PRINCIPAL_LESS_REPAYMENTS);
+    // Found as a mortgage, so the loan table is not read.
+    verify(loanRepository, never()).findAllById(any());
+  }
+
+  @Test
+  void aLoanWithoutRepaymentsOwesItsOriginalPrincipal() {
+    account = account("LIABILITY");
+    account.setHasAmortisation(true);
+    AccountLoan loan = new AccountLoan();
+    ReflectionTestUtils.setField(loan, "accountId", account.getId());
+    loan.setOriginalPrincipal(new BigDecimal("15000.00"));
+    when(loanRepository.findAllById(anyCollection())).thenReturn(List.of(loan));
+
+    AccountValuation valuation = service.valueIn(account, "CHF", TODAY);
+
+    assertThat(valuation.value()).isEqualByComparingTo("15000.00");
+    assertThat(valuation.valueBasis()).isEqualTo(ValueBasisValues.ORIGINAL_PRINCIPAL);
+    verify(loanRepository).findAllById(List.of(account.getId()));
+  }
+
+  @Test
+  void aLoanWithAnUnresolvedRepaymentIsUnknownEvenWithAStatement() {
+    account = account("LIABILITY");
+    account.setHasAmortisation(true);
+    withLatestSnapshot(snapshot(account, UUID.randomUUID(), TODAY, "1000.00"));
+    when(transactionRepository.findAccountIdsWithUnresolvedLoanRepaymentAsOf(
+            anyCollection(), eq(TODAY)))
+        .thenReturn(List.of(account.getId()));
+
+    assertThat(service.valueIn(account, "CHF", TODAY).valueKnown()).isFalse();
+  }
+
+  @Test
+  void aCardOwesItsNegatedLedgerAndZeroWithoutOne() {
+    account = account("LIABILITY");
+    account.setHasStatementCycle(true);
+    Account emptyCard = account("LIABILITY");
+    emptyCard.setHasStatementCycle(true);
+    withLedgerSum(account.getId(), TODAY, "-321.50");
+
+    List<AccountValuation> valuations = service.valueAll(List.of(account, emptyCard), "CHF", TODAY);
+
+    assertThat(valuations.get(0).value()).isEqualByComparingTo("321.50");
+    assertThat(valuations.get(0).valueBasis()).isEqualTo(ValueBasisValues.LEDGER);
+    assertThat(valuations.get(1).value()).isEqualByComparingTo("0");
+    assertThat(valuations.get(1).valueBasis()).isEqualTo(ValueBasisValues.LEDGER_EMPTY);
+  }
+
+  // --- Batching (#380) -------------------------------------------------------------------------
+
+  @Test
+  void aBatchReadsEverySourceOnceWhateverTheNumberOfAccounts() {
+    List<Account> accounts = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      Account cash = account("ASSET");
+      Account card = account("LIABILITY");
+      card.setHasStatementCycle(true);
+      Account loan = account("LIABILITY");
+      loan.setHasAmortisation(true);
+      Account property = account("ASSET");
+      property.setManualValuation(true);
+      Account vested = account("ASSET");
+      vested.setHasTransactions(false);
+      accounts.addAll(List.of(cash, card, loan, property, vested));
+    }
+    AccountSnapshot opening = snapshot(accounts.get(0), OPENING_ID, OPENING_DATE, "10.00");
+    opening.setOpeningBalance(true);
+    when(snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(anyCollection()))
+        .thenReturn(List.of(opening));
+    withLatestSnapshot(snapshot(accounts.get(2), UUID.randomUUID(), TODAY, "1.00"));
+
+    List<AccountValuation> valuations = service.valueAll(accounts, "CHF", TODAY);
+
+    assertThat(valuations).hasSize(50);
+    assertThat(valuations.get(0).value()).isEqualByComparingTo("10.00");
+    assertThat(valuations.get(2).value()).isEqualByComparingTo("1.00");
+    verify(snapshotRepository, times(1)).findByAccountIdInAndOpeningBalanceTrue(anyCollection());
+    verify(snapshotRepository, times(1)).findLatestWithBalance(anyCollection(), eq(TODAY));
+    verify(valuationRepository, times(1)).findLatestOnOrBefore(anyCollection(), eq(TODAY));
+    verify(transactionRepository, times(1))
+        .findAccountIdsWithUnresolvedLoanRepaymentAsOf(anyCollection(), eq(TODAY));
+    verify(transactionRepository, times(1)).sumAmountByAccountIdsAsOf(anyCollection(), eq(TODAY));
+    verify(transactionRepository, times(1))
+        .sumAmountBookedAfterSnapshots(anyCollection(), eq(TODAY));
+    verify(mortgageRepository, times(1)).findAllById(anyCollection());
+    verify(loanRepository, times(1)).findAllById(anyCollection());
+    verify(accountCurrencyService, times(1)).ownCurrencies(anyCollection());
+    verify(accountDataQualityService, times(1)).warningsForAll(anyCollection(), any());
+  }
+
+  @Test
+  void anAccountsOwnCurrencyComesFromTheBatchedLookup() {
+    account = account("LIABILITY");
+    account.setHasStatementCycle(true);
+    when(accountCurrencyService.ownCurrencies(anyCollection()))
+        .thenReturn(Map.of(account.getId(), "EUR"));
+
+    AccountValuation valuation = service.valueIn(account, "EUR", TODAY);
+
+    assertThat(valuation.nativeCurrency()).isEqualTo("EUR");
+    assertThat(valuation.value()).isEqualByComparingTo("0");
+  }
+
+  // --- getBalance ------------------------------------------------------------------------------
+
+  @Test
   void theBalanceIsReadAsOfTheRequestedDateOrToday() {
     when(accountLookupService.findAccountOrThrow(account.getId(), ACTOR)).thenReturn(account);
     withOpeningBalance("10000.00");
-    withLedgerAfterOpening(TODAY, "-1000.00");
+    withLedgerAfterSnapshot(OPENING_ID, TODAY, "-1000.00");
     LocalDate asOf = OPENING_DATE.plusDays(30);
-    withLedgerAfterOpening(asOf, "-250.00");
+    withLedgerAfterSnapshot(OPENING_ID, asOf, "-250.00");
 
     assertThat(service.getBalance(account.getId(), null, ACTOR, null).value())
         .isEqualByComparingTo("9000.00");
@@ -298,29 +513,55 @@ class AccountValuationServiceTest {
             e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT));
   }
 
-  private void withOpeningBalance(String balance) {
-    AccountSnapshot snapshot = new AccountSnapshot();
-    snapshot.setAccount(account);
-    snapshot.setSnapshotDate(OPENING_DATE);
-    snapshot.setBalance(new BigDecimal(balance));
-    snapshot.setOpeningBalance(true);
-    ReflectionTestUtils.setField(snapshot, "createdAt", OPENING_STATED_AT);
-    when(snapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId()))
-        .thenReturn(Optional.of(snapshot));
+  // --- Helpers ---------------------------------------------------------------------------------
+
+  private AccountValuationService service(Period staleAfter) {
+    return new AccountValuationService(
+        accountLookupService,
+        accessControlService,
+        mortgageRepository,
+        loanRepository,
+        valuationRepository,
+        snapshotRepository,
+        transactionRepository,
+        accountCurrencyService,
+        accountDataQualityService,
+        fxRateService,
+        businessDateService,
+        "ECB",
+        staleAfter);
   }
 
-  private AccountSnapshot snapshot(LocalDate date, String balance) {
+  private void withOpeningBalance(String balance) {
+    AccountSnapshot snapshot = snapshot(account, OPENING_ID, OPENING_DATE, balance);
+    snapshot.setOpeningBalance(true);
+    ReflectionTestUtils.setField(snapshot, "createdAt", OPENING_STATED_AT);
+    when(snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(anyCollection()))
+        .thenReturn(List.of(snapshot));
+  }
+
+  private void withLatestSnapshot(AccountSnapshot snapshot) {
+    when(snapshotRepository.findLatestWithBalance(anyCollection(), any()))
+        .thenReturn(List.of(snapshot));
+  }
+
+  private void withLedgerAfterSnapshot(UUID snapshotId, LocalDate asOf, String sum) {
+    when(transactionRepository.sumAmountBookedAfterSnapshots(anyCollection(), eq(asOf)))
+        .thenReturn(List.of(new KeyedAmount(snapshotId, new BigDecimal(sum))));
+  }
+
+  private void withLedgerSum(UUID accountId, LocalDate asOf, String sum) {
+    when(transactionRepository.sumAmountByAccountIdsAsOf(anyCollection(), eq(asOf)))
+        .thenReturn(List.of(new KeyedAmount(accountId, new BigDecimal(sum))));
+  }
+
+  private static AccountSnapshot snapshot(Account owner, UUID id, LocalDate date, String balance) {
     AccountSnapshot snapshot = new AccountSnapshot();
-    snapshot.setAccount(account);
+    ReflectionTestUtils.setField(snapshot, "id", id);
+    snapshot.setAccount(owner);
     snapshot.setSnapshotDate(date);
     snapshot.setBalance(new BigDecimal(balance));
     return snapshot;
-  }
-
-  private void withLedgerAfterOpening(LocalDate asOf, String sum) {
-    when(transactionRepository.sumAmountByAccountIdBookedAfter(
-            account.getId(), OPENING_DATE, OPENING_STATED_AT, asOf))
-        .thenReturn(Optional.ofNullable(sum).map(BigDecimal::new));
   }
 
   // id and nature are database-generated; set here as the persisted row would carry them.

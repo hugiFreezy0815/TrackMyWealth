@@ -30,12 +30,26 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
   // #241 review: the opening balances of several accounts at once, for a page of transactions.
   List<AccountSnapshot> findByAccountIdInAndOpeningBalanceTrue(Collection<UUID> accountIds);
 
-  // #232 review: the value of an account without a ledger - its newest balance on or before the
-  // as-of date, the opening balance included. A holdings-only snapshot (no balance) says nothing
-  // about it.
-  Optional<AccountSnapshot>
-      findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
-          UUID accountId, LocalDate asOf);
+  /**
+   * #232 review, batched in #380: per account, the balance in effect on {@code asOf} - its newest
+   * snapshot with a balance on or before that date, the opening balance included, withdrawn ones
+   * (US-07-12) left out; newest by date, then by when it was recorded. A holdings-only snapshot (no
+   * balance) says nothing about the value. An account without one has no row.
+   */
+  @Query(
+      value =
+          """
+          SELECT DISTINCT ON (account_id) *
+          FROM account_snapshot
+          WHERE account_id IN (:accountIds)
+            AND snapshot_date <= :asOf
+            AND balance IS NOT NULL
+            AND withdrawn_at IS NULL
+          ORDER BY account_id, snapshot_date DESC, created_at DESC, id
+          """,
+      nativeQuery = true)
+  List<AccountSnapshot> findLatestWithBalance(
+      @Param("accountIds") Collection<UUID> accountIds, @Param("asOf") LocalDate asOf);
 
   // US-25-02: the newest observed balance, excluding the synthetic opening-balance starting point.
   Optional<AccountSnapshot>
@@ -55,12 +69,6 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
   default Optional<AccountSnapshot> findLatestObserved(UUID accountId) {
     return findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
         accountId);
-  }
-
-  /** The balance in effect on {@code asOf}, the opening balance included (valuation). */
-  default Optional<AccountSnapshot> findLatestWithBalance(UUID accountId, LocalDate asOf) {
-    return findFirstByAccountIdAndSnapshotDateLessThanEqualAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
-        accountId, asOf);
   }
 
   /** The observed balance immediately before {@code snapshotDate} (US-25-02's cause period). */

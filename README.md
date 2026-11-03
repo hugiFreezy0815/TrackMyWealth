@@ -271,6 +271,9 @@ than `FX_STALE_AFTER` (default `P5D`) is shown as stale. To run without outbound
 `FX_IMPORT_ENABLED=false` and `FX_DEFAULT_SOURCE=MANUAL`, and enter rates yourself. The other
 `FX_IMPORT_*` settings are documented in `application.yml`.
 
+An account whose value rests on a snapshot or a manual valuation older than
+`VALUATION_SNAPSHOT_STALE_AFTER` (default `P45D`) is shown with the value status `STALE`.
+
 The provider is chosen with `FX_IMPORT_PROVIDER` (#226; default and today the only value: `ecb`,
 whose URL stays `FX_IMPORT_ECB_BASE_URL`; the former key `app.fx.import.ecb-base-url` is still read
 as a fallback). An unknown name stops the backend at start. Cross rates

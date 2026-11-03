@@ -66,6 +66,13 @@ public record PortfolioSummaryResponse(
    *     codebase (every type except {@code CUSTOM_ASSET}, {@code MORTGAGE} and {@code LOAN}, or a
    *     {@code CUSTOM_ASSET} account with no valuation recorded at all) - excluded from the
    *     institution's totals, not counted as zero
+   * @param valueSourceDate the date of the snapshot or manual valuation {@code value} rests on, so
+   *     a client can show how old it is; {@code null} for a value derived from the ledger or the
+   *     loan terms, and when {@code valueKnown} is {@code false} (#380)
+   * @param valueSourceStale {@code true} when {@code valueSourceDate} is older than {@code
+   *     app.valuation.snapshot-stale-after} before the valuation date: the value is out of date, as
+   *     the account list and the Portfolio View mark it {@code STALE} (#380). Always {@code false}
+   *     when {@code valueSourceDate} is {@code null}
    * @param warnings the account's data-quality warnings ({@code DataQualityWarningValues}), empty
    *     when there are none
    */
@@ -80,6 +87,8 @@ public record PortfolioSummaryResponse(
       boolean conversionRateCarriedForward,
       boolean conversionRateStale,
       boolean valueKnown,
+      LocalDate valueSourceDate,
+      boolean valueSourceStale,
       List<String> warnings) {
 
     public AccountContribution {

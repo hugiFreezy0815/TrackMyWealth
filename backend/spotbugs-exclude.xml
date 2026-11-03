@@ -103,6 +103,13 @@ holds itself to for its own exemption list.
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
 
+    <!-- Same reasoning again, for #380: AccountValuationService rejects a non-positive
+         app.valuation.snapshot-stale-after, which would mark every snapshot stale. -->
+    <Match>
+        <Class name="com.trackmywealth.backend.service.AccountValuationService"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+
     <!-- Same reasoning again, for #226: FxRateProviderCatalogService refuses an unknown
          app.fx.import.provider, duplicate or MANUAL provider definitions, and an
          app.fx.default-source that is neither MANUAL nor the selected provider's source;

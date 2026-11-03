@@ -9,8 +9,10 @@ import java.util.Collection;
  * <p>Derived from the {@link AccountValuation} every figure already comes from, so no second
  * calculation path exists: {@code UNKNOWN} when it has no value, {@code UNRECONCILED} while a
  * reconciliation difference is open, {@code STALE} when a carried-forward FX rate is older than
- * {@code app.fx.stale-after}, {@code ESTIMATED} when the value rests on an approximation ({@link
- * ValueBasisValues#isApproximate}) or leaves out transactions booked before the opening balance.
+ * {@code app.fx.stale-after} or the snapshot or valuation the value rests on is older than {@code
+ * app.valuation.snapshot-stale-after} (#380), {@code ESTIMATED} when the value rests on an
+ * approximation ({@link ValueBasisValues#isApproximate}) or leaves out transactions booked before
+ * the opening balance.
  */
 public enum ValueStatus {
   CURRENT,
@@ -27,7 +29,7 @@ public enum ValueStatus {
     if (valuation.warnings().contains(DataQualityWarningValues.OPEN_RECONCILIATION_DIFFERENCE)) {
       return UNRECONCILED;
     }
-    if (valuation.conversionRateStale()) {
+    if (valuation.conversionRateStale() || valuation.valueSourceStale()) {
       return STALE;
     }
     if (ValueBasisValues.isApproximate(valuation.valueBasis())

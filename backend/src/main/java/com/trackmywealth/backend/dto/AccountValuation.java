@@ -51,6 +51,10 @@ import java.util.UUID;
  *     for {@code LATEST_SNAPSHOT}, the valuation's date for {@code MANUAL_VALUATION} - so a client
  *     can show how old it is; {@code null} for a value derived from the ledger or the loan terms,
  *     and when {@code valueKnown} is {@code false}
+ * @param valueSourceStale {@code true} when {@code valueSourceDate} is older than {@code
+ *     app.valuation.snapshot-stale-after} before the valuation date (#380): the snapshot or manual
+ *     valuation the value rests on is out of date, so {@link ValueStatus} calls it {@code STALE}.
+ *     Always {@code false} when {@code valueSourceDate} is {@code null}
  * @param warnings the account's data-quality warnings ({@link DataQualityWarningValues}), empty
  *     when there are none - independent of {@code valueKnown}, a client shows them on the account
  *     (PR-011, FR-CON-007)
@@ -69,6 +73,7 @@ public record AccountValuation(
     boolean valueKnown,
     String valueBasis,
     LocalDate valueSourceDate,
+    boolean valueSourceStale,
     List<String> warnings) {
 
   public AccountValuation {

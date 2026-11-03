@@ -1,14 +1,18 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountValuation;
+import com.trackmywealth.backend.dto.AccountValueSources;
 import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.NativeAccountValue;
+import com.trackmywealth.backend.dto.SnapshotBalance;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountLoan;
 import com.trackmywealth.backend.entity.AccountMortgage;
 import com.trackmywealth.backend.entity.AccountSnapshot;
+import com.trackmywealth.backend.entity.CustomAssetValuation;
 import com.trackmywealth.backend.repository.AccountLoanRepository;
 import com.trackmywealth.backend.repository.AccountMortgageRepository;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
@@ -19,16 +23,19 @@ import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.Period;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.function.Predicate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -56,6 +63,11 @@ import org.springframework.web.server.ResponseStatusException;
  * false}) is valued from its latest snapshot instead, the opening balance being one of them. Every
  * other account without an opening balance has no value source yet and resolves as unknown, not
  * zero.
+ *
+ * <p>#380: every read goes through {@link #valuationsOf}, which loads each kind of value source
+ * once for the whole batch ({@link AccountValueSources}), so valuing fifty accounts runs the same
+ * number of queries as valuing one. {@link #valueIn} is that same path for a single account - there
+ * is no second way to resolve a value. Only the sources some account of the batch can use are read.
  */
 @Service
 public class AccountValuationService {
@@ -74,6 +86,7 @@ public class AccountValuationService {
   private final FxRateService fxRateService;
   private final BusinessDateService businessDateService;
   private final String fxDefaultSource;
+  private final Period snapshotStaleAfter;
 
   public AccountValuationService(
       AccountLookupService accountLookupService,
@@ -87,7 +100,8 @@ public class AccountValuationService {
       AccountDataQualityService accountDataQualityService,
       FxRateService fxRateService,
       BusinessDateService businessDateService,
-      @Value("${app.fx.default-source}") String fxDefaultSource) {
+      @Value("${app.fx.default-source}") String fxDefaultSource,
+      @Value("${app.valuation.snapshot-stale-after:P45D}") Period snapshotStaleAfter) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.accountMortgageRepository = accountMortgageRepository;
@@ -100,6 +114,12 @@ public class AccountValuationService {
     this.fxRateService = fxRateService;
     this.businessDateService = businessDateService;
     this.fxDefaultSource = fxDefaultSource;
+    // A non-positive period would mark every snapshot stale, one taken today included.
+    if (snapshotStaleAfter.isNegative() || snapshotStaleAfter.isZero()) {
+      throw new IllegalArgumentException(
+          "app.valuation.snapshot-stale-after must be a positive period.");
+    }
+    this.snapshotStaleAfter = snapshotStaleAfter;
   }
 
   /**
@@ -143,60 +163,50 @@ public class AccountValuationService {
    */
   @Transactional(readOnly = true)
   public AccountValuation valueIn(Account account, String targetCurrency, LocalDate asOf) {
-    // Read once: both the value and the warnings depend on it.
-    Optional<AccountSnapshot> openingBalance =
-        takesOpeningBalance(account)
-            ? accountSnapshotRepository.findByAccountIdAndOpeningBalanceTrue(account.getId())
-            : Optional.empty();
-    List<String> warnings =
-        accountDataQualityService.warningsFor(
-            account, openingBalance.map(AccountSnapshot::getSnapshotDate).orElse(null));
-    return valueIn(
-        account, targetCurrency, asOf, rateLookup(targetCurrency, asOf), openingBalance, warnings);
+    return valuationsOf(List.of(account), List.of(targetCurrency), asOf, false)
+        .in(targetCurrency)
+        .get(0);
   }
 
   /**
    * {@link #valueIn} for several accounts in one target currency, resolving each distinct native
-   * currency's FX rate once rather than once per account, and the accounts' opening balances and
-   * their warnings in one query each for the whole batch (#241 review), not two per account. Same
-   * no-access-check contract as {@link #valueIn}: pass only accounts the caller has already been
-   * cleared to see.
+   * currency's FX rate once rather than once per account, and every value source in one query for
+   * the whole batch (#241 review, #380), not one per account. Same no-access-check contract as
+   * {@link #valueIn}: pass only accounts the caller has already been cleared to see.
    */
   @Transactional(readOnly = true)
   public List<AccountValuation> valueAll(
       Collection<Account> accounts, String targetCurrency, LocalDate asOf) {
-    return valueAllIn(accounts, List.of(targetCurrency), asOf).in(targetCurrency);
+    return valuationsOf(accounts, List.of(targetCurrency), asOf, false).in(targetCurrency);
   }
 
   /**
    * US-04-06: {@link #valueAll} in several target currencies at once, plus each account's own
    * currency. Each account's value (and its opening balance and warnings) is resolved once, then
    * only converted per currency, each distinct rate looked up once - the same figures {@link
-   * #valueAll} gives per currency, without repeating the value lookups. Same no-access-check
-   * contract as {@link #valueIn}.
+   * #valueAll} gives per currency, without repeating the value lookups. The number of queries does
+   * not depend on the number of accounts (#380). Same no-access-check contract as {@link #valueIn}.
    */
   @Transactional(readOnly = true)
   public MultiCurrencyValuations valueAllIn(
       Collection<Account> accounts, Collection<String> targetCurrencies, LocalDate asOf) {
-    List<UUID> eligible =
-        accounts.stream()
-            .filter(AccountValuationService::takesOpeningBalance)
-            .map(Account::getId)
-            .toList();
-    Map<UUID, AccountSnapshot> openingBalances =
-        eligible.isEmpty()
-            ? Map.of()
-            : accountSnapshotRepository.findByAccountIdInAndOpeningBalanceTrue(eligible).stream()
-                .collect(
-                    Collectors.toMap(
-                        snapshot -> snapshot.getAccount().getId(), snapshot -> snapshot));
+    return valuationsOf(accounts, targetCurrencies, asOf, true);
+  }
+
+  // The one valuation path. The valuations in each account's own currency are built only when the
+  // caller reads them (withOwnCurrency); otherwise MultiCurrencyValuations#inOwnCurrency is empty.
+  private MultiCurrencyValuations valuationsOf(
+      Collection<Account> accounts,
+      Collection<String> targetCurrencies,
+      LocalDate asOf,
+      boolean withOwnCurrency) {
+    AccountValueSources sources = sourcesFor(accounts, asOf);
+    Map<UUID, LocalDate> openingDates = new HashMap<>();
+    sources
+        .openingBalances()
+        .forEach((accountId, opening) -> openingDates.put(accountId, opening.snapshotDate()));
     Map<UUID, List<String>> warnings =
-        accountDataQualityService.warningsForAll(
-            accounts,
-            openingBalances.entrySet().stream()
-                .collect(
-                    Collectors.toMap(
-                        Map.Entry::getKey, entry -> entry.getValue().getSnapshotDate())));
+        accountDataQualityService.warningsForAll(accounts, openingDates);
 
     // Per target currency, one rate per native currency, looked up on first use.
     Map<String, Function<String, Optional<CurrencyConversionResult>>> rates = new LinkedHashMap<>();
@@ -210,10 +220,8 @@ public class AccountValuationService {
     List<AccountValuation> inOwnCurrency = new ArrayList<>();
 
     for (Account account : accounts) {
-      String ownCurrency = accountCurrencyService.ownCurrency(account);
-      Optional<NativeAccountValue> nativeValue =
-          resolveNativeAccountValue(
-              account, Optional.ofNullable(openingBalances.get(account.getId())), asOf);
+      String ownCurrency = sources.ownCurrencies().get(account.getId());
+      Optional<NativeAccountValue> nativeValue = resolveNativeAccountValue(account, sources, asOf);
       List<String> accountWarnings = warnings.getOrDefault(account.getId(), List.of());
       for (Map.Entry<String, Function<String, Optional<CurrencyConversionResult>>> rate :
           rates.entrySet()) {
@@ -226,25 +234,183 @@ public class AccountValuationService {
                     rate.getKey(),
                     nativeValue,
                     rate.getValue(),
+                    asOf,
                     accountWarnings));
       }
-      // Its own currency needs no rate.
-      inOwnCurrency.add(
-          inCurrency(
-              account,
-              ownCurrency,
-              ownCurrency,
-              nativeValue,
-              nativeCurrency -> Optional.empty(),
-              accountWarnings));
+      if (withOwnCurrency) {
+        // Its own currency needs no rate.
+        inOwnCurrency.add(
+            inCurrency(
+                account,
+                ownCurrency,
+                ownCurrency,
+                nativeValue,
+                nativeCurrency -> Optional.empty(),
+                asOf,
+                accountWarnings));
+      }
     }
     return new MultiCurrencyValuations(byCurrency, inOwnCurrency);
   }
 
+  /**
+   * #380: every value source the accounts may need, each kind in one query for all of them (none
+   * for a kind no account needs). Each kind is read only for the accounts that {@link
+   * #resolveNativeAccountValue} can take it from, decided from the capability flags and from the
+   * sources already loaded: a card with an opening balance reads no ledger sum of its own, a loan
+   * with a statement no repayments against its principal, an account without a ledger no ledger
+   * after its opening balance.
+   */
+  private AccountValueSources sourcesFor(Collection<Account> accounts, LocalDate asOf) {
+    // Kept for an account that holds positions: no value from it yet, but the warnings read it.
+    Map<UUID, SnapshotBalance> openingBalances = new HashMap<>();
+    List<UUID> openingCandidates = idsOf(accounts, AccountValuationService::takesOpeningBalance);
+    if (!openingCandidates.isEmpty()) {
+      for (AccountSnapshot snapshot :
+          accountSnapshotRepository.findByAccountIdInAndOpeningBalanceTrue(openingCandidates)) {
+        openingBalances.put(snapshot.getAccount().getId(), balanceOf(snapshot));
+      }
+    }
+
+    Map<UUID, NativeAccountValue> latestValuations = new HashMap<>();
+    List<UUID> manual = idsOf(accounts, Account::isManualValuation);
+    if (!manual.isEmpty()) {
+      for (CustomAssetValuation valuation :
+          customAssetValuationRepository.findLatestOnOrBefore(manual, asOf)) {
+        latestValuations.put(
+            valuation.getAccount().getId(),
+            new NativeAccountValue(
+                valuation.getValue(),
+                ValueBasisValues.MANUAL_VALUATION,
+                valuation.getValuationDate()));
+      }
+    }
+
+    // A loan's statement balance, and the value of an account without a ledger (unless it holds
+    // positions, which leaves it unknown whatever its snapshots say).
+    Map<UUID, SnapshotBalance> latestSnapshots = new HashMap<>();
+    List<UUID> snapshotValued =
+        idsOf(
+            accounts,
+            account ->
+                account.isHasAmortisation()
+                    || (!account.isHasTransactions() && !account.isHoldsPositions()));
+    if (!snapshotValued.isEmpty()) {
+      for (AccountSnapshot snapshot :
+          accountSnapshotRepository.findLatestWithBalance(snapshotValued, asOf)) {
+        latestSnapshots.put(snapshot.getAccount().getId(), balanceOf(snapshot));
+      }
+    }
+
+    List<UUID> loans = idsOf(accounts, Account::isHasAmortisation);
+    Set<UUID> unresolvedLoanRepayments =
+        loans.isEmpty()
+            ? Set.of()
+            : Set.copyOf(
+                transactionRepository.findAccountIdsWithUnresolvedLoanRepaymentAsOf(loans, asOf));
+    // Without a statement, a loan is valued from its original principal and its repayments.
+    List<UUID> loansWithoutStatement =
+        loans.stream().filter(loan -> !latestSnapshots.containsKey(loan)).toList();
+    Map<UUID, BigDecimal> originalPrincipals = originalPrincipalsOf(loansWithoutStatement);
+
+    // A card's own ledger (superseded by its opening balance), and a loan's repayments.
+    List<UUID> ledgerSummed = new ArrayList<>(loansWithoutStatement);
+    for (Account account : accounts) {
+      if (account.isHasStatementCycle()
+          && account.isHasTransactions()
+          && !openingBalances.containsKey(account.getId())) {
+        ledgerSummed.add(account.getId());
+      }
+    }
+    Map<UUID, BigDecimal> ledgerSums =
+        ledgerSummed.isEmpty()
+            ? Map.of()
+            : byKey(transactionRepository.sumAmountByAccountIdsAsOf(ledgerSummed, asOf));
+
+    // The ledger after each opening balance that values its account by then, and after each loan
+    // statement.
+    List<UUID> snapshotIds = new ArrayList<>();
+    for (Account account : accounts) {
+      SnapshotBalance opening = openingBalances.get(account.getId());
+      if (opening != null
+          && !account.isHoldsPositions()
+          && !asOf.isBefore(opening.snapshotDate())) {
+        snapshotIds.add(opening.snapshotId());
+      }
+    }
+    for (UUID loan : loans) {
+      SnapshotBalance statement = latestSnapshots.get(loan);
+      if (statement != null) {
+        snapshotIds.add(statement.snapshotId());
+      }
+    }
+    Map<UUID, BigDecimal> ledgerSumsAfterSnapshot =
+        snapshotIds.isEmpty()
+            ? Map.of()
+            : byKey(transactionRepository.sumAmountBookedAfterSnapshots(snapshotIds, asOf));
+
+    return new AccountValueSources(
+        accountCurrencyService.ownCurrencies(accounts),
+        openingBalances,
+        latestSnapshots,
+        latestValuations,
+        unresolvedLoanRepayments,
+        originalPrincipals,
+        ledgerSums,
+        ledgerSumsAfterSnapshot);
+  }
+
+  // A loan is either a mortgage or a loan, never both: the loan table is read only for the ids
+  // without a mortgage row (none at all when every one is a mortgage).
+  private Map<UUID, BigDecimal> originalPrincipalsOf(List<UUID> loans) {
+    Map<UUID, BigDecimal> originalPrincipals = new HashMap<>();
+    if (loans.isEmpty()) {
+      return originalPrincipals;
+    }
+    Set<UUID> mortgages = new HashSet<>();
+    for (AccountMortgage mortgage : accountMortgageRepository.findAllById(loans)) {
+      mortgages.add(mortgage.getAccountId());
+      putIfPresent(originalPrincipals, mortgage.getAccountId(), mortgage.getOriginalPrincipal());
+    }
+    List<UUID> others = loans.stream().filter(loan -> !mortgages.contains(loan)).toList();
+    if (!others.isEmpty()) {
+      for (AccountLoan loan : accountLoanRepository.findAllById(others)) {
+        putIfPresent(originalPrincipals, loan.getAccountId(), loan.getOriginalPrincipal());
+      }
+    }
+    return originalPrincipals;
+  }
+
+  private static List<UUID> idsOf(Collection<Account> accounts, Predicate<Account> filter) {
+    return accounts.stream().filter(filter).map(Account::getId).toList();
+  }
+
+  private static SnapshotBalance balanceOf(AccountSnapshot snapshot) {
+    return new SnapshotBalance(snapshot.getId(), snapshot.getSnapshotDate(), snapshot.getBalance());
+  }
+
+  private static void putIfPresent(Map<UUID, BigDecimal> map, UUID key, BigDecimal value) {
+    if (value != null) {
+      map.put(key, value);
+    }
+  }
+
+  // A batched sum's rows by key; a key without rows has no entry, as a single sum would be empty.
+  private static Map<UUID, BigDecimal> byKey(List<KeyedAmount> rows) {
+    Map<UUID, BigDecimal> byKey = new HashMap<>();
+    for (KeyedAmount row : rows) {
+      putIfPresent(byKey, row.key(), row.amount());
+    }
+    return byKey;
+  }
+
   // An account with a value source of its own takes no opening balance (OpeningBalanceService),
-  // so it is not looked up at all.
+  // so it is not looked up at all; nor is one without a ledger, valued from its latest snapshot
+  // (the opening balance being one) and never warned about rows before it.
   private static boolean takesOpeningBalance(Account account) {
-    return !account.isManualValuation() && !account.isHasAmortisation();
+    return !account.isManualValuation()
+        && !account.isHasAmortisation()
+        && account.isHasTransactions();
   }
 
   private Function<String, Optional<CurrencyConversionResult>> rateLookup(
@@ -259,26 +425,6 @@ public class AccountValuationService {
         fxRateService.tryGetConversionRate(nativeCurrency, targetCurrency, asOf, fxDefaultSource);
   }
 
-  private AccountValuation valueIn(
-      Account account,
-      String targetCurrency,
-      LocalDate asOf,
-      Function<String, Optional<CurrencyConversionResult>> rateForNativeCurrency,
-      Optional<AccountSnapshot> openingBalance,
-      List<String> warnings) {
-    // US-09-04: for a CREDIT_CARD this is billing_currency, not account.nativeCurrency - see
-    // AccountCurrencyService. Every other account type's own currency is simply its
-    // nativeCurrency.
-    String ownCurrency = accountCurrencyService.ownCurrency(account);
-    return inCurrency(
-        account,
-        ownCurrency,
-        targetCurrency,
-        resolveNativeAccountValue(account, openingBalance, asOf),
-        rateForNativeCurrency,
-        warnings);
-  }
-
   // An account's resolved value (or none) as a valuation in targetCurrency: unconverted in its own
   // currency, otherwise at the rate rateForNativeCurrency gives, unknown without one.
   private AccountValuation inCurrency(
@@ -287,11 +433,13 @@ public class AccountValuationService {
       String targetCurrency,
       Optional<NativeAccountValue> nativeValue,
       Function<String, Optional<CurrencyConversionResult>> rateForNativeCurrency,
+      LocalDate asOf,
       List<String> warnings) {
     if (nativeValue.isEmpty()) {
       return unknown(account, ownCurrency, targetCurrency, warnings);
     }
     NativeAccountValue resolved = nativeValue.get();
+    boolean sourceStale = isStale(resolved.sourceDate(), asOf);
 
     if (ownCurrency.equals(targetCurrency)) {
       // Rounded, not returned raw: resolved.amount() can carry more than money's usual 4 decimal
@@ -299,7 +447,8 @@ public class AccountValuationService {
       // the same NFR-CALC-007 policy the cross-currency path below already applies via applyRate.
       BigDecimal value =
           resolved.amount().setScale(FxRateService.MONEY_SCALE, RoundingMode.HALF_UP);
-      return known(account, ownCurrency, targetCurrency, resolved, value, null, warnings);
+      return known(
+          account, ownCurrency, targetCurrency, resolved, value, null, sourceStale, warnings);
     }
 
     // FR-CUR-011/US-06-03: a current holding's value converts at the valuation date (today), not
@@ -312,7 +461,23 @@ public class AccountValuationService {
 
     BigDecimal convertedValue = fxRateService.applyRate(resolved.amount(), conversion.get());
     return known(
-        account, ownCurrency, targetCurrency, resolved, convertedValue, conversion.get(), warnings);
+        account,
+        ownCurrency,
+        targetCurrency,
+        resolved,
+        convertedValue,
+        conversion.get(),
+        sourceStale,
+        warnings);
+  }
+
+  // #380: a value resting on a snapshot or manual valuation older than
+  // app.valuation.snapshot-stale-after before the valuation date - only a source that carries a
+  // sourceDate (LATEST_SNAPSHOT, MANUAL_VALUATION). Never a value carried forward by the ledger:
+  // an opening balance or a loan statement plus the ledger after it is as current as the ledger
+  // (PO decision on #380, see US-05-06), however old the snapshot it starts from.
+  private boolean isStale(LocalDate sourceDate, LocalDate asOf) {
+    return sourceDate != null && sourceDate.isBefore(asOf.minus(snapshotStaleAfter));
   }
 
   // CUSTOM_ASSET (via CustomAssetValuation), MORTGAGE/LOAN (via its newest statement balance and
@@ -320,43 +485,31 @@ public class AccountValuationService {
   // US-10-02 - see loanValueFromStatement and loanValue), an account without a ledger (via its
   // latest snapshot), any account with an opening balance (US-25-04) and CREDIT_CARD (via its
   // ledger) have a value source today.
-  private Optional<NativeAccountValue> resolveNativeAccountValue(
-      Account account, Optional<AccountSnapshot> openingBalance, LocalDate asOf) {
+  private static Optional<NativeAccountValue> resolveNativeAccountValue(
+      Account account, AccountValueSources sources, LocalDate asOf) {
+    UUID accountId = account.getId();
     if (account.isManualValuation()) {
-      return customAssetValuationRepository
-          .findFirstByAccountIdAndValuationDateLessThanEqualOrderByValuationDateDesc(
-              account.getId(), asOf)
-          .map(
-              v ->
-                  new NativeAccountValue(
-                      v.getValue(), ValueBasisValues.MANUAL_VALUATION, v.getValuationDate()));
+      return Optional.ofNullable(sources.latestValuations().get(accountId));
     }
     if (account.isHasAmortisation()) {
       // An UNKNOWN split has no known principal. Reporting the entire payment as principal
       // would overstate net worth, so fail closed until the entry is resolved.
-      if (transactionRepository.existsUnresolvedLoanRepaymentAsOf(account.getId(), asOf)) {
+      if (sources.unresolvedLoanRepayments().contains(accountId)) {
         return Optional.empty();
       }
-      Optional<AccountSnapshot> statement =
-          accountSnapshotRepository.findLatestWithBalance(account.getId(), asOf);
-      if (statement.isPresent()) {
-        return Optional.of(loanValueFromStatement(account, statement.get(), asOf));
+      SnapshotBalance statement = sources.latestSnapshots().get(accountId);
+      if (statement != null) {
+        return Optional.of(loanValueFromStatement(statement, sources));
       }
-      return accountMortgageRepository
-          .findById(account.getId())
-          .map(AccountMortgage::getOriginalPrincipal)
-          .or(
-              () ->
-                  accountLoanRepository
-                      .findById(account.getId())
-                      .map(AccountLoan::getOriginalPrincipal))
-          .map(principal -> loanValue(account, principal, asOf));
+      return Optional.ofNullable(sources.originalPrincipals().get(accountId))
+          .map(principal -> loanValue(accountId, principal, sources));
     }
     if (!account.isHasTransactions()) {
-      return latestSnapshot(account, asOf);
+      return latestSnapshot(account, sources);
     }
-    if (openingBalance.isPresent()) {
-      return fromOpeningBalance(account, openingBalance.get(), asOf);
+    SnapshotBalance openingBalance = sources.openingBalances().get(accountId);
+    if (openingBalance != null) {
+      return fromOpeningBalance(account, openingBalance, sources, asOf);
     }
     if (account.isHasStatementCycle()) {
       // FR-CC-001/003, DM-11: the card's ledger is cash-direction signed (a purchase is negative),
@@ -369,8 +522,7 @@ public class AccountValuationService {
       // that query already converts each row via fxRateToAccountCurrency before summing, so this
       // call site needs no change of its own.
       return Optional.of(
-          transactionRepository
-              .sumAmountByAccountIdAsOf(account.getId(), asOf)
+          Optional.ofNullable(sources.ledgerSums().get(accountId))
               .map(sum -> new NativeAccountValue(sum.negate(), ValueBasisValues.LEDGER))
               .orElseGet(
                   () -> new NativeAccountValue(BigDecimal.ZERO, ValueBasisValues.LEDGER_EMPTY)));
@@ -385,9 +537,9 @@ public class AccountValuationService {
    * with voids and reversals left out as for any balance. A loan payment whose split is unknown is
    * on the ledger in full until the member re-enters it; the basis is approximate either way.
    */
-  private NativeAccountValue loanValue(Account account, BigDecimal principal, LocalDate asOf) {
-    return transactionRepository
-        .sumAmountByAccountIdAsOf(account.getId(), asOf)
+  private static NativeAccountValue loanValue(
+      UUID accountId, BigDecimal principal, AccountValueSources sources) {
+    return Optional.ofNullable(sources.ledgerSums().get(accountId))
         .map(
             repaid ->
                 new NativeAccountValue(
@@ -405,15 +557,12 @@ public class AccountValuationService {
    * (negative) raises it. Rows on the snapshot's date are contained in it. An exact figure, unlike
    * the original principal less repayments it replaces.
    */
-  private NativeAccountValue loanValueFromStatement(
-      Account account, AccountSnapshot statement, LocalDate asOf) {
+  private static NativeAccountValue loanValueFromStatement(
+      SnapshotBalance statement, AccountValueSources sources) {
     BigDecimal ledger =
-        transactionRepository
-            .sumAmountByAccountIdBookedAfter(
-                account.getId(), statement.getSnapshotDate(), statement.getStatedAt(), asOf)
-            .orElse(BigDecimal.ZERO);
+        sources.ledgerSumsAfterSnapshot().getOrDefault(statement.snapshotId(), BigDecimal.ZERO);
     return new NativeAccountValue(
-        statement.getBalance().subtract(ledger), ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE);
+        statement.balance().subtract(ledger), ValueBasisValues.LEDGER_FROM_STATEMENT_BALANCE);
   }
 
   /**
@@ -423,18 +572,16 @@ public class AccountValuationService {
    * client can show how old it is. Nothing recorded by then: unknown, not zero. An account that
    * {@code holdsPositions} stays unknown, as with an opening balance (EPIC 15).
    */
-  private Optional<NativeAccountValue> latestSnapshot(Account account, LocalDate asOf) {
+  private static Optional<NativeAccountValue> latestSnapshot(
+      Account account, AccountValueSources sources) {
     if (account.isHoldsPositions()) {
       return Optional.empty();
     }
-    return accountSnapshotRepository
-        .findLatestWithBalance(account.getId(), asOf)
+    return Optional.ofNullable(sources.latestSnapshots().get(account.getId()))
         .map(
             snapshot ->
                 new NativeAccountValue(
-                    snapshot.getBalance(),
-                    ValueBasisValues.LATEST_SNAPSHOT,
-                    snapshot.getSnapshotDate()));
+                    snapshot.balance(), ValueBasisValues.LATEST_SNAPSHOT, snapshot.snapshotDate()));
   }
 
   /**
@@ -450,23 +597,22 @@ public class AccountValuationService {
    * while the ledger is cash-direction signed, so a liability subtracts its ledger sum: a card
    * purchase (negative) increases what is owed. Read from {@code nature}, never from the type.
    */
-  private Optional<NativeAccountValue> fromOpeningBalance(
-      Account account, AccountSnapshot openingBalance, LocalDate asOf) {
-    if (account.isHoldsPositions() || asOf.isBefore(openingBalance.getSnapshotDate())) {
+  private static Optional<NativeAccountValue> fromOpeningBalance(
+      Account account,
+      SnapshotBalance openingBalance,
+      AccountValueSources sources,
+      LocalDate asOf) {
+    if (account.isHoldsPositions() || asOf.isBefore(openingBalance.snapshotDate())) {
       return Optional.empty();
     }
     BigDecimal ledger =
-        transactionRepository
-            .sumAmountByAccountIdBookedAfter(
-                account.getId(),
-                openingBalance.getSnapshotDate(),
-                openingBalance.getStatedAt(),
-                asOf)
-            .orElse(BigDecimal.ZERO);
+        sources
+            .ledgerSumsAfterSnapshot()
+            .getOrDefault(openingBalance.snapshotId(), BigDecimal.ZERO);
     BigDecimal value =
         LIABILITY.equals(account.getNature())
-            ? openingBalance.getBalance().subtract(ledger)
-            : openingBalance.getBalance().add(ledger);
+            ? openingBalance.balance().subtract(ledger)
+            : openingBalance.balance().add(ledger);
     return Optional.of(new NativeAccountValue(value, ValueBasisValues.LEDGER_FROM_OPENING_BALANCE));
   }
 
@@ -486,6 +632,7 @@ public class AccountValuationService {
         false,
         null,
         null,
+        false,
         warnings);
   }
 
@@ -496,6 +643,7 @@ public class AccountValuationService {
       NativeAccountValue source,
       BigDecimal value,
       CurrencyConversionResult conversion,
+      boolean sourceStale,
       List<String> warnings) {
     // FR-CUR-011: the conversion date is the date the rate was requested for (the valuation date),
     // not the date of the stored rate it resolved to - carriedForward/stale say how far apart.
@@ -513,6 +661,7 @@ public class AccountValuationService {
         true,
         source.basis(),
         source.sourceDate(),
+        sourceStale,
         warnings);
   }
 }

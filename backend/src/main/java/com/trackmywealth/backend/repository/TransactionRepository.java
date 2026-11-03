@@ -2,6 +2,7 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
+import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.TransactionSearchFilter;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
@@ -146,6 +147,12 @@ public interface TransactionRepository
   // US-07-02: neither a voided original nor its reversing row - the pair nets to zero in a
   // balance, but must not count as spending or pair with a settlement.
   String NOT_VOIDED_OR_REVERSAL = " and t.voidedAt is null and t.replacesTransactionId is null";
+
+  // A balance's sum: in the account's own currency, a void pair counted as zero (see
+  // sumAmountByAccountIdAsOf). Every ledger balance sums with it, one account's or a batch's.
+  String LEDGER_SUM =
+      "sum(case when t.voidedAt is null and t.replacesTransactionId is null"
+          + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)";
 
   // US-10-02: not a loan payment's interest - an EXPENSE naming its loan that is not an internal
   // transfer (TransactionService#isLoanInterest). It is the cost of a loan, never a card payment,
@@ -366,8 +373,8 @@ public interface TransactionRepository
    * has history (a measured zero, not "no rows").
    */
   @Query(
-      "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
-          + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
+      "select "
+          + LEDGER_SUM
           + " from Transaction t where t.account.id = :accountId and t.bookingDate <= :asOf")
   Optional<BigDecimal> sumAmountByAccountIdAsOf(
       @Param(ACCOUNT_ID) UUID accountId, @Param(AS_OF) LocalDate asOf);
@@ -389,8 +396,8 @@ public interface TransactionRepository
    * the application's clock and the database's can reorder them.
    */
   @Query(
-      "select sum(case when t.voidedAt is null and t.replacesTransactionId is null"
-          + " then t.amount * coalesce(t.fxRateToAccountCurrency, 1) else 0 end)"
+      "select "
+          + LEDGER_SUM
           + " from Transaction t where t.account.id = :accountId"
           + " and (t.bookingDate > :after"
           + " or (t.bookingDate = :after and t.reconciliationResultId is not null"
@@ -401,6 +408,37 @@ public interface TransactionRepository
       @Param(AFTER) LocalDate after,
       @Param("openingStatedAt") OffsetDateTime openingStatedAt,
       @Param(AS_OF) LocalDate asOf);
+
+  /**
+   * #380: {@link #sumAmountByAccountIdAsOf} for several accounts in one query, keyed by account. An
+   * account without any row on or before {@code asOf} has no entry, as the single query is empty.
+   */
+  @Query(
+      "select new com.trackmywealth.backend.dto.KeyedAmount(t.account.id, "
+          + LEDGER_SUM
+          + ") from Transaction t where t.account.id in :accountIds and t.bookingDate <= :asOf"
+          + " group by t.account.id")
+  List<KeyedAmount> sumAmountByAccountIdsAsOf(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds, @Param(AS_OF) LocalDate asOf);
+
+  /**
+   * #380: {@link #sumAmountByAccountIdBookedAfter} for several snapshots in one query, keyed by
+   * snapshot: each sums its own account's ledger after its own date, with the same exception for a
+   * reconciliation adjustment on that date booked after the snapshot was last stated ({@code
+   * AccountSnapshot#getStatedAt}). A snapshot with no row in its window has no entry.
+   */
+  @Query(
+      "select new com.trackmywealth.backend.dto.KeyedAmount(s.id, "
+          + LEDGER_SUM
+          + ") from AccountSnapshot s, Transaction t"
+          + " where s.id in :snapshotIds and t.account.id = s.account.id"
+          + " and (t.bookingDate > s.snapshotDate"
+          + " or (t.bookingDate = s.snapshotDate and t.reconciliationResultId is not null"
+          + " and t.createdAt > coalesce(s.updatedAt, s.createdAt)))"
+          + " and t.bookingDate <= :asOf"
+          + " group by s.id")
+  List<KeyedAmount> sumAmountBookedAfterSnapshots(
+      @Param("snapshotIds") Collection<UUID> snapshotIds, @Param(AS_OF) LocalDate asOf);
 
   /**
    * US-25-04: the earliest booking date of the account's live rows - neither voided nor a reversal
@@ -417,20 +455,6 @@ public interface TransactionRepository
           + " and t.bookingDate < :before"
           + NOT_VOIDED_OR_REVERSAL)
   long countLiveBookedBefore(@Param(ACCOUNT_ID) UUID accountId, @Param("before") LocalDate before);
-
-  /**
-   * US-25-04: whether the account has a live row booked before {@code before} - the opening date,
-   * when the caller already holds the opening balance (one query less per account in a valuation).
-   * A reconciliation adjustment (US-25-03) does not count: see {@link
-   * #existsLiveBookedBeforeOpeningBalance}.
-   */
-  @Query(
-      "select count(t) > 0 from Transaction t where t.account.id = :accountId"
-          + " and t.bookingDate < :before"
-          + NOT_VOIDED_OR_REVERSAL
-          + NOT_RECONCILIATION_ADJUSTMENT)
-  boolean existsLiveBookedBefore(
-      @Param(ACCOUNT_ID) UUID accountId, @Param("before") LocalDate before);
 
   /**
    * US-25-04: whether the account has a live row booked before its opening balance - {@code false}
@@ -720,6 +744,16 @@ public interface TransactionRepository
           + NOT_VOIDED_OR_REVERSAL)
   boolean existsUnresolvedLoanRepaymentAsOf(
       @Param(ACCOUNT_ID) UUID accountId, @Param(AS_OF) LocalDate asOf);
+
+  /** #380: {@link #existsUnresolvedLoanRepaymentAsOf} for several accounts in one query. */
+  @Query(
+      "select distinct t.account.id from Transaction t"
+          + " where t.account.id in :accountIds and t.transactionType = 'DEBT_REPAYMENT'"
+          + " and t.amount > 0 and t.internalTransfer = false and t.bookingDate <= :asOf"
+          + " and t.relatedTransactionId is not null"
+          + NOT_VOIDED_OR_REVERSAL)
+  List<UUID> findAccountIdsWithUnresolvedLoanRepaymentAsOf(
+      @Param(ACCOUNT_IDS) Collection<UUID> accountIds, @Param(AS_OF) LocalDate asOf);
 
   /**
    * US-10-02/FR-CF-006: per booking date and currency, the principal repaid on the loans in {@code

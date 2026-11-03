@@ -60,30 +60,10 @@ public class AccountDataQualityService {
   }
 
   /**
-   * {@link #warningsFor(UUID)} for a caller that already holds the account's opening balance date
-   * ({@code null} when it has none) - a valuation, which needs the opening balance anyway. Saves a
-   * query per account: none at all without an opening balance or without a ledger.
-   */
-  @Transactional(readOnly = true)
-  public List<String> warningsFor(Account account, LocalDate openingBalanceDate) {
-    List<String> warnings = new ArrayList<>();
-    if (openingBalanceDate != null
-        && account.isHasTransactions()
-        && transactionRepository.existsLiveBookedBefore(account.getId(), openingBalanceDate)) {
-      warnings.add(DataQualityWarningValues.TRANSACTIONS_BEFORE_OPENING_BALANCE);
-    }
-    if (reconciliationResultRepository.existsByAccountIdAndStatusAndAffectedSecurityIdIsNull(
-        account.getId(), ReconciliationResultValues.OPEN)) {
-      warnings.add(DataQualityWarningValues.OPEN_RECONCILIATION_DIFFERENCE);
-    }
-    return List.copyOf(warnings);
-  }
-
-  /**
-   * {@link #warningsFor(Account, LocalDate)} for a whole batch of accounts (a net worth, an
-   * institution summary) in one query instead of one per account. {@code openingBalanceDates} holds
-   * the date of each account that has an opening balance; an account missing from the result has no
-   * warnings.
+   * {@link #warningsFor(UUID)} for a whole batch of accounts (a valuation: a net worth, an account
+   * list) in one query instead of one per account, for a caller that already holds their opening
+   * balances. {@code openingBalanceDates} holds the date of each account that has an opening
+   * balance; an account missing from the result has no warnings.
    */
   @Transactional(readOnly = true)
   public Map<UUID, List<String>> warningsForAll(
