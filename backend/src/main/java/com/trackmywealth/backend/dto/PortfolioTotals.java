@@ -30,9 +30,21 @@ public record PortfolioTotals(
     ValueStatus valueStatus) {
 
   /**
+   * The totals of accounts whose portfolio is in the workspace's currency, valued in it once: both
+   * totals are the same sum, computed once.
+   */
+  public static PortfolioTotals of(List<AccountValuation> inWorkspaceCurrency) {
+    List<ValueStatus> statuses = new ArrayList<>(inWorkspaceCurrency.size());
+    inWorkspaceCurrency.forEach(valuation -> statuses.add(ValueStatus.of(valuation)));
+    BigDecimal sum = signedSum(inWorkspaceCurrency);
+    return new PortfolioTotals(
+        sum, sum, allKnown(inWorkspaceCurrency), ValueStatus.worstOf(statuses));
+  }
+
+  /**
    * The totals of the same accounts valued in the portfolio's currency ({@code inPortfolio}) and in
-   * the workspace's ({@code inWorkspace}). When both currencies are the same, the caller may pass
-   * the same list twice.
+   * the workspace's ({@code inWorkspace}), two different currencies. With one currency, use {@link
+   * #of(List)}.
    */
   public static PortfolioTotals of(
       List<AccountValuation> inPortfolio, List<AccountValuation> inWorkspace) {

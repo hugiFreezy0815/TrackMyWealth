@@ -138,10 +138,15 @@ public class PortfolioService {
    * totals, for the portfolio tabs. A bounded list, deliberately not paged: a workspace holds a
    * handful of portfolios. Every active member sees all of them (US-03-06).
    *
-   * <p>No second calculation path: every active account of the workspace is valued once by {@link
-   * AccountValuationService#valueAllIn}, in the workspace's currency and every portfolio's, and
-   * each portfolio's totals are the same {@link PortfolioTotals} as its View's. The number of
-   * queries does not grow with the number of portfolios or accounts.
+   * <p>No second calculation path: the active accounts of the listed portfolios are valued once by
+   * {@link AccountValuationService#valueAllInCurrencies}, in the workspace's currency and every
+   * portfolio's, and each portfolio's totals are the same {@link PortfolioTotals} as its View's.
+   * The number of queries grows with the number of distinct currencies among the portfolios (one FX
+   * lookup per currency pair), never with the number of portfolios or accounts.
+   *
+   * <p>The rows' workspace totals add up to net worth, which counts every active account, as long
+   * as no archived portfolio holds an active account: the rule archiving a portfolio must keep
+   * (#439). Such an account is in no row, and is not valued here.
    */
   @Transactional(readOnly = true)
   public List<PortfolioListItemResponse> listPortfolios(AuthenticatedUserPrincipal actor) {
@@ -156,55 +161,50 @@ public class PortfolioService {
     String workspaceCurrency = portfolios.get(0).getWorkspace().getCurrency();
     Set<String> currencies = new LinkedHashSet<>();
     currencies.add(workspaceCurrency);
-    portfolios.forEach(portfolio -> currencies.add(portfolio.getPortfolioCurrency()));
+    Map<UUID, List<UUID>> accountIdsByPortfolio = new HashMap<>();
+    for (Portfolio portfolio : portfolios) {
+      currencies.add(portfolio.getPortfolioCurrency());
+      accountIdsByPortfolio.put(portfolio.getId(), new ArrayList<>());
+    }
     LocalDate asOf = businessDateService.today();
 
-    List<Account> accounts =
+    // Only the accounts of the listed portfolios; an empty list values nothing and runs no query.
+    List<Account> accounts = new ArrayList<>();
+    for (Account account :
         accountRepository.findByWorkspaceIdAndStatusOrderByCreatedAtAsc(
-            actor.workspaceId(), ACTIVE);
-    Map<UUID, List<Integer>> accountsByPortfolio = new HashMap<>();
-    for (int i = 0; i < accounts.size(); i++) {
-      accountsByPortfolio
-          .computeIfAbsent(accounts.get(i).getPortfolio().getId(), key -> new ArrayList<>())
-          .add(i);
+            actor.workspaceId(), ACTIVE)) {
+      List<UUID> ids = accountIdsByPortfolio.get(account.getPortfolio().getId());
+      if (ids != null) {
+        ids.add(account.getId());
+        accounts.add(account);
+      }
     }
-    // A workspace without accounts has nothing to value, and runs no query for it.
     MultiCurrencyValuations valuations =
-        accounts.isEmpty()
-            ? MultiCurrencyValuations.none(currencies)
-            : accountValuationService.valueAllIn(accounts, currencies, asOf);
+        accountValuationService.valueAllInCurrencies(accounts, currencies, asOf);
+    Map<String, Map<UUID, AccountValuation>> byCurrency = new HashMap<>();
+    currencies.forEach(currency -> byCurrency.put(currency, valuations.byAccountIn(currency)));
     Map<UUID, PortfolioPlacement> placements = accountService.portfolioPlacementsOf(accounts);
 
     List<PortfolioListItemResponse> rows = new ArrayList<>(portfolios.size());
     for (Portfolio portfolio : portfolios) {
-      List<Integer> indexes = accountsByPortfolio.getOrDefault(portfolio.getId(), List.of());
+      List<UUID> ids = accountIdsByPortfolio.get(portfolio.getId());
+      String portfolioCurrency = portfolio.getPortfolioCurrency();
       List<AccountValuation> inPortfolio =
-          valuationsAt(valuations, portfolio.getPortfolioCurrency(), indexes);
-      List<AccountValuation> inWorkspace = valuationsAt(valuations, workspaceCurrency, indexes);
+          MultiCurrencyValuations.select(ids, byCurrency.get(portfolioCurrency));
+      PortfolioTotals totals =
+          portfolioCurrency.equals(workspaceCurrency)
+              ? PortfolioTotals.of(inPortfolio)
+              : PortfolioTotals.of(
+                  inPortfolio,
+                  MultiCurrencyValuations.select(ids, byCurrency.get(workspaceCurrency)));
       PortfolioType type =
           PortfolioType.of(
               portfolio.getPortfolioTypeOverride(),
               portfolio.isPersonalAssetsDefault(),
-              indexes.stream()
-                  .map(i -> placements.get(accounts.get(i).getId()).section())
-                  .toList());
-      rows.add(
-          toListItem(
-              portfolio,
-              type,
-              indexes.size(),
-              PortfolioTotals.of(inPortfolio, inWorkspace),
-              workspaceCurrency,
-              asOf));
+              () -> ids.stream().map(id -> placements.get(id).section()).toList());
+      rows.add(toListItem(portfolio, type, ids.size(), totals, workspaceCurrency, asOf));
     }
     return rows;
-  }
-
-  // The valuations (in the order the accounts were given to valueAllIn) at the given positions.
-  private static List<AccountValuation> valuationsAt(
-      MultiCurrencyValuations valuations, String currency, List<Integer> indexes) {
-    List<AccountValuation> inCurrency = valuations.in(currency);
-    return indexes.stream().map(inCurrency::get).toList();
   }
 
   private static PortfolioListItemResponse toListItem(
@@ -421,17 +421,21 @@ public class PortfolioService {
    * AccountService#portfolioPlacementsOf}). Reads the accounts only when there is no type set.
    * Performs no access check.
    */
+  // The same PortfolioType.of as the list and the View; its active accounts are read only when the
+  // type is suggested from them.
   private PortfolioType typeOf(Portfolio portfolio) {
-    if (portfolio.getPortfolioTypeOverride() != null) {
-      return portfolio.getPortfolioTypeOverride();
-    }
-    List<Account> active =
-        accountRepository.findByPortfolioIdAndStatusOrderByCreatedAtAsc(portfolio.getId(), ACTIVE);
-    return PortfolioType.suggestedFor(
+    return PortfolioType.of(
+        portfolio.getPortfolioTypeOverride(),
         portfolio.isPersonalAssetsDefault(),
-        accountService.portfolioPlacementsOf(active).values().stream()
-            .map(PortfolioPlacement::section)
-            .toList());
+        () ->
+            accountService
+                .portfolioPlacementsOf(
+                    accountRepository.findByPortfolioIdAndStatusOrderByCreatedAtAsc(
+                        portfolio.getId(), ACTIVE))
+                .values()
+                .stream()
+                .map(PortfolioPlacement::section)
+                .toList());
   }
 
   private PortfolioResponse toResponse(Portfolio portfolio) {

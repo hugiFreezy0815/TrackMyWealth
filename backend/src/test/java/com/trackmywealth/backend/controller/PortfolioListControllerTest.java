@@ -416,12 +416,61 @@ class PortfolioListControllerTest {
     assertThat(forSeven).isEqualTo(forTwo);
   }
 
+  // #381 review: each further portfolio currency adds its own FX lookups, so the count is the same
+  // for more portfolios in the same currencies - not for more currencies.
+  @Test
+  void morePortfoliosInTheSameCurrenciesAreListedWithTheSameNumberOfQueries() throws Exception {
+    String token = bootstrapAdministrator();
+    seedFxRate("CHF", "EUR", "1.0500000000");
+    seedFxRate("CHF", "USD", "1.1000000000");
+    createPortfolioWithAccounts(token, "Euro", "EUR");
+    createPortfolioWithAccounts(token, "Dollar", "USD");
+    long forThree = statementsFor(() -> assertThat(list(token)).hasSize(3));
+
+    for (int i = 0; i < 2; i++) {
+      createPortfolioWithAccounts(token, "Euro " + i, "EUR");
+      createPortfolioWithAccounts(token, "Dollar " + i, "USD");
+    }
+    long forSeven = statementsFor(() -> assertThat(list(token)).hasSize(7));
+
+    assertThat(forThree).isPositive();
+    assertThat(forSeven).isEqualTo(forThree);
+  }
+
+  // #381 review: an archived portfolio is not listed, and an active account left in it (only
+  // possible by hand until #439 decides how archiving treats them) is in no row and changes none.
+  @Test
+  void anArchivedPortfolioIsNotListedAndItsAccountsChangeNoOtherRow() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse kept = createPortfolio(token, "Kept", "CHF");
+    PortfolioResponse closed = createPortfolio(token, "Closed", "CHF");
+    UUID keptCash = createAccount(token, cash("Kept cash", kept.id())).id();
+    UUID closedCash = createAccount(token, cash("Closed cash", closed.id())).id();
+    seedOpeningBalance(keptCash, "700.0000");
+    seedOpeningBalance(closedCash, "300.0000");
+    execute("UPDATE portfolio SET status = 'ARCHIVED' WHERE id = ?", closed.id());
+
+    Map<UUID, PortfolioListItemResponse> rows = byId(list(token));
+
+    assertThat(rows).doesNotContainKey(closed.id()).hasSize(2);
+    PortfolioListItemResponse keptRow = rows.get(kept.id());
+    assertThat(keptRow.activeAccountCount()).isEqualTo(1);
+    assertThat(keptRow.total()).isEqualByComparingTo("700");
+    assertThat(keptRow.complete()).isTrue();
+  }
+
   // --- Helpers ---------------------------------------------------------------------------------
 
   // A cash account with an opening balance, a loan, a vehicle with a valuation and a pillar 3a
   // account: every value source the valuation and the placements read.
   private void createPortfolioWithAccounts(String token, String name) throws Exception {
-    UUID portfolio = createPortfolio(token, name, "CHF").id();
+    createPortfolioWithAccounts(token, name, "CHF");
+  }
+
+  // A portfolio in portfolioCurrency holding CHF accounts of every value source.
+  private void createPortfolioWithAccounts(String token, String name, String portfolioCurrency)
+      throws Exception {
+    UUID portfolio = createPortfolio(token, name, portfolioCurrency).id();
     UUID cash = createAccount(token, cash("Cash " + name, portfolio)).id();
     seedOpeningBalance(cash, "100.0000");
     createAccount(

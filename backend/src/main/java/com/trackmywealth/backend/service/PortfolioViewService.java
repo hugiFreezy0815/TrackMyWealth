@@ -102,12 +102,13 @@ public class PortfolioViewService {
     String portfolioCurrency = portfolio.getPortfolioCurrency();
     String workspaceCurrency = portfolio.getWorkspace().getCurrency();
 
+    boolean oneCurrency = portfolioCurrency.equals(workspaceCurrency);
     MultiCurrencyValuations valuations =
         accountValuationService.valueAllIn(
             accounts, Stream.of(portfolioCurrency, workspaceCurrency).distinct().toList(), asOf);
-    Map<UUID, AccountValuation> inPortfolio = byAccount(valuations.in(portfolioCurrency));
-    Map<UUID, AccountValuation> inWorkspace = byAccount(valuations.in(workspaceCurrency));
-    Map<UUID, AccountValuation> inOwn = byAccount(valuations.inOwnCurrency());
+    Map<UUID, AccountValuation> inPortfolio = valuations.byAccountIn(portfolioCurrency);
+    Map<UUID, AccountValuation> inWorkspace = valuations.byAccountIn(workspaceCurrency);
+    Map<UUID, AccountValuation> inOwn = valuations.byAccountInOwnCurrency();
     Map<UUID, PortfolioPlacement> placements = accountService.portfolioPlacementsOf(accounts);
     PortfolioAccountDetails details = details(accounts, placements);
 
@@ -125,10 +126,7 @@ public class PortfolioViewService {
         UUID id = account.getId();
         rows.add(toRow(account, placements.get(id), inPortfolio.get(id), inOwn.get(id), details));
       }
-      PortfolioTotals subtotals =
-          PortfolioTotals.of(
-              valuationsOf(entry.getValue(), inPortfolio),
-              valuationsOf(entry.getValue(), inWorkspace));
+      PortfolioTotals subtotals = totalsOf(entry.getValue(), inPortfolio, inWorkspace, oneCurrency);
       sections.add(
           new Section(
               entry.getKey(),
@@ -147,7 +145,7 @@ public class PortfolioViewService {
     Set<String> warnings = new TreeSet<>();
     allInPortfolio.forEach(valuation -> warnings.addAll(valuation.warnings()));
     allInWorkspace.forEach(valuation -> warnings.addAll(valuation.warnings()));
-    PortfolioTotals totals = PortfolioTotals.of(allInPortfolio, allInWorkspace);
+    PortfolioTotals totals = totalsOf(accounts, inPortfolio, inWorkspace, oneCurrency);
 
     return new PortfolioViewResponse(
         portfolio.getId(),
@@ -156,7 +154,7 @@ public class PortfolioViewService {
         PortfolioType.of(
             portfolio.getPortfolioTypeOverride(),
             portfolio.isPersonalAssetsDefault(),
-            placements.values().stream().map(PortfolioPlacement::section).toList()),
+            () -> placements.values().stream().map(PortfolioPlacement::section).toList()),
         portfolio.getPortfolioTypeOverride() != null,
         portfolio.isPersonalAssetsDefault(),
         portfolioCurrency,
@@ -248,16 +246,22 @@ public class PortfolioViewService {
         .toList();
   }
 
-  private static Map<UUID, AccountValuation> byAccount(List<AccountValuation> valuations) {
-    Map<UUID, AccountValuation> byAccount = new HashMap<>();
-    for (AccountValuation valuation : valuations) {
-      byAccount.put(valuation.accountId(), valuation);
-    }
-    return byAccount;
-  }
-
   private static List<AccountValuation> valuationsOf(
       List<Account> accounts, Map<UUID, AccountValuation> byAccount) {
-    return accounts.stream().map(account -> byAccount.get(account.getId())).toList();
+    return MultiCurrencyValuations.select(
+        accounts.stream().map(Account::getId).toList(), byAccount);
+  }
+
+  // The totals of a group of accounts; summed once when the portfolio is in the workspace's
+  // currency.
+  private static PortfolioTotals totalsOf(
+      List<Account> accounts,
+      Map<UUID, AccountValuation> inPortfolio,
+      Map<UUID, AccountValuation> inWorkspace,
+      boolean oneCurrency) {
+    List<AccountValuation> portfolioValues = valuationsOf(accounts, inPortfolio);
+    return oneCurrency
+        ? PortfolioTotals.of(portfolioValues)
+        : PortfolioTotals.of(portfolioValues, valuationsOf(accounts, inWorkspace));
   }
 }

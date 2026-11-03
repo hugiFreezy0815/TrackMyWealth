@@ -1,9 +1,11 @@
 package com.trackmywealth.backend.dto;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * US-04-06: the same accounts valued in several currencies at once ({@code
@@ -27,13 +29,6 @@ public record MultiCurrencyValuations(
     inOwnCurrency = List.copyOf(inOwnCurrency);
   }
 
-  /** No accounts, valued in each of {@code currencies}: every list is empty. */
-  public static MultiCurrencyValuations none(Collection<String> currencies) {
-    Map<String, List<AccountValuation>> byCurrency = new LinkedHashMap<>();
-    currencies.forEach(currency -> byCurrency.put(currency, List.of()));
-    return new MultiCurrencyValuations(byCurrency, List.of());
-  }
-
   /** The valuations in {@code currency}, which must have been requested. */
   public List<AccountValuation> in(String currency) {
     List<AccountValuation> valuations = byCurrency.get(currency);
@@ -41,5 +36,33 @@ public record MultiCurrencyValuations(
       throw new IllegalArgumentException("Not valued in " + currency);
     }
     return valuations;
+  }
+
+  /** The valuations in {@code currency}, which must have been requested, keyed by account id. */
+  public Map<UUID, AccountValuation> byAccountIn(String currency) {
+    return byAccount(in(currency));
+  }
+
+  /** The valuations in each account's own currency, keyed by account id. */
+  public Map<UUID, AccountValuation> byAccountInOwnCurrency() {
+    return byAccount(inOwnCurrency);
+  }
+
+  /**
+   * The valuations of {@code accountIds}, in that order, from a {@link #byAccountIn} map: how a
+   * group of accounts (a portfolio, a section) picks its own out of a batch valuation, by id rather
+   * than by position.
+   */
+  public static List<AccountValuation> select(
+      Collection<UUID> accountIds, Map<UUID, AccountValuation> byAccount) {
+    return accountIds.stream().map(byAccount::get).toList();
+  }
+
+  private static Map<UUID, AccountValuation> byAccount(List<AccountValuation> valuations) {
+    Map<UUID, AccountValuation> byAccount = new HashMap<>();
+    for (AccountValuation valuation : valuations) {
+      byAccount.put(valuation.accountId(), valuation);
+    }
+    return byAccount;
   }
 }

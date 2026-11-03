@@ -193,6 +193,17 @@ public class AccountValuationService {
     return valuationsOf(accounts, targetCurrencies, asOf, true);
   }
 
+  /**
+   * {@link #valueAllIn} for a caller that reads only the target currencies (#381 review, the
+   * portfolio list): no valuation in each account's own currency is built, and {@link
+   * MultiCurrencyValuations#inOwnCurrency} is empty. Same no-access-check contract.
+   */
+  @Transactional(readOnly = true)
+  public MultiCurrencyValuations valueAllInCurrencies(
+      Collection<Account> accounts, Collection<String> targetCurrencies, LocalDate asOf) {
+    return valuationsOf(accounts, targetCurrencies, asOf, false);
+  }
+
   // The one valuation path. The valuations in each account's own currency are built only when the
   // caller reads them (withOwnCurrency); otherwise MultiCurrencyValuations#inOwnCurrency is empty.
   private MultiCurrencyValuations valuationsOf(
@@ -200,6 +211,12 @@ public class AccountValuationService {
       Collection<String> targetCurrencies,
       LocalDate asOf,
       boolean withOwnCurrency) {
+    Map<String, List<AccountValuation>> byCurrency = new LinkedHashMap<>();
+    targetCurrencies.forEach(target -> byCurrency.put(target, new ArrayList<>()));
+    if (accounts.isEmpty()) {
+      // Nothing to value: no query at all, every list empty (#381 review).
+      return new MultiCurrencyValuations(byCurrency, List.of());
+    }
     AccountValueSources sources = sourcesFor(accounts, asOf);
     Map<UUID, LocalDate> openingDates = new HashMap<>();
     sources
@@ -210,12 +227,10 @@ public class AccountValuationService {
 
     // Per target currency, one rate per native currency, looked up on first use.
     Map<String, Function<String, Optional<CurrencyConversionResult>>> rates = new LinkedHashMap<>();
-    Map<String, List<AccountValuation>> byCurrency = new LinkedHashMap<>();
-    for (String target : targetCurrencies) {
+    for (String target : byCurrency.keySet()) {
       Function<String, Optional<CurrencyConversionResult>> lookup = rateLookup(target, asOf);
       Map<String, Optional<CurrencyConversionResult>> resolved = new HashMap<>();
       rates.put(target, nativeCurrency -> resolved.computeIfAbsent(nativeCurrency, lookup));
-      byCurrency.put(target, new ArrayList<>());
     }
     List<AccountValuation> inOwnCurrency = new ArrayList<>();
 

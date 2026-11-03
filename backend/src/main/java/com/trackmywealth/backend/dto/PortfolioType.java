@@ -3,6 +3,7 @@ package com.trackmywealth.backend.dto;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * What a portfolio holds, for display only (US-04-06, FR-INS-006/008). It never restricts which
@@ -33,13 +34,18 @@ public enum PortfolioType {
   /**
    * A portfolio's type as shown (FR-INS-006): {@code override}, the type the member set, when there
    * is one; otherwise the type {@link #suggestedFor} its active accounts. Derived on every read,
-   * never stored, so an account write never touches the portfolio's row or version.
+   * never stored, so an account write never touches the portfolio's row or version. The one way
+   * every read derives it (the portfolio, its View, the list). {@code sections} is asked for only
+   * when it decides the type: not for an override, nor for the Personal Assets default.
    */
   public static PortfolioType of(
       PortfolioType override,
       boolean personalAssetsDefault,
-      Collection<PortfolioSection> sections) {
-    return override != null ? override : suggestedFor(personalAssetsDefault, sections);
+      Supplier<? extends Collection<PortfolioSection>> sections) {
+    if (override != null) {
+      return override;
+    }
+    return personalAssetsDefault ? PERSONAL_ASSETS : suggestedFor(false, sections.get());
   }
 
   /**

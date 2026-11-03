@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -69,6 +70,21 @@ class PortfolioTypeTest {
                 .filter(type -> type != PortfolioType.PERSONAL_ASSETS)
                 .map(Enum::name)
                 .collect(Collectors.joining("|")));
+  }
+
+  // #381 review: the accounts are only looked at when they decide the type.
+  @Test
+  void anOverrideOrThePersonalAssetsDefaultNeverAsksForTheSections() {
+    Supplier<List<PortfolioSection>> never =
+        () -> {
+          throw new AssertionError("sections asked for");
+        };
+
+    assertThat(PortfolioType.of(PortfolioType.CRYPTO, false, never))
+        .isEqualTo(PortfolioType.CRYPTO);
+    assertThat(PortfolioType.of(null, true, never)).isEqualTo(PortfolioType.PERSONAL_ASSETS);
+    assertThat(PortfolioType.of(null, false, () -> List.of(DEPOT)))
+        .isEqualTo(PortfolioType.PORTFOLIO);
   }
 
   @Test

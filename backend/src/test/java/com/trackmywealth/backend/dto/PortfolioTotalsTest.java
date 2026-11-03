@@ -30,11 +30,24 @@ class PortfolioTotalsTest {
             known("ASSET", "500000", ValueBasisValues.LEDGER),
             known("LIABILITY", "600000", ValueBasisValues.LEDGER));
 
-    PortfolioTotals totals = PortfolioTotals.of(values, values);
+    PortfolioTotals totals = PortfolioTotals.of(values);
 
     assertThat(totals.total()).isEqualByComparingTo("-100000");
     assertThat(totals.totalInWorkspaceCurrency()).isEqualByComparingTo("-100000");
     assertThat(totals.complete()).isTrue();
+  }
+
+  // #381 review: a portfolio in the workspace's currency sums once, to the same totals as two
+  // currencies holding the same values.
+  @Test
+  void oneCurrencyGivesTheSameTotalsAsTwoWithTheSameValues() {
+    List<AccountValuation> values =
+        List.of(
+            known("ASSET", "1000", ValueBasisValues.LEDGER),
+            known("LIABILITY", "200", ValueBasisValues.LEDGER_EMPTY),
+            unknown());
+
+    assertThat(PortfolioTotals.of(values)).isEqualTo(PortfolioTotals.of(values, values));
   }
 
   @Test
