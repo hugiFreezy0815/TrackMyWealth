@@ -23,19 +23,19 @@ const proposal: AccountProposal = {
 describe('account proposal confirmation', () => {
   afterEach(() => jest.resetAllMocks());
 
-  it('needs one of the workspace institutions and a name', () => {
+  it('needs one of the workspace portfolios and a name', () => {
     expect(() => prepareAccountDraft('', 'Checking', 'CASH', 'CHF')).toThrow();
-    expect(() => prepareAccountDraft('institution', ' ', 'CASH', 'CHF')).toThrow();
+    expect(() => prepareAccountDraft('portfolio', ' ', 'CASH', 'CHF')).toThrow();
   });
 
   it('accepts only the account types the backend knows and an ISO currency', () => {
-    expect(() => prepareAccountDraft('institution', 'Checking', 'CHECKING', 'CHF')).toThrow();
-    expect(() => prepareAccountDraft('institution', 'Checking', 'CASH', 'CH')).toThrow();
+    expect(() => prepareAccountDraft('portfolio', 'Checking', 'CHECKING', 'CHF')).toThrow();
+    expect(() => prepareAccountDraft('portfolio', 'Checking', 'CASH', 'CH')).toThrow();
   });
 
   it('builds the create-account request from the confirmed values only', () => {
-    expect(prepareAccountDraft('institution', ' Checking ', 'CASH', 'chf')).toEqual({
-      financialInstitutionId: 'institution',
+    expect(prepareAccountDraft('portfolio', ' Checking ', 'CASH', 'chf')).toEqual({
+      portfolioId: 'portfolio',
       name: 'Checking',
       accountType: 'CASH',
       nativeCurrency: 'CHF',

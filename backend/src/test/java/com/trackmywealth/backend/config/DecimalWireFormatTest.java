@@ -10,8 +10,8 @@ import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CardStatementResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
-import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import java.lang.reflect.Constructor;
@@ -75,7 +75,7 @@ class DecimalWireFormatTest {
     assertRecordHasComponent(TransactionResponse.class, "currency");
     assertRecordHasComponent(AccountValuation.class, "currency");
     assertRecordHasComponent(NetWorthResponse.class, "currency");
-    assertRecordHasComponent(InstitutionSummaryResponse.class, "containerCurrency");
+    assertRecordHasComponent(PortfolioSummaryResponse.class, "portfolioCurrency");
     assertRecordHasComponent(CashFlowResponse.CurrencyAmount.class, "currency");
     assertRecordHasComponent(CardStatementResponse.class, "currency");
     assertRecordHasComponent(SettlementMatchResponse.class, "currency");
@@ -85,7 +85,7 @@ class DecimalWireFormatTest {
     // nested under responses whose single currency field defines the unit for every child amount.
     assertRecordHasComponent(AccountSnapshotResponse.class, "currency");
     assertRecordHasComponent(AccountSnapshotResponse.class, "holdings");
-    assertRecordHasComponent(InstitutionSummaryResponse.class, "accounts");
+    assertRecordHasComponent(PortfolioSummaryResponse.class, "accounts");
   }
 
   // #197: the rule sits on the application's shared mapper - the ObjectMapper bean services also

@@ -12,11 +12,11 @@ import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
-import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.PageResponse;
+import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
@@ -121,7 +121,7 @@ class TransactionControllerTest {
               "authorization_denial_log",
               "app_user",
               "workspace_member",
-              "financial_institution",
+              "portfolio",
               "workspace")) {
         statement.execute("DELETE FROM " + table);
       }
@@ -227,20 +227,20 @@ class TransactionControllerTest {
 
   @Test
   void theInstitutionSummaryCountsTheCardAsALiabilityToo() {
-    // Guards the extraction of value resolution out of InstitutionService: a card under an
+    // Guards the extraction of value resolution out of PortfolioService: a card under an
     // institution now has a value source, and must show up in its liabilities.
     String token = bootstrapAdministrator();
     AccountSummaryResponse card = createCard(token);
     recordPurchaseOn(token, card.id(), "-85.00", today());
 
-    InstitutionSummaryResponse summary =
+    PortfolioSummaryResponse summary =
         client(token)
             .get()
-            .uri("/api/v1/institutions/" + card.financialInstitutionId() + "/summary")
+            .uri("/api/v1/portfolios/" + card.portfolioId() + "/summary")
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(InstitutionSummaryResponse.class)
+            .expectBody(PortfolioSummaryResponse.class)
             .returnResult()
             .getResponseBody();
 

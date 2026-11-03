@@ -129,7 +129,7 @@ class ApiConventionsIntegrationTest {
               "DELETE FROM authorization_denial_log",
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
-              "DELETE FROM financial_institution",
+              "DELETE FROM portfolio",
               "DELETE FROM workspace")) {
         statement.execute(sql);
       }
@@ -541,7 +541,7 @@ class ApiConventionsIntegrationTest {
     for (String path :
         List.of(
             "/api/v1/net-worth",
-            "/api/v1/institutions/{institutionId}/summary",
+            "/api/v1/portfolios/{portfolioId}/summary",
             "/api/v1/accounts/{accountId}/balance",
             "/api/v1/cash-flow")) {
       assertThat(
@@ -552,6 +552,26 @@ class ApiConventionsIntegrationTest {
                   .findValuesAsString("name"))
           .contains("currency");
     }
+
+    // US-04-06: the workspace's containers are portfolios; "institutions" is left only for the
+    // shared catalogue of real banks and brokers.
+    List<String> institutionPaths = new ArrayList<>();
+    spec.path("paths")
+        .propertyNames()
+        .forEach(
+            path -> {
+              if (path.startsWith("/api/v1/institutions")) {
+                institutionPaths.add(path);
+              }
+            });
+    assertThat(institutionPaths).containsExactly("/api/v1/institutions/catalogue");
+    assertThat(
+            spec.path("paths")
+                .path("/api/v1/portfolios/{portfolioId}/view")
+                .path("get")
+                .path("operationId")
+                .asString())
+        .isEqualTo("getPortfolioView");
 
     // #207: the expanded rollout is in the generated contract too, not only the original
     // account/category endpoints from #206.
@@ -781,9 +801,9 @@ class ApiConventionsIntegrationTest {
       }
       try (PreparedStatement statement =
           connection.prepareStatement(
-              "INSERT INTO account (id, workspace_id, financial_institution_id, account_type,"
+              "INSERT INTO account (id, workspace_id, portfolio_id, account_type,"
                   + " name, native_currency) SELECT ?, ?, id, 'CASH', 'B', 'CHF'"
-                  + " FROM financial_institution WHERE workspace_id = ?")) {
+                  + " FROM portfolio WHERE workspace_id = ?")) {
         statement.setObject(1, account);
         statement.setObject(2, workspace);
         statement.setObject(3, workspace);

@@ -5,10 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
-import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
-import com.trackmywealth.backend.dto.FinancialInstitutionSummaryResponse;
-import com.trackmywealth.backend.dto.InstitutionSummaryResponse;
-import com.trackmywealth.backend.dto.ReassignAccountInstitutionRequest;
+import com.trackmywealth.backend.dto.CreatePortfolioRequest;
+import com.trackmywealth.backend.dto.PortfolioResponse;
+import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
+import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.testsupport.AccountRequests;
@@ -89,7 +89,7 @@ class AccountControllerTest {
 
   @BeforeEach
   void cleanDatabase() throws Exception {
-    // See InstitutionControllerTest's identical method for why this is plain per-table DELETEs,
+    // See PortfolioControllerTest's identical method for why this is plain per-table DELETEs,
     // not TRUNCATE ... CASCADE - the latter transitively wipes the shared institution_catalogue
     // seed data via app_user -> reference_package -> institution_catalogue.
     try (Connection connection = dataSource.getConnection();
@@ -110,7 +110,7 @@ class AccountControllerTest {
               "authorization_denial_log",
               "app_user",
               "workspace_member",
-              "financial_institution",
+              "portfolio",
               "workspace")) {
         statement.execute("DELETE FROM " + table);
       }
@@ -323,7 +323,7 @@ class AccountControllerTest {
   }
 
   @Test
-  void omittingFinancialInstitutionIdDefaultsToThePersonalAssetsContainer() throws Exception {
+  void omittingPortfolioIdDefaultsToThePersonalAssetsContainer() throws Exception {
     String token = bootstrapAdministrator();
 
     AccountSummaryResponse created =
@@ -333,7 +333,7 @@ class AccountControllerTest {
         PreparedStatement statement =
             connection.prepareStatement(
                 "SELECT fi.is_personal_assets_default FROM account a "
-                    + "JOIN financial_institution fi ON fi.id = a.financial_institution_id "
+                    + "JOIN portfolio fi ON fi.id = a.portfolio_id "
                     + "WHERE a.id = ?")) {
       statement.setObject(1, created.id());
       try (ResultSet rs = statement.executeQuery()) {
@@ -388,9 +388,7 @@ class AccountControllerTest {
         .uri("/api/v1/accounts")
         .contentType(MediaType.APPLICATION_JSON)
         .body(
-            AccountRequests.account("Orphan", "CASH", "CHF")
-                .financialInstitutionId(UUID.randomUUID())
-                .build())
+            AccountRequests.account("Orphan", "CASH", "CHF").portfolioId(UUID.randomUUID()).build())
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
@@ -671,45 +669,43 @@ class AccountControllerTest {
   @Test
   void reassigningInstitutionMovesTheAccountAndBothSummariesRecomputeCorrectly() {
     // DoD: reassigns an account with a known value (a MORTGAGE's original_principal is the
-    // simplest existing value source that needs no extra setup call - see InstitutionService's
+    // simplest existing value source that needs no extra setup call - see PortfolioService's
     // resolveNativeValue) and confirms both institutions' summaries are correct before and after.
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institutionA =
-        createInstitution(
+    PortfolioResponse institutionA =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
-                null, "Institution A", "CH", "BANK", null, null, "CHF"));
-    FinancialInstitutionSummaryResponse institutionB =
-        createInstitution(
+            new CreatePortfolioRequest(null, "Institution A", "CH", "BANK", null, null, "CHF"));
+    PortfolioResponse institutionB =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
-                null, "Institution B", "CH", "BANK", null, null, "CHF"));
+            new CreatePortfolioRequest(null, "Institution B", "CH", "BANK", null, null, "CHF"));
     AccountSummaryResponse account =
         createAccount(
             token,
             AccountRequests.account("Home Mortgage", "MORTGAGE", "CHF")
-                .financialInstitutionId(institutionA.id())
+                .portfolioId(institutionA.id())
                 .originalPrincipal(BigDecimal.valueOf(500000))
                 .interestRatePercent(BigDecimal.valueOf(1.5))
                 .build());
 
-    InstitutionSummaryResponse beforeA = getInstitutionSummary(token, institutionA.id());
-    InstitutionSummaryResponse beforeB = getInstitutionSummary(token, institutionB.id());
+    PortfolioSummaryResponse beforeA = getInstitutionSummary(token, institutionA.id());
+    PortfolioSummaryResponse beforeB = getInstitutionSummary(token, institutionB.id());
     assertThat(beforeA.totalLiabilities()).isEqualByComparingTo(BigDecimal.valueOf(500000));
     assertThat(beforeB.totalLiabilities()).isEqualByComparingTo(BigDecimal.ZERO);
 
     AccountSummaryResponse reassigned =
-        reassign(token, account.id(), new ReassignAccountInstitutionRequest(institutionB.id()))
+        reassign(token, account.id(), new ReassignAccountPortfolioRequest(institutionB.id()))
             .expectStatus()
             .isOk()
             .expectBody(AccountSummaryResponse.class)
             .returnResult()
             .getResponseBody();
 
-    assertThat(reassigned.financialInstitutionId()).isEqualTo(institutionB.id());
+    assertThat(reassigned.portfolioId()).isEqualTo(institutionB.id());
 
-    InstitutionSummaryResponse afterA = getInstitutionSummary(token, institutionA.id());
-    InstitutionSummaryResponse afterB = getInstitutionSummary(token, institutionB.id());
+    PortfolioSummaryResponse afterA = getInstitutionSummary(token, institutionA.id());
+    PortfolioSummaryResponse afterB = getInstitutionSummary(token, institutionB.id());
     assertThat(afterA.totalLiabilities()).isEqualByComparingTo(BigDecimal.ZERO);
     assertThat(afterB.totalLiabilities()).isEqualByComparingTo(BigDecimal.valueOf(500000));
   }
@@ -720,7 +716,7 @@ class AccountControllerTest {
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
 
-    reassign(token, created.id(), new ReassignAccountInstitutionRequest(UUID.randomUUID()))
+    reassign(token, created.id(), new ReassignAccountPortfolioRequest(UUID.randomUUID()))
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
   }
@@ -728,17 +724,16 @@ class AccountControllerTest {
   @Test
   void reassigningAnUnknownAccountIsNotFound() {
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse institution =
-        createInstitution(
+    PortfolioResponse institution =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
-                null, "Institution A", "CH", "BANK", null, null, "CHF"));
+            new CreatePortfolioRequest(null, "Institution A", "CH", "BANK", null, null, "CHF"));
 
     client(token)
         .post()
-        .uri("/api/v1/accounts/" + UUID.randomUUID() + "/reassign-institution")
+        .uri("/api/v1/accounts/" + UUID.randomUUID() + "/reassign-portfolio")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new ReassignAccountInstitutionRequest(institution.id()))
+        .body(new ReassignAccountPortfolioRequest(institution.id()))
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.NOT_FOUND);
@@ -753,14 +748,13 @@ class AccountControllerTest {
     String token = bootstrapAdministrator();
     AccountSummaryResponse created =
         createAccount(token, AccountRequests.account("Everyday Checking", "CASH", "CHF").build());
-    FinancialInstitutionSummaryResponse destination =
-        createInstitution(
+    PortfolioResponse destination =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
-                null, "Institution A", "CH", "BANK", null, null, "CHF"));
+            new CreatePortfolioRequest(null, "Institution A", "CH", "BANK", null, null, "CHF"));
     setStatusDirectly(created.id(), "DELETED");
 
-    reassign(token, created.id(), new ReassignAccountInstitutionRequest(destination.id()))
+    reassign(token, created.id(), new ReassignAccountPortfolioRequest(destination.id()))
         .expectStatus()
         .isEqualTo(HttpStatus.CONFLICT);
   }
@@ -771,36 +765,35 @@ class AccountControllerTest {
     // (VIAC-like) can hold a plain cash balance, a securities depot, and more than one pension
     // account side by side, with no validation error referencing institution type for any of them.
     String token = bootstrapAdministrator();
-    FinancialInstitutionSummaryResponse pensionProvider =
-        createInstitution(
+    PortfolioResponse pensionProvider =
+        createPortfolio(
             token,
-            new CreateFinancialInstitutionRequest(
-                null, "VIAC", "CH", "PENSION_PROVIDER", null, null, "CHF"));
+            new CreatePortfolioRequest(null, "VIAC", "CH", "PENSION_PROVIDER", null, null, "CHF"));
 
     AccountSummaryResponse cash =
         createAccount(
             token,
             AccountRequests.account("Cash Sleeve", "CASH", "CHF")
-                .financialInstitutionId(pensionProvider.id())
+                .portfolioId(pensionProvider.id())
                 .build());
     AccountSummaryResponse securities =
         createAccount(
             token,
             AccountRequests.account("Fund Depot", "SECURITIES", "CHF")
-                .financialInstitutionId(pensionProvider.id())
+                .portfolioId(pensionProvider.id())
                 .build());
     AccountSummaryResponse pillar3aFirst =
         createAccount(
             token,
             AccountRequests.account("Pillar 3a - Account 1", "PENSION", "CHF")
-                .financialInstitutionId(pensionProvider.id())
+                .portfolioId(pensionProvider.id())
                 .pensionScheme("CH_PILLAR_3A")
                 .build());
     AccountSummaryResponse pillar3aSecond =
         createAccount(
             token,
             AccountRequests.account("Pillar 3a - Account 2", "PENSION", "CHF")
-                .financialInstitutionId(pensionProvider.id())
+                .portfolioId(pensionProvider.id())
                 .pensionScheme("CH_PILLAR_3A")
                 .build());
 
@@ -861,29 +854,28 @@ class AccountControllerTest {
     }
   }
 
-  private FinancialInstitutionSummaryResponse createInstitution(
-      String token, CreateFinancialInstitutionRequest request) {
+  private PortfolioResponse createPortfolio(String token, CreatePortfolioRequest request) {
     return client(token)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
         .body(request)
         .exchange()
         .expectStatus()
         .isEqualTo(HttpStatus.CREATED)
-        .expectBody(FinancialInstitutionSummaryResponse.class)
+        .expectBody(PortfolioResponse.class)
         .returnResult()
         .getResponseBody();
   }
 
-  private InstitutionSummaryResponse getInstitutionSummary(String token, UUID institutionId) {
+  private PortfolioSummaryResponse getInstitutionSummary(String token, UUID institutionId) {
     return client(token)
         .get()
-        .uri("/api/v1/institutions/" + institutionId + "/summary")
+        .uri("/api/v1/portfolios/" + institutionId + "/summary")
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(InstitutionSummaryResponse.class)
+        .expectBody(PortfolioSummaryResponse.class)
         .returnResult()
         .getResponseBody();
   }
@@ -925,10 +917,10 @@ class AccountControllerTest {
   }
 
   private RestTestClient.ResponseSpec reassign(
-      String token, UUID accountId, ReassignAccountInstitutionRequest request) {
+      String token, UUID accountId, ReassignAccountPortfolioRequest request) {
     return client(token)
         .post()
-        .uri("/api/v1/accounts/" + accountId + "/reassign-institution")
+        .uri("/api/v1/accounts/" + accountId + "/reassign-portfolio")
         .header("If-Match", "\"" + getAccount(token, accountId).version() + "\"")
         .contentType(MediaType.APPLICATION_JSON)
         .body(request)

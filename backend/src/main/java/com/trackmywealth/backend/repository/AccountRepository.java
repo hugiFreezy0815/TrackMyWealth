@@ -52,8 +52,7 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
   // UserSessionRepository.findByUser_IdAndStatusOrderByLastSeenAtDesc) - without it, row order
   // isn't guaranteed stable across a table rewrite/vacuum/query-plan change, and a drillable list
   // reordering itself with no underlying data change is a worse experience than a fixed one.
-  List<Account> findByFinancialInstitutionIdAndStatusOrderByCreatedAtAsc(
-      UUID financialInstitutionId, String status);
+  List<Account> findByPortfolioIdAndStatusOrderByCreatedAtAsc(UUID portfolioId, String status);
 
   // US-09-01: net worth spans every currently-active account in the workspace (FR-LIF-005 - an
   // archived account is excluded from current totals, same as the institution summary above).

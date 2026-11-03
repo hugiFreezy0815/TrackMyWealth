@@ -25,7 +25,7 @@ public final class AccountRequests {
     private final String name;
     private final String accountType;
     private final String nativeCurrency;
-    private UUID financialInstitutionId;
+    private UUID portfolioId;
     private Boolean holdsPositions;
     private String billingCurrency;
     private BigDecimal originalPrincipal;
@@ -40,8 +40,8 @@ public final class AccountRequests {
       this.nativeCurrency = nativeCurrency;
     }
 
-    public Builder financialInstitutionId(UUID financialInstitutionId) {
-      this.financialInstitutionId = financialInstitutionId;
+    public Builder portfolioId(UUID portfolioId) {
+      this.portfolioId = portfolioId;
       return this;
     }
 
@@ -82,7 +82,7 @@ public final class AccountRequests {
 
     public CreateAccountRequest build() {
       return new CreateAccountRequest(
-          financialInstitutionId,
+          portfolioId,
           name,
           accountType,
           nativeCurrency,

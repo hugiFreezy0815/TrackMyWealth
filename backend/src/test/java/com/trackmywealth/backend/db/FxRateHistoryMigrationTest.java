@@ -142,8 +142,8 @@ class FxRateHistoryMigrationTest {
     assertThat(currenciesInUse()).contains("CHF");
 
     insertReturningId(
-        "INSERT INTO account(workspace_id, financial_institution_id, account_type, name,"
-            + " native_currency) SELECT workspace_id, financial_institution_id, 'SAVINGS',"
+        "INSERT INTO account(workspace_id, portfolio_id, account_type, name,"
+            + " native_currency) SELECT workspace_id, portfolio_id, 'SAVINGS',"
             + " 'Dollar savings', 'USD' FROM account WHERE id = ? RETURNING id",
         accountId);
     book(LocalDate.of(2025, 2, 3), "GBP");

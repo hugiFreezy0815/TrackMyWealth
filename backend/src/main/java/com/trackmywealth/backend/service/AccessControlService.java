@@ -2,7 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AppUser;
-import com.trackmywealth.backend.entity.FinancialInstitution;
+import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AppUserRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
@@ -37,7 +37,8 @@ public class AccessControlService {
   private static final String SYSTEM_ADMINISTRATOR = "SYSTEM_ADMINISTRATOR";
   private static final long SOLE_MEMBER = 1;
   private static final String ACCOUNT_ENTITY_TYPE = "Account";
-  private static final String INSTITUTION_ENTITY_TYPE = "FinancialInstitution";
+  // As PortfolioLookupService's: "FinancialInstitution" in denials logged before V111.
+  private static final String PORTFOLIO_ENTITY_TYPE = "Portfolio";
   private static final String WORKSPACE_ENTITY_TYPE = "Workspace";
 
   private final AppUserRepository appUserRepository;
@@ -76,10 +77,9 @@ public class AccessControlService {
   }
 
   @Transactional(readOnly = true)
-  public void requireInstitutionAccess(
-      AuthenticatedUserPrincipal actor, FinancialInstitution institution) {
+  public void requirePortfolioAccess(AuthenticatedUserPrincipal actor, Portfolio portfolio) {
     requireWorkspaceMembership(
-        actor, institution.getWorkspace().getId(), INSTITUTION_ENTITY_TYPE, institution.getId());
+        actor, portfolio.getWorkspace().getId(), PORTFOLIO_ENTITY_TYPE, portfolio.getId());
   }
 
   @Transactional(readOnly = true)

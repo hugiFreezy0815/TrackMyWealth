@@ -140,7 +140,7 @@ class TransactionRemovalControllerTest {
               "DELETE FROM authorization_denial_log",
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
-              "DELETE FROM financial_institution",
+              "DELETE FROM portfolio",
               // a member's own categories (only a flat one is created here); V19's shipped
               // defaults have no workspace and stay
               "DELETE FROM workspace_category_override",

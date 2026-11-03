@@ -10,13 +10,13 @@ import {
   prepareAccountDraft,
 } from './account-proposal';
 
-/** One of the workspace's institutions, as the member chose it. */
-export type ChosenInstitution = { id: string; name: string };
+/** One of the workspace's portfolios, as the member chose it. */
+export type ChosenPortfolio = { id: string; name: string };
 
 type Props = {
   proposal: AccountProposal;
-  /** Chosen by the member among the workspace's institutions; null until then. */
-  institution: ChosenInstitution | null;
+  /** Chosen by the member among the workspace's portfolios; null until then. */
+  portfolio: ChosenPortfolio | null;
   onConfirm: (draft: ConfirmedAccountDraft) => void;
   onCancel: () => void;
 };
@@ -26,7 +26,7 @@ type Props = {
  * parent submits the confirmed draft to `POST /api/v1/accounts`, then registers the file's
  * identifier on the new account.
  */
-export function AccountProposalReview({ proposal, institution, onConfirm, onCancel }: Props) {
+export function AccountProposalReview({ proposal, portfolio, onConfirm, onCancel }: Props) {
   const [name, setName] = useState('');
   const [accountType, setAccountType] = useState(proposal.suggestedAccountType ?? '');
   const [currency, setCurrency] = useState(proposal.suggestedCurrency ?? '');
@@ -34,7 +34,7 @@ export function AccountProposalReview({ proposal, institution, onConfirm, onCanc
 
   function confirm() {
     try {
-      const draft = prepareAccountDraft(institution?.id ?? '', name, accountType, currency);
+      const draft = prepareAccountDraft(portfolio?.id ?? '', name, accountType, currency);
       setError(null);
       onConfirm(draft);
     } catch (cause) {
@@ -51,7 +51,7 @@ export function AccountProposalReview({ proposal, institution, onConfirm, onCanc
       <ThemedText>
         Bank named by the statement: {proposal.institutionName ?? 'Not named'}
       </ThemedText>
-      <ThemedText>Institution: {institution?.name ?? 'Choose an institution first'}</ThemedText>
+      <ThemedText>Portfolio: {portfolio?.name ?? 'Choose a portfolio first'}</ThemedText>
       <ThemedText>Account identifier: {proposal.maskedIdentifier ?? 'Not found'}</ThemedText>
       <ThemedText>Account name</ThemedText>
       <TextInput

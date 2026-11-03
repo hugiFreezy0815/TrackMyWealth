@@ -75,7 +75,7 @@ class CrossTenantIsolationTest {
       Set.of(
           "workspace",
           "workspace_member",
-          "financial_institution",
+          "portfolio",
           "account",
           "transaction",
           "settlement_match",
@@ -139,7 +139,7 @@ class CrossTenantIsolationTest {
         Statement statement = admin.createStatement()) {
       statement.execute(
           LedgerCleanup.withGuardsOff(
-              "TRUNCATE TABLE account_snapshot, settlement_match, transaction, account, financial_institution,"
+              "TRUNCATE TABLE account_snapshot, settlement_match, transaction, account, portfolio,"
                   + " workspace_member, workspace RESTART IDENTITY CASCADE"));
       // The CASCADE above also empties `category` (it references workspace), shipped defaults
       // included, so this suite seeds its own shared default: only a superuser can, since V20's
@@ -202,11 +202,9 @@ class CrossTenantIsolationTest {
   }
 
   @Test
-  void financialInstitutionRowIsInvisibleAcrossWorkspaces() throws Exception {
-    assertThat(rowVisibleUnderContext(workspaceAId, "financial_institution", institutionBId))
-        .isFalse();
-    assertThat(rowVisibleUnderContext(workspaceBId, "financial_institution", institutionAId))
-        .isFalse();
+  void portfolioRowIsInvisibleAcrossWorkspaces() throws Exception {
+    assertThat(rowVisibleUnderContext(workspaceAId, "portfolio", institutionBId)).isFalse();
+    assertThat(rowVisibleUnderContext(workspaceBId, "portfolio", institutionAId)).isFalse();
   }
 
   @Test
@@ -382,7 +380,7 @@ class CrossTenantIsolationTest {
     UUID loanId = UUID.randomUUID();
     rowsCommittedUnderContext(
         workspaceAId,
-        "INSERT INTO account (id, workspace_id, financial_institution_id, account_type, name,"
+        "INSERT INTO account (id, workspace_id, portfolio_id, account_type, name,"
             + " native_currency) VALUES (?, ?, ?, 'CASH', 'Loan A', 'CHF')",
         loanId,
         workspaceAId,
@@ -623,8 +621,7 @@ class CrossTenantIsolationTest {
   void eachWorkspaceCanStillSeeItsOwnData() throws Exception {
     assertThat(rowVisibleUnderContext(workspaceAId, "workspace", workspaceAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "workspace_member", memberAId)).isTrue();
-    assertThat(rowVisibleUnderContext(workspaceAId, "financial_institution", institutionAId))
-        .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceAId, "portfolio", institutionAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "account", accountAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "transaction", transactionAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceAId, "settlement_match", settlementMatchAId))
@@ -638,8 +635,7 @@ class CrossTenantIsolationTest {
     assertThat(rowVisibleUnderContext(workspaceAId, "categorization_rule", ruleAId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace", workspaceBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "workspace_member", memberBId)).isTrue();
-    assertThat(rowVisibleUnderContext(workspaceBId, "financial_institution", institutionBId))
-        .isTrue();
+    assertThat(rowVisibleUnderContext(workspaceBId, "portfolio", institutionBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "account", accountBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "transaction", transactionBId)).isTrue();
     assertThat(rowVisibleUnderContext(workspaceBId, "settlement_match", settlementMatchBId))
@@ -759,7 +755,7 @@ class CrossTenantIsolationTest {
   private UUID personalAssetsId(Connection connection, UUID workspaceId) throws Exception {
     try (PreparedStatement statement =
         connection.prepareStatement(
-            "SELECT id FROM financial_institution WHERE workspace_id = ? AND"
+            "SELECT id FROM portfolio WHERE workspace_id = ? AND"
                 + " is_personal_assets_default = true")) {
       statement.setObject(1, workspaceId);
       try (ResultSet resultSet = statement.executeQuery()) {
@@ -771,17 +767,16 @@ class CrossTenantIsolationTest {
     }
   }
 
-  private UUID insertAccount(
-      Connection connection, UUID workspaceId, UUID financialInstitutionId, String name)
+  private UUID insertAccount(Connection connection, UUID workspaceId, UUID portfolioId, String name)
       throws Exception {
     UUID accountId = UUID.randomUUID();
     try (PreparedStatement statement =
         connection.prepareStatement(
-            "INSERT INTO account (id, workspace_id, financial_institution_id, account_type,"
+            "INSERT INTO account (id, workspace_id, portfolio_id, account_type,"
                 + " name, native_currency) VALUES (?, ?, ?, 'CASH', ?, 'CHF')")) {
       statement.setObject(1, accountId);
       statement.setObject(2, workspaceId);
-      statement.setObject(3, financialInstitutionId);
+      statement.setObject(3, portfolioId);
       statement.setString(4, name);
       statement.executeUpdate();
     }

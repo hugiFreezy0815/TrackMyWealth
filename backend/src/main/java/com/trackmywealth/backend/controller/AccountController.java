@@ -2,7 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
-import com.trackmywealth.backend.dto.ReassignAccountInstitutionRequest;
+import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountService;
@@ -82,14 +82,14 @@ public class AccountController {
     return withEtag(ResponseEntity.ok(), restored);
   }
 
-  @PostMapping("/{accountId}/reassign-institution")
-  public ResponseEntity<AccountSummaryResponse> reassignInstitution(
+  @PostMapping("/{accountId}/reassign-portfolio")
+  public ResponseEntity<AccountSummaryResponse> reassignPortfolio(
       @PathVariable UUID accountId,
-      @Valid @RequestBody ReassignAccountInstitutionRequest request,
+      @Valid @RequestBody ReassignAccountPortfolioRequest request,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     AccountSummaryResponse reassigned =
-        accountService.reassignInstitution(
+        accountService.reassignPortfolio(
             accountId, request, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), reassigned);
   }

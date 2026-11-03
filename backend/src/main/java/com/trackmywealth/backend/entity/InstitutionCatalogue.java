@@ -15,9 +15,9 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Maps {@code institution_catalogue} (V3) - a shared, non-tenant-scoped seed-data catalogue of
- * CH/DE institutions (FR-INS-007), searchable when a workspace member creates a {@link
- * FinancialInstitution}. Maintained as configuration (see V18's reference-data-distribution
- * framework), not written by any application code path yet - only read.
+ * CH/DE institutions (FR-INS-007), searchable when a workspace member creates a {@link Portfolio}.
+ * Maintained as configuration (see V18's reference-data-distribution framework), not written by any
+ * application code path yet - only read.
  */
 @Entity
 @Table(name = "institution_catalogue")

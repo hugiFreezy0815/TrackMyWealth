@@ -4,11 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.CreateFinancialInstitutionRequest;
+import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.dto.UpdatePortfolioRequest;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.sql.Connection;
@@ -78,7 +79,7 @@ class AdministratorFinancialAccessTest {
               "DELETE FROM authorization_denial_log",
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
-              "DELETE FROM financial_institution",
+              "DELETE FROM portfolio",
               "DELETE FROM workspace")) {
         statement.execute(sql);
       }
@@ -141,16 +142,31 @@ class AdministratorFinancialAccessTest {
         client(memberToken).get().uri(path).exchange().expectStatus().isOk();
       }
     }
-    UUID institution = membersAccount.financialInstitutionId();
+    UUID portfolio = membersAccount.portfolioId();
     for (String path :
         List.of(
             "/api/v1/net-worth",
             "/api/v1/cash-flow?month=2026-09",
             "/api/v1/categories",
-            "/api/v1/institutions/" + institution + "/summary")) {
+            "/api/v1/portfolios/" + portfolio,
+            "/api/v1/portfolios/" + portfolio + "/summary",
+            "/api/v1/portfolios/" + portfolio + "/view")) {
       client(adminToken).get().uri(path).exchange().expectStatus().isNotFound();
       client(memberToken).get().uri(path).exchange().expectStatus().isOk();
     }
+    client(adminToken)
+        .put()
+        .uri("/api/v1/portfolios/" + portfolio)
+        .header(
+            "If-Match",
+            "\"" + query("SELECT version FROM portfolio WHERE id = ?", portfolio) + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new UpdatePortfolioRequest("Taken over", null, null, null))
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    assertThat((Long) query("SELECT count(*) FROM portfolio WHERE name = ?", "Taken over"))
+        .isZero();
     client(adminToken)
         .post()
         .uri("/api/v1/accounts")
@@ -161,17 +177,13 @@ class AdministratorFinancialAccessTest {
         .isNotFound();
     client(adminToken)
         .post()
-        .uri("/api/v1/institutions")
+        .uri("/api/v1/portfolios")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            new CreateFinancialInstitutionRequest(
-                null, "Sneaky Bank", "CH", "BANK", null, null, "CHF"))
+        .body(new CreatePortfolioRequest(null, "Sneaky Bank", "CH", "BANK", null, null, "CHF"))
         .exchange()
         .expectStatus()
         .isNotFound();
-    assertThat(
-            (Long)
-                query("SELECT count(*) FROM financial_institution WHERE name = ?", "Sneaky Bank"))
+    assertThat((Long) query("SELECT count(*) FROM portfolio WHERE name = ?", "Sneaky Bank"))
         .isZero();
 
     // Every refusal is audited, and administration itself still works (FR-TEN-007).
@@ -251,9 +263,9 @@ class AdministratorFinancialAccessTest {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
-                "INSERT INTO account (id, workspace_id, financial_institution_id, account_type,"
+                "INSERT INTO account (id, workspace_id, portfolio_id, account_type,"
                     + " name, native_currency) SELECT ?, ?, id, 'CASH', 'B checking', 'CHF'"
-                    + " FROM financial_institution WHERE workspace_id = ?")) {
+                    + " FROM portfolio WHERE workspace_id = ?")) {
       statement.setObject(1, account);
       statement.setObject(2, workspace);
       statement.setObject(3, workspace);

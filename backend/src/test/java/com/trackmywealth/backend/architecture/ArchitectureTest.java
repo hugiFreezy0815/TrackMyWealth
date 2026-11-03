@@ -23,10 +23,10 @@ import com.tngtech.archunit.library.Architectures.LayeredArchitecture;
 import com.tngtech.archunit.library.GeneralCodingRules;
 import com.trackmywealth.backend.client.FxRateProvider;
 import com.trackmywealth.backend.entity.Account;
-import com.trackmywealth.backend.entity.FinancialInstitution;
+import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.security.SystemWorkspaceContext;
 import com.trackmywealth.backend.service.AccountService;
-import com.trackmywealth.backend.service.InstitutionService;
+import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.TransferRecheckService;
 import com.trackmywealth.backend.web.Paged;
 import jakarta.persistence.Entity;
@@ -219,22 +219,22 @@ class ArchitectureTest {
                   + " the capability flags it computes instead");
 
   // US-04-02/FR-INS-008/012, RULE-020/022: institution_type must never restrict or otherwise
-  // drive which account_type may be added under a financial_institution - a securities depot
+  // drive which account_type may be added under a portfolio - a securities depot
   // under a "Bank" and a cash account under a "Pension Provider" are both exactly as valid as any
   // other combination. Unlike account_type (which legitimately drives behaviour inside
   // AccountService, translated into capability flags), institution_type has no sanctioned
-  // exception at all for account creation - InstitutionService reads it only to manage the
+  // exception at all for account creation - PortfolioService reads it only to manage the
   // institution itself (e.g. rendering its own summary), never to gate what account_type a
   // caller may create. Same reasoning as only_account_service_branches_on_account_type for why
-  // this doesn't need allowEmptyShould(true): InstitutionService already has real classes to
+  // this doesn't need allowEmptyShould(true): PortfolioService already has real classes to
   // check against today.
   @ArchTest
   static final ArchRule only_institution_service_reads_institution_type =
       noClasses()
           .that()
-          .areNotAssignableTo(InstitutionService.class)
+          .areNotAssignableTo(PortfolioService.class)
           .should()
-          .callMethod(FinancialInstitution.class, "getInstitutionType")
+          .callMethod(Portfolio.class, "getInstitutionType")
           .because(
               "institution_type must never restrict which account_type may be added under it"
                   + " (US-04-02/FR-INS-008/012, RULE-020/022) - AccountService must never read"
@@ -259,7 +259,7 @@ class ArchitectureTest {
           // Globally shared reference data, identical for every tenant.
           "SecurityService#get",
           "SecurityService#lookup",
-          "InstitutionService#applyCatalogueEntry",
+          "PortfolioService#applyCatalogueEntry",
           // An account the caller was already cleared for simply has no opening balance.
           "OpeningBalanceService#notRecorded",
           // A row number of an import batch the caller was already cleared for (#230): row numbers

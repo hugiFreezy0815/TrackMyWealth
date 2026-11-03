@@ -119,7 +119,7 @@ class SettlementMatchControllerTest {
               "authorization_denial_log",
               "app_user",
               "workspace_member",
-              "financial_institution",
+              "portfolio",
               "workspace")) {
         statement.execute("DELETE FROM " + table);
       }

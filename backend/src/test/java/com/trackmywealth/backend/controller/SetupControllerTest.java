@@ -4,11 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.entity.AppUser;
-import com.trackmywealth.backend.entity.FinancialInstitution;
+import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.entity.Workspace;
 import com.trackmywealth.backend.entity.WorkspaceMember;
 import com.trackmywealth.backend.repository.AppUserRepository;
-import com.trackmywealth.backend.repository.FinancialInstitutionRepository;
+import com.trackmywealth.backend.repository.PortfolioRepository;
 import com.trackmywealth.backend.repository.WorkspaceMemberRepository;
 import com.trackmywealth.backend.repository.WorkspaceRepository;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
@@ -69,7 +69,7 @@ class SetupControllerTest {
 
   @Autowired WorkspaceRepository workspaceRepository;
   @Autowired WorkspaceMemberRepository workspaceMemberRepository;
-  @Autowired FinancialInstitutionRepository financialInstitutionRepository;
+  @Autowired PortfolioRepository portfolioRepository;
   @Autowired AppUserRepository appUserRepository;
   @Autowired PasswordEncoder passwordEncoder;
   @Autowired DataSource dataSource;
@@ -87,7 +87,7 @@ class SetupControllerTest {
       statement.execute(
           LedgerCleanup.withGuardsOff(
               "TRUNCATE TABLE user_session, refresh_token, app_user, workspace_member,"
-                  + " financial_institution, workspace RESTART IDENTITY CASCADE"));
+                  + " portfolio, workspace RESTART IDENTITY CASCADE"));
     }
   }
 
@@ -135,11 +135,11 @@ class SetupControllerTest {
     Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
     assertThat(workspace.getName()).isEqualTo("The Example Workspace");
 
-    FinancialInstitution personalAssets =
-        financialInstitutionRepository
+    Portfolio personalAssets =
+        portfolioRepository
             .findByWorkspaceIdAndPersonalAssetsDefaultTrue(workspace.getId())
             .orElseThrow();
-    assertThat(personalAssets.getContainerCurrency()).isEqualTo("CHF");
+    assertThat(personalAssets.getPortfolioCurrency()).isEqualTo("CHF");
     assertThat(personalAssets.getInstitutionType()).isEqualTo("PERSONAL_ASSETS");
 
     // Second attempt: setup is a one-time bootstrap, not a general "create admin" endpoint.

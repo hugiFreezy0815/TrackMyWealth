@@ -257,9 +257,9 @@ abstract class HardenedRuntimeAuthenticationScenario {
       }
       try (PreparedStatement insert =
           superuser.prepareStatement(
-              "INSERT INTO account (id, workspace_id, financial_institution_id, account_type,"
+              "INSERT INTO account (id, workspace_id, portfolio_id, account_type,"
                   + " name, native_currency) SELECT ?, ?, id, 'CASH', 'Foreign', 'CHF'"
-                  + " FROM financial_institution"
+                  + " FROM portfolio"
                   + " WHERE workspace_id = ? AND is_personal_assets_default")) {
         insert.setObject(1, account);
         insert.setObject(2, workspace);

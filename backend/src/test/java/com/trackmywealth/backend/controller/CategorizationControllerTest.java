@@ -118,7 +118,7 @@ class CategorizationControllerTest {
               "DELETE FROM authorization_denial_log",
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
-              "DELETE FROM financial_institution",
+              "DELETE FROM portfolio",
               "DELETE FROM workspace")) {
         statement.execute(sql);
       }
@@ -655,7 +655,7 @@ class CategorizationControllerTest {
         .isNotFound();
     assertThat(listRules(token, true)).isEmpty();
     execute("DELETE FROM categorization_rule WHERE id = ?", foreignRule);
-    execute("DELETE FROM financial_institution WHERE workspace_id = ?", foreignWorkspace);
+    execute("DELETE FROM portfolio WHERE workspace_id = ?", foreignWorkspace);
     execute("DELETE FROM workspace WHERE id = ?", foreignWorkspace);
   }
 

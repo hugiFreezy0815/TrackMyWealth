@@ -129,7 +129,7 @@ class ReconciliationDecisionControllerTest {
               "DELETE FROM authorization_denial_log",
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
-              "DELETE FROM financial_institution",
+              "DELETE FROM portfolio",
               "DELETE FROM workspace")) {
         statement.execute(sql);
       }
@@ -1013,9 +1013,9 @@ class ReconciliationDecisionControllerTest {
     UUID foreign = UUID.randomUUID();
     execute("INSERT INTO workspace (id, name) VALUES (?, 'Other')", workspace);
     execute(
-        "INSERT INTO account (id, workspace_id, financial_institution_id, account_type, name,"
+        "INSERT INTO account (id, workspace_id, portfolio_id, account_type, name,"
             + " native_currency) SELECT ?, ?, id, 'CASH', 'Foreign', 'CHF'"
-            + " FROM financial_institution WHERE workspace_id = ? AND is_personal_assets_default",
+            + " FROM portfolio WHERE workspace_id = ? AND is_personal_assets_default",
         account,
         workspace,
         workspace);

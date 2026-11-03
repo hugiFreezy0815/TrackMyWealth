@@ -108,7 +108,7 @@ class YuhStatementImportControllerTest {
             "DELETE FROM authorization_denial_log",
             "DELETE FROM app_user",
             "DELETE FROM workspace_member",
-            "DELETE FROM financial_institution",
+            "DELETE FROM portfolio",
             "DELETE FROM workspace")) {
       jdbc.execute(sql);
     }
@@ -151,8 +151,7 @@ class YuhStatementImportControllerTest {
     assertThat(pocketAccount.accountType()).isEqualTo("SAVINGS");
     assertThat(pocketAccount.nativeCurrency()).isEqualTo("CHF");
     assertThat(pocketAccount.countsAsSaving()).isTrue();
-    assertThat(pocketAccount.financialInstitutionId())
-        .isEqualTo(account(yuh).financialInstitutionId());
+    assertThat(pocketAccount.portfolioId()).isEqualTo(account(yuh).portfolioId());
     // The pocket's leg: the opposite amount, a row of the same batch, linked to the move.
     Map<String, Object> leg =
         jdbc.queryForMap(
@@ -316,9 +315,9 @@ class YuhStatementImportControllerTest {
     jdbc.update("INSERT INTO workspace (id, name) VALUES (?, 'Workspace B')", workspace);
     UUID foreign = UUID.randomUUID();
     jdbc.update(
-        "INSERT INTO account (id, workspace_id, financial_institution_id, account_type, name,"
+        "INSERT INTO account (id, workspace_id, portfolio_id, account_type, name,"
             + " native_currency) SELECT ?, ?, id, 'SAVINGS', 'B pocket', 'CHF'"
-            + " FROM financial_institution WHERE workspace_id = ?",
+            + " FROM portfolio WHERE workspace_id = ?",
         foreign,
         workspace,
         workspace);

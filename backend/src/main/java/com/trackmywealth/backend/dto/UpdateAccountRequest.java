@@ -17,10 +17,10 @@ import java.time.LocalDate;
  * com.trackmywealth.backend.web.GlobalExceptionHandler}) rather than the field being silently
  * ignored or a raw 500; sending the account's own current value is a no-op.
  *
- * <p>Deliberately excludes {@code financialInstitutionId} (institution reassignment is its own
- * story, US-04-04), {@code status} (archive/restore is US-05-03), and the capability flags (their
- * own governance is US-05-04) - none of those are "ordinary" mutable attributes the way the fields
- * here are.
+ * <p>Deliberately excludes {@code portfolioId} (institution reassignment is its own story,
+ * US-04-04), {@code status} (archive/restore is US-05-03), and the capability flags (their own
+ * governance is US-05-04) - none of those are "ordinary" mutable attributes the way the fields here
+ * are.
  */
 public record UpdateAccountRequest(
     @NotBlank String name,

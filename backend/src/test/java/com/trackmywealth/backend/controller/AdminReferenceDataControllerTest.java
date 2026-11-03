@@ -80,7 +80,7 @@ class AdminReferenceDataControllerTest {
               "DELETE FROM refresh_token",
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
-              "DELETE FROM financial_institution",
+              "DELETE FROM portfolio",
               "DELETE FROM workspace")) {
         statement.execute(sql);
       }

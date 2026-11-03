@@ -19,7 +19,7 @@ describe('AccountProposalReview', () => {
     await render(
       <AccountProposalReview
         proposal={proposal}
-        institution={{ id: 'institution', name: 'Synthetic Bank Basel' }}
+        portfolio={{ id: 'portfolio', name: 'Synthetic Bank Basel' }}
         onConfirm={jest.fn()}
         onCancel={jest.fn()}
       />,
@@ -36,7 +36,7 @@ describe('AccountProposalReview', () => {
     await render(
       <AccountProposalReview
         proposal={proposal}
-        institution={{ id: 'institution', name: 'Synthetic Bank Basel' }}
+        portfolio={{ id: 'portfolio', name: 'Synthetic Bank Basel' }}
         onConfirm={onConfirm}
         onCancel={jest.fn()}
       />,
@@ -51,25 +51,25 @@ describe('AccountProposalReview', () => {
     await fireEvent.press(screen.getByText('Confirm new account details'));
 
     expect(onConfirm).toHaveBeenCalledWith({
-      financialInstitutionId: 'institution',
+      portfolioId: 'portfolio',
       name: 'Kreditkarte',
       accountType: 'CASH',
       nativeCurrency: 'EUR',
     });
   });
 
-  it('asks for an institution before anything can be confirmed', async () => {
+  it('asks for a portfolio before anything can be confirmed', async () => {
     const onConfirm = jest.fn();
     await render(
       <AccountProposalReview
         proposal={proposal}
-        institution={null}
+        portfolio={null}
         onConfirm={onConfirm}
         onCancel={jest.fn()}
       />,
     );
 
-    expect(screen.getByText(/Choose an institution first/)).toBeTruthy();
+    expect(screen.getByText(/Choose a portfolio first/)).toBeTruthy();
     await fireEvent.changeText(screen.getByLabelText('Account name'), 'Kreditkarte');
     await fireEvent.press(screen.getByText('Confirm new account details'));
     expect(onConfirm).not.toHaveBeenCalled();
