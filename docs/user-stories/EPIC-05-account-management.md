@@ -163,3 +163,33 @@ correct historical attribution.
 **Data-quality behaviour:** An account with no valuation at all must be flagged in the UI as
 "value unknown," and excluded (with a visible note, not silently) from any total that requires a
 numeric value.
+
+## US-05-06 — List the workspace's accounts, with current balance and value status (#380)
+
+**Actor:** Member.
+**Objective:** The app can show and navigate all accounts.
+**Story:** As a member, I want to see all accounts of my workspace with their current value, so
+that I can find an account and see where my money is.
+
+**Implemented (PO decisions on #380, 2026-11-03):**
+- `GET /api/v1/accounts`, operation `listAccounts`, tag Accounts: a bounded list (plain array,
+  not paged; a workspace holds tens of accounts), oldest first. Filters `portfolioId`,
+  `accountType` (an unknown type is a 400) and `archived` (default `false`).
+- Each row: id, version, name, account type, nature, portfolio id and name, own currency,
+  archived, the **signed** balance in its own currency and in the workspace currency (assets
+  positive, liabilities negative, as in the Portfolio View), `valueKnown`, value status, `asOf`,
+  `valueSourceDate` and warnings. Same valuation as net worth: each `balanceInWorkspaceCurrency`
+  is the account's net worth contribution.
+- **Value status `STALE`** now also means an out-of-date snapshot or manual valuation: older than
+  `app.valuation.snapshot-stale-after` (`VALUATION_SNAPSHOT_STALE_AFTER`, default `P45D`) before
+  the valuation date. A value derived from the ledger never goes stale this way. It applies
+  everywhere value status is shown (Portfolio View, net worth's `ValueStatus`).
+- **Valuation is batched:** `AccountValuationService` reads every value source in one query for
+  all accounts, so the list, net worth and the Portfolio View run the same number of queries for
+  50 accounts as for one.
+
+**Acceptance criteria:** see #380; covered by `AccountListControllerTest`,
+`AccountValuationServiceTest` and `ValueStatusTest`.
+**Authorization:** every active member of the workspace sees all its accounts (US-03-06); RLS
+keeps workspaces apart, and another workspace's portfolio matches nothing, like an unknown id.
+**Priority:** MUST. **Size:** M (grew towards L with the batched valuation).
