@@ -43,6 +43,8 @@ class CounterpartyNameMigrationTest {
   private static UUID importedWithoutCounterparty;
   private static UUID manual;
   private static UUID importedWithLongCounterparty;
+  private static UUID importedWithAstralCounterparty;
+  private static final String BANK = new String(Character.toChars(0x1F3E6));
 
   @BeforeAll
   static void seedRowsBeforeV113ThenMigrate() throws Exception {
@@ -66,6 +68,9 @@ class CounterpartyNameMigrationTest {
     importedWithLongCounterparty =
         insertTransaction(
             workspace, account, "{\"counterpartyName\": \"" + "y".repeat(300) + "\"}");
+    importedWithAstralCounterparty =
+        insertTransaction(
+            workspace, account, "{\"counterpartyName\": \"z" + BANK.repeat(200) + "\"}");
 
     flyway(null).migrate();
   }
@@ -86,6 +91,21 @@ class CounterpartyNameMigrationTest {
   @Test
   void aLongerCounterpartyIsCutToWhatARequestMaySendSoTheRowStaysCorrectable() throws Exception {
     assertThat(counterpartyName(importedWithLongCounterparty)).isEqualTo("y".repeat(255));
+  }
+
+  @Test
+  void theCutCountsWhatTheRequestCountsAndNeverSplitsACharacter() throws Exception {
+    // @Size counts UTF-16 units: an emoji counts twice. "z" plus 127 banks is 255 units.
+    String stored = counterpartyName(importedWithAstralCounterparty);
+    assertThat(stored).isEqualTo("z" + BANK.repeat(127));
+    assertThat(stored.length()).isEqualTo(255);
+  }
+
+  @Test
+  void v114StoresTheFoldedSearchTextWithASeparatorBetweenTheFields() throws Exception {
+    // Lower case, no accents; U+001F keeps a search from matching across the two fields.
+    assertThat(text("SELECT search_text FROM transaction WHERE id = ?"))
+        .isEqualTo("card payment\u001fmigros zurich");
   }
 
   @Test

@@ -35,11 +35,8 @@ import org.springframework.stereotype.Repository;
 public interface TransactionRepository
     extends JpaRepository<Transaction, UUID>, JpaSpecificationExecutor<Transaction> {
 
-  /** The escape character of {@link #searchedBy}'s LIKE pattern. */
+  /** The escape character of V114's {@code search_like_pattern}. */
   char LIKE_ESCAPE = '\\';
-
-  /** The characters LIKE gives a meaning: its two wildcards and the escape character itself. */
-  String LIKE_SPECIAL_CHARACTERS = "\\%_";
 
   /**
    * US-07-35 (#382): the rows of the workspace-wide list - {@code workspaceId}'s rows matching
@@ -118,32 +115,15 @@ public interface TransactionRepository
     }
   }
 
-  // The same expression V114's trigram index is built on, so the index serves the LIKE; q is
-  // folded by the database's own function, so both sides fold alike.
+  // V114's stored search_text (folded once per write), matched against q folded and escaped by
+  // search_like_pattern: folding before escaping, so nothing the fold produces is a wildcard. No
+  // index can serve this under row-level security (see V114); the workspace's rows come from its
+  // order indexes.
   private static Predicate matchesSearch(
       Root<Transaction> root, CriteriaBuilder builder, String q) {
-    Expression<String> searchText =
-        builder.function(
-            "transaction_search_text",
-            String.class,
-            root.get("merchantDescription"),
-            root.get("counterpartyName"));
-    Expression<String> folded =
-        builder.function("search_fold", String.class, builder.literal(escapeLike(q)));
-    return builder.like(searchText, builder.concat(builder.concat("%", folded), "%"), LIKE_ESCAPE);
-  }
-
-  /** {@code q} with LIKE's wildcards and the escape character taken literally. */
-  static String escapeLike(String q) {
-    StringBuilder escaped = new StringBuilder(q.length() + 8);
-    for (int i = 0; i < q.length(); i++) {
-      char c = q.charAt(i);
-      if (LIKE_SPECIAL_CHARACTERS.indexOf(c) >= 0) {
-        escaped.append(LIKE_ESCAPE);
-      }
-      escaped.append(c);
-    }
-    return escaped.toString();
+    Expression<String> pattern =
+        builder.function("search_like_pattern", String.class, builder.literal(q));
+    return builder.like(root.get("searchText"), pattern, LIKE_ESCAPE);
   }
 
   String ACCOUNT_ID = "accountId";

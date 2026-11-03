@@ -128,17 +128,19 @@ public class ImportLedgerRowService {
 
   /**
    * The row's counterparty as the ledger stores it (US-07-35): at most {@value
-   * CreateTransactionRequest#COUNTERPARTY_NAME_MAX_LENGTH} characters, so a member can still
-   * correct the row with the request it read; the full text stays in {@code raw_source_data}. Cut
-   * at a code point, never inside a surrogate pair.
+   * CreateTransactionRequest#COUNTERPARTY_NAME_MAX_LENGTH} UTF-16 code units - what the request's
+   * {@code @Size} counts - so a member can still correct the row with the request it read; the full
+   * text stays in {@code raw_source_data}. Never cut inside a surrogate pair. V113's backfill cuts
+   * the same way.
    */
   public static String ledgerCounterpartyName(CanonicalImportRow row) {
     String name = row.counterpartyName();
     int max = CreateTransactionRequest.COUNTERPARTY_NAME_MAX_LENGTH;
-    if (name == null || name.codePointCount(0, name.length()) <= max) {
+    if (name == null || name.length() <= max) {
       return name;
     }
-    return name.substring(0, name.offsetByCodePoints(0, max));
+    int end = Character.isHighSurrogate(name.charAt(max - 1)) ? max - 1 : max;
+    return name.substring(0, end);
   }
 
   /**

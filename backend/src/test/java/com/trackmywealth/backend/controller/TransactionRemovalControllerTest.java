@@ -293,7 +293,7 @@ class TransactionRemovalControllerTest {
     assertThat(renamed.transaction().counterpartyName()).isEqualTo("Coop");
     assertThat(renamed.transaction().version()).isGreaterThan(original.version());
 
-    // The correction is the row's whole desired state: leaving the name out clears it.
+    // A blank name removes it (omitted would keep it, see the next test).
     TransactionCorrectionResponse cleared =
         correct(
             token,
@@ -311,6 +311,47 @@ class TransactionRemovalControllerTest {
     assertThat(cleared.transaction().id()).isEqualTo(original.id());
     assertThat(cleared.transaction().counterpartyName()).isNull();
     assertThat(countRows(card.id())).isEqualTo(1);
+  }
+
+  @Test
+  void aCorrectionThatOmitsTheCounterpartyNameKeepsIt() {
+    // A client that predates the field sends none: it must not erase an imported counterparty.
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original =
+        record(
+            token,
+            card.id(),
+            TransactionRequests.withCounterpartyName(purchase("-85.00"), "Migros"));
+
+    TransactionCorrectionResponse notesOnly =
+        correct(
+            token,
+            card.id(),
+            original.id(),
+            correction(
+                original, "-85.00", null, original.merchantDescription(), "Lunch", null, null));
+
+    assertThat(notesOnly.removal()).isNull();
+    assertThat(notesOnly.transaction().notes()).isEqualTo("Lunch");
+    assertThat(notesOnly.transaction().counterpartyName()).isEqualTo("Migros");
+
+    TransactionCorrectionResponse replaced =
+        correct(
+            token,
+            card.id(),
+            original.id(),
+            correction(
+                notesOnly.transaction(),
+                "-80.00",
+                "Wrong amount",
+                original.merchantDescription(),
+                null,
+                null,
+                null));
+
+    assertThat(replaced.removal()).isNotNull();
+    assertThat(replaced.transaction().counterpartyName()).isEqualTo("Migros");
   }
 
   @Test

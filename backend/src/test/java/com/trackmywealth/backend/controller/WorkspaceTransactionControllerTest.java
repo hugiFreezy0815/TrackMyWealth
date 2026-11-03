@@ -308,6 +308,30 @@ class WorkspaceTransactionControllerTest {
         .extracting(TransactionResponse::id)
         .containsExactly(underscore.id());
     assertThat(list(token, "?q=  ").content()).as("a blank q is no filter").hasSize(4);
+    // U+FF05 (fullwidth percent) folds to "%": escaped after folding, it is no wildcard either.
+    assertThat(list(token, "?q=100\uFF05").content())
+        .extracting(TransactionResponse::id)
+        .containsExactly(percent.id());
+  }
+
+  @Test
+  void qIgnoresSurroundingSpaceAndNeverMatchesAcrossTheTwoFields() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse checking = createAccount(token, "Checking", "CASH", "CHF", null);
+    TransactionResponse migros =
+        record(
+            token,
+            checking.id(),
+            TransactionRequests.withCounterpartyName(
+                expense(DAY_1, "-5.00", "Einkauf AG"), "Migros"));
+
+    assertThat(list(token, "?q= migros ").content())
+        .as("a keyboard's trailing or leading space")
+        .extracting(TransactionResponse::id)
+        .containsExactly(migros.id());
+    assertThat(list(token, "?q=AG Migros").content())
+        .as("the end of the description and the start of the counterparty are not one text")
+        .isEmpty();
   }
 
   @Test
@@ -324,6 +348,8 @@ class WorkspaceTransactionControllerTest {
             "?bookingDateFrom=" + DAY_3 + "&bookingDateTo=" + DAY_1,
             "?q=" + "x".repeat(101),
             "?currency=chf",
+            "?currency=XYZ",
+            "?q=a\u001Fb",
             tooManyAccounts)) {
       client(token)
           .get()

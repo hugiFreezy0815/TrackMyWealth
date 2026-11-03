@@ -101,6 +101,13 @@ public class Transaction {
   @Column(name = "counterparty_name")
   private String counterpartyName;
 
+  // US-07-35 (V114): the folded description and counterparty the workspace list's q is matched
+  // against, a generated column. Mapped only so a query can name it: never written, and (unlike
+  // amountInAccountCurrency, no @Generated) not read back after a write, which would cost a select
+  // per row - so there is deliberately no getter.
+  @Column(name = "search_text", insertable = false, updatable = false)
+  private String searchText;
+
   private String notes;
 
   @Column(nullable = false)

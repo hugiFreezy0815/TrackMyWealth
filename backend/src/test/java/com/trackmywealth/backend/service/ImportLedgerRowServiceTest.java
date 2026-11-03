@@ -98,14 +98,35 @@ class ImportLedgerRowServiceTest {
   @Test
   void theCutNeverSplitsACharacterOutsideTheBasicPlane() {
     int max = CreateTransactionRequest.COUNTERPARTY_NAME_MAX_LENGTH;
-    // U+1F3E6 (bank) is two UTF-16 units; cutting by units at 255 would leave half of one.
+    // U+1F3E6 (bank) is two UTF-16 units. The request's @Size counts units, so the cut does too,
+    // and stops before a pair it would otherwise split: "x" plus 127 banks is 255 units.
     String bank = new String(Character.toChars(0x1F3E6));
     String name = "x" + bank.repeat(max);
 
     String stored = service.request(row(null, name)).counterpartyName();
 
-    assertThat(stored.codePointCount(0, stored.length())).isEqualTo(max);
-    assertThat(stored).isEqualTo("x" + bank.repeat(max - 1));
+    assertThat(stored).isEqualTo("x" + bank.repeat(127));
+    assertThat(stored.length()).isEqualTo(max);
+  }
+
+  @Test
+  void aCutThatWouldEndInsideAPairDropsTheWholeCharacter() {
+    int max = CreateTransactionRequest.COUNTERPARTY_NAME_MAX_LENGTH;
+    String bank = new String(Character.toChars(0x1F3E6));
+    // 254 units of text, then a pair whose first half would be unit 255.
+    String name = "y".repeat(max - 1) + bank;
+
+    String stored = service.request(row(null, name)).counterpartyName();
+
+    assertThat(stored).isEqualTo("y".repeat(max - 1));
+  }
+
+  @Test
+  void anAstralNameThatFitsARequestIsStoredWhole() {
+    String bank = new String(Character.toChars(0x1F3E6));
+    String name = bank.repeat(127);
+
+    assertThat(service.request(row(null, name)).counterpartyName()).isEqualTo(name);
   }
 
   @Test

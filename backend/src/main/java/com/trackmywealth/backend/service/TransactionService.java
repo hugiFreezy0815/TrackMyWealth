@@ -43,6 +43,7 @@ import java.util.stream.Stream;
 import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -705,19 +706,8 @@ public class TransactionService {
                     PagingValues.requireBounded(pageable, PAGE_TIE_BREAKER))
             : transactionRepository.findByAccountId(
                 accountId, PagingValues.requireBounded(pageable, PAGE_TIE_BREAKER));
-    Map<UUID, String> assignments = latestAssignments(page.getContent());
-    Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(page.getContent());
-    Map<UUID, String> adjustmentStates =
-        reconciliationAdjustmentService.adjustmentStates(page.getContent());
-    Map<UUID, String> accountNames = accountNames(page.getContent());
-    return page.map(
-        transaction ->
-            toResponse(
-                transaction,
-                assignments.get(transaction.getId()),
-                openingBalanceDates,
-                adjustmentStates,
-                accountNames));
+    return new PageImpl<>(
+        toResponses(page.getContent()), page.getPageable(), page.getTotalElements());
   }
 
   // How each row got its category, for a whole page in one query.

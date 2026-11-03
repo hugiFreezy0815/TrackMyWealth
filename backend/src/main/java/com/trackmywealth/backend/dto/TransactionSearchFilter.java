@@ -19,7 +19,9 @@ import java.util.UUID;
  *   <li>{@code uncategorized} - only rows in UNCATEGORIZED that still need a category (not voided,
  *       not a reversal): the actionable inbox of FR-CAT-013, across accounts.
  *   <li>{@code q} - contained in the description or the counterparty name, ignoring case and
- *       accents; {@code %} and {@code _} match themselves. Blank counts as not sent.
+ *       accents; {@code %} and {@code _} match themselves. Leading and trailing white space is
+ *       ignored, and blank counts as not sent. It never matches across the end of the description
+ *       and the start of the counterparty; control characters are rejected.
  *   <li>{@code amountMin}, {@code amountMax} - inclusive, signed, in the account's currency (the
  *       value {@code sort=amount} orders by), whatever the booking's currency.
  *   <li>{@code currency} - the booking's own currency.
@@ -47,6 +49,6 @@ public record TransactionSearchFilter(
     accountIds = Collections.unmodifiableList(new ArrayList<>(accountIds));
     portfolioIds = Collections.unmodifiableList(new ArrayList<>(portfolioIds));
     categoryIds = Collections.unmodifiableList(new ArrayList<>(categoryIds));
-    q = RequestStrings.blankToNull(q);
+    q = RequestStrings.blankToNull(q == null ? null : q.strip());
   }
 }

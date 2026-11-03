@@ -6,8 +6,8 @@ import com.trackmywealth.backend.dto.TransactionSearchFilter;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.util.List;
-import java.util.regex.Pattern;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -26,7 +26,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class TransactionSearchService {
 
   private static final String PAGE_TIE_BREAKER = "id";
-  private static final Pattern CURRENCY_CODE = Pattern.compile("[A-Z]{3}");
 
   private final AccessControlService accessControlService;
   private final TransactionRepository transactionRepository;
@@ -92,8 +91,14 @@ public class TransactionSearchService {
       throw badRequest(
           "q must be at most " + TransactionSearchFilter.MAX_QUERY_LENGTH + " characters long.");
     }
-    if (filter.currency() != null && !CURRENCY_CODE.matcher(filter.currency()).matches()) {
-      throw badRequest("currency must be a three-letter ISO 4217 code such as CHF.");
+    // V114 joins description and counterparty with U+001F; a q that could contain it would match
+    // across the two fields. No one types a control character into a search box.
+    if (filter.q() != null && filter.q().chars().anyMatch(Character::isISOControl)) {
+      throw badRequest("q must not contain control characters.");
+    }
+    if (filter.currency() != null) {
+      // The API's one ISO 4217 check, as for every other currency a request names.
+      CurrencyCodes.requireValid(filter.currency(), "currency");
     }
   }
 

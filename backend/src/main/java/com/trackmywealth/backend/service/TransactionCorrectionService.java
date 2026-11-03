@@ -89,8 +89,12 @@ public class TransactionCorrectionService {
     // A client that sends back the row it read echoes a server-estimated rate as if it were an
     // explicit one. Unchanged, it is not a disclosed rate: left out, it counts as "derive it", so
     // a description edit stays in place and a replacement estimates its own rate again.
+    // An omitted counterparty name keeps the original's (a client that predates the field must not
+    // erase an imported one); from here on the request says exactly what the row should carry.
+    CorrectTransactionRequest resolved =
+        request.withCounterpartyNameResolved(original.getCounterpartyName());
     CorrectTransactionRequest desired =
-        echoesEstimatedRate(original, request) ? request.withoutFxRate() : request;
+        echoesEstimatedRate(original, resolved) ? resolved.withoutFxRate() : resolved;
 
     UUID targetAccountId =
         desired.targetAccountId() == null ? sourceAccount.getId() : desired.targetAccountId();
