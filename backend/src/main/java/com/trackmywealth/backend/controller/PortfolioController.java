@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
+import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
@@ -13,6 +14,7 @@ import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -44,6 +46,25 @@ public class PortfolioController {
       PortfolioService portfolioService, PortfolioViewService portfolioViewService) {
     this.portfolioService = portfolioService;
     this.portfolioViewService = portfolioViewService;
+  }
+
+  /**
+   * US-04-05 (#381): every active portfolio of the workspace with its totals, in tab order. A
+   * bounded list, deliberately not paged: a workspace holds a handful of portfolios.
+   */
+  @Operation(
+      operationId = "listPortfolios",
+      summary = "List the workspace's portfolios with their totals",
+      description =
+          "Every active portfolio of the workspace, the Personal Assets default included, in"
+              + " creation order. Not paged: a workspace holds a handful of portfolios. Each row"
+              + " has the number of active accounts and their signed total (assets positive,"
+              + " liabilities negative) in the portfolio's and the workspace's currency, from the"
+              + " same valuation as the Portfolio View and net worth.")
+  @GetMapping
+  public List<PortfolioListItemResponse> listPortfolios(
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return portfolioService.listPortfolios(actor);
   }
 
   @Operation(operationId = "createPortfolio", summary = "Create a portfolio")

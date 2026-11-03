@@ -2,10 +2,13 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
+import com.trackmywealth.backend.dto.MultiCurrencyValuations;
+import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse.AccountContribution;
+import com.trackmywealth.backend.dto.PortfolioTotals;
 import com.trackmywealth.backend.dto.PortfolioType;
 import com.trackmywealth.backend.dto.UpdatePortfolioRequest;
 import com.trackmywealth.backend.entity.Account;
@@ -20,11 +23,14 @@ import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +63,9 @@ public class PortfolioService {
 
   private static final String ACTIVE = "ACTIVE";
   private static final String ASSET = "ASSET";
+  // US-04-05: the tab order is the creation order until the member can reorder them; the id makes
+  // it unique. The Personal Assets default comes first, created with the workspace (V19).
+  private static final Sort LIST_ORDER = Sort.by("createdAt", "id");
   // Names the resource in a 412 VERSION_CONFLICT detail (VersionPreconditionService).
   private static final String VERSIONED_RESOURCE = "portfolio";
 
@@ -122,6 +131,110 @@ public class PortfolioService {
     Portfolio portfolio = portfolioLookupService.findPortfolioOrThrow(portfolioId, actor);
     accessControlService.requirePortfolioAccess(actor, portfolio);
     return toResponse(portfolio);
+  }
+
+  /**
+   * US-04-05 (#381): every active portfolio of the workspace with its active accounts' count and
+   * totals, for the portfolio tabs. A bounded list, deliberately not paged: a workspace holds a
+   * handful of portfolios. Every active member sees all of them (US-03-06).
+   *
+   * <p>No second calculation path: every active account of the workspace is valued once by {@link
+   * AccountValuationService#valueAllIn}, in the workspace's currency and every portfolio's, and
+   * each portfolio's totals are the same {@link PortfolioTotals} as its View's. The number of
+   * queries does not grow with the number of portfolios or accounts.
+   */
+  @Transactional(readOnly = true)
+  public List<PortfolioListItemResponse> listPortfolios(AuthenticatedUserPrincipal actor) {
+    accessControlService.requireWorkspaceAccess(actor, actor.workspaceId());
+    List<Portfolio> portfolios =
+        portfolioRepository.findByWorkspaceIdAndStatus(actor.workspaceId(), ACTIVE, LIST_ORDER);
+    if (portfolios.isEmpty()) {
+      // Not reachable while V19 gives every workspace its Personal Assets portfolio.
+      return List.of();
+    }
+
+    String workspaceCurrency = portfolios.get(0).getWorkspace().getCurrency();
+    Set<String> currencies = new LinkedHashSet<>();
+    currencies.add(workspaceCurrency);
+    portfolios.forEach(portfolio -> currencies.add(portfolio.getPortfolioCurrency()));
+    LocalDate asOf = businessDateService.today();
+
+    List<Account> accounts =
+        accountRepository.findByWorkspaceIdAndStatusOrderByCreatedAtAsc(
+            actor.workspaceId(), ACTIVE);
+    Map<UUID, List<Integer>> accountsByPortfolio = new HashMap<>();
+    for (int i = 0; i < accounts.size(); i++) {
+      accountsByPortfolio
+          .computeIfAbsent(accounts.get(i).getPortfolio().getId(), key -> new ArrayList<>())
+          .add(i);
+    }
+    // A workspace without accounts has nothing to value, and runs no query for it.
+    MultiCurrencyValuations valuations =
+        accounts.isEmpty()
+            ? MultiCurrencyValuations.none(currencies)
+            : accountValuationService.valueAllIn(accounts, currencies, asOf);
+    Map<UUID, PortfolioPlacement> placements = accountService.portfolioPlacementsOf(accounts);
+
+    List<PortfolioListItemResponse> rows = new ArrayList<>(portfolios.size());
+    for (Portfolio portfolio : portfolios) {
+      List<Integer> indexes = accountsByPortfolio.getOrDefault(portfolio.getId(), List.of());
+      List<AccountValuation> inPortfolio =
+          valuationsAt(valuations, portfolio.getPortfolioCurrency(), indexes);
+      List<AccountValuation> inWorkspace = valuationsAt(valuations, workspaceCurrency, indexes);
+      PortfolioType type =
+          PortfolioType.of(
+              portfolio.getPortfolioTypeOverride(),
+              portfolio.isPersonalAssetsDefault(),
+              indexes.stream()
+                  .map(i -> placements.get(accounts.get(i).getId()).section())
+                  .toList());
+      rows.add(
+          toListItem(
+              portfolio,
+              type,
+              indexes.size(),
+              PortfolioTotals.of(inPortfolio, inWorkspace),
+              workspaceCurrency,
+              asOf));
+    }
+    return rows;
+  }
+
+  // The valuations (in the order the accounts were given to valueAllIn) at the given positions.
+  private static List<AccountValuation> valuationsAt(
+      MultiCurrencyValuations valuations, String currency, List<Integer> indexes) {
+    List<AccountValuation> inCurrency = valuations.in(currency);
+    return indexes.stream().map(inCurrency::get).toList();
+  }
+
+  private static PortfolioListItemResponse toListItem(
+      Portfolio portfolio,
+      PortfolioType type,
+      int activeAccountCount,
+      PortfolioTotals totals,
+      String workspaceCurrency,
+      LocalDate asOf) {
+    return new PortfolioListItemResponse(
+        portfolio.getId(),
+        VersionPreconditionService.persistedVersion(portfolio.getVersion(), VERSIONED_RESOURCE),
+        portfolio.getName(),
+        portfolio.getCatalogueInstitution() != null
+            ? portfolio.getCatalogueInstitution().getId()
+            : null,
+        portfolio.getInstitutionType(),
+        portfolio.getCountry(),
+        portfolio.getLogoUrl(),
+        type,
+        portfolio.getPortfolioTypeOverride() != null,
+        portfolio.isPersonalAssetsDefault(),
+        activeAccountCount,
+        portfolio.getPortfolioCurrency(),
+        totals.total(),
+        workspaceCurrency,
+        totals.totalInWorkspaceCurrency(),
+        totals.complete(),
+        totals.valueStatus(),
+        asOf);
   }
 
   /**

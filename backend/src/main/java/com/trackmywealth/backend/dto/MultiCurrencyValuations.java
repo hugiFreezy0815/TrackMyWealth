@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.dto;
 
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,13 @@ public record MultiCurrencyValuations(
     byCurrency.forEach((currency, valuations) -> copy.put(currency, List.copyOf(valuations)));
     byCurrency = Map.copyOf(copy);
     inOwnCurrency = List.copyOf(inOwnCurrency);
+  }
+
+  /** No accounts, valued in each of {@code currencies}: every list is empty. */
+  public static MultiCurrencyValuations none(Collection<String> currencies) {
+    Map<String, List<AccountValuation>> byCurrency = new LinkedHashMap<>();
+    currencies.forEach(currency -> byCurrency.put(currency, List.of()));
+    return new MultiCurrencyValuations(byCurrency, List.of());
   }
 
   /** The valuations in {@code currency}, which must have been requested. */
