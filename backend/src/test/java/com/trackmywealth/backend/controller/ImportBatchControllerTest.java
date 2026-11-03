@@ -167,7 +167,8 @@ class ImportBatchControllerTest {
               "DELETE FROM app_user",
               "DELETE FROM workspace_member",
               "DELETE FROM portfolio",
-              "DELETE FROM workspace")) {
+              "DELETE FROM workspace",
+              LedgerCleanup.SETTLE_LEDGER_STATISTICS)) {
         statement.execute(sql);
       }
     }
