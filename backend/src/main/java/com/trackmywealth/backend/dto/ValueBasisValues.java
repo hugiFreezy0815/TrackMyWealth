@@ -58,7 +58,9 @@ public final class ValueBasisValues {
    * US-07-21: a loan's or mortgage's newest statement balance on or before the as-of date - a loan
    * statement's closing balance, or a snapshot the member recorded - adjusted by its ledger after
    * that date. Measured, not approximate: it replaces {@link #ORIGINAL_PRINCIPAL_LESS_REPAYMENTS}
-   * as soon as a statement exists.
+   * as soon as a statement exists. {@code AccountValuation.valueSourceDate} is the statement's
+   * date; it goes stale once neither the statement nor a payment on the loan since (an instalment,
+   * or a payment's interest) is recent enough (#445).
    */
   public static final String LEDGER_FROM_STATEMENT_BALANCE = "LEDGER_FROM_STATEMENT_BALANCE";
 

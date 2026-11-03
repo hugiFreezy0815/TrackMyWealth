@@ -85,8 +85,9 @@ public record PortfolioViewResponse(
    *     {@code valueKnown} is {@code false}
    * @param valueKnown whether the account has a value in the portfolio's currency, i.e. counts
    *     towards the section's {@code subtotal}; {@code valueStatus} describes that same value
-   * @param valueSourceDate the date of the snapshot or valuation the value rests on, {@code null}
-   *     when it is derived from the ledger or the loan terms ({@link AccountValuation})
+   * @param valueSourceDate the date of the snapshot, valuation or loan statement the value rests
+   *     on, {@code null} when it is derived from the ledger alone or the loan terms ({@link
+   *     AccountValuation})
    * @param positionsCount for an account holding positions: the number of positions in its newest
    *     holdings snapshot; {@code null} when it has none yet
    * @param positionsAsOf the date of that snapshot, so a client can show how old the count is: a

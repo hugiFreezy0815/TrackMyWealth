@@ -187,8 +187,9 @@ that I can find an account and see where my money is.
 - **Value status `STALE`** now also means an out-of-date snapshot or manual valuation: older than
   `app.valuation.snapshot-stale-after` (`VALUATION_SNAPSHOT_STALE_AFTER`, default `P45D`) before
   the valuation date. A value derived from the ledger never goes stale this way, including one
-  the ledger carries forward from a snapshot: an opening balance or a loan statement plus the
-  ledger after it. It applies everywhere value status is shown (Portfolio View, net worth's
+  the ledger carries forward from an opening balance. A loan statement plus the ledger after it
+  goes stale only when no payment has been booked on the loan recently either (US-05-07, #445).
+  It applies everywhere value status is shown (Portfolio View, net worth's
   `ValueStatus`), and the portfolio summary's account contributions carry `valueSourceDate` and
   `valueSourceStale`.
 - **Valuation is batched:** `AccountValuationService` reads every value source in one query for
@@ -200,3 +201,36 @@ that I can find an account and see where my money is.
 **Authorization:** every active member of the workspace sees all its accounts (US-03-06); RLS
 keeps workspaces apart, and another workspace's portfolio matches nothing, like an unknown id.
 **Priority:** MUST. **Size:** M (grew towards L with the batched valuation).
+
+## US-05-07 — Flag a loan or mortgage whose ledger has gone quiet as STALE (#445)
+
+**Actor:** Member.
+**Objective:** A forgotten loan does not pass for a current one.
+**Story:** As a member, I want a loan or mortgage I have stopped recording to be marked out of
+date, so that I do not trust a net worth built on it.
+
+**Implemented (2026-11-03):**
+- A loan or mortgage valued from a statement balance (`LEDGER_FROM_STATEMENT_BALANCE`) is
+  `STALE` when the **newer of** its statement's date and the latest payment on the loan since
+  then, on or before the valuation date, is older than `app.valuation.snapshot-stale-after`
+  before that date. A payment is a live row (neither voided nor a reversal) that is either an
+  instalment's principal on the loan (`DEBT_REPAYMENT`, positive - recorded or imported) or a
+  loan payment's interest on the paying account, which names the loan (US-10-02). So an
+  interest-only or indirectly amortised mortgage is kept current by its interest payments too.
+  Interest or fees charged onto the loan, and reconciliation adjustments, confirm nothing: they
+  are not payments.
+- Same setting as snapshots (default `P45D`): a monthly instalment missed once is tolerated, two
+  are not. No second setting.
+- Its `valueSourceDate` is now the statement's date (it was `null`), so a client can show it.
+- A loan valued from its original principal (no statement) and an opening balance plus its ledger
+  are unchanged: they never go stale.
+- Batched like every value source (#380): one query for the latest payment after each loan
+  statement, none without one. It is separate from the ledger sum after the statement because a
+  payment's interest is booked on the paying account, not on the loan.
+
+**Acceptance criteria:** see #445; covered by `AccountValuationServiceTest` (boundaries,
+valuation date, batching) and `AccountListControllerTest` (against PostgreSQL: instalment,
+interest-only payment, interest charged onto the loan, voided instalment, a payment after the
+valuation date).
+**Dependencies:** US-05-06 (#380).
+**Priority:** SHOULD. **Size:** S.

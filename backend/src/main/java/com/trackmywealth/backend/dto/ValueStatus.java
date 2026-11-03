@@ -10,9 +10,10 @@ import java.util.Collection;
  * calculation path exists: {@code UNKNOWN} when it has no value, {@code UNRECONCILED} while a
  * reconciliation difference is open, {@code STALE} when a carried-forward FX rate is older than
  * {@code app.fx.stale-after} or the snapshot or valuation the value rests on is older than {@code
- * app.valuation.snapshot-stale-after} (#380), {@code ESTIMATED} when the value rests on an
- * approximation ({@link ValueBasisValues#isApproximate}) or leaves out transactions booked before
- * the opening balance.
+ * app.valuation.snapshot-stale-after} (#380) - for a loan statement, unless a payment on the loan
+ * since is recent enough (#445) - {@code ESTIMATED} when the value rests on an approximation
+ * ({@link ValueBasisValues#isApproximate}) or leaves out transactions booked before the opening
+ * balance.
  */
 public enum ValueStatus {
   CURRENT,

@@ -3,6 +3,7 @@ package com.trackmywealth.backend.repository;
 import com.trackmywealth.backend.dto.FuzzyCategoryCandidate;
 import com.trackmywealth.backend.dto.ImportDuplicateCandidate;
 import com.trackmywealth.backend.dto.KeyedAmount;
+import com.trackmywealth.backend.dto.KeyedDate;
 import com.trackmywealth.backend.dto.TransactionSearchFilter;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
@@ -744,6 +745,31 @@ public interface TransactionRepository
           + NOT_VOIDED_OR_REVERSAL)
   boolean existsUnresolvedLoanRepaymentAsOf(
       @Param(ACCOUNT_ID) UUID accountId, @Param(AS_OF) LocalDate asOf);
+
+  /**
+   * #445: keyed by <b>loan statement</b> (a snapshot on a loan or mortgage), the booking date of
+   * the latest payment on that loan after the statement's date, up to {@code asOf} - in one query
+   * for all of them. A payment is a live row (neither voided nor a reversal) that is either an
+   * instalment's principal on the loan's own ledger ({@code DEBT_REPAYMENT}, positive: the leg of a
+   * recorded payment or an imported instalment) or the interest of a loan payment on the paying
+   * account, which names the loan ({@link #NOT_LOAN_INTEREST}'s shape) - so an interest-only or
+   * indirectly amortised mortgage is kept current by its interest. Interest charged onto the loan,
+   * a fee or a reconciliation adjustment is no payment and confirms nothing. A statement without a
+   * payment after it has no entry: it is confirmed by its own date alone.
+   */
+  @Query(
+      "select new com.trackmywealth.backend.dto.KeyedDate(s.id, max(t.bookingDate))"
+          + " from AccountSnapshot s, Transaction t"
+          + " where s.id in :snapshotIds"
+          + " and t.bookingDate > s.snapshotDate and t.bookingDate <= :asOf"
+          + " and ((t.account.id = s.account.id and t.transactionType = 'DEBT_REPAYMENT'"
+          + " and t.amount > 0)"
+          + " or (t.counterpartyAccountId = s.account.id and t.transactionType = 'EXPENSE'"
+          + " and t.internalTransfer = false))"
+          + NOT_VOIDED_OR_REVERSAL
+          + " group by s.id")
+  List<KeyedDate> findLatestLoanPaymentDatesAfterStatements(
+      @Param("snapshotIds") Collection<UUID> snapshotIds, @Param(AS_OF) LocalDate asOf);
 
   /** #380: {@link #existsUnresolvedLoanRepaymentAsOf} for several accounts in one query. */
   @Query(
