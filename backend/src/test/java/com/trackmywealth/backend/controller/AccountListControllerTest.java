@@ -19,6 +19,7 @@ import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -91,9 +92,11 @@ class AccountListControllerTest {
   @BeforeEach
   void cleanDatabase() throws Exception {
     // Plain DELETEs in FK order, as PortfolioControllerTest explains: a TRUNCATE ... CASCADE
-    // would reach the shared institution catalogue. No test here books a transaction.
+    // would reach the shared institution catalogue. The ledger first, through LedgerCleanup.
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
+      statement.execute("DELETE FROM transaction_categorization_log");
+      statement.execute(LedgerCleanup.DELETE_ALL_TRANSACTIONS);
       for (String table :
           List.of(
               "fx_rate",
@@ -290,6 +293,52 @@ class AccountListControllerTest {
     assertThat(row.balanceInWorkspaceCurrency()).isNull();
     assertThat(row.valueStatus()).isEqualTo(ValueStatus.UNKNOWN);
     assertThat(row.valueSourceDate()).isEqualTo(longAgo);
+  }
+
+  // #445: a mortgage's yearly statement is kept current by payments on it - an instalment on its
+  // ledger, or a payment's interest on the paying account. Nothing else booked since an old
+  // statement keeps it current: not interest charged onto the loan, not a voided instalment (nor
+  // its reversal), not an instalment dated after the valuation date.
+  @Test
+  void aMortgageIsKeptCurrentByPaymentsOnItAndGoesStaleWithoutThem() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID current = createAccount(token, cash("Current account", "CHF", null)).id();
+    UUID instalment = mortgage(token, "Instalment");
+    UUID interestOnly = mortgage(token, "Interest only");
+    UUID forgotten = mortgage(token, "Forgotten");
+    UUID charged = mortgage(token, "Interest charged");
+    UUID voided = mortgage(token, "Voided instalment");
+    UUID future = mortgage(token, "Future instalment");
+    LocalDate statementDate = today().minusDays(400);
+    for (UUID mortgage : List.of(instalment, interestOnly, forgotten, charged, voided, future)) {
+      seedSnapshot(mortgage, statementDate, "300000.0000", false);
+    }
+    LocalDate recent = today().minusDays(20);
+    seedLedgerRow(instalment, "DEBT_REPAYMENT", recent, "1500.0000", null);
+    // Indirect amortisation: only the interest is paid, from the current account.
+    seedLedgerRow(current, "EXPENSE", recent, "-375.0000", interestOnly);
+    seedLedgerRow(charged, "EXPENSE", recent, "-375.0000", null);
+    seedVoidedRowWithReversal(voided, "DEBT_REPAYMENT", recent, "1500.0000");
+    seedLedgerRow(future, "DEBT_REPAYMENT", today().plusDays(5), "1500.0000", null);
+
+    Map<UUID, AccountListItemResponse> byId = byId(list(token, ""));
+
+    assertStatus(byId.get(instalment), ValueStatus.CURRENT, "-298500");
+    assertStatus(byId.get(interestOnly), ValueStatus.CURRENT, "-300000");
+    assertStatus(byId.get(forgotten), ValueStatus.STALE, "-300000");
+    assertStatus(byId.get(charged), ValueStatus.STALE, "-300375");
+    assertStatus(byId.get(voided), ValueStatus.STALE, "-300000");
+    assertStatus(byId.get(future), ValueStatus.STALE, "-300000");
+    for (UUID mortgage : List.of(instalment, interestOnly, forgotten, charged, voided, future)) {
+      assertThat(byId.get(mortgage).valueKnown()).isTrue();
+      assertThat(byId.get(mortgage).valueSourceDate()).isEqualTo(statementDate);
+    }
+  }
+
+  private static void assertStatus(
+      AccountListItemResponse row, ValueStatus status, String balance) {
+    assertThat(row.valueStatus()).as(row.name()).isEqualTo(status);
+    assertThat(row.balance()).as(row.name()).isEqualByComparingTo(balance);
   }
 
   @Test
@@ -523,6 +572,57 @@ class AccountListControllerTest {
         date,
         new BigDecimal(balance),
         opening,
+        accountId);
+  }
+
+  private UUID mortgage(String token, String name) {
+    return createAccount(
+            token,
+            AccountRequests.account(name, "MORTGAGE", "CHF")
+                .originalPrincipal(new BigDecimal("400000"))
+                .interestRatePercent(new BigDecimal("1.5"))
+                .build())
+        .id();
+  }
+
+  // A live row on the account's ledger, naming counterpartyAccountId (or none). An imported
+  // instalment is a positive DEBT_REPAYMENT; a loan payment's interest an EXPENSE on the paying
+  // account that names the loan.
+  private void seedLedgerRow(
+      UUID accountId, String type, LocalDate date, String amount, UUID counterpartyAccountId)
+      throws Exception {
+    execute(
+        "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+            + " amount, currency, counterparty_account_id) SELECT workspace_id, id, ?, ?, ?,"
+            + " native_currency, ? FROM account WHERE id = ?",
+        type,
+        date,
+        new BigDecimal(amount),
+        counterpartyAccountId,
+        accountId);
+  }
+
+  // A voided row and the reversal that cancels it, as a void writes them (US-07-02).
+  private void seedVoidedRowWithReversal(UUID accountId, String type, LocalDate date, String amount)
+      throws Exception {
+    UUID original = UUID.randomUUID();
+    execute(
+        "INSERT INTO transaction (id, workspace_id, account_id, transaction_type, booking_date,"
+            + " amount, currency, voided_at, void_reason) SELECT ?, workspace_id, id, ?, ?, ?,"
+            + " native_currency, now(), 'Booked twice' FROM account WHERE id = ?",
+        original,
+        type,
+        date,
+        new BigDecimal(amount),
+        accountId);
+    execute(
+        "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+            + " amount, currency, replaces_transaction_id) SELECT workspace_id, id, ?, ?, ?,"
+            + " native_currency, ? FROM account WHERE id = ?",
+        type,
+        date,
+        new BigDecimal(amount).negate(),
+        original,
         accountId);
   }
 
