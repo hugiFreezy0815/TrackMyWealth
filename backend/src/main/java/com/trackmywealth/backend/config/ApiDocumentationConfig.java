@@ -199,10 +199,14 @@ public class ApiDocumentationConfig {
   /**
    * US-29-02 (#372): an endpoint marked {@link SuccessStatus} documents the statuses it declares in
    * place of springdoc's generated 200, which is all springdoc can infer from a {@code
-   * ResponseEntity}. Each gets its own copy of the generated response's maps - media types,
-   * headers, links, examples, encodings and extensions - so adding to or removing from one leaves
-   * the others alone; the objects in them (schemas, headers) stay shared, as springdoc shares them
-   * between operations. A 204 has no body.
+   * ResponseEntity}. A declared status springdoc already generated itself ({@code @ResponseStatus}
+   * or an explicit {@code @ApiResponse}) starts from that response, with its description; every
+   * other one starts from the generated 200 or, without one, from the first declared status
+   * springdoc generated, and takes the status's reason phrase - so a find-or-create's 200 keeps the
+   * body of its generated 201. Each gets its own copy of its source's maps - media types, headers,
+   * links, examples, encodings and extensions - so adding to or removing from one leaves the others
+   * alone; the objects in them (schemas, headers) stay shared, as springdoc shares them between
+   * operations. A 204 has no body.
    */
   @Bean
   OperationCustomizer successStatusResponses() {
@@ -218,15 +222,29 @@ public class ApiDocumentationConfig {
   private static void documentSuccessStatuses(
       Map<String, ApiResponse> responses, HttpStatus... statuses) {
     ApiResponse generated = responses.remove(OK);
+    ApiResponse template = generated != null ? generated : firstGenerated(responses, statuses);
     for (HttpStatus status : statuses) {
       String code = String.valueOf(status.value());
-      // Without a 200, springdoc generated the declared status itself (@ResponseStatus or an
-      // explicit @ApiResponse): keep that response's body and headers rather than dropping them.
-      ApiResponse source = generated != null ? generated : responses.get(code);
+      ApiResponse own = status == HttpStatus.OK ? generated : responses.get(code);
+      ApiResponse source = own != null ? own : template;
       ApiResponse response =
           source == null ? new ApiResponse() : copyOf(source, status != HttpStatus.NO_CONTENT);
-      responses.put(code, response.description(status.getReasonPhrase()));
+      // Only a status's own response describes it; a template's description is another status's.
+      boolean ownDescription =
+          own != null && own.getDescription() != null && !own.getDescription().isBlank();
+      responses.put(
+          code,
+          response.description(ownDescription ? own.getDescription() : status.getReasonPhrase()));
     }
+  }
+
+  private static ApiResponse firstGenerated(
+      Map<String, ApiResponse> responses, HttpStatus... statuses) {
+    return Arrays.stream(statuses)
+        .map(status -> responses.get(String.valueOf(status.value())))
+        .filter(Objects::nonNull)
+        .findFirst()
+        .orElse(null);
   }
 
   private static ApiResponse copyOf(ApiResponse generated, boolean withBody) {
