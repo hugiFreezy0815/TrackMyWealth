@@ -2,6 +2,8 @@ package com.trackmywealth.backend.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
@@ -17,6 +19,7 @@ import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -24,8 +27,8 @@ import org.springframework.web.method.HandlerMethod;
 
 /**
  * US-29-02 (#372): what {@link ApiDocumentationConfig} adds to the contract beyond springdoc - the
- * declared success statuses in place of the generated 200, and the bearer token every operation
- * outside the public set requires.
+ * declared success statuses in place of the generated 200, the declared response headers (US-29-09,
+ * #455), and the bearer token every operation outside the public set requires.
  */
 class ApiDocumentationContractTest {
 
@@ -179,6 +182,70 @@ class ApiDocumentationContractTest {
   }
 
   @Test
+  void eachDeclaredHeaderIsReferencedOnTheSuccessStatusesItComesWith()
+      throws NoSuchMethodException {
+    Operation operation = new Operation().responses(new ApiResponses());
+    operation.getResponses().addApiResponse("200", new ApiResponse().description("OK"));
+    operation.getResponses().addApiResponse("default", new ApiResponse());
+    operation.getResponses().addApiResponse("409", new ApiResponse());
+
+    config.successStatusResponses().customize(operation, handler("findOrCreateVersioned"));
+
+    ApiResponses responses = operation.getResponses();
+    assertThat(responses.get("201").getHeaders()).containsOnlyKeys("ETag", "Location");
+    assertThat(responses.get("201").getHeaders().get("Location").get$ref())
+        .isEqualTo("#/components/headers/Location");
+    assertThat(responses.get("200").getHeaders()).containsOnlyKeys("ETag");
+    assertThat(responses.get("200").getHeaders().get("ETag").get$ref())
+        .isEqualTo("#/components/headers/ETag");
+    // Neither an error nor the catch-all response carries them.
+    assertThat(responses.get("default").getHeaders()).isNull();
+    assertThat(responses.get("409").getHeaders()).isNull();
+  }
+
+  @Test
+  void aNoContentResponseGetsNoETag() throws NoSuchMethodException {
+    Operation operation =
+        new Operation()
+            .responses(new ApiResponses().addApiResponse("200", new ApiResponse().description("")));
+
+    config.successStatusResponses().customize(operation, handler("removed"));
+
+    assertThat(operation.getResponses()).containsOnlyKeys("204");
+    assertThat(operation.getResponses().get("204").getHeaders()).isNull();
+  }
+
+  @Test
+  void aHeaderLandsOnlyOnItsOwnResponseWhenSpringdocSharesTheHeadersMap()
+      throws NoSuchMethodException {
+    Map<String, Header> shared = new LinkedHashMap<>();
+    ApiResponse other = new ApiResponse().headers(shared);
+    Operation operation =
+        new Operation()
+            .responses(new ApiResponses().addApiResponse("200", new ApiResponse().headers(shared)));
+
+    config.successStatusResponses().customize(operation, handler("versioned"));
+
+    assertThat(operation.getResponses().get("200").getHeaders()).containsOnlyKeys("ETag");
+    assertThat(other.getHeaders()).isEmpty();
+  }
+
+  @Test
+  void theSharedHeadersAreRequiredComponentsAndTheETagNamesIfMatch() {
+    OpenAPI openApi = new OpenAPI();
+
+    config.apiWireConventions().customise(openApi);
+
+    Map<String, Header> headers = openApi.getComponents().getHeaders();
+    assertThat(headers).containsOnlyKeys("ETag", "Location");
+    assertThat(headers.get("ETag").getRequired()).isTrue();
+    assertThat(headers.get("ETag").getDescription()).contains("If-Match");
+    assertThat(headers.get("ETag").getSchema().getType()).isEqualTo("string");
+    assertThat(headers.get("Location").getRequired()).isTrue();
+    assertThat(headers.get("Location").getSchema().getFormat()).isEqualTo("uri-reference");
+  }
+
+  @Test
   void everyOperationNeedsTheBearerTokenExceptSetUpAndAuthenticationAndAdminOnesMayBeForbidden() {
     OpenAPI openApi =
         new OpenAPI()
@@ -260,5 +327,16 @@ class ApiDocumentationContractTest {
     void created() {}
 
     void plain() {}
+
+    @SendsHeaders(ResponseHeader.ETAG)
+    void versioned() {}
+
+    @SuccessStatus({HttpStatus.CREATED, HttpStatus.OK})
+    @SendsHeaders({ResponseHeader.ETAG, ResponseHeader.LOCATION})
+    void findOrCreateVersioned() {}
+
+    @SuccessStatus(HttpStatus.NO_CONTENT)
+    @SendsHeaders(ResponseHeader.ETAG)
+    void removed() {}
   }
 }

@@ -5,6 +5,7 @@ import com.tngtech.archunit.core.domain.JavaCodeUnit;
 import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.domain.JavaMethodReference;
+import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.VersionedResponse;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -36,8 +38,16 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * ResponseEntity.status(int)}, {@code new ResponseEntity<>(body, int)}, {@code HttpStatus.valueOf})
  * is reported as {@link #unreadable}. A {@code ResponseEntity} built in another class stays unseen;
  * {@code DocumentedSuccessStatusFilter} checks the status actually sent, in every test request.
+ *
+ * <p>US-29-09 (#455): the same walk collects the {@link ResponseHeader}s the handler {@link
+ * #sends}: a {@link VersionedResponse} factory or an {@code eTag(..)} on a response builder sends
+ * the {@code ETag}, {@code ResponseEntity.created(uri)} or a {@code location(..)} the {@code
+ * Location}, and so do {@link HttpHeaders#setETag} and {@link HttpHeaders#setLocation}. A header
+ * set by name ({@code header("ETag", ..)}) is invisible here: javac inlines the name; the runtime
+ * check sees it.
  */
-record SuccessStatusEvidence(Set<HttpStatus> answered, List<String> unreadable) {
+record SuccessStatusEvidence(
+    Set<HttpStatus> answered, List<String> unreadable, Set<ResponseHeader> sends) {
 
   private static final Map<String, HttpStatus> STATUS_FACTORIES =
       Map.of(
@@ -55,14 +65,30 @@ record SuccessStatusEvidence(Set<HttpStatus> answered, List<String> unreadable) 
           HttpStatus.class.getName() + "#resolve",
           HttpStatusCode.class.getName() + "#valueOf");
 
+  private static final Map<String, ResponseHeader> HEADER_FACTORIES =
+      Map.of(
+          ResponseEntity.class.getName() + "#created", ResponseHeader.LOCATION,
+          VersionedResponse.class.getName() + "#ok", ResponseHeader.ETAG,
+          VersionedResponse.class.getName() + "#created", ResponseHeader.ETAG,
+          HttpHeaders.class.getName() + "#setETag", ResponseHeader.ETAG,
+          HttpHeaders.class.getName() + "#setLocation", ResponseHeader.LOCATION);
+
+  // Methods of ResponseEntity.HeadersBuilder, also when called through a BodyBuilder.
+  private static final Map<String, ResponseHeader> HEADER_BUILDER_METHODS =
+      Map.of("eTag", ResponseHeader.ETAG, "location", ResponseHeader.LOCATION);
+
   SuccessStatusEvidence {
     answered = Collections.unmodifiableSet(EnumSet.copyOf(answered));
     unreadable = List.copyOf(unreadable);
+    sends =
+        Collections.unmodifiableSet(
+            sends.isEmpty() ? EnumSet.noneOf(ResponseHeader.class) : EnumSet.copyOf(sends));
   }
 
   static SuccessStatusEvidence of(JavaMethod handler) {
     Set<HttpStatus> answered = EnumSet.noneOf(HttpStatus.class);
     List<String> unreadable = new ArrayList<>();
+    Set<ResponseHeader> sends = EnumSet.noneOf(ResponseHeader.class);
     implicitStatus(handler).ifPresent(answered::add);
 
     // The handler's class and the ones it inherits from: a helper may live in a base controller.
@@ -102,6 +128,7 @@ record SuccessStatusEvidence(Set<HttpStatus> answered, List<String> unreadable) 
       }
       for (CodeUnitTarget target : targets) {
         String name = target.owner().getName() + "#" + target.name();
+        sentHeader(target, name).ifPresent(sends::add);
         HttpStatus factoryStatus = STATUS_FACTORIES.get(name);
         if (factoryStatus != null) {
           answered.add(factoryStatus);
@@ -117,7 +144,18 @@ record SuccessStatusEvidence(Set<HttpStatus> answered, List<String> unreadable) 
           .filter(call -> takesAnInt(call.getTarget().getRawParameterTypes()))
           .forEach(call -> unreadable.add(unit.getName() + " calls new ResponseEntity(..., int)"));
     }
-    return new SuccessStatusEvidence(answered, unreadable);
+    return new SuccessStatusEvidence(answered, unreadable, sends);
+  }
+
+  private static Optional<ResponseHeader> sentHeader(CodeUnitTarget target, String name) {
+    ResponseHeader factory = HEADER_FACTORIES.get(name);
+    if (factory != null) {
+      return Optional.of(factory);
+    }
+    if (target.owner().isAssignableTo(ResponseEntity.HeadersBuilder.class)) {
+      return Optional.ofNullable(HEADER_BUILDER_METHODS.get(target.name()));
+    }
+    return Optional.empty();
   }
 
   private record CodeUnitTarget(

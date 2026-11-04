@@ -7,6 +7,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.OpeningBalanceService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -44,6 +46,7 @@ public class OpeningBalanceController {
   @Operation(operationId = "getOpeningBalance", summary = "Read an account's opening balance")
   @ProblemCodes({ProblemCode.OPENING_BALANCE_NOT_RECORDED})
   @GetMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<OpeningBalanceResponse> getOpeningBalance(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     OpeningBalanceResponse response = openingBalanceService.get(accountId, actor);
@@ -59,6 +62,7 @@ public class OpeningBalanceController {
     ProblemCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION
   })
   @PostMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<OpeningBalanceResponse> recordOpeningBalance(
       @PathVariable UUID accountId,
       @Valid @RequestBody OpeningBalanceRequest request,
@@ -77,6 +81,7 @@ public class OpeningBalanceController {
     ProblemCode.OPENING_BALANCE_NOT_RECORDED
   })
   @PutMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<OpeningBalanceResponse> replaceOpeningBalance(
       @PathVariable UUID accountId,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,

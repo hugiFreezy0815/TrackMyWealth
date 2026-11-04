@@ -8,6 +8,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.WorkspaceService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,6 +38,7 @@ public class WorkspaceController {
   @Operation(operationId = "getWorkspace", summary = "Read the workspace")
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<WorkspaceResponse> getCurrent(
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     WorkspaceResponse response = workspaceService.getCurrent(actor);
@@ -45,6 +48,7 @@ public class WorkspaceController {
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @Operation(operationId = "updateWorkspaceName", summary = "Rename or clear the workspace name")
   @PutMapping("/name")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<WorkspaceResponse> updateName(
       @Valid @RequestBody UpdateWorkspaceNameRequest request,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -57,6 +61,7 @@ public class WorkspaceController {
   @Operation(operationId = "updateWorkspaceCurrency", summary = "Change the workspace's currency")
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @PutMapping("/currency")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<WorkspaceResponse> updateCurrency(
       @Valid @RequestBody UpdateWorkspaceCurrencyRequest request,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,

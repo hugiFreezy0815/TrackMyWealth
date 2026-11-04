@@ -1,8 +1,8 @@
 # ADR 0006: API contract, paging and client generation
 
 ## Status
-Accepted in part. This first version holds only the response-field decision (US-29-07, #451;
-product owner decisions of 2026-11-04). US-29-01 (#371) adds the other conventions of the sprint 6
+Accepted in part. This version holds the response-field decision (US-29-07, #451) and the
+response-header decision (US-29-09, #455), both product owner decisions of 2026-11-04. US-29-01 (#371) adds the other conventions of the sprint 6
 plan (`docs/backlog/SPRINT-6.md`, decisions 1-8): naming, collections, paging, errors,
 concurrency.
 
@@ -76,3 +76,50 @@ really returns.
   unnoticed until a test covers it. It also checks one way only: a component marked `@Nullable`
   that is never null is not reported. That is safe (the generated type is wider than needed), so
   remove such a mark when it is found.
+
+## Response headers (US-29-09, #455)
+
+### Context
+
+Handlers send two headers that clients need. `ETag` carries the resource version for `If-Match`
+(ADR 0004, #172), and `Location` gives the URL of a created resource. springdoc cannot see headers
+set on a `ResponseEntity`. So until #455 the contract named `If-Match` on every change but never
+said where its value comes from, and generated clients had no typed access to either header.
+
+### Decision
+
+**Declared on the handler: `@SendsHeaders`.** A handler lists the headers it sends on success, for
+example `@SendsHeaders({ResponseHeader.ETAG, ResponseHeader.LOCATION})`. This follows the pattern of
+`@SuccessStatus`. Rejected: reading the headers from the bytecode in main code. `/api-docs` is
+served by the running application, so the documentation step would need a second call-graph walker
+on Spring's ASM at startup. The ArchUnit walk is test code and cannot serve it.
+
+**Documented as shared components.** `components.headers.ETag` and `components.headers.Location`
+are both `required`. Each success response that carries a header refers to it by `$ref`:
+
+- `ETag`: every declared success response with a body (not a 204). Its description names
+  `If-Match`.
+- `Location`: the 201 only, `format: uri-reference`.
+
+**Checked both ways, as the statuses are.**
+
+- `ArchitectureTest` (`api_operations_send_their_documented_headers`) reuses the bytecode walk of
+  the success statuses: the handler, its lambdas and the helpers of its own class. It fails a
+  handler that sends a header it does not declare, and one that declares a header it never sends or
+  that none of its success statuses carries. It recognises `VersionedResponse`, `eTag(..)`,
+  `ResponseEntity.created(uri)`, `location(..)`, `HttpHeaders.setETag` and
+  `HttpHeaders.setLocation`.
+- In every test, `DocumentedSuccessStatusFilter` fails a success response that lacks a declared
+  header or carries an undeclared one. This also catches a header set by name, which the bytecode
+  rule cannot see because javac inlines the constant.
+
+**Only where sent.** Today 71 operations send `ETag`. Two send `Location`: creating an import
+template and uploading an import batch. The other 201s (`VersionedResponse.created`) send no
+`Location`, so the contract does not claim one. Sending it on every 201 is a separate story.
+
+### Consequences
+
+- Generated clients read the version for `If-Match` and the new resource's URL as typed headers.
+- Adding a header to a response is additive. Removing one, or making it optional, is breaking.
+- A new handler that sends either header must declare it in the same PR, or the build fails and
+  names the handler.

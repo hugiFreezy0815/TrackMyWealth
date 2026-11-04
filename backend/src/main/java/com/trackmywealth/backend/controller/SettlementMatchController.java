@@ -8,6 +8,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SettlementMatchService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -44,6 +46,7 @@ public class SettlementMatchController {
   @Operation(operationId = "setSettlementSource", summary = "Set the account a card is paid from")
   @ProblemCodes({ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
   @PutMapping("/accounts/{cardAccountId}/settlement-source")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<SettlementSourceResponse> setSettlementSource(
       @PathVariable UUID cardAccountId,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -58,6 +61,7 @@ public class SettlementMatchController {
   @Operation(operationId = "getSettlementSource", summary = "Read the account a card is paid from")
   @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @GetMapping("/accounts/{cardAccountId}/settlement-source")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<SettlementSourceResponse> getSettlementSource(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     SettlementSourceResponse response =
@@ -94,6 +98,7 @@ public class SettlementMatchController {
   @Operation(operationId = "confirmSettlementMatch", summary = "Confirm a settlement match")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/settlement-matches/{matchId}/confirm")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<SettlementMatchResponse> confirm(
       @PathVariable UUID matchId,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -106,6 +111,7 @@ public class SettlementMatchController {
   @Operation(operationId = "rejectSettlementMatch", summary = "Reject a settlement match")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/settlement-matches/{matchId}/reject")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<SettlementMatchResponse> reject(
       @PathVariable UUID matchId,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,

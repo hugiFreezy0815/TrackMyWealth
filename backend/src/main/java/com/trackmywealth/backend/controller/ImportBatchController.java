@@ -18,6 +18,8 @@ import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -121,6 +123,7 @@ public class ImportBatchController {
     ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE
   })
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @SendsHeaders({ResponseHeader.ETAG, ResponseHeader.LOCATION})
   public ResponseEntity<ImportBatchResponse> upload(
       @PathVariable UUID accountId,
       @RequestPart("file") MultipartFile file,
@@ -180,6 +183,7 @@ public class ImportBatchController {
     ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE
   })
   @PostMapping(BY_ID + "/parse")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportBatchResponse> parse(
       @PathVariable UUID accountId,
       @PathVariable UUID batchId,
@@ -210,6 +214,7 @@ public class ImportBatchController {
 
   @Operation(operationId = "getImportBatch", summary = "Read an import")
   @GetMapping(BY_ID)
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportBatchResponse> get(
       @PathVariable UUID accountId,
       @PathVariable UUID batchId,
@@ -249,6 +254,7 @@ public class ImportBatchController {
     ProblemCode.IMPORT_ROW_NOT_INCLUDABLE
   })
   @PatchMapping(BY_ID + "/rows/{rowNumber}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportBatchResponse> setIncluded(
       @PathVariable UUID accountId,
       @PathVariable UUID batchId,
@@ -312,6 +318,7 @@ public class ImportBatchController {
     ProblemCode.IMPORT_HOLDINGS_UNREADABLE
   })
   @PostMapping(BY_ID + "/commit")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportBatchResponse> commit(
       @PathVariable UUID accountId,
       @PathVariable UUID batchId,
@@ -336,6 +343,7 @@ public class ImportBatchController {
     ProblemCode.IMPORT_BATCH_STATE
   })
   @PostMapping(BY_ID + "/confirm-account")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportBatchResponse> confirmAccount(
       @PathVariable UUID accountId,
       @PathVariable UUID batchId,
@@ -355,6 +363,7 @@ public class ImportBatchController {
     ProblemCode.IMPORT_BATCH_STATE
   })
   @PostMapping(BY_ID + "/discard")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportBatchResponse> discard(
       @PathVariable UUID accountId,
       @PathVariable UUID batchId,
@@ -383,6 +392,7 @@ public class ImportBatchController {
     ProblemCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED
   })
   @PostMapping(BY_ID + "/rollback")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportRollbackResponse> rollback(
       @PathVariable UUID accountId,
       @PathVariable UUID batchId,

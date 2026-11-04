@@ -9,6 +9,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -69,6 +71,7 @@ public class ImportTemplateController {
   /** Any version, current or retired. */
   @Operation(operationId = "getImportTemplate", summary = "Read an import template")
   @GetMapping(BY_ID)
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportTemplateResponse> get(
       @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     ImportTemplateResponse template = importTemplateService.get(id, actor);
@@ -83,6 +86,7 @@ public class ImportTemplateController {
     ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED
   })
   @PostMapping
+  @SendsHeaders({ResponseHeader.ETAG, ResponseHeader.LOCATION})
   public ResponseEntity<ImportTemplateResponse> create(
       @Valid @RequestBody ImportTemplateRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -108,6 +112,7 @@ public class ImportTemplateController {
     ProblemCode.IMPORT_TEMPLATE_READ_ONLY
   })
   @PutMapping(BY_ID)
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportTemplateResponse> update(
       @PathVariable UUID id,
       @Valid @RequestBody ImportTemplateRequest request,
@@ -122,6 +127,7 @@ public class ImportTemplateController {
   @Operation(operationId = "deactivateImportTemplate", summary = "Deactivate an import template")
   @ProblemCodes({ProblemCode.IMPORT_TEMPLATE_READ_ONLY})
   @PostMapping(BY_ID + "/deactivate")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportTemplateResponse> deactivate(
       @PathVariable UUID id,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -134,6 +140,7 @@ public class ImportTemplateController {
   @Operation(operationId = "activateImportTemplate", summary = "Reactivate an import template")
   @ProblemCodes({ProblemCode.IMPORT_TEMPLATE_READ_ONLY})
   @PostMapping(BY_ID + "/activate")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ImportTemplateResponse> activate(
       @PathVariable UUID id,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,

@@ -17,6 +17,8 @@ import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -73,6 +75,7 @@ public class TransactionController {
     ProblemCode.UNPROCESSABLE
   })
   @PostMapping("/transactions")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<TransactionResponse> recordTransaction(
       @PathVariable UUID accountId,
       @Valid @RequestBody CreateTransactionRequest request,
@@ -97,6 +100,7 @@ public class TransactionController {
     ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED
   })
   @PutMapping("/transactions/{transactionId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<TransactionCorrectionResponse> correctTransaction(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
@@ -149,6 +153,7 @@ public class TransactionController {
     ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED
   })
   @PutMapping("/transactions/{transactionId}/category")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<TransactionResponse> overrideCategory(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
@@ -171,6 +176,7 @@ public class TransactionController {
       summary = "Return a transaction to its automatic category")
   @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED})
   @DeleteMapping("/transactions/{transactionId}/category")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<TransactionResponse> resetCategory(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
@@ -194,6 +200,7 @@ public class TransactionController {
     ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED
   })
   @DeleteMapping("/transactions/{transactionId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<TransactionRemovalResponse> removeTransaction(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
@@ -219,6 +226,7 @@ public class TransactionController {
     ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED
   })
   @PostMapping("/transactions/{transactionId}/restore")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<TransactionRemovalResponse> restoreTransaction(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
@@ -252,6 +260,7 @@ public class TransactionController {
       summary = "Mark a transaction as a transfer to an untracked account")
   @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
   @PostMapping("/transactions/{transactionId}/untracked-transfer")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<TransactionResponse> confirmUntrackedTransfer(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
@@ -269,6 +278,7 @@ public class TransactionController {
       summary = "Undo marking a transaction as an untracked transfer")
   @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
   @DeleteMapping("/transactions/{transactionId}/untracked-transfer")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<TransactionResponse> undoUntrackedTransfer(
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,

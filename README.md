@@ -347,6 +347,10 @@ file client code is generated from. `./mvnw verify` keeps it in step with the co
 - A handler answering anything but 200 declares its statuses with `@SuccessStatus` (201, 204, or
   both 201 and 200 for a find-or-create). `ArchitectureTest` reads them from the bytecode, and in
   every test a request answered with an undeclared success status fails with a 500 that names it.
+- A handler that sends `ETag` (any `VersionedResponse`) or `Location` declares it with
+  `@SendsHeaders` (ADR 0006, #455). The contract then lists the header on its success responses
+  (`ETag` with every response that has a body, `Location` with the 201). `ArchitectureTest` and the
+  same per-request test check fail a header sent but not declared, or declared but not sent.
 - Every field of a response schema is `required` (the backend always sends it), and nullable only
   where its record component is JSpecify `@Nullable` (`org.jspecify.annotations.Nullable`; ADR
   0006, #451), so generated client types say `string` or `string | null`, never an optional field.
