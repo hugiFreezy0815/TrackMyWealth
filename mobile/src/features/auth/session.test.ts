@@ -230,6 +230,37 @@ describe('secure auth session', () => {
     expect(secureStore.deleteItemAsync).toHaveBeenCalled();
   });
 
+  it('returns to sign-in on a refused refresh whose code this app does not know (#375)', async () => {
+    serve((url) => {
+      if (url.endsWith('/auth/refresh')) {
+        return { status: 401, body: { title: 'x', status: 401, code: 'NEW_REFUSAL_REASON' } };
+      }
+      if (url.endsWith('/accounts')) return { status: 401 };
+      return plainLogin(url) ?? { status: 404 };
+    });
+    await signIn('demo@example.com', 'test');
+
+    await expect(api.get('/api/v1/accounts')).rejects.toMatchObject({ status: 401 });
+
+    expect(sessionSnapshot()).toMatchObject({ signedIn: false, identity: null });
+  });
+
+  it('keeps the session when the refresh fails with a server error, known code or not', async () => {
+    serve((url) => {
+      if (url.endsWith('/auth/refresh')) {
+        return { status: 503, body: { title: 'x', status: 503, code: 'NEW_OUTAGE_REASON' } };
+      }
+      if (url.endsWith('/accounts')) return { status: 401 };
+      return plainLogin(url) ?? { status: 404 };
+    });
+    await signIn('demo@example.com', 'test');
+
+    await expect(api.get('/api/v1/accounts')).rejects.toMatchObject({ status: 401 });
+
+    expect(sessionSnapshot().signedIn).toBe(true);
+    expect(secureStore.deleteItemAsync).not.toHaveBeenCalled();
+  });
+
   it('keeps the session when the refresh fails only because the server is unreachable', async () => {
     serve((url) => {
       if (url.endsWith('/auth/refresh')) return new TypeError('Network request failed');

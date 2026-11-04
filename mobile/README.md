@@ -19,7 +19,11 @@ src/
   constants/              Theme tokens
   hooks/                  Shared hooks (color scheme, theme, ...)
   api/
-    client.ts             Thin fetch wrapper around the Spring Boot backend (EXPO_PUBLIC_API_URL)
+    client.ts             Transport: fetch, token refresh, timeouts, ApiError/NetworkError
+    typed-api.ts          typedApi - every call typed from the contract (#375)
+    schema.d.ts           Generated from api/openapi.yaml - never edit by hand
+    problem-codes.generated.ts  Generated from api/problem-codes.json - never edit by hand
+    problems.ts           problemReaction(): what to do about an error response
 assets/                   Icons, splash images
 .env.example              Copy to .env - backend base URL for local development
 ```
@@ -87,12 +91,48 @@ deployed web origin (e.g. `https://app.trackmywealth.example`) in every other en
 
 ## API client
 
-`src/api/client.ts` is a minimal `fetch` wrapper (`api.get`, `api.post`, `api.put`, `api.delete`)
-pointed at `EXPO_PUBLIC_API_URL`. It has a placeholder `setAccessToken`/bearer-token hookup ready
-for when the auth flow (`docs/user-stories/EPIC-02-user-administration-and-auth.md`) is
-implemented on both sides. There is no generated API client yet - once the backend exposes its
-OpenAPI spec (`/api-docs`), consider generating typed request/response types from it instead of
-hand-written types here.
+The app's request and response types come from the committed contract `api/openapi.yaml`, never
+by hand (US-29-05, #375). A backend change therefore shows up in the app as a type error, not as a
+broken screen.
+
+- **Generate:** `npm run api:types` writes `src/api/schema.d.ts` (openapi-typescript) and
+  `src/api/problem-codes.generated.ts` (from `api/problem-codes.json`). Run it after the backend
+  changed the contract, then `npx tsc --noEmit` lists every place in the app the change affects.
+  Commit the generated files; never edit them by hand.
+- **CI:** Mobile Web CI runs on every change to `mobile/`, `api/openapi.yaml` or
+  `api/problem-codes.json`. `npm run api:types:check` fails, naming the file, when a generated file
+  is stale. A backend PR that changes the contract regenerates the app's types in the same PR.
+- **Calls:** `typedApi` (`src/api/typed-api.ts`) takes a contract path and checks the path
+  parameters, query, JSON body and response against it. An operation that requires `If-Match`
+  takes its `version`, which is sent as `If-Match: "<version>"`:
+
+  ```ts
+  const me = await typedApi.get('/api/v1/users/me');
+  await typedApi.put('/api/v1/accounts/{accountId}/identifier/from-import', {
+    params: { accountId },
+    version,
+    body: { importAccountId, batchId },
+  });
+  ```
+
+  Name a schema type as `components['schemas']['AccountIdentifierResponse']` (from
+  `@/api/schema`). The untyped `api` and `request` in `client.ts` are the transport only; ESLint
+  rejects them outside `src/api`.
+
+- **Transport:** `client.ts` sends JSON with the access token, renews the session once on a 401
+  (never for `/api/v1/auth/*`), aborts after 15 s with a `NetworkError`, and throws `ApiError`
+  (status and body) for any other failure.
+- **Decimals:** every `format: decimal` field is `DecimalString` (`src/api/decimal.ts`), never
+  `number`; the generator fails if one is not. Keep the string as received and send it back
+  unchanged.
+- **Errors:** problem codes are an open set (#374): the server may send a code this app version
+  does not know. `problemReaction(error)` (`src/api/problems.ts`) gives a known code's own
+  reaction from the contract, and an unknown one a reaction by HTTP status: 401 sign in again,
+  403 not allowed, 409/412 reload, another 4xx the generic error, 5xx the generic error with the
+  `correlationId` to report. It never retries a request because of an unknown code.
+  `KnownProblemCode` and `KnownImportRowCode` list the known codes for exhaustive switches;
+  `ProblemCode` and `ImportRowCode` also accept any other string. For an unknown import row code,
+  show the row's `message`, which the server has already translated.
 
 ## Status
 

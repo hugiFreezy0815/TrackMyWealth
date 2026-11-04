@@ -1,22 +1,13 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
-import { api, ApiError, setAccessToken, setRefreshHandler } from '@/api/client';
+import { ApiError, setAccessToken, setRefreshHandler } from '@/api/client';
+import { problemReaction } from '@/api/problems';
+import type { components } from '@/api/schema';
+import { typedApi } from '@/api/typed-api';
 
-export type Tokens = {
-  accessToken: string;
-  refreshToken: string;
-  tokenType: string;
-  expiresInSeconds: number;
-};
-// FR-USR-004: the roles app_user.role allows (V2's CHECK constraint).
-export type Role = 'SYSTEM_ADMINISTRATOR' | 'STANDARD_USER';
-export type Identity = { userId: string; role: Role; language: string; sessionId: string };
-export type LoginResult = {
-  mfaRequired: boolean;
-  mfaChallengeToken: string | null;
-  tokens: Tokens | null;
-};
+type Tokens = components['schemas']['AuthTokensResponse'];
+export type Identity = components['schemas']['CurrentUserResponse'];
 type Listener = () => void;
 
 const STORAGE_KEY = 'trackmywealth.session.refresh';
@@ -61,10 +52,14 @@ async function persist(token: string | null): Promise<void> {
   else await SecureStore.deleteItemAsync(STORAGE_KEY, STORAGE_OPTIONS);
 }
 
-// Only the server saying no ends a session: an expired, reused or revoked refresh token is a 401
-// (a malformed one a 400). Offline, a timeout or a 5xx keeps the stored token for the next try.
+// Only the server saying no ends a session: an expired, reused or revoked refresh token asks to
+// sign in again (UNAUTHENTICATED, 401), a malformed one to fix the input (VALIDATION_FAILED, 400);
+// a code this app does not know counts by its status (#375). Offline, a timeout or a 5xx keeps the
+// stored token for the next try.
 function rejectedByServer(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 400 || error.status === 401);
+  if (!(error instanceof ApiError)) return false;
+  const { reaction } = problemReaction(error);
+  return reaction === 'REAUTHENTICATE' || reaction === 'FIX_INPUT';
 }
 
 /**
@@ -85,7 +80,7 @@ async function accept(tokens: Tokens): Promise<void> {
   try {
     // Never through the refresh handler: this can run inside a rotation, which would then wait for
     // itself. A 401 here is final - renewing a token the server has only just issued cannot help.
-    verified = await api.get<Identity>('/api/v1/users/me', { renewSession: false });
+    verified = await typedApi.get('/api/v1/users/me', { renewSession: false });
   } catch (error) {
     if (current === generation && rejectedByServer(error)) {
       await clearSession();
@@ -103,7 +98,7 @@ async function accept(tokens: Tokens): Promise<void> {
 
 export async function signIn(email: string, password: string): Promise<void> {
   challenge = null;
-  const result = await api.post<LoginResult>('/api/v1/auth/login', { email, password });
+  const result = await typedApi.post('/api/v1/auth/login', { body: { email, password } });
   if (result.mfaRequired) {
     if (!result.mfaChallengeToken) throw new Error('MFA challenge missing');
     challenge = result.mfaChallengeToken;
@@ -117,9 +112,8 @@ export async function signIn(email: string, password: string): Promise<void> {
 
 export async function verifyMfa(code: string): Promise<void> {
   if (!challenge) throw new Error('No MFA challenge');
-  const tokens = await api.post<Tokens>('/api/v1/auth/mfa/verify', {
-    challengeToken: challenge,
-    code,
+  const tokens = await typedApi.post('/api/v1/auth/mfa/verify', {
+    body: { challengeToken: challenge, code },
   });
   challenge = null;
   await accept(tokens);
@@ -139,7 +133,7 @@ async function rotate(): Promise<string | null> {
   if (!refresh) return null;
   const before = generation;
   try {
-    const tokens = await api.post<Tokens>('/api/v1/auth/refresh', { refreshToken: refresh });
+    const tokens = await typedApi.post('/api/v1/auth/refresh', { body: { refreshToken: refresh } });
     // A sign-in or sign-out replaced this session meanwhile: the waiting request uses whatever
     // holds now (null after a sign-out), never the tokens of the session that was replaced.
     if (before !== generation) return access;
@@ -196,9 +190,8 @@ export async function signOut(): Promise<void> {
   try {
     if (refresh) {
       // Started offline, the identity (and with it the session id) is not verified yet.
-      const sessionId =
-        identity?.sessionId ?? (await api.get<Identity>('/api/v1/users/me')).sessionId;
-      await api.post(`/api/v1/sessions/${encodeURIComponent(sessionId)}/revoke`);
+      const sessionId = identity?.sessionId ?? (await typedApi.get('/api/v1/users/me')).sessionId;
+      await typedApi.post('/api/v1/sessions/{id}/revoke', { params: { id: sessionId } });
     }
   } catch {
     // Nothing to tell the user: they are signed out on this device either way.

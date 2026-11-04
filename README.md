@@ -340,6 +340,15 @@ file client code is generated from. `./mvnw verify` keeps it in step with the co
   ./mvnw test -Dtest=OpenApiContractTest -Dopenapi.update=true
   ```
 
+  Then regenerate the app's API types from it in the same PR (#375), and fix what the type check
+  reports; Mobile Web CI fails, naming the file, while they are stale (see `mobile/README.md`,
+  "API client"):
+
+  ```bash
+  cd mobile
+  npm run api:types && npx tsc --noEmit
+  ```
+
 - The same test fails on an operation without a unique `operationId`, exactly one tag or a summary;
   `ArchitectureTest` fails on a controller without `@Tag` (or `@Hidden`, for one that is not part of
   the API) and on a handler method without `@Operation(operationId = ..., summary = ...)`. An
