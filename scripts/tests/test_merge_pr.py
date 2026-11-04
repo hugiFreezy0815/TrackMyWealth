@@ -264,6 +264,20 @@ class MainTest(unittest.TestCase):
         self.assertEqual(quietly(merge_pr.main, ["42"], gh), 1)
         self.assertEqual(gh.merges(), [])
 
+    def test_a_change_to_a_self_judging_workflow_is_named_but_still_merged(self):
+        gh = FakeGh(all_green(), files=[".github/workflows/api-contract.yml", "backend/pom.xml"])
+        err = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(err):
+            self.assertEqual(merge_pr.main(["42"], gh), 0)
+        self.assertIn(".github/workflows/api-contract.yml", err.getvalue())
+        self.assertEqual(len(gh.merges()), 1)
+        self.assertEqual(merge_pr.notices(["backend/pom.xml"]), [])
+
+    def test_every_self_judging_workflow_exists(self):
+        for path in merge_pr.SELF_JUDGING_WORKFLOWS:
+            with self.subTest(path=path):
+                self.assertTrue((ROOT / path).is_file())
+
     def test_more_check_runs_than_one_page_stops_rather_than_deciding_on_part_of_them(self):
         gh = FakeGh(all_green(), total_count=150)
         with self.assertRaises(SystemExit):

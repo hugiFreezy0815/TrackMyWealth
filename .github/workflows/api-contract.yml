@@ -73,7 +73,8 @@ jobs:
       # The check is the base's scripts/api_breaking.py, not the PR's: a PR cannot loosen the check
       # that judges it (a change to the check itself takes effect for the PRs after it). Only while
       # the base has no check yet does the PR's run. This workflow file is the PR's under
-      # pull_request either way; a change to it is reviewed like code.
+      # pull_request either way; a change to it is reviewed like code, and scripts/merge_pr.py names
+      # it (SELF_JUDGING_WORKFLOWS).
       #
       # Labels and description are read from the PR as it is now, not from the event: a re-run of
       # an old run judges the current PR, never the labels it had back then. They reach the script
@@ -99,7 +100,8 @@ jobs:
             checker="$RUNNER_TEMP/api_breaking.py"
             git show "HEAD^1:scripts/api_breaking.py" > "$checker"
           fi
-          PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name]')
-          PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
+          pr=$(gh pr view "$PR_NUMBER" --json labels,body)
+          PR_LABELS=$(jq -c '[.labels[].name]' <<< "$pr")
+          PR_BODY=$(jq -r '.body' <<< "$pr")
           export PR_LABELS PR_BODY
           python3 "$checker" --base "$base" --revision api/openapi.yaml --oasdiff "$OASDIFF"

@@ -362,8 +362,14 @@ Removing any response field and adding a value to a response enum count as break
 rates them lower: the backend sends every field of a response, so clients rely on all of them, and
 a client handling each enum value fails on one it does not know (`SEVERITY_OVERRIDES` in
 `scripts/api_breaking.py`).
-The job runs `main`'s copy of that script, so a PR cannot loosen the check that judges it; a change
-to the check applies from the next PR on. An intended break passes only with both
+Failing on oasdiff's warnings is stricter than oasdiff's own default (errors only): a change oasdiff
+says breaks only some clients, such as a new pattern or a changed format on an existing field,
+needs the declaration below too. Run the check locally (below) to see the level of each change.
+The job runs `main`'s copy of that script, so a PR cannot loosen the script that judges it; a change
+to the script applies from the next PR on. The workflow file itself is the PR's, though: a PR that
+changes `.github/workflows/api-contract.yml` changes what the job runs, so review such a change as
+closely as the check itself (`scripts/merge_pr.py` points it out). An intended break passes only
+with both
 
 - the label `api-breaking` on the PR, and
 - a `## API breaking change` section in the PR description saying what breaks for clients and why.
