@@ -18632,12 +18632,18 @@ components:
           type: string
           description: "CREDIT_CARD for a card statement, otherwise CASH."
         suggestedCurrency:
-          type: string
-          description: The one currency every readable row is in.
+          type:
+          - string
+          - "null"
+          description: "The one currency every readable row is in; null when the rows\
+            \ have several, or none and the template fixes none."
         maskedIdentifier:
-          type: string
+          type:
+          - string
+          - "null"
           description: "The account identifier the file names, masked: an IBAN's last\
-            \ four characters, or a card number as masked as the statement had it."
+            \ four characters, or a card number as masked as the statement had it;\
+            \ null when the template identifies no account or the file names none."
       required:
       - institutionCatalogueId
       - institutionName

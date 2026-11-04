@@ -21,9 +21,14 @@ public record ImportAccountProposalResponse(
         @Nullable String institutionName,
     @Schema(description = "CREDIT_CARD for a card statement, otherwise CASH.")
         String suggestedAccountType,
-    @Schema(description = "The one currency every readable row is in.") String suggestedCurrency,
+    @Schema(
+            description =
+                "The one currency every readable row is in; null when the rows have several, or"
+                    + " none and the template fixes none.")
+        @Nullable String suggestedCurrency,
     @Schema(
             description =
                 "The account identifier the file names, masked: an IBAN's last four characters, or"
-                    + " a card number as masked as the statement had it.")
-        String maskedIdentifier) {}
+                    + " a card number as masked as the statement had it; null when the template"
+                    + " identifies no account or the file names none.")
+        @Nullable String maskedIdentifier) {}

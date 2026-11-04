@@ -603,6 +603,29 @@ class ImportBatchControllerTest {
   }
 
   /**
+   * #460: a file in two currencies proposes no currency, and a template that identifies no account
+   * proposes no identifier - both null, as the contract declares (the runtime check of #451 fails
+   * this test when either component loses its {@code @Nullable}).
+   */
+  @Test
+  void aMixedCurrencyFileWithoutAnIdentifierProposesNeitherCurrencyNorIdentifier() {
+    UUID template = createTemplate(simpleTemplate("No identifier", SIMPLE_COLUMNS)).id();
+
+    ImportAccountProposalResponse proposal =
+        proposalStatus(
+                "/api/v1/import-templates/" + template + "/account-proposal",
+                csv("2019-01-05;-12.50;CHF;Coffee;R1;5812", "2019-01-06;-20.00;EUR;Train;R2;4111"))
+            .isOk()
+            .expectBody(ImportAccountProposalResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(proposal.suggestedAccountType()).isEqualTo("CASH");
+    assertThat(proposal.suggestedCurrency()).isNull();
+    assertThat(proposal.maskedIdentifier()).isNull();
+  }
+
+  /**
    * The flow of #271: the file names no account, the member creates one from the proposal and
    * registers the file's identifier on it without typing it; the same file then matches it.
    */

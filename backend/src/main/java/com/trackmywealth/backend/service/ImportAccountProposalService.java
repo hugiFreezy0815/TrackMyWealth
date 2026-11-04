@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -94,7 +95,7 @@ public class ImportAccountProposalService {
    * account: {@code null} when its template does not identify accounts. Never log or return its
    * value (US-07-10).
    */
-  public ImportFileAccountIdentifier identifierOf(
+  public @Nullable ImportFileAccountIdentifier identifierOf(
       UUID accountId, UUID batchId, AuthenticatedUserPrincipal actor) {
     ImportBatch batch = openBatch(accountId, batchId, actor);
     return templates
@@ -143,7 +144,7 @@ public class ImportAccountProposalService {
    * The one currency every readable row is in; a fixed-currency template's own when no row could be
    * read; otherwise none. A template that takes the currency from the account reads none here.
    */
-  static String currencyOf(ImportTemplateDefinition template, ImportParseResult result) {
+  static @Nullable String currencyOf(ImportTemplateDefinition template, ImportParseResult result) {
     Set<String> currencies =
         result.rows().stream()
             .map(ParsedImportRow::canonical)
@@ -161,7 +162,7 @@ public class ImportAccountProposalService {
   /**
    * The display value of the file's identifier, as an account's ({@link AccountIdentifierService}).
    */
-  static String masked(ImportFileAccountIdentifier identifier) {
+  static @Nullable String masked(@Nullable ImportFileAccountIdentifier identifier) {
     return identifier == null || !identifier.found()
         ? null
         : AccountIdentifierService.masked(identifier.value(), identifier.kind());
