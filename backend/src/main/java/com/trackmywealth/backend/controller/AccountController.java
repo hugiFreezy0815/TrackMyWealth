@@ -162,9 +162,16 @@ public class AccountController {
           "The next import commits book the account's savings pocket moves on this account, e.g."
               + " after the pocket an import created was archived. The pocket must be an active"
               + " account in the account's currency that holds transactions, is no card or loan"
-              + " and has no pocket of its own (422), and no other account's pocket (409). A link"
-              + " is replaced, never removed.")
-  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
+              + " and has no pocket of its own (422 SAVINGS_POCKET_UNSUITABLE), and no other"
+              + " account's pocket (409 SAVINGS_POCKET_IN_USE). A card, a loan, an account without"
+              + " transactions or another account's pocket can have none (422"
+              + " SAVINGS_POCKET_NOT_APPLICABLE). A link is replaced, never removed.")
+  @ProblemCodes({
+    ProblemCode.SAVINGS_POCKET_NOT_APPLICABLE,
+    ProblemCode.SAVINGS_POCKET_UNSUITABLE,
+    ProblemCode.SAVINGS_POCKET_IN_USE,
+    ProblemCode.CONFLICT
+  })
   @PutMapping("/{accountId}/savings-pocket")
   public ResponseEntity<AccountSummaryResponse> linkSavingsPocket(
       @PathVariable UUID accountId,

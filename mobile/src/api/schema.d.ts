@@ -493,6 +493,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/accounts/{accountId}/savings-pocket': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Link another account as the account's savings pocket
+     * @description The next import commits book the account's savings pocket moves on this account, e.g. after the pocket an import created was archived. The pocket must be an active account in the account's currency that holds transactions, is no card or loan and has no pocket of its own (422 SAVINGS_POCKET_UNSUITABLE), and no other account's pocket (409 SAVINGS_POCKET_IN_USE). A card, a loan, an account without transactions or another account's pocket can have none (422 SAVINGS_POCKET_NOT_APPLICABLE). A link is replaced, never removed.
+     */
+    put: operations['linkAccountSavingsPocket'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/accounts/{accountId}/snapshots': {
     parameters: {
       query?: never;
@@ -1880,6 +1900,7 @@ export interface components {
       valueDateAdjusted: boolean;
       groupReference: string | null;
       savingsPocket: boolean;
+      savingsPocketOtherCurrency: boolean;
     };
     CardStatementResponse: {
       /** Format: uuid */
@@ -2845,6 +2866,10 @@ export interface components {
       institutionType: string;
       identifier: string | null;
       logoUrl: string | null;
+    };
+    LinkSavingsPocketRequest: {
+      /** Format: uuid */
+      savingsPocketAccountId: string;
     };
     LoanRepaymentResponse: {
       /** Format: uuid */
@@ -8361,6 +8386,154 @@ export interface operations {
        *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
        */
       412: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
+       */
+      428: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+       */
+      500: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      default: components['responses']['ApiProblemResponse'];
+    };
+  };
+  linkAccountSavingsPocket: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Strong ETag of the resource version last read, for example "7". Missing values return 428 VERSION_REQUIRED; stale values return 412 VERSION_CONFLICT. */
+        'If-Match': string;
+        /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
+        'X-Correlation-Id'?: string;
+      };
+      path: {
+        accountId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['LinkSavingsPocketRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AccountSummaryResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+       */
+      401: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+       */
+      404: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `CONFLICT`: The request conflicts with the current state; detail says how.
+       *     - `SAVINGS_POCKET_IN_USE`: The chosen account is already the savings pocket of another account.
+       */
+      409: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+       */
+      412: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `SAVINGS_POCKET_NOT_APPLICABLE`: The account can have no savings pocket: a card, a loan, an account without transactions, or one that is itself another account's pocket.
+       *     - `SAVINGS_POCKET_UNSUITABLE`: The chosen account cannot be the savings pocket: the account itself, not active, without transactions, a card or loan, in another currency, or with a pocket of its own.
+       */
+      422: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;

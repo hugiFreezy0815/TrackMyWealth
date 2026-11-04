@@ -2,7 +2,10 @@ package com.trackmywealth.backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -11,12 +14,18 @@ import static org.mockito.Mockito.when;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -31,14 +40,17 @@ class SavingsPocketServiceTest {
   private final AccountService accountService = mock(AccountService.class);
   private final AccountLookupService lookups = mock(AccountLookupService.class);
   private final ImportLockService locks = mock(ImportLockService.class);
+  private final AccessControlService access = mock(AccessControlService.class);
+  private final EntityManager entityManager = mock(EntityManager.class);
   private final SavingsPocketService pockets =
       new SavingsPocketService(
           accounts,
           accountService,
           lookups,
-          mock(AccessControlService.class),
+          access,
           new VersionPreconditionService(),
-          locks);
+          locks,
+          entityManager);
   private final AuthenticatedUserPrincipal actor = mock(AuthenticatedUserPrincipal.class);
 
   private final UUID accountId = UUID.randomUUID();
@@ -105,16 +117,23 @@ class SavingsPocketServiceTest {
   }
 
   // #325 follow-up: the member links another account as the pocket, e.g. after archiving the one
-  // the import created; the account is read under its import lock.
+  // the import created. Both accounts are cleared before anything is locked, then both import
+  // locks are taken and both rows read again under their row locks, before any rule is checked.
   @Test
   void anActiveAccountInTheSameCurrencyBecomesThePocket() {
-    linkable(pocket("ACTIVE", "CHF"));
+    Account pocket = linkable(pocket("ACTIVE", "CHF"));
     AccountSummaryResponse linked = mock(AccountSummaryResponse.class);
     when(accountService.getAccount(accountId, actor)).thenReturn(linked);
 
     assertThat(pockets.linkPocket(accountId, pocketId, 3, actor)).isSameAs(linked);
-    verify(locks).lockAccount(accountId);
-    verify(accounts).relinkSavingsPocket(accountId, pocketId);
+
+    InOrder order = inOrder(access, locks, entityManager, accounts);
+    order.verify(access).requireAccountAccess(actor, account);
+    order.verify(access).requireAccountAccess(actor, pocket);
+    order.verify(locks).lockAccounts(List.of(accountId, pocketId));
+    order.verify(entityManager).refresh(account, LockModeType.PESSIMISTIC_WRITE);
+    order.verify(accounts).relinkSavingsPocket(accountId, pocketId);
+    verify(entityManager).refresh(pocket, LockModeType.PESSIMISTIC_WRITE);
   }
 
   @Test
@@ -127,33 +146,70 @@ class SavingsPocketServiceTest {
     verify(accounts, never()).relinkSavingsPocket(any(), any());
   }
 
+  // Security: an account the member cannot see is never locked, nor is it linked.
   @Test
-  void aPocketThatCannotTakeTheMovesIsRefused() {
-    linkable(pocket("ARCHIVED", "CHF"));
-    assertStatus(
-        () -> pockets.linkPocket(accountId, pocketId, 3, actor), HttpStatus.UNPROCESSABLE_CONTENT);
+  void anAccountOrPocketTheMemberCannotSeeIsNeverLocked() {
+    Account pocket = linkable(pocket("ACTIVE", "CHF"));
+    ResponseStatusException notFound = new ResponseStatusException(HttpStatus.NOT_FOUND);
+    doThrow(notFound).when(access).requireAccountAccess(actor, pocket);
 
-    linkable(pocket("ACTIVE", "EUR"));
-    assertStatus(
-        () -> pockets.linkPocket(accountId, pocketId, 3, actor), HttpStatus.UNPROCESSABLE_CONTENT);
+    assertThatThrownBy(() -> pockets.linkPocket(accountId, pocketId, 3, actor)).isSameAs(notFound);
 
-    Account nested = linkable(pocket("ACTIVE", "CHF"));
-    when(nested.getSavingsPocketAccountId()).thenReturn(UUID.randomUUID());
-    assertStatus(
-        () -> pockets.linkPocket(accountId, pocketId, 3, actor), HttpStatus.UNPROCESSABLE_CONTENT);
-
-    assertStatus(
-        () -> pockets.linkPocket(accountId, accountId, 3, actor), HttpStatus.UNPROCESSABLE_CONTENT);
+    doThrow(notFound).when(access).requireAccountAccess(actor, account);
+    assertThatThrownBy(() -> pockets.linkPocket(accountId, pocketId, 3, actor)).isSameAs(notFound);
+    verify(locks, never()).lockAccounts(any());
     verify(accounts, never()).relinkSavingsPocket(any(), any());
   }
 
   @Test
-  void aCardCanHaveNoPocketLinked() {
+  void aPocketThatCannotTakeTheMovesIsRefused() {
+    linkable(pocket("ARCHIVED", "CHF"));
+    assertCode(ProblemCode.SAVINGS_POCKET_UNSUITABLE);
+
+    linkable(pocket("ACTIVE", "EUR"));
+    assertCode(ProblemCode.SAVINGS_POCKET_UNSUITABLE);
+
+    Account nested = linkable(pocket("ACTIVE", "CHF"));
+    when(nested.getSavingsPocketAccountId()).thenReturn(UUID.randomUUID());
+    assertCode(ProblemCode.SAVINGS_POCKET_UNSUITABLE);
+
+    Account card = linkable(pocket("ACTIVE", "CHF"));
+    when(card.isHasStatementCycle()).thenReturn(true);
+    assertCode(ProblemCode.SAVINGS_POCKET_UNSUITABLE);
+
+    Account loan = linkable(pocket("ACTIVE", "CHF"));
+    when(loan.isHasAmortisation()).thenReturn(true);
+    assertCode(ProblemCode.SAVINGS_POCKET_UNSUITABLE);
+
+    assertThatThrownBy(() -> pockets.linkPocket(accountId, accountId, 3, actor))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            refused ->
+                assertThat(refused.getCode()).isEqualTo(ProblemCode.SAVINGS_POCKET_UNSUITABLE));
+    verify(accounts, never()).relinkSavingsPocket(any(), any());
+  }
+
+  @Test
+  void aCardOrALoanCanHaveNoPocketLinked() {
     linkable(pocket("ACTIVE", "CHF"));
     when(account.isHasStatementCycle()).thenReturn(true);
+    assertCode(ProblemCode.SAVINGS_POCKET_NOT_APPLICABLE);
 
-    assertStatus(
-        () -> pockets.linkPocket(accountId, pocketId, 3, actor), HttpStatus.UNPROCESSABLE_CONTENT);
+    when(account.isHasStatementCycle()).thenReturn(false);
+    when(account.isHasAmortisation()).thenReturn(true);
+    assertCode(ProblemCode.SAVINGS_POCKET_NOT_APPLICABLE);
+    verify(accounts, never()).relinkSavingsPocket(any(), any());
+  }
+
+  // Pockets never nest: an account that is another account's pocket gains none of its own, which
+  // also keeps two accounts from becoming each other's pocket.
+  @Test
+  void anAccountThatIsItselfAPocketCanHaveNoPocketLinked() {
+    linkable(pocket("ACTIVE", "CHF"));
+    when(accounts.existsBySavingsPocketAccountId(accountId)).thenReturn(true);
+
+    assertCode(ProblemCode.SAVINGS_POCKET_NOT_APPLICABLE);
+    verify(accounts, never()).relinkSavingsPocket(any(), any());
   }
 
   @Test
@@ -161,7 +217,8 @@ class SavingsPocketServiceTest {
     linkable(pocket("ACTIVE", "CHF"));
     when(accounts.existsBySavingsPocketAccountIdAndIdNot(pocketId, accountId)).thenReturn(true);
 
-    assertStatus(() -> pockets.linkPocket(accountId, pocketId, 3, actor), HttpStatus.CONFLICT);
+    ApiException refused = assertCode(ProblemCode.SAVINGS_POCKET_IN_USE);
+    assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     verify(accounts, never()).relinkSavingsPocket(any(), any());
   }
 
@@ -174,20 +231,22 @@ class SavingsPocketServiceTest {
     verify(accounts, never()).relinkSavingsPocket(any(), any());
   }
 
-  // The account at version 3, found under its lock, and the pocket found by its id.
+  // The account at version 3 and the pocket, both found by their ids.
   private Account linkable(Account pocket) {
     when(account.getVersion()).thenReturn(3);
-    when(accounts.findByIdForUpdate(accountId)).thenReturn(Optional.of(account));
+    when(lookups.findAccountOrThrow(accountId, actor)).thenReturn(account);
     when(pocket.getId()).thenReturn(pocketId);
     when(lookups.findAccountOrThrow(pocketId, actor)).thenReturn(pocket);
     return pocket;
   }
 
-  private static void assertStatus(Runnable call, HttpStatus status) {
-    assertThatThrownBy(call::run)
-        .isInstanceOfSatisfying(
-            ResponseStatusException.class,
-            refused -> assertThat(refused.getStatusCode()).isEqualTo(status));
+  private ApiException assertCode(ProblemCode code) {
+    ApiException refused =
+        catchThrowableOfType(
+            ApiException.class, () -> pockets.linkPocket(accountId, pocketId, 3, actor));
+    assertThat(refused).as("refused with %s", code).isNotNull();
+    assertThat(refused.getCode()).isEqualTo(code);
+    return refused;
   }
 
   private Account pocket(String status, String currency) {

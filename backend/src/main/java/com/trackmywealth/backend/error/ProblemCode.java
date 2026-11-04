@@ -258,6 +258,20 @@ public enum ProblemCode {
       SHOW,
       "Account identification is switched off on this server (no key configured).",
       HttpStatus.SERVICE_UNAVAILABLE),
+  SAVINGS_POCKET_NOT_APPLICABLE(
+      SHOW,
+      "The account can have no savings pocket: a card, a loan, an account without transactions,"
+          + " or one that is itself another account's pocket.",
+      HttpStatus.UNPROCESSABLE_CONTENT),
+  SAVINGS_POCKET_UNSUITABLE(
+      FIX_INPUT,
+      "The chosen account cannot be the savings pocket: the account itself, not active, without"
+          + " transactions, a card or loan, in another currency, or with a pocket of its own.",
+      HttpStatus.UNPROCESSABLE_CONTENT),
+  SAVINGS_POCKET_IN_USE(
+      FIX_INPUT,
+      "The chosen account is already the savings pocket of another account.",
+      HttpStatus.CONFLICT),
   LOCKED(
       RETRY_LATER,
       "The user account is temporarily locked after failed sign-ins.",

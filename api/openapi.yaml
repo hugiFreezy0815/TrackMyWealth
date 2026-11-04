@@ -5843,8 +5843,10 @@ paths:
       description: "The next import commits book the account's savings pocket moves\
         \ on this account, e.g. after the pocket an import created was archived. The\
         \ pocket must be an active account in the account's currency that holds transactions,\
-        \ is no card or loan and has no pocket of its own (422), and no other account's\
-        \ pocket (409). A link is replaced, never removed."
+        \ is no card or loan and has no pocket of its own (422 SAVINGS_POCKET_UNSUITABLE),\
+        \ and no other account's pocket (409 SAVINGS_POCKET_IN_USE). A card, a loan,\
+        \ an account without transactions or another account's pocket can have none\
+        \ (422 SAVINGS_POCKET_NOT_APPLICABLE). A link is replaced, never removed."
       operationId: linkAccountSavingsPocket
       parameters:
       - name: accountId
@@ -5932,6 +5934,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `SAVINGS_POCKET_IN_USE`: The chosen account is already the savings pocket of another account.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -5957,7 +5960,8 @@ paths:
         "422":
           description: |-
             Problem codes:
-            - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
+            - `SAVINGS_POCKET_NOT_APPLICABLE`: The account can have no savings pocket: a card, a loan, an account without transactions, or one that is itself another account's pocket.
+            - `SAVINGS_POCKET_UNSUITABLE`: The chosen account cannot be the savings pocket: the account itself, not active, without transactions, a card or loan, in another currency, or with a pocket of its own.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -6007,7 +6011,9 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
-      - UNPROCESSABLE
+      - SAVINGS_POCKET_NOT_APPLICABLE
+      - SAVINGS_POCKET_UNSUITABLE
+      - SAVINGS_POCKET_IN_USE
       - INTERNAL
   /api/v1/accounts/{accountId}/snapshots:
     get:
@@ -17651,6 +17657,9 @@ components:
           - ACCOUNT_IDENTIFIER_IN_USE
           - ACCOUNT_IDENTIFIER_NOT_IN_FILE
           - ACCOUNT_IDENTIFICATION_UNAVAILABLE
+          - SAVINGS_POCKET_NOT_APPLICABLE
+          - SAVINGS_POCKET_UNSUITABLE
+          - SAVINGS_POCKET_IN_USE
           - LOCKED
           - RATE_LIMITED
           - INTERNAL

@@ -84,6 +84,9 @@ public interface AccountRepository
   // #325 follow-up: whether an account other than accountId already has pocketId as its pocket.
   boolean existsBySavingsPocketAccountIdAndIdNot(UUID pocketId, UUID accountId);
 
+  // #325 follow-up: whether accountId is some account's pocket - a pocket gains none of its own.
+  boolean existsBySavingsPocketAccountId(UUID accountId);
+
   // US-04-03/FR-LIF-005: an institution summary counts only currently-active accounts - an
   // archived account is excluded from current totals (though still included in a historical
   // figure covering a period it was active in, not this story's concern). Explicit ordering

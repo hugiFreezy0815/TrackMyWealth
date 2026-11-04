@@ -66,6 +66,7 @@ class YuhStatementImportControllerTest {
   // The IBAN the synthetic statement names: registered, the statement imports without asking.
   private static final String YUH_IBAN = "CH21 0076 2000 0000 0000 0";
   private static final String JANUARY = "2031-01";
+  private static final String UNSUITABLE = "SAVINGS_POCKET_UNSUITABLE";
 
   @Container
   static PostgreSQLContainer<?> postgres =
@@ -394,9 +395,9 @@ class YuhStatementImportControllerTest {
     long version = accountVersion(yuh);
 
     linkPocket(replacement, version - 1).expectStatus().isEqualTo(HttpStatus.PRECONDITION_FAILED);
-    linkPocket(euros, version).expectStatus().isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
-    linkPocket(archived, version).expectStatus().isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
-    linkPocket(yuh, version).expectStatus().isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+    assertRefused(linkPocket(euros, version), HttpStatus.UNPROCESSABLE_CONTENT, UNSUITABLE);
+    assertRefused(linkPocket(archived, version), HttpStatus.UNPROCESSABLE_CONTENT, UNSUITABLE);
+    assertRefused(linkPocket(yuh, version), HttpStatus.UNPROCESSABLE_CONTENT, UNSUITABLE);
     assertThat(account(yuh).savingsPocketAccountId()).as("nothing changed").isEqualTo(archived);
 
     AccountSummaryResponse linked =
@@ -432,31 +433,53 @@ class YuhStatementImportControllerTest {
     UUID pocket = account(yuh).savingsPocketAccountId();
     UUID other = createAccount("Other bank", "CASH", "CHF");
 
-    client()
-        .put()
-        .uri("/api/v1/accounts/" + other + "/savings-pocket")
-        .header(HttpHeaders.IF_MATCH, "\"" + accountVersion(other) + "\"")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(new LinkSavingsPocketRequest(pocket))
-        .exchange()
-        .expectStatus()
-        .isEqualTo(HttpStatus.CONFLICT);
+    assertRefused(
+        linkPocket(other, pocket, accountVersion(other)),
+        HttpStatus.CONFLICT,
+        "SAVINGS_POCKET_IN_USE");
     assertThat(account(other).savingsPocketAccountId()).isNull();
+  }
+
+  // Pockets never nest: the pocket the import created gains no pocket of its own. This also keeps
+  // two accounts from becoming each other's pocket.
+  @Test
+  void aPocketCanHaveNoPocketLinked() throws IOException {
+    commit(upload());
+    UUID pocket = account(yuh).savingsPocketAccountId();
+    UUID other = createAccount("Other savings", "SAVINGS", "CHF");
+
+    assertRefused(
+        linkPocket(pocket, other, accountVersion(pocket)),
+        HttpStatus.UNPROCESSABLE_CONTENT,
+        "SAVINGS_POCKET_NOT_APPLICABLE");
+    assertThat(account(pocket).savingsPocketAccountId()).isNull();
+  }
+
+  // Security: neither the account nor the pocket can belong to another workspace. Both are the
+  // audited 404 of an id the member cannot see, and nothing is linked.
+  @Test
+  void anAccountOfAnotherWorkspaceIsNotFoundOnEitherSideOfTheLink() {
+    UUID foreign = foreignAccount();
+    long version = accountVersion(yuh);
+    long denials = count("SELECT count(*) FROM authorization_denial_log");
+
+    assertRefused(linkPocket(foreign, version), HttpStatus.NOT_FOUND, "NOT_FOUND");
+    assertRefused(
+        linkPocket(foreign, createAccount("Own savings", "SAVINGS", "CHF"), 0),
+        HttpStatus.NOT_FOUND,
+        "NOT_FOUND");
+
+    assertThat(count("SELECT count(*) FROM authorization_denial_log")).isEqualTo(denials + 2);
+    assertThat(account(yuh).savingsPocketAccountId()).isNull();
+    assertThat(count("SELECT count(*) FROM account WHERE savings_pocket_account_id IS NOT NULL"))
+        .as("nothing linked")
+        .isZero();
   }
 
   // V101: a pocket is an account of the same workspace, and never the account itself.
   @Test
   void theDatabaseRefusesAPocketOfAnotherWorkspaceOrTheAccountItself() {
-    UUID workspace = UUID.randomUUID();
-    jdbc.update("INSERT INTO workspace (id, name) VALUES (?, 'Workspace B')", workspace);
-    UUID foreign = UUID.randomUUID();
-    jdbc.update(
-        "INSERT INTO account (id, workspace_id, portfolio_id, account_type, name,"
-            + " native_currency) SELECT ?, ?, id, 'SAVINGS', 'B pocket', 'CHF'"
-            + " FROM portfolio WHERE workspace_id = ?",
-        foreign,
-        workspace,
-        workspace);
+    UUID foreign = foreignAccount();
 
     assertThatThrownBy(
             () ->
@@ -580,13 +603,37 @@ class YuhStatementImportControllerTest {
   }
 
   private RestTestClient.ResponseSpec linkPocket(UUID pocket, long version) {
+    return linkPocket(yuh, pocket, version);
+  }
+
+  private RestTestClient.ResponseSpec linkPocket(UUID account, UUID pocket, long version) {
     return client()
         .put()
-        .uri("/api/v1/accounts/" + yuh + "/savings-pocket")
+        .uri("/api/v1/accounts/" + account + "/savings-pocket")
         .header(HttpHeaders.IF_MATCH, "\"" + version + "\"")
         .contentType(MediaType.APPLICATION_JSON)
         .body(new LinkSavingsPocketRequest(pocket))
         .exchange();
+  }
+
+  private static void assertRefused(
+      RestTestClient.ResponseSpec response, HttpStatus status, String code) {
+    response.expectStatus().isEqualTo(status).expectBody().jsonPath("$.code").isEqualTo(code);
+  }
+
+  // A savings account of a second workspace, written past the API.
+  private UUID foreignAccount() {
+    UUID workspace = UUID.randomUUID();
+    jdbc.update("INSERT INTO workspace (id, name) VALUES (?, 'Workspace B')", workspace);
+    UUID foreign = UUID.randomUUID();
+    jdbc.update(
+        "INSERT INTO account (id, workspace_id, portfolio_id, account_type, name,"
+            + " native_currency) SELECT ?, ?, id, 'SAVINGS', 'B pocket', 'CHF'"
+            + " FROM portfolio WHERE workspace_id = ?",
+        foreign,
+        workspace,
+        workspace);
+    return foreign;
   }
 
   private long transactionVersion(UUID transaction) {
