@@ -13,7 +13,10 @@ import org.springframework.http.HttpStatus;
  * {@code ApiDocumentationConfig} documents these instead, keeping the response body. A 201 created
  * resource, a 204 without a body - or both 201 and 200 for a find-or-create.
  *
- * <p>{@code ArchitectureTest} fails a handler that answers 201, 202 or 204 without declaring it.
+ * <p>The declared statuses replace the 200 in the contract, so they must be exactly the ones the
+ * handler answers: {@code ArchitectureTest} fails a handler whose bytecode answers a success status
+ * it does not declare, or declares one it never answers, and in tests every request to a documented
+ * handler that answers an undeclared success status fails ({@code DocumentedSuccessStatusFilter}).
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)

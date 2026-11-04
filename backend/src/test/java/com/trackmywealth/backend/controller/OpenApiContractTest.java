@@ -79,9 +79,6 @@ class OpenApiContractTest {
     registry.add("spring.datasource.username", postgres::getUsername);
     registry.add("spring.datasource.password", postgres::getPassword);
     registry.add("app.rate-limit.enabled", () -> "false");
-    // Each request builds the document anew: with springdoc's cache, a second request would only
-    // serialize the first one's document again, and the same-every-time check could not fail.
-    registry.add("springdoc.cache.disabled", () -> "true");
   }
 
   @LocalServerPort int port;
@@ -153,11 +150,20 @@ class OpenApiContractTest {
     return index < lines.length ? lines[index] : "<end of file>";
   }
 
+  /**
+   * The committed file was generated in another JVM, and CI compares it in yet another: an order
+   * that changes from one JVM to the next (identity hash codes, a {@code HashSet} of enums, thread
+   * timing) would make the drift check fail at random. A second request in this JVM cannot show
+   * that - it shares all of it - so the document is generated again by the application started in a
+   * JVM of its own, on the same classpath and database. What differs between machines, such as the
+   * classpath scanning order, the drift check itself catches on CI.
+   */
   @Test
-  void theDocumentIsTheSameEveryTimeItIsGenerated() {
+  void aFreshJvmServesTheSameDocument() throws Exception {
     String token = bootstrapAdministrator();
+    String here = served(token);
 
-    assertThat(served(token)).isEqualTo(served(token));
+    assertThat(FreshJvmApplication.serve(postgres, "/api-docs.yaml", token)).isEqualTo(here);
   }
 
   /**

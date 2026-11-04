@@ -344,6 +344,12 @@ file client code is generated from. `./mvnw verify` keeps it in step with the co
   `ArchitectureTest` fails on a controller without `@Tag` (or `@Hidden`, for one that is not part of
   the API) and on a handler method without `@Operation(operationId = ..., summary = ...)`. An
   `operationId` is a verb plus the resource: `listAccounts`, `getAccount`, `createImportBatch`.
+- A handler answering anything but 200 declares its statuses with `@SuccessStatus` (201, 204, or
+  both 201 and 200 for a find-or-create). `ArchitectureTest` reads them from the bytecode, and in
+  every test a request answered with an undeclared success status fails with a 500 that names it.
+- Every operation requires the bearer access token except those under `/api/v1/setup/**` and
+  `/api/v1/auth/**` (`SecurityConfig.PUBLIC_API_PATTERNS`, shared by Spring Security and the
+  contract).
 
 `.github/workflows/mobile-web-ci.yml` type-checks, lints, formats-checks and tests `mobile/`, then
 builds its web export (`npx expo export -p web`) on every push/PR touching `mobile/**`. It does

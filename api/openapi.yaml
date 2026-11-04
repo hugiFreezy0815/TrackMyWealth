@@ -7,6 +7,8 @@ info:
 servers:
 - url: /
   description: The server serving this document
+security:
+- bearerAuth: []
 paths:
   /api/v1/accounts:
     get:
@@ -60,6 +62,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AccountListItemResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -101,6 +110,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -143,6 +159,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -198,6 +221,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -256,6 +286,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AmortisationScheduleEntryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -303,6 +340,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AmortisationScheduleEntryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -365,6 +409,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AmortisationScheduleEntryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -430,6 +481,13 @@ paths:
               description: Correlation id assigned to this request.
               schema:
                 type: string
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -494,6 +552,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -561,6 +626,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountValuation"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -603,6 +675,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountIdentifierResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -658,6 +737,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountIdentifierResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -726,6 +812,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountIdentifierResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -796,6 +889,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountIdentifierResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -894,6 +994,13 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -958,6 +1065,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportBatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "503":
           headers:
             X-Correlation-Id:
@@ -1013,6 +1127,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportBatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -1061,6 +1182,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportAccountProposalResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "503":
           headers:
             X-Correlation-Id:
@@ -1124,6 +1252,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportBatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -1194,6 +1329,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportBatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -1264,6 +1406,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportBatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -1327,6 +1476,13 @@ paths:
               schema:
                 type: string
                 format: binary
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -1389,6 +1545,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportBatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -1472,6 +1635,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportRollbackResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -1581,6 +1751,13 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -1649,6 +1826,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportBatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -1705,6 +1889,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OpeningBalanceResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -1760,6 +1951,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OpeningBalanceResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -1821,6 +2019,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OpeningBalanceResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -1866,6 +2071,13 @@ paths:
               description: Correlation id assigned to this request.
               schema:
                 type: string
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -1936,6 +2148,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -2034,6 +2253,13 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2082,6 +2308,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReconciliationResultResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2144,6 +2377,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReconciliationResultResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -2220,6 +2460,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReconciliationResultResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -2290,6 +2537,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReconciliationResultResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -2348,6 +2602,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/LoanRepaymentResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2395,6 +2656,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoanRepaymentResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2445,6 +2713,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -2503,6 +2778,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AccountSnapshotResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2550,6 +2832,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountSnapshotResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2598,6 +2887,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountSnapshotResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2659,6 +2955,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountSnapshotResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -2766,6 +3069,13 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2813,6 +3123,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2857,6 +3174,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/TransactionResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -2919,6 +3243,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionCorrectionResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -2993,6 +3324,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionRemovalResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -3069,6 +3407,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -3138,6 +3483,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -3208,6 +3560,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionRemovalResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -3278,6 +3637,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -3347,6 +3713,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -3405,6 +3778,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/CustomAssetValuationResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -3452,6 +3832,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CustomAssetValuationResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -3496,6 +3883,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/SettlementMatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -3538,6 +3932,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SettlementSourceResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -3593,6 +3994,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SettlementSourceResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -3649,6 +4057,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CardStatementResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -3691,6 +4106,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatementConfigResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -3746,6 +4168,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatementConfigResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -3796,6 +4225,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FxImportSettingsResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+        "403":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -3845,6 +4288,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FxImportSettingsResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+        "403":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -3895,6 +4352,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReferenceDataResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+        "403":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -3937,6 +4408,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+        "403":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -3979,6 +4464,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+        "403":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -4034,6 +4533,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+        "403":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -4098,6 +4611,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+        "403":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -4162,6 +4689,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+        "403":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -4230,6 +4771,7 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+      security: []
   /api/v1/auth/mfa/verify:
     post:
       tags:
@@ -4277,6 +4819,7 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+      security: []
   /api/v1/auth/refresh:
     post:
       tags:
@@ -4319,6 +4862,7 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+      security: []
   /api/v1/cash-flow:
     get:
       tags:
@@ -4358,6 +4902,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CashFlowResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -4402,6 +4953,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/CategoryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -4443,6 +5001,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CategoryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -4485,6 +5050,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CategoryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -4540,6 +5112,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CategoryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -4599,6 +5178,13 @@ paths:
               description: Correlation id assigned to this request.
               schema:
                 type: string
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -4663,6 +5249,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CategoryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -4727,6 +5320,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CategoryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -4785,6 +5385,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/CategorizationRuleResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -4826,6 +5433,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CategorizationRuleResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -4876,6 +5490,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CategorizationRuleResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -4940,6 +5561,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ImportTemplateResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -4981,6 +5609,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportTemplateResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -5030,6 +5665,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ImportTemplateCandidateResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "503":
           headers:
             X-Correlation-Id:
@@ -5093,6 +5735,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportTemplateTestResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "503":
           headers:
             X-Correlation-Id:
@@ -5142,6 +5791,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportTemplateResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -5197,6 +5853,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportTemplateResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -5256,6 +5919,13 @@ paths:
               description: Correlation id assigned to this request.
               schema:
                 type: string
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -5320,6 +5990,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportTemplateResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -5384,6 +6061,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportTemplateResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -5457,6 +6141,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportTemplateTestResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "503":
           headers:
             X-Correlation-Id:
@@ -5517,6 +6208,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportAccountProposalResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "503":
           headers:
             X-Correlation-Id:
@@ -5607,6 +6305,13 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -5648,6 +6353,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NetWorthResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -5691,6 +6403,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PortfolioListItemResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -5732,6 +6451,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PortfolioResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -5774,6 +6500,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PortfolioResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -5829,6 +6562,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PortfolioResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -5890,6 +6630,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PortfolioSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -5932,6 +6679,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PortfolioViewResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -5973,6 +6727,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SecurityResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6025,6 +6786,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SecurityResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6067,6 +6835,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SecurityResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6105,6 +6880,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/SessionSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6147,6 +6929,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SessionSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6195,6 +6984,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/SettlementMatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6245,6 +7041,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SettlementMatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -6309,6 +7112,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SettlementMatchResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -6377,6 +7187,7 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+      security: []
   /api/v1/transactions:
     get:
       tags:
@@ -6519,6 +7330,13 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6555,6 +7373,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentUserResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6593,6 +7418,13 @@ paths:
               description: Correlation id assigned to this request.
               schema:
                 type: string
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6631,6 +7463,13 @@ paths:
               description: Correlation id assigned to this request.
               schema:
                 type: string
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6673,6 +7512,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MfaEnrollmentResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6709,6 +7555,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6747,6 +7600,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/WorkspaceMemberListItemResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6789,6 +7649,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceMemberSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -6839,6 +7706,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceMemberSummaryResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -6903,6 +7777,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -6967,6 +7848,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceResponse"
+        "401":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -10393,3 +11281,10 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/ApiProblem"
+  securitySchemes:
+    bearerAuth:
+      type: http
+      description: "The access token from set-up, login or refresh, sent as Authorization:\
+        \ Bearer <token>."
+      scheme: bearer
+      bearerFormat: JWT

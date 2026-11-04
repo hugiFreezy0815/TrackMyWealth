@@ -28,22 +28,20 @@ import com.trackmywealth.backend.security.SystemWorkspaceContext;
 import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.TransferRecheckService;
+import com.trackmywealth.backend.testsupport.DocumentedHandlers;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.SuccessStatus;
-import com.trackmywealth.backend.web.VersionedResponse;
-import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.Entity;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
@@ -402,28 +400,22 @@ class ArchitectureTest {
 
   // US-29-02 (#372): the committed api/openapi.yaml groups every operation under a tag and names it
   // by an id the code chose, never springdoc's fallback (the method name, numbered on a clash).
-  // Every controller springdoc documents: @RestController, but also a @Controller with
-  // @ResponseBody handlers.
-  private static final Map<String, HttpStatus> NON_200_SUCCESS =
-      Map.of(
-          "CREATED", HttpStatus.CREATED,
-          "ACCEPTED", HttpStatus.ACCEPTED,
-          "NO_CONTENT", HttpStatus.NO_CONTENT);
-
-  // Factories that answer a fixed status without naming the HttpStatus constant.
-  private static final Map<String, HttpStatus> STATUS_FACTORIES =
-      Map.of(
-          ResponseEntity.class.getName() + "#created", HttpStatus.CREATED,
-          ResponseEntity.class.getName() + "#accepted", HttpStatus.ACCEPTED,
-          ResponseEntity.class.getName() + "#noContent", HttpStatus.NO_CONTENT,
-          VersionedResponse.class.getName() + "#created", HttpStatus.CREATED);
-
+  // Exactly what springdoc documents (DocumentedHandlers): a @Controller or @RestController
+  // handler with @ResponseBody or @Operation, neither it nor its class @Hidden.
+  // Reflection only for controllers: the annotation check on ArchUnit's own model comes first.
   private static final DescribedPredicate<JavaClass> API_CONTROLLERS =
-      CanBeAnnotated.Predicates.annotatedWith(Controller.class)
-          .or(CanBeAnnotated.Predicates.metaAnnotatedWith(Controller.class))
-          .and(DescribedPredicate.not(CanBeAnnotated.Predicates.annotatedWith(Hidden.class)))
-          .as("are controllers (@Controller or @RestController) not marked @Hidden")
-          .forSubtype();
+      DescribedPredicate.describe(
+          "are controllers with operations in the API contract",
+          type -> isController(type) && DocumentedHandlers.isDocumentedController(type.reflect()));
+
+  private static final DescribedPredicate<JavaMethod> API_OPERATIONS =
+      DescribedPredicate.describe(
+          "are operations of the API contract",
+          method ->
+              isController(method.getOwner())
+                  && method.isMetaAnnotatedWith(RequestMapping.class)
+                  && DocumentedHandlers.isDocumentedOperation(
+                      method.getOwner().reflect(), method.reflect()));
 
   @ArchTest
   static final ArchRule api_controllers_declare_their_tag =
@@ -438,28 +430,26 @@ class ArchitectureTest {
   @ArchTest
   static final ArchRule api_operations_declare_their_operation_id =
       methods()
-          .that()
-          .areDeclaredInClassesThat(API_CONTROLLERS)
-          .and()
-          .areMetaAnnotatedWith(RequestMapping.class)
+          .that(API_OPERATIONS)
           .should(declareAnExplicitOperationId())
           .because(
               "generated clients call operations by their id (#372): it must be chosen, stable and"
-                  + " unique - annotate the method with @Operation(operationId = ..., summary = ...)");
+                  + " unique - annotate the method with @Operation(operationId = ..., summary = ...),"
+                  + " or @Hidden when it is not part of the API");
 
-  // US-29-02 (#372): springdoc documents every success as 200; a handler answering 201, 202 or 204
-  // must say so, or api/openapi.yaml promises clients the wrong status.
+  // US-29-02 (#372): springdoc documents every success as 200; @SuccessStatus documents the
+  // statuses a handler answers instead. Both directions: an answered status not documented, and a
+  // documented one never answered (which would replace the real 200 in the contract). The bytecode
+  // half; DocumentedSuccessStatusFilter checks the status actually sent in every test request.
   @ArchTest
-  static final ArchRule api_operations_declare_a_non_200_success_status =
+  static final ArchRule api_operations_answer_their_documented_success_statuses =
       methods()
-          .that()
-          .areDeclaredInClassesThat(API_CONTROLLERS)
-          .and()
-          .areMetaAnnotatedWith(RequestMapping.class)
-          .should(declareTheSuccessStatusesTheyAnswerWith())
+          .that(API_OPERATIONS)
+          .should(answerTheSuccessStatusesTheyDocument())
           .because(
               "springdoc cannot see the status inside a ResponseEntity and documents 200 (#372) -"
-                  + " annotate the method with @SuccessStatus");
+                  + " declare the statuses the method answers with @SuccessStatus, each set from an"
+                  + " HttpStatus constant or a ResponseEntity factory");
 
   @ArchTest
   static final ArchRule no_standard_streams =
@@ -492,44 +482,45 @@ class ArchitectureTest {
     };
   }
 
-  private static ArchCondition<JavaMethod> declareTheSuccessStatusesTheyAnswerWith() {
-    return new ArchCondition<>("declare the non-200 success statuses they answer with") {
+  private static boolean isController(JavaClass type) {
+    return type.isAnnotatedWith(Controller.class) || type.isMetaAnnotatedWith(Controller.class);
+  }
+
+  private static ArchCondition<JavaMethod> answerTheSuccessStatusesTheyDocument() {
+    return new ArchCondition<>("answer exactly the success statuses they document") {
       @Override
       public void check(JavaMethod method, ConditionEvents events) {
-        Set<HttpStatus> answered = EnumSet.noneOf(HttpStatus.class);
-        method
-            .getFieldAccesses()
-            .forEach(
-                access -> {
-                  if (access.getTargetOwner().isEquivalentTo(HttpStatus.class)
-                      && NON_200_SUCCESS.containsKey(access.getName())) {
-                    answered.add(NON_200_SUCCESS.get(access.getName()));
-                  }
-                });
-        method
-            .getMethodCallsFromSelf()
-            .forEach(
-                call -> {
-                  HttpStatus status =
-                      STATUS_FACTORIES.get(call.getTargetOwner().getName() + "#" + call.getName());
-                  if (status != null) {
-                    answered.add(status);
-                  }
-                });
-        Set<HttpStatus> declared = EnumSet.noneOf(HttpStatus.class);
-        method
-            .tryGetAnnotationOfType(SuccessStatus.class)
-            .ifPresent(annotation -> declared.addAll(List.of(annotation.value())));
-        answered.removeAll(declared);
-        if (!answered.isEmpty()) {
-          events.add(
-              SimpleConditionEvent.violated(
-                  method,
-                  method.getFullName()
-                      + " answers "
-                      + answered
-                      + " without declaring it in @SuccessStatus"));
+        SuccessStatusEvidence evidence = SuccessStatusEvidence.of(method);
+        Set<HttpStatus> documented = DocumentedHandlers.documentedSuccessStatuses(method.reflect());
+        List<String> problems = new ArrayList<>();
+        if (!evidence.unreadable().isEmpty()) {
+          problems.add("sets a status this rule cannot read: " + evidence.unreadable());
         }
+        Set<HttpStatus> undocumented = EnumSet.noneOf(HttpStatus.class);
+        undocumented.addAll(evidence.answered());
+        undocumented.removeAll(documented);
+        if (!undocumented.isEmpty()) {
+          problems.add("answers " + undocumented + " without declaring it in @SuccessStatus");
+        }
+        Set<HttpStatus> neverAnswered = EnumSet.copyOf(documented);
+        neverAnswered.removeAll(evidence.answered());
+        // A ResponseEntity built in another class shows no status here: only springdoc's default
+        // 200 is taken on trust then (the runtime check still sees it); a declared one is not.
+        boolean defaultTakenOnTrust =
+            evidence.answered().isEmpty() && documented.equals(EnumSet.of(HttpStatus.OK));
+        if (!neverAnswered.isEmpty() && !defaultTakenOnTrust) {
+          problems.add(
+              "documents "
+                  + neverAnswered
+                  + (method.isAnnotatedWith(SuccessStatus.class)
+                      ? " in @SuccessStatus"
+                      : " (springdoc's default)")
+                  + " but never answers it");
+        }
+        problems.forEach(
+            problem ->
+                events.add(
+                    SimpleConditionEvent.violated(method, method.getFullName() + " " + problem)));
       }
     };
   }
