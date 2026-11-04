@@ -348,8 +348,10 @@ file client code is generated from. `./mvnw verify` keeps it in step with the co
   both 201 and 200 for a find-or-create). `ArchitectureTest` reads them from the bytecode, and in
   every test a request answered with an undeclared success status fails with a 500 that names it.
 - Every operation requires the bearer access token except those under `/api/v1/setup/**` and
-  `/api/v1/auth/**` (`SecurityConfig.PUBLIC_API_PATTERNS`, shared by Spring Security and the
-  contract).
+  `/api/v1/auth/**`, and only a system administrator may call those under `/api/v1/admin/**`. Both
+  lists live in `security.ApiAccessPaths`: Spring Security enforces them (`SecurityConfig`), and
+  the contract's security section and each operation's implied problem codes (`UNAUTHENTICATED`,
+  `FORBIDDEN`) are read from the same lists, so documentation code never decides who may call what.
 
 `.github/workflows/api-contract.yml` (job `api-breaking`) keeps the contract from breaking by
 accident. On every PR touching `backend/**` or `api/**` it compares `main`'s `api/openapi.yaml` with
