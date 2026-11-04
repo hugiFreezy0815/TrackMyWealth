@@ -15,10 +15,10 @@ import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
 import com.trackmywealth.backend.error.ImportRowRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.validation.CurrencyCodes;
 import com.trackmywealth.backend.validation.Re2Patterns;
 import java.io.IOException;
@@ -57,7 +57,6 @@ import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -704,11 +703,7 @@ public class ImportFileParserService {
       return Re2Patterns.compile(pattern).groupCount();
     } catch (IllegalArgumentException e) {
       ApiException exception =
-          new ApiException(
-              HttpStatus.UNPROCESSABLE_CONTENT,
-              ApiErrorCode.IMPORT_TEMPLATE_INVALID,
-              e.getMessage(),
-              e);
+          new ApiException(ProblemCode.IMPORT_TEMPLATE_INVALID, e.getMessage(), e);
       exception.getBody().setProperty("field", field);
       throw exception;
     }
@@ -1018,12 +1013,12 @@ public class ImportFileParserService {
       }
     } catch (IOException | UncheckedIOException e) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_FILE_MALFORMED,
+          ProblemCode.IMPORT_FILE_MALFORMED,
           "The file is not valid CSV with this template's delimiter (e.g. an unclosed quote).",
           e);
     }
     if (records.isEmpty()) {
-      throw fileError(ApiErrorCode.IMPORT_FILE_EMPTY, "The file holds no rows to import.");
+      throw fileError(ProblemCode.IMPORT_FILE_EMPTY, "The file holds no rows to import.");
     }
     return records;
   }
@@ -1053,7 +1048,7 @@ public class ImportFileParserService {
         end++;
       }
       if (end == text.length()) {
-        throw fileError(ApiErrorCode.IMPORT_FILE_EMPTY, "The file ends within its preamble.");
+        throw fileError(ProblemCode.IMPORT_FILE_EMPTY, "The file ends within its preamble.");
       }
       position =
           text.charAt(end) == '\r' && end + 1 < text.length() && text.charAt(end + 1) == '\n'
@@ -1069,7 +1064,7 @@ public class ImportFileParserService {
       return List.of();
     }
     if (records.size() <= template.headerRowIndex()) {
-      throw fileError(ApiErrorCode.IMPORT_FILE_EMPTY, "The file has no header row.");
+      throw fileError(ProblemCode.IMPORT_FILE_EMPTY, "The file has no header row.");
     }
     return records.get(template.headerRowIndex());
   }
@@ -1079,7 +1074,7 @@ public class ImportFileParserService {
     int first = template.hasHeaderRow() ? template.headerRowIndex() + 1 : 0;
     int end = records.size() - template.trailingSummaryRowCount();
     if (end <= first) {
-      throw fileError(ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS, "The file has no data rows.");
+      throw fileError(ProblemCode.IMPORT_FILE_NO_DATA_ROWS, "The file has no data rows.");
     }
     return records.subList(first, end);
   }
@@ -1090,7 +1085,7 @@ public class ImportFileParserService {
     for (String cell : cells) {
       if (cell.indexOf(REPLACEMENT_CHARACTER) >= 0) {
         throw fileError(
-            ApiErrorCode.IMPORT_ENCODING_SUSPECT,
+            ProblemCode.IMPORT_ENCODING_SUSPECT,
             "The file does not look like it is encoded in this template's encoding.");
       }
     }
@@ -1127,7 +1122,7 @@ public class ImportFileParserService {
     }
     if (!missing.isEmpty()) {
       throw fileError(
-              ApiErrorCode.IMPORT_TEMPLATE_MISMATCH,
+              ProblemCode.IMPORT_TEMPLATE_MISMATCH,
               "The file's header lacks columns this template reads: " + missing.size() + ".")
           .withProperty("missingColumns", missing);
     }
@@ -1887,25 +1882,22 @@ public class ImportFileParserService {
   // Package-private for CamtImportReaderService: a CAMT file is held to the same row limit.
   static ImportFileRejectedException tooManyRows() {
     return fileError(
-            ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS,
+            ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
             "An import file may hold at most " + MAX_DATA_ROWS + " data rows.")
         .withProperty("maxRows", MAX_DATA_ROWS);
   }
 
-  private static ImportFileRejectedException fileError(String code, String detail) {
+  private static ImportFileRejectedException fileError(ProblemCode code, String detail) {
     return new ImportFileRejectedException(code, detail);
   }
 
   private static ApiException invalid(String field, String detail) {
-    ApiException exception =
-        new ApiException(
-            HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.IMPORT_TEMPLATE_INVALID, detail);
+    ApiException exception = new ApiException(ProblemCode.IMPORT_TEMPLATE_INVALID, detail);
     exception.getBody().setProperty("field", field);
     return exception;
   }
 
   private static ApiException unsupported(String detail) {
-    return new ApiException(
-        HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED, detail);
+    return new ApiException(ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED, detail);
   }
 }

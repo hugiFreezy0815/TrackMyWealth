@@ -26,9 +26,9 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ImportFile;
 import com.trackmywealth.backend.entity.ImportRowRaw;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ImportFileRepository;
 import com.trackmywealth.backend.repository.ImportRowRawRepository;
@@ -215,7 +215,7 @@ public class ImportBatchService {
               return accountContext(account);
             });
     if (content.length == 0) {
-      throw new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_EMPTY, "The file is empty.");
+      throw new ImportFileRejectedException(ProblemCode.IMPORT_FILE_EMPTY, "The file is empty.");
     }
     // An .xlsx workbook is a ZIP archive too, but no CAMT statement (#273).
     boolean camt =
@@ -402,8 +402,7 @@ public class ImportBatchService {
     ImportBatch batch = requireBatch(account, batchId, actor);
     if (status != null && !ImportBatchValues.ROW_STATUSES.contains(status)) {
       throw new ApiException(
-          HttpStatus.BAD_REQUEST,
-          ApiErrorCode.VALIDATION_FAILED,
+          ProblemCode.VALIDATION_FAILED,
           "status must be one of PARSED, DUPLICATE, ERROR, SKIPPED.");
     }
     List<ImportRowRaw> readable =
@@ -488,14 +487,12 @@ public class ImportBatchService {
     ImportRowRaw row = requireRow(batch, rowNumber);
     if (included && ImportBatchValues.ROW_SKIPPED.equals(row.getParseStatus())) {
       throw new ApiException(
-          HttpStatus.UNPROCESSABLE_CONTENT,
-          ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE,
+          ProblemCode.IMPORT_ROW_NOT_INCLUDABLE,
           "Row " + rowNumber + " moves no money and is never imported.");
     }
     if (included && ImportBatchValues.ROW_ERROR.equals(row.getParseStatus())) {
       throw new ApiException(
-          HttpStatus.UNPROCESSABLE_CONTENT,
-          ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE,
+          ProblemCode.IMPORT_ROW_NOT_INCLUDABLE,
           "Row " + rowNumber + " could not be read and cannot be imported.");
     }
     List<ImportRowRaw> readable = recheckService.readableRows(batch);
@@ -580,9 +577,7 @@ public class ImportBatchService {
     Account account = requireEditableAccount(accountId, actor);
     if (!ACTIVE.equals(account.getStatus())) {
       throw new ApiException(
-          HttpStatus.CONFLICT,
-          ApiErrorCode.ACCOUNT_ARCHIVED,
-          "Cannot import into an archived account.");
+          ProblemCode.ACCOUNT_ARCHIVED, "Cannot import into an archived account.");
     }
     if (!account.isHasTransactions()) {
       throw new ResponseStatusException(
@@ -621,8 +616,7 @@ public class ImportBatchService {
   static ApiException stateConflict(ImportBatch batch) {
     ApiException conflict =
         new ApiException(
-            HttpStatus.CONFLICT,
-            ApiErrorCode.IMPORT_BATCH_STATE,
+            ProblemCode.IMPORT_BATCH_STATE,
             "This import batch is " + batch.getStatus() + "; that step is no longer possible.");
     conflict.getBody().setProperty("status", batch.getStatus());
     return conflict;
@@ -927,8 +921,7 @@ public class ImportBatchService {
     if (open >= maxOpenBatches) {
       ApiException full =
           new ApiException(
-              HttpStatus.CONFLICT,
-              ApiErrorCode.IMPORT_TOO_MANY_OPEN_BATCHES,
+              ProblemCode.IMPORT_TOO_MANY_OPEN_BATCHES,
               "This account already has "
                   + maxOpenBatches
                   + " imports that are neither committed nor discarded; commit or discard one"

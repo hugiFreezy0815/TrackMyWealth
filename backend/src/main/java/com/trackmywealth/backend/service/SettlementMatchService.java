@@ -8,8 +8,8 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.SettlementMatch;
 import com.trackmywealth.backend.entity.Transaction;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.repository.SettlementMatchRepository;
@@ -342,9 +342,7 @@ public class SettlementMatchService {
     }
     if (!"ACTIVE".equals(source.getStatus())) {
       throw new ApiException(
-          HttpStatus.CONFLICT,
-          ApiErrorCode.ACCOUNT_ARCHIVED,
-          "The settlement source account is archived.");
+          ProblemCode.ACCOUNT_ARCHIVED, "The settlement source account is archived.");
     }
     if (!source.getNativeCurrency().equals(card.getNativeCurrency())) {
       throw new ResponseStatusException(

@@ -6,14 +6,13 @@ import com.trackmywealth.backend.dto.ImportIdentificationResponse;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -120,8 +119,7 @@ public class ImportAccountIdentificationService {
     if (batch.isAccountConfirmationRequired() && !batch.isAccountConfirmed()) {
       ApiException exception =
           new ApiException(
-              HttpStatus.CONFLICT,
-              ApiErrorCode.IMPORT_ACCOUNT_UNCONFIRMED,
+              ProblemCode.IMPORT_ACCOUNT_UNCONFIRMED,
               "The file does not name this account for certain; confirm the account before"
                   + " committing.");
       exception.getBody().setProperty("accountIdentification", batch.getAccountIdentification());

@@ -1,8 +1,10 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.AccountValuation;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountValuationService;
+import com.trackmywealth.backend.web.ProblemCodes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.LocalDate;
@@ -41,6 +43,7 @@ public class AccountBalanceController {
   }
 
   @Operation(operationId = "getAccountBalance", summary = "An account's current value")
+  @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @GetMapping
   public AccountValuation getBalance(
       @PathVariable UUID accountId,

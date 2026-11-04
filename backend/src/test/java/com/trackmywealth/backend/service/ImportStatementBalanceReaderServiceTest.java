@@ -7,8 +7,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -166,7 +166,7 @@ class ImportStatementBalanceReaderServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_INVALID);
               assertThat(e.getBody().getProperties()).containsEntry("field", field);
             });
   }
@@ -304,7 +304,7 @@ class ImportStatementBalanceReaderServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_INVALID);
               assertThat(e.getBody().getProperties()).containsEntry("field", field);
             });
   }

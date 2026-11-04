@@ -15,9 +15,9 @@ import com.trackmywealth.backend.dto.ImportHoldingsStatement;
 import com.trackmywealth.backend.dto.ImportHoldingsStatement.Line;
 import com.trackmywealth.backend.dto.ImportHoldingsValues;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -188,12 +188,12 @@ class ImportHoldingsReaderServiceTest {
     assertThatThrownBy(() -> readStubbed(pdfTemplate(SWISSQUOTE)))
         .isInstanceOfSatisfying(
             ImportFileRejectedException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_MALFORMED));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_FILE_MALFORMED));
     stubText("Portfolio-Wertentwicklung per 31.12.2031", "Nothing held");
     assertThatThrownBy(() -> readStubbed(pdfTemplate(SWISSQUOTE)))
         .isInstanceOfSatisfying(
             ImportFileRejectedException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_FILE_NO_DATA_ROWS));
   }
 
   // --- spreadsheets ------------------------------------------------------------------------
@@ -255,7 +255,7 @@ class ImportHoldingsReaderServiceTest {
     assertThatThrownBy(() -> reader.read(cash, sheetTemplate(POSITIONS), MEMBER_DATE))
         .isInstanceOfSatisfying(
             ImportFileRejectedException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_MISMATCH));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_MISMATCH));
     assertThat(reader.readHeader(cash, sheetTemplate(CASH))).startsWith("Währung", "Kurs");
   }
 
@@ -344,7 +344,7 @@ class ImportHoldingsReaderServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_INVALID);
               assertThat(e.getBody().getProperties()).containsEntry("field", field);
             });
   }

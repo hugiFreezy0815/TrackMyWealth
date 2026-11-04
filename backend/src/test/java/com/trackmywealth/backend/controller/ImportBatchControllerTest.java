@@ -38,7 +38,7 @@ import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
@@ -552,7 +552,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_BATCH_STATE);
+        .isEqualTo(ProblemCode.IMPORT_BATCH_STATE.name());
   }
 
   @Test
@@ -655,7 +655,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.ACCOUNT_IDENTIFIER_NOT_IN_FILE);
+        .isEqualTo(ProblemCode.ACCOUNT_IDENTIFIER_NOT_IN_FILE.name());
 
     // A credit card is registered by a masked card number, never by the file's IBAN.
     UUID identifying = createTemplate(preambleTemplate()).id();
@@ -1354,7 +1354,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE)
+        .isEqualTo(ProblemCode.IMPORT_ROW_NOT_INCLUDABLE.name())
         .jsonPath("$.detail")
         .isEqualTo("Row 1 moves no money and is never imported.");
 
@@ -1580,7 +1580,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_ROW_NOT_INCLUDABLE)
+        .isEqualTo(ProblemCode.IMPORT_ROW_NOT_INCLUDABLE.name())
         .jsonPath("$.detail")
         .isEqualTo("Row 2 could not be read and cannot be imported.");
 
@@ -1704,7 +1704,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_BATCH_STATE)
+        .isEqualTo(ProblemCode.IMPORT_BATCH_STATE.name())
         .jsonPath("$.status")
         .isEqualTo("COMMITTED");
 
@@ -1847,7 +1847,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_BATCH_STATE);
+        .isEqualTo(ProblemCode.IMPORT_BATCH_STATE.name());
     commitStatus(account, batch.id(), "\"" + discarded.version() + "\"")
         .isEqualTo(HttpStatus.CONFLICT);
     assertThat(count("SELECT count(*) FROM transaction")).isZero();
@@ -1863,7 +1863,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.CONTENT_TOO_LARGE)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_FILE_TOO_LARGE);
+        .isEqualTo(ProblemCode.IMPORT_FILE_TOO_LARGE.name());
 
     String[] rows = new String[20_001];
     for (int i = 0; i < rows.length; i++) {
@@ -1874,7 +1874,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS);
+        .isEqualTo(ProblemCode.IMPORT_FILE_TOO_MANY_ROWS.name());
     assertThat(count("SELECT count(*) FROM import_batch")).isZero();
   }
 
@@ -1910,7 +1910,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.ACCOUNT_ARCHIVED);
+        .isEqualTo(ProblemCode.ACCOUNT_ARCHIVED.name());
   }
 
   @Test
@@ -1957,7 +1957,7 @@ class ImportBatchControllerTest {
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_TOO_MANY_OPEN_BATCHES)
+        .isEqualTo(ProblemCode.IMPORT_TOO_MANY_OPEN_BATCHES.name())
         .jsonPath("$.maxOpenBatches")
         .isEqualTo(MAX_OPEN_BATCHES);
     assertThat(count("SELECT count(*) FROM import_batch")).isEqualTo(MAX_OPEN_BATCHES);
@@ -1986,7 +1986,7 @@ class ImportBatchControllerTest {
         .isBadRequest()
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        .isEqualTo(ProblemCode.VALIDATION_FAILED.name());
     client()
         .patch()
         .uri(imports() + "/" + batch.id() + "/rows/99")

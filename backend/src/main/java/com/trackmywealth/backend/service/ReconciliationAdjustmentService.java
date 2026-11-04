@@ -3,8 +3,8 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.ReconciliationAdjustmentValues;
 import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.entity.Transaction;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import java.util.Collection;
 import java.util.HashMap;
@@ -14,7 +14,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -115,9 +114,7 @@ public class ReconciliationAdjustmentService {
               "This is the adjusting entry of an accepted reconciliation difference. Reopen the"
                   + " reconciliation result to take it back.";
         };
-    ApiException locked =
-        new ApiException(
-            HttpStatus.CONFLICT, ApiErrorCode.RECONCILIATION_ADJUSTMENT_LOCKED, detail);
+    ApiException locked = new ApiException(ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED, detail);
     locked.getBody().setProperty("reconciliationAdjustment", state);
     throw locked;
   }

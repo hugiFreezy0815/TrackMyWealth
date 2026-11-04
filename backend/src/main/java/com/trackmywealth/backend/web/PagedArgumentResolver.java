@@ -1,8 +1,8 @@
 package com.trackmywealth.backend.web;
 
 import com.trackmywealth.backend.dto.PagingValues;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -11,7 +11,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.core.MethodParameter;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -76,9 +75,7 @@ public class PagedArgumentResolver implements HandlerMethodArgumentResolver {
           case 1 -> values[0];
           default ->
               throw new ApiException(
-                  HttpStatus.BAD_REQUEST,
-                  ApiErrorCode.VALIDATION_FAILED,
-                  "%s must be sent at most once.".formatted(name));
+                  ProblemCode.VALIDATION_FAILED, "%s must be sent at most once.".formatted(name));
         };
     if (value.isBlank()) {
       return absent;
@@ -97,8 +94,7 @@ public class PagedArgumentResolver implements HandlerMethodArgumentResolver {
 
   private static ApiException notAWholeNumber(String name, int minimum, Throwable cause) {
     return new ApiException(
-        HttpStatus.BAD_REQUEST,
-        ApiErrorCode.VALIDATION_FAILED,
+        ProblemCode.VALIDATION_FAILED,
         "%s must be a whole number of at least %d.".formatted(name, minimum),
         cause);
   }

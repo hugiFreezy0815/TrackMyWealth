@@ -11,11 +11,11 @@ public class ImportFileRejectedException extends ApiException {
 
   private static final long serialVersionUID = 1L;
 
-  public ImportFileRejectedException(String code, String detail) {
+  public ImportFileRejectedException(ProblemCode code, String detail) {
     super(HttpStatus.UNPROCESSABLE_CONTENT, code, detail);
   }
 
-  public ImportFileRejectedException(String code, String detail, Throwable cause) {
+  public ImportFileRejectedException(ProblemCode code, String detail, Throwable cause) {
     super(HttpStatus.UNPROCESSABLE_CONTENT, code, detail, cause);
   }
 

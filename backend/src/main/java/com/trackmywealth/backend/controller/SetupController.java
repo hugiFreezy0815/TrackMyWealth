@@ -2,7 +2,9 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.service.SetupService;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,6 +36,7 @@ public class SetupController {
   @Operation(
       operationId = "setupAdministrator",
       summary = "Create the first administrator and the workspace")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping(ADMINISTRATOR_PATH)
   public ResponseEntity<AuthTokensResponse> bootstrapAdministrator(
       @Valid @RequestBody SetupAdministratorRequest request,

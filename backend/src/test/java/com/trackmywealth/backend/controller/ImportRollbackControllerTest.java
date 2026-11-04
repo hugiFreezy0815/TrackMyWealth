@@ -32,7 +32,7 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
@@ -1194,7 +1194,7 @@ class ImportRollbackControllerTest {
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_BATCH_STATE);
+        .isEqualTo(ProblemCode.IMPORT_BATCH_STATE.name());
 
     ImportBatchResponse committed = commit(parsed);
     ImportRollbackResponse rollback = rollback(committed, REASON);
@@ -1204,7 +1204,7 @@ class ImportRollbackControllerTest {
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_BATCH_STATE);
+        .isEqualTo(ProblemCode.IMPORT_BATCH_STATE.name());
     rollbackStatus(parsed.id(), etag(rollback.batch().version()), REASON)
         .isEqualTo(HttpStatus.CONFLICT);
   }

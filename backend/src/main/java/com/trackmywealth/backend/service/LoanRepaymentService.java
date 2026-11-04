@@ -11,8 +11,8 @@ import com.trackmywealth.backend.entity.AccountMortgage;
 import com.trackmywealth.backend.entity.AmortisationScheduleEntry;
 import com.trackmywealth.backend.entity.LoanPayment;
 import com.trackmywealth.backend.entity.Transaction;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountLoanRepository;
 import com.trackmywealth.backend.repository.AccountMortgageRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
@@ -134,9 +134,7 @@ public class LoanRepaymentService {
     }
     if (!ACTIVE.equals(loan.getStatus())) {
       throw new ApiException(
-          HttpStatus.CONFLICT,
-          ApiErrorCode.ACCOUNT_ARCHIVED,
-          "Cannot record a repayment on an archived loan.");
+          ProblemCode.ACCOUNT_ARCHIVED, "Cannot record a repayment on an archived loan.");
     }
     validateAmounts(loan, paying, request);
     // The interest row is an EXPENSE on the paying account; the ledger's own rules decide whether

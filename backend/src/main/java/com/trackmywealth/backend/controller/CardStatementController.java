@@ -3,9 +3,11 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.CardStatementResponse;
 import com.trackmywealth.backend.dto.SetStatementConfigRequest;
 import com.trackmywealth.backend.dto.StatementConfigResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CardStatementService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,6 +39,7 @@ public class CardStatementController {
   }
 
   @Operation(operationId = "setCardStatementConfig", summary = "Set a card's statement cycle")
+  @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @PutMapping("/statement-config")
   public ResponseEntity<StatementConfigResponse> setStatementConfig(
       @PathVariable UUID cardAccountId,
@@ -50,6 +53,7 @@ public class CardStatementController {
   }
 
   @Operation(operationId = "getCardStatementConfig", summary = "Read a card's statement cycle")
+  @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @GetMapping("/statement-config")
   public ResponseEntity<StatementConfigResponse> getStatementConfig(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -64,6 +68,7 @@ public class CardStatementController {
   @Operation(
       operationId = "getCurrentCardStatement",
       summary = "A card's current statement and due date")
+  @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @GetMapping("/statement")
   public CardStatementResponse getCurrentStatement(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {

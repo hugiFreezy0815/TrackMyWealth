@@ -1,7 +1,7 @@
 package com.trackmywealth.backend.web;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -50,10 +50,11 @@ import org.springframework.web.util.DisconnectedClientHelper;
  * can lose this race and must not surface it as an unhandled 500 either.
  *
  * <p>EPIC-29 (#149, #175): this is the single place that shapes every error Spring MVC sees into
- * the one {@link ProblemDetails} shape - status, title, detail, a stable {@link ApiErrorCode} and
- * the correlation id. Extending {@link ResponseEntityExceptionHandler} covers {@code
- * ResponseStatusException} (with its reason as detail, which the default error page used to drop)
- * and Spring's own request errors; the handlers below add what is specific to this application.
+ * the one {@link ProblemDetails} shape - status, title, detail, a stable {@link
+ * com.trackmywealth.backend.error.ProblemCode} and the correlation id. Extending {@link
+ * ResponseEntityExceptionHandler} covers {@code ResponseStatusException} (with its reason as
+ * detail, which the default error page used to drop) and Spring's own request errors; the handlers
+ * below add what is specific to this application.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
@@ -69,36 +70,36 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         || rootMessage.contains("uq_account_workspace_contract_identifier")) {
       // US-07-10, #323: two registrations of one identifier raced past the service's own check.
       return conflict(
-          ApiErrorCode.ACCOUNT_IDENTIFIER_IN_USE,
+          ProblemCode.ACCOUNT_IDENTIFIER_IN_USE,
           "Another account of this workspace is already registered with this identifier.");
     }
     if (rootMessage.contains("account_type_immutable")) {
       return conflict(
-          ApiErrorCode.IMMUTABLE_FIELD,
+          ProblemCode.IMMUTABLE_FIELD,
           "An account's type cannot be changed after creation (FR-ACC-005/G5). To convert this"
               + " account, archive it and create a new one with the correct type.");
     }
     if (rootMessage.contains("account_currency_immutable")) {
       return conflict(
-          ApiErrorCode.IMMUTABLE_FIELD,
+          ProblemCode.IMMUTABLE_FIELD,
           "An account's currency cannot be changed after creation (FR-ACC-002). To convert this"
               + " account, archive it and create a new one with the correct currency.");
     }
     if (rootMessage.contains("custom_asset_valuation_currency_mismatch")) {
       return conflict(
-          ApiErrorCode.CONFLICT,
+          ProblemCode.CONFLICT,
           "A valuation's currency must match the account's own currency (FR-ACC-002).");
     }
     if (rootMessage.contains("account_snapshot_currency_mismatch")) {
       return conflict(
-          ApiErrorCode.CONFLICT,
+          ProblemCode.CONFLICT,
           "A snapshot's currency must match the account's own currency (FR-ACC-002).");
     }
     // Two concurrent entries for the same account and date: the loser of the race lands here
     // rather than on AccountSnapshotService's own existence check, which answers with the id.
     if (rootMessage.contains("account_snapshot_account_id_snapshot_date_source_key")) {
       return conflict(
-          ApiErrorCode.RETRY,
+          ProblemCode.RETRY,
           "A snapshot for this account and date already exists. Retry the request to get its id,"
               + " then update it instead.");
     }
@@ -106,33 +107,33 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     // loser's retry gets OpeningBalanceService's 409 naming the winner.
     if (rootMessage.contains("uq_account_snapshot_opening_balance")) {
       return conflict(
-          ApiErrorCode.RETRY,
+          ProblemCode.RETRY,
           "An opening balance for this account was recorded at the same moment. Retry the request"
               + " to get its id, then replace it instead.");
     }
     if (rootMessage.contains("uq_transaction_external_id")) {
       return conflict(
-          ApiErrorCode.RETRY,
+          ProblemCode.RETRY,
           "A transaction with this externalId is already being recorded. Retry the request: it"
               + " returns the recorded transaction.");
     }
     if (rootMessage.contains("uq_category_workspace_code")) {
       return conflict(
-          ApiErrorCode.RETRY,
+          ProblemCode.RETRY,
           "A category with the same name was created at the same moment. Retry the request.");
     }
     if (rootMessage.contains("uq_workspace_category_override")) {
       return conflict(
-          ApiErrorCode.RETRY,
+          ProblemCode.RETRY,
           "This category was customised by another request at the same moment. Retry the request.");
     }
     return conflict(
-        ApiErrorCode.CONFLICT, "The request conflicts with an existing data constraint.");
+        ProblemCode.CONFLICT, "The request conflicts with an existing data constraint.");
   }
 
   @ExceptionHandler(ExistingResourceConflictException.class)
   public ProblemDetail handleExistingResourceConflict(ExistingResourceConflictException ex) {
-    ProblemDetail problem = conflict(ApiErrorCode.CONFLICT, ex.getMessage());
+    ProblemDetail problem = conflict(ProblemCode.CONFLICT, ex.getMessage());
     problem.setProperty(ex.getPropertyName(), ex.getExistingId());
     return problem;
   }
@@ -152,7 +153,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             : HttpStatus.PRECONDITION_FAILED;
     return ProblemDetails.of(
         status,
-        ApiErrorCode.VERSION_CONFLICT,
+        ProblemCode.VERSION_CONFLICT,
         "This record was changed after you read it. Reload the current state and retry explicitly.");
   }
 
@@ -162,7 +163,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
    */
   @ExceptionHandler(AccessDeniedException.class)
   public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
-    return ProblemDetails.of(HttpStatus.FORBIDDEN, ApiErrorCode.FORBIDDEN, "Not allowed.");
+    return ProblemDetails.of(ProblemCode.FORBIDDEN, "Not allowed.");
   }
 
   /**
@@ -179,8 +180,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
     LOG.error("Unexpected error answered with 500", ex);
     return ProblemDetails.of(
-        HttpStatus.INTERNAL_SERVER_ERROR,
-        ApiErrorCode.INTERNAL,
+        ProblemCode.INTERNAL,
         "An unexpected error occurred. Quote the correlation id when reporting it.");
   }
 
@@ -225,8 +225,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       WebRequest request) {
     ProblemDetail problem =
         ProblemDetails.of(
-            HttpStatus.CONTENT_TOO_LARGE,
-            ApiErrorCode.IMPORT_FILE_TOO_LARGE,
+            ProblemCode.IMPORT_FILE_TOO_LARGE,
             "The file is larger than the 5 MB an import file may have.");
     return handleExceptionInternal(ex, problem, headers, HttpStatus.CONTENT_TOO_LARGE, request);
   }
@@ -251,8 +250,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     // them with the request locale); the detail around them must match, not stay English.
     ProblemDetail problem =
         ProblemDetails.of(
-            HttpStatus.BAD_REQUEST,
-            ApiErrorCode.VALIDATION_FAILED,
+            ProblemCode.VALIDATION_FAILED,
             localized("tmw.problem.validation.detail", "The request is invalid."));
     problem.setProperty(ERRORS, errors);
     return handleExceptionInternal(ex, problem, headers, HttpStatus.BAD_REQUEST, request);
@@ -289,7 +287,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         : messageSource.getMessage(code, null, defaultMessage, LocaleContextHolder.getLocale());
   }
 
-  private ProblemDetail conflict(String code, String detail) {
+  private ProblemDetail conflict(ProblemCode code, String detail) {
     return ProblemDetails.of(HttpStatus.CONFLICT, code, detail);
   }
 

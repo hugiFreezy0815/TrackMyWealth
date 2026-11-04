@@ -22,7 +22,7 @@ import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
@@ -768,13 +768,13 @@ class OpeningBalanceControllerTest {
         .isNotFound()
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.OPENING_BALANCE_NOT_RECORDED);
+        .isEqualTo(ProblemCode.OPENING_BALANCE_NOT_RECORDED.name());
     delete(token, cash.id(), ifMatch(opening.version()))
         .expectStatus()
         .isNotFound()
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.OPENING_BALANCE_NOT_RECORDED);
+        .isEqualTo(ProblemCode.OPENING_BALANCE_NOT_RECORDED.name());
     assertThat(balance(token, cash.id()).valueKnown()).isFalse();
   }
 

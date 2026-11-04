@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -25,7 +25,7 @@ class VersionPreconditionServiceTest {
             ApiException.class,
             ex -> {
               assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.PRECONDITION_REQUIRED);
-              assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VERSION_REQUIRED);
+              assertThat(ex.getCode()).isEqualTo(ProblemCode.VERSION_REQUIRED);
             });
   }
 
@@ -36,7 +36,7 @@ class VersionPreconditionServiceTest {
             ApiException.class,
             ex -> {
               assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.PRECONDITION_FAILED);
-              assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VERSION_CONFLICT);
+              assertThat(ex.getCode()).isEqualTo(ProblemCode.VERSION_CONFLICT);
               assertThat(ex.getReason()).contains("Reload");
             });
   }

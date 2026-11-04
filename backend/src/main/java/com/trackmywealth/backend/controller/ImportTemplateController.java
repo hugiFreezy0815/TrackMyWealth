@@ -4,10 +4,11 @@ import com.trackmywealth.backend.dto.ImportTemplateCandidateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
 import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
-import com.trackmywealth.backend.web.RetryableWhenBusy;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -56,6 +57,7 @@ public class ImportTemplateController {
 
   /** Current versions of the shipped and the workspace's own templates, by name. */
   @Operation(operationId = "listImportTemplates", summary = "List the import templates")
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
   public List<ImportTemplateResponse> list(
       @RequestParam(required = false) UUID institutionCatalogueId,
@@ -75,6 +77,11 @@ public class ImportTemplateController {
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createImportTemplate", summary = "Create an import template")
+  @ProblemCodes({
+    ProblemCode.NOT_FOUND,
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED
+  })
   @PostMapping
   public ResponseEntity<ImportTemplateResponse> create(
       @Valid @RequestBody ImportTemplateRequest request,
@@ -95,6 +102,11 @@ public class ImportTemplateController {
    * id} (FR-IMP-023); a new name or institution only returns the same one.
    */
   @Operation(operationId = "updateImportTemplate", summary = "Change an import template")
+  @ProblemCodes({
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IMPORT_TEMPLATE_READ_ONLY
+  })
   @PutMapping(BY_ID)
   public ResponseEntity<ImportTemplateResponse> update(
       @PathVariable UUID id,
@@ -108,6 +120,7 @@ public class ImportTemplateController {
 
   /** Hides the template from detection and the default list; it stays usable for history. */
   @Operation(operationId = "deactivateImportTemplate", summary = "Deactivate an import template")
+  @ProblemCodes({ProblemCode.IMPORT_TEMPLATE_READ_ONLY})
   @PostMapping(BY_ID + "/deactivate")
   public ResponseEntity<ImportTemplateResponse> deactivate(
       @PathVariable UUID id,
@@ -119,6 +132,7 @@ public class ImportTemplateController {
   }
 
   @Operation(operationId = "activateImportTemplate", summary = "Reactivate an import template")
+  @ProblemCodes({ProblemCode.IMPORT_TEMPLATE_READ_ONLY})
   @PostMapping(BY_ID + "/activate")
   public ResponseEntity<ImportTemplateResponse> activate(
       @PathVariable UUID id,
@@ -132,6 +146,7 @@ public class ImportTemplateController {
   /** 204 with every version, only while no import used it; otherwise 409, deactivate instead. */
   @SuccessStatus(HttpStatus.NO_CONTENT)
   @Operation(operationId = "deleteImportTemplate", summary = "Delete an import template")
+  @ProblemCodes({ProblemCode.IMPORT_TEMPLATE_READ_ONLY, ProblemCode.IMPORT_TEMPLATE_IN_USE})
   @DeleteMapping(BY_ID)
   public ResponseEntity<Void> delete(
       @PathVariable UUID id,
@@ -147,10 +162,27 @@ public class ImportTemplateController {
    * 503 {@code IMPORT_PDF_BUSY} (with {@code Retry-After}) when the server is reading too many PDFs
    * at once.
    */
-  @RetryableWhenBusy
   @Operation(
       operationId = "detectImportTemplate",
       summary = "Find the templates that can read a file")
+  @ProblemCodes({
+    ProblemCode.NOT_FOUND,
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IMPORT_TEMPLATE_MISMATCH,
+    ProblemCode.IMPORT_ENCODING_SUSPECT,
+    ProblemCode.IMPORT_FILE_EMPTY,
+    ProblemCode.IMPORT_FILE_MALFORMED,
+    ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
+    ProblemCode.IMPORT_FILE_TOO_MANY_PAGES,
+    ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_PDF_NO_TEXT,
+    ProblemCode.IMPORT_PDF_BUSY,
+    ProblemCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_SPREADSHEET_BUSY,
+    ProblemCode.IMPORT_OCR_FAILED,
+    ProblemCode.IMPORT_OCR_UNAVAILABLE
+  })
   @PostMapping(path = "/detect", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public List<ImportTemplateCandidateResponse> detect(
       @RequestPart("file") MultipartFile file,
@@ -165,8 +197,23 @@ public class ImportTemplateController {
    * IMPORT_OCR_UNAVAILABLE} when the server cannot read the PDF now; {@code Retry-After} when
    * waiting helps.
    */
-  @RetryableWhenBusy
   @Operation(operationId = "testImportTemplate", summary = "Try a saved template on a file")
+  @ProblemCodes({
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IMPORT_TEMPLATE_MISMATCH,
+    ProblemCode.IMPORT_ENCODING_SUSPECT,
+    ProblemCode.IMPORT_FILE_EMPTY,
+    ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
+    ProblemCode.IMPORT_FILE_MALFORMED,
+    ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
+    ProblemCode.IMPORT_FILE_TOO_MANY_PAGES,
+    ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_PDF_NO_TEXT,
+    ProblemCode.IMPORT_PDF_BUSY,
+    ProblemCode.IMPORT_OCR_FAILED,
+    ProblemCode.IMPORT_OCR_UNAVAILABLE
+  })
   @PostMapping(path = BY_ID + "/test", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ImportTemplateTestResponse testSaved(
       @PathVariable UUID id,
@@ -180,10 +227,26 @@ public class ImportTemplateController {
    * Dry run of an unsaved template (the mapping screen's live preview); its {@code name} and {@code
    * headerColumns} are not needed. Writes nothing. A 503 as for {@link #testSaved}.
    */
-  @RetryableWhenBusy
   @Operation(
       operationId = "testUnsavedImportTemplate",
       summary = "Try a template that is not saved yet on a file")
+  @ProblemCodes({
+    ProblemCode.NOT_FOUND,
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IMPORT_TEMPLATE_MISMATCH,
+    ProblemCode.IMPORT_ENCODING_SUSPECT,
+    ProblemCode.IMPORT_FILE_EMPTY,
+    ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
+    ProblemCode.IMPORT_FILE_MALFORMED,
+    ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
+    ProblemCode.IMPORT_FILE_TOO_MANY_PAGES,
+    ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_PDF_NO_TEXT,
+    ProblemCode.IMPORT_PDF_BUSY,
+    ProblemCode.IMPORT_OCR_FAILED,
+    ProblemCode.IMPORT_OCR_UNAVAILABLE
+  })
   @PostMapping(path = "/test", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ImportTemplateTestResponse testUnsaved(
       @RequestPart("file") MultipartFile file,

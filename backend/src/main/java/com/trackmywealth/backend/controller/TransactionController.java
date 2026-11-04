@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.TransactionCorrectionService;
 import com.trackmywealth.backend.service.TransactionRemovalService;
@@ -15,6 +16,7 @@ import com.trackmywealth.backend.service.TransferResolutionService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -64,6 +66,12 @@ public class TransactionController {
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "recordTransaction", summary = "Record a transaction")
+  @ProblemCodes({
+    ProblemCode.CONFLICT,
+    ProblemCode.RETRY,
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE
+  })
   @PostMapping("/transactions")
   public ResponseEntity<TransactionResponse> recordTransaction(
       @PathVariable UUID accountId,
@@ -82,6 +90,12 @@ public class TransactionController {
    * TransactionCorrectionResponse}).
    */
   @Operation(operationId = "correctTransaction", summary = "Correct a transaction")
+  @ProblemCodes({
+    ProblemCode.CONFLICT,
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED
+  })
   @PutMapping("/transactions/{transactionId}")
   public ResponseEntity<TransactionCorrectionResponse> correctTransaction(
       @PathVariable UUID accountId,
@@ -129,6 +143,11 @@ public class TransactionController {
   @Operation(
       operationId = "overrideTransactionCategory",
       summary = "Set a transaction's category by hand")
+  @ProblemCodes({
+    ProblemCode.CONFLICT,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED
+  })
   @PutMapping("/transactions/{transactionId}/category")
   public ResponseEntity<TransactionResponse> overrideCategory(
       @PathVariable UUID accountId,
@@ -150,6 +169,7 @@ public class TransactionController {
   @Operation(
       operationId = "resetTransactionCategory",
       summary = "Return a transaction to its automatic category")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED})
   @DeleteMapping("/transactions/{transactionId}/category")
   public ResponseEntity<TransactionResponse> resetCategory(
       @PathVariable UUID accountId,
@@ -168,6 +188,11 @@ public class TransactionController {
    * {@code reason}. Each row's {@code removal} says which applies. Needs access to the account.
    */
   @Operation(operationId = "removeTransaction", summary = "Remove a transaction")
+  @ProblemCodes({
+    ProblemCode.CONFLICT,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED
+  })
   @DeleteMapping("/transactions/{transactionId}")
   public ResponseEntity<TransactionRemovalResponse> removeTransaction(
       @PathVariable UUID accountId,
@@ -188,6 +213,11 @@ public class TransactionController {
    * {@code ETag} is then the unchanged voided row's version; each copy carries its own.
    */
   @Operation(operationId = "restoreTransaction", summary = "Restore a removed transaction")
+  @ProblemCodes({
+    ProblemCode.CONFLICT,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED
+  })
   @PostMapping("/transactions/{transactionId}/restore")
   public ResponseEntity<TransactionRemovalResponse> restoreTransaction(
       @PathVariable UUID accountId,
@@ -220,6 +250,7 @@ public class TransactionController {
   @Operation(
       operationId = "confirmUntrackedTransfer",
       summary = "Mark a transaction as a transfer to an untracked account")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
   @PostMapping("/transactions/{transactionId}/untracked-transfer")
   public ResponseEntity<TransactionResponse> confirmUntrackedTransfer(
       @PathVariable UUID accountId,
@@ -236,6 +267,7 @@ public class TransactionController {
   @Operation(
       operationId = "undoUntrackedTransfer",
       summary = "Undo marking a transaction as an untracked transfer")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
   @DeleteMapping("/transactions/{transactionId}/untracked-transfer")
   public ResponseEntity<TransactionResponse> undoUntrackedTransfer(
       @PathVariable UUID accountId,

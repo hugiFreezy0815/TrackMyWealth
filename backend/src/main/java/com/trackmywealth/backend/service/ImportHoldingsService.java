@@ -13,9 +13,9 @@ import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ImportHoldingRow;
 import com.trackmywealth.backend.entity.Security;
 import com.trackmywealth.backend.entity.WorkspaceSecurityTicker;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.ImportHoldingRowRepository;
 import com.trackmywealth.backend.repository.SecurityRepository;
 import com.trackmywealth.backend.repository.WorkspaceSecurityTickerRepository;
@@ -126,7 +126,7 @@ public class ImportHoldingsService {
             .anyMatch(cash -> currency.equals(cash.currency()));
     if (!positions && !ownCash && statement.linesOf(ImportHoldingsValues.KIND_ERROR).isEmpty()) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS,
+          ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
           "The statement holds no position and no cash in the account's currency ("
               + currency
               + ").");
@@ -253,8 +253,7 @@ public class ImportHoldingsService {
     if (!errors.isEmpty()) {
       ApiException unreadable =
           new ApiException(
-              HttpStatus.UNPROCESSABLE_CONTENT,
-              ApiErrorCode.IMPORT_HOLDINGS_UNREADABLE,
+              ProblemCode.IMPORT_HOLDINGS_UNREADABLE,
               "The statement has lines that could not be read; the snapshot would miss them.");
       unreadable
           .getBody()
@@ -376,8 +375,7 @@ public class ImportHoldingsService {
     if (!unresolved.isEmpty()) {
       ApiException exception =
           new ApiException(
-              HttpStatus.UNPROCESSABLE_CONTENT,
-              ApiErrorCode.IMPORT_HOLDINGS_UNRESOLVED,
+              ProblemCode.IMPORT_HOLDINGS_UNRESOLVED,
               unresolved.size()
                   + " positions resolve to no security. Create them (with the statement's ticker"
                   + " for a position without an ISIN), then commit again.");

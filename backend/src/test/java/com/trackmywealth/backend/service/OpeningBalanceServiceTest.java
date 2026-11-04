@@ -14,9 +14,9 @@ import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.DatabaseClockRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
@@ -179,7 +179,7 @@ class OpeningBalanceServiceTest {
             e -> {
               assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
               assertThat(e.getCode())
-                  .isEqualTo(ApiErrorCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION);
+                  .isEqualTo(ProblemCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION);
               assertThat(e.getBody().getProperties())
                   .containsEntry("transactionCount", 3L)
                   .containsEntry("earliestBookingDate", earliest.toString());
@@ -207,7 +207,7 @@ class OpeningBalanceServiceTest {
             ApiException.class,
             e ->
                 assertThat(e.getCode())
-                    .isEqualTo(ApiErrorCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION));
+                    .isEqualTo(ProblemCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION));
     verify(snapshotRepository, never()).saveAndFlush(any());
     assertThat(existing.getBalance()).isEqualByComparingTo("1.00");
 
@@ -242,11 +242,11 @@ class OpeningBalanceServiceTest {
     assertThatThrownBy(() -> service.replace(account.getId(), request("2.00"), null, ACTOR))
         .isInstanceOfSatisfying(
             ApiException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.VERSION_REQUIRED));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.VERSION_REQUIRED));
     assertThatThrownBy(() -> service.replace(account.getId(), request("2.00"), 2, ACTOR))
         .isInstanceOfSatisfying(
             ApiException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.VERSION_CONFLICT));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.VERSION_CONFLICT));
 
     OpeningBalanceResponse replaced = service.replace(account.getId(), request("2.00"), 3, ACTOR);
     assertThat(replaced.id()).isEqualTo(existing.getId());
@@ -303,7 +303,7 @@ class OpeningBalanceServiceTest {
             ApiException.class,
             e -> {
               assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.OPENING_BALANCE_NOT_APPLICABLE);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.OPENING_BALANCE_NOT_APPLICABLE);
             });
   }
 

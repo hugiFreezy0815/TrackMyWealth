@@ -3,8 +3,10 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.SecurityCreation;
 import com.trackmywealth.backend.dto.SecurityResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SecurityService;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,6 +41,7 @@ public class SecurityController {
 
   /** 200 with the existing record, 404 if none - never creates one (FR-SMD-007). */
   @Operation(operationId = "findSecurity", summary = "Find a security by ISIN")
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
   public SecurityResponse lookup(
       @RequestParam String isin, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -60,6 +63,7 @@ public class SecurityController {
    */
   @SuccessStatus({HttpStatus.CREATED, HttpStatus.OK})
   @Operation(operationId = "findOrCreateSecurity", summary = "Find a security or create it")
+  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.UNPROCESSABLE})
   @PostMapping
   public ResponseEntity<SecurityResponse> findOrCreate(
       @Valid @RequestBody CreateSecurityRequest request,

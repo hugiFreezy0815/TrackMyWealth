@@ -2,8 +2,8 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.entity.Account;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -16,7 +16,6 @@ import java.util.regex.Pattern;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -149,8 +148,7 @@ public class AccountIdentifierService {
   public String hash(UUID workspaceId, String normalized, String kind) {
     if (!enabled()) {
       throw new ApiException(
-          HttpStatus.SERVICE_UNAVAILABLE,
-          ApiErrorCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE,
+          ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE,
           "Account identification is not configured on this server.");
     }
     try {

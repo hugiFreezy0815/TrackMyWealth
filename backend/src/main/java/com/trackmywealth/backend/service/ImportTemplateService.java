@@ -21,9 +21,9 @@ import com.trackmywealth.backend.dto.ParsedImportRow;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportTemplate;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.ImportTemplateRepository;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -40,7 +40,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -170,8 +169,7 @@ public class ImportTemplateService {
     ImportTemplate template = requireVisible(id, actor);
     if (!template.isCurrent() || !template.isActive()) {
       throw new ApiException(
-          HttpStatus.UNPROCESSABLE_CONTENT,
-          ApiErrorCode.UNPROCESSABLE,
+          ProblemCode.UNPROCESSABLE,
           "Only the current version of an active template can be used for a new import.");
     }
     ImportTemplateDefinition definition = definitionOf(template);
@@ -258,8 +256,7 @@ public class ImportTemplateService {
     ImportTemplate template = requireChangeable(id, expectedVersion, actor);
     if (templateRepository.isFamilyUsed(template.getTemplateFamilyId())) {
       throw new ApiException(
-          HttpStatus.CONFLICT,
-          ApiErrorCode.IMPORT_TEMPLATE_IN_USE,
+          ProblemCode.IMPORT_TEMPLATE_IN_USE,
           "An import used this template, so it is kept for that import's history. Deactivate it"
               + " instead.");
     }
@@ -400,8 +397,7 @@ public class ImportTemplateService {
       // requireVisible throws the audited 404 for a template the workspace cannot see.
       if (requireVisible(id, actor).isShared()) {
         throw new ApiException(
-            HttpStatus.FORBIDDEN,
-            ApiErrorCode.IMPORT_TEMPLATE_READ_ONLY,
+            ProblemCode.IMPORT_TEMPLATE_READ_ONLY,
             "Shipped import templates are shared by every workspace and cannot be changed. Create a"
                 + " template of your own instead.");
       }
@@ -415,8 +411,7 @@ public class ImportTemplateService {
     if (!template.isCurrent()) {
       ApiException superseded =
           new ApiException(
-              HttpStatus.PRECONDITION_FAILED,
-              ApiErrorCode.VERSION_CONFLICT,
+              ProblemCode.VERSION_CONFLICT,
               "A newer version of this import template replaced this one. Change the current"
                   + " version instead.");
       templateRepository
@@ -477,9 +472,7 @@ public class ImportTemplateService {
   }
 
   private static ApiException invalid(String field, String detail) {
-    ApiException exception =
-        new ApiException(
-            HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.IMPORT_TEMPLATE_INVALID, detail);
+    ApiException exception = new ApiException(ProblemCode.IMPORT_TEMPLATE_INVALID, detail);
     exception.getBody().setProperty("field", field);
     return exception;
   }
@@ -496,7 +489,7 @@ public class ImportTemplateService {
     try {
       return pdfReader.readTextLayer(content);
     } catch (ImportFileRejectedException e) {
-      if (ApiErrorCode.IMPORT_PDF_NO_TEXT.equals(e.getCode())) {
+      if (ProblemCode.IMPORT_PDF_NO_TEXT.equals(e.getCode())) {
         throw e;
       }
       return null;
@@ -530,7 +523,7 @@ public class ImportTemplateService {
   private List<String> spreadsheetHeader(byte[] content, ImportTemplateDefinition definition) {
     if (!SpreadsheetImportReaderService.isWorkbook(content)) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_FILE_MALFORMED, "The file is no .xlsx or .xls workbook.");
+          ProblemCode.IMPORT_FILE_MALFORMED, "The file is no .xlsx or .xls workbook.");
     }
     return holdingsReader.readHeader(content, definition);
   }

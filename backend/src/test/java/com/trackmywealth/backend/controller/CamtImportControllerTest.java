@@ -21,7 +21,7 @@ import com.trackmywealth.backend.dto.ReconciliationStatusResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
@@ -303,7 +303,7 @@ class CamtImportControllerTest {
         .isEqualTo(HttpStatus.CONFLICT)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_ACCOUNT_UNCONFIRMED);
+        .isEqualTo(ProblemCode.IMPORT_ACCOUNT_UNCONFIRMED.name());
     assertThat(sortedTransactions(account)).isEmpty();
   }
 
@@ -353,17 +353,17 @@ class CamtImportControllerTest {
             ("<?xml version=\"1.0\"?><!DOCTYPE Document [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>"
                     + "<Document>&xxe;</Document>")
                 .getBytes(StandardCharsets.UTF_8),
-            ApiErrorCode.IMPORT_FILE_MALFORMED,
+            ProblemCode.IMPORT_FILE_MALFORMED.name(),
             "<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:camt.054.001.08\"/>"
                 .getBytes(StandardCharsets.UTF_8),
-            ApiErrorCode.IMPORT_CAMT_UNSUPPORTED,
+            ProblemCode.IMPORT_CAMT_UNSUPPORTED.name(),
             zip(bomb),
-            ApiErrorCode.IMPORT_CAMT_LIMIT_EXCEEDED,
+            ProblemCode.IMPORT_CAMT_LIMIT_EXCEEDED.name(),
             camt053("001.08")
                 .statement(IBAN, s -> s.entry(entry("1.00", "CRDT", "2026-09-01")))
                 .statement(OTHER_IBAN, s -> s.entry(entry("1.00", "CRDT", "2026-09-01")))
                 .bytes(),
-            ApiErrorCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS);
+            ProblemCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS.name());
 
     refused.forEach(
         (file, code) ->

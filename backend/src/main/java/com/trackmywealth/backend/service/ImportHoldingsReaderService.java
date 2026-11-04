@@ -11,10 +11,10 @@ import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.dto.SpreadsheetCell;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
 import com.trackmywealth.backend.error.ImportRowRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.validation.IsinValidator;
 import com.trackmywealth.backend.validation.Re2Patterns;
 import java.math.BigDecimal;
@@ -255,11 +255,7 @@ public class ImportHoldingsReaderService {
       return Re2Patterns.compile(pattern);
     } catch (IllegalArgumentException e) {
       ApiException exception =
-          new ApiException(
-              HttpStatus.UNPROCESSABLE_CONTENT,
-              ApiErrorCode.IMPORT_TEMPLATE_INVALID,
-              e.getMessage(),
-              e);
+          new ApiException(ProblemCode.IMPORT_TEMPLATE_INVALID, e.getMessage(), e);
       exception.getBody().setProperty("field", field);
       throw exception;
     }
@@ -277,7 +273,7 @@ public class ImportHoldingsReaderService {
     int headerAt = template.preambleRowCount() + template.headerRowIndex();
     if (headerAt >= rows.size()) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_FILE_EMPTY, "The sheet ends before its header row.");
+          ProblemCode.IMPORT_FILE_EMPTY, "The sheet ends before its header row.");
     }
     return rows.get(headerAt).stream().map(SpreadsheetCell::text).toList();
   }
@@ -313,7 +309,7 @@ public class ImportHoldingsReaderService {
             : readPdf(content, template);
     if (statement.lines().isEmpty()) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS,
+          ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
           "The statement holds no position or cash balance this template reads.");
     }
     return statement;
@@ -326,7 +322,7 @@ public class ImportHoldingsReaderService {
     LocalDate date = statementDate(lines, template);
     if (date == null) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_FILE_MALFORMED,
+          ProblemCode.IMPORT_FILE_MALFORMED,
           "The statement states no date this template can read.");
     }
     ImportHoldingsRule rule = template.holdingsRule();
@@ -377,14 +373,14 @@ public class ImportHoldingsReaderService {
     int headerAt = template.preambleRowCount() + template.headerRowIndex();
     if (headerAt >= rows.size()) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_FILE_EMPTY, "The sheet ends before its header row.");
+          ProblemCode.IMPORT_FILE_EMPTY, "The sheet ends before its header row.");
     }
     List<String> header = rows.get(headerAt).stream().map(SpreadsheetCell::text).toList();
     ImportHoldingsColumns columns = template.holdingsRule().columns();
     for (String column : mappedColumns(columns)) {
       if (ImportFileParserService.columnIndex(column, header) < 0) {
         throw new ImportFileRejectedException(
-                ApiErrorCode.IMPORT_TEMPLATE_MISMATCH,
+                ProblemCode.IMPORT_TEMPLATE_MISMATCH,
                 "The sheet's header has no single column named " + column + ".")
             .withProperty("column", column);
       }
@@ -424,7 +420,7 @@ public class ImportHoldingsReaderService {
       ImportHoldingsStatement.Line line) {
     if (lines.size() >= MAX_LINES) {
       throw new ImportFileRejectedException(
-              ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS,
+              ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
               "A holdings statement may have at most " + MAX_LINES + " positions and balances.")
           .withProperty("maxRows", MAX_LINES);
     }
@@ -698,9 +694,7 @@ public class ImportHoldingsReaderService {
   }
 
   private static ApiException invalid(String field, String detail) {
-    ApiException exception =
-        new ApiException(
-            HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.IMPORT_TEMPLATE_INVALID, detail);
+    ApiException exception = new ApiException(ProblemCode.IMPORT_TEMPLATE_INVALID, detail);
     exception.getBody().setProperty("field", field);
     return exception;
   }

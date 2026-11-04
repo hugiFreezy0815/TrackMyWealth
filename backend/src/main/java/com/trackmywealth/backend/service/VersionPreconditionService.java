@@ -1,8 +1,7 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
-import org.springframework.http.HttpStatus;
+import com.trackmywealth.backend.error.ProblemCode;
 import org.springframework.stereotype.Service;
 
 /**
@@ -32,14 +31,12 @@ public class VersionPreconditionService {
     persistedVersion(currentVersion, resourceName);
     if (expectedVersion == null) {
       throw new ApiException(
-          HttpStatus.PRECONDITION_REQUIRED,
-          ApiErrorCode.VERSION_REQUIRED,
+          ProblemCode.VERSION_REQUIRED,
           "This update requires If-Match with the version you last read.");
     }
     if (!expectedVersion.equals(currentVersion)) {
       throw new ApiException(
-          HttpStatus.PRECONDITION_FAILED,
-          ApiErrorCode.VERSION_CONFLICT,
+          ProblemCode.VERSION_CONFLICT,
           "This "
               + resourceName
               + " was changed after you read it. Reload the current state and retry explicitly.");

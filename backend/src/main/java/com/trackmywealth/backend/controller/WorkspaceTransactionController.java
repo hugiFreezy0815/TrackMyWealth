@@ -3,10 +3,12 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.TransactionSearchFilter;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.TransactionSearchService;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
+import com.trackmywealth.backend.web.ProblemCodes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.math.BigDecimal;
@@ -39,6 +41,7 @@ public class WorkspaceTransactionController {
     this.transactionSearchService = transactionSearchService;
   }
 
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @Operation(
       operationId = "listWorkspaceTransactions",
       summary = "List the workspace's transactions across all accounts")

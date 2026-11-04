@@ -6,12 +6,11 @@ import com.trackmywealth.backend.dto.AccountIdentifierResponse;
 import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.entity.Account;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -99,8 +98,7 @@ public class AccountIdentifierRegistrationService {
     if (named == null || !named.found() || !registrable(account, kind)) {
       ApiException exception =
           new ApiException(
-              HttpStatus.UNPROCESSABLE_CONTENT,
-              ApiErrorCode.ACCOUNT_IDENTIFIER_NOT_IN_FILE,
+              ProblemCode.ACCOUNT_IDENTIFIER_NOT_IN_FILE,
               "The import file names no " + noun(kind) + " this account could be registered with.");
       exception.getBody().setProperty("field", "batchId");
       throw exception;
@@ -121,8 +119,7 @@ public class AccountIdentifierRegistrationService {
         .ifPresent(
             other -> {
               throw new ApiException(
-                  HttpStatus.CONFLICT,
-                  ApiErrorCode.ACCOUNT_IDENTIFIER_IN_USE,
+                  ProblemCode.ACCOUNT_IDENTIFIER_IN_USE,
                   "Another account of this workspace is already registered with this identifier.");
             });
     if (isContract(kind)) {
@@ -171,8 +168,7 @@ public class AccountIdentifierRegistrationService {
     if (!registrable(account, kind)) {
       ApiException exception =
           new ApiException(
-              HttpStatus.UNPROCESSABLE_CONTENT,
-              ApiErrorCode.ACCOUNT_IDENTIFIER_INVALID,
+              ProblemCode.ACCOUNT_IDENTIFIER_INVALID,
               "This account cannot be registered with a " + noun(kind) + ".");
       exception.getBody().setProperty("field", "kind");
       throw exception;
@@ -212,9 +208,7 @@ public class AccountIdentifierRegistrationService {
             : isContract(kind)
                 ? "Enter a ten-digit contract number, with optional spaces or hyphens."
                 : "This is not a valid IBAN; check it for typing errors.";
-    ApiException exception =
-        new ApiException(
-            HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.ACCOUNT_IDENTIFIER_INVALID, detail);
+    ApiException exception = new ApiException(ProblemCode.ACCOUNT_IDENTIFIER_INVALID, detail);
     exception.getBody().setProperty("field", "identifier");
     return exception;
   }

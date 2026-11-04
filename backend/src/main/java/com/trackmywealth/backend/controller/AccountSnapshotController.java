@@ -3,9 +3,11 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountSnapshotService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,6 +43,7 @@ public class AccountSnapshotController {
   @Operation(
       operationId = "recordAccountSnapshot",
       summary = "Record a balance or holdings snapshot")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.RETRY, ProblemCode.UNPROCESSABLE})
   @PostMapping
   public ResponseEntity<AccountSnapshotResponse> recordSnapshot(
       @PathVariable UUID accountId,
@@ -68,6 +71,7 @@ public class AccountSnapshotController {
   }
 
   @Operation(operationId = "replaceAccountSnapshot", summary = "Replace a snapshot")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
   @PutMapping("/{snapshotId}")
   public ResponseEntity<AccountSnapshotResponse> replaceSnapshot(
       @PathVariable UUID accountId,

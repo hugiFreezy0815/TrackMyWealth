@@ -1,6 +1,6 @@
 package com.trackmywealth.backend.controller;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.web.ProblemDetails;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.RequestDispatcher;
@@ -46,7 +46,7 @@ public class ProblemErrorController implements ErrorController {
     // The path the client asked for, not /error, which is only where the container forwarded it.
     ProblemDetail problem =
         ProblemDetails.withInstance(
-            ProblemDetails.of(status, ApiErrorCode.forStatus(status), detailFor(status)),
+            ProblemDetails.of(status, ProblemCode.forStatus(status), detailFor(status)),
             request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI) instanceof String path
                 ? path
                 : null);

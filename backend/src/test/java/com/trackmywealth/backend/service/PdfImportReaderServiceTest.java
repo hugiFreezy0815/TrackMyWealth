@@ -18,8 +18,8 @@ import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ParsedImportRow;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.pdf.PdfLimitException;
 import com.trackmywealth.backend.pdf.PdfStreamBudget;
 import java.awt.image.BufferedImage;
@@ -137,21 +137,21 @@ class PdfImportReaderServiceTest {
   @Test
   void aFileOfAnotherKindOrLayoutIsAMismatch() throws IOException {
     assertFileError(
-        pdf("Other statement", "04.01.2031 1,00 x"), ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+        pdf("Other statement", "04.01.2031 1,00 x"), ProblemCode.IMPORT_TEMPLATE_MISMATCH);
     assertFileError(
         "date,amount\n2031-01-04,1\n".getBytes(StandardCharsets.UTF_8),
-        ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+        ProblemCode.IMPORT_TEMPLATE_MISMATCH);
   }
 
   @Test
   void anUnreadablePdfIsMalformed() {
     assertFileError(
-        "%PDF-broken".getBytes(StandardCharsets.US_ASCII), ApiErrorCode.IMPORT_FILE_MALFORMED);
+        "%PDF-broken".getBytes(StandardCharsets.US_ASCII), ProblemCode.IMPORT_FILE_MALFORMED);
   }
 
   @Test
   void aPdfWithoutTextLayerNeedsAnOcrTemplate() throws IOException {
-    assertFileError(pdf(), ApiErrorCode.IMPORT_PDF_NO_TEXT);
+    assertFileError(pdf(), ProblemCode.IMPORT_PDF_NO_TEXT);
   }
 
   /** Fifth PR #267 review: the hint to use OCR is given only where OCR runs. */
@@ -173,7 +173,7 @@ class PdfImportReaderServiceTest {
   @Test
   void aStatementWithoutBookingLinesHasNoDataRows() throws IOException {
     assertFileError(
-        pdf(MARKER, "No bookings in this period"), ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS);
+        pdf(MARKER, "No bookings in this period"), ProblemCode.IMPORT_FILE_NO_DATA_ROWS);
   }
 
   @Test
@@ -186,7 +186,7 @@ class PdfImportReaderServiceTest {
       document.save(output);
 
       ApiException error =
-          assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_TOO_MANY_PAGES);
+          assertFileError(output.toByteArray(), ProblemCode.IMPORT_FILE_TOO_MANY_PAGES);
       assertThat(error.getBody().getProperties())
           .containsEntry("maxPages", PdfImportReaderService.MAX_PAGES);
     }
@@ -202,7 +202,7 @@ class PdfImportReaderServiceTest {
       assertThatThrownBy(() -> parser.parse(output.toByteArray(), template("PDF_OCR"), null))
           .isInstanceOfSatisfying(
               ApiException.class,
-              e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_PDF_LIMIT_EXCEEDED));
+              e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED));
       verifyNoInteractions(ocr);
     }
   }
@@ -232,7 +232,7 @@ class PdfImportReaderServiceTest {
       document.protect(policy);
       document.save(output);
 
-      assertFileError(output.toByteArray(), ApiErrorCode.IMPORT_FILE_MALFORMED);
+      assertFileError(output.toByteArray(), ProblemCode.IMPORT_FILE_MALFORMED);
     }
   }
 
@@ -568,7 +568,7 @@ class PdfImportReaderServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED);
               assertThat(e.getStatusCode().value()).isEqualTo(422);
             });
   }
@@ -588,7 +588,7 @@ class PdfImportReaderServiceTest {
           .isInstanceOfSatisfying(
               ApiException.class,
               e -> {
-                assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_PDF_BUSY);
+                assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_PDF_BUSY);
                 assertThat(e.getStatusCode().value()).isEqualTo(503);
                 assertThat(e.getHeaders().getFirst(HttpHeaders.RETRY_AFTER))
                     .isEqualTo(String.valueOf(PdfImportReaderService.BUSY_RETRY_AFTER_SECONDS));
@@ -665,8 +665,8 @@ class PdfImportReaderServiceTest {
   /** The same files within the limits are read: what is refused is only the size. */
   @Test
   void crossReferenceAndObjectStreamsWithinTheLimitsAreRead() throws IOException {
-    assertFileError(handwrittenPdf(false, 1000), ApiErrorCode.IMPORT_PDF_NO_TEXT);
-    assertFileError(handwrittenPdf(true, 1000), ApiErrorCode.IMPORT_PDF_NO_TEXT);
+    assertFileError(handwrittenPdf(false, 1000), ProblemCode.IMPORT_PDF_NO_TEXT);
+    assertFileError(handwrittenPdf(true, 1000), ProblemCode.IMPORT_PDF_NO_TEXT);
   }
 
   /**
@@ -681,7 +681,7 @@ class PdfImportReaderServiceTest {
     String damaged = statement.substring(0, offset) + "\n17\n%%EOF\n";
 
     assertFileError(
-        damaged.getBytes(StandardCharsets.ISO_8859_1), ApiErrorCode.IMPORT_FILE_MALFORMED);
+        damaged.getBytes(StandardCharsets.ISO_8859_1), ProblemCode.IMPORT_FILE_MALFORMED);
   }
 
   /**
@@ -769,7 +769,7 @@ class PdfImportReaderServiceTest {
 
     assertTextLayerRefused(
         crossReferenceSections(half, half), "declares more objects than a statement needs");
-    assertFileError(crossReferenceSections(100, 100), ApiErrorCode.IMPORT_PDF_NO_TEXT);
+    assertFileError(crossReferenceSections(100, 100), ProblemCode.IMPORT_PDF_NO_TEXT);
   }
 
   /** PDFBox parses every object of an object stream as soon as one of them is read. */
@@ -815,7 +815,7 @@ class PdfImportReaderServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_PDF_LIMIT_EXCEEDED);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED);
               assertThat(e.getStatusCode().value()).isEqualTo(422);
               assertThat(e.getReason()).isEqualTo(e.getCause().getMessage());
             })
@@ -829,7 +829,7 @@ class PdfImportReaderServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_PDF_LIMIT_EXCEEDED);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED);
               assertThat(e.getStatusCode().value()).isEqualTo(422);
               assertThat(e.getReason()).isEqualTo(e.getCause().getMessage());
             })
@@ -1128,12 +1128,12 @@ class PdfImportReaderServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_INVALID);
               assertThat(e.getBody().getProperties()).containsEntry("field", field);
             });
   }
 
-  private ApiException assertFileError(byte[] content, String code) {
+  private ApiException assertFileError(byte[] content, ProblemCode code) {
     ThrowingCallable parse = () -> parser.parse(content, template("PDF_TEXT"), null);
     ApiException[] caught = new ApiException[1];
     assertThatThrownBy(parse)

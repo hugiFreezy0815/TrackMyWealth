@@ -1,8 +1,10 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CashFlowResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CashFlowService;
+import com.trackmywealth.backend.web.ProblemCodes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.YearMonth;
@@ -26,6 +28,7 @@ public class CashFlowController {
 
   /** {@code month} is {@code yyyy-MM}. */
   @Operation(operationId = "getCashFlow", summary = "Income and spending per category for a month")
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
   public CashFlowResponse getCashFlow(
       @RequestParam YearMonth month,

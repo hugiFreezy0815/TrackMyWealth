@@ -2,9 +2,11 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.OpeningBalanceService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,6 +42,7 @@ public class OpeningBalanceController {
   }
 
   @Operation(operationId = "getOpeningBalance", summary = "Read an account's opening balance")
+  @ProblemCodes({ProblemCode.OPENING_BALANCE_NOT_RECORDED})
   @GetMapping
   public ResponseEntity<OpeningBalanceResponse> getOpeningBalance(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -49,6 +52,12 @@ public class OpeningBalanceController {
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "recordOpeningBalance", summary = "Record an account's opening balance")
+  @ProblemCodes({
+    ProblemCode.RETRY,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.OPENING_BALANCE_NOT_APPLICABLE,
+    ProblemCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION
+  })
   @PostMapping
   public ResponseEntity<OpeningBalanceResponse> recordOpeningBalance(
       @PathVariable UUID accountId,
@@ -61,6 +70,12 @@ public class OpeningBalanceController {
   @Operation(
       operationId = "replaceOpeningBalance",
       summary = "Replace an account's opening balance")
+  @ProblemCodes({
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.OPENING_BALANCE_NOT_APPLICABLE,
+    ProblemCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION,
+    ProblemCode.OPENING_BALANCE_NOT_RECORDED
+  })
   @PutMapping
   public ResponseEntity<OpeningBalanceResponse> replaceOpeningBalance(
       @PathVariable UUID accountId,
@@ -75,6 +90,7 @@ public class OpeningBalanceController {
 
   @SuccessStatus(HttpStatus.NO_CONTENT)
   @Operation(operationId = "deleteOpeningBalance", summary = "Delete an account's opening balance")
+  @ProblemCodes({ProblemCode.OPENING_BALANCE_NOT_RECORDED})
   @DeleteMapping
   public ResponseEntity<Void> deleteOpeningBalance(
       @PathVariable UUID accountId,

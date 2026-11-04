@@ -2,9 +2,11 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.FxImportSettingsResponse;
 import com.trackmywealth.backend.dto.UpdateFxImportIntervalRequest;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AdminFxImportService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,6 +47,7 @@ public class AdminFxImportController {
   @Operation(
       operationId = "updateFxImportInterval",
       summary = "Change how often FX rates are imported")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
   @PutMapping
   public ResponseEntity<FxImportSettingsResponse> updateInterval(
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,

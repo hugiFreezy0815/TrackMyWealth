@@ -7,8 +7,8 @@ import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.entity.Account;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountRepository;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -165,7 +165,7 @@ class AccountIdentifierServiceTest {
             ApiException.class,
             e -> {
               assertThat(e.getStatusCode().value()).isEqualTo(503);
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE);
             });
   }
 

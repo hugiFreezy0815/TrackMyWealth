@@ -3,12 +3,14 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ReconciliationDecisionRequest;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ReconciliationDecisionService;
 import com.trackmywealth.backend.service.ReconciliationHistoryService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -72,6 +74,7 @@ public class ReconciliationController {
   @Operation(
       operationId = "acceptReconciliation",
       summary = "Accept a difference with an adjusting entry")
+  @ProblemCodes({ProblemCode.RECONCILIATION_STALE, ProblemCode.RECONCILIATION_FINALIZED})
   @PostMapping("/{resultId}/accept")
   public ResponseEntity<ReconciliationResultResponse> accept(
       @PathVariable UUID accountId,
@@ -86,6 +89,7 @@ public class ReconciliationController {
   }
 
   @Operation(operationId = "dismissReconciliation", summary = "Dismiss a difference")
+  @ProblemCodes({ProblemCode.RECONCILIATION_STALE, ProblemCode.RECONCILIATION_FINALIZED})
   @PostMapping("/{resultId}/dismiss")
   public ResponseEntity<ReconciliationResultResponse> dismiss(
       @PathVariable UUID accountId,
@@ -102,6 +106,7 @@ public class ReconciliationController {
   @Operation(
       operationId = "reopenReconciliation",
       summary = "Reopen an accepted or dismissed difference")
+  @ProblemCodes({ProblemCode.RECONCILIATION_STALE, ProblemCode.RECONCILIATION_FINALIZED})
   @PostMapping("/{resultId}/reopen")
   public ResponseEntity<ReconciliationResultResponse> reopen(
       @PathVariable UUID accountId,

@@ -2,9 +2,11 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CategorizationRuleResponse;
 import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategorizationRuleService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,6 +43,7 @@ public class CategorizationRuleController {
 
   /** Evaluation order; inactive rules only with {@code includeInactive=true}. */
   @Operation(operationId = "listCategorizationRules", summary = "List the categorization rules")
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
   public List<CategorizationRuleResponse> list(
       @RequestParam(defaultValue = "false") boolean includeInactive,
@@ -50,6 +53,7 @@ public class CategorizationRuleController {
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createCategorizationRule", summary = "Create a categorization rule")
+  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.UNPROCESSABLE})
   @PostMapping
   public ResponseEntity<CategorizationRuleResponse> create(
       @Valid @RequestBody CreateCategorizationRuleRequest request,

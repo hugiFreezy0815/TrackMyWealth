@@ -1,10 +1,11 @@
 package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.controller.SecurityController;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.JwtAuthenticationFilter;
 import com.trackmywealth.backend.security.RateLimitFilter;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
+import com.trackmywealth.backend.web.OperationProblemCodes;
 import com.trackmywealth.backend.web.ProblemResponseWriter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,13 +51,14 @@ public class SecurityConfig {
    * The API operations a caller without a token may call: the one-time setup and login/refresh.
    * Also what the API contract marks as needing no bearer token ({@code ApiDocumentationConfig}).
    */
-  static final List<String> PUBLIC_API_PATTERNS = List.of("/api/v1/setup/**", "/api/v1/auth/**");
+  static final List<String> PUBLIC_API_PATTERNS =
+      List.of(OperationProblemCodes.SETUP_PATHS, OperationProblemCodes.AUTH_PATHS);
 
   /**
    * The API operations only a system administrator may call (FR-TEN-007); anyone else gets a 403.
    * Also what the API contract documents that 403 for ({@code ApiDocumentationConfig}).
    */
-  static final List<String> ADMIN_API_PATTERNS = List.of("/api/v1/admin/**");
+  static final List<String> ADMIN_API_PATTERNS = List.of(OperationProblemCodes.ADMIN_PATHS);
 
   @Value("${app.cors.allowed-origin-patterns:http://localhost:*}")
   private List<String> allowedOriginPatterns;
@@ -119,7 +121,7 @@ public class SecurityConfig {
                                 request,
                                 response,
                                 HttpStatus.UNAUTHORIZED,
-                                ApiErrorCode.UNAUTHENTICATED,
+                                ProblemCode.UNAUTHENTICATED,
                                 "Sign in to continue."))
                     .accessDeniedHandler(
                         (request, response, denied) ->
@@ -127,7 +129,7 @@ public class SecurityConfig {
                                 request,
                                 response,
                                 HttpStatus.FORBIDDEN,
-                                ApiErrorCode.FORBIDDEN,
+                                ProblemCode.FORBIDDEN,
                                 "Not allowed.")))
         // Stateless, token-based API (see EPIC-02) - no session cookie for CSRF to protect.
         .csrf(csrf -> csrf.disable());
@@ -144,7 +146,7 @@ public class SecurityConfig {
             request,
             response,
             HttpStatus.BAD_REQUEST,
-            ApiErrorCode.VALIDATION_FAILED,
+            ProblemCode.VALIDATION_FAILED,
             "The request was rejected.");
   }
 

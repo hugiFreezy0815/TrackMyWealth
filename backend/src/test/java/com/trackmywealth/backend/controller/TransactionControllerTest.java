@@ -23,7 +23,7 @@ import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.FxRate;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
@@ -969,7 +969,7 @@ class TransactionControllerTest {
         .isBadRequest()
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.INVALID_SORT);
+        .isEqualTo(ProblemCode.INVALID_SORT.name());
   }
 
   @Test

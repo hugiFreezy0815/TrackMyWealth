@@ -16,8 +16,8 @@ import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.entity.Transaction;
 import com.trackmywealth.backend.entity.Workspace;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -136,7 +136,7 @@ class ReconciliationDecisionServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             conflict -> {
-              assertThat(conflict.getCode()).isEqualTo(ApiErrorCode.RECONCILIATION_STALE);
+              assertThat(conflict.getCode()).isEqualTo(ProblemCode.RECONCILIATION_STALE);
               assertThat(conflict.getBody().getProperties())
                   .containsEntry("differenceAmount", "20.0000");
             });
@@ -148,7 +148,7 @@ class ReconciliationDecisionServiceTest {
     assertThatThrownBy(() -> service.dismiss(account.getId(), result.getId(), "note", 2, ACTOR))
         .isInstanceOfSatisfying(
             ApiException.class,
-            conflict -> assertThat(conflict.getCode()).isEqualTo(ApiErrorCode.VERSION_CONFLICT));
+            conflict -> assertThat(conflict.getCode()).isEqualTo(ProblemCode.VERSION_CONFLICT));
     verify(accessControlService).requireAccountAccess(ACTOR, account);
     assertThat(result.getStatus()).isEqualTo("OPEN");
   }

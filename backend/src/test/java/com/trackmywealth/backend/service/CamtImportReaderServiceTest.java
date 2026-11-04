@@ -19,8 +19,8 @@ import com.trackmywealth.backend.dto.ImportParseResult;
 import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ParsedImportRow;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.CamtFixtures;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -494,7 +494,7 @@ class CamtImportReaderServiceTest {
     assertThatThrownBy(() -> service.parse(two, CASH))
         .isInstanceOfSatisfying(
             ImportFileRejectedException.class,
-            e -> assertThat(code(e)).isEqualTo(ApiErrorCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS));
+            e -> assertThat(code(e)).isEqualTo(ProblemCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS));
     byte[] acrossArchive =
         zip(
             camt053("001.08").statement(IBAN, s -> s.entry(entry("1.00", "CRDT", DAY))).bytes(),
@@ -504,7 +504,7 @@ class CamtImportReaderServiceTest {
     assertThatThrownBy(() -> service.parse(acrossArchive, CASH))
         .isInstanceOfSatisfying(
             ImportFileRejectedException.class,
-            e -> assertThat(code(e)).isEqualTo(ApiErrorCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS));
+            e -> assertThat(code(e)).isEqualTo(ProblemCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS));
 
     byte[] oneAccount =
         zip(
@@ -624,7 +624,8 @@ class CamtImportReaderServiceTest {
 
     assertThatThrownBy(() -> service.parse(file, CASH))
         .isInstanceOfSatisfying(
-            ImportFileRejectedException.class, e -> assertThat(code(e)).isEqualTo(parts[1]));
+            ImportFileRejectedException.class,
+            e -> assertThat(code(e)).isEqualTo(ProblemCode.valueOf(parts[1])));
   }
 
   @Test
@@ -639,7 +640,7 @@ class CamtImportReaderServiceTest {
     assertThatThrownBy(() -> service.parse(deep, CASH))
         .isInstanceOfSatisfying(
             ImportFileRejectedException.class,
-            e -> assertThat(code(e)).isEqualTo(ApiErrorCode.IMPORT_CAMT_LIMIT_EXCEEDED));
+            e -> assertThat(code(e)).isEqualTo(ProblemCode.IMPORT_CAMT_LIMIT_EXCEEDED));
   }
 
   // Splitting may make more rows than entries: the import's row limit holds all the same.
@@ -663,7 +664,7 @@ class CamtImportReaderServiceTest {
     assertThatThrownBy(() -> service.parse(file, CASH))
         .isInstanceOfSatisfying(
             ImportFileRejectedException.class,
-            e -> assertThat(code(e)).isEqualTo(ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS));
+            e -> assertThat(code(e)).isEqualTo(ProblemCode.IMPORT_FILE_TOO_MANY_ROWS));
   }
 
   @Test
@@ -698,7 +699,7 @@ class CamtImportReaderServiceTest {
         .bytes();
   }
 
-  private static String code(ImportFileRejectedException e) {
+  private static ProblemCode code(ImportFileRejectedException e) {
     return e.getCode();
   }
 }

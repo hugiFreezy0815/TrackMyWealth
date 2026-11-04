@@ -3,8 +3,8 @@ package com.trackmywealth.backend.service;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
@@ -133,9 +133,7 @@ public class TransferRecordingService {
     }
     if (!ACTIVE.equals(counterparty.getStatus())) {
       throw new ApiException(
-          HttpStatus.CONFLICT,
-          ApiErrorCode.ACCOUNT_ARCHIVED,
-          "Cannot transfer to or from an archived account.");
+          ProblemCode.ACCOUNT_ARCHIVED, "Cannot transfer to or from an archived account.");
     }
     if (!counterparty.isHasTransactions()) {
       throw unprocessable("The other account does not hold transactions.");

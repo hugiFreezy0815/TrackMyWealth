@@ -18,6 +18,7 @@ import com.trackmywealth.backend.dto.ImportTemplateTestResponse;
 import com.trackmywealth.backend.dto.ResolvedImportTemplate;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportFileParserService;
 import com.trackmywealth.backend.service.ImportTemplateService;
@@ -838,7 +839,7 @@ class ImportTemplateControllerTest {
               ApiException.class,
               e -> {
                 assertThat(e.getStatusCode().value()).isEqualTo(403);
-                assertThat(e.getCode()).isEqualTo("IMPORT_TEMPLATE_READ_ONLY");
+                assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_READ_ONLY);
               });
     }
     assertThatThrownBy(

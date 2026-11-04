@@ -13,8 +13,9 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ImportRowCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.SortWhitelist;
@@ -30,6 +31,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.List;
@@ -55,6 +57,7 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -294,7 +297,7 @@ class ApiConventionsIntegrationTest {
     problem(
         client(token).get().uri("/api/v1/test/busy").exchange(),
         HttpStatus.SERVICE_UNAVAILABLE,
-        ApiErrorCode.IMPORT_PDF_BUSY);
+        ProblemCode.IMPORT_PDF_BUSY.name());
   }
 
   @Test
@@ -502,10 +505,11 @@ class ApiConventionsIntegrationTest {
             .findFirst()
             .orElseThrow();
     assertThat(ifMatch.path("required").asBoolean()).isTrue();
-    assertThat(updateAccount.path("responses").path("412").path("$ref").asString())
-        .isEqualTo("#/components/responses/ApiProblemResponse");
-    assertThat(updateAccount.path("responses").path("428").path("$ref").asString())
-        .isEqualTo("#/components/responses/ApiProblemResponse");
+    // #374: each status is its own problem response, naming the codes it carries.
+    assertThat(updateAccount.path("responses").path("412").path("description").asString())
+        .contains("`VERSION_CONFLICT`");
+    assertThat(updateAccount.path("responses").path("428").path("description").asString())
+        .contains("`VERSION_REQUIRED`");
 
     JsonNode updateCategory = spec.path("paths").path("/api/v1/categories/{id}").path("put");
     assertThat(updateCategory.path("parameters").findValuesAsString("name")).contains("If-Match");
@@ -581,23 +585,137 @@ class ApiConventionsIntegrationTest {
         .as("mutating operations whose OpenAPI lacks a required If-Match with 412/428")
         .isEmpty();
 
-    // PR #267 review: a 503 a client may retry documents its Retry-After header.
+    // PR #267 review, #374: a 503 a client may retry documents its codes and Retry-After header,
+    // next to the generated success response.
     JsonNode detect = spec.path("paths").path("/api/v1/import-templates/detect").path("post");
-    assertThat(detect.path("responses").path("503").path("$ref").asString())
-        .isEqualTo("#/components/responses/ApiProblemRetryableResponse");
+    assertThat(detect.path("responses").path("503").path("description").asString())
+        .contains("`IMPORT_PDF_BUSY`", "`IMPORT_OCR_UNAVAILABLE`");
+    assertThat(detect.path("responses").path("503").path("headers").has("Retry-After")).isTrue();
     assertThat(detect.path("responses").has("200")).isTrue();
-    assertThat(
-            spec.path("components")
-                .path("responses")
-                .path("ApiProblemRetryableResponse")
-                .path("headers")
-                .has("Retry-After"))
-        .isTrue();
 
     JsonNode problem = spec.path("components").path("schemas").path("ApiProblem");
     assertThat(problem.path("properties").path("code").path("type").asString()).isEqualTo("string");
     assertThat(problem.path("properties").path("correlationId").path("type").asString())
         .isEqualTo("string");
+  }
+
+  // US-29-04 (#374): the contract names every code - all of them in ApiProblem.code, and per
+  // operation the ones it can return, in x-problem-codes and one error response per status.
+  @Test
+  void openApiListsEveryProblemCodeAndPerOperationTheCodesItCanReturn() {
+    JsonNode spec =
+        objectMapper.readTree(
+            client(bootstrapAdministrator())
+                .get()
+                .uri("/api-docs")
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody());
+
+    List<String> codes = new ArrayList<>();
+    spec.path("components")
+        .path("schemas")
+        .path("ApiProblem")
+        .path("properties")
+        .path("code")
+        .path("enum")
+        .forEach(code -> codes.add(code.asString()));
+    assertThat(codes)
+        .containsExactlyElementsOf(Arrays.stream(ProblemCode.values()).map(Enum::name).toList());
+
+    JsonNode commit =
+        spec.path("paths")
+            .path("/api/v1/accounts/{accountId}/imports/{batchId}/commit")
+            .path("post");
+    List<String> commitCodes = new ArrayList<>();
+    commit.path("x-problem-codes").forEach(code -> commitCodes.add(code.asString()));
+    assertThat(commitCodes)
+        .contains(
+            ProblemCode.IMPORT_BATCH_STATE.name(),
+            ProblemCode.ACCOUNT_ARCHIVED.name(),
+            ProblemCode.NOT_FOUND.name(),
+            ProblemCode.UNAUTHENTICATED.name(),
+            ProblemCode.INTERNAL.name());
+    assertThat(commit.path("responses").path("409").path("description").asString())
+        .contains("`IMPORT_BATCH_STATE`: " + ProblemCode.IMPORT_BATCH_STATE.meaning());
+    assertThat(
+            commit
+                .path("responses")
+                .path("409")
+                .path("content")
+                .path("application/problem+json")
+                .path("schema")
+                .path("$ref")
+                .asString())
+        .isEqualTo("#/components/schemas/ApiProblem");
+    assertThat(commit.path("responses").has("200")).isTrue();
+
+    // A public, rate-limited sign-in documents 429 but no 401 for a missing token.
+    JsonNode login = spec.path("paths").path("/api/v1/auth/login").path("post");
+    List<String> loginCodes = new ArrayList<>();
+    login.path("x-problem-codes").forEach(code -> loginCodes.add(code.asString()));
+    assertThat(loginCodes).contains(ProblemCode.RATE_LIMITED.name(), ProblemCode.LOCKED.name());
+    assertThat(login.path("responses").path("429").path("headers").has("Retry-After")).isTrue();
+
+    // Every operation lists its codes; each listed code has a response for its status.
+    List<String> undocumented = new ArrayList<>();
+    spec.path("paths")
+        .properties()
+        .forEach(
+            path ->
+                path.getValue()
+                    .properties()
+                    .forEach(
+                        operation -> {
+                          JsonNode listed = operation.getValue().path("x-problem-codes");
+                          if (listed.isEmpty()) {
+                            undocumented.add(operation.getKey() + " " + path.getKey());
+                          }
+                          listed.forEach(
+                              code -> {
+                                String status =
+                                    Integer.toString(
+                                        ProblemCode.valueOf(code.asString()).status().value());
+                                if (!operation.getValue().path("responses").has(status)) {
+                                  undocumented.add(
+                                      operation.getKey() + " " + path.getKey() + " " + status);
+                                }
+                              });
+                        }));
+    assertThat(undocumented).as("operations without their problem codes").isEmpty();
+
+    List<String> rowCodes = new ArrayList<>();
+    spec.path("components")
+        .path("schemas")
+        .path("ImportRowErrorResponse")
+        .path("properties")
+        .path("code")
+        .path("enum")
+        .forEach(code -> rowCodes.add(code.asString()));
+    assertThat(rowCodes)
+        .containsExactlyElementsOf(Arrays.stream(ImportRowCode.values()).map(Enum::name).toList());
+  }
+
+  // US-29-04 (#374): an error response never carries a code the registry does not list.
+  @Test
+  void anUnregisteredCodeNeverReachesAClient() {
+    JsonNode problem =
+        objectMapper.readTree(
+            client(bootstrapAdministrator())
+                .get()
+                .uri("/api/v1/test/unregistered-code")
+                .exchange()
+                .expectStatus()
+                .isEqualTo(HttpStatus.CONFLICT)
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody());
+
+    assertThat(problem.path("code").asString()).isEqualTo(ProblemCode.CONFLICT.name());
+    assertThat(ProblemCode.isRegistered(problem.path("code").asString())).isTrue();
   }
 
   // #373: every paged list documents the one paging contract and answers with a PageResponse.
@@ -669,8 +787,8 @@ class ApiConventionsIntegrationTest {
             "amount",
             "amount,asc",
             "amount,desc");
-    assertThat(list.path("responses").path("400").path("$ref").asString())
-        .isEqualTo("#/components/responses/ApiProblemResponse");
+    assertThat(list.path("responses").path("400").path("description").asString())
+        .contains("`INVALID_SORT`", "`VALIDATION_FAILED`");
 
     JsonNode schemas = spec.path("components").path("schemas");
     JsonNode page = schemas.path("PageResponseTransactionResponse").path("properties");
@@ -876,10 +994,17 @@ class ApiConventionsIntegrationTest {
           "SELECT password_hash FROM app_user WHERE password_hash = 'super-secret'");
     }
 
+    @GetMapping("/api/v1/test/unregistered-code")
+    void unregisteredCode() {
+      ResponseStatusException raw = new ResponseStatusException(HttpStatus.CONFLICT, "Raw.");
+      raw.getBody().setProperty(ProblemCode.PROPERTY, "NOT_IN_THE_REGISTRY");
+      throw raw;
+    }
+
     @GetMapping("/api/v1/test/busy")
     void busy() {
       throw new ApiException(
-              HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.IMPORT_PDF_BUSY, "Busy; try again.")
+              HttpStatus.SERVICE_UNAVAILABLE, ProblemCode.IMPORT_PDF_BUSY, "Busy; try again.")
           .withRetryAfter(7);
     }
   }

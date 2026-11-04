@@ -12,8 +12,8 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.entity.Transaction;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -97,7 +97,7 @@ class ReconciliationAdjustmentServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             locked -> {
-              assertThat(locked.getCode()).isEqualTo(ApiErrorCode.RECONCILIATION_ADJUSTMENT_LOCKED);
+              assertThat(locked.getCode()).isEqualTo(ProblemCode.RECONCILIATION_ADJUSTMENT_LOCKED);
               assertThat(locked.getBody().getProperties())
                   .containsEntry(
                       "reconciliationAdjustment", ReconciliationAdjustmentValues.REOPENABLE);

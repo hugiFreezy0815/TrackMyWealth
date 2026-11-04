@@ -1,9 +1,10 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.ImportAccountProposalResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportAccountProposalService;
-import com.trackmywealth.backend.web.RetryableWhenBusy;
+import com.trackmywealth.backend.web.ProblemCodes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.io.IOException;
@@ -34,10 +35,25 @@ public class ImportAccountProposalController {
   }
 
   /** The proposal for an uploaded file, read with a template version the member may see. */
-  @RetryableWhenBusy
   @Operation(
       operationId = "proposeAccountFromFile",
       summary = "Propose a new account from a statement file")
+  @ProblemCodes({
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IMPORT_TEMPLATE_MISMATCH,
+    ProblemCode.IMPORT_ENCODING_SUSPECT,
+    ProblemCode.IMPORT_FILE_EMPTY,
+    ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
+    ProblemCode.IMPORT_FILE_MALFORMED,
+    ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
+    ProblemCode.IMPORT_FILE_TOO_MANY_PAGES,
+    ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_PDF_NO_TEXT,
+    ProblemCode.IMPORT_PDF_BUSY,
+    ProblemCode.IMPORT_OCR_FAILED,
+    ProblemCode.IMPORT_OCR_UNAVAILABLE
+  })
   @PostMapping(
       path = "/api/v1/import-templates/{templateId}/account-proposal",
       consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -52,10 +68,26 @@ public class ImportAccountProposalController {
    * The proposal for an open import batch's file, typically one whose file names no account of the
    * workspace ({@code accountIdentification} {@code NO_MATCH}); needs access to its account.
    */
-  @RetryableWhenBusy
   @Operation(
       operationId = "proposeAccountFromImportBatch",
       summary = "Propose a new account from an import")
+  @ProblemCodes({
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IMPORT_TEMPLATE_MISMATCH,
+    ProblemCode.IMPORT_ENCODING_SUSPECT,
+    ProblemCode.IMPORT_FILE_EMPTY,
+    ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
+    ProblemCode.IMPORT_FILE_MALFORMED,
+    ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
+    ProblemCode.IMPORT_FILE_TOO_MANY_PAGES,
+    ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_PDF_NO_TEXT,
+    ProblemCode.IMPORT_PDF_BUSY,
+    ProblemCode.IMPORT_OCR_FAILED,
+    ProblemCode.IMPORT_OCR_UNAVAILABLE,
+    ProblemCode.IMPORT_BATCH_STATE
+  })
   @PostMapping("/api/v1/accounts/{accountId}/imports/{batchId}/account-proposal")
   public ImportAccountProposalResponse proposeFromBatch(
       @PathVariable UUID accountId,

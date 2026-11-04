@@ -17,8 +17,8 @@ import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.entity.SnapshotHolding;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
@@ -159,8 +159,7 @@ class ImportSnapshotCompletionServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode())
-                  .isEqualTo(ApiErrorCode.IMPORT_SNAPSHOT_RECONCILIATION_DECIDED);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_SNAPSHOT_RECONCILIATION_DECIDED);
               assertThat(e.getBody().getProperties())
                   .containsEntry("reconciliationResultId", accepted.getId());
             });
@@ -196,7 +195,7 @@ class ImportSnapshotCompletionServiceTest {
 
     ApiException refused = ImportSnapshotCompletionService.refusal(conflict, "Differs.");
 
-    assertThat(refused.getCode()).isEqualTo(ApiErrorCode.IMPORT_SNAPSHOT_CONFLICT);
+    assertThat(refused.getCode()).isEqualTo(ProblemCode.IMPORT_SNAPSHOT_CONFLICT);
     assertThat(refused.getBody().getProperties())
         .containsEntry("existingSnapshotId", conflict.existing().id())
         .containsKey("conflicts");
