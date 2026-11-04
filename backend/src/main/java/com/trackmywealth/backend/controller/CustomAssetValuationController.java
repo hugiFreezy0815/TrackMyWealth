@@ -2,8 +2,10 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CustomAssetValuationService;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,6 +38,7 @@ public class CustomAssetValuationController {
   @Operation(
       operationId = "recordAccountValuation",
       summary = "Record a manual valuation of an asset")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping
   public ResponseEntity<CustomAssetValuationResponse> recordValuation(
       @PathVariable UUID accountId,

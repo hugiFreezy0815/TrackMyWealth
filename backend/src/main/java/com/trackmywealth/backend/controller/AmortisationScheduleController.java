@@ -2,9 +2,11 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AmortisationScheduleService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -43,6 +45,7 @@ public class AmortisationScheduleController {
   @Operation(
       operationId = "listAmortisationEntries",
       summary = "List a loan's amortisation schedule")
+  @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @GetMapping
   public List<AmortisationScheduleEntryResponse> listEntries(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -53,6 +56,7 @@ public class AmortisationScheduleController {
   @Operation(
       operationId = "createAmortisationEntry",
       summary = "Add an amortisation schedule entry")
+  @ProblemCodes({ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
   @PostMapping
   public ResponseEntity<AmortisationScheduleEntryResponse> createEntry(
       @PathVariable UUID accountId,
@@ -66,6 +70,7 @@ public class AmortisationScheduleController {
   @Operation(
       operationId = "replaceAmortisationEntry",
       summary = "Replace an amortisation schedule entry")
+  @ProblemCodes({ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
   @PutMapping("/{entryId}")
   public ResponseEntity<AmortisationScheduleEntryResponse> replaceEntry(
       @PathVariable UUID accountId,
@@ -83,6 +88,7 @@ public class AmortisationScheduleController {
   @Operation(
       operationId = "deleteAmortisationEntry",
       summary = "Delete an amortisation schedule entry")
+  @ProblemCodes({ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
   @DeleteMapping("/{entryId}")
   public ResponseEntity<Void> deleteEntry(
       @PathVariable UUID accountId,

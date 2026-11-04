@@ -3,8 +3,8 @@ package com.trackmywealth.backend.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.web.Paged.SortField;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -107,7 +107,7 @@ class SortWhitelistTest {
             ApiException.class,
             e -> {
               assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.INVALID_SORT);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.INVALID_SORT);
               assertThat(e.getReason()).contains(names).contains(allowed);
             });
   }

@@ -5,8 +5,10 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.service.LoginService;
 import com.trackmywealth.backend.service.TokenRotationService;
+import com.trackmywealth.backend.web.ProblemCodes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,6 +42,7 @@ public class AuthController {
   }
 
   @Operation(operationId = "login", summary = "Sign in with email and password")
+  @ProblemCodes({ProblemCode.UNAUTHENTICATED, ProblemCode.LOCKED})
   @PostMapping(LOGIN_PATH)
   public ResponseEntity<LoginResponse> login(
       @Valid @RequestBody LoginRequest request,
@@ -50,6 +53,7 @@ public class AuthController {
   }
 
   @Operation(operationId = "refreshToken", summary = "Exchange a refresh token for new tokens")
+  @ProblemCodes({ProblemCode.UNAUTHENTICATED})
   @PostMapping(REFRESH_PATH)
   public ResponseEntity<AuthTokensResponse> refresh(
       @Valid @RequestBody RefreshTokenRequest request) {
@@ -57,6 +61,7 @@ public class AuthController {
   }
 
   @Operation(operationId = "verifyMfa", summary = "Complete a sign-in with a one-time code")
+  @ProblemCodes({ProblemCode.UNAUTHENTICATED, ProblemCode.LOCKED})
   @PostMapping(MFA_VERIFY_PATH)
   public ResponseEntity<AuthTokensResponse> verifyMfa(
       @Valid @RequestBody MfaVerifyRequest request,

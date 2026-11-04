@@ -11,8 +11,8 @@ import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.entity.SnapshotHolding;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
@@ -30,7 +30,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -288,8 +287,7 @@ public class ImportStatementBalanceService {
     if (!historical && decided.isPresent()) {
       ApiException exception =
           new ApiException(
-              HttpStatus.CONFLICT,
-              ApiErrorCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED,
+              ProblemCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED,
               "The reconciliation of this statement's balance was "
                   + decided.get().getStatus().toLowerCase(Locale.ROOT)
                   + "; reopen it before rolling back the import.");

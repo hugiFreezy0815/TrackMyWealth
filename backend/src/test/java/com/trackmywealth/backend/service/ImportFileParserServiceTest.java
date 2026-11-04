@@ -21,8 +21,8 @@ import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ParsedImportRow;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -128,7 +128,7 @@ class ImportFileParserServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_INVALID);
               assertThat(e.getBody().getProperties()).containsEntry("field", "statementBalance");
             });
   }
@@ -188,7 +188,7 @@ class ImportFileParserServiceTest {
         assertFileError(
             utf8("date,amount\n2031-01-02,-5.00\n"),
             template,
-            ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+            ProblemCode.IMPORT_TEMPLATE_MISMATCH);
 
     assertThat(error.getBody().getProperties())
         .containsEntry("missingColumns", List.of("text", "Status"));
@@ -204,7 +204,7 @@ class ImportFileParserServiceTest {
         assertFileError(
             utf8("date,amount,text\n2031-01-02,-5.00,Booked\n"),
             template,
-            ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+            ProblemCode.IMPORT_TEMPLATE_MISMATCH);
 
     assertThat(error.getBody().getProperties()).containsEntry("missingColumns", List.of("Status"));
   }
@@ -476,7 +476,7 @@ class ImportFileParserServiceTest {
         assertFileError(
             utf8("date,amount,text\n2031-01-02,-5.00,a\n"),
             template,
-            ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+            ProblemCode.IMPORT_TEMPLATE_MISMATCH);
 
     assertThat(error.getBody().getProperties())
         .containsEntry("missingColumns", List.of("Own IBAN"));
@@ -557,7 +557,7 @@ class ImportFileParserServiceTest {
                 parser.validateTemplate(
                     new Template().accountIdentifier("FILENAME", columnRule("IBAN", "x")).build(),
                     null));
-    assertThat(error.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED);
+    assertThat(error.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED);
   }
 
   @Test
@@ -1078,7 +1078,7 @@ class ImportFileParserServiceTest {
   void anUnclosedQuoteRejectsTheFile() {
     String csv = "date,amount,text\n2026-03-01,-7.50,\"open\n";
 
-    assertFileError(utf8(csv), new Template().build(), ApiErrorCode.IMPORT_FILE_MALFORMED);
+    assertFileError(utf8(csv), new Template().build(), ProblemCode.IMPORT_FILE_MALFORMED);
   }
 
   @Test
@@ -1108,7 +1108,7 @@ class ImportFileParserServiceTest {
     byte[] content =
         "Datum,Betrag,W\u00e4hrung\n2026-03-01,-7.50,CHF\n".getBytes(StandardCharsets.ISO_8859_1);
 
-    assertFileError(content, new Template().build(), ApiErrorCode.IMPORT_ENCODING_SUSPECT);
+    assertFileError(content, new Template().build(), ProblemCode.IMPORT_ENCODING_SUSPECT);
   }
 
   @Test
@@ -1164,17 +1164,17 @@ class ImportFileParserServiceTest {
   void emptyFilesAndFilesWithoutDataRowsAreRejected() {
     ImportTemplateDefinition template = new Template().build();
 
-    assertFileError(new byte[0], template, ApiErrorCode.IMPORT_FILE_EMPTY);
-    assertFileError(utf8("\n\n,,\n"), template, ApiErrorCode.IMPORT_FILE_EMPTY);
+    assertFileError(new byte[0], template, ProblemCode.IMPORT_FILE_EMPTY);
+    assertFileError(utf8("\n\n,,\n"), template, ProblemCode.IMPORT_FILE_EMPTY);
     assertFileError(
         utf8("only\npreamble\n"),
         new Template().preamble(3).build(),
-        ApiErrorCode.IMPORT_FILE_EMPTY);
-    assertFileError(utf8("date,amount,text\n"), template, ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS);
+        ProblemCode.IMPORT_FILE_EMPTY);
+    assertFileError(utf8("date,amount,text\n"), template, ProblemCode.IMPORT_FILE_NO_DATA_ROWS);
     assertFileError(
         utf8("date,amount,text\n2026-03-01,1.00,Summary\n"),
         new Template().trailing(1).build(),
-        ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS);
+        ProblemCode.IMPORT_FILE_NO_DATA_ROWS);
   }
 
   @Test
@@ -1186,7 +1186,7 @@ class ImportFileParserServiceTest {
 
     ApiException error =
         assertFileError(
-            utf8(csv.toString()), new Template().build(), ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS);
+            utf8(csv.toString()), new Template().build(), ProblemCode.IMPORT_FILE_TOO_MANY_ROWS);
     assertThat(error.getBody().getProperties())
         .containsEntry("maxRows", ImportFileParserService.MAX_DATA_ROWS);
   }
@@ -1215,7 +1215,7 @@ class ImportFileParserServiceTest {
         assertFileError(
             utf8("date,amount,text\n2026-03-01,1.00,x\n"),
             template,
-            ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+            ProblemCode.IMPORT_TEMPLATE_MISMATCH);
 
     assertThat(error.getBody().getProperties())
         .containsEntry("missingColumns", List.of("memo", "note"));
@@ -1233,7 +1233,7 @@ class ImportFileParserServiceTest {
   void aRepeatedHeaderNameCanOnlyBeMappedByIndex() {
     String csv = "date,amount,text,amount\n2026-03-01,1.00,x,2.00\n";
 
-    assertFileError(utf8(csv), new Template().build(), ApiErrorCode.IMPORT_TEMPLATE_MISMATCH);
+    assertFileError(utf8(csv), new Template().build(), ProblemCode.IMPORT_TEMPLATE_MISMATCH);
 
     ImportParseResult byIndex =
         parser.parse(
@@ -1277,7 +1277,7 @@ class ImportFileParserServiceTest {
     ImportTemplateDefinition template = new Template().delimiter(";").build();
 
     assertThat(parser.readHeader(content, template)).containsExactly("date", "amount");
-    assertFileError(content, template, ApiErrorCode.IMPORT_FILE_MALFORMED);
+    assertFileError(content, template, ProblemCode.IMPORT_FILE_MALFORMED);
   }
 
   @Test
@@ -1748,7 +1748,7 @@ class ImportFileParserServiceTest {
             new Template().accountStrategy("FILENAME").build())) {
       ApiException error =
           catchThrowableOfType(ApiException.class, () -> parser.validateTemplate(template, null));
-      assertThat(error.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED);
+      assertThat(error.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED);
       assertThat(error.getStatusCode().value()).isEqualTo(422);
     }
     // #273: SNAPSHOT is supported, for a holdings PDF or spreadsheet; a CSV cash template is none.
@@ -1808,7 +1808,7 @@ class ImportFileParserServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_INVALID);
               assertThat(e.getBody().getProperties())
                   .containsEntry("field", "columnMapping.description");
             });
@@ -1822,7 +1822,7 @@ class ImportFileParserServiceTest {
   // --- helpers ------------------------------------------------------------------------------
 
   private ApiException assertFileError(
-      byte[] content, ImportTemplateDefinition template, String code) {
+      byte[] content, ImportTemplateDefinition template, ProblemCode code) {
     ApiException error =
         catchThrowableOfType(ApiException.class, () -> parser.parse(content, template, null));
     assertThat(error).as("expected %s", code).isNotNull();
@@ -1835,7 +1835,7 @@ class ImportFileParserServiceTest {
     ApiException error =
         catchThrowableOfType(ApiException.class, () -> parser.validateTemplate(template, null));
     assertThat(error).as("expected %s to be rejected", field).isNotNull();
-    assertThat(error.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+    assertThat(error.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_INVALID);
     assertThat(error.getBody().getProperties()).containsEntry("field", field);
   }
 

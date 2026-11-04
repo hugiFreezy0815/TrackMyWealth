@@ -6,10 +6,12 @@ import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.UpdatePortfolioRequest;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.PortfolioViewService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -54,6 +56,7 @@ public class PortfolioController {
    * US-04-05 (#381): every active portfolio of the workspace with its totals, in tab order. A
    * bounded list, deliberately not paged: a workspace holds a handful of portfolios.
    */
+  @ProblemCodes({ProblemCode.VALIDATION_FAILED, ProblemCode.NOT_FOUND})
   @Operation(
       operationId = "listPortfolios",
       summary = "List the workspace's portfolios with their totals",
@@ -70,6 +73,7 @@ public class PortfolioController {
   }
 
   @SuccessStatus(HttpStatus.CREATED)
+  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
   @Operation(operationId = "createPortfolio", summary = "Create a portfolio")
   @PostMapping
   public ResponseEntity<PortfolioResponse> createPortfolio(
@@ -87,6 +91,7 @@ public class PortfolioController {
     return VersionedResponse.ok(portfolio, portfolio.version());
   }
 
+  @ProblemCodes({ProblemCode.CONFLICT})
   @Operation(
       operationId = "updatePortfolio",
       summary = "Rename a portfolio, describe its institution or set its type")

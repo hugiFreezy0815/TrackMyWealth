@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.web;
 
+import com.trackmywealth.backend.error.ProblemCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -26,7 +27,7 @@ public class ProblemResponseWriter {
       HttpServletRequest request,
       HttpServletResponse response,
       HttpStatusCode status,
-      String code,
+      ProblemCode code,
       String detail)
       throws IOException {
     ProblemDetail problem =

@@ -23,8 +23,8 @@ import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ParsedImportRow;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -908,7 +908,7 @@ class PdfStatementLayoutTest {
                     .parse(new byte[0], yuhTemplate(), null))
         .isInstanceOfSatisfying(
             ApiException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_FILE_TOO_MANY_ROWS));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_FILE_TOO_MANY_ROWS));
   }
 
   /**

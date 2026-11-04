@@ -1,8 +1,10 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.NetWorthService;
+import com.trackmywealth.backend.web.ProblemCodes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,6 +26,7 @@ public class NetWorthController {
   }
 
   @Operation(operationId = "getNetWorth", summary = "The workspace's net worth")
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
   public NetWorthResponse getNetWorth(
       @RequestParam(required = false) String currency,

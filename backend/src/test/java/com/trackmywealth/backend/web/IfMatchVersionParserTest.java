@@ -3,8 +3,8 @@ package com.trackmywealth.backend.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -43,7 +43,7 @@ class IfMatchVersionParserTest {
               ApiException.class,
               ex -> {
                 assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-                assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+                assertThat(ex.getCode()).isEqualTo(ProblemCode.VALIDATION_FAILED);
               });
     }
   }

@@ -15,8 +15,8 @@ import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.Workspace;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.Collection;
@@ -196,7 +196,8 @@ class ImportAccountIdentificationServiceTest {
             e -> {
               assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
               assertThat(e.getBody().getProperties())
-                  .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.IMPORT_ACCOUNT_UNCONFIRMED)
+                  .containsEntry(
+                      ProblemCode.PROPERTY, ProblemCode.IMPORT_ACCOUNT_UNCONFIRMED.name())
                   .containsEntry("accountIdentification", batch.getAccountIdentification());
             });
   }

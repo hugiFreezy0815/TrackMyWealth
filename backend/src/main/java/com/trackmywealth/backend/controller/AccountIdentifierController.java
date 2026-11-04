@@ -3,9 +3,11 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.AccountIdentifierFromImportRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountIdentifierResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountIdentifierRegistrationService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -48,6 +50,11 @@ public class AccountIdentifierController {
   @Operation(
       operationId = "setAccountIdentifier",
       summary = "Register an account's IBAN, card number or contract number")
+  @ProblemCodes({
+    ProblemCode.ACCOUNT_IDENTIFIER_INVALID,
+    ProblemCode.ACCOUNT_IDENTIFIER_IN_USE,
+    ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE
+  })
   @PutMapping
   public ResponseEntity<AccountIdentifierResponse> set(
       @PathVariable UUID accountId,
@@ -65,6 +72,26 @@ public class AccountIdentifierController {
   @Operation(
       operationId = "setAccountIdentifierFromImport",
       summary = "Take an account's identifier from an imported file")
+  @ProblemCodes({
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IMPORT_TEMPLATE_MISMATCH,
+    ProblemCode.IMPORT_ENCODING_SUSPECT,
+    ProblemCode.IMPORT_FILE_EMPTY,
+    ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
+    ProblemCode.IMPORT_FILE_MALFORMED,
+    ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
+    ProblemCode.IMPORT_FILE_TOO_MANY_PAGES,
+    ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_PDF_NO_TEXT,
+    ProblemCode.IMPORT_PDF_BUSY,
+    ProblemCode.IMPORT_OCR_FAILED,
+    ProblemCode.IMPORT_OCR_UNAVAILABLE,
+    ProblemCode.IMPORT_BATCH_STATE,
+    ProblemCode.ACCOUNT_IDENTIFIER_IN_USE,
+    ProblemCode.ACCOUNT_IDENTIFIER_NOT_IN_FILE,
+    ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE
+  })
   @PutMapping("/from-import")
   public ResponseEntity<AccountIdentifierResponse> setFromImport(
       @PathVariable UUID accountId,
@@ -80,6 +107,7 @@ public class AccountIdentifierController {
    * {@code CONTRACT_NUMBER}) only that one (#323).
    */
   @Operation(operationId = "clearAccountIdentifier", summary = "Remove an account's identifiers")
+  @ProblemCodes({ProblemCode.ACCOUNT_IDENTIFIER_INVALID})
   @DeleteMapping
   public ResponseEntity<AccountIdentifierResponse> clear(
       @PathVariable UUID accountId,

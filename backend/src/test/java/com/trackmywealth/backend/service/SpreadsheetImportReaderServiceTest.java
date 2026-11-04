@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.SpreadsheetCell;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.CamtFixtures;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -81,7 +81,7 @@ class SpreadsheetImportReaderServiceTest {
   void aSheetPastTheLimitsIsRefused() throws Exception {
     byte[] tooLong =
         workbook(sheet -> sheet.createRow(SpreadsheetImportReaderService.MAX_ROWS).createCell(0));
-    assertCode(tooLong, ApiErrorCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED);
+    assertCode(tooLong, ProblemCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED);
     byte[] tooWide =
         workbook(
             sheet ->
@@ -89,7 +89,7 @@ class SpreadsheetImportReaderServiceTest {
                     .createRow(0)
                     .createCell(SpreadsheetImportReaderService.MAX_COLUMNS)
                     .setCellValue("x"));
-    assertCode(tooWide, ApiErrorCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED);
+    assertCode(tooWide, ProblemCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED);
     byte[] longText =
         workbook(
             sheet ->
@@ -97,15 +97,15 @@ class SpreadsheetImportReaderServiceTest {
                     .createRow(0)
                     .createCell(0)
                     .setCellValue("x".repeat(SpreadsheetImportReaderService.MAX_CELL_LENGTH + 1)));
-    assertCode(longText, ApiErrorCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED);
+    assertCode(longText, ProblemCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED);
   }
 
   @Test
   void aDamagedWorkbookOrAnotherFileIsMalformed() throws Exception {
     byte[] workbook = ShippedTemplateFixtures.postfinancePositionsWorkbook();
     byte[] truncated = Arrays.copyOf(workbook, workbook.length / 2);
-    assertCode(truncated, ApiErrorCode.IMPORT_FILE_MALFORMED);
-    assertCode("%PDF-1.7".getBytes(StandardCharsets.US_ASCII), ApiErrorCode.IMPORT_FILE_MALFORMED);
+    assertCode(truncated, ProblemCode.IMPORT_FILE_MALFORMED);
+    assertCode("%PDF-1.7".getBytes(StandardCharsets.US_ASCII), ProblemCode.IMPORT_FILE_MALFORMED);
   }
 
   @Test
@@ -117,7 +117,7 @@ class SpreadsheetImportReaderServiceTest {
     assertThatThrownBy(() -> busy.readRows(content))
         .isInstanceOfSatisfying(
             ApiException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_SPREADSHEET_BUSY));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_SPREADSHEET_BUSY));
     // A turn taken is given back, whatever the read's outcome.
     Semaphore one = new Semaphore(1);
     SpreadsheetImportReaderService reading = new SpreadsheetImportReaderService(one, 1);
@@ -126,7 +126,7 @@ class SpreadsheetImportReaderServiceTest {
     assertThat(one.availablePermits()).isEqualTo(1);
   }
 
-  private void assertCode(byte[] content, String code) {
+  private void assertCode(byte[] content, ProblemCode code) {
     assertThatThrownBy(() -> reader.readRows(content))
         .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.getCode()).isEqualTo(code));
   }

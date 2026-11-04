@@ -6,10 +6,12 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountListService;
 import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -53,6 +55,7 @@ public class AccountController {
    * US-05-06 (#380): every account of the workspace with its current value, oldest first. A bounded
    * list, deliberately not paged: a workspace holds tens of accounts, not thousands.
    */
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @Operation(
       operationId = "listAccounts",
       summary = "List the workspace's accounts with their current value",
@@ -74,6 +77,7 @@ public class AccountController {
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createAccount", summary = "Create an account")
+  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.CONFLICT})
   @PostMapping
   public ResponseEntity<AccountSummaryResponse> createAccount(
       @Valid @RequestBody CreateAccountRequest request,
@@ -91,6 +95,7 @@ public class AccountController {
   }
 
   @Operation(operationId = "updateAccount", summary = "Change an account's name and details")
+  @ProblemCodes({ProblemCode.IMMUTABLE_FIELD})
   @PutMapping("/{accountId}")
   public ResponseEntity<AccountSummaryResponse> updateAccount(
       @PathVariable UUID accountId,
@@ -104,6 +109,7 @@ public class AccountController {
   }
 
   @Operation(operationId = "archiveAccount", summary = "Archive an account")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{accountId}/archive")
   public ResponseEntity<AccountSummaryResponse> archiveAccount(
       @PathVariable UUID accountId,
@@ -115,6 +121,7 @@ public class AccountController {
   }
 
   @Operation(operationId = "restoreAccount", summary = "Restore an archived account")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{accountId}/restore")
   public ResponseEntity<AccountSummaryResponse> restoreAccount(
       @PathVariable UUID accountId,
@@ -128,6 +135,7 @@ public class AccountController {
   @Operation(
       operationId = "reassignAccountPortfolio",
       summary = "Move an account to another portfolio")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{accountId}/reassign-portfolio")
   public ResponseEntity<AccountSummaryResponse> reassignPortfolio(
       @PathVariable UUID accountId,

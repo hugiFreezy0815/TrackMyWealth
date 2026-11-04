@@ -18,8 +18,8 @@ import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ReconciliationResult;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
@@ -427,8 +427,7 @@ class ImportStatementBalanceServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode())
-                  .isEqualTo(ApiErrorCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED);
               assertThat(e.getBody().getProperties())
                   .containsEntry("reconciliationResultId", decided.getId());
             });

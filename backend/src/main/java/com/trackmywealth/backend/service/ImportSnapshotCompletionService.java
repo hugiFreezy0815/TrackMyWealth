@@ -10,8 +10,8 @@ import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ReconciliationResult;
 import com.trackmywealth.backend.entity.Security;
 import com.trackmywealth.backend.entity.SnapshotHolding;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
@@ -29,7 +29,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -256,10 +255,9 @@ public class ImportSnapshotCompletionService {
     boolean duplicate = ImportSnapshotValues.ALREADY_RECORDED.equals(plan.outcome());
     ApiException refused =
         new ApiException(
-            HttpStatus.CONFLICT,
             duplicate
-                ? ApiErrorCode.IMPORT_SNAPSHOT_ALREADY_RECORDED
-                : ApiErrorCode.IMPORT_SNAPSHOT_CONFLICT,
+                ? ProblemCode.IMPORT_SNAPSHOT_ALREADY_RECORDED
+                : ProblemCode.IMPORT_SNAPSHOT_CONFLICT,
             explanation);
     refused.getBody().setProperty("existingSnapshotId", plan.existing().id());
     if (!duplicate) {
@@ -279,8 +277,7 @@ public class ImportSnapshotCompletionService {
     }
     ApiException exception =
         new ApiException(
-            HttpStatus.CONFLICT,
-            ApiErrorCode.IMPORT_SNAPSHOT_RECONCILIATION_DECIDED,
+            ProblemCode.IMPORT_SNAPSHOT_RECONCILIATION_DECIDED,
             "A reconciliation decision covers the snapshot of this date as it is; reopen it before"
                 + " the snapshot changes.");
     exception.getBody().setProperty("reconciliationResultId", decided.get().getId());

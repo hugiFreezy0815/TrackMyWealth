@@ -4,9 +4,9 @@ import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AmortisationScheduleEntry;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AmortisationScheduleEntryRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.math.BigDecimal;
@@ -157,8 +157,7 @@ public class AmortisationScheduleService {
     }
     if (forChange && !ACTIVE.equals(account.getStatus())) {
       throw new ApiException(
-          HttpStatus.CONFLICT,
-          ApiErrorCode.ACCOUNT_ARCHIVED,
+          ProblemCode.ACCOUNT_ARCHIVED,
           "Cannot change the amortisation schedule of an archived loan.");
     }
     return account;

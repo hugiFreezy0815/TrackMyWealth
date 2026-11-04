@@ -3,9 +3,11 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.UpdateWorkspaceCurrencyRequest;
 import com.trackmywealth.backend.dto.UpdateWorkspaceNameRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.WorkspaceService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +34,7 @@ public class WorkspaceController {
   }
 
   @Operation(operationId = "getWorkspace", summary = "Read the workspace")
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping
   public ResponseEntity<WorkspaceResponse> getCurrent(
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -39,6 +42,7 @@ public class WorkspaceController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @Operation(operationId = "updateWorkspaceName", summary = "Rename or clear the workspace name")
   @PutMapping("/name")
   public ResponseEntity<WorkspaceResponse> updateName(
@@ -51,6 +55,7 @@ public class WorkspaceController {
   }
 
   @Operation(operationId = "updateWorkspaceCurrency", summary = "Change the workspace's currency")
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @PutMapping("/currency")
   public ResponseEntity<WorkspaceResponse> updateCurrency(
       @Valid @RequestBody UpdateWorkspaceCurrencyRequest request,

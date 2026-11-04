@@ -7,9 +7,9 @@ import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportRowRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.validation.Re2Patterns;
 import java.math.BigDecimal;
 import java.time.DateTimeException;
@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -110,11 +109,7 @@ public class ImportStatementBalanceReaderService {
       return Re2Patterns.compile(pattern);
     } catch (IllegalArgumentException e) {
       ApiException exception =
-          new ApiException(
-              HttpStatus.UNPROCESSABLE_CONTENT,
-              ApiErrorCode.IMPORT_TEMPLATE_INVALID,
-              e.getMessage(),
-              e);
+          new ApiException(ProblemCode.IMPORT_TEMPLATE_INVALID, e.getMessage(), e);
       exception.getBody().setProperty("field", field);
       throw exception;
     }
@@ -261,9 +256,7 @@ public class ImportStatementBalanceReaderService {
   }
 
   private static ApiException invalid(String field, String detail) {
-    ApiException exception =
-        new ApiException(
-            HttpStatus.UNPROCESSABLE_CONTENT, ApiErrorCode.IMPORT_TEMPLATE_INVALID, detail);
+    ApiException exception = new ApiException(ProblemCode.IMPORT_TEMPLATE_INVALID, detail);
     exception.getBody().setProperty("field", field);
     return exception;
   }

@@ -4,9 +4,9 @@ import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.DatabaseClockRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
@@ -171,8 +171,7 @@ public class OpeningBalanceService {
   private String validate(Account account, OpeningBalanceRequest request, UUID ownSnapshotId) {
     if (account.isHasAmortisation() || account.isManualValuation()) {
       throw new ApiException(
-          HttpStatus.UNPROCESSABLE_CONTENT,
-          ApiErrorCode.OPENING_BALANCE_NOT_APPLICABLE,
+          ProblemCode.OPENING_BALANCE_NOT_APPLICABLE,
           "This account takes no opening balance: its value comes from its own source (the"
               + " loan's principal or the asset's valuations).");
     }
@@ -221,8 +220,7 @@ public class OpeningBalanceService {
     long count = transactionRepository.countLiveBookedBefore(accountId, date);
     ApiException conflict =
         new ApiException(
-            HttpStatus.CONFLICT,
-            ApiErrorCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION,
+            ProblemCode.OPENING_BALANCE_AFTER_FIRST_TRANSACTION,
             count
                 + " transaction(s) are booked before the opening date, the earliest on "
                 + earliest.get()
@@ -253,9 +251,7 @@ public class OpeningBalanceService {
   // code, so a client can tell "record one" from "no such account" (#241 review).
   private static ApiException notRecorded() {
     return new ApiException(
-        HttpStatus.NOT_FOUND,
-        ApiErrorCode.OPENING_BALANCE_NOT_RECORDED,
-        "This account has no opening balance.");
+        ProblemCode.OPENING_BALANCE_NOT_RECORDED, "This account has no opening balance.");
   }
 
   private OpeningBalanceResponse toResponse(AccountSnapshot snapshot) {

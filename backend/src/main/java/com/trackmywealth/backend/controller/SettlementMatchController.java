@@ -3,9 +3,11 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SettlementSourceResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SettlementMatchService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -40,6 +42,7 @@ public class SettlementMatchController {
   }
 
   @Operation(operationId = "setSettlementSource", summary = "Set the account a card is paid from")
+  @ProblemCodes({ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
   @PutMapping("/accounts/{cardAccountId}/settlement-source")
   public ResponseEntity<SettlementSourceResponse> setSettlementSource(
       @PathVariable UUID cardAccountId,
@@ -53,6 +56,7 @@ public class SettlementMatchController {
   }
 
   @Operation(operationId = "getSettlementSource", summary = "Read the account a card is paid from")
+  @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @GetMapping("/accounts/{cardAccountId}/settlement-source")
   public ResponseEntity<SettlementSourceResponse> getSettlementSource(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -65,6 +69,7 @@ public class SettlementMatchController {
   @Operation(
       operationId = "runSettlementMatching",
       summary = "Match card payments to statements now")
+  @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @PostMapping("/accounts/{cardAccountId}/settlement-matches/run")
   public List<SettlementMatchResponse> run(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -77,6 +82,7 @@ public class SettlementMatchController {
    * kind of match; without it both are listed.
    */
   @Operation(operationId = "listSettlementMatches", summary = "List settlement matches")
+  @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping("/settlement-matches")
   public List<SettlementMatchResponse> list(
       @RequestParam(required = false) String status,
@@ -86,6 +92,7 @@ public class SettlementMatchController {
   }
 
   @Operation(operationId = "confirmSettlementMatch", summary = "Confirm a settlement match")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/settlement-matches/{matchId}/confirm")
   public ResponseEntity<SettlementMatchResponse> confirm(
       @PathVariable UUID matchId,
@@ -97,6 +104,7 @@ public class SettlementMatchController {
   }
 
   @Operation(operationId = "rejectSettlementMatch", summary = "Reject a settlement match")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/settlement-matches/{matchId}/reject")
   public ResponseEntity<SettlementMatchResponse> reject(
       @PathVariable UUID matchId,

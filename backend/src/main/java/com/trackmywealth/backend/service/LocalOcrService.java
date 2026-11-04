@@ -1,8 +1,8 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import jakarta.annotation.PreDestroy;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -24,7 +24,6 @@ import javax.imageio.stream.MemoryCacheImageOutputStream;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -250,8 +249,7 @@ public class LocalOcrService {
   }
 
   private static ApiException unavailable(String detail, Throwable cause) {
-    return new ApiException(
-        HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.IMPORT_OCR_UNAVAILABLE, detail, cause);
+    return new ApiException(ProblemCode.IMPORT_OCR_UNAVAILABLE, detail, cause);
   }
 
   // The server's own time limit, not a fault of the file: retryable, like a busy server.
@@ -263,6 +261,6 @@ public class LocalOcrService {
 
   private static ImportFileRejectedException failed(Throwable cause) {
     return new ImportFileRejectedException(
-        ApiErrorCode.IMPORT_OCR_FAILED, "Text recognition could not read the scanned page.", cause);
+        ProblemCode.IMPORT_OCR_FAILED, "Text recognition could not read the scanned page.", cause);
   }
 }

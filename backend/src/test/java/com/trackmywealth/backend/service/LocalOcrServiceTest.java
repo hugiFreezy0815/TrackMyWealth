@@ -3,8 +3,8 @@ package com.trackmywealth.backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -86,7 +86,7 @@ class LocalOcrServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_OCR_FAILED);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_OCR_FAILED);
               assertThat(e.getMessage()).doesNotContain("invented diagnostics");
             });
   }
@@ -103,7 +103,7 @@ class LocalOcrServiceTest {
             () -> new LocalOcrService(true, script.toString(), "eng").recognizePages(1, onePage))
         .isInstanceOfSatisfying(
             ApiException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_OCR_FAILED));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_OCR_FAILED));
   }
 
   /**
@@ -120,7 +120,7 @@ class LocalOcrServiceTest {
     assertThatThrownBy(() -> ocr.recognizePages(1, onePage))
         .isInstanceOfSatisfying(
             ApiException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_OCR_FAILED));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_OCR_FAILED));
     assertThat(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start)).isLessThan(10);
   }
 
@@ -233,7 +233,7 @@ class LocalOcrServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_OCR_UNAVAILABLE);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_OCR_UNAVAILABLE);
               assertThat(e.getStatusCode().value()).isEqualTo(503);
               assertThat(e.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo(retryAfter);
             });

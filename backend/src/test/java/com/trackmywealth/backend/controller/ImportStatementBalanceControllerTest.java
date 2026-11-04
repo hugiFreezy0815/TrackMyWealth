@@ -22,7 +22,7 @@ import com.trackmywealth.backend.dto.ReconciliationDecisionRequest;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import java.math.BigDecimal;
@@ -332,7 +332,7 @@ class ImportStatementBalanceControllerTest {
         .isEqualTo(409)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED)
+        .isEqualTo(ProblemCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED.name())
         .jsonPath("$.reconciliationResultId")
         .isEqualTo(open.id().toString());
     // Nothing was changed: the batch, its bookings and its snapshot are all still there.
@@ -409,7 +409,7 @@ class ImportStatementBalanceControllerTest {
         .isEqualTo(422)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID)
+        .isEqualTo(ProblemCode.IMPORT_TEMPLATE_INVALID.name())
         .jsonPath("$.field")
         .isEqualTo("statementBalance.pattern");
   }

@@ -71,7 +71,7 @@ cd backend
   anything in `..entity..` or annotated `@Entity` wherever it lives, and
   `ArchitectureRulesBiteTest` proves both rules fail on a deliberate violation of each kind.
 - **Services never depend on the web layer** (`services_do_not_depend_on_the_web_layer`). The
-  error types a service throws (`ApiException`, `ApiErrorCode`,
+  error types a service throws (`ApiException`, `ProblemCode`,
   `ExistingResourceConflictException`) live in `..error..` for that reason.
 - **Object-level denials are audited** (US-28-02, #192). When a caller-supplied id does not
   resolve to something the caller may use, deny through `AuthorizationDenialAuditService` (via
@@ -87,13 +87,32 @@ cd backend
     shared mapper, so JSON the application stores (e.g. `raw_source_data`) keeps decimals as
     strings too; read them back as `BigDecimal`.
   - **One error shape.** Every error is RFC 9457 `application/problem+json` with `detail`, a
-    stable `code` (`ApiErrorCode`), the request's `correlationId` and its path as `instance`,
+    stable `code` (`ProblemCode`), the request's `correlationId` and its path as `instance`,
     whichever component answered. Throw a
     `ResponseStatusException` with a user-facing reason — its class-level code is added
     automatically. Throw an `ApiException` with a specific code only where a client must branch on
-    it, and add that code to `ApiErrorCode`; codes are contract and are never renamed. A 404 for
-    something another workspace owns says exactly what one for a missing id says (US-28-03). A
-    500 never carries exception text.
+    it; codes are contract and are never renamed. A 404 for something another workspace owns says
+    exactly what one for a missing id says (US-28-03). A 500 never carries exception text.
+  - **Error-code catalogue (US-29-04, #374).** A new code goes into the `ProblemCode` enum with
+    its status, one-line meaning and client reaction, plus `tmw.error.<CODE>` in both
+    `messages.properties` and `messages_de.properties`; then regenerate
+    [`docs/api/error-codes.md`](../api/error-codes.md)
+    and `api/problem-codes.json`
+    (`./mvnw test -Dtest=ErrorCodeCatalogueTest -Derror-codes.write=true`). A new import row code
+    goes into `ImportRowCode` the same way. An endpoint lists the codes its services can answer
+    with in `@ProblemCodes` (the ones its mapping implies, such as `NOT_FOUND` for a path id or
+    `VERSION_CONFLICT` for a write, are added by `OperationProblemCodes`); `ProblemCodeCoverageTest`
+    follows the call graph and fails on a missing, stale or redundant entry and prints the
+    annotation to paste. The OpenAPI contract lists the codes per operation (`x-problem-codes`, one
+    error response per status the operation answers them with).
+  - **Codes are an open set (#374).** The contract lists them as `x-extensible-enum`, so adding a
+    code needs no declaration, and clients must handle a code they do not know by its HTTP status.
+    Never rename a code. To remove one, mark it `@Deprecated` first (the catalogue and
+    `api/problem-codes.json` say so), then delete it, add its name to `ProblemCode.RETIRED` (or
+    `ImportRowCode.RETIRED`) and declare the break (`api-breaking` label and note): the API
+    contract check compares `api/problem-codes.json` with `main`'s and fails on a removed code, a
+    changed status, reaction or row kind, a reused retired name or a shortened retired list. Never
+    bring back a retired name.
   - **Correlation id.** `CorrelationIdFilter` puts one on every request (a well-formed
     `X-Correlation-Id` is honoured) and in the log MDC; quote it when reporting an error. Browser
     CORS must allow the header on requests and expose it on responses. `MdcTaskDecorator` carries

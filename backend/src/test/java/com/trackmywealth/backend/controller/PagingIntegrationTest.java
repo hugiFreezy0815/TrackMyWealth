@@ -10,7 +10,7 @@ import com.trackmywealth.backend.dto.PageResponse.PageMetadata;
 import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -168,7 +168,7 @@ class PagingIntegrationTest {
     JsonNode problem =
         problem(path.replace("{ledger}", ledger.toString()) + "?sort=unknownField,asc");
 
-    assertThat(problem.path("code").asString()).isEqualTo(ApiErrorCode.INVALID_SORT);
+    assertThat(problem.path("code").asString()).isEqualTo(ProblemCode.INVALID_SORT.name());
     assertThat(problem.path("detail").asString())
         .contains("'unknownField'")
         .contains("Sort by one of: " + allowed + ".");
@@ -178,14 +178,14 @@ class PagingIntegrationTest {
   void anEntityPropertyOutsideTheWhitelistIsRefusedToo() {
     JsonNode problem = problem("/api/v1/accounts/" + ledger + "/transactions?sort=workspaceId,asc");
 
-    assertThat(problem.path("code").asString()).isEqualTo(ApiErrorCode.INVALID_SORT);
+    assertThat(problem.path("code").asString()).isEqualTo(ProblemCode.INVALID_SORT.name());
   }
 
   @Test
   void aMalformedPageIsRefused() {
     JsonNode problem = problem("/api/v1/accounts/" + ledger + "/transactions?page=-1");
 
-    assertThat(problem.path("code").asString()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+    assertThat(problem.path("code").asString()).isEqualTo(ProblemCode.VALIDATION_FAILED.name());
     assertThat(problem.path("detail").asString()).contains("page must be a whole number");
   }
 
@@ -195,7 +195,7 @@ class PagingIntegrationTest {
   void aPageOrSizeSentTwiceIsRefused(String query, String name) {
     JsonNode problem = problem("/api/v1/accounts/" + ledger + "/transactions?" + query);
 
-    assertThat(problem.path("code").asString()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+    assertThat(problem.path("code").asString()).isEqualTo(ProblemCode.VALIDATION_FAILED.name());
     assertThat(problem.path("detail").asString()).isEqualTo(name + " must be sent at most once.");
   }
 

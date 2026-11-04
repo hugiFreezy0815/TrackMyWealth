@@ -9,8 +9,8 @@ import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportHoldingsRule;
 import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -114,7 +114,7 @@ class ImportHoldingsTemplateValidationTest {
                     null))
         .isInstanceOfSatisfying(
             ApiException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED));
   }
 
   @Test
@@ -144,7 +144,7 @@ class ImportHoldingsTemplateValidationTest {
                     "CHF"))
         .isInstanceOfSatisfying(
             ApiException.class,
-            e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED));
+            e -> assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED));
   }
 
   private void assertInvalid(ImportTemplateDefinition template, String field) {
@@ -152,7 +152,7 @@ class ImportHoldingsTemplateValidationTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.IMPORT_TEMPLATE_INVALID);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.IMPORT_TEMPLATE_INVALID);
               assertThat(e.getBody().getProperties()).containsEntry("field", field);
             });
   }

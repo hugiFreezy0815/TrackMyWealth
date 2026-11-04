@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.PagingValues;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.web.Paged.SortField;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -68,7 +68,7 @@ class PagedArgumentResolverTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.VALIDATION_FAILED);
               assertThat(e.getReason()).startsWith(name + " must be a whole number");
             });
   }
@@ -84,7 +84,7 @@ class PagedArgumentResolverTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             e -> {
-              assertThat(e.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+              assertThat(e.getCode()).isEqualTo(ProblemCode.VALIDATION_FAILED);
               assertThat(e.getReason()).isEqualTo(name + " must be sent at most once.");
             });
   }
@@ -109,7 +109,7 @@ class PagedArgumentResolverTest {
 
     assertThatThrownBy(() -> resolve(request))
         .isInstanceOfSatisfying(
-            ApiException.class, e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.INVALID_SORT));
+            ApiException.class, e -> assertThat(e.getCode()).isEqualTo(ProblemCode.INVALID_SORT));
   }
 
   private Pageable resolve(MockHttpServletRequest request) throws NoSuchMethodException {

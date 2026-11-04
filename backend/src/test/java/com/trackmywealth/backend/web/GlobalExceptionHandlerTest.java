@@ -2,9 +2,9 @@ package com.trackmywealth.backend.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ExistingResourceConflictException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.io.IOException;
 import java.util.Locale;
 import java.util.UUID;
@@ -79,7 +79,7 @@ class GlobalExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getProperties())
-        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.ACCOUNT_IDENTIFIER_IN_USE);
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.ACCOUNT_IDENTIFIER_IN_USE.name());
   }
 
   @Test
@@ -92,7 +92,7 @@ class GlobalExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getProperties())
-        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.ACCOUNT_IDENTIFIER_IN_USE);
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.ACCOUNT_IDENTIFIER_IN_USE.name());
   }
 
   @Test
@@ -117,7 +117,8 @@ class GlobalExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getDetail()).contains("category").contains("Retry");
-    assertThat(problem.getProperties()).containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.RETRY);
+    assertThat(problem.getProperties())
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.RETRY.name());
     assertThat(problem.getDetail()).doesNotContain("uq_workspace_category_override");
   }
 
@@ -155,7 +156,8 @@ class GlobalExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getDetail()).contains("opening balance").contains("Retry");
-    assertThat(problem.getProperties()).containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.RETRY);
+    assertThat(problem.getProperties())
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.RETRY.name());
     assertThat(problem.getDetail()).doesNotContain("uq_account_snapshot_opening_balance");
   }
 
@@ -220,7 +222,7 @@ class GlobalExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.PRECONDITION_FAILED.value());
     assertThat(problem.getProperties())
-        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.VERSION_CONFLICT);
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.VERSION_CONFLICT.name());
     assertThat(problem.getDetail()).contains("Reload");
   }
 
@@ -234,7 +236,7 @@ class GlobalExceptionHandlerTest {
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
     assertThat(problem.getProperties())
-        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.VERSION_CONFLICT);
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.VERSION_CONFLICT.name());
   }
 
   // --- EPIC-29 (#149): stable codes and no leaks ------------------------------------------------
@@ -248,25 +250,25 @@ class GlobalExceptionHandlerTest {
                         "ERROR: duplicate key value violates unique constraint"
                             + " \"uq_transaction_external_id\""))
                 .getProperties())
-        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.RETRY);
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.RETRY.name());
     assertThat(
             handler
                 .handleDataIntegrityViolation(
                     violationWithRootMessage("ERROR: account_type_immutable: ..."))
                 .getProperties())
-        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.IMMUTABLE_FIELD);
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.IMMUTABLE_FIELD.name());
     assertThat(
             handler
                 .handleOptimisticLockingFailure(
                     new ObjectOptimisticLockingFailureException(Object.class, "id"),
                     new ServletWebRequest(new MockHttpServletRequest()))
                 .getProperties())
-        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.VERSION_CONFLICT);
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.VERSION_CONFLICT.name());
     assertThat(
             handler
                 .handleDataIntegrityViolation(violationWithRootMessage("ERROR: something else"))
                 .getProperties())
-        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.CONFLICT);
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.CONFLICT.name());
   }
 
   @Test
@@ -276,7 +278,8 @@ class GlobalExceptionHandlerTest {
             new IllegalStateException("SELECT * FROM app_user WHERE password_hash = 'secret'"));
 
     assertThat(problem.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
-    assertThat(problem.getProperties()).containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.INTERNAL);
+    assertThat(problem.getProperties())
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.INTERNAL.name());
     assertThat(problem.getDetail())
         .doesNotContain("SELECT")
         .doesNotContain("secret")
@@ -285,19 +288,44 @@ class GlobalExceptionHandlerTest {
 
   @Test
   void methodNotAllowedIsARequestErrorNotNotFound() {
-    assertThat(ApiErrorCode.forStatus(HttpStatus.METHOD_NOT_ALLOWED))
-        .isEqualTo(ApiErrorCode.VALIDATION_FAILED)
-        .isNotEqualTo(ApiErrorCode.NOT_FOUND);
+    assertThat(ProblemCode.forStatus(HttpStatus.METHOD_NOT_ALLOWED))
+        .isEqualTo(ProblemCode.VALIDATION_FAILED)
+        .isNotEqualTo(ProblemCode.NOT_FOUND);
   }
 
   @Test
   void aCodedExceptionKeepsItsOwnCode() {
     ApiException archived =
-        new ApiException(HttpStatus.CONFLICT, ApiErrorCode.ACCOUNT_ARCHIVED, "Archived.");
+        new ApiException(HttpStatus.CONFLICT, ProblemCode.ACCOUNT_ARCHIVED, "Archived.");
 
     assertThat(ProblemDetails.decorate(archived.getBody()).getProperties())
-        .containsEntry(ApiErrorCode.PROPERTY, ApiErrorCode.ACCOUNT_ARCHIVED);
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.ACCOUNT_ARCHIVED.name());
     assertThat(archived.getBody().getDetail()).isEqualTo("Archived.");
+  }
+
+  // US-29-04 (#374): a code outside the registry never reaches a client; the status's class-level
+  // code does, so the contract's ApiProblem.code enum stays true.
+  @Test
+  void anUnregisteredCodeIsReplacedByTheClassLevelCode() {
+    ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Raw.");
+    problem.setProperty(ProblemCode.PROPERTY, "SOMETHING_UNREGISTERED");
+
+    assertThat(ProblemDetails.decorate(problem).getProperties())
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.CONFLICT.name());
+
+    ProblemDetail notAString = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Raw.");
+    notAString.setProperty(ProblemCode.PROPERTY, 42);
+    assertThat(ProblemDetails.decorate(notAString).getProperties())
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.NOT_FOUND.name());
+  }
+
+  @Test
+  void aProblemWithoutACodeGetsTheClassLevelCode() {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, "Rule.");
+
+    assertThat(ProblemDetails.decorate(problem).getProperties())
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.UNPROCESSABLE.name());
   }
 
   private DataIntegrityViolationException violationWithRootMessage(String rootMessage) {

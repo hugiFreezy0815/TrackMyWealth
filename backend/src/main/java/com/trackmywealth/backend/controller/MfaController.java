@@ -4,8 +4,10 @@ import com.trackmywealth.backend.dto.MfaConfirmRequest;
 import com.trackmywealth.backend.dto.MfaDisableRequest;
 import com.trackmywealth.backend.dto.MfaEnrollmentRequest;
 import com.trackmywealth.backend.dto.MfaEnrollmentResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.MfaService;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,6 +41,7 @@ public class MfaController {
   }
 
   @Operation(operationId = "enrollMfa", summary = "Start enrolling an authenticator app")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.LOCKED})
   @PostMapping("/enroll")
   public ResponseEntity<MfaEnrollmentResponse> enroll(
       @Valid @RequestBody MfaEnrollmentRequest request,
@@ -50,6 +53,7 @@ public class MfaController {
   @Operation(
       operationId = "confirmMfa",
       summary = "Confirm the authenticator app with a first code")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.LOCKED})
   @PostMapping("/confirm")
   public ResponseEntity<Void> confirm(
       @Valid @RequestBody MfaConfirmRequest request,
@@ -60,6 +64,7 @@ public class MfaController {
 
   @SuccessStatus(HttpStatus.NO_CONTENT)
   @Operation(operationId = "disableMfa", summary = "Turn off two-factor sign-in")
+  @ProblemCodes({ProblemCode.LOCKED})
   @PostMapping("/disable")
   public ResponseEntity<Void> disable(
       @Valid @RequestBody MfaDisableRequest request,

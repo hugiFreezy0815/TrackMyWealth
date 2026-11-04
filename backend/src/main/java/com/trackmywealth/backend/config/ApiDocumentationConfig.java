@@ -1,11 +1,11 @@
 package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.dto.PagingValues;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.PagedArgumentResolver;
-import com.trackmywealth.backend.web.RetryableWhenBusy;
 import com.trackmywealth.backend.web.SortWhitelist;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.models.Components;
@@ -38,7 +38,6 @@ import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.PathContainer;
@@ -60,14 +59,15 @@ public class ApiDocumentationConfig {
 
   private static final String API_PROBLEM_SCHEMA = "ApiProblem";
   private static final String API_PROBLEM_RESPONSE = "ApiProblemResponse";
-  private static final String RETRYABLE_PROBLEM_RESPONSE = "ApiProblemRetryableResponse";
+
+  /** The problem envelope's schema, for the per-status error responses (#374). */
+  public static final String API_PROBLEM_REF = "#/components/schemas/" + API_PROBLEM_SCHEMA;
 
   /**
-   * A 503 a client may retry unchanged (e.g. {@code IMPORT_PDF_BUSY}): the problem envelope, with a
-   * {@code Retry-After} header when the server can tell how long to wait.
+   * The schema extension for an open set of string values (#374): the values known today, where a
+   * client must expect others. Used for the problem and import row codes.
    */
-  public static final String RETRYABLE_PROBLEM_RESPONSE_REF =
-      "#/components/responses/" + RETRYABLE_PROBLEM_RESPONSE;
+  public static final String EXTENSIBLE_ENUM = "x-extensible-enum";
 
   // Any order before ApiDocumentOrder's, which must run last.
   private static final int WIRE_CONVENTIONS_ORDER = 0;
@@ -134,17 +134,6 @@ public class ApiDocumentationConfig {
     Components components = componentsOf(openApi);
     components.addSchemas(API_PROBLEM_SCHEMA, problemSchema());
     components.addResponses(API_PROBLEM_RESPONSE, problemResponse());
-    components.addResponses(
-        RETRYABLE_PROBLEM_RESPONSE,
-        problemResponse()
-            .description(
-                "The server cannot do this now; retry the same request later, after the"
-                    + " Retry-After seconds when the header is sent.")
-            .addHeaderObject(
-                HttpHeaders.RETRY_AFTER,
-                new Header()
-                    .description("Seconds to wait before retrying.")
-                    .schema(new IntegerSchema().format("int64"))));
 
     components.addSecuritySchemes(
         BEARER_SCHEME,
@@ -279,21 +268,6 @@ public class ApiDocumentationConfig {
   }
 
   /**
-   * An endpoint marked {@link RetryableWhenBusy} documents its retryable 503 - added here rather
-   * than by an {@code @ApiResponse} on the method, which would drop the generated success response.
-   */
-  @Bean
-  OperationCustomizer retryableWhenBusyResponses() {
-    return (operation, handlerMethod) -> {
-      if (handlerMethod.hasMethodAnnotation(RetryableWhenBusy.class)) {
-        responsesOf(operation)
-            .putIfAbsent("503", new ApiResponse().$ref(RETRYABLE_PROBLEM_RESPONSE_REF));
-      }
-      return operation;
-    };
-  }
-
-  /**
    * A {@link Paged} list documents the one paging contract (#373): {@code page}, {@code size} with
    * its default and cap, and {@code sort} with exactly the values its whitelist accepts - in place
    * of springdoc's generic {@code Pageable} parameters, which would offer any property.
@@ -380,10 +354,18 @@ public class ApiDocumentationConfig {
     problem.addProperty("title", new StringSchema());
     problem.addProperty("status", new IntegerSchema().format("int32"));
     problem.addProperty("detail", new StringSchema());
-    problem.addProperty(
-        "code",
-        new StringSchema()
-            .description("Stable application error code. Existing values are never renamed."));
+    StringSchema code = new StringSchema();
+    code.setDescription(
+        "Stable application error code (docs/api/error-codes.md); each operation lists the codes"
+            + " it can return. An open set: new codes are added without a new API version, so a"
+            + " client must handle a code it does not know by the response's HTTP status. Existing"
+            + " codes are never renamed, and removed only as a declared breaking change.");
+    // #374: x-extensible-enum, not enum - adding a code is additive (a closed enum would make it a
+    // breaking change for every error response). scripts/api_breaking.py guards removals through
+    // api/problem-codes.json, which oasdiff cannot do for this extension.
+    code.addExtension(
+        EXTENSIBLE_ENUM, Arrays.stream(ProblemCode.values()).map(Enum::name).toList());
+    problem.addProperty(ProblemCode.PROPERTY, code);
     problem.addProperty(
         "correlationId",
         new StringSchema()
@@ -403,8 +385,7 @@ public class ApiDocumentationConfig {
 
   private static ApiResponse problemResponse() {
     io.swagger.v3.oas.models.media.MediaType problemMediaType =
-        new io.swagger.v3.oas.models.media.MediaType()
-            .schema(new Schema<>().$ref("#/components/schemas/" + API_PROBLEM_SCHEMA));
+        new io.swagger.v3.oas.models.media.MediaType().schema(new Schema<>().$ref(API_PROBLEM_REF));
     return new ApiResponse()
         .description("Error response using the TrackMyWealth problem-detail contract.")
         .content(

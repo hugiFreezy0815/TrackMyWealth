@@ -21,9 +21,9 @@ import com.trackmywealth.backend.dto.ImportRowErrorValues;
 import com.trackmywealth.backend.dto.ImportStatementBalances;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
 import com.trackmywealth.backend.dto.ParsedImportRow;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
 import com.trackmywealth.backend.error.ImportRowRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -204,7 +204,7 @@ public class CamtImportReaderService {
     }
     if (rows.isEmpty()) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS, "The CAMT file holds no entry.");
+          ProblemCode.IMPORT_FILE_NO_DATA_ROWS, "The CAMT file holds no entry.");
     }
     return new ImportParseResult(List.of(), null, rows, identifier(iban), balances(messages));
   }
@@ -214,13 +214,12 @@ public class CamtImportReaderService {
       return CamtFileReader.read(content);
     } catch (CamtLimitException e) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_CAMT_LIMIT_EXCEEDED, e.getMessage(), e);
+          ProblemCode.IMPORT_CAMT_LIMIT_EXCEEDED, e.getMessage(), e);
     } catch (CamtUnsupportedException e) {
-      throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_CAMT_UNSUPPORTED, e.getMessage(), e);
+      throw new ImportFileRejectedException(ProblemCode.IMPORT_CAMT_UNSUPPORTED, e.getMessage(), e);
     } catch (CamtFormatException e) {
       // Its message is the reader's own; the parser exception it wraps is never shown.
-      throw new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_MALFORMED, e.getMessage(), e);
+      throw new ImportFileRejectedException(ProblemCode.IMPORT_FILE_MALFORMED, e.getMessage(), e);
     }
   }
 
@@ -235,7 +234,7 @@ public class CamtImportReaderService {
             .toList();
     if (accounts.size() > ONE_ACCOUNT) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS,
+          ProblemCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS,
           "The file holds statements of "
               + accounts.size()
               + " accounts; import each account's statements into that account.");

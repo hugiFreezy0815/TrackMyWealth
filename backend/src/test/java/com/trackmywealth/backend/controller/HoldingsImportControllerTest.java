@@ -23,7 +23,7 @@ import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingResponse;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.service.ShippedTemplateFixtures;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
@@ -171,7 +171,7 @@ class HoldingsImportControllerTest {
     assertThat(holdings.readyToCommit()).isFalse();
 
     // Nothing is created by the import: the commit waits for the member's securities.
-    expectProblem(commitRequest(preview), 422, ApiErrorCode.IMPORT_HOLDINGS_UNRESOLVED);
+    expectProblem(commitRequest(preview), 422, ProblemCode.IMPORT_HOLDINGS_UNRESOLVED);
     assertThat(count("SELECT count(*) FROM account_snapshot")).isZero();
     assertThat(count("SELECT count(*) FROM security")).isZero();
 
@@ -242,7 +242,7 @@ class HoldingsImportControllerTest {
     assertThat(again.sameFileImportedIn().batchId()).isEqualTo(first.id());
     assertThat(again.holdings().snapshot()).isEqualTo(ImportSnapshotValues.ALREADY_RECORDED);
     assertThat(again.holdings().readyToCommit()).isFalse();
-    expectProblem(commitRequest(again), 409, ApiErrorCode.IMPORT_SNAPSHOT_ALREADY_RECORDED);
+    expectProblem(commitRequest(again), 409, ProblemCode.IMPORT_SNAPSHOT_ALREADY_RECORDED);
 
     ImportRollbackResponse rolledBack = rollback(get(depot, first.id()));
     assertThat(rolledBack.batch().holdings().snapshot())
@@ -371,7 +371,7 @@ class HoldingsImportControllerTest {
         upload(depot, ShippedTemplateFixtures.postfinanceCashWorkbook(), STATEMENT_DATE);
     assertThat(cash.holdings().snapshot()).isEqualTo(ImportSnapshotValues.ALREADY_RECORDED);
     assertThat(cash.holdings().explanation()).endsWith("Discard this import.");
-    expectProblem(commitRequest(cash), 409, ApiErrorCode.IMPORT_SNAPSHOT_ALREADY_RECORDED);
+    expectProblem(commitRequest(cash), 409, ProblemCode.IMPORT_SNAPSHOT_ALREADY_RECORDED);
 
     // PF-5 lists other securities (its tickers are mapped to none of the PDF's): a conflict, each
     // position named; nothing is overwritten.
@@ -387,7 +387,7 @@ class HoldingsImportControllerTest {
             tuple(ImportSnapshotValues.CONFLICT_HOLDING, true, false));
     assertThat(preview.conflicts()).hasSize(7);
     assertThat(preview.readyToCommit()).isFalse();
-    expectProblem(commitRequest(positions), 409, ApiErrorCode.IMPORT_SNAPSHOT_CONFLICT);
+    expectProblem(commitRequest(positions), 409, ProblemCode.IMPORT_SNAPSHOT_CONFLICT);
     assertThat(snapshots(depot).get(0).holdings()).hasSize(4);
   }
 
@@ -506,7 +506,7 @@ class HoldingsImportControllerTest {
     assertThat(preview.explanation())
         .startsWith("A reconciliation decision covers the snapshot of Nov 30, 2031 as it is.");
     expectProblem(
-        commitRequest(positions), 409, ApiErrorCode.IMPORT_SNAPSHOT_RECONCILIATION_DECIDED);
+        commitRequest(positions), 409, ProblemCode.IMPORT_SNAPSHOT_RECONCILIATION_DECIDED);
     assertThat(count("SELECT count(*) FROM snapshot_holding")).isZero();
 
     // A newer balance finalizes the decision: it can never be reopened, so it no longer blocks.
@@ -616,7 +616,7 @@ class HoldingsImportControllerTest {
             .body(body)
             .exchange(),
         422,
-        ApiErrorCode.IMPORT_TEMPLATE_UNSUPPORTED);
+        ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED);
 
     UUID coin = createSecurity(null, ShippedTemplateFixtures.HOLDING_CRYPTO, "CRYPTO", "CHF");
     assertThat(
@@ -875,7 +875,8 @@ class HoldingsImportControllerTest {
         .getResponseBody();
   }
 
-  private static void expectProblem(RestTestClient.ResponseSpec response, int status, String code) {
+  private static void expectProblem(
+      RestTestClient.ResponseSpec response, int status, ProblemCode code) {
     @SuppressWarnings("unchecked")
     Map<String, Object> problem =
         response
@@ -885,7 +886,7 @@ class HoldingsImportControllerTest {
             .returnResult()
             .getResponseBody();
     if (code != null) {
-      assertThat(problem).containsEntry("code", code);
+      assertThat(problem).containsEntry("code", code.name());
     }
   }
 

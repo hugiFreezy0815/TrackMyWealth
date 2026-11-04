@@ -1,8 +1,7 @@
 package com.trackmywealth.backend.web;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
-import org.springframework.http.HttpStatus;
+import com.trackmywealth.backend.error.ProblemCode;
 
 /**
  * Parses the strong entity-tag form used by FR-CNC-001/002 optimistic concurrency.
@@ -51,8 +50,6 @@ public final class IfMatchVersionParser {
 
   private static ApiException invalid() {
     return new ApiException(
-        HttpStatus.BAD_REQUEST,
-        ApiErrorCode.VALIDATION_FAILED,
-        "If-Match must be a strong numeric ETag such as \"7\".");
+        ProblemCode.VALIDATION_FAILED, "If-Match must be a strong numeric ETag such as \"7\".");
   }
 }

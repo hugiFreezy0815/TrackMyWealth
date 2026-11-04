@@ -2,9 +2,11 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.WorkspaceMemberListItemResponse;
 import com.trackmywealth.backend.dto.WorkspaceMemberSummaryResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.WorkspaceMemberService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +34,7 @@ public class WorkspaceMemberController {
   }
 
   @Operation(operationId = "listWorkspaceMembers", summary = "List the workspace's members")
+  @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.UNPROCESSABLE})
   @GetMapping
   public List<WorkspaceMemberListItemResponse> listWorkspaceMembers(
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -47,6 +50,7 @@ public class WorkspaceMemberController {
   }
 
   @Operation(operationId = "deactivateWorkspaceMember", summary = "Deactivate a workspace member")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{memberId}/deactivate")
   public ResponseEntity<WorkspaceMemberSummaryResponse> deactivateMember(
       @PathVariable UUID memberId,

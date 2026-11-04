@@ -14,7 +14,7 @@ import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import com.trackmywealth.backend.testsupport.LedgerCleanup;
 import com.trackmywealth.backend.testsupport.TransactionRequests;
@@ -366,7 +366,7 @@ class WorkspaceTransactionControllerTest {
         .isBadRequest()
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo(ApiErrorCode.INVALID_SORT);
+        .isEqualTo(ProblemCode.INVALID_SORT.name());
   }
 
   // --- helpers -----------------------------------------------------------------------------------

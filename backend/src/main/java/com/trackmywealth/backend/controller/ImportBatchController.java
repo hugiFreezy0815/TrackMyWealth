@@ -8,6 +8,7 @@ import com.trackmywealth.backend.dto.ImportRollbackResponse;
 import com.trackmywealth.backend.dto.ImportRowInclusionRequest;
 import com.trackmywealth.backend.dto.ImportRowResponse;
 import com.trackmywealth.backend.dto.PageResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportBatchService;
 import com.trackmywealth.backend.service.ImportCommitService;
@@ -16,7 +17,7 @@ import com.trackmywealth.backend.service.ImportRollbackService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
-import com.trackmywealth.backend.web.RetryableWhenBusy;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -92,9 +93,33 @@ public class ImportBatchController {
    * IMPORT_FILE_TOO_MANY_ROWS}); for a CAMT file also {@code IMPORT_CAMT_UNSUPPORTED}, {@code
    * IMPORT_CAMT_LIMIT_EXCEEDED} and {@code IMPORT_CAMT_MULTIPLE_ACCOUNTS}.
    */
-  @RetryableWhenBusy
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createImportBatch", summary = "Upload a statement file for import")
+  @ProblemCodes({
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IMPORT_TEMPLATE_MISMATCH,
+    ProblemCode.IMPORT_ENCODING_SUSPECT,
+    ProblemCode.IMPORT_FILE_EMPTY,
+    ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
+    ProblemCode.IMPORT_FILE_MALFORMED,
+    ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
+    ProblemCode.IMPORT_CAMT_UNSUPPORTED,
+    ProblemCode.IMPORT_CAMT_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS,
+    ProblemCode.IMPORT_FILE_TOO_MANY_PAGES,
+    ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_PDF_NO_TEXT,
+    ProblemCode.IMPORT_PDF_BUSY,
+    ProblemCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_SPREADSHEET_BUSY,
+    ProblemCode.IMPORT_OCR_FAILED,
+    ProblemCode.IMPORT_OCR_UNAVAILABLE,
+    ProblemCode.IMPORT_TOO_MANY_OPEN_BATCHES,
+    ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE
+  })
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<ImportBatchResponse> upload(
       @PathVariable UUID accountId,
@@ -126,10 +151,34 @@ public class ImportBatchController {
    * Parses the stored file (again) with a template, replacing the batch's rows; a CAMT statement
    * without one (#350). Without {@code templateId}, any other file is a 400.
    */
-  @RetryableWhenBusy
   @Operation(
       operationId = "parseImportBatch",
       summary = "Read an uploaded file into rows to preview")
+  @ProblemCodes({
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IMPORT_TEMPLATE_INVALID,
+    ProblemCode.IMPORT_TEMPLATE_UNSUPPORTED,
+    ProblemCode.IMPORT_TEMPLATE_MISMATCH,
+    ProblemCode.IMPORT_ENCODING_SUSPECT,
+    ProblemCode.IMPORT_FILE_EMPTY,
+    ProblemCode.IMPORT_FILE_NO_DATA_ROWS,
+    ProblemCode.IMPORT_FILE_MALFORMED,
+    ProblemCode.IMPORT_FILE_TOO_MANY_ROWS,
+    ProblemCode.IMPORT_CAMT_UNSUPPORTED,
+    ProblemCode.IMPORT_CAMT_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_CAMT_MULTIPLE_ACCOUNTS,
+    ProblemCode.IMPORT_FILE_TOO_MANY_PAGES,
+    ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_PDF_NO_TEXT,
+    ProblemCode.IMPORT_PDF_BUSY,
+    ProblemCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED,
+    ProblemCode.IMPORT_SPREADSHEET_BUSY,
+    ProblemCode.IMPORT_OCR_FAILED,
+    ProblemCode.IMPORT_OCR_UNAVAILABLE,
+    ProblemCode.IMPORT_BATCH_STATE,
+    ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE
+  })
   @PostMapping(BY_ID + "/parse")
   public ResponseEntity<ImportBatchResponse> parse(
       @PathVariable UUID accountId,
@@ -193,6 +242,12 @@ public class ImportBatchController {
    * batch's version; the answer is the batch with its new counts and version.
    */
   @Operation(operationId = "setImportRowIncluded", summary = "Include or leave out one preview row")
+  @ProblemCodes({
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IMPORT_BATCH_STATE,
+    ProblemCode.IMPORT_ROW_NOT_INCLUDABLE
+  })
   @PatchMapping(BY_ID + "/rows/{rowNumber}")
   public ResponseEntity<ImportBatchResponse> setIncluded(
       @PathVariable UUID accountId,
@@ -244,6 +299,18 @@ public class ImportBatchController {
 
   /** Inserts the included rows into the ledger; {@code PARSED -> COMMITTED}. */
   @Operation(operationId = "commitImportBatch", summary = "Book an import's rows")
+  @ProblemCodes({
+    ProblemCode.CONFLICT,
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IMPORT_BATCH_STATE,
+    ProblemCode.IMPORT_ACCOUNT_UNCONFIRMED,
+    ProblemCode.IMPORT_SNAPSHOT_ALREADY_RECORDED,
+    ProblemCode.IMPORT_SNAPSHOT_CONFLICT,
+    ProblemCode.IMPORT_SNAPSHOT_RECONCILIATION_DECIDED,
+    ProblemCode.IMPORT_HOLDINGS_UNRESOLVED,
+    ProblemCode.IMPORT_HOLDINGS_UNREADABLE
+  })
   @PostMapping(BY_ID + "/commit")
   public ResponseEntity<ImportBatchResponse> commit(
       @PathVariable UUID accountId,
@@ -263,6 +330,11 @@ public class ImportBatchController {
   @Operation(
       operationId = "confirmImportBatchAccount",
       summary = "Confirm the account an import belongs to")
+  @ProblemCodes({
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IMPORT_BATCH_STATE
+  })
   @PostMapping(BY_ID + "/confirm-account")
   public ResponseEntity<ImportBatchResponse> confirmAccount(
       @PathVariable UUID accountId,
@@ -277,6 +349,11 @@ public class ImportBatchController {
 
   /** Ends a batch that is not committed and deletes its stored file. */
   @Operation(operationId = "discardImportBatch", summary = "Discard an import that was not booked")
+  @ProblemCodes({
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IMPORT_BATCH_STATE
+  })
   @PostMapping(BY_ID + "/discard")
   public ResponseEntity<ImportBatchResponse> discard(
       @PathVariable UUID accountId,
@@ -299,6 +376,12 @@ public class ImportBatchController {
    * version.
    */
   @Operation(operationId = "rollbackImportBatch", summary = "Undo a booked import")
+  @ProblemCodes({
+    ProblemCode.ACCOUNT_ARCHIVED,
+    ProblemCode.UNPROCESSABLE,
+    ProblemCode.IMPORT_BATCH_STATE,
+    ProblemCode.IMPORT_ROLLBACK_RECONCILIATION_DECIDED
+  })
   @PostMapping(BY_ID + "/rollback")
   public ResponseEntity<ImportRollbackResponse> rollback(
       @PathVariable UUID accountId,

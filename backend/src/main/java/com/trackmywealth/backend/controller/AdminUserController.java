@@ -3,9 +3,11 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.EditUserRequest;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AdminUserService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -42,6 +44,7 @@ public class AdminUserController {
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createUser", summary = "Create a user")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping
   public ResponseEntity<UserSummaryResponse> createUser(
       @Valid @RequestBody CreateUserRequest request,
@@ -59,6 +62,7 @@ public class AdminUserController {
   }
 
   @Operation(operationId = "updateUser", summary = "Change a user's email, role or language")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PatchMapping("/{id}")
   public ResponseEntity<UserSummaryResponse> editUser(
       @PathVariable UUID id,
@@ -71,6 +75,7 @@ public class AdminUserController {
   }
 
   @Operation(operationId = "disableUser", summary = "Disable a user")
+  @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{id}/disable")
   public ResponseEntity<UserSummaryResponse> disableUser(
       @PathVariable UUID id,

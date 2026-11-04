@@ -2,8 +2,10 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.LoanRepaymentService;
+import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,6 +40,7 @@ public class LoanRepaymentController {
 
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "recordLoanRepayment", summary = "Record a loan repayment")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
   @PostMapping
   public ResponseEntity<LoanRepaymentResponse> recordRepayment(
       @PathVariable UUID accountId,

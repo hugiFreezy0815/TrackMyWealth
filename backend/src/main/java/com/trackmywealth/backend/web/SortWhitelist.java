@@ -1,7 +1,7 @@
 package com.trackmywealth.backend.web;
 
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpStatus;
 
 /**
  * The sort rules of one {@link Paged} list (#373): which fields a client may sort by, the default
@@ -142,6 +141,6 @@ public final class SortWhitelist {
   }
 
   private static ApiException invalid(String detail) {
-    return new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_SORT, detail);
+    return new ApiException(ProblemCode.INVALID_SORT, detail);
   }
 }

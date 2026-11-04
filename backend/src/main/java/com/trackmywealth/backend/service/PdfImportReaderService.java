@@ -7,9 +7,9 @@ import com.trackmywealth.backend.dto.ImportPdfBookingLine.Status;
 import com.trackmywealth.backend.dto.ImportPdfLayout;
 import com.trackmywealth.backend.dto.ImportPdfStatement;
 import com.trackmywealth.backend.dto.ImportTemplateDefinition;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.pdf.BoundedPdfParser;
 import com.trackmywealth.backend.pdf.BoundedPdfRenderer;
 import com.trackmywealth.backend.pdf.BoundedTextStripper;
@@ -41,7 +41,6 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -149,7 +148,7 @@ public class PdfImportReaderService {
             layout);
     if (walked.isEmpty()) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_FILE_NO_DATA_ROWS, "The statement has no booking lines.");
+          ProblemCode.IMPORT_FILE_NO_DATA_ROWS, "The statement has no booking lines.");
     }
     Pattern row = Re2Patterns.compile(layout.rowPattern());
     return new ImportPdfStatement(
@@ -479,8 +478,7 @@ public class PdfImportReaderService {
     }
     if (!acquired) {
       throw new ApiException(
-              HttpStatus.SERVICE_UNAVAILABLE,
-              ApiErrorCode.IMPORT_PDF_BUSY,
+              ProblemCode.IMPORT_PDF_BUSY,
               "The server is reading other statements. Try again in a moment.")
           .withRetryAfter(BUSY_RETRY_AFTER_SECONDS);
     }
@@ -494,7 +492,7 @@ public class PdfImportReaderService {
       int pages = document.getNumberOfPages();
       if (pages > MAX_PAGES) {
         throw new ImportFileRejectedException(
-                ApiErrorCode.IMPORT_FILE_TOO_MANY_PAGES,
+                ProblemCode.IMPORT_FILE_TOO_MANY_PAGES,
                 "An import PDF may have at most " + MAX_PAGES + " pages.")
             .withProperty("maxPages", MAX_PAGES);
       }
@@ -582,7 +580,7 @@ public class PdfImportReaderService {
     }
     if (blank) {
       throw new ImportFileRejectedException(
-          ApiErrorCode.IMPORT_PDF_NO_TEXT,
+          ProblemCode.IMPORT_PDF_NO_TEXT,
           ocr.isEnabled()
               ? "The PDF has no text layer (a scanned document). Use a template that reads it by"
                   + " OCR."
@@ -621,7 +619,7 @@ public class PdfImportReaderService {
   }
 
   private static ImportFileRejectedException mismatch(String detail) {
-    return new ImportFileRejectedException(ApiErrorCode.IMPORT_TEMPLATE_MISMATCH, detail)
+    return new ImportFileRejectedException(ProblemCode.IMPORT_TEMPLATE_MISMATCH, detail)
         .withProperty("missingColumns", List.of());
   }
 
@@ -629,10 +627,10 @@ public class PdfImportReaderService {
   // file. The detail says which limit, never anything of the document.
   private static ImportFileRejectedException overLimit(PdfLimitException limit) {
     return new ImportFileRejectedException(
-        ApiErrorCode.IMPORT_PDF_LIMIT_EXCEEDED, limit.getMessage(), limit);
+        ProblemCode.IMPORT_PDF_LIMIT_EXCEEDED, limit.getMessage(), limit);
   }
 
   private static ImportFileRejectedException malformed(String detail, Throwable cause) {
-    return new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_MALFORMED, detail, cause);
+    return new ImportFileRejectedException(ProblemCode.IMPORT_FILE_MALFORMED, detail, cause);
   }
 }

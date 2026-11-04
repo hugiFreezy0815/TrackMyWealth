@@ -1,9 +1,9 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.SpreadsheetCell;
-import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ImportFileRejectedException;
+import com.trackmywealth.backend.error.ProblemCode;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -24,7 +24,6 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -208,8 +207,7 @@ public class SpreadsheetImportReaderService {
     }
     if (!acquired) {
       throw new ApiException(
-              HttpStatus.SERVICE_UNAVAILABLE,
-              ApiErrorCode.IMPORT_SPREADSHEET_BUSY,
+              ProblemCode.IMPORT_SPREADSHEET_BUSY,
               "The server is reading other spreadsheets. Try again in a moment.")
           .withRetryAfter(BUSY_RETRY_AFTER_SECONDS);
     }
@@ -227,16 +225,16 @@ public class SpreadsheetImportReaderService {
 
   private static ImportFileRejectedException malformed(String detail, Throwable cause) {
     return cause == null
-        ? new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_MALFORMED, detail)
-        : new ImportFileRejectedException(ApiErrorCode.IMPORT_FILE_MALFORMED, detail, cause);
+        ? new ImportFileRejectedException(ProblemCode.IMPORT_FILE_MALFORMED, detail)
+        : new ImportFileRejectedException(ProblemCode.IMPORT_FILE_MALFORMED, detail, cause);
   }
 
   private static ImportFileRejectedException limitExceeded(String detail) {
-    return new ImportFileRejectedException(ApiErrorCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED, detail);
+    return new ImportFileRejectedException(ProblemCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED, detail);
   }
 
   private static ImportFileRejectedException limitExceeded(String detail, Throwable cause) {
     return new ImportFileRejectedException(
-        ApiErrorCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED, detail, cause);
+        ProblemCode.IMPORT_SPREADSHEET_LIMIT_EXCEEDED, detail, cause);
   }
 }

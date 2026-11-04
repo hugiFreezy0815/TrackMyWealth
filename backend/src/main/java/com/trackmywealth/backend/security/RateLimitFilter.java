@@ -8,7 +8,7 @@ import com.trackmywealth.backend.controller.MfaController;
 import com.trackmywealth.backend.controller.SecurityController;
 import com.trackmywealth.backend.controller.SessionController;
 import com.trackmywealth.backend.controller.SetupController;
-import com.trackmywealth.backend.error.ApiErrorCode;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.web.ProblemResponseWriter;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
@@ -115,6 +115,18 @@ public class RateLimitFilter extends OncePerRequestFilter {
   // with the number of *Rule fields/newRule(...) calls in the constructor.
   private static final int RULE_COUNT = 8;
 
+  // Which rule a request falls under; one per *Rule field.
+  private enum Route {
+    LOGIN,
+    REFRESH,
+    SETUP,
+    SESSION_REVOKE,
+    MFA_VERIFY,
+    MFA_CONFIRM,
+    SECURITY_CREATE,
+    SECURITY_LOOKUP
+  }
+
   private final ProblemResponseWriter problemResponseWriter;
   private final boolean enabled;
   private final Rule loginRule;
@@ -185,11 +197,37 @@ public class RateLimitFilter extends OncePerRequestFilter {
         request,
         response,
         HttpStatus.TOO_MANY_REQUESTS,
-        ApiErrorCode.RATE_LIMITED,
+        ProblemCode.RATE_LIMITED,
         "Too many requests. Retry after " + retryAfterSeconds + " seconds.");
   }
 
+  /**
+   * Whether a request to {@code path} (a concrete path, or a mapping's pattern such as {@code
+   * /api/v1/sessions/{id}/revoke}) with {@code method} is rate limited - so the OpenAPI contract
+   * documents its 429 {@code RATE_LIMITED} from the same routing (US-29-04, #374).
+   */
+  public static boolean isRateLimited(String method, String path) {
+    return routeFor(method, path).isPresent();
+  }
+
   private Optional<Rule> ruleFor(String method, String path) {
+    return routeFor(method, path).map(this::ruleOf);
+  }
+
+  private Rule ruleOf(Route route) {
+    return switch (route) {
+      case LOGIN -> loginRule;
+      case REFRESH -> refreshRule;
+      case SETUP -> setupRule;
+      case SESSION_REVOKE -> sessionRevokeRule;
+      case MFA_VERIFY -> mfaVerifyRule;
+      case MFA_CONFIRM -> mfaConfirmRule;
+      case SECURITY_CREATE -> securityCreateRule;
+      case SECURITY_LOOKUP -> securityLookupRule;
+    };
+  }
+
+  private static Optional<Route> routeFor(String method, String path) {
     // US-12-01: the one rate-limited *read* in this filter, and the reason it exists is not the
     // cost of the query. The security master is global reference data with no tenant column, so any
     // member of any workspace may ask whether an ISIN is in it - and a "yes" reveals that somebody
@@ -202,36 +240,36 @@ public class RateLimitFilter extends OncePerRequestFilter {
     // Only the collection path: GET /securities/{id} takes an unguessable UUID and there is no
     // listing endpoint, so a security without an ISIN is not reachable by guessing.
     if ("GET".equals(method) && SecurityController.BASE_PATH.equals(path)) {
-      return Optional.of(securityLookupRule);
+      return Optional.of(Route.SECURITY_LOOKUP);
     }
     if (!"POST".equals(method)) {
       return Optional.empty();
     }
     if (AuthController.LOGIN_PATH.equals(path)) {
-      return Optional.of(loginRule);
+      return Optional.of(Route.LOGIN);
     }
     if (AuthController.REFRESH_PATH.equals(path)) {
-      return Optional.of(refreshRule);
+      return Optional.of(Route.REFRESH);
     }
     if (SetupController.ADMINISTRATOR_PATH.equals(path)) {
-      return Optional.of(setupRule);
+      return Optional.of(Route.SETUP);
     }
     // AntPathMatcher supports the same {id} placeholder syntax as Spring MVC's own @PostMapping,
     // so this is the exact same literal SessionController maps - not a hand-translated wildcard
     // that could drift from it.
     if (PATH_MATCHER.match(SessionController.REVOKE_PATH, path)) {
-      return Optional.of(sessionRevokeRule);
+      return Optional.of(Route.SESSION_REVOKE);
     }
     if (AuthController.MFA_VERIFY_PATH.equals(path)) {
-      return Optional.of(mfaVerifyRule);
+      return Optional.of(Route.MFA_VERIFY);
     }
     if (MfaController.CONFIRM_PATH.equals(path)) {
-      return Optional.of(mfaConfirmRule);
+      return Optional.of(Route.MFA_CONFIRM);
     }
     // US-12-01: every insert into the shared security master is visible to every tenant, so an
     // authenticated member must not be able to flood it. Like the rules above, keyed by source.
     if (SecurityController.BASE_PATH.equals(path)) {
-      return Optional.of(securityCreateRule);
+      return Optional.of(Route.SECURITY_CREATE);
     }
     return Optional.empty();
   }
