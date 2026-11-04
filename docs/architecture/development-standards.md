@@ -283,10 +283,16 @@ npm test                 # what CI runs
 - **Merging (#187)**: this free private repository cannot make GitHub enforce required checks, so
   merge only with `scripts/merge_pr.py <pr-number>` (convention). It squash-merges only a PR that
   is up to date with `main`, conflict-free, and whose checks all passed on its current head - the
-  always-run Semgrep and secret scanning plus Backend CI, Mobile Web CI or Scripts CI where the PR
-  changes their part of the repository - pinned to that head commit, never with `--admin`. When
-  Backend CI, Semgrep or secret scanning is red on `main`, the "Main health" workflow keeps a
-  `[CI] main is red: <workflow>` issue open until it is green again; fix `main` first.
+  always-run Semgrep and secret scanning plus Backend CI, the API contract's breaking-change check
+  (#372), Mobile Web CI or Scripts CI where the PR changes their part of the repository - pinned
+  to that head commit, never with `--admin`. When Backend CI, Semgrep or secret scanning is red on
+  `main`, the "Main health" workflow keeps a `[CI] main is red: <workflow>` issue open until it is
+  green again; fix `main` first.
+- **API contract (#372)**: `api/openapi.yaml` is committed and kept in step with the code by
+  `OpenApiContractTest` (**automated**, Backend CI). A change that breaks it for clients fails the
+  `api-breaking` job (`.github/workflows/api-contract.yml`, oasdiff) unless the PR has the label
+  `api-breaking` and a `## API breaking change` section in its description (**automated**); ADR
+  0006 allows additive changes only inside `/api/v1`. See the README's "Testing & CI".
 - **CI runners (#237)**: every workflow job names a fixed runner image (`ubuntu-24.04`, and
   `macos-26` for the iOS build), never a floating label such as `ubuntu-latest`, which GitHub moves
   to a new image on its own schedule and so changes CI underneath every open PR without a commit.

@@ -351,6 +351,40 @@ file client code is generated from. `./mvnw verify` keeps it in step with the co
   `/api/v1/auth/**` (`SecurityConfig.PUBLIC_API_PATTERNS`, shared by Spring Security and the
   contract).
 
+`.github/workflows/api-contract.yml` (job `api-breaking`) keeps the contract from breaking by
+accident. On every PR touching `backend/**` or `api/**` it compares `main`'s `api/openapi.yaml` with
+the PR's using [oasdiff](https://www.oasdiff.com/) (`oasdiff breaking`, pinned version and checksum)
+and fails on a breaking change - anything oasdiff rates "error" or "warning" - listing each one: a
+removed endpoint, parameter or response field, an optional parameter or request field made required,
+a narrowed type or enum. ADR 0006 allows additive changes only inside `/api/v1`, so a new endpoint,
+a new optional field or parameter passes (oasdiff's "info" changes are listed but do not fail).
+Removing any response field and adding a value to a response enum count as breaking, though oasdiff
+rates them lower: the backend sends every field of a response, so clients rely on all of them, and
+a client handling each enum value fails on one it does not know (`SEVERITY_OVERRIDES` in
+`scripts/api_breaking.py`).
+Failing on oasdiff's warnings is stricter than oasdiff's own default (errors only): a change oasdiff
+says breaks only some clients, such as a new pattern or a changed format on an existing field,
+needs the declaration below too. Run the check locally (below) to see the level of each change.
+The job runs `main`'s copy of that script, so a PR cannot loosen the script that judges it; a change
+to the script applies from the next PR on. The workflow file itself is the PR's, though: a PR that
+changes `.github/workflows/api-contract.yml` changes what the job runs, so review such a change as
+closely as the check itself (`scripts/merge_pr.py` points it out). An intended break passes only
+with both
+
+- the label `api-breaking` on the PR, and
+- a `## API breaking change` section in the PR description saying what breaks for clients and why.
+
+The job runs again when the `api-breaking` label, the description or the base branch changes, and
+reads label and description from the PR as it is then, so adding both turns it green without a new
+commit (and re-running an old run judges the PR as it is now). Other label changes skip the job.
+While `main` has no `api/openapi.yaml`, there is nothing to compare and it passes. To run the check
+locally (with oasdiff installed, e.g. `brew install oasdiff`):
+
+```bash
+git show origin/main:api/openapi.yaml > /tmp/main-openapi.yaml
+python3 scripts/api_breaking.py --base /tmp/main-openapi.yaml --revision api/openapi.yaml
+```
+
 `.github/workflows/mobile-web-ci.yml` type-checks, lints, formats-checks and tests `mobile/`, then
 builds its web export (`npx expo export -p web`) on every push/PR touching `mobile/**`. It does
 not deploy anywhere yet — wire your chosen static host's deploy step in once you've picked one
