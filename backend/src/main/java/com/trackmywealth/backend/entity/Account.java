@@ -88,8 +88,9 @@ public class Account {
   private boolean countsAsSaving;
 
   // US-07-22 (#325): the account's savings pocket (Yuh's "Sparkonto"), its own savings account that
-  // an import created; null while it has none. Written only by AccountRepository#linkSavingsPocket,
-  // so saving an entity loaded before the link was made never clears it.
+  // an import created or the member linked; null while it has none. Written only by
+  // AccountRepository#linkSavingsPocket and #relinkSavingsPocket, so saving an entity loaded before
+  // the link was made never clears it. Either UPDATE bumps the version (V4's trigger).
   @Column(name = "savings_pocket_account_id", updatable = false)
   private UUID savingsPocketAccountId;
 

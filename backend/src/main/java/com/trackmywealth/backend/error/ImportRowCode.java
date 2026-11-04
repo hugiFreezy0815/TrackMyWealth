@@ -83,6 +83,9 @@ public enum ImportRowCode {
   IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE(
       Kind.ROW_WARNING,
       "A savings pocket move the pocket cannot take; imported as a one-sided transfer for review."),
+  IMPORT_ROW_SAVINGS_POCKET_OTHER_CURRENCY(
+      Kind.ROW_WARNING,
+      "A savings pocket move in another currency than the account; typed by its sign instead."),
   IMPORT_ROW_BEFORE_OPENING_BALANCE(
       Kind.ROW_WARNING, "The booking lies before the account's opening balance."),
   HOLDING_VALUE_UNREADABLE(

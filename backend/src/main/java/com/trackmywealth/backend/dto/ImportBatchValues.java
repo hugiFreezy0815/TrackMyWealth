@@ -117,6 +117,15 @@ public final class ImportBatchValues {
   public static final String WARNING_SAVINGS_POCKET_UNAVAILABLE =
       "IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE";
 
+  /**
+   * Warning {@code currency}, {@code accountCurrency} (#325 follow-up): the row matches the savings
+   * pocket pattern but is in another currency than the account, so it cannot be booked as a move to
+   * the pocket; it is typed like any other row and may count as income or spending. The row stays
+   * included.
+   */
+  public static final String WARNING_SAVINGS_POCKET_OTHER_CURRENCY =
+      "IMPORT_ROW_SAVINGS_POCKET_OTHER_CURRENCY";
+
   /** Booking is strictly before the account opening balance; importing remains allowed. */
   public static final String WARNING_BEFORE_OPENING_BALANCE = "IMPORT_ROW_BEFORE_OPENING_BALANCE";
 

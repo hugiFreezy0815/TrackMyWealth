@@ -64,13 +64,25 @@ public interface AccountRepository
   Optional<UUID> findSavingsPocketAccountId(@Param("id") UUID id);
 
   // US-07-22: links a new pocket by this column alone - the account entity never writes it (it is
-  // not updatable), and the account's version, its ETag, stays as the member last saw it. Only an
-  // account without a pocket gains one.
+  // not updatable), so an account entity loaded before the import lock cannot overwrite it. The
+  // UPDATE still bumps the account's version (trg_bump_version, V4): the response shows the pocket,
+  // so a member's older ETag is stale from then on. Only an account without a pocket gains one; the
+  // caller checks that exactly one row changed.
   @Modifying(flushAutomatically = true)
   @Query(
       "UPDATE Account a SET a.savingsPocketAccountId = :pocketId"
           + " WHERE a.id = :id AND a.savingsPocketAccountId IS NULL")
   int linkSavingsPocket(@Param("id") UUID id, @Param("pocketId") UUID pocketId);
+
+  // #325 follow-up: the member links another account as the pocket, replacing the one the import
+  // created (archived, say). The caller holds the row's lock and has checked its version; the
+  // trigger bumps it. Clears the persistence context so the account reads back afresh.
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query("UPDATE Account a SET a.savingsPocketAccountId = :pocketId WHERE a.id = :id")
+  int relinkSavingsPocket(@Param("id") UUID id, @Param("pocketId") UUID pocketId);
+
+  // #325 follow-up: whether an account other than accountId already has pocketId as its pocket.
+  boolean existsBySavingsPocketAccountIdAndIdNot(UUID pocketId, UUID accountId);
 
   // US-04-03/FR-LIF-005: an institution summary counts only currently-active accounts - an
   // archived account is excluded from current totals (though still included in a historical

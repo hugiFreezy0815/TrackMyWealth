@@ -5835,6 +5835,180 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - INTERNAL
+  /api/v1/accounts/{accountId}/savings-pocket:
+    put:
+      tags:
+      - Accounts
+      summary: Link another account as the account's savings pocket
+      description: "The next import commits book the account's savings pocket moves\
+        \ on this account, e.g. after the pocket an import created was archived. The\
+        \ pocket must be an active account in the account's currency that holds transactions,\
+        \ is no card or loan and has no pocket of its own (422), and no other account's\
+        \ pocket (409). A link is replaced, never removed."
+      operationId: linkAccountSavingsPocket
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: If-Match
+        in: header
+        description: "Strong ETag of the resource version last read, for example \"\
+          7\". Missing values return 428 VERSION_REQUIRED; stale values return 412\
+          \ VERSION_CONFLICT."
+        required: true
+        schema:
+          type: string
+      - name: X-Correlation-Id
+        in: header
+        description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
+          \ otherwise the server generates a UUID."
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          minLength: 8
+          pattern: "[A-Za-z0-9._-]{8,64}"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkSavingsPocketRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountSummaryResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "401":
+          description: |-
+            Problem codes:
+            - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "404":
+          description: |-
+            Problem codes:
+            - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `CONFLICT`: The request conflicts with the current state; detail says how.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "412":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "422":
+          description: |-
+            Problem codes:
+            - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "428":
+          description: |-
+            Problem codes:
+            - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "500":
+          description: |-
+            Problem codes:
+            - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        default:
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+      x-problem-codes:
+      - VALIDATION_FAILED
+      - UNAUTHENTICATED
+      - NOT_FOUND
+      - CONFLICT
+      - VERSION_REQUIRED
+      - VERSION_CONFLICT
+      - UNPROCESSABLE
+      - INTERNAL
   /api/v1/accounts/{accountId}/snapshots:
     get:
       tags:
@@ -17588,6 +17762,8 @@ components:
           - "null"
         savingsPocket:
           type: boolean
+        savingsPocketOtherCurrency:
+          type: boolean
       required:
       - amount
       - bankExchangeRate
@@ -17603,6 +17779,7 @@ components:
       - originalAmount
       - originalCurrency
       - savingsPocket
+      - savingsPocketOtherCurrency
       - transactionType
       - valueDate
       - valueDateAdjusted
@@ -19460,6 +19637,7 @@ components:
           - IMPORT_ROW_VALUE_DATE_ADJUSTED
           - IMPORT_ROW_SAVINGS_POCKET_CREATED
           - IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE
+          - IMPORT_ROW_SAVINGS_POCKET_OTHER_CURRENCY
           - IMPORT_ROW_BEFORE_OPENING_BALANCE
           - HOLDING_VALUE_UNREADABLE
           - HOLDING_CURRENCY_MISSING
@@ -20102,6 +20280,14 @@ components:
       - institutionType
       - logoUrl
       - name
+    LinkSavingsPocketRequest:
+      type: object
+      properties:
+        savingsPocketAccountId:
+          type: string
+          format: uuid
+      required:
+      - savingsPocketAccountId
     LoanRepaymentResponse:
       type: object
       properties:

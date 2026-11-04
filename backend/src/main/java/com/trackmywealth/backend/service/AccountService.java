@@ -222,9 +222,13 @@ public class AccountService {
   /**
    * US-07-22 (#325): creates the savings pocket of {@code parent} - a {@code SAVINGS} account in
    * {@code currency} in the same portfolio, named after it - and links it as the parent's pocket.
-   * The import commit that first books a pocket move calls this, in its own transaction, under the
-   * parent's import lock, so a parent never gains two pockets. The link is written on its own, not
-   * by saving {@code parent}: the entity was loaded before the import lock and may be stale.
+   * The import commit that first books a pocket move calls this, in the commit's transaction (a
+   * failed commit leaves no pocket behind), under the parent's import lock, so a parent never gains
+   * two pockets. The link is written on its own, not by saving {@code parent}: the entity was
+   * loaded before the import lock and may be stale.
+   *
+   * @throws IllegalStateException when {@code parent} has a pocket by now - a caller without the
+   *     import lock; the transaction rolls back, so no orphan pocket is left
    */
   @Transactional
   public Account createSavingsPocket(Account parent, String currency) {
@@ -244,7 +248,11 @@ public class AccountService {
     validateExtensionFields(request);
     Account pocket = insertAccount(parent.getWorkspace(), parent.getPortfolio(), request);
 
-    accountRepository.linkSavingsPocket(parent.getId(), pocket.getId());
+    // One row by id, or none when the parent has a pocket by now.
+    if (accountRepository.linkSavingsPocket(parent.getId(), pocket.getId()) == 0) {
+      throw new IllegalStateException(
+          "Account " + parent.getId() + " gained a savings pocket while this one was created.");
+    }
     return pocket;
   }
 

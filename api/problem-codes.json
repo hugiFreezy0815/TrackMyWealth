@@ -93,6 +93,7 @@
     "IMPORT_ROW_VALUE_DATE_ADJUSTED": {"kind": "ROW_WARNING", "deprecated": false},
     "IMPORT_ROW_SAVINGS_POCKET_CREATED": {"kind": "ROW_WARNING", "deprecated": false},
     "IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE": {"kind": "ROW_WARNING", "deprecated": false},
+    "IMPORT_ROW_SAVINGS_POCKET_OTHER_CURRENCY": {"kind": "ROW_WARNING", "deprecated": false},
     "IMPORT_ROW_BEFORE_OPENING_BALANCE": {"kind": "ROW_WARNING", "deprecated": false},
     "HOLDING_VALUE_UNREADABLE": {"kind": "HOLDINGS_LINE_ERROR", "deprecated": false},
     "HOLDING_CURRENCY_MISSING": {"kind": "HOLDINGS_LINE_ERROR", "deprecated": false},

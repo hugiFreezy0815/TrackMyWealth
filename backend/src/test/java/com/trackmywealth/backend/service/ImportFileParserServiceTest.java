@@ -11,6 +11,7 @@ import static org.mockito.Mockito.mock;
 import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.ImportAccountContext;
 import com.trackmywealth.backend.dto.ImportAccountIdentifierRule;
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportColumnMapping;
 import com.trackmywealth.backend.dto.ImportFileAccountIdentifier;
 import com.trackmywealth.backend.dto.ImportParseResult;
@@ -942,15 +943,60 @@ class ImportFileParserServiceTest {
             .parseForAccount(statement, template, new ImportAccountContext("CHF", true, false))
             .rows();
 
+    // #325 follow-up: the EUR move says so, or it would count as spending unnoticed; on a card the
+    // pattern means nothing, so nothing is said.
     assertThat(chf)
         .extracting(
-            row -> row.canonical().transactionType(), row -> row.canonical().savingsPocket())
-        .containsExactly(tuple("TRANSFER", true), tuple("EXPENSE", false));
+            row -> row.canonical().transactionType(),
+            row -> row.canonical().savingsPocket(),
+            row -> row.canonical().savingsPocketOtherCurrency())
+        .containsExactly(tuple("TRANSFER", true, false), tuple("EXPENSE", false, true));
+    assertThat(ImportRowCheckService.rowWarnings(chf.get(1).canonical()))
+        .containsExactly(ImportBatchValues.WARNING_SAVINGS_POCKET_OTHER_CURRENCY);
+    assertThat(
+            ImportRowCheckService.warningArgs(
+                ImportBatchValues.WARNING_SAVINGS_POCKET_OTHER_CURRENCY,
+                chf.get(1).canonical(),
+                "CHF"))
+        .containsExactly(entry("currency", "EUR"), entry("accountCurrency", "CHF"));
+    assertThat(ImportRowCheckService.rowWarnings(chf.get(0).canonical())).isEmpty();
     assertThat(card)
         .extracting(
-            row -> row.canonical().transactionType(), row -> row.canonical().savingsPocket())
+            row -> row.canonical().transactionType(),
+            row -> row.canonical().savingsPocket(),
+            row -> row.canonical().savingsPocketOtherCurrency())
         .containsExactly(
-            tuple("CREDIT_CARD_PURCHASE", false), tuple("CREDIT_CARD_PURCHASE", false));
+            tuple("CREDIT_CARD_PURCHASE", false, false),
+            tuple("CREDIT_CARD_PURCHASE", false, false));
+  }
+
+  @Test
+  void aPocketMoveInADryRunWithoutAnAccountCurrencyIsAMoveWithoutAWarning() {
+    ImportTemplateDefinition template =
+        new Template()
+            .delimiter(";")
+            .currencyMode("PER_ROW")
+            .fixedCurrency(null)
+            .mapping(
+                new MappingBuilder()
+                    .bookingDate("date")
+                    .amount("amount")
+                    .currency("currency")
+                    .description("text")
+                    .build())
+            .savingsPocketPattern("^Spareinlage")
+            .build();
+
+    List<ParsedImportRow> rows =
+        parser
+            .parseForAccount(
+                utf8("date;amount;currency;text\n2031-05-01;-8.19;EUR;Spareinlage\n"),
+                template,
+                new ImportAccountContext(null, false, false))
+            .rows();
+
+    assertThat(rows.get(0).canonical().savingsPocket()).isTrue();
+    assertThat(rows.get(0).canonical().savingsPocketOtherCurrency()).isFalse();
   }
 
   @Test

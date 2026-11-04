@@ -158,6 +158,7 @@ class ImportTransferLinkServiceTest {
         null,
         false,
         groupReference,
+        false,
         false);
   }
 
@@ -179,6 +180,7 @@ class ImportTransferLinkServiceTest {
         null,
         false,
         groupReference,
-        true);
+        true,
+        false);
   }
 }

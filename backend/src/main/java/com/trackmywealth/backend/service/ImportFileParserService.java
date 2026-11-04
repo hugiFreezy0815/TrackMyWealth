@@ -1364,14 +1364,16 @@ public class ImportFileParserService {
     String description = optionalCell(record, columns.get("description"));
     // US-07-22: a savings pocket move is a transfer, whatever else would type it - where the ledger
     // takes one: in the account's own currency (unknown in a template's dry run), and not on a card
-    // or a loan. Anywhere else the row is typed as any other.
-    boolean pocketMove =
+    // or a loan. Anywhere else the row is typed as any other; in another currency it says so, as it
+    // would otherwise count as income or spending unnoticed (#325 follow-up).
+    boolean pocketPattern =
         savingsPocket != null
             && description != null
             && !account.creditCard()
             && !account.loan()
-            && (accountCurrency == null || accountCurrency.equals(currency))
             && savingsPocket.matcher(description).find();
+    boolean pocketMove =
+        pocketPattern && (accountCurrency == null || accountCurrency.equals(currency));
     String type =
         pocketMove
             ? TRANSFER
@@ -1422,7 +1424,8 @@ public class ImportFileParserService {
         issuerRate,
         valueDateAdjusted,
         optionalCell(record, columns.get("groupReference")),
-        pocketMove);
+        pocketMove,
+        pocketPattern && !pocketMove);
   }
 
   private static BigDecimal originalAmountOf(

@@ -4,12 +4,14 @@ import com.trackmywealth.backend.dto.AccountListFilter;
 import com.trackmywealth.backend.dto.AccountListItemResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
+import com.trackmywealth.backend.dto.LinkSavingsPocketRequest;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
 import com.trackmywealth.backend.dto.UpdateAccountRequest;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountListService;
 import com.trackmywealth.backend.service.AccountService;
+import com.trackmywealth.backend.service.SavingsPocketService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
@@ -36,7 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
  * US-05-01, US-05-02, US-05-03, US-04-04, US-03-06 (workspace membership checked by {@code
  * AccessControlService}), and the account list of US-05-06 (#380). Every operation here is under
  * the Accounts tag, as each controller's operations are under one tag (#380 moved them there from
- * springdoc's default {@code account-controller}).
+ * springdoc's default {@code account-controller}). The savings pocket link is #325's follow-up.
  */
 @RestController
 @RequestMapping("/api/v1/accounts")
@@ -45,10 +47,15 @@ public class AccountController {
 
   private final AccountService accountService;
   private final AccountListService accountListService;
+  private final SavingsPocketService savingsPocketService;
 
-  public AccountController(AccountService accountService, AccountListService accountListService) {
+  public AccountController(
+      AccountService accountService,
+      AccountListService accountListService,
+      SavingsPocketService savingsPocketService) {
     this.accountService = accountService;
     this.accountListService = accountListService;
+    this.savingsPocketService = savingsPocketService;
   }
 
   /**
@@ -146,6 +153,31 @@ public class AccountController {
         accountService.reassignPortfolio(
             accountId, request, IfMatchVersionParser.parse(ifMatch), actor);
     return withEtag(ResponseEntity.ok(), reassigned);
+  }
+
+  @Operation(
+      operationId = "linkAccountSavingsPocket",
+      summary = "Link another account as the account's savings pocket",
+      description =
+          "The next import commits book the account's savings pocket moves on this account, e.g."
+              + " after the pocket an import created was archived. The pocket must be an active"
+              + " account in the account's currency that holds transactions, is no card or loan"
+              + " and has no pocket of its own (422), and no other account's pocket (409). A link"
+              + " is replaced, never removed.")
+  @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
+  @PutMapping("/{accountId}/savings-pocket")
+  public ResponseEntity<AccountSummaryResponse> linkSavingsPocket(
+      @PathVariable UUID accountId,
+      @Valid @RequestBody LinkSavingsPocketRequest request,
+      @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    AccountSummaryResponse linked =
+        savingsPocketService.linkPocket(
+            accountId,
+            request.savingsPocketAccountId(),
+            IfMatchVersionParser.parse(ifMatch),
+            actor);
+    return withEtag(ResponseEntity.ok(), linked);
   }
 
   private static ResponseEntity<AccountSummaryResponse> withEtag(
