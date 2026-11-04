@@ -95,7 +95,7 @@ public class ImportAccountProposalService {
    * account: {@code null} when its template does not identify accounts. Never log or return its
    * value (US-07-10).
    */
-  public ImportFileAccountIdentifier identifierOf(
+  public @Nullable ImportFileAccountIdentifier identifierOf(
       UUID accountId, UUID batchId, AuthenticatedUserPrincipal actor) {
     ImportBatch batch = openBatch(accountId, batchId, actor);
     return templates
