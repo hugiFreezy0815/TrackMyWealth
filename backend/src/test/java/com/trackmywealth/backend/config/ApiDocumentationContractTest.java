@@ -96,6 +96,30 @@ class ApiDocumentationContractTest {
   }
 
   @Test
+  void aDeclaredStatusSpringdocAlreadyGeneratedKeepsItsBodyAndHeaders()
+      throws NoSuchMethodException {
+    // @ResponseStatus(CREATED) or an explicit @ApiResponse: springdoc generates the 201, no 200.
+    ApiResponse ownCreated =
+        new ApiResponse()
+            .description("generated")
+            .content(
+                new Content()
+                    .addMediaType("application/json", new MediaType().schema(new StringSchema())))
+            .addHeaderObject("Location", new Header());
+    Operation operation =
+        new Operation().responses(new ApiResponses().addApiResponse("201", ownCreated));
+
+    config.successStatusResponses().customize(operation, handler("created"));
+
+    ApiResponse created = operation.getResponses().get("201");
+    assertThat(operation.getResponses()).containsOnlyKeys("201");
+    assertThat(created.getDescription()).isEqualTo("Created");
+    assertThat(created.getContent().get("application/json").getSchema())
+        .isInstanceOf(StringSchema.class);
+    assertThat(created.getHeaders()).containsKey("Location");
+  }
+
+  @Test
   void anUndeclaredHandlerKeepsTheGeneratedResponse() throws NoSuchMethodException {
     Operation operation = generated();
     ApiResponse before = operation.getResponses().get("200");
@@ -173,6 +197,9 @@ class ApiDocumentationContractTest {
 
     @SuccessStatus(HttpStatus.NO_CONTENT)
     void noContent() {}
+
+    @SuccessStatus(HttpStatus.CREATED)
+    void created() {}
 
     void plain() {}
   }

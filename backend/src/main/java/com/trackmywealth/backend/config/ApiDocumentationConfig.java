@@ -219,11 +219,13 @@ public class ApiDocumentationConfig {
       Map<String, ApiResponse> responses, HttpStatus... statuses) {
     ApiResponse generated = responses.remove(OK);
     for (HttpStatus status : statuses) {
+      String code = String.valueOf(status.value());
+      // Without a 200, springdoc generated the declared status itself (@ResponseStatus or an
+      // explicit @ApiResponse): keep that response's body and headers rather than dropping them.
+      ApiResponse source = generated != null ? generated : responses.get(code);
       ApiResponse response =
-          generated == null
-              ? new ApiResponse()
-              : copyOf(generated, status != HttpStatus.NO_CONTENT);
-      responses.put(String.valueOf(status.value()), response.description(status.getReasonPhrase()));
+          source == null ? new ApiResponse() : copyOf(source, status != HttpStatus.NO_CONTENT);
+      responses.put(code, response.description(status.getReasonPhrase()));
     }
   }
 
