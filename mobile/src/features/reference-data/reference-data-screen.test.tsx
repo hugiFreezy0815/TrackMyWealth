@@ -81,6 +81,30 @@ describe('ReferenceDataScreen', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 
+  it('treats a 403 with a code this app does not know as not available (#375)', async () => {
+    jest
+      .mocked(loadReferenceData)
+      .mockRejectedValueOnce(
+        new ApiError('x', 403, { title: 'x', status: 403, code: 'NEW_DENIAL_REASON' }),
+      );
+    await render(<ReferenceDataScreen identity={ADMIN} />);
+
+    expect(await screen.findByText('Reference data is not available.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('offers retry for a server error with a code this app does not know (#375)', async () => {
+    jest
+      .mocked(loadReferenceData)
+      .mockRejectedValueOnce(
+        new ApiError('x', 500, { title: 'x', status: 500, code: 'NEW_FAILURE_REASON' }),
+      );
+    await render(<ReferenceDataScreen identity={ADMIN} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Could not load reference data/);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  });
+
   it('offers retry after network failure and shows the recovered data', async () => {
     jest
       .mocked(loadReferenceData)

@@ -39,6 +39,7 @@
     "eslint-import-resolver-typescript": "^4.4.5",
     "jest": "~30.5.2",
     "jest-expo": "~58.0.12",
+    "openapi-typescript": "7.13.0",
     "prettier": "^3.9.9",
     "typescript": "~6.0.3"
   },
@@ -51,7 +52,9 @@
     "lint": "expo lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "jest"
+    "test": "jest",
+    "api:types": "node scripts/generate-api-types.mjs",
+    "api:types:check": "node scripts/generate-api-types.mjs --check"
   },
   "private": true,
   "expo": {

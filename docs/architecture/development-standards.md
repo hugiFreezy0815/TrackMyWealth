@@ -307,6 +307,13 @@ npm test                 # what CI runs
   response record component that can be null is marked `org.jspecify.annotations.Nullable`, and
   only that one is nullable in the contract (**automated**: in every test, a `null` in an
   unmarked component fails the request with a 500 naming it).
+- **App API types (#375)**: the app's request and response types are generated from
+  `api/openapi.yaml` (`mobile/src/api/schema.d.ts`) and its known problem codes from
+  `api/problem-codes.json`; neither is edited by hand. A PR that changes the contract runs
+  `npm run api:types` in `mobile/` and commits the result (**automated**: Mobile Web CI fails on a
+  stale file, and `merge_pr.py` requires Mobile Web CI for a contract change). App code calls the
+  API only through `typedApi` (**automated**: ESLint), a decimal is `DecimalString`, and an
+  unknown problem code is handled by its HTTP status (`problemReaction`).
 - **CI runners (#237)**: every workflow job names a fixed runner image (`ubuntu-24.04`, and
   `macos-26` for the iOS build), never a floating label such as `ubuntu-latest`, which GitHub moves
   to a new image on its own schedule and so changes CI underneath every open PR without a commit.

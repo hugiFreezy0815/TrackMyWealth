@@ -32,15 +32,9 @@ export class NetworkError extends Error {
 // waiting for the platform's own timeout - a minute or more - with nothing the user can do.
 export const REQUEST_TIMEOUT_MS = 15_000;
 
-/**
- * An exact API decimal - money, quantity, unit price, FX rate, percentage - exactly as the backend
- * sends it: a plain decimal string such as "12345678.1234567891" (#176). Declare such fields with
- * this type, never `number`: a JavaScript number is an IEEE-754 double and rounds the value. Keep
- * it as received, send it back unchanged, and do arithmetic only through a decimal library.
- */
-export type DecimalString = string;
+export type { DecimalString } from './decimal';
 
-type RequestOptions = Omit<RequestInit, 'body'> & {
+export type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
   // false: a 401 is final and never goes through the refresh handler (see session.ts, which
   // verifies a token the server has only just issued).
@@ -90,7 +84,16 @@ async function send(url: string, init: RequestInit): Promise<Response> {
   }
 }
 
-async function request<T>(path: string, options: RequestOptions = {}, retried = false): Promise<T> {
+/**
+ * The transport every API call goes through: JSON in and out, the access token, one renewal of
+ * the session on a 401, ApiError and NetworkError. Features call typedApi (typed-api.ts), whose
+ * types come from the contract; they never name a path or a type by hand.
+ */
+export async function request<T>(
+  path: string,
+  options: RequestOptions = {},
+  retried = false,
+): Promise<T> {
   const { body, headers, renewSession = true, ...rest } = options;
   const sentToken = accessToken;
 
