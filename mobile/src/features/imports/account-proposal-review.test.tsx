@@ -58,6 +58,28 @@ describe('AccountProposalReview', () => {
     });
   });
 
+  it('asks for the currency when the statement suggests none and names no identifier (#460)', async () => {
+    const onConfirm = jest.fn();
+    await render(
+      <AccountProposalReview
+        proposal={{ ...proposal, suggestedCurrency: null, maskedIdentifier: null }}
+        portfolio={{ id: 'portfolio', name: 'Synthetic Bank Basel' }}
+        onConfirm={onConfirm}
+        onCancel={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Account identifier: Not found')).toBeTruthy();
+    expect(screen.getByLabelText('Currency').props.value).toBe('');
+    await fireEvent.changeText(screen.getByLabelText('Account name'), 'Kreditkarte');
+    await fireEvent.press(screen.getByText('Confirm new account details'));
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    await fireEvent.changeText(screen.getByLabelText('Currency'), 'chf');
+    await fireEvent.press(screen.getByText('Confirm new account details'));
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ nativeCurrency: 'CHF' }));
+  });
+
   it('asks for a portfolio before anything can be confirmed', async () => {
     const onConfirm = jest.fn();
     await render(

@@ -2314,10 +2314,10 @@ export interface components {
       institutionName: string | null;
       /** @description CREDIT_CARD for a card statement, otherwise CASH. */
       suggestedAccountType: string;
-      /** @description The one currency every readable row is in. */
-      suggestedCurrency: string;
-      /** @description The account identifier the file names, masked: an IBAN's last four characters, or a card number as masked as the statement had it. */
-      maskedIdentifier: string;
+      /** @description The one currency every readable row is in; null when the rows have several, or none and the template fixes none. */
+      suggestedCurrency: string | null;
+      /** @description The account identifier the file names, masked: an IBAN's last four characters, or a card number as masked as the statement had it; null when the template identifies no account or the file names none. */
+      maskedIdentifier: string | null;
     };
     ImportBatchCountsResponse: {
       /** Format: int32 */

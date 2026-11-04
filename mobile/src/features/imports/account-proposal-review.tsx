@@ -28,7 +28,9 @@ type Props = {
  */
 export function AccountProposalReview({ proposal, portfolio, onConfirm, onCancel }: Props) {
   const [name, setName] = useState('');
-  const [accountType, setAccountType] = useState(proposal.suggestedAccountType ?? '');
+  // The contract (#460): the type is always suggested; the currency is null when the statement's
+  // rows have several or none, and then the member enters it.
+  const [accountType, setAccountType] = useState<string>(proposal.suggestedAccountType);
   const [currency, setCurrency] = useState(proposal.suggestedCurrency ?? '');
   const [error, setError] = useState<string | null>(null);
 
