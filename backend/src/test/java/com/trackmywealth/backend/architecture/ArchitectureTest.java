@@ -38,6 +38,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -395,13 +396,19 @@ class ArchitectureTest {
 
   // US-29-02 (#372): the committed api/openapi.yaml groups every operation under a tag and names it
   // by an id the code chose, never springdoc's fallback (the method name, numbered on a clash).
+  // Every controller springdoc documents: @RestController, but also a @Controller with
+  // @ResponseBody handlers.
+  private static final DescribedPredicate<JavaClass> API_CONTROLLERS =
+      CanBeAnnotated.Predicates.annotatedWith(Controller.class)
+          .or(CanBeAnnotated.Predicates.metaAnnotatedWith(Controller.class))
+          .and(DescribedPredicate.not(CanBeAnnotated.Predicates.annotatedWith(Hidden.class)))
+          .as("are controllers (@Controller or @RestController) not marked @Hidden")
+          .forSubtype();
+
   @ArchTest
   static final ArchRule api_controllers_declare_their_tag =
       classes()
-          .that()
-          .areAnnotatedWith(RestController.class)
-          .and()
-          .areNotAnnotatedWith(Hidden.class)
+          .that(API_CONTROLLERS)
           .should()
           .beAnnotatedWith(Tag.class)
           .because(
@@ -412,11 +419,7 @@ class ArchitectureTest {
   static final ArchRule api_operations_declare_their_operation_id =
       methods()
           .that()
-          .areDeclaredInClassesThat()
-          .areAnnotatedWith(RestController.class)
-          .and()
-          .areDeclaredInClassesThat()
-          .areNotAnnotatedWith(Hidden.class)
+          .areDeclaredInClassesThat(API_CONTROLLERS)
           .and()
           .areMetaAnnotatedWith(RequestMapping.class)
           .should(declareAnExplicitOperationId())

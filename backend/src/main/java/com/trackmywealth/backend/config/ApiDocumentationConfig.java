@@ -34,7 +34,6 @@ import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 
@@ -59,6 +58,9 @@ public class ApiDocumentationConfig {
    */
   public static final String RETRYABLE_PROBLEM_RESPONSE_REF =
       "#/components/responses/" + RETRYABLE_PROBLEM_RESPONSE;
+
+  // Any order before ApiDocumentOrder's, which must run last.
+  private static final int WIRE_CONVENTIONS_ORDER = 0;
 
   private static final String DECIMAL_FORMAT = "decimal";
   private static final String QUERY = "query";
@@ -98,54 +100,57 @@ public class ApiDocumentationConfig {
 
   /**
    * US-29-02 (#372): runs after every other customizer, so whatever they added is put in a fixed
-   * order too ({@link ApiDocumentOrder}).
+   * order too ({@link ApiDocumentOrder}). It alone has {@link Ordered#LOWEST_PRECEDENCE}: every
+   * other {@link OpenApiCustomizer} must come earlier through {@link OrderedOpenApiCustomizer}, or
+   * it would tie with this one and could run after it ({@code OpenApiContractTest} checks).
    */
   @Bean
-  @Order(Ordered.LOWEST_PRECEDENCE)
   OpenApiCustomizer deterministicDocumentOrder() {
-    return ApiDocumentOrder::apply;
+    return new OrderedOpenApiCustomizer(Ordered.LOWEST_PRECEDENCE, ApiDocumentOrder::apply);
   }
 
   @Bean
   OpenApiCustomizer apiWireConventions() {
-    return openApi -> {
-      Components components = componentsOf(openApi);
-      components.addSchemas(API_PROBLEM_SCHEMA, problemSchema());
-      components.addResponses(API_PROBLEM_RESPONSE, problemResponse());
-      components.addResponses(
-          RETRYABLE_PROBLEM_RESPONSE,
-          problemResponse()
-              .description(
-                  "The server cannot do this now; retry the same request later, after the"
-                      + " Retry-After seconds when the header is sent.")
-              .addHeaderObject(
-                  HttpHeaders.RETRY_AFTER,
-                  new Header()
-                      .description("Seconds to wait before retrying.")
-                      .schema(new IntegerSchema().format("int64"))));
+    return new OrderedOpenApiCustomizer(WIRE_CONVENTIONS_ORDER, ApiDocumentationConfig::wire);
+  }
 
-      if (openApi.getPaths() == null) {
-        return;
-      }
-      openApi
-          .getPaths()
-          .values()
-          .forEach(
-              pathItem ->
-                  pathItem
-                      .readOperations()
-                      .forEach(
-                          operation -> {
-                            documentCorrelationRequestHeader(operation);
-                            documentOptimisticConcurrency(operation);
-                            Map<String, ApiResponse> responses = responsesOf(operation);
-                            responses.putIfAbsent(
-                                "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
-                            responses
-                                .values()
-                                .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
-                          }));
-    };
+  private static void wire(OpenAPI openApi) {
+    Components components = componentsOf(openApi);
+    components.addSchemas(API_PROBLEM_SCHEMA, problemSchema());
+    components.addResponses(API_PROBLEM_RESPONSE, problemResponse());
+    components.addResponses(
+        RETRYABLE_PROBLEM_RESPONSE,
+        problemResponse()
+            .description(
+                "The server cannot do this now; retry the same request later, after the"
+                    + " Retry-After seconds when the header is sent.")
+            .addHeaderObject(
+                HttpHeaders.RETRY_AFTER,
+                new Header()
+                    .description("Seconds to wait before retrying.")
+                    .schema(new IntegerSchema().format("int64"))));
+
+    if (openApi.getPaths() == null) {
+      return;
+    }
+    openApi
+        .getPaths()
+        .values()
+        .forEach(
+            pathItem ->
+                pathItem
+                    .readOperations()
+                    .forEach(
+                        operation -> {
+                          documentCorrelationRequestHeader(operation);
+                          documentOptimisticConcurrency(operation);
+                          Map<String, ApiResponse> responses = responsesOf(operation);
+                          responses.putIfAbsent(
+                              "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
+                          responses
+                              .values()
+                              .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
+                        }));
   }
 
   /**

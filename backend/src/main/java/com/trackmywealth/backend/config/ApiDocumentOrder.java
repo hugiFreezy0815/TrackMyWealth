@@ -18,10 +18,11 @@ import java.util.TreeMap;
  * classpath scanning into a fixed order, so the committed {@code api/openapi.yaml} is
  * byte-identical from build to build and a diff shows only real contract changes.
  *
- * <p>Sorted by name: the paths, each operation's responses, every components section and the tag
- * list. Left as they are, because their order is the code's own and carries meaning: the properties
- * of a schema (a record's components, in declaration order) and an operation's parameters (the
- * method's).
+ * <p>Sorted by name: the paths and webhooks, each operation's responses, every components section
+ * (OpenAPI 3.1's {@code pathItems} included), the extensions and the tag list (a tag without a name
+ * last). Left as they are, because their order is the code's own and carries meaning: the
+ * properties of a schema (a record's components, in declaration order) and an operation's
+ * parameters (the method's).
  */
 final class ApiDocumentOrder {
 
@@ -33,14 +34,19 @@ final class ApiDocumentOrder {
       Map<String, Object> extensions = openApi.getPaths().getExtensions();
       openApi.setPaths(new Paths());
       new TreeMap<>(paths).forEach(openApi.getPaths()::addPathItem);
-      openApi.getPaths().setExtensions(extensions);
-      openApi
-          .getPaths()
-          .values()
-          .forEach(item -> item.readOperations().forEach(ApiDocumentOrder::sort));
+      openApi.getPaths().setExtensions(sorted(extensions));
+      openApi.getPaths().values().forEach(ApiDocumentOrder::sortOperations);
     }
+    openApi.setWebhooks(sorted(openApi.getWebhooks()));
+    if (openApi.getWebhooks() != null) {
+      openApi.getWebhooks().values().forEach(ApiDocumentOrder::sortOperations);
+    }
+    openApi.setExtensions(sorted(openApi.getExtensions()));
     if (openApi.getTags() != null) {
-      openApi.getTags().sort(Comparator.comparing(Tag::getName));
+      openApi
+          .getTags()
+          .sort(
+              Comparator.comparing(Tag::getName, Comparator.nullsLast(Comparator.naturalOrder())));
     }
     Components components = openApi.getComponents();
     if (components != null) {
@@ -51,7 +57,15 @@ final class ApiDocumentOrder {
       components.setRequestBodies(sorted(components.getRequestBodies()));
       components.setSecuritySchemes(sorted(components.getSecuritySchemes()));
       components.setExamples(sorted(components.getExamples()));
+      components.setLinks(sorted(components.getLinks()));
+      components.setCallbacks(sorted(components.getCallbacks()));
+      components.setPathItems(sorted(components.getPathItems()));
+      components.setExtensions(sorted(components.getExtensions()));
     }
+  }
+
+  private static void sortOperations(PathItem item) {
+    item.readOperations().forEach(ApiDocumentOrder::sort);
   }
 
   private static void sort(Operation operation) {
@@ -60,7 +74,7 @@ final class ApiDocumentOrder {
       Map<String, Object> extensions = operation.getResponses().getExtensions();
       operation.setResponses(new ApiResponses());
       new TreeMap<>(responses).forEach(operation.getResponses()::addApiResponse);
-      operation.getResponses().setExtensions(extensions);
+      operation.getResponses().setExtensions(sorted(extensions));
     }
   }
 

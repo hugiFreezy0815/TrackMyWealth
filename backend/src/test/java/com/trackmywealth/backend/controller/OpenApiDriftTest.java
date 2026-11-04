@@ -30,6 +30,11 @@ class OpenApiDriftTest {
   }
 
   @Test
+  void aCheckoutWithWindowsLineEndingsHasNoDrift() {
+    assertThat(OpenApiContractTest.driftOf(COMMITTED.replace("\n", "\r\n"), COMMITTED)).isEmpty();
+  }
+
+  @Test
   void aChangedResponseFieldIsDriftNamingTheFileAndTheLine() {
     String served = COMMITTED.replace(" name:", " displayName:");
 

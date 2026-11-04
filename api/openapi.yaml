@@ -1389,13 +1389,6 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ImportBatchResponse"
-        "503":
-          headers:
-            X-Correlation-Id:
-              description: Correlation id assigned to this request.
-              schema:
-                type: string
-          $ref: "#/components/responses/ApiProblemRetryableResponse"
         "412":
           headers:
             X-Correlation-Id:
@@ -1410,6 +1403,13 @@ paths:
               schema:
                 type: string
           $ref: "#/components/responses/ApiProblemResponse"
+        "503":
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemRetryableResponse"
         default:
           headers:
             X-Correlation-Id:
@@ -7370,6 +7370,38 @@ components:
         createdAt:
           type: string
           format: date-time
+    ApiProblem:
+      type: object
+      description: RFC 9457 problem detail extended with a stable application code
+        and correlation id.
+      properties:
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        code:
+          type: string
+          description: Stable application error code. Existing values are never renamed.
+        correlationId:
+          type: string
+          description: Request correlation id; quote it when reporting an error.
+        instance:
+          type: string
+          format: uri
+        errors:
+          type: array
+          description: Present on bean-validation failures; one entry per rejected
+            field.
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
     AuthTokensResponse:
       type: object
       properties:
@@ -10321,38 +10353,6 @@ components:
         version:
           type: integer
           format: int32
-    ApiProblem:
-      type: object
-      description: RFC 9457 problem detail extended with a stable application code
-        and correlation id.
-      properties:
-        title:
-          type: string
-        status:
-          type: integer
-          format: int32
-        detail:
-          type: string
-        code:
-          type: string
-          description: Stable application error code. Existing values are never renamed.
-        correlationId:
-          type: string
-          description: Request correlation id; quote it when reporting an error.
-        instance:
-          type: string
-          format: uri
-        errors:
-          type: array
-          description: Present on bean-validation failures; one entry per rejected
-            field.
-          items:
-            type: object
-            properties:
-              field:
-                type: string
-              message:
-                type: string
   responses:
     ApiProblemResponse:
       description: Error response using the TrackMyWealth problem-detail contract.

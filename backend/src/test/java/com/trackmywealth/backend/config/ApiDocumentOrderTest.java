@@ -7,6 +7,8 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.Paths;
+import io.swagger.v3.oas.models.callbacks.Callback;
+import io.swagger.v3.oas.models.links.Link;
 import io.swagger.v3.oas.models.media.ObjectSchema;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.media.StringSchema;
@@ -57,6 +59,48 @@ class ApiDocumentOrderTest {
         .containsExactly("Accounts", "Portfolios");
     assertThat(openApi.getComponents().getSchemas().keySet()).containsExactly("Alpha", "Zeta");
     assertThat(openApi.getComponents().getResponses().keySet()).containsExactly("A", "Z");
+  }
+
+  @Test
+  void theOtherSectionsWebhooksAndExtensionsAreSortedToo() {
+    ApiResponses responses = new ApiResponses();
+    responses.addApiResponse("default", new ApiResponse());
+    responses.addApiResponse("200", new ApiResponse());
+    OpenAPI openApi =
+        new OpenAPI()
+            .addWebhooks("zeta", new PathItem().post(new Operation().responses(responses)))
+            .addWebhooks("alpha", new PathItem())
+            .components(
+                new Components()
+                    .addLinks("Z", new Link())
+                    .addLinks("A", new Link())
+                    .addCallbacks("Z", new Callback())
+                    .addCallbacks("A", new Callback())
+                    .addPathItem("Z", new PathItem())
+                    .addPathItem("A", new PathItem()));
+    openApi.addExtension("x-zeta", 1);
+    openApi.addExtension("x-alpha", 2);
+
+    ApiDocumentOrder.apply(openApi);
+
+    assertThat(openApi.getWebhooks().keySet()).containsExactly("alpha", "zeta");
+    assertThat(openApi.getWebhooks().get("zeta").getPost().getResponses().keySet())
+        .containsExactly("200", "default");
+    assertThat(openApi.getExtensions().keySet()).containsExactly("x-alpha", "x-zeta");
+    assertThat(openApi.getComponents().getLinks().keySet()).containsExactly("A", "Z");
+    assertThat(openApi.getComponents().getCallbacks().keySet()).containsExactly("A", "Z");
+    assertThat(openApi.getComponents().getPathItems().keySet()).containsExactly("A", "Z");
+  }
+
+  @Test
+  void aTagWithoutANameGoesLastInsteadOfFailingTheDocument() {
+    OpenAPI openApi =
+        new OpenAPI()
+            .tags(new ArrayList<>(List.of(new Tag(), new Tag().name("B"), new Tag().name("A"))));
+
+    ApiDocumentOrder.apply(openApi);
+
+    assertThat(openApi.getTags()).extracting(Tag::getName).containsExactly("A", "B", null);
   }
 
   @Test

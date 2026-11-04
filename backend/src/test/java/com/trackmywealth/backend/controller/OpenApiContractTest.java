@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,9 +21,12 @@ import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springdoc.core.customizers.OpenApiCustomizer;
+import org.springdoc.core.customizers.SpringDocCustomizers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -75,12 +79,16 @@ class OpenApiContractTest {
     registry.add("spring.datasource.username", postgres::getUsername);
     registry.add("spring.datasource.password", postgres::getPassword);
     registry.add("app.rate-limit.enabled", () -> "false");
+    // Each request builds the document anew: with springdoc's cache, a second request would only
+    // serialize the first one's document again, and the same-every-time check could not fail.
+    registry.add("springdoc.cache.disabled", () -> "true");
   }
 
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
   @Autowired ObjectMapper objectMapper;
+  @Autowired SpringDocCustomizers springDocCustomizers;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -122,7 +130,10 @@ class OpenApiContractTest {
    * otherwise a message naming the file, the first line that differs and how to regenerate it. Only
    * that line, not the whole document (some 300 KB), which would bury it in the build log.
    */
-  static Optional<String> driftOf(String committed, String served) {
+  static Optional<String> driftOf(String committedFile, String served) {
+    // A checkout that converts line endings (core.autocrlf) is not drift; .gitattributes keeps the
+    // file LF, this keeps the check honest where that is overridden.
+    String committed = committedFile.replace("\r\n", "\n");
     if (committed.equals(served)) {
       return Optional.empty();
     }
@@ -147,6 +158,87 @@ class OpenApiContractTest {
     String token = bootstrapAdministrator();
 
     assertThat(served(token)).isEqualTo(served(token));
+  }
+
+  /**
+   * {@code ApiDocumentOrder} ran after everything that adds to the document: whatever a customizer
+   * added is in order, not appended after the sorted entries.
+   */
+  @Test
+  void theServedDocumentIsSortedByName() {
+    JsonNode spec = objectMapper.readTree(json(bootstrapAdministrator()));
+
+    List<String> unsorted = new ArrayList<>();
+    expectSorted("paths", names(spec.path("paths")), unsorted);
+    spec.path("paths")
+        .properties()
+        .forEach(
+            path ->
+                path.getValue()
+                    .properties()
+                    .forEach(
+                        operation ->
+                            expectSorted(
+                                operation.getKey() + " " + path.getKey() + " responses",
+                                names(operation.getValue().path("responses")),
+                                unsorted)));
+    spec.path("components")
+        .properties()
+        .forEach(
+            section ->
+                expectSorted(
+                    "components." + section.getKey(), names(section.getValue()), unsorted));
+    List<String> tags = new ArrayList<>();
+    spec.path("tags").forEach(tag -> tags.add(tag.path("name").asString("")));
+    expectSorted("tags", tags, unsorted);
+
+    assertThat(spec.path("components").path("schemas").has("ApiProblem")).isTrue();
+    assertThat(unsorted).isEmpty();
+  }
+
+  /**
+   * The sorter runs after every customizer of this application, and has that place to itself: one
+   * tying with it could run after it, in whichever order the bean set iterates. springdoc's own
+   * {@code OperationIdCustomizer} may still run later; it only renames clashing operation ids, of
+   * which there are none ({@link #everyOperationHasItsOwnExplicitIdOneTagAndASummary}), and adds
+   * nothing - {@link #theServedDocumentIsSortedByName} checks the outcome either way.
+   */
+  @Test
+  void theDocumentOrderRunsAfterEveryCustomizerOfTheApplication() {
+    List<OpenApiCustomizer> ours =
+        springDocCustomizers
+            .getOpenApiCustomizersStream()
+            .filter(customizer -> customizer.getClass().getName().startsWith("com.trackmywealth."))
+            .toList();
+
+    assertThat(ours).hasSizeGreaterThan(1);
+    assertThat(ours.get(ours.size() - 1))
+        .isInstanceOfSatisfying(
+            Ordered.class,
+            last -> assertThat(last.getOrder()).isEqualTo(Ordered.LOWEST_PRECEDENCE));
+    assertThat(ours.subList(0, ours.size() - 1))
+        .as("customizers tying with the document order: give them an OrderedOpenApiCustomizer")
+        .allSatisfy(
+            customizer ->
+                assertThat(customizer)
+                    .isInstanceOfSatisfying(
+                        Ordered.class,
+                        ordered ->
+                            assertThat(ordered.getOrder()).isLessThan(Ordered.LOWEST_PRECEDENCE)));
+  }
+
+  private static List<String> names(JsonNode section) {
+    List<String> names = new ArrayList<>();
+    section.properties().forEach(entry -> names.add(entry.getKey()));
+    return names;
+  }
+
+  private static void expectSorted(String where, List<String> names, List<String> unsorted) {
+    List<String> sorted = new ArrayList<>(names);
+    Collections.sort(sorted);
+    if (!sorted.equals(names)) {
+      unsorted.add(where + ": " + names);
+    }
   }
 
   @Test

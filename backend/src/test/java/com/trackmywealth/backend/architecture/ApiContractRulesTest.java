@@ -7,6 +7,7 @@ import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.trackmywealth.fixtures.contract.DocumentedController;
 import com.trackmywealth.fixtures.contract.UndocumentedController;
+import com.trackmywealth.fixtures.contract.UndocumentedPlainController;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -18,6 +19,8 @@ class ApiContractRulesTest {
 
   private static final JavaClasses UNDOCUMENTED =
       new ClassFileImporter().importClasses(UndocumentedController.class);
+  private static final JavaClasses UNDOCUMENTED_PLAIN =
+      new ClassFileImporter().importClasses(UndocumentedPlainController.class);
   private static final JavaClasses DOCUMENTED =
       new ClassFileImporter().importClasses(DocumentedController.class);
 
@@ -36,6 +39,20 @@ class ApiContractRulesTest {
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining("withoutOperation()")
         .hasMessageContaining("withoutOperationId()");
+  }
+
+  @Test
+  void aPlainControllerWithResponseBodyHandlersIsHeldToTheSameRules() {
+    assertThatThrownBy(
+            () -> ArchitectureTest.api_controllers_declare_their_tag.check(UNDOCUMENTED_PLAIN))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("UndocumentedPlainController");
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_declare_their_operation_id.check(
+                    UNDOCUMENTED_PLAIN))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("plainWithoutOperation()");
   }
 
   @Test
