@@ -3,6 +3,7 @@ package com.trackmywealth.backend.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.core.converter.ModelConverters;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -19,6 +20,8 @@ import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -157,6 +160,53 @@ class ResponseFieldContractTest {
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("ItemResponse.amount is nullable")
         .hasMessageContaining("mark the component @Nullable");
+  }
+
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  record Sparse(String id) {}
+
+  record SparseComponent(@JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> tags) {}
+
+  record Maybe(Optional<String> note) {}
+
+  record MaybeNumber(OptionalInt count) {}
+
+  record Explicit(@JsonInclude(JsonInclude.Include.ALWAYS) String id) {}
+
+  @Test
+  void aResponseRecordJacksonMayLeaveKeysOutOfFailsNamingIt() {
+    assertThatThrownBy(() -> ResponseFieldContract.apply(documentAnswering(Sparse.class), Set.of()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Sparse sets @JsonInclude");
+    assertThatThrownBy(
+            () -> ResponseFieldContract.apply(documentAnswering(SparseComponent.class), Set.of()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("SparseComponent.tags sets @JsonInclude");
+    assertThatThrownBy(() -> ResponseFieldContract.apply(documentAnswering(Maybe.class), Set.of()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Maybe.note is an Optional");
+    assertThatThrownBy(
+            () -> ResponseFieldContract.apply(documentAnswering(MaybeNumber.class), Set.of()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("MaybeNumber.count is an Optional");
+  }
+
+  @Test
+  void anExplicitAlwaysIncludeIsAccepted() {
+    OpenAPI api = documentAnswering(Explicit.class);
+
+    ResponseFieldContract.apply(api, Set.of());
+
+    assertThat(schema(api, "ItemResponse").getRequired()).containsExactly("id");
+  }
+
+  /** {@link #document()}, with GET /items answering a schema marked as {@code record}'s. */
+  private static OpenAPI documentAnswering(Class<?> record) {
+    OpenAPI api = document();
+    Schema<?> item = schema(api, "ItemResponse");
+    item.getProperties().keySet().retainAll(Set.of("id"));
+    item.getExtensions().put(RecordSchemaMarker.RECORD_EXTENSION, record);
+    return api;
   }
 
   @Test

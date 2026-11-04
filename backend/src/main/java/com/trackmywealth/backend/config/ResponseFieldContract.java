@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.config;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.core.util.AnnotationsUtils;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -16,12 +17,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalDouble;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
@@ -35,11 +41,12 @@ import org.jspecify.annotations.Nullable;
  * never an optional field the backend always sends.
  *
  * <p><b>Presence:</b> Jackson writes every component of a response record, a null one as {@code
- * null} (nothing in the backend sets {@code @JsonInclude}), so every property of a response schema
- * is {@code required}. <b>Nullability:</b> a property is nullable exactly when its record component
- * is JSpecify {@link Nullable} (ADR 0006); the record comes from {@link RecordSchemaMarker}. A
- * nullable property is {@code type: [<type>, "null"]} (a {@code null} added to an enum's values),
- * or {@code anyOf} its schema and {@code null} for a reference.
+ * null} (a response record that sets {@code @JsonInclude} or has an {@code Optional} component
+ * fails the generation), so every property of a response schema is {@code required}.
+ * <b>Nullability:</b> a property is nullable exactly when its record component is JSpecify {@link
+ * Nullable} (ADR 0006); the record comes from {@link RecordSchemaMarker}. A nullable property is
+ * {@code type: [<type>, "null"]} (a {@code null} added to an enum's values), or {@code anyOf} its
+ * schema and {@code null} for a reference.
  *
  * <p>Request schemas are left as they are: there, {@code required} is what bean validation demands
  * of the caller. A schema used by a request and a response alike (the import-template parts) is
@@ -55,6 +62,15 @@ final class ResponseFieldContract {
 
   private static final String SCHEMA_REF_PREFIX = "#/components/schemas/";
   private static final String NULL_TYPE = "null";
+  private static final String RESPONSE_SCHEMA = "Response schema ";
+
+  /** The inclusions that write a null component as {@code null}; the global default is ALWAYS. */
+  private static final Set<JsonInclude.Include> WRITES_EVERY_KEY =
+      EnumSet.of(JsonInclude.Include.ALWAYS, JsonInclude.Include.USE_DEFAULTS);
+
+  /** Component types Jackson writes as {@code null} when empty. */
+  private static final Set<Class<?>> OPTIONALS =
+      Set.of(Optional.class, OptionalInt.class, OptionalLong.class, OptionalDouble.class);
 
   private ResponseFieldContract() {}
 
@@ -110,14 +126,59 @@ final class ResponseFieldContract {
       Class<?> record = records.get(name);
       if (record == null) {
         throw new IllegalStateException(
-            "Response schema "
+            RESPONSE_SCHEMA
                 + name
                 + " is not generated from a record, so its fields' presence and nullability are"
                 + " unknown: answer with a record, or build the schema by hand with its own"
                 + " required list (#451)");
       }
+      requireEveryKeyWritten(name, record);
       document(name, schemas.get(name), record);
     }
+  }
+
+  /**
+   * Fails when Jackson could leave a key of {@code record} out, which would make {@code required} a
+   * lie: an {@code @JsonInclude} other than {@code ALWAYS} on the record or a component, or an
+   * {@code Optional} component (an empty one is written as {@code null}, a value the walk of the
+   * tests cannot see). The global default is checked by {@code OpenApiContractTest}.
+   */
+  private static void requireEveryKeyWritten(String name, Class<?> record) {
+    if (omitsKeys(record.getAnnotation(JsonInclude.class))) {
+      throw new IllegalStateException(
+          RESPONSE_SCHEMA
+              + name
+              + ": "
+              + record.getSimpleName()
+              + " sets @JsonInclude, so Jackson may leave keys out that the contract lists as"
+              + " required - remove it; a field that can be null is @Nullable (#451)");
+    }
+    for (RecordComponent component : record.getRecordComponents()) {
+      String where = record.getSimpleName() + "." + component.getName();
+      // JsonInclude cannot target a record component; javac puts it on the accessor (and field).
+      if (omitsKeys(component.getAccessor().getAnnotation(JsonInclude.class))) {
+        throw new IllegalStateException(
+            RESPONSE_SCHEMA
+                + name
+                + ": "
+                + where
+                + " sets @JsonInclude, so Jackson may leave the key out that the contract lists"
+                + " as required - remove it; a field that can be null is @Nullable (#451)");
+      }
+      if (OPTIONALS.contains(component.getType())) {
+        throw new IllegalStateException(
+            RESPONSE_SCHEMA
+                + name
+                + ": "
+                + where
+                + " is an Optional - answer with the value and mark the component @Nullable"
+                + " (org.jspecify.annotations) (#451)");
+      }
+    }
+  }
+
+  private static boolean omitsKeys(@Nullable JsonInclude include) {
+    return include != null && !WRITES_EVERY_KEY.contains(include.value());
   }
 
   /** The record each marked schema comes from; the marks are removed from the document. */
@@ -159,7 +220,7 @@ final class ResponseFieldContract {
       RecordComponent component = byName.get(property.getKey());
       if (component == null) {
         throw new IllegalStateException(
-            "Response schema "
+            RESPONSE_SCHEMA
                 + name
                 + " has the property "
                 + property.getKey()
@@ -171,7 +232,7 @@ final class ResponseFieldContract {
         property.setValue(nullable(property.getValue()));
       } else if (allowsNull(property.getValue())) {
         throw new IllegalStateException(
-            "Response schema "
+            RESPONSE_SCHEMA
                 + name
                 + "."
                 + property.getKey()

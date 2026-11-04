@@ -61,10 +61,18 @@ really returns.
 - Generated client types are exact: `string` for a field that is always filled, `string | null` for
   a nullable one, and no optional response fields.
 - Removing a response field is breaking by oasdiff's own rule (`response-required-property-removed`),
-  so `scripts/api_breaking.py` no longer raises `response-optional-property-removed`.
+  also behind a nullable reference (`anyOf`). `scripts/api_breaking.py` still raises
+  `response-optional-property-removed` to an error, for the optional fields of the hand-built
+  `ApiProblem` (`detail`, `instance`, `errors`).
 - Making a field nullable later is a breaking change (`response-property-became-nullable`) and needs
   the `api-breaking` label and a note. A new response field is additive.
 - A new response record component that can be null must be marked `@Nullable` in the same PR. The
   test suite fails on it as soon as any test sees the null.
+- "Always present" holds only while Jackson writes nulls. `ResponseFieldContract` fails the
+  document for a response record that sets `@JsonInclude` (other than `ALWAYS`) or has an
+  `Optional` component, and `OpenApiContractTest` checks that the application's mapper writes a
+  null component as `null`, so a global `default-property-inclusion` cannot change it unseen.
 - The runtime check sees only what the tests exercise. A null on a path that no test reaches goes
-  unnoticed until a test covers it.
+  unnoticed until a test covers it. It also checks one way only: a component marked `@Nullable`
+  that is never null is not reported. That is safe (the generated type is wider than needed), so
+  remove such a mark when it is found.

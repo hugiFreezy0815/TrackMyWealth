@@ -374,6 +374,24 @@ class OpenApiContractTest {
         .doesNotContain("\"detail\"");
   }
 
+  /** A response-shaped record with a component that can be null. */
+  record NullProbe(String id, String note) {}
+
+  /**
+   * #451: "every key is required" holds only while the application's mapper writes a null component
+   * as {@code null}; a global {@code spring.jackson.default-property-inclusion} would drop it
+   * silently. And the record marks of the generation never reach the served document.
+   */
+  @Test
+  void everyKeyIsWrittenAndNoRecordMarkIsServed() {
+    assertThat(objectMapper.writeValueAsString(new NullProbe("1", null)))
+        .isEqualTo("{\"id\":\"1\",\"note\":null}");
+
+    String token = bootstrapAdministrator();
+    assertThat(json(token)).doesNotContain("x-trackmywealth-record");
+    assertThat(served(token)).doesNotContain("x-trackmywealth-record");
+  }
+
   /** Adds the schema names {@code node} refers to, and those they refer to in turn. */
   private static void schemaRefs(JsonNode node, JsonNode schemas, Set<String> names) {
     if (node.isObject()) {

@@ -178,7 +178,7 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(args[args.index("--fail-on") + 1], "WARN")
         self.assertEqual(
             oasdiff.levels,
-            "response-property-enum-value-added ERR\n",
+            "response-optional-property-removed ERR\nresponse-property-enum-value-added ERR\n",
         )
 
     def test_a_base_without_a_contract_passes_without_running_oasdiff(self):
@@ -406,6 +406,22 @@ class RealOasdiffTest(unittest.TestCase):
         result = self.check("became-nullable.yaml")
         self.assertFalse(result.passed, result.message)
         self.assertIn("currency", result.message)
+
+    def test_a_field_removed_behind_a_nullable_reference_fails_and_is_listed(self):
+        # A nullable reference is anyOf [$ref, null] in the contract (#451); oasdiff looks inside it.
+        base = FIXTURES / "nullable-ref-base.yaml"
+        result = self.check("nullable-ref-field-removed.yaml", base=base)
+        self.assertFalse(result.passed, result.message)
+        self.assertIn("response-required-property-removed", result.message)
+        self.assertIn("BalanceResponse]/currency", result.message)
+
+    def test_an_optional_problem_field_removed_fails_and_is_listed(self):
+        # ApiProblem is hand-built and keeps optional fields: only the severity override catches it.
+        base = FIXTURES / "nullable-ref-base.yaml"
+        result = self.check("problem-field-removed.yaml", base=base)
+        self.assertFalse(result.passed, result.message)
+        self.assertIn("response-optional-property-removed", result.message)
+        self.assertIn("errors", result.message)
 
     def test_an_optional_parameter_made_required_fails_and_is_listed(self):
         result = self.check("parameter-required.yaml")

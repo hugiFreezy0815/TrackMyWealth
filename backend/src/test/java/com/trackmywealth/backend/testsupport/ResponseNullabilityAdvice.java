@@ -3,6 +3,7 @@ package com.trackmywealth.backend.testsupport;
 import java.lang.reflect.Method;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
+import org.springframework.boot.test.context.TestComponent;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -21,7 +22,12 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
  * <p>Only notes it, as the request attribute {@link #FINDING}: {@link
  * DocumentedSuccessStatusFilter}, which holds the response back, turns it into a 500 naming the
  * components, so the test making the request fails - however the test reads the response.
+ *
+ * <p>{@code @ControllerAdvice} lets Spring MVC find the registered instance; {@code @TestComponent}
+ * keeps the application's component scan (which covers this package) from registering a second one,
+ * so {@link DocumentedSuccessStatusCheck} is its only registration, in every context alike.
  */
+@TestComponent
 @ControllerAdvice
 public class ResponseNullabilityAdvice implements ResponseBodyAdvice<Object> {
 

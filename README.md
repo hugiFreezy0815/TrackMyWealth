@@ -369,9 +369,10 @@ a new response field or a new optional request field or parameter passes (oasdif
 changes are listed but do not fail).
 Removing a response field is breaking by oasdiff's own rules, since every response field is
 required (`response-required-property-removed`); so is making one nullable
-(`response-property-became-nullable`). Adding a value to a response enum counts as breaking too,
-though oasdiff rates it lower: a client handling each enum value fails on one it does not know
-(`SEVERITY_OVERRIDES` in `scripts/api_breaking.py`).
+(`response-property-became-nullable`). Two changes count as breaking although oasdiff rates them
+lower (`SEVERITY_OVERRIDES` in `scripts/api_breaking.py`): adding a value to a response enum (a
+client handling each enum value fails on one it does not know), and removing an optional response
+field (only the hand-built `ApiProblem` has such fields: `detail`, `instance`, `errors`).
 Failing on oasdiff's warnings is stricter than oasdiff's own default (errors only): a change oasdiff
 says breaks only some clients, such as a new pattern or a changed format on an existing field,
 needs the declaration below too. Run the check locally (below) to see the level of each change.
