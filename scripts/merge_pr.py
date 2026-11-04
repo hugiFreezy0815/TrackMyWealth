@@ -10,8 +10,8 @@ check cannot be merged unverified. It never uses --admin.
 
 Which checks apply follows the workflows' own triggers: Semgrep and secret scanning run on every
 pull request, Backend CI, the API contract's breaking-change check, Mobile Web CI, Mobile Native CI
-and Scripts CI only when their part of the repository changed (REQUIRED_CHECKS). scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in
-step with the workflows.
+and Scripts CI only when their part of the repository changed (REQUIRED_CHECKS).
+scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in step with the workflows.
 
 Usage: scripts/merge_pr.py <pr-number> [--dry-run] [--delete-branch]
 Needs the GitHub CLI (gh), logged in with access to the repository.

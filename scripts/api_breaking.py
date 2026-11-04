@@ -82,7 +82,9 @@ def note_of(body: Optional[str]) -> str:
 def verdict(diff: Diff, labels: Sequence[str], body: Optional[str]) -> Verdict:
     """Whether the PR may change the contract the way oasdiff found."""
     if diff.exit_code == 0:
-        return Verdict(True, "No breaking change to the API contract.")
+        # Changes below ERR (oasdiff's warnings) do not fail the check but are still shown.
+        report = f"\n{diff.report}" if diff.report else ""
+        return Verdict(True, f"No breaking change to the API contract.{report}")
     if diff.exit_code != BREAKING_EXIT_CODE:
         return Verdict(
             False,
@@ -153,7 +155,10 @@ def labels_from(raw: Optional[str]) -> List[str]:
     check rather than reading as "no label"."""
     if not raw:
         return []
-    labels = json.loads(raw)
+    try:
+        labels = json.loads(raw)
+    except ValueError:
+        labels = None
     if not isinstance(labels, list) or not all(isinstance(name, str) for name in labels):
         raise SystemExit(f"PR_LABELS is not a JSON array of label names: {raw}")
     return labels

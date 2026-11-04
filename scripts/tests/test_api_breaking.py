@@ -86,6 +86,12 @@ class VerdictTest(unittest.TestCase):
             with self.subTest(labels=labels):
                 self.assertTrue(verdict(Diff(0, "No changes detected"), labels, None).passed)
 
+    def test_warnings_below_the_failing_level_pass_and_are_shown(self):
+        warning = "0 error, 1 warning\nwarning\t[response-property-enum-value-added]"
+        result = verdict(Diff(0, warning), [], None)
+        self.assertTrue(result.passed)
+        self.assertIn("response-property-enum-value-added", result.message)
+
     def test_a_breaking_change_fails_and_lists_the_change(self):
         result = verdict(BREAKING, [], None)
         self.assertFalse(result.passed)
@@ -157,7 +163,7 @@ class MainTest(unittest.TestCase):
     def test_labels_must_be_a_json_array_of_names(self):
         self.assertEqual(labels_from(None), [])
         self.assertEqual(labels_from('["api-breaking","sprint-6"]'), ["api-breaking", "sprint-6"])
-        for raw in ('"api-breaking"', '{"name": "api-breaking"}', "[1]"):
+        for raw in ('"api-breaking"', '{"name": "api-breaking"}', "[1]", "[api-breaking"):
             with self.subTest(raw=raw), self.assertRaises(SystemExit):
                 labels_from(raw)
 
