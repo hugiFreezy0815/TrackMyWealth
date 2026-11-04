@@ -9,9 +9,15 @@ PR has no conflicts. It then squash-merges with --match-head-commit, so a commit
 check cannot be merged unverified. It never uses --admin.
 
 Which checks apply follows the workflows' own triggers: Semgrep and secret scanning run on every
-pull request, Backend CI, Mobile Web CI, Mobile Native CI and Scripts CI only when their part of
-the repository changed (REQUIRED_CHECKS). scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in
-step with the workflows.
+pull request, Backend CI, the API contract's breaking-change check, Mobile Web CI, Mobile Native CI
+and Scripts CI only when their part of the repository changed (REQUIRED_CHECKS).
+scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in step with the workflows.
+
+For every check, the newest run that was not skipped decides (latest_by_name): a re-run supersedes
+the run it repeats, and a skipped run counts only when the check never ran otherwise on that head.
+A PR that changes a workflow judging it by a script from main (SELF_JUDGING_WORKFLOWS) is merged as
+usual but named in the output: that workflow file is the PR's own, so review it as closely as the
+check it runs.
 
 Usage: scripts/merge_pr.py <pr-number> [--dry-run] [--delete-branch]
 Needs the GitHub CLI (gh), logged in with access to the repository.
@@ -45,6 +51,19 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
     "gitleaks": ("Secret scanning", None),
     "test": ("Backend CI", ("backend/", "api/", ".github/workflows/backend-ci.yml")),
     "sql-lint": ("Backend CI", ("backend/", "api/", ".github/workflows/backend-ci.yml")),
+    # #372: oasdiff of main's api/openapi.yaml against the PR's, whenever the code or the contract
+    # (or the check itself) changes.
+    "api-breaking": (
+        "API contract",
+        (
+            "backend/",
+            "api/",
+            "scripts/api_breaking.py",
+            "scripts/tests/test_api_breaking.py",
+            "scripts/tests/fixtures/api/",
+            ".github/workflows/api-contract.yml",
+        ),
+    ),
     "build-web": ("Mobile Web CI", ("mobile/", ".github/workflows/mobile-web-ci.yml")),
     "android": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "ios": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
@@ -52,6 +71,11 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
 }
 
 PASSED = {"success", "skipped", "neutral"}
+
+# Workflows that judge a PR with main's copy of their script, so that a PR cannot loosen the check
+# on itself. The workflow file is still the PR's under pull_request: a change to it changes what
+# judges this very PR, so the merge names it (#372).
+SELF_JUDGING_WORKFLOWS = (".github/workflows/api-contract.yml",)
 
 # What a check run looks like when billing or a spending limit stopped GitHub from starting the
 # job at all (PRs #180, #182 and #185): it fails within seconds with no steps run.
@@ -91,11 +115,27 @@ def required_checks(changed_files: Sequence[str]) -> List[str]:
     return [name for name, (_, paths) in REQUIRED_CHECKS.items() if paths is None or touches(paths)]
 
 
+def notices(changed_files: Sequence[str]) -> List[str]:
+    """What a reviewer should know before the merge without it blocking the merge."""
+    return [
+        f"The PR changes {path}, which judges this PR itself; make sure the change was reviewed."
+        for path in SELF_JUDGING_WORKFLOWS
+        if path in changed_files
+    ]
+
+
 def latest_by_name(check_runs: Sequence[CheckRun]) -> Dict[str, CheckRun]:
-    """The newest run of each check: a re-run supersedes the run it repeats."""
+    """The newest run of each check: a re-run supersedes the run it repeats. This holds for every
+    check, not only the API contract's: a skipped run stands only when the check never ran
+    otherwise, so a job skipped for an event that does not concern it (the API contract's check on
+    an unrelated label) cannot hide the verdict of a run that did."""
+
+    def rank(run: CheckRun) -> Tuple[bool, int]:
+        return (run.conclusion != "skipped", run.id)
+
     latest: Dict[str, CheckRun] = {}
     for run in check_runs:
-        if run.name not in latest or run.id > latest[run.name].id:
+        if run.name not in latest or rank(run) > rank(latest[run.name]):
             latest[run.name] = run
     return latest
 
@@ -221,7 +261,10 @@ def main(argv: Optional[Sequence[str]] = None, gh: Runner = run_gh) -> int:
     args = parser.parse_args(argv)
 
     pr = fetch_pull_request(args.pr, gh)
-    required = required_checks(fetch_changed_files(pr.number, gh))
+    changed_files = fetch_changed_files(pr.number, gh)
+    required = required_checks(changed_files)
+    for notice in notices(changed_files):
+        print(f"Note: {notice}", file=sys.stderr)
     reasons = problems(pr, fetch_check_runs(pr.head_sha, gh), required)
     if reasons:
         print(f"Not merging PR #{pr.number}:", file=sys.stderr)
