@@ -12,7 +12,9 @@ import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
+import com.trackmywealth.backend.testsupport.MutableClock;
 import com.trackmywealth.backend.testsupport.RoleSplitScripts;
+import com.trackmywealth.backend.testsupport.TestClockConfig;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import java.io.IOException;
 import java.sql.Connection;
@@ -24,8 +26,10 @@ import java.sql.Statement;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -44,8 +48,15 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * <p>Run on both databases the split meets: a fresh one ({@link
  * HardenedRuntimeAuthenticationHttpTest}) and an existing single-role installation that is split
  * afterwards ({@link UpgradedRoleSplitAuthenticationHttpTest}). Each subclass owns its container.
+ *
+ * <p>The TOTP codes come from the server's own clock, a {@link MutableClock} held still for the
+ * whole scenario (#465). On the real clock, a code built just before a 30-second boundary was two
+ * steps old by the time the server checked it, and the MFA confirmation failed with 401 now and
+ * then in a loaded full build. The clock is set to the real time when the test starts, so whatever
+ * else reads it sees today; access and refresh tokens and the database do not read it at all.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestClockConfig.class)
 abstract class HardenedRuntimeAuthenticationScenario {
 
   static final String SUPERUSER = "trackmywealth";
@@ -95,9 +106,13 @@ abstract class HardenedRuntimeAuthenticationScenario {
 
   @LocalServerPort int port;
 
+  @Autowired MutableClock clock;
+
   @Test
   void anActiveMemberReachesOnlyTheirWorkspaceAndAnInactiveOneIsRefusedEverywhere()
       throws Exception {
+    // Real time, held still: every code below is for a fixed step, whatever the build's load.
+    clock.set(Instant.now());
     assertThat(runtimeBypassesRls())
         .as("the application connects as a role bound by RLS")
         .isFalse();
@@ -223,9 +238,9 @@ abstract class HardenedRuntimeAuthenticationScenario {
         .exchange();
   }
 
-  // The code of the current TOTP step plus offset; the server accepts one step either side.
+  // The code of the server's current TOTP step plus offset; it accepts one step either side.
   private String codeAtStep(String secret, int offset) throws Exception {
-    long step = Math.floorDiv(Instant.now().getEpochSecond(), TOTP_PERIOD_SECONDS);
+    long step = Math.floorDiv(clock.instant().getEpochSecond(), TOTP_PERIOD_SECONDS);
     return codeGenerator.generate(secret, step + offset);
   }
 
