@@ -377,12 +377,19 @@ with both
 The job runs again when the `api-breaking` label, the description or the base branch changes, and
 reads label and description from the PR as it is then, so adding both turns it green without a new
 commit (and re-running an old run judges the PR as it is now). Other label changes skip the job.
+The error codes (#374) are an open set in the contract (`x-extensible-enum`), so a new code passes,
+and oasdiff cannot see a removed one. The job therefore also compares `api/problem-codes.json`, the
+registry generated from `ProblemCode` and `ImportRowCode`, with `main`'s: a removed or renamed code,
+a changed status, client reaction or row kind, a reused retired name or a shortened retired list is
+a breaking change; a new or deprecated code is listed and passes; an unreadable registry fails.
 While `main` has no `api/openapi.yaml`, there is nothing to compare and it passes. To run the check
 locally (with oasdiff installed, e.g. `brew install oasdiff`):
 
 ```bash
 git show origin/main:api/openapi.yaml > /tmp/main-openapi.yaml
-python3 scripts/api_breaking.py --base /tmp/main-openapi.yaml --revision api/openapi.yaml
+git show origin/main:api/problem-codes.json > /tmp/main-problem-codes.json
+python3 scripts/api_breaking.py --base /tmp/main-openapi.yaml --revision api/openapi.yaml \
+  --base-codes /tmp/main-problem-codes.json --revision-codes api/problem-codes.json
 ```
 
 `.github/workflows/mobile-web-ci.yml` type-checks, lints, formats-checks and tests `mobile/`, then

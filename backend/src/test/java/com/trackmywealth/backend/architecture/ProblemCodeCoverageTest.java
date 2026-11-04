@@ -53,6 +53,11 @@ class ProblemCodeCoverageTest {
   /**
    * Codes no call graph reaches, but an endpoint may still answer with - each declared by hand
    * where it applies. Keep the reason with each.
+   *
+   * <p>Nothing here can prove that every endpoint touching such a constraint declares its code: the
+   * constraint lives in the database, not in the code this test reads. So review it by hand: a new
+   * unique index, check or trigger that {@code GlobalExceptionHandler} maps to one of these codes
+   * means declaring that code on every endpoint that writes the table (#374 review).
    */
   static final Map<ProblemCode, String> RAISED_OUTSIDE_THE_CALL_GRAPH =
       Map.of(
@@ -103,7 +108,11 @@ class ProblemCodeCoverageTest {
           continue;
         }
         String key = controller.getSimpleName() + "#" + method.getName();
-        endpoints.put(key, reflected);
+        // An overloaded handler name would replace the other endpoint here and leave it unchecked.
+        if (endpoints.put(key, reflected) != null) {
+          throw new IllegalStateException(
+              key + " is mapped twice: give overloaded handlers distinct names");
+        }
         reachableByEndpoint.put(key, graph.reachableCodes(method));
       }
     }

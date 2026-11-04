@@ -11,6 +11,7 @@ import static com.trackmywealth.backend.error.ClientReaction.SHOW;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
@@ -24,9 +25,11 @@ import org.springframework.http.HttpStatusCode;
  *
  * <p>Each code carries the HTTP status it is answered with, a one-line meaning, the message key of
  * its EN/DE text ({@code tmw.error.<CODE>} in {@code messages*.properties}) and the client reaction
- * the catalogue recommends. {@code docs/api/error-codes.md} and the OpenAPI {@code ApiProblem.code}
- * enum are generated from this list. Codes are part of the API contract: never rename or remove one
- * (#372 treats that as a breaking change).
+ * the catalogue recommends. {@code docs/api/error-codes.md}, {@code api/problem-codes.json} and the
+ * OpenAPI {@code ApiProblem.code} list ({@code x-extensible-enum}) are generated from this list.
+ * Codes are part of the API contract and an open set: adding one is additive, never rename one, and
+ * remove one only after deprecating it, as a declared breaking change that adds its name to {@link
+ * #RETIRED} ({@code scripts/api_breaking.py} enforces this against {@code api/problem-codes.json}).
  */
 public enum ProblemCode {
   VALIDATION_FAILED(
@@ -272,6 +275,16 @@ public enum ProblemCode {
   /** The prefix of each code's message key in {@code messages*.properties}. */
   public static final String MESSAGE_KEY_PREFIX = "tmw.error.";
 
+  /**
+   * The names of codes that were removed, in the order they were retired. A retired name is never
+   * used again, not even for a new code with another meaning: a client that still knows the old
+   * code would misread it. Removing a code is a declared breaking change, and this list only grows
+   * (the API contract's check, {@code scripts/api_breaking.py}, enforces both against {@code
+   * api/problem-codes.json}). Before removing a code, deprecate it ({@link Deprecated}) for at
+   * least one release.
+   */
+  public static final List<String> RETIRED = List.of();
+
   private static final Set<String> NAMES =
       Arrays.stream(values()).map(Enum::name).collect(Collectors.toUnmodifiableSet());
 
@@ -305,7 +318,15 @@ public enum ProblemCode {
    */
   public boolean allows(HttpStatusCode candidate) {
     return allowedStatuses.stream().anyMatch(allowed -> allowed.value() == candidate.value())
-        || forStatus(candidate) == this;
+        || candidate.isError() && forStatus(candidate) == this;
+  }
+
+  /**
+   * Whether the code is on its way out: still sent and still in the contract, but marked {@link
+   * Deprecated} so clients stop relying on it before it is retired ({@link #RETIRED}).
+   */
+  public boolean isDeprecated() {
+    return Codes.isDeprecated(this);
   }
 
   public ClientReaction reaction() {

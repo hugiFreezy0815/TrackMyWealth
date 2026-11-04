@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.error;
 
+import java.util.List;
 import java.util.Properties;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -27,9 +28,15 @@ final class ErrorCodeCatalogue {
         .append(" text of the code's message key in the member's language; the keys and texts")
         .append(" below are the server's own (`backend/src/main/resources/messages*.properties`).")
         .append("\n\n")
-        .append("Codes are part of the API contract: a code is never renamed or removed. The")
-        .append(" OpenAPI contract lists every code in `ApiProblem.code`, and per operation the")
-        .append(" codes it can return (`x-problem-codes`, and one error response per status).\n\n");
+        .append("Codes are part of the API contract, and an open set: new codes are added without")
+        .append(" a new API version, so a client handles a code it does not know by the response's")
+        .append(" HTTP status (an unknown row code: show its `message`). A code is never renamed;")
+        .append(" it is deprecated first and removed only as a declared breaking change, and a")
+        .append(" removed name is never used again (\"Retired codes\" below). The OpenAPI contract")
+        .append(" lists every code in `ApiProblem.code` (`x-extensible-enum`), and per operation")
+        .append(" the codes it can return (`x-problem-codes`, and one error response per status).")
+        .append(" `api/problem-codes.json` holds the same registry for the CI check that keeps")
+        .append(" these rules.\n\n");
 
     md.append("## Client reactions\n\n| Reaction | What the client does |\n|---|---|\n");
     for (ClientReaction reaction : ClientReaction.values()) {
@@ -51,7 +58,7 @@ final class ErrorCodeCatalogue {
                   .map(status -> Integer.toString(status.value()))
                   .collect(Collectors.joining(", ")))
           .append(" | ")
-          .append(cell(code.meaning()))
+          .append(meaning(code.meaning(), code.isDeprecated()))
           .append(" | `")
           .append(code.reaction().name())
           .append("` | `")
@@ -80,7 +87,7 @@ final class ErrorCodeCatalogue {
           .append("` | `")
           .append(code.kind().name())
           .append("` | ")
-          .append(cell(code.meaning()))
+          .append(meaning(code.meaning(), code.isDeprecated()))
           .append(" | `")
           .append(code.messageKey())
           .append("` | ")
@@ -89,7 +96,25 @@ final class ErrorCodeCatalogue {
           .append(cell(german.getProperty(code.messageKey())))
           .append(" |\n");
     }
+
+    md.append("\n## Retired codes\n\n")
+        .append("Removed codes; their names are never used again.\n\n")
+        .append("- Problem codes: ")
+        .append(names(ProblemCode.RETIRED))
+        .append("\n- Import row codes: ")
+        .append(names(ImportRowCode.RETIRED))
+        .append('\n');
     return md.toString();
+  }
+
+  private static String meaning(String meaning, boolean deprecated) {
+    return (deprecated ? "**Deprecated.** " : "") + cell(meaning);
+  }
+
+  private static String names(List<String> retired) {
+    return retired.isEmpty()
+        ? "none"
+        : retired.stream().map(name -> "`" + name + "`").collect(Collectors.joining(", "));
   }
 
   // A table cell: a missing text shows as such, and a pipe would end the cell.

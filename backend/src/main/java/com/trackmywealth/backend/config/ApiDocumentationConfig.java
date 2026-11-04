@@ -63,6 +63,12 @@ public class ApiDocumentationConfig {
   /** The problem envelope's schema, for the per-status error responses (#374). */
   public static final String API_PROBLEM_REF = "#/components/schemas/" + API_PROBLEM_SCHEMA;
 
+  /**
+   * The schema extension for an open set of string values (#374): the values known today, where a
+   * client must expect others. Used for the problem and import row codes.
+   */
+  public static final String EXTENSIBLE_ENUM = "x-extensible-enum";
+
   // Any order before ApiDocumentOrder's, which must run last.
   private static final int WIRE_CONVENTIONS_ORDER = 0;
 
@@ -351,8 +357,14 @@ public class ApiDocumentationConfig {
     StringSchema code = new StringSchema();
     code.setDescription(
         "Stable application error code (docs/api/error-codes.md); each operation lists the codes"
-            + " it can return. Existing values are never renamed.");
-    code.setEnum(Arrays.stream(ProblemCode.values()).map(Enum::name).toList());
+            + " it can return. An open set: new codes are added without a new API version, so a"
+            + " client must handle a code it does not know by the response's HTTP status. Existing"
+            + " codes are never renamed, and removed only as a declared breaking change.");
+    // #374: x-extensible-enum, not enum - adding a code is additive (a closed enum would make it a
+    // breaking change for every error response). scripts/api_breaking.py guards removals through
+    // api/problem-codes.json, which oasdiff cannot do for this extension.
+    code.addExtension(
+        EXTENSIBLE_ENUM, Arrays.stream(ProblemCode.values()).map(Enum::name).toList());
     problem.addProperty(ProblemCode.PROPERTY, code);
     problem.addProperty(
         "correlationId",

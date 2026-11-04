@@ -97,12 +97,22 @@ cd backend
     its status, one-line meaning and client reaction, plus `tmw.error.<CODE>` in both
     `messages.properties` and `messages_de.properties`; then regenerate
     [`docs/api/error-codes.md`](../api/error-codes.md)
+    and `api/problem-codes.json`
     (`./mvnw test -Dtest=ErrorCodeCatalogueTest -Derror-codes.write=true`). A new import row code
     goes into `ImportRowCode` the same way. An endpoint lists the codes its services can answer
-    with in `@ProblemCodes` (the ones its mapping implies, such as `NOT_FOUND` for a path id, are
-    added by `OperationProblemCodes`); `ProblemCodeCoverageTest` follows the call graph and fails on
-    a missing, stale or redundant entry and prints the annotation to paste. The OpenAPI contract
-    lists the codes per operation (`x-problem-codes`, one error response per status).
+    with in `@ProblemCodes` (the ones its mapping implies, such as `NOT_FOUND` for a path id or
+    `VERSION_CONFLICT` for a write, are added by `OperationProblemCodes`); `ProblemCodeCoverageTest`
+    follows the call graph and fails on a missing, stale or redundant entry and prints the
+    annotation to paste. The OpenAPI contract lists the codes per operation (`x-problem-codes`, one
+    error response per status the operation answers them with).
+  - **Codes are an open set (#374).** The contract lists them as `x-extensible-enum`, so adding a
+    code needs no declaration, and clients must handle a code they do not know by its HTTP status.
+    Never rename a code. To remove one, mark it `@Deprecated` first (the catalogue and
+    `api/problem-codes.json` say so), then delete it, add its name to `ProblemCode.RETIRED` (or
+    `ImportRowCode.RETIRED`) and declare the break (`api-breaking` label and note): the API
+    contract check compares `api/problem-codes.json` with `main`'s and fails on a removed code, a
+    changed status, reaction or row kind, a reused retired name or a shortened retired list. Never
+    bring back a retired name.
   - **Correlation id.** `CorrelationIdFilter` puts one on every request (a well-formed
     `X-Correlation-Id` is honoured) and in the log MDC; quote it when reporting an error. Browser
     CORS must allow the header on requests and expose it on responses. `MdcTaskDecorator` carries

@@ -1,15 +1,19 @@
 package com.trackmywealth.backend.web;
 
 import com.trackmywealth.backend.error.ProblemCode;
+import com.trackmywealth.backend.security.ApiAccessPaths;
 import com.trackmywealth.backend.security.RateLimitFilter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.http.HttpStatus;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,22 +33,16 @@ import org.springframework.web.multipart.MultipartFile;
  *
  * <p>Implied are the codes the request handling around the endpoint answers with, whatever the
  * endpoint does: {@code INTERNAL} always; {@code UNAUTHENTICATED} unless the path is public, {@code
- * FORBIDDEN} on an administration path ({@code SecurityConfig} uses the same patterns); {@code
- * VALIDATION_FAILED} when anything is bound from the request; {@code NOT_FOUND} for a path
- * variable; {@code VERSION_REQUIRED} and {@code VERSION_CONFLICT} for {@code If-Match}; {@code
- * INVALID_SORT} for a {@link Paged} list; {@code IMPORT_FILE_TOO_LARGE} for an upload; {@code
- * RATE_LIMITED} where {@code RateLimitFilter} limits the request.
+ * FORBIDDEN} on an administration path (both from {@link ApiAccessPaths}, which SecurityConfig
+ * enforces); {@code VALIDATION_FAILED} when anything is bound from the request; {@code NOT_FOUND}
+ * for a path variable; {@code VERSION_REQUIRED} and {@code VERSION_CONFLICT} for {@code If-Match};
+ * {@code VERSION_CONFLICT} also for any other write, which can lose a race on a versioned row;
+ * {@code INVALID_SORT} for a {@link Paged} list; {@code IMPORT_FILE_TOO_LARGE} for an upload;
+ * {@code RATE_LIMITED} where {@code RateLimitFilter} limits the request.
+ *
+ * <p>Each code is documented under the status this endpoint answers it with ({@link #statusOf}).
  */
 public final class OperationProblemCodes {
-
-  /** First-run setup; public (SecurityConfig). */
-  public static final String SETUP_PATHS = "/api/v1/setup/**";
-
-  /** Sign-in and token refresh; public (SecurityConfig). */
-  public static final String AUTH_PATHS = "/api/v1/auth/**";
-
-  /** Administration; SYSTEM_ADMINISTRATOR only (SecurityConfig). */
-  public static final String ADMIN_PATHS = "/api/v1/admin/**";
 
   private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
 
@@ -75,7 +73,7 @@ public final class OperationProblemCodes {
     if (!paths.stream().allMatch(OperationProblemCodes::isPublic)) {
       codes.add(ProblemCode.UNAUTHENTICATED);
     }
-    if (paths.stream().anyMatch(path -> PATH_MATCHER.match(ADMIN_PATHS, path))) {
+    if (paths.stream().anyMatch(path -> matchesAny(ApiAccessPaths.ADMIN, path))) {
       codes.add(ProblemCode.FORBIDDEN);
     }
     if (isRateLimited(method, paths)) {
@@ -84,7 +82,63 @@ public final class OperationProblemCodes {
     for (Parameter parameter : method.getParameters()) {
       addImpliedBy(parameter, codes);
     }
+    // A write can lose a race to a concurrent one on a @Version row (GlobalExceptionHandler's
+    // optimistic-locking handler): VERSION_CONFLICT, as a 409 without If-Match (statusOf).
+    if (isStateChanging(method)) {
+      codes.add(ProblemCode.VERSION_CONFLICT);
+    }
     return Collections.unmodifiableSet(codes);
+  }
+
+  /**
+   * Every code the endpoint can answer with ({@link #documented}), each with the status this
+   * endpoint answers it with ({@link #statusOf}), in registry order.
+   */
+  public static Map<ProblemCode, HttpStatus> documentedWithStatus(Method method) {
+    Map<ProblemCode, HttpStatus> codes = new EnumMap<>(ProblemCode.class);
+    for (ProblemCode code : documented(method)) {
+      codes.put(code, statusOf(method, code));
+    }
+    return Collections.unmodifiableMap(codes);
+  }
+
+  /**
+   * The status the endpoint answers {@code code} with: the code's own, except for {@code
+   * VERSION_CONFLICT}, which is a 412 where the client sends {@code If-Match} (its precondition
+   * failed) and a 409 where it does not (a lost race, RFC 9110; GlobalExceptionHandler).
+   */
+  public static HttpStatus statusOf(Method method, ProblemCode code) {
+    if (code == ProblemCode.VERSION_CONFLICT) {
+      return hasIfMatch(method) ? HttpStatus.PRECONDITION_FAILED : HttpStatus.CONFLICT;
+    }
+    return code.status();
+  }
+
+  private static boolean hasIfMatch(Method method) {
+    for (Parameter parameter : method.getParameters()) {
+      RequestHeader header = parameter.getAnnotation(RequestHeader.class);
+      if (header != null && isIfMatch(header)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean isStateChanging(Method method) {
+    RequestMapping mapping =
+        AnnotatedElementUtils.findMergedAnnotation(method, RequestMapping.class);
+    if (mapping == null) {
+      return false;
+    }
+    for (RequestMethod httpMethod : mapping.method()) {
+      if (httpMethod == RequestMethod.POST
+          || httpMethod == RequestMethod.PUT
+          || httpMethod == RequestMethod.PATCH
+          || httpMethod == RequestMethod.DELETE) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** The endpoint's full path patterns: its class's mapping joined with its own. */
@@ -153,7 +207,11 @@ public final class OperationProblemCodes {
   }
 
   private static boolean isPublic(String path) {
-    return PATH_MATCHER.match(SETUP_PATHS, path) || PATH_MATCHER.match(AUTH_PATHS, path);
+    return matchesAny(ApiAccessPaths.PUBLIC, path);
+  }
+
+  private static boolean matchesAny(List<String> patterns, String path) {
+    return patterns.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path));
   }
 
   private static List<String> pathsOf(RequestMapping mapping) {

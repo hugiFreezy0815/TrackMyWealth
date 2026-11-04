@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -23,7 +24,16 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import api_breaking  # noqa: E402
-from api_breaking import LABEL, Diff, check, labels_from, note_of, verdict  # noqa: E402
+from api_breaking import (  # noqa: E402
+    LABEL,
+    Diff,
+    check,
+    labels_from,
+    load_registry,
+    note_of,
+    registry_diff,
+    verdict,
+)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "api"
 BASE = FIXTURES / "base.yaml"
@@ -163,10 +173,166 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(oasdiff.calls, [])
 
 
+def registry(problem_codes=None, rows=None, retired=(), retired_rows=()) -> dict:
+    """A problem-code registry in the layout the backend generates (api/problem-codes.json)."""
+    if problem_codes is None:
+        problem_codes = {
+            "NOT_FOUND": {"statuses": [404], "reaction": "RELOAD", "deprecated": False},
+            "VERSION_CONFLICT": {
+                "statuses": [412, 409],
+                "reaction": "RELOAD_AND_RETRY",
+                "deprecated": False,
+            },
+        }
+    if rows is None:
+        rows = {"IMPORT_ROW_ZERO_AMOUNT": {"kind": "ROW_SKIPPED", "deprecated": False}}
+    return {
+        "problemCodes": problem_codes,
+        "retiredProblemCodes": list(retired),
+        "importRowCodes": rows,
+        "retiredImportRowCodes": list(retired_rows),
+    }
+
+
+class RegistryTest(unittest.TestCase):
+    """#374: the codes are an open set in the contract, so the registry guards their removal."""
+
+    def setUp(self):
+        self.work = tempfile.TemporaryDirectory()
+        self.addCleanup(self.work.cleanup)
+
+    def write(self, name: str, content) -> Path:
+        path = Path(self.work.name) / name
+        path.write_text(content if isinstance(content, str) else json.dumps(content))
+        return path
+
+    def diff(self, base: dict, revision: dict) -> Diff:
+        return registry_diff(self.write("base.json", base), self.write("revision.json", revision))
+
+    def changed(self, **revision) -> dict:
+        changed = registry()
+        changed.update(revision)
+        return changed
+
+    def test_an_unchanged_registry_passes_silently(self):
+        self.assertEqual(self.diff(registry(), registry()), Diff(0, ""))
+
+    def test_an_added_code_is_additive_and_listed(self):
+        codes = registry()["problemCodes"]
+        codes["ACCOUNT_ARCHIVED"] = {"statuses": [409], "reaction": "SHOW", "deprecated": False}
+        rows = dict(registry()["importRowCodes"], IMPORT_ROW_NEW={"kind": "ROW_ERROR"})
+        diff = self.diff(registry(), registry(codes, rows))
+        self.assertEqual(diff.exit_code, 0)
+        self.assertIn("added the problem code `ACCOUNT_ARCHIVED`", diff.report)
+        self.assertIn("added the import row code `IMPORT_ROW_NEW`", diff.report)
+
+    def test_a_deprecated_code_is_additive(self):
+        codes = registry()["problemCodes"]
+        codes["NOT_FOUND"] = dict(codes["NOT_FOUND"], deprecated=True)
+        diff = self.diff(registry(), registry(codes))
+        self.assertEqual(diff.exit_code, 0)
+        self.assertIn("deprecated the problem code `NOT_FOUND`", diff.report)
+
+    def test_a_removed_or_renamed_code_is_breaking(self):
+        codes = registry()["problemCodes"]
+        codes["MISSING"] = codes.pop("NOT_FOUND")
+        diff = self.diff(registry(), registry(codes, rows={}, retired=["NOT_FOUND"]))
+        self.assertEqual(diff.exit_code, 1)
+        self.assertIn("removed the problem code `NOT_FOUND`", diff.report)
+        self.assertIn("removed the import row code `IMPORT_ROW_ZERO_AMOUNT`", diff.report)
+        self.assertIn("added the problem code `MISSING`", diff.report)
+
+    def test_a_changed_status_reaction_or_row_kind_is_breaking(self):
+        codes = registry()["problemCodes"]
+        codes["VERSION_CONFLICT"] = dict(codes["VERSION_CONFLICT"], statuses=[412])
+        codes["NOT_FOUND"] = dict(codes["NOT_FOUND"], reaction="SHOW")
+        rows = {"IMPORT_ROW_ZERO_AMOUNT": {"kind": "ROW_ERROR", "deprecated": False}}
+        diff = self.diff(registry(), registry(codes, rows))
+        self.assertEqual(diff.exit_code, 1)
+        self.assertIn(
+            "changed the statuses of the problem code `VERSION_CONFLICT` from [412, 409] to [412]",
+            diff.report,
+        )
+        self.assertIn(
+            'changed the reaction of the problem code `NOT_FOUND` from "RELOAD"', diff.report
+        )
+        self.assertIn(
+            "changed the kind of the import row code `IMPORT_ROW_ZERO_AMOUNT`", diff.report
+        )
+
+    def test_a_retired_name_is_never_reused_and_the_retired_list_only_grows(self):
+        codes = registry()["problemCodes"]
+        codes["OLD_CODE"] = {"statuses": [409], "reaction": "SHOW", "deprecated": False}
+        reused = self.diff(registry(retired=["OLD_CODE"]), registry(codes, retired=["OLD_CODE"]))
+        self.assertEqual(reused.exit_code, 1)
+        self.assertIn("reuses the retired problem code name `OLD_CODE`", reused.report)
+        # Reused in the same PR that retires it (the name moved to the list and back): still caught.
+        same_pr = self.diff(registry(), registry(codes, retired=["OLD_CODE"]))
+        self.assertIn("reuses the retired problem code name `OLD_CODE`", same_pr.report)
+        dropped = self.diff(registry(retired_rows=["IMPORT_ROW_OLD"]), registry())
+        self.assertEqual(dropped.exit_code, 1)
+        self.assertIn(
+            "dropped `IMPORT_ROW_OLD` from the retired import row code names", dropped.report
+        )
+
+    def test_a_base_without_a_registry_has_nothing_to_compare(self):
+        missing = Path(self.work.name) / "missing.json"
+        diff = registry_diff(missing, self.write("r.json", registry()))
+        self.assertEqual(diff, Diff(0, ""))
+
+    def test_deleting_the_registry_is_breaking(self):
+        gone = Path(self.work.name) / "gone.json"
+        diff = registry_diff(self.write("base.json", registry()), gone)
+        self.assertEqual(diff.exit_code, 1)
+        self.assertIn("deletes the problem-code registry", diff.report)
+
+    def test_an_unreadable_registry_fails_whatever_the_pr_says(self):
+        base = self.write("base.json", registry())
+        malformed = (
+            "{not json",
+            "[]",
+            {"problemCodes": []},
+            dict(registry(), retiredProblemCodes="X"),
+        )
+        for content in malformed:
+            with self.subTest(content=content):
+                diff = registry_diff(base, self.write("bad.json", content))
+                self.assertEqual(diff.exit_code, api_breaking.REGISTRY_UNREADABLE_EXIT_CODE)
+                result = verdict(diff, [LABEL], NOTE)
+                self.assertFalse(result.passed)
+                self.assertIn("could not compare", result.message)
+
+    def test_a_registry_break_needs_the_label_and_the_note_like_a_contract_break(self):
+        base = self.write("base.json", registry())
+        revision = self.write("revision.json", registry(rows={}))
+        oasdiff = FakeOasdiff(Diff(0, "No breaking changes to report"))
+        failed = check(BASE, BASE, [], None, oasdiff, base, revision)
+        self.assertFalse(failed.passed)
+        self.assertIn("removed the import row code `IMPORT_ROW_ZERO_AMOUNT`", failed.message)
+        self.assertTrue(check(BASE, BASE, [LABEL], NOTE, oasdiff, base, revision).passed)
+
+    def test_an_oasdiff_failure_wins_over_a_registry_break(self):
+        base = self.write("base.json", registry())
+        revision = self.write("revision.json", registry(rows={}))
+        result = check(BASE, BASE, [LABEL], NOTE, FakeOasdiff(Diff(102, "Error")), base, revision)
+        self.assertFalse(result.passed)
+        self.assertIn("exit code 102", result.message)
+
+    def test_without_registries_only_the_contract_is_compared(self):
+        self.assertTrue(check(BASE, BASE, [], None, FakeOasdiff(Diff(0, ""))).passed)
+
+    def test_the_committed_registry_has_the_shape_the_check_reads(self):
+        # The backend generates api/problem-codes.json; the check must be able to read it.
+        committed = load_registry(ROOT / "api" / "problem-codes.json")
+        self.assertIn("NOT_FOUND", committed["problemCodes"])
+        path = ROOT / "api" / "problem-codes.json"
+        self.assertEqual(registry_diff(path, path), Diff(0, ""))
+
+
 class MainTest(unittest.TestCase):
-    def run_main(self, diff: Diff, labels: List[str], body: str) -> int:
+    def run_main(self, diff: Diff, labels: List[str], body: str, extra=()) -> int:
         env = {"PR_LABELS": json.dumps(labels), "PR_BODY": body}
-        args = ["--base", str(BASE), "--revision", str(FIXTURES / "field-removed.yaml")]
+        args = ["--base", str(BASE), "--revision", str(FIXTURES / "field-removed.yaml"), *extra]
         with mock.patch.dict(os.environ, env):
             return quietly(api_breaking.main, args, FakeOasdiff(diff))
 
@@ -174,6 +340,18 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.run_main(BREAKING, [], ""), 1)
         self.assertEqual(self.run_main(BREAKING, [LABEL], NOTE), 0)
         self.assertEqual(self.run_main(Diff(0, ""), [], ""), 0)
+
+    def test_the_registries_are_compared_when_given_and_only_together(self):
+        with tempfile.TemporaryDirectory() as work:
+            base = Path(work) / "base.json"
+            base.write_text(json.dumps(registry()))
+            revision = Path(work) / "revision.json"
+            revision.write_text(json.dumps(registry(rows={})))
+            codes = ["--base-codes", str(base), "--revision-codes", str(revision)]
+            self.assertEqual(self.run_main(Diff(0, ""), [], "", codes), 1)
+            self.assertEqual(self.run_main(Diff(0, ""), [LABEL], NOTE, codes), 0)
+            with self.assertRaises(SystemExit):
+                self.run_main(Diff(0, ""), [], "", ["--base-codes", str(base)])
 
     def test_labels_must_be_a_json_array_of_names(self):
         self.assertEqual(labels_from(None), [])

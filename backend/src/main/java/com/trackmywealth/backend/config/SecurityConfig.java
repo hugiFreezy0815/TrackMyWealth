@@ -2,10 +2,10 @@ package com.trackmywealth.backend.config;
 
 import com.trackmywealth.backend.controller.SecurityController;
 import com.trackmywealth.backend.error.ProblemCode;
+import com.trackmywealth.backend.security.ApiAccessPaths;
 import com.trackmywealth.backend.security.JwtAuthenticationFilter;
 import com.trackmywealth.backend.security.RateLimitFilter;
 import com.trackmywealth.backend.web.CorrelationIdFilter;
-import com.trackmywealth.backend.web.OperationProblemCodes;
 import com.trackmywealth.backend.web.ProblemResponseWriter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,14 +51,13 @@ public class SecurityConfig {
    * The API operations a caller without a token may call: the one-time setup and login/refresh.
    * Also what the API contract marks as needing no bearer token ({@code ApiDocumentationConfig}).
    */
-  static final List<String> PUBLIC_API_PATTERNS =
-      List.of(OperationProblemCodes.SETUP_PATHS, OperationProblemCodes.AUTH_PATHS);
+  static final List<String> PUBLIC_API_PATTERNS = ApiAccessPaths.PUBLIC;
 
   /**
    * The API operations only a system administrator may call (FR-TEN-007); anyone else gets a 403.
    * Also what the API contract documents that 403 for ({@code ApiDocumentationConfig}).
    */
-  static final List<String> ADMIN_API_PATTERNS = List.of(OperationProblemCodes.ADMIN_PATHS);
+  static final List<String> ADMIN_API_PATTERNS = ApiAccessPaths.ADMIN;
 
   @Value("${app.cors.allowed-origin-patterns:http://localhost:*}")
   private List<String> allowedOriginPatterns;

@@ -100,8 +100,20 @@ jobs:
             checker="$RUNNER_TEMP/api_breaking.py"
             git show "HEAD^1:scripts/api_breaking.py" > "$checker"
           fi
+          # #374: the problem-code registry, compared by a check that knows it (from the PR after
+          # the one that taught main's check to). A base without one has nothing to compare.
+          base_codes="$RUNNER_TEMP/base-problem-codes.json"
+          listed=$(git ls-tree --name-only HEAD^1 -- api/problem-codes.json)
+          if [ -n "$listed" ]; then
+            git show "HEAD^1:api/problem-codes.json" > "$base_codes"
+          fi
+          codes=()
+          if grep -q -- "--base-codes" "$checker"; then
+            codes=(--base-codes "$base_codes" --revision-codes api/problem-codes.json)
+          fi
           pr=$(gh pr view "$PR_NUMBER" --json labels,body)
           PR_LABELS=$(jq -c '[.labels[].name]' <<< "$pr")
           PR_BODY=$(jq -r '.body' <<< "$pr")
           export PR_LABELS PR_BODY
-          python3 "$checker" --base "$base" --revision api/openapi.yaml --oasdiff "$OASDIFF"
+          python3 "$checker" --base "$base" --revision api/openapi.yaml --oasdiff "$OASDIFF" \
+            "${codes[@]}"

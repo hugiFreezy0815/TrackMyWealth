@@ -615,14 +615,12 @@ class ApiConventionsIntegrationTest {
                 .returnResult()
                 .getResponseBody());
 
+    // An open set (x-extensible-enum): adding a code is additive; a closed enum would not be.
+    JsonNode problemCode =
+        spec.path("components").path("schemas").path("ApiProblem").path("properties").path("code");
+    assertThat(problemCode.has("enum")).as("ApiProblem.code is no closed enum").isFalse();
     List<String> codes = new ArrayList<>();
-    spec.path("components")
-        .path("schemas")
-        .path("ApiProblem")
-        .path("properties")
-        .path("code")
-        .path("enum")
-        .forEach(code -> codes.add(code.asString()));
+    problemCode.path("x-extensible-enum").forEach(code -> codes.add(code.asString()));
     assertThat(codes)
         .containsExactlyElementsOf(Arrays.stream(ProblemCode.values()).map(Enum::name).toList());
 
@@ -640,7 +638,16 @@ class ApiConventionsIntegrationTest {
             ProblemCode.UNAUTHENTICATED.name(),
             ProblemCode.INTERNAL.name());
     assertThat(commit.path("responses").path("409").path("description").asString())
-        .contains("`IMPORT_BATCH_STATE`: " + ProblemCode.IMPORT_BATCH_STATE.meaning());
+        .contains("`IMPORT_BATCH_STATE`: " + ProblemCode.IMPORT_BATCH_STATE.meaning())
+        // The commit sends If-Match, so a version conflict is its 412, never a 409.
+        .doesNotContain("`VERSION_CONFLICT`");
+    assertThat(commit.path("responses").path("412").path("description").asString())
+        .contains("`VERSION_CONFLICT`");
+    // A write without If-Match answers a lost version race with 409 VERSION_CONFLICT.
+    JsonNode createCategory = spec.path("paths").path("/api/v1/categories").path("post");
+    assertThat(createCategory.path("responses").path("409").path("description").asString())
+        .contains("`VERSION_CONFLICT`: " + ProblemCode.VERSION_CONFLICT.meaning());
+    assertThat(createCategory.path("responses").has("412")).isFalse();
     assertThat(
             commit
                 .path("responses")
@@ -674,27 +681,39 @@ class ApiConventionsIntegrationTest {
                           if (listed.isEmpty()) {
                             undocumented.add(operation.getKey() + " " + path.getKey());
                           }
+                          // Each listed code is named by the response of one of its statuses.
                           listed.forEach(
                               code -> {
-                                String status =
-                                    Integer.toString(
-                                        ProblemCode.valueOf(code.asString()).status().value());
-                                if (!operation.getValue().path("responses").has(status)) {
+                                ProblemCode problem = ProblemCode.valueOf(code.asString());
+                                boolean named =
+                                    problem.statuses().stream()
+                                        .map(
+                                            status ->
+                                                operation
+                                                    .getValue()
+                                                    .path("responses")
+                                                    .path(Integer.toString(status.value()))
+                                                    .path("description")
+                                                    .asString())
+                                        .anyMatch(
+                                            text -> text.contains("`" + problem.name() + "`"));
+                                if (!named) {
                                   undocumented.add(
-                                      operation.getKey() + " " + path.getKey() + " " + status);
+                                      operation.getKey() + " " + path.getKey() + " " + problem);
                                 }
                               });
                         }));
     assertThat(undocumented).as("operations without their problem codes").isEmpty();
 
+    JsonNode rowCode =
+        spec.path("components")
+            .path("schemas")
+            .path("ImportRowErrorResponse")
+            .path("properties")
+            .path("code");
+    assertThat(rowCode.has("enum")).as("ImportRowErrorResponse.code is no closed enum").isFalse();
     List<String> rowCodes = new ArrayList<>();
-    spec.path("components")
-        .path("schemas")
-        .path("ImportRowErrorResponse")
-        .path("properties")
-        .path("code")
-        .path("enum")
-        .forEach(code -> rowCodes.add(code.asString()));
+    rowCode.path("x-extensible-enum").forEach(code -> rowCodes.add(code.asString()));
     assertThat(rowCodes)
         .containsExactlyElementsOf(Arrays.stream(ImportRowCode.values()).map(Enum::name).toList());
   }

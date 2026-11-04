@@ -8,8 +8,11 @@ import java.lang.reflect.Method;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -42,6 +45,40 @@ class OperationProblemCodesTest {
             ProblemCode.VERSION_CONFLICT,
             ProblemCode.VALIDATION_FAILED,
             ProblemCode.NOT_FOUND);
+  }
+
+  @Test
+  void aWriteWithoutIfMatchCanLoseARaceAndAnswersItWith409() {
+    Method create = method(Things.class, "create");
+
+    assertThat(OperationProblemCodes.implied(create)).contains(ProblemCode.VERSION_CONFLICT);
+    assertThat(OperationProblemCodes.statusOf(create, ProblemCode.VERSION_CONFLICT))
+        .isEqualTo(HttpStatus.CONFLICT);
+    assertThat(OperationProblemCodes.documentedWithStatus(create))
+        .containsEntry(ProblemCode.VERSION_CONFLICT, HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void aWriteWithIfMatchAnswersAVersionConflictWith412() {
+    Method replace = method(Things.class, "replace");
+
+    assertThat(OperationProblemCodes.documentedWithStatus(replace))
+        .containsEntry(ProblemCode.VERSION_CONFLICT, HttpStatus.PRECONDITION_FAILED)
+        .containsEntry(ProblemCode.VERSION_REQUIRED, HttpStatus.PRECONDITION_REQUIRED)
+        .containsEntry(ProblemCode.NOT_FOUND, HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void aReadCannotLoseAVersionRace() {
+    assertThat(implied(Things.class, "one")).doesNotContain(ProblemCode.VERSION_CONFLICT);
+    assertThat(implied(Things.class, "search")).doesNotContain(ProblemCode.VERSION_CONFLICT);
+  }
+
+  @Test
+  void everyKindOfWriteImpliesAVersionConflict() {
+    assertThat(implied(Writes.class, "patch")).contains(ProblemCode.VERSION_CONFLICT);
+    assertThat(implied(Writes.class, "delete")).contains(ProblemCode.VERSION_CONFLICT);
+    assertThat(implied(Writes.class, "anyMethod")).doesNotContain(ProblemCode.VERSION_CONFLICT);
   }
 
   @Test
@@ -174,6 +211,20 @@ class OperationProblemCodesTest {
 
     @GetMapping("users")
     void users() {}
+  }
+
+  @RequestMapping("/api/v1/writes")
+  static class Writes {
+
+    @PatchMapping("/{id}")
+    void patch(@PathVariable String id) {}
+
+    @DeleteMapping("/{id}")
+    void delete(@PathVariable String id) {}
+
+    // No method: Spring maps every one, and the contract has no operation to put a code on.
+    @RequestMapping("/any")
+    void anyMethod() {}
   }
 
   static class Unmapped {

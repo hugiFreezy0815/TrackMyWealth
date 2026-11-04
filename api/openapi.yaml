@@ -203,6 +203,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -237,6 +238,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - CONFLICT
+      - VERSION_CONFLICT
       - INTERNAL
   /api/v1/accounts/{accountId}:
     get:
@@ -688,6 +690,7 @@ paths:
         "409":
           description: |-
             Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
             - `ACCOUNT_ARCHIVED`: The account is archived; restore it first.
           headers:
             X-Correlation-Id:
@@ -735,6 +738,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
       - INTERNAL
@@ -2237,6 +2241,7 @@ paths:
         "409":
           description: |-
             Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
             - `ACCOUNT_ARCHIVED`: The account is archived; restore it first.
             - `IMPORT_TOO_MANY_OPEN_BATCHES`: The account holds as many open import batches as it may (maxOpenBatches); commit or discard one first.
           headers:
@@ -2335,6 +2340,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
       - IMPORT_TEMPLATE_INVALID
@@ -2548,6 +2554,7 @@ paths:
         "409":
           description: |-
             Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
             - `IMPORT_BATCH_STATE`: The import batch's status (status) does not allow this step; a retried commit gets this, never a second import.
           headers:
             X-Correlation-Id:
@@ -2625,6 +2632,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - IMPORT_TEMPLATE_INVALID
       - IMPORT_TEMPLATE_UNSUPPORTED
       - IMPORT_TEMPLATE_MISMATCH
@@ -4374,6 +4382,7 @@ paths:
         "409":
           description: |-
             Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
             - `RETRY`: A concurrent request won a race for the same key; the retry answers with the winner.
             - `OPENING_BALANCE_AFTER_FIRST_TRANSACTION`: Live transactions are booked before the opening date (transactionCount, earliestBookingDate); move the date back or repeat with acknowledgeEarlierTransactions = true.
           headers:
@@ -4423,6 +4432,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - RETRY
       - UNPROCESSABLE
       - OPENING_BALANCE_NOT_APPLICABLE
@@ -5623,6 +5633,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
             - `ACCOUNT_ARCHIVED`: The account is archived; restore it first.
           headers:
             X-Correlation-Id:
@@ -5671,6 +5682,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - CONFLICT
+      - VERSION_CONFLICT
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
       - INTERNAL
@@ -6007,6 +6019,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
             - `RETRY`: A concurrent request won a race for the same key; the retry answers with the winner.
           headers:
             X-Correlation-Id:
@@ -6055,6 +6068,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - CONFLICT
+      - VERSION_CONFLICT
       - RETRY
       - UNPROCESSABLE
       - INTERNAL
@@ -6565,6 +6579,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
             - `RETRY`: A concurrent request won a race for the same key; the retry answers with the winner.
             - `ACCOUNT_ARCHIVED`: The account is archived; restore it first.
           headers:
@@ -6614,6 +6629,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - CONFLICT
+      - VERSION_CONFLICT
       - RETRY
       - ACCOUNT_ARCHIVED
       - UNPROCESSABLE
@@ -8098,6 +8114,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -8132,6 +8149,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - CONFLICT
+      - VERSION_CONFLICT
       - INTERNAL
   /api/v1/accounts/{cardAccountId}/settlement-matches/run:
     post:
@@ -8209,6 +8227,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "422":
           description: |-
             Problem codes:
@@ -8246,6 +8277,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - UNPROCESSABLE
       - INTERNAL
   /api/v1/accounts/{cardAccountId}/settlement-source:
@@ -9307,6 +9339,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -9341,6 +9374,7 @@ paths:
       - UNAUTHENTICATED
       - FORBIDDEN
       - CONFLICT
+      - VERSION_CONFLICT
       - INTERNAL
   /api/v1/admin/users/{id}:
     get:
@@ -10001,6 +10035,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "423":
           description: |-
             Problem codes:
@@ -10061,6 +10108,7 @@ paths:
       x-problem-codes:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
+      - VERSION_CONFLICT
       - LOCKED
       - RATE_LIMITED
       - INTERNAL
@@ -10130,6 +10178,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "423":
           description: |-
             Problem codes:
@@ -10190,6 +10251,7 @@ paths:
       x-problem-codes:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
+      - VERSION_CONFLICT
       - LOCKED
       - RATE_LIMITED
       - INTERNAL
@@ -10254,6 +10316,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "429":
           description: |-
             Problem codes:
@@ -10296,6 +10371,7 @@ paths:
       x-problem-codes:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
+      - VERSION_CONFLICT
       - RATE_LIMITED
       - INTERNAL
   /api/v1/cash-flow:
@@ -10579,6 +10655,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
             - `RETRY`: A concurrent request won a race for the same key; the retry answers with the winner.
           headers:
             X-Correlation-Id:
@@ -10627,6 +10704,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - CONFLICT
+      - VERSION_CONFLICT
       - RETRY
       - UNPROCESSABLE
       - INTERNAL
@@ -11515,6 +11593,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "422":
           description: |-
             Problem codes:
@@ -11552,6 +11643,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - UNPROCESSABLE
       - INTERNAL
   /api/v1/categorization-rules/{id}/deactivate:
@@ -11869,6 +11961,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "422":
           description: |-
             Problem codes:
@@ -11907,6 +12012,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - IMPORT_TEMPLATE_INVALID
       - IMPORT_TEMPLATE_UNSUPPORTED
       - INTERNAL
@@ -11982,6 +12088,19 @@ paths:
           description: |-
             Problem codes:
             - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -12072,6 +12191,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - IMPORT_TEMPLATE_INVALID
       - IMPORT_TEMPLATE_UNSUPPORTED
       - IMPORT_TEMPLATE_MISMATCH
@@ -12177,6 +12297,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "413":
           description: |-
             Problem codes:
@@ -12257,6 +12390,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - IMPORT_TEMPLATE_INVALID
       - IMPORT_TEMPLATE_UNSUPPORTED
       - IMPORT_TEMPLATE_MISMATCH
@@ -13089,6 +13223,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "413":
           description: |-
             Problem codes:
@@ -13169,6 +13316,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - IMPORT_TEMPLATE_INVALID
       - IMPORT_TEMPLATE_UNSUPPORTED
       - IMPORT_TEMPLATE_MISMATCH
@@ -13270,6 +13418,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "413":
           description: |-
             Problem codes:
@@ -13350,6 +13511,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - IMPORT_TEMPLATE_INVALID
       - IMPORT_TEMPLATE_UNSUPPORTED
       - IMPORT_TEMPLATE_MISMATCH
@@ -13762,6 +13924,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -13809,6 +13972,7 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - CONFLICT
+      - VERSION_CONFLICT
       - UNPROCESSABLE
       - INTERNAL
   /api/v1/portfolios/{portfolioId}:
@@ -14468,6 +14632,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "422":
           description: |-
             Problem codes:
@@ -14523,6 +14700,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - UNPROCESSABLE
       - RATE_LIMITED
       - INTERNAL
@@ -14766,6 +14944,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "429":
           description: |-
             Problem codes:
@@ -14808,6 +14999,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - NOT_FOUND
+      - VERSION_CONFLICT
       - RATE_LIMITED
       - INTERNAL
   /api/v1/settlement-matches:
@@ -15270,6 +15462,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -15321,6 +15514,7 @@ paths:
       x-problem-codes:
       - VALIDATION_FAILED
       - CONFLICT
+      - VERSION_CONFLICT
       - RATE_LIMITED
       - INTERNAL
   /api/v1/transactions:
@@ -15650,6 +15844,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -15719,6 +15914,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - CONFLICT
+      - VERSION_CONFLICT
       - LOCKED
       - RATE_LIMITED
       - INTERNAL
@@ -15779,6 +15975,19 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ApiProblem"
+        "409":
+          description: |-
+            Problem codes:
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
         "423":
           description: |-
             Problem codes:
@@ -15820,6 +16029,7 @@ paths:
       x-problem-codes:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
+      - VERSION_CONFLICT
       - LOCKED
       - INTERNAL
   /api/v1/users/me/mfa/enroll:
@@ -15887,6 +16097,7 @@ paths:
           description: |-
             Problem codes:
             - `CONFLICT`: The request conflicts with the current state; detail says how.
+            - `VERSION_CONFLICT`: The record changed since it was read: 412 with If-Match, 409 for a lost race without it.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -15938,6 +16149,7 @@ paths:
       - VALIDATION_FAILED
       - UNAUTHENTICATED
       - CONFLICT
+      - VERSION_CONFLICT
       - LOCKED
       - INTERNAL
   /api/v1/workspace:
@@ -17039,9 +17251,12 @@ components:
           type: string
         code:
           type: string
-          description: Stable application error code (docs/api/error-codes.md); each
-            operation lists the codes it can return. Existing values are never renamed.
-          enum:
+          description: "Stable application error code (docs/api/error-codes.md); each\
+            \ operation lists the codes it can return. An open set: new codes are\
+            \ added without a new API version, so a client must handle a code it does\
+            \ not know by the response's HTTP status. Existing codes are never renamed,\
+            \ and removed only as a declared breaking change."
+          x-extensible-enum:
           - VALIDATION_FAILED
           - INVALID_SORT
           - UNAUTHENTICATED
@@ -18384,9 +18599,11 @@ components:
       properties:
         code:
           type: string
-          description: Stable row code; the text is tmw.import.row.<code> with args
-            in order (docs/api/error-codes.md). Existing values are never renamed.
-          enum:
+          description: "Stable row code; the text is tmw.import.row.<code> with args\
+            \ in order (docs/api/error-codes.md). An open set: a client shows message\
+            \ for a code it does not know. Existing codes are never renamed, and removed\
+            \ only as a declared breaking change."
+          x-extensible-enum:
           - IMPORT_ROW_ZERO_AMOUNT
           - IMPORT_ROW_FILTERED
           - IMPORT_ROW_CAMT_NOT_BOOKED

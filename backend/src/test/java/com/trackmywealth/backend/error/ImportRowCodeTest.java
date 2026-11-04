@@ -88,4 +88,14 @@ class ImportRowCodeTest {
     }
     return codes;
   }
+
+  @Test
+  void aRetiredRowCodeIsNeverACurrentOne() {
+    Set<String> current =
+        Arrays.stream(ImportRowCode.values()).map(Enum::name).collect(Collectors.toSet());
+    assertThat(ImportRowCode.RETIRED).doesNotContainAnyElementsOf(current).doesNotHaveDuplicates();
+    assertThat(Arrays.stream(ImportRowCode.values()).filter(ImportRowCode::isDeprecated))
+        .as("no row code is deprecated yet; update this test when one is")
+        .isEmpty();
+  }
 }

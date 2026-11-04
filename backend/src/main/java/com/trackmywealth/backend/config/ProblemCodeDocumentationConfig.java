@@ -19,13 +19,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.customizers.OperationCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 
 /**
  * Puts the problem-code catalogue (US-29-04, #374) into the OpenAPI contract: per operation, one
@@ -45,7 +45,7 @@ public class ProblemCodeDocumentationConfig {
   @Bean
   OperationCustomizer problemCodeResponses() {
     return (operation, handlerMethod) -> {
-      document(operation, OperationProblemCodes.documented(handlerMethod.getMethod()));
+      document(operation, OperationProblemCodes.documentedWithStatus(handlerMethod.getMethod()));
       return operation;
     };
   }
@@ -70,27 +70,33 @@ public class ProblemCodeDocumentationConfig {
     StringSchema code = new StringSchema();
     code.setDescription(
         "Stable row code; the text is tmw.import.row.<code> with args in order"
-            + " (docs/api/error-codes.md). Existing values are never renamed.");
-    code.setEnum(Arrays.stream(ImportRowCode.values()).map(Enum::name).toList());
+            + " (docs/api/error-codes.md). An open set: a client shows message for a code it does"
+            + " not know. Existing codes are never renamed, and removed only as a declared"
+            + " breaking change.");
+    code.addExtension(
+        ApiDocumentationConfig.EXTENSIBLE_ENUM,
+        Arrays.stream(ImportRowCode.values()).map(Enum::name).toList());
     rowError.getProperties().put("code", code);
   }
 
   /**
-   * Documents {@code codes} on {@code operation}. Package-private for the unit test: it replaces
-   * the generic {@code ApiProblemResponse} reference another customizer may have put on a status.
+   * Documents {@code codes} on {@code operation}, each under the status the operation answers it
+   * with. Package-private for the unit test: it replaces the generic {@code ApiProblemResponse}
+   * reference another customizer may have put on a status.
    */
-  static void document(Operation operation, Set<ProblemCode> codes) {
+  static void document(Operation operation, Map<ProblemCode, HttpStatus> codes) {
     Map<Integer, List<ProblemCode>> byStatus = new TreeMap<>();
-    for (ProblemCode code : codes) {
-      byStatus.computeIfAbsent(code.status().value(), status -> new ArrayList<>()).add(code);
-    }
+    codes.forEach(
+        (code, status) ->
+            byStatus.computeIfAbsent(status.value(), value -> new ArrayList<>()).add(code));
     if (operation.getResponses() == null) {
       operation.setResponses(new ApiResponses());
     }
     byStatus.forEach(
         (status, statusCodes) ->
             operation.getResponses().put(Integer.toString(status), response(statusCodes)));
-    operation.addExtension(PROBLEM_CODES_EXTENSION, codes.stream().map(Enum::name).toList());
+    operation.addExtension(
+        PROBLEM_CODES_EXTENSION, codes.keySet().stream().map(Enum::name).toList());
   }
 
   private static ApiResponse response(List<ProblemCode> codes) {

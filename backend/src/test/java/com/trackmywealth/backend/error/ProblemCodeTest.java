@@ -131,4 +131,36 @@ class ProblemCodeTest {
                 .getStatus())
         .isEqualTo(413);
   }
+
+  @Test
+  void aClassLevelCodeNeverStandsForASuccessOrARedirect() {
+    assertThat(ProblemCode.INTERNAL.allows(HttpStatus.OK)).isFalse();
+    assertThat(ProblemCode.INTERNAL.allows(HttpStatus.FOUND)).isFalse();
+    assertThat(ProblemCode.INTERNAL.allows(HttpStatus.SERVICE_UNAVAILABLE)).isTrue();
+  }
+
+  @Test
+  void aRetiredNameIsNeverACurrentCode() {
+    for (String retired : ProblemCode.RETIRED) {
+      assertThat(ProblemCode.isRegistered(retired))
+          .as("retired %s is a code again", retired)
+          .isFalse();
+    }
+    assertThat(ProblemCode.RETIRED).doesNotHaveDuplicates();
+  }
+
+  @Test
+  void deprecationIsReadFromTheConstantsAnnotation() {
+    assertThat(Codes.isDeprecated(Lifecycle.OLD)).isTrue();
+    assertThat(Codes.isDeprecated(Lifecycle.CURRENT)).isFalse();
+    assertThat(Arrays.stream(ProblemCode.values()).filter(ProblemCode::isDeprecated))
+        .as("no code is deprecated yet; update this test when one is")
+        .isEmpty();
+  }
+
+  enum Lifecycle {
+    CURRENT,
+    @Deprecated
+    OLD
+  }
 }

@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.error;
 
+import java.util.List;
+
 /**
  * The registry of every code an import row or holdings line carries in its {@code error} or {@code
  * warnings} ({@code ImportRowErrorResponse.code}; US-29-04, #374). Unlike a {@link ProblemCode} it
@@ -9,8 +11,9 @@ package com.trackmywealth.backend.error;
  * <p>The codes themselves stay the string constants the parsers use and the database stores ({@code
  * ImportRowErrorValues}, {@code ImportBatchValues}, {@code ImportHoldingsValues}); this list adds
  * what the catalogue needs, and a test keeps both the same. The text is {@code
- * tmw.import.row.<CODE>}, with the row's {@code args} in order. Codes are part of the API contract:
- * never rename or remove one.
+ * tmw.import.row.<CODE>}, with the row's {@code args} in order. Codes are part of the API contract,
+ * with the same lifecycle as a {@link ProblemCode}: adding one is additive, removing one is a
+ * declared break that adds its name to {@link #RETIRED}.
  */
 public enum ImportRowCode {
   IMPORT_ROW_ZERO_AMOUNT(Kind.ROW_SKIPPED, "A zero-amount booking that changes no balance."),
@@ -97,6 +100,12 @@ public enum ImportRowCode {
   /** The prefix of each code's message key in {@code messages*.properties}. */
   public static final String MESSAGE_KEY_PREFIX = "tmw.import.row.";
 
+  /**
+   * The names of row codes that were removed; never used again. Like {@link ProblemCode#RETIRED}:
+   * removing a code is a declared breaking change, and this list only grows.
+   */
+  public static final List<String> RETIRED = List.of();
+
   /** Where a code appears and what it means for the row. */
   public enum Kind {
     ROW_ERROR("Row error: the row is not imported."),
@@ -136,5 +145,10 @@ public enum ImportRowCode {
   /** The key of the code's EN/DE text, e.g. {@code tmw.import.row.IMPORT_ROW_ZERO_AMOUNT}. */
   public String messageKey() {
     return MESSAGE_KEY_PREFIX + name();
+  }
+
+  /** Whether the code is marked {@link Deprecated}: still written, but on its way out. */
+  public boolean isDeprecated() {
+    return Codes.isDeprecated(this);
   }
 }

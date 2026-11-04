@@ -5,7 +5,7 @@
 
 Every error response is an RFC 9457 `application/problem+json` body with a stable `code` (US-29-04, #374). A client branches on `code`, never on `detail`: `detail` is the server's English explanation for developers and logs. The app shows the text of the code's message key in the member's language; the keys and texts below are the server's own (`backend/src/main/resources/messages*.properties`).
 
-Codes are part of the API contract: a code is never renamed or removed. The OpenAPI contract lists every code in `ApiProblem.code`, and per operation the codes it can return (`x-problem-codes`, and one error response per status).
+Codes are part of the API contract, and an open set: new codes are added without a new API version, so a client handles a code it does not know by the response's HTTP status (an unknown row code: show its `message`). A code is never renamed; it is deprecated first and removed only as a declared breaking change, and a removed name is never used again ("Retired codes" below). The OpenAPI contract lists every code in `ApiProblem.code` (`x-extensible-enum`), and per operation the codes it can return (`x-problem-codes`, and one error response per status). `api/problem-codes.json` holds the same registry for the CI check that keeps these rules.
 
 ## Client reactions
 
@@ -135,3 +135,10 @@ Not error responses: an import goes on, and each row or holdings line says in `e
 | `HOLDING_IDENTIFIER_INVALID` | `HOLDINGS_LINE_ERROR` | The ISIN's check digit is wrong, or the symbol is no ticker. | `tmw.import.row.HOLDING_IDENTIFIER_INVALID` | This line names no valid ISIN or ticker. | Diese Zeile nennt keine gültige ISIN und kein gültiges Kürzel. |
 | `HOLDING_DUPLICATE` | `HOLDINGS_LINE_ERROR` | A second line of the same ISIN or symbol in one statement. | `tmw.import.row.HOLDING_DUPLICATE` | The statement lists this position a second time. | Der Auszug führt diese Position ein zweites Mal auf. |
 | `HOLDING_VALUE_MISMATCH` | `HOLDINGS_LINE_WARNING` | Quantity times price is not the value (nor a hundredth of it); check the columns. | `tmw.import.row.HOLDING_VALUE_MISMATCH` | Quantity times price is not the value the statement reports; check that the columns are read right. | Anzahl mal Kurs ergibt nicht den Wert, den der Auszug nennt; prüfen Sie, ob die Spalten richtig gelesen werden. |
+
+## Retired codes
+
+Removed codes; their names are never used again.
+
+- Problem codes: none
+- Import row codes: none
