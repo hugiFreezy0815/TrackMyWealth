@@ -96,6 +96,78 @@ class ApiDocumentationContractTest {
   }
 
   @Test
+  void aDeclaredStatusSpringdocAlreadyGeneratedKeepsItsBodyAndHeaders()
+      throws NoSuchMethodException {
+    // @ResponseStatus(CREATED) or an explicit @ApiResponse: springdoc generates the 201, no 200.
+    Operation operation =
+        new Operation().responses(new ApiResponses().addApiResponse("201", ownCreated(null)));
+
+    config.successStatusResponses().customize(operation, handler("created"));
+
+    ApiResponse created = operation.getResponses().get("201");
+    assertThat(operation.getResponses()).containsOnlyKeys("201");
+    assertThat(created.getDescription()).isEqualTo("Created");
+    assertThat(created.getContent().get("application/json").getSchema())
+        .isInstanceOf(StringSchema.class);
+    assertThat(created.getHeaders()).containsKey("Location");
+  }
+
+  @Test
+  void aFindOrCreateWithoutAGenerated200DocumentsBothStatusesFromItsGenerated201()
+      throws NoSuchMethodException {
+    Operation operation =
+        new Operation()
+            .responses(new ApiResponses().addApiResponse("201", ownCreated("Account created")));
+
+    config.successStatusResponses().customize(operation, handler("both"));
+
+    ApiResponse created = operation.getResponses().get("201");
+    ApiResponse ok = operation.getResponses().get("200");
+    assertThat(operation.getResponses()).containsOnlyKeys("201", "200");
+    assertThat(created.getDescription()).isEqualTo("Account created");
+    assertThat(ok.getDescription()).isEqualTo("OK");
+    for (ApiResponse response : new ApiResponse[] {created, ok}) {
+      assertThat(response.getContent().get("application/json").getSchema())
+          .isInstanceOf(StringSchema.class);
+      assertThat(response.getHeaders()).containsKey("Location");
+    }
+    ok.getHeaders().remove("Location");
+    assertThat(created.getHeaders()).containsKey("Location");
+  }
+
+  @Test
+  void aDeclaredStatusSpringdocGeneratedItselfWinsOverTheGenerated200()
+      throws NoSuchMethodException {
+    Operation operation = generated();
+    operation.getResponses().addApiResponse("201", ownCreated("Account created"));
+
+    config.successStatusResponses().customize(operation, handler("both"));
+
+    ApiResponse created = operation.getResponses().get("201");
+    ApiResponse ok = operation.getResponses().get("200");
+    assertThat(created.getDescription()).isEqualTo("Account created");
+    assertThat(created.getHeaders()).containsOnlyKeys("Location");
+    assertThat(created.getLinks()).isNull();
+    assertThat(ok.getDescription()).isEqualTo("OK");
+    assertThat(ok.getHeaders()).containsOnlyKeys("ETag");
+  }
+
+  @Test
+  void aNoContentStatusSpringdocGeneratedItselfLosesItsBodyAndABlankDescription()
+      throws NoSuchMethodException {
+    Operation operation =
+        new Operation().responses(new ApiResponses().addApiResponse("204", ownCreated(" ")));
+
+    config.successStatusResponses().customize(operation, handler("noContent"));
+
+    ApiResponse noContent = operation.getResponses().get("204");
+    assertThat(operation.getResponses()).containsOnlyKeys("204");
+    assertThat(noContent.getDescription()).isEqualTo("No Content");
+    assertThat(noContent.getContent()).isNull();
+    assertThat(noContent.getHeaders()).containsKey("Location");
+  }
+
+  @Test
   void anUndeclaredHandlerKeepsTheGeneratedResponse() throws NoSuchMethodException {
     Operation operation = generated();
     ApiResponse before = operation.getResponses().get("200");
@@ -161,6 +233,16 @@ class ApiDocumentationContractTest {
     return new Operation().responses(new ApiResponses().addApiResponse("200", ok));
   }
 
+  // A response springdoc generated for the declared status itself, with the given description.
+  private static ApiResponse ownCreated(String description) {
+    return new ApiResponse()
+        .description(description)
+        .content(
+            new Content()
+                .addMediaType("application/json", new MediaType().schema(new StringSchema())))
+        .addHeaderObject("Location", new Header());
+  }
+
   private static HandlerMethod handler(String name) throws NoSuchMethodException {
     return new HandlerMethod(new Endpoints(), Endpoints.class.getDeclaredMethod(name));
   }
@@ -173,6 +255,9 @@ class ApiDocumentationContractTest {
 
     @SuccessStatus(HttpStatus.NO_CONTENT)
     void noContent() {}
+
+    @SuccessStatus(HttpStatus.CREATED)
+    void created() {}
 
     void plain() {}
   }

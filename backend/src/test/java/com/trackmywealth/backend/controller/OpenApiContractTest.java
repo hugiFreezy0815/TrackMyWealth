@@ -359,21 +359,17 @@ class OpenApiContractTest {
   }
 
   private String served(String token) {
-    return client(token)
-        .get()
-        .uri("/api-docs.yaml")
-        .exchange()
-        .expectStatus()
-        .isOk()
-        .expectBody(String.class)
-        .returnResult()
-        .getResponseBody();
+    return document(token, "/api-docs.yaml");
   }
 
   private String json(String token) {
+    return document(token, "/api-docs");
+  }
+
+  private String document(String token, String uri) {
     return client(token)
         .get()
-        .uri("/api-docs")
+        .uri(uri)
         .exchange()
         .expectStatus()
         .isOk()
