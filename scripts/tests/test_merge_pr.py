@@ -118,9 +118,15 @@ class ProblemsTest(unittest.TestCase):
         )
         self.assertEqual(
             required_checks(["api/openapi.yaml"]),
-            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking"],
+            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking", "build-web"],
             "#372: the committed API contract is checked against the code by Backend CI and"
-            " against main's contract by the breaking-change check",
+            " against main's contract by the breaking-change check; #375: the app's types are"
+            " generated from it, so Mobile Web CI checks they are current",
+        )
+        self.assertEqual(
+            required_checks(["api/problem-codes.json"]),
+            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking", "build-web"],
+            "#375: the app's known problem codes are generated from the registry",
         )
         self.assertEqual(
             required_checks(["scripts/api_breaking.py"]),

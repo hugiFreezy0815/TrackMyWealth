@@ -18,6 +18,26 @@ module.exports = defineConfig([
     },
   },
   {
+    // US-29-05 (#375): app code calls the API through typedApi, whose paths and types come from
+    // the contract; the untyped transport stays inside src/api (and its tests).
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/api/**', '**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@/api/client',
+              importNames: ['api', 'request'],
+              message: 'Call the API through typedApi (@/api/typed-api): its types are generated.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     ignores: ['dist/*'],
   },
 ]);

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
+import { problemReaction } from '@/api/problems';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -56,9 +57,11 @@ export function ReferenceDataScreen({ identity }: Props) {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        // Never expose the server's 403 response body or internal error information.
-        const forbidden = error instanceof ApiError && error.status === 403;
-        setState({ status: forbidden ? 'not-available' : 'error' });
+        // Never expose the server's response body or internal error information. A refusal to
+        // show (FORBIDDEN, or a code this app does not know on a 403) means "not available";
+        // anything else - unreachable, a 5xx - is an error the member can retry.
+        const refused = error instanceof ApiError && problemReaction(error).reaction === 'SHOW';
+        setState({ status: refused ? 'not-available' : 'error' });
       });
 
     return () => {
