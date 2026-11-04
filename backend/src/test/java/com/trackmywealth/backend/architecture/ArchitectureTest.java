@@ -29,6 +29,9 @@ import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.TransferRecheckService;
 import com.trackmywealth.backend.web.Paged;
+import io.swagger.v3.oas.annotations.Hidden;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.Entity;
 import java.util.Set;
 import org.springframework.data.domain.Pageable;
@@ -37,6 +40,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -389,6 +393,37 @@ class ArchitectureTest {
                   + " Pageable with @Paged")
           .allowEmptyShould(true);
 
+  // US-29-02 (#372): the committed api/openapi.yaml groups every operation under a tag and names it
+  // by an id the code chose, never springdoc's fallback (the method name, numbered on a clash).
+  @ArchTest
+  static final ArchRule api_controllers_declare_their_tag =
+      classes()
+          .that()
+          .areAnnotatedWith(RestController.class)
+          .and()
+          .areNotAnnotatedWith(Hidden.class)
+          .should()
+          .beAnnotatedWith(Tag.class)
+          .because(
+              "every operation in api/openapi.yaml belongs to one resource area (#372) - annotate"
+                  + " the controller with @Tag, or @Hidden when it is not part of the API");
+
+  @ArchTest
+  static final ArchRule api_operations_declare_their_operation_id =
+      methods()
+          .that()
+          .areDeclaredInClassesThat()
+          .areAnnotatedWith(RestController.class)
+          .and()
+          .areDeclaredInClassesThat()
+          .areNotAnnotatedWith(Hidden.class)
+          .and()
+          .areMetaAnnotatedWith(RequestMapping.class)
+          .should(declareAnExplicitOperationId())
+          .because(
+              "generated clients call operations by their id (#372): it must be chosen, stable and"
+                  + " unique - annotate the method with @Operation(operationId = ..., summary = ...)");
+
   @ArchTest
   static final ArchRule no_standard_streams =
       GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
@@ -400,6 +435,25 @@ class ArchitectureTest {
   @ArchTest
   static final ArchRule no_generic_exceptions =
       GeneralCodingRules.NO_CLASSES_SHOULD_THROW_GENERIC_EXCEPTIONS;
+
+  private static ArchCondition<JavaMethod> declareAnExplicitOperationId() {
+    return new ArchCondition<>("declare @Operation with an operationId and a summary") {
+      @Override
+      public void check(JavaMethod method, ConditionEvents events) {
+        boolean declared =
+            method
+                .tryGetAnnotationOfType(Operation.class)
+                .filter(operation -> !operation.operationId().isBlank())
+                .filter(operation -> !operation.summary().isBlank())
+                .isPresent();
+        if (!declared) {
+          events.add(
+              SimpleConditionEvent.violated(
+                  method, method.getFullName() + " has no @Operation operationId and summary"));
+        }
+      }
+    };
+  }
 
   private static ArchCondition<JavaMethod> notReturnASpringDataSlice() {
     return new ArchCondition<>("not return a Spring Data Page or Slice") {

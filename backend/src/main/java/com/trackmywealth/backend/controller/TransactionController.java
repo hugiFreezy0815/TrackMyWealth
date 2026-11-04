@@ -16,6 +16,8 @@ import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -39,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}")
+@Tag(name = "Transactions")
 public class TransactionController {
 
   private final TransactionService transactionService;
@@ -57,6 +60,7 @@ public class TransactionController {
     this.transferResolutionService = transferResolutionService;
   }
 
+  @Operation(operationId = "recordTransaction", summary = "Record a transaction")
   @PostMapping("/transactions")
   public ResponseEntity<TransactionResponse> recordTransaction(
       @PathVariable UUID accountId,
@@ -74,6 +78,7 @@ public class TransactionController {
    * correction that is the replacement, which has a new id (see {@link
    * TransactionCorrectionResponse}).
    */
+  @Operation(operationId = "correctTransaction", summary = "Correct a transaction")
   @PutMapping("/transactions/{transactionId}")
   public ResponseEntity<TransactionCorrectionResponse> correctTransaction(
       @PathVariable UUID accountId,
@@ -93,6 +98,7 @@ public class TransactionController {
    * the account. The order always ends with the id, so pages never overlap. {@code
    * uncategorized=true} lists only the rows still in UNCATEGORIZED (FR-CAT-013).
    */
+  @Operation(operationId = "listAccountTransactions", summary = "List an account's transactions")
   @GetMapping("/transactions")
   public PageResponse<TransactionResponse> listTransactions(
       @PathVariable UUID accountId,
@@ -117,6 +123,9 @@ public class TransactionController {
    * US-08-02: the member's own category for this transaction, which no automatic run replaces.
    * Needs access to the account.
    */
+  @Operation(
+      operationId = "overrideTransactionCategory",
+      summary = "Set a transaction's category by hand")
   @PutMapping("/transactions/{transactionId}/category")
   public ResponseEntity<TransactionResponse> overrideCategory(
       @PathVariable UUID accountId,
@@ -135,6 +144,9 @@ public class TransactionController {
   }
 
   /** US-08-02 "reset to automatic": gives up the override and categorizes the row again. */
+  @Operation(
+      operationId = "resetTransactionCategory",
+      summary = "Return a transaction to its automatic category")
   @DeleteMapping("/transactions/{transactionId}/category")
   public ResponseEntity<TransactionResponse> resetCategory(
       @PathVariable UUID accountId,
@@ -152,6 +164,7 @@ public class TransactionController {
    * soft-deleted (restorable for 30 days), an imported one voided and reversed, which needs a
    * {@code reason}. Each row's {@code removal} says which applies. Needs access to the account.
    */
+  @Operation(operationId = "removeTransaction", summary = "Remove a transaction")
   @DeleteMapping("/transactions/{transactionId}")
   public ResponseEntity<TransactionRemovalResponse> removeTransaction(
       @PathVariable UUID accountId,
@@ -171,6 +184,7 @@ public class TransactionController {
    * in the response's {@code restored} (the voided row and its reversal stay as history). The
    * {@code ETag} is then the unchanged voided row's version; each copy carries its own.
    */
+  @Operation(operationId = "restoreTransaction", summary = "Restore a removed transaction")
   @PostMapping("/transactions/{transactionId}/restore")
   public ResponseEntity<TransactionRemovalResponse> restoreTransaction(
       @PathVariable UUID accountId,
@@ -187,6 +201,9 @@ public class TransactionController {
    * US-07-02/07-07: the account's transactions that can still be restored - soft-deleted or voided
    * within the window, not yet restored or corrected.
    */
+  @Operation(
+      operationId = "listRemovedTransactions",
+      summary = "List an account's removed transactions")
   @GetMapping("/transactions/deleted")
   public List<TransactionResponse> listRestorableTransactions(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -197,6 +214,9 @@ public class TransactionController {
    * US-10-01: confirms a one-sided transfer leg as money moved to or from an own account not
    * tracked here - it then counts as neither income nor spending. Needs access to the account.
    */
+  @Operation(
+      operationId = "confirmUntrackedTransfer",
+      summary = "Mark a transaction as a transfer to an untracked account")
   @PostMapping("/transactions/{transactionId}/untracked-transfer")
   public ResponseEntity<TransactionResponse> confirmUntrackedTransfer(
       @PathVariable UUID accountId,
@@ -210,6 +230,9 @@ public class TransactionController {
   }
 
   /** US-10-01: undoes that confirmation; the leg is pending review again. */
+  @Operation(
+      operationId = "undoUntrackedTransfer",
+      summary = "Undo marking a transaction as an untracked transfer")
   @DeleteMapping("/transactions/{transactionId}/untracked-transfer")
   public ResponseEntity<TransactionResponse> undoUntrackedTransfer(
       @PathVariable UUID accountId,

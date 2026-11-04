@@ -7,6 +7,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountSnapshotService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** US-25-01: manual snapshot entry (FR-REC-006). Rules in {@link AccountSnapshotService}. */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/snapshots")
+@Tag(name = "Account values")
 public class AccountSnapshotController {
 
   private final AccountSnapshotService accountSnapshotService;
@@ -32,6 +35,9 @@ public class AccountSnapshotController {
     this.accountSnapshotService = accountSnapshotService;
   }
 
+  @Operation(
+      operationId = "recordAccountSnapshot",
+      summary = "Record a balance or holdings snapshot")
   @PostMapping
   public ResponseEntity<AccountSnapshotResponse> recordSnapshot(
       @PathVariable UUID accountId,
@@ -41,12 +47,14 @@ public class AccountSnapshotController {
     return VersionedResponse.created(response, response.version());
   }
 
+  @Operation(operationId = "listAccountSnapshots", summary = "List an account's snapshots")
   @GetMapping
   public List<AccountSnapshotResponse> listSnapshots(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return accountSnapshotService.list(accountId, actor);
   }
 
+  @Operation(operationId = "getAccountSnapshot", summary = "Read a snapshot")
   @GetMapping("/{snapshotId}")
   public ResponseEntity<AccountSnapshotResponse> getSnapshot(
       @PathVariable UUID accountId,
@@ -56,6 +64,7 @@ public class AccountSnapshotController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "replaceAccountSnapshot", summary = "Replace a snapshot")
   @PutMapping("/{snapshotId}")
   public ResponseEntity<AccountSnapshotResponse> replaceSnapshot(
       @PathVariable UUID accountId,

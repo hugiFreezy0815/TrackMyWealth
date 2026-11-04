@@ -7,6 +7,8 @@ import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.service.LoginService;
 import com.trackmywealth.backend.service.TokenRotationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * TokenRotationService}.
  */
 @RestController
+@Tag(name = "Auth")
 public class AuthController {
 
   // Referenced by RateLimitFilter (FR-AUT-010) so the two can never silently drift apart - the
@@ -36,6 +39,7 @@ public class AuthController {
     this.tokenRotationService = tokenRotationService;
   }
 
+  @Operation(operationId = "login", summary = "Sign in with email and password")
   @PostMapping(LOGIN_PATH)
   public ResponseEntity<LoginResponse> login(
       @Valid @RequestBody LoginRequest request,
@@ -45,12 +49,14 @@ public class AuthController {
     return ResponseEntity.ok(response);
   }
 
+  @Operation(operationId = "refreshToken", summary = "Exchange a refresh token for new tokens")
   @PostMapping(REFRESH_PATH)
   public ResponseEntity<AuthTokensResponse> refresh(
       @Valid @RequestBody RefreshTokenRequest request) {
     return ResponseEntity.ok(tokenRotationService.rotate(request.refreshToken()));
   }
 
+  @Operation(operationId = "verifyMfa", summary = "Complete a sign-in with a one-time code")
   @PostMapping(MFA_VERIFY_PATH)
   public ResponseEntity<AuthTokensResponse> verifyMfa(
       @Valid @RequestBody MfaVerifyRequest request,

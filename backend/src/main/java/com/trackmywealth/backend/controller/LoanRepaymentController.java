@@ -4,6 +4,8 @@ import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.LoanRepaymentService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/repayments")
+@Tag(name = "Loans")
 public class LoanRepaymentController {
 
   private final LoanRepaymentService loanRepaymentService;
@@ -32,6 +35,7 @@ public class LoanRepaymentController {
     this.loanRepaymentService = loanRepaymentService;
   }
 
+  @Operation(operationId = "recordLoanRepayment", summary = "Record a loan repayment")
   @PostMapping
   public ResponseEntity<LoanRepaymentResponse> recordRepayment(
       @PathVariable UUID accountId,
@@ -41,6 +45,7 @@ public class LoanRepaymentController {
         .body(loanRepaymentService.record(accountId, request, actor));
   }
 
+  @Operation(operationId = "listLoanRepayments", summary = "List a loan's repayments")
   @GetMapping
   public List<LoanRepaymentResponse> listRepayments(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {

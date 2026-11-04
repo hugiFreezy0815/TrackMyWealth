@@ -4,6 +4,8 @@ import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CustomAssetValuationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** US-05-05, US-03-06 (workspace membership checked by {@code AccessControlService}). */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/valuations")
+@Tag(name = "Account values")
 public class CustomAssetValuationController {
 
   private final CustomAssetValuationService customAssetValuationService;
@@ -28,6 +31,9 @@ public class CustomAssetValuationController {
     this.customAssetValuationService = customAssetValuationService;
   }
 
+  @Operation(
+      operationId = "recordAccountValuation",
+      summary = "Record a manual valuation of an asset")
   @PostMapping
   public ResponseEntity<CustomAssetValuationResponse> recordValuation(
       @PathVariable UUID accountId,
@@ -37,6 +43,7 @@ public class CustomAssetValuationController {
         .body(customAssetValuationService.recordValuation(accountId, request, actor));
   }
 
+  @Operation(operationId = "listAccountValuations", summary = "List an asset's manual valuations")
   @GetMapping
   public List<CustomAssetValuationResponse> listValuations(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {

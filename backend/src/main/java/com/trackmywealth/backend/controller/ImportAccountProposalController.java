@@ -4,6 +4,8 @@ import com.trackmywealth.backend.dto.ImportAccountProposalResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportAccountProposalService;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.UUID;
@@ -22,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
  * an empty one is the parser's 422 {@code IMPORT_FILE_EMPTY}, as for a template dry run.
  */
 @RestController
+@Tag(name = "Imports")
 public class ImportAccountProposalController {
 
   private final ImportAccountProposalService proposals;
@@ -32,6 +35,9 @@ public class ImportAccountProposalController {
 
   /** The proposal for an uploaded file, read with a template version the member may see. */
   @RetryableWhenBusy
+  @Operation(
+      operationId = "proposeAccountFromFile",
+      summary = "Propose a new account from a statement file")
   @PostMapping(
       path = "/api/v1/import-templates/{templateId}/account-proposal",
       consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -47,6 +53,9 @@ public class ImportAccountProposalController {
    * workspace ({@code accountIdentification} {@code NO_MATCH}); needs access to its account.
    */
   @RetryableWhenBusy
+  @Operation(
+      operationId = "proposeAccountFromImportBatch",
+      summary = "Propose a new account from an import")
   @PostMapping("/api/v1/accounts/{accountId}/imports/{batchId}/account-proposal")
   public ImportAccountProposalResponse proposeFromBatch(
       @PathVariable UUID accountId,

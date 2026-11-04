@@ -18,6 +18,8 @@ import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -54,6 +56,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/imports")
+@Tag(name = "Imports")
 public class ImportBatchController {
 
   private static final String BY_ID = "/{batchId}";
@@ -85,6 +88,7 @@ public class ImportBatchController {
    * IMPORT_CAMT_LIMIT_EXCEEDED} and {@code IMPORT_CAMT_MULTIPLE_ACCOUNTS}.
    */
   @RetryableWhenBusy
+  @Operation(operationId = "createImportBatch", summary = "Upload a statement file for import")
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<ImportBatchResponse> upload(
       @PathVariable UUID accountId,
@@ -117,6 +121,9 @@ public class ImportBatchController {
    * without one (#350). Without {@code templateId}, any other file is a 400.
    */
   @RetryableWhenBusy
+  @Operation(
+      operationId = "parseImportBatch",
+      summary = "Read an uploaded file into rows to preview")
   @PostMapping(BY_ID + "/parse")
   public ResponseEntity<ImportBatchResponse> parse(
       @PathVariable UUID accountId,
@@ -136,6 +143,7 @@ public class ImportBatchController {
   }
 
   /** The account's batches, newest upload first unless {@code sort} says otherwise. */
+  @Operation(operationId = "listImportBatches", summary = "List an account's imports")
   @GetMapping
   public PageResponse<ImportBatchResponse> list(
       @PathVariable UUID accountId,
@@ -145,6 +153,7 @@ public class ImportBatchController {
     return PageResponse.of(importBatchService.list(accountId, pageable, actor));
   }
 
+  @Operation(operationId = "getImportBatch", summary = "Read an import")
   @GetMapping(BY_ID)
   public ResponseEntity<ImportBatchResponse> get(
       @PathVariable UUID accountId,
@@ -158,6 +167,7 @@ public class ImportBatchController {
    * The preview's rows in file order; {@code status} narrows them to PARSED, DUPLICATE, ERROR or
    * SKIPPED. While the batch is PARSED, each row shows what the commit will do with it now (#308).
    */
+  @Operation(operationId = "listImportBatchRows", summary = "List an import's preview rows")
   @GetMapping(BY_ID + "/rows")
   public PageResponse<ImportRowResponse> rows(
       @PathVariable UUID accountId,
@@ -176,6 +186,7 @@ public class ImportBatchController {
    * Forces a duplicate into the commit or keeps a new row out of it. {@code If-Match} is the
    * batch's version; the answer is the batch with its new counts and version.
    */
+  @Operation(operationId = "setImportRowIncluded", summary = "Include or leave out one preview row")
   @PatchMapping(BY_ID + "/rows/{rowNumber}")
   public ResponseEntity<ImportBatchResponse> setIncluded(
       @PathVariable UUID accountId,
@@ -199,6 +210,9 @@ public class ImportBatchController {
    * FR-IMP-012: the rows that could not be imported, as CSV in the source file's delimiter and
    * encoding - their cells, then {@code error_code} and {@code error_message}.
    */
+  @Operation(
+      operationId = "getImportBatchErrors",
+      summary = "Download an import's row errors as CSV")
   @GetMapping(BY_ID + "/errors.csv")
   public ResponseEntity<byte[]> errors(
       @PathVariable UUID accountId,
@@ -215,6 +229,7 @@ public class ImportBatchController {
   }
 
   /** Inserts the included rows into the ledger; {@code PARSED -> COMMITTED}. */
+  @Operation(operationId = "commitImportBatch", summary = "Book an import's rows")
   @PostMapping(BY_ID + "/commit")
   public ResponseEntity<ImportBatchResponse> commit(
       @PathVariable UUID accountId,
@@ -231,6 +246,9 @@ public class ImportBatchController {
    * account for certain ({@code accountIdentification}); until then the commit is a 409 {@code
    * IMPORT_ACCOUNT_UNCONFIRMED}.
    */
+  @Operation(
+      operationId = "confirmImportBatchAccount",
+      summary = "Confirm the account an import belongs to")
   @PostMapping(BY_ID + "/confirm-account")
   public ResponseEntity<ImportBatchResponse> confirmAccount(
       @PathVariable UUID accountId,
@@ -244,6 +262,7 @@ public class ImportBatchController {
   }
 
   /** Ends a batch that is not committed and deletes its stored file. */
+  @Operation(operationId = "discardImportBatch", summary = "Discard an import that was not booked")
   @PostMapping(BY_ID + "/discard")
   public ResponseEntity<ImportBatchResponse> discard(
       @PathVariable UUID accountId,
@@ -265,6 +284,7 @@ public class ImportBatchController {
    * IMPORT_ROLLBACK_RECONCILIATION_DECIDED} (US-07-12). The {@code ETag} is the batch's new
    * version.
    */
+  @Operation(operationId = "rollbackImportBatch", summary = "Undo a booked import")
   @PostMapping(BY_ID + "/rollback")
   public ResponseEntity<ImportRollbackResponse> rollback(
       @PathVariable UUID accountId,

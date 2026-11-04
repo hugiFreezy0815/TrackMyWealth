@@ -43,8 +43,8 @@ MOBILE_NATIVE_PATHS = (
 REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
     "semgrep": ("Semgrep", None),
     "gitleaks": ("Secret scanning", None),
-    "test": ("Backend CI", ("backend/", ".github/workflows/backend-ci.yml")),
-    "sql-lint": ("Backend CI", ("backend/", ".github/workflows/backend-ci.yml")),
+    "test": ("Backend CI", ("backend/", "api/", ".github/workflows/backend-ci.yml")),
+    "sql-lint": ("Backend CI", ("backend/", "api/", ".github/workflows/backend-ci.yml")),
     "build-web": ("Mobile Web CI", ("mobile/", ".github/workflows/mobile-web-ci.yml")),
     "android": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "ios": ("Mobile Native CI", MOBILE_NATIVE_PATHS),

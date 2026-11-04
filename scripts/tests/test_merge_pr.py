@@ -107,6 +107,11 @@ class ProblemsTest(unittest.TestCase):
             required_checks(["backend/pom.xml"]), ["semgrep", "gitleaks", "test", "sql-lint"]
         )
         self.assertEqual(
+            required_checks(["api/openapi.yaml"]),
+            ["semgrep", "gitleaks", "test", "sql-lint"],
+            "#372: the committed API contract is checked against the code by Backend CI",
+        )
+        self.assertEqual(
             required_checks([".github/workflows/mobile-web-ci.yml"]),
             ["semgrep", "gitleaks", "build-web", "scripts"],
         )

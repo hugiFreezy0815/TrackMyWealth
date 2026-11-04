@@ -6,6 +6,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.OpeningBalanceService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/opening-balance")
+@Tag(name = "Account values")
 public class OpeningBalanceController {
 
   private final OpeningBalanceService openingBalanceService;
@@ -34,6 +37,7 @@ public class OpeningBalanceController {
     this.openingBalanceService = openingBalanceService;
   }
 
+  @Operation(operationId = "getOpeningBalance", summary = "Read an account's opening balance")
   @GetMapping
   public ResponseEntity<OpeningBalanceResponse> getOpeningBalance(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -41,6 +45,7 @@ public class OpeningBalanceController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "recordOpeningBalance", summary = "Record an account's opening balance")
   @PostMapping
   public ResponseEntity<OpeningBalanceResponse> recordOpeningBalance(
       @PathVariable UUID accountId,
@@ -50,6 +55,9 @@ public class OpeningBalanceController {
     return VersionedResponse.created(response, response.version());
   }
 
+  @Operation(
+      operationId = "replaceOpeningBalance",
+      summary = "Replace an account's opening balance")
   @PutMapping
   public ResponseEntity<OpeningBalanceResponse> replaceOpeningBalance(
       @PathVariable UUID accountId,
@@ -62,6 +70,7 @@ public class OpeningBalanceController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "deleteOpeningBalance", summary = "Delete an account's opening balance")
   @DeleteMapping
   public ResponseEntity<Void> deleteOpeningBalance(
       @PathVariable UUID accountId,

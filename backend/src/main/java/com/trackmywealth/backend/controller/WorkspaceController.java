@@ -31,6 +31,7 @@ public class WorkspaceController {
     this.workspaceService = workspaceService;
   }
 
+  @Operation(operationId = "getWorkspace", summary = "Read the workspace")
   @GetMapping
   public ResponseEntity<WorkspaceResponse> getCurrent(
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -49,6 +50,7 @@ public class WorkspaceController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "updateWorkspaceCurrency", summary = "Change the workspace's currency")
   @PutMapping("/currency")
   public ResponseEntity<WorkspaceResponse> updateCurrency(
       @Valid @RequestBody UpdateWorkspaceCurrencyRequest request,

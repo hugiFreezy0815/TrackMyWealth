@@ -7,6 +7,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SettlementMatchService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1")
+@Tag(name = "Credit cards")
 public class SettlementMatchController {
 
   private final SettlementMatchService settlementMatchService;
@@ -36,6 +39,7 @@ public class SettlementMatchController {
     this.settlementMatchService = settlementMatchService;
   }
 
+  @Operation(operationId = "setSettlementSource", summary = "Set the account a card is paid from")
   @PutMapping("/accounts/{cardAccountId}/settlement-source")
   public ResponseEntity<SettlementSourceResponse> setSettlementSource(
       @PathVariable UUID cardAccountId,
@@ -48,6 +52,7 @@ public class SettlementMatchController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "getSettlementSource", summary = "Read the account a card is paid from")
   @GetMapping("/accounts/{cardAccountId}/settlement-source")
   public ResponseEntity<SettlementSourceResponse> getSettlementSource(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -57,6 +62,9 @@ public class SettlementMatchController {
   }
 
   /** Runs matching for the card now; idempotent. Returns every match the card has. */
+  @Operation(
+      operationId = "runSettlementMatching",
+      summary = "Match card payments to statements now")
   @PostMapping("/accounts/{cardAccountId}/settlement-matches/run")
   public List<SettlementMatchResponse> run(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -68,6 +76,7 @@ public class SettlementMatchController {
    * {@code kind} ({@code CARD_SETTLEMENT} or {@code TRANSFER}, US-10-01) narrows the list to one
    * kind of match; without it both are listed.
    */
+  @Operation(operationId = "listSettlementMatches", summary = "List settlement matches")
   @GetMapping("/settlement-matches")
   public List<SettlementMatchResponse> list(
       @RequestParam(required = false) String status,
@@ -76,6 +85,7 @@ public class SettlementMatchController {
     return settlementMatchService.list(status, kind, actor);
   }
 
+  @Operation(operationId = "confirmSettlementMatch", summary = "Confirm a settlement match")
   @PostMapping("/settlement-matches/{matchId}/confirm")
   public ResponseEntity<SettlementMatchResponse> confirm(
       @PathVariable UUID matchId,
@@ -86,6 +96,7 @@ public class SettlementMatchController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "rejectSettlementMatch", summary = "Reject a settlement match")
   @PostMapping("/settlement-matches/{matchId}/reject")
   public ResponseEntity<SettlementMatchResponse> reject(
       @PathVariable UUID matchId,

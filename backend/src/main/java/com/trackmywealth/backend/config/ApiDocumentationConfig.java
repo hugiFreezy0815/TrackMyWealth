@@ -10,6 +10,7 @@ import com.trackmywealth.backend.web.SortWhitelist;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.headers.Header;
+import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.IntegerSchema;
@@ -19,6 +20,7 @@ import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
+import io.swagger.v3.oas.models.servers.Server;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,6 +33,8 @@ import org.springdoc.core.customizers.OperationCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 
@@ -72,6 +76,34 @@ public class ApiDocumentationConfig {
                 .description(
                     "Exact decimal encoded as a plain JSON string. Strings are canonical on"
                         + " requests; JSON numbers remain accepted for compatibility."));
+  }
+
+  /**
+   * US-29-02 (#372): the document's fixed header. The server is the relative {@code /}, not the
+   * host springdoc would take from the request, so the committed {@code api/openapi.yaml} does not
+   * depend on where it was generated.
+   */
+  @Bean
+  OpenAPI apiDocument() {
+    return new OpenAPI()
+        .info(
+            new Info()
+                .title("TrackMyWealth API")
+                .version("v1")
+                .description(
+                    "The REST API of TrackMyWealth. Committed as api/openapi.yaml; the build fails"
+                        + " when it differs from the code."))
+        .servers(List.of(new Server().url("/").description("The server serving this document")));
+  }
+
+  /**
+   * US-29-02 (#372): runs after every other customizer, so whatever they added is put in a fixed
+   * order too ({@link ApiDocumentOrder}).
+   */
+  @Bean
+  @Order(Ordered.LOWEST_PRECEDENCE)
+  OpenApiCustomizer deterministicDocumentOrder() {
+    return ApiDocumentOrder::apply;
   }
 
   @Bean

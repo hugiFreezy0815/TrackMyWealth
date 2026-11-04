@@ -2,6 +2,8 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CurrentUserResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,8 +16,10 @@ import org.springframework.web.bind.annotation.RestController;
  * refreshes on. Admin endpoints still enforce the role themselves; this only drives the UI.
  */
 @RestController
+@Tag(name = "Current user")
 public class CurrentUserController {
 
+  @Operation(operationId = "getCurrentUser", summary = "Read the signed-in user")
   @GetMapping("/api/v1/users/me")
   public ResponseEntity<CurrentUserResponse> currentUser(
       @AuthenticationPrincipal AuthenticatedUserPrincipal principal) {

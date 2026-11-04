@@ -6,6 +6,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AmortisationScheduleService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/amortisation-schedule")
+@Tag(name = "Loans")
 public class AmortisationScheduleController {
 
   private final AmortisationScheduleService amortisationScheduleService;
@@ -35,12 +38,18 @@ public class AmortisationScheduleController {
     this.amortisationScheduleService = amortisationScheduleService;
   }
 
+  @Operation(
+      operationId = "listAmortisationEntries",
+      summary = "List a loan's amortisation schedule")
   @GetMapping
   public List<AmortisationScheduleEntryResponse> listEntries(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return amortisationScheduleService.list(accountId, actor);
   }
 
+  @Operation(
+      operationId = "createAmortisationEntry",
+      summary = "Add an amortisation schedule entry")
   @PostMapping
   public ResponseEntity<AmortisationScheduleEntryResponse> createEntry(
       @PathVariable UUID accountId,
@@ -51,6 +60,9 @@ public class AmortisationScheduleController {
     return VersionedResponse.created(response, response.version());
   }
 
+  @Operation(
+      operationId = "replaceAmortisationEntry",
+      summary = "Replace an amortisation schedule entry")
   @PutMapping("/{entryId}")
   public ResponseEntity<AmortisationScheduleEntryResponse> replaceEntry(
       @PathVariable UUID accountId,
@@ -64,6 +76,9 @@ public class AmortisationScheduleController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(
+      operationId = "deleteAmortisationEntry",
+      summary = "Delete an amortisation schedule entry")
   @DeleteMapping("/{entryId}")
   public ResponseEntity<Void> deleteEntry(
       @PathVariable UUID accountId,

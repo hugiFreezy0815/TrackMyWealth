@@ -71,6 +71,7 @@ public class AccountController {
         new AccountListFilter(portfolioId, type, archived), actor);
   }
 
+  @Operation(operationId = "createAccount", summary = "Create an account")
   @PostMapping
   public ResponseEntity<AccountSummaryResponse> createAccount(
       @Valid @RequestBody CreateAccountRequest request,
@@ -79,6 +80,7 @@ public class AccountController {
     return withEtag(ResponseEntity.status(HttpStatus.CREATED), created);
   }
 
+  @Operation(operationId = "getAccount", summary = "Read an account")
   @GetMapping("/{accountId}")
   public ResponseEntity<AccountSummaryResponse> getAccount(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -86,6 +88,7 @@ public class AccountController {
     return withEtag(ResponseEntity.ok(), account);
   }
 
+  @Operation(operationId = "updateAccount", summary = "Change an account's name and details")
   @PutMapping("/{accountId}")
   public ResponseEntity<AccountSummaryResponse> updateAccount(
       @PathVariable UUID accountId,
@@ -98,6 +101,7 @@ public class AccountController {
     return withEtag(ResponseEntity.ok(), updated);
   }
 
+  @Operation(operationId = "archiveAccount", summary = "Archive an account")
   @PostMapping("/{accountId}/archive")
   public ResponseEntity<AccountSummaryResponse> archiveAccount(
       @PathVariable UUID accountId,
@@ -108,6 +112,7 @@ public class AccountController {
     return withEtag(ResponseEntity.ok(), archived);
   }
 
+  @Operation(operationId = "restoreAccount", summary = "Restore an archived account")
   @PostMapping("/{accountId}/restore")
   public ResponseEntity<AccountSummaryResponse> restoreAccount(
       @PathVariable UUID accountId,
@@ -118,6 +123,9 @@ public class AccountController {
     return withEtag(ResponseEntity.ok(), restored);
   }
 
+  @Operation(
+      operationId = "reassignAccountPortfolio",
+      summary = "Move an account to another portfolio")
   @PostMapping("/{accountId}/reassign-portfolio")
   public ResponseEntity<AccountSummaryResponse> reassignPortfolio(
       @PathVariable UUID accountId,

@@ -2,6 +2,8 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.ReferenceDataResponse;
 import com.trackmywealth.backend.service.ReferenceDataService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/reference-data")
+@Tag(name = "Admin")
 public class AdminReferenceDataController {
 
   private final ReferenceDataService referenceDataService;
@@ -21,6 +24,7 @@ public class AdminReferenceDataController {
     this.referenceDataService = referenceDataService;
   }
 
+  @Operation(operationId = "getReferenceData", summary = "Read the loaded reference-data package")
   @GetMapping
   public ReferenceDataResponse current() {
     return referenceDataService.current();

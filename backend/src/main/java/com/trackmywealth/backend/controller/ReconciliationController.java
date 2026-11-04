@@ -10,6 +10,8 @@ import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/reconciliations")
+@Tag(name = "Reconciliation")
 public class ReconciliationController {
 
   private final ReconciliationHistoryService historyService;
@@ -44,6 +47,9 @@ public class ReconciliationController {
     this.reconciliationDecisionService = reconciliationDecisionService;
   }
 
+  @Operation(
+      operationId = "listReconciliations",
+      summary = "List an account's reconciliation results")
   @GetMapping
   public PageResponse<ReconciliationResultResponse> list(
       @PathVariable UUID accountId,
@@ -53,6 +59,7 @@ public class ReconciliationController {
     return PageResponse.of(historyService.list(accountId, pageable, actor));
   }
 
+  @Operation(operationId = "getReconciliation", summary = "Read a reconciliation result")
   @GetMapping("/{resultId}")
   public ResponseEntity<ReconciliationResultResponse> get(
       @PathVariable UUID accountId,
@@ -62,6 +69,9 @@ public class ReconciliationController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(
+      operationId = "acceptReconciliation",
+      summary = "Accept a difference with an adjusting entry")
   @PostMapping("/{resultId}/accept")
   public ResponseEntity<ReconciliationResultResponse> accept(
       @PathVariable UUID accountId,
@@ -75,6 +85,7 @@ public class ReconciliationController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "dismissReconciliation", summary = "Dismiss a difference")
   @PostMapping("/{resultId}/dismiss")
   public ResponseEntity<ReconciliationResultResponse> dismiss(
       @PathVariable UUID accountId,
@@ -88,6 +99,9 @@ public class ReconciliationController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(
+      operationId = "reopenReconciliation",
+      summary = "Reopen an accepted or dismissed difference")
   @PostMapping("/{resultId}/reopen")
   public ResponseEntity<ReconciliationResultResponse> reopen(
       @PathVariable UUID accountId,

@@ -3,6 +3,8 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.SessionSummaryResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SessionService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** US-02-03: list and revoke the caller's own sessions. See {@link SessionService}. */
 @RestController
+@Tag(name = "Current user")
 public class SessionController {
 
   // Referenced by RateLimitFilter (FR-AUT-010) so the two can never silently drift apart - the
@@ -28,6 +31,7 @@ public class SessionController {
     this.sessionService = sessionService;
   }
 
+  @Operation(operationId = "listSessions", summary = "List the signed-in user's sessions")
   @GetMapping("/api/v1/sessions")
   public ResponseEntity<List<SessionSummaryResponse>> listSessions(
       @AuthenticationPrincipal AuthenticatedUserPrincipal principal) {
@@ -35,6 +39,7 @@ public class SessionController {
         sessionService.listSessions(principal.userId(), principal.sessionId()));
   }
 
+  @Operation(operationId = "revokeSession", summary = "Sign out one session")
   @PostMapping(REVOKE_PATH)
   public ResponseEntity<SessionSummaryResponse> revokeSession(
       @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal principal) {

@@ -7,6 +7,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CardStatementService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{cardAccountId}")
+@Tag(name = "Credit cards")
 public class CardStatementController {
 
   private final CardStatementService cardStatementService;
@@ -33,6 +36,7 @@ public class CardStatementController {
     this.cardStatementService = cardStatementService;
   }
 
+  @Operation(operationId = "setCardStatementConfig", summary = "Set a card's statement cycle")
   @PutMapping("/statement-config")
   public ResponseEntity<StatementConfigResponse> setStatementConfig(
       @PathVariable UUID cardAccountId,
@@ -45,6 +49,7 @@ public class CardStatementController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "getCardStatementConfig", summary = "Read a card's statement cycle")
   @GetMapping("/statement-config")
   public ResponseEntity<StatementConfigResponse> getStatementConfig(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -56,6 +61,9 @@ public class CardStatementController {
   /**
    * The current statement (the most recently closed cycle as of today) - see the service Javadoc.
    */
+  @Operation(
+      operationId = "getCurrentCardStatement",
+      summary = "A card's current statement and due date")
   @GetMapping("/statement")
   public CardStatementResponse getCurrentStatement(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {

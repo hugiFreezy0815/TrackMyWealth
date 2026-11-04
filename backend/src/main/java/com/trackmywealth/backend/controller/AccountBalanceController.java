@@ -3,6 +3,8 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountValuationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/balance")
+@Tag(name = "Account values")
 public class AccountBalanceController {
 
   private final AccountValuationService accountValuationService;
@@ -37,6 +40,7 @@ public class AccountBalanceController {
     this.accountValuationService = accountValuationService;
   }
 
+  @Operation(operationId = "getAccountBalance", summary = "An account's current value")
   @GetMapping
   public AccountValuation getBalance(
       @PathVariable UUID accountId,

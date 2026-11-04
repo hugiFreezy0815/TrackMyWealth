@@ -7,6 +7,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AdminUserService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/users")
+@Tag(name = "Admin")
 public class AdminUserController {
 
   private final AdminUserService adminUserService;
@@ -35,6 +38,7 @@ public class AdminUserController {
     this.adminUserService = adminUserService;
   }
 
+  @Operation(operationId = "createUser", summary = "Create a user")
   @PostMapping
   public ResponseEntity<UserSummaryResponse> createUser(
       @Valid @RequestBody CreateUserRequest request,
@@ -44,12 +48,14 @@ public class AdminUserController {
     return VersionedResponse.created(response, response.version());
   }
 
+  @Operation(operationId = "getUser", summary = "Read a user")
   @GetMapping("/{id}")
   public ResponseEntity<UserSummaryResponse> getUser(@PathVariable UUID id) {
     UserSummaryResponse response = adminUserService.getUser(id);
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "updateUser", summary = "Change a user's email, role or language")
   @PatchMapping("/{id}")
   public ResponseEntity<UserSummaryResponse> editUser(
       @PathVariable UUID id,
@@ -61,6 +67,7 @@ public class AdminUserController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "disableUser", summary = "Disable a user")
   @PostMapping("/{id}/disable")
   public ResponseEntity<UserSummaryResponse> disableUser(
       @PathVariable UUID id,
@@ -71,6 +78,7 @@ public class AdminUserController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "reactivateUser", summary = "Reactivate a disabled user")
   @PostMapping("/{id}/reactivate")
   public ResponseEntity<UserSummaryResponse> reactivateUser(
       @PathVariable UUID id,

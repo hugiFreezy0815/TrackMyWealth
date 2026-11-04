@@ -5,10 +5,16 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      # #372: the drift check runs in this build, so a change to the committed contract alone
+      # (api/openapi.yaml edited by hand) is checked too.
+      - "api/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     paths:
       - "backend/**"
+      # #372: the drift check runs in this build, so a change to the committed contract alone
+      # (api/openapi.yaml edited by hand) is checked too.
+      - "api/**"
       - ".github/workflows/backend-ci.yml"
 
 jobs:
