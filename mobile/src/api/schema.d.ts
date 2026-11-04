@@ -8482,6 +8482,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;

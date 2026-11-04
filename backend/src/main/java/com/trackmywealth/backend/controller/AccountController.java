@@ -180,6 +180,7 @@ public class AccountController {
     ProblemCode.SAVINGS_POCKET_IN_USE,
     ProblemCode.CONFLICT
   })
+  @SendsHeaders(ResponseHeader.ETAG)
   @PutMapping("/{accountId}/savings-pocket")
   public ResponseEntity<AccountSummaryResponse> linkSavingsPocket(
       @PathVariable UUID accountId,
