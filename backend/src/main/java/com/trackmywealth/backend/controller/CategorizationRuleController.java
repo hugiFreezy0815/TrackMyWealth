@@ -7,6 +7,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategorizationRuleService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -55,6 +57,7 @@ public class CategorizationRuleController {
   @Operation(operationId = "createCategorizationRule", summary = "Create a categorization rule")
   @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.UNPROCESSABLE})
   @PostMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<CategorizationRuleResponse> create(
       @Valid @RequestBody CreateCategorizationRuleRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -66,6 +69,7 @@ public class CategorizationRuleController {
       operationId = "deactivateCategorizationRule",
       summary = "Deactivate a categorization rule")
   @PostMapping("/{id}/deactivate")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<CategorizationRuleResponse> deactivate(
       @PathVariable UUID id,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,

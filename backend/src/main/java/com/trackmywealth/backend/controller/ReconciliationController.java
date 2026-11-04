@@ -11,6 +11,8 @@ import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -63,6 +65,7 @@ public class ReconciliationController {
 
   @Operation(operationId = "getReconciliation", summary = "Read a reconciliation result")
   @GetMapping("/{resultId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ReconciliationResultResponse> get(
       @PathVariable UUID accountId,
       @PathVariable UUID resultId,
@@ -76,6 +79,7 @@ public class ReconciliationController {
       summary = "Accept a difference with an adjusting entry")
   @ProblemCodes({ProblemCode.RECONCILIATION_STALE, ProblemCode.RECONCILIATION_FINALIZED})
   @PostMapping("/{resultId}/accept")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ReconciliationResultResponse> accept(
       @PathVariable UUID accountId,
       @PathVariable UUID resultId,
@@ -91,6 +95,7 @@ public class ReconciliationController {
   @Operation(operationId = "dismissReconciliation", summary = "Dismiss a difference")
   @ProblemCodes({ProblemCode.RECONCILIATION_STALE, ProblemCode.RECONCILIATION_FINALIZED})
   @PostMapping("/{resultId}/dismiss")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ReconciliationResultResponse> dismiss(
       @PathVariable UUID accountId,
       @PathVariable UUID resultId,
@@ -108,6 +113,7 @@ public class ReconciliationController {
       summary = "Reopen an accepted or dismissed difference")
   @ProblemCodes({ProblemCode.RECONCILIATION_STALE, ProblemCode.RECONCILIATION_FINALIZED})
   @PostMapping("/{resultId}/reopen")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<ReconciliationResultResponse> reopen(
       @PathVariable UUID accountId,
       @PathVariable UUID resultId,

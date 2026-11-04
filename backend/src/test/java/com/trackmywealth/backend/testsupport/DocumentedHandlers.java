@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.testsupport;
 
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
@@ -65,6 +67,20 @@ public final class DocumentedHandlers {
       statuses.addAll(Arrays.asList(declared.value()));
     }
     return Collections.unmodifiableSet(statuses);
+  }
+
+  /**
+   * US-29-09 (#455): the response headers the contract documents for {@code method}, those of its
+   * {@link SendsHeaders} - each on the success responses it comes with ({@link
+   * ResponseHeader#comesWith}).
+   */
+  public static Set<ResponseHeader> documentedHeaders(Method method) {
+    SendsHeaders declared = AnnotatedElementUtils.findMergedAnnotation(method, SendsHeaders.class);
+    Set<ResponseHeader> headers = EnumSet.noneOf(ResponseHeader.class);
+    if (declared != null) {
+      headers.addAll(Arrays.asList(declared.value()));
+    }
+    return Collections.unmodifiableSet(headers);
   }
 
   private static boolean isController(Class<?> type) {

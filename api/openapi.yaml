@@ -152,6 +152,8 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -267,6 +269,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -379,6 +383,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -640,6 +646,8 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -789,6 +797,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -1116,6 +1126,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -1381,6 +1393,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -1493,6 +1507,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -1674,6 +1690,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -1829,6 +1847,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -2191,6 +2211,10 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Location:
+              $ref: "#/components/headers/Location"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -2399,6 +2423,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -2690,6 +2716,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -2875,6 +2903,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -3046,6 +3076,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -3329,6 +3361,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -3563,6 +3597,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -3895,6 +3931,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -4054,6 +4092,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -4168,6 +4208,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -4332,6 +4374,8 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -4611,6 +4655,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -4894,6 +4940,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -5013,6 +5061,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -5176,6 +5226,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -5333,6 +5385,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -5721,6 +5775,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -5968,6 +6024,8 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -6105,6 +6163,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -6223,6 +6283,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -6528,6 +6590,8 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -6782,6 +6846,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -6959,6 +7025,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -7136,6 +7204,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -7306,6 +7376,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -7463,6 +7535,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -7634,6 +7708,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -7802,6 +7878,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -8307,6 +8385,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -8433,6 +8513,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -8701,6 +8783,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -8827,6 +8911,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -8962,6 +9048,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -9054,6 +9142,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -9288,6 +9378,8 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -9403,6 +9495,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -9529,6 +9623,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -9692,6 +9788,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -9855,6 +9953,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -10604,6 +10704,8 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -10735,6 +10837,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -10847,6 +10951,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -11156,6 +11262,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -11305,6 +11413,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -11546,6 +11656,8 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -11681,6 +11793,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -11914,6 +12028,10 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Location:
+              $ref: "#/components/headers/Location"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -12434,6 +12552,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -12546,6 +12666,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -12869,6 +12991,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -13018,6 +13142,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -13873,6 +13999,8 @@ paths:
         "201":
           description: Created
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -14002,6 +14130,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -14114,6 +14244,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -15142,6 +15274,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -15291,6 +15425,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -16173,6 +16309,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -16353,6 +16491,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -16460,6 +16600,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -16609,6 +16751,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -16744,6 +16888,8 @@ paths:
         "200":
           description: OK
           headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
             X-Correlation-Id:
               description: Correlation id assigned to this request.
               schema:
@@ -21839,6 +21985,20 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/ApiProblem"
+  headers:
+    ETag:
+      description: "Strong ETag of the returned resource's version, for example \"\
+        7\". Send it as If-Match to change or delete this version of the resource."
+      required: true
+      schema:
+        type: string
+        pattern: "^\"[0-9]+\"$"
+    Location:
+      description: URL of the created resource.
+      required: true
+      schema:
+        type: string
+        format: uri-reference
   securitySchemes:
     bearerAuth:
       type: http

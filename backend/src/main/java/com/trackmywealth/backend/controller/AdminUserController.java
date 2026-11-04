@@ -8,6 +8,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AdminUserService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -46,6 +48,7 @@ public class AdminUserController {
   @Operation(operationId = "createUser", summary = "Create a user")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<UserSummaryResponse> createUser(
       @Valid @RequestBody CreateUserRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -56,6 +59,7 @@ public class AdminUserController {
 
   @Operation(operationId = "getUser", summary = "Read a user")
   @GetMapping("/{id}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<UserSummaryResponse> getUser(@PathVariable UUID id) {
     UserSummaryResponse response = adminUserService.getUser(id);
     return VersionedResponse.ok(response, response.version());
@@ -64,6 +68,7 @@ public class AdminUserController {
   @Operation(operationId = "updateUser", summary = "Change a user's email, role or language")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PatchMapping("/{id}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<UserSummaryResponse> editUser(
       @PathVariable UUID id,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -77,6 +82,7 @@ public class AdminUserController {
   @Operation(operationId = "disableUser", summary = "Disable a user")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{id}/disable")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<UserSummaryResponse> disableUser(
       @PathVariable UUID id,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -88,6 +94,7 @@ public class AdminUserController {
 
   @Operation(operationId = "reactivateUser", summary = "Reactivate a disabled user")
   @PostMapping("/{id}/reactivate")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<UserSummaryResponse> reactivateUser(
       @PathVariable UUID id,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,

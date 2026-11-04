@@ -7,6 +7,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AmortisationScheduleService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -58,6 +60,7 @@ public class AmortisationScheduleController {
       summary = "Add an amortisation schedule entry")
   @ProblemCodes({ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
   @PostMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AmortisationScheduleEntryResponse> createEntry(
       @PathVariable UUID accountId,
       @Valid @RequestBody AmortisationScheduleEntryRequest request,
@@ -72,6 +75,7 @@ public class AmortisationScheduleController {
       summary = "Replace an amortisation schedule entry")
   @ProblemCodes({ProblemCode.ACCOUNT_ARCHIVED, ProblemCode.UNPROCESSABLE})
   @PutMapping("/{entryId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AmortisationScheduleEntryResponse> replaceEntry(
       @PathVariable UUID accountId,
       @PathVariable UUID entryId,

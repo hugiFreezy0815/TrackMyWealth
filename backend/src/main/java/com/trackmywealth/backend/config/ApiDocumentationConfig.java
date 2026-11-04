@@ -6,6 +6,7 @@ import com.trackmywealth.backend.web.CorrelationIdFilter;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.PagedArgumentResolver;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SortWhitelist;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.core.converter.ModelConverter;
@@ -158,6 +159,7 @@ public class ApiDocumentationConfig {
     Components components = componentsOf(openApi);
     components.addSchemas(API_PROBLEM_SCHEMA, problemSchema());
     components.addResponses(API_PROBLEM_RESPONSE, problemResponse());
+    ResponseHeaderContract.addComponents(components);
 
     components.addSecuritySchemes(
         BEARER_SCHEME,
@@ -238,6 +240,11 @@ public class ApiDocumentationConfig {
       SuccessStatus declared = handlerMethod.getMethodAnnotation(SuccessStatus.class);
       if (declared != null) {
         documentSuccessStatuses(responsesOf(operation), declared.value());
+      }
+      // US-29-09 (#455): after the statuses, so each header lands on the final success responses.
+      SendsHeaders headers = handlerMethod.getMethodAnnotation(SendsHeaders.class);
+      if (headers != null) {
+        ResponseHeaderContract.document(responsesOf(operation), headers.value());
       }
       return operation;
     };

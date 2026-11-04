@@ -1,9 +1,13 @@
 package com.trackmywealth.fixtures.contract;
 
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
+import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.net.URI;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,11 +29,19 @@ public class DocumentedController {
     return "";
   }
 
+  @Operation(operationId = "getVersionedFixture", summary = "Read the fixture and its version")
+  @GetMapping("/fixture/versioned")
+  @SendsHeaders(ResponseHeader.ETAG)
+  public ResponseEntity<String> getVersionedFixture() {
+    return VersionedResponse.ok("", 1);
+  }
+
   @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createFixture", summary = "Create a fixture")
   @PostMapping("/fixture")
+  @SendsHeaders({ResponseHeader.ETAG, ResponseHeader.LOCATION})
   public ResponseEntity<String> createFixture() {
-    return ResponseEntity.status(HttpStatus.CREATED).body("");
+    return ResponseEntity.created(URI.create("/fixture/1")).eTag("\"1\"").body("");
   }
 
   @SuccessStatus(HttpStatus.NO_CONTENT)

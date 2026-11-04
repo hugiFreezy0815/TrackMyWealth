@@ -350,7 +350,7 @@ class ApiConventionsIntegrationTest {
   }
 
   @Test
-  void browserPreflightAllowsApiConventionHeadersAndExposesEtag() {
+  void browserPreflightAllowsApiConventionHeadersAndExposesEtagAndLocation() {
     anonymousClient()
         .options()
         .uri("/api/v1/accounts/some-id")
@@ -378,7 +378,8 @@ class ApiConventionsIntegrationTest {
         .expectHeader()
         .value(
             "Access-Control-Expose-Headers",
-            value -> assertThat(value.toLowerCase()).contains("etag"));
+            // #455: the contract documents both; a browser reads neither unless it is exposed.
+            value -> assertThat(value.toLowerCase()).contains("etag").contains("location"));
   }
 
   // --- decimals as strings (#149, #176)
