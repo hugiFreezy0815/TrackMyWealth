@@ -9,8 +9,8 @@ PR has no conflicts. It then squash-merges with --match-head-commit, so a commit
 check cannot be merged unverified. It never uses --admin.
 
 Which checks apply follows the workflows' own triggers: Semgrep and secret scanning run on every
-pull request, Backend CI, Mobile Web CI, Mobile Native CI and Scripts CI only when their part of
-the repository changed (REQUIRED_CHECKS). scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in
+pull request, Backend CI, the API contract's breaking-change check, Mobile Web CI, Mobile Native CI
+and Scripts CI only when their part of the repository changed (REQUIRED_CHECKS). scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in
 step with the workflows.
 
 Usage: scripts/merge_pr.py <pr-number> [--dry-run] [--delete-branch]
@@ -45,6 +45,19 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
     "gitleaks": ("Secret scanning", None),
     "test": ("Backend CI", ("backend/", "api/", ".github/workflows/backend-ci.yml")),
     "sql-lint": ("Backend CI", ("backend/", "api/", ".github/workflows/backend-ci.yml")),
+    # #372: oasdiff of main's api/openapi.yaml against the PR's, whenever the code or the contract
+    # (or the check itself) changes.
+    "api-breaking": (
+        "API contract",
+        (
+            "backend/",
+            "api/",
+            "scripts/api_breaking.py",
+            "scripts/tests/test_api_breaking.py",
+            "scripts/tests/fixtures/api/",
+            ".github/workflows/api-contract.yml",
+        ),
+    ),
     "build-web": ("Mobile Web CI", ("mobile/", ".github/workflows/mobile-web-ci.yml")),
     "android": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "ios": ("Mobile Native CI", MOBILE_NATIVE_PATHS),

@@ -1,0 +1,40 @@
+# Test fixture for scripts/tests/test_api_breaking.py (#372). Shaped like api/openapi.yaml: no
+# response field is marked required.
+openapi: 3.1.0
+info:
+  title: Fixture API
+  version: v1
+paths:
+  /api/v1/accounts:
+    get:
+      tags:
+      - Accounts
+      summary: List the workspace's accounts
+      operationId: listAccounts
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccountResponse"
+components:
+  schemas:
+    AccountResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        currency:
+          type: string

@@ -104,12 +104,23 @@ class ProblemsTest(unittest.TestCase):
 
     def test_a_changed_part_of_the_repository_requires_its_checks(self):
         self.assertEqual(
-            required_checks(["backend/pom.xml"]), ["semgrep", "gitleaks", "test", "sql-lint"]
+            required_checks(["backend/pom.xml"]),
+            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking"],
         )
         self.assertEqual(
             required_checks(["api/openapi.yaml"]),
-            ["semgrep", "gitleaks", "test", "sql-lint"],
-            "#372: the committed API contract is checked against the code by Backend CI",
+            ["semgrep", "gitleaks", "test", "sql-lint", "api-breaking"],
+            "#372: the committed API contract is checked against the code by Backend CI and"
+            " against main's contract by the breaking-change check",
+        )
+        self.assertEqual(
+            required_checks(["scripts/api_breaking.py"]),
+            ["semgrep", "gitleaks", "api-breaking", "scripts"],
+            "#372: a change to the breaking-change check runs it",
+        )
+        self.assertEqual(
+            required_checks([".github/workflows/api-contract.yml"]),
+            ["semgrep", "gitleaks", "api-breaking", "scripts"],
         )
         self.assertEqual(
             required_checks([".github/workflows/mobile-web-ci.yml"]),
