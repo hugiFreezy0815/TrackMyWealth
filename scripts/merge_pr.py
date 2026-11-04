@@ -105,10 +105,16 @@ def required_checks(changed_files: Sequence[str]) -> List[str]:
 
 
 def latest_by_name(check_runs: Sequence[CheckRun]) -> Dict[str, CheckRun]:
-    """The newest run of each check: a re-run supersedes the run it repeats."""
+    """The newest run of each check: a re-run supersedes the run it repeats. A skipped run stands
+    only when the check never ran otherwise: a job skipped for an event that does not concern it
+    (the API contract's check on an unrelated label) must not hide the verdict of a run that did."""
+
+    def rank(run: CheckRun) -> Tuple[bool, int]:
+        return (run.conclusion != "skipped", run.id)
+
     latest: Dict[str, CheckRun] = {}
     for run in check_runs:
-        if run.name not in latest or run.id > latest[run.name].id:
+        if run.name not in latest or rank(run) > rank(latest[run.name]):
             latest[run.name] = run
     return latest
 

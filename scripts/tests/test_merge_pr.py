@@ -85,6 +85,15 @@ class ProblemsTest(unittest.TestCase):
         runs = all_green() + [run("test", "failure", run_id=100)]
         self.assertEqual(len(problems(pr(), runs)), 1, "the newest run failed")
 
+    def test_a_newer_skipped_run_does_not_hide_a_run_that_did_run(self):
+        # The API contract's job skips on a label other than api-breaking; that run must not
+        # replace the red verdict of the run before it.
+        failed = [r if r.name != "test" else run("test", "failure", run_id=r.id) for r in all_green()]
+        runs = failed + [run("test", "skipped", run_id=100)]
+        self.assertEqual(len(problems(pr(), runs)), 1, "the skipped run hid the failure")
+        runs = all_green() + [run("test", "skipped", run_id=100)]
+        self.assertEqual(problems(pr(), runs), [], "the run that ran passed")
+
     def test_cancelled_and_timed_out_are_not_passed(self):
         for conclusion in ("cancelled", "timed_out", "action_required", "stale"):
             runs = [r if r.name != "test" else run("test", conclusion) for r in all_green()]

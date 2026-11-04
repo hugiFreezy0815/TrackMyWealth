@@ -37,20 +37,28 @@ NOTE_HEADING = "API breaking change"
 # response-optional-property-removed is "info" in oasdiff: a client must not rely on an optional
 # property being there. Ours do: the backend serializes every field of a response record, a null one
 # as null (no @JsonInclude), and none is marked required in the document, so without this a removed
-# response field would not count as breaking at all.
+# response field would not count as breaking at all. A new value of a response enum breaks a client
+# that handles each value and fails on one it does not know, whatever level oasdiff gives it.
 SEVERITY_OVERRIDES = {
     "response-optional-property-removed": "ERR",
+    "response-property-enum-value-added": "ERR",
 }
 
-# `oasdiff breaking --fail-on ERR` exits with 1 when it found a breaking change; anything else but 0
+# The lowest level that fails the check: oasdiff's warnings are changes that break some clients, and
+# a PR that means them declares them like an error. Only "info" changes pass undeclared (and shown).
+FAIL_ON = "WARN"
+
+# `oasdiff breaking --fail-on WARN` exits with 1 when it found such a change; anything else but 0
 # means it could not compare the documents.
 BREAKING_EXIT_CODE = 1
 
-# The note's heading, then everything up to the next heading of the same or a higher level.
-NOTE_SECTION = re.compile(
-    r"^##[ \t]+" + re.escape(NOTE_HEADING) + r"[ \t]*#*[ \t]*$(?P<text>.*?)(?=^#{1,2}[ \t]|\Z)",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+# The note's heading; the section runs up to the next heading of the same or a higher level outside
+# a fenced code block, so a `# comment` line in a shell snippet belongs to the note.
+NOTE_HEADING_LINE = re.compile(
+    r"^##[ \t]+" + re.escape(NOTE_HEADING) + r"[ \t]*#*[ \t]*$", re.IGNORECASE
 )
+SECTION_END = re.compile(r"^#{1,2}[ \t]")
+FENCE = re.compile(r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
@@ -75,14 +83,34 @@ Oasdiff = Callable[[List[str]], Diff]
 def note_of(body: Optional[str]) -> str:
     """The text of the description's `## API breaking change` section, without the HTML comments a
     template leaves in it; empty when there is no such section or it says nothing."""
-    match = NOTE_SECTION.search((body or "").replace("\r\n", "\n"))
-    return HTML_COMMENT.sub("", match.group("text")).strip() if match else ""
+    lines: Optional[List[str]] = None
+    fence: Optional[str] = None
+    for line in (body or "").replace("\r\n", "\n").split("\n"):
+        opening = FENCE.match(line)
+        if fence is not None:
+            # In a code block: a line of only the same fence character, at least as many, ends it.
+            closing = line.strip()
+            if len(closing) >= len(fence) and not closing.lstrip(fence[0]) and opening:
+                fence = None
+        elif opening:
+            fence = opening.group("fence")
+        elif lines is None:
+            if NOTE_HEADING_LINE.match(line):
+                lines = []
+            continue
+        elif SECTION_END.match(line):
+            break
+        if lines is not None:
+            lines.append(line)
+    if lines is None:
+        return ""
+    return HTML_COMMENT.sub("", "\n".join(lines)).strip()
 
 
 def verdict(diff: Diff, labels: Sequence[str], body: Optional[str]) -> Verdict:
     """Whether the PR may change the contract the way oasdiff found."""
     if diff.exit_code == 0:
-        # Changes below ERR (oasdiff's warnings) do not fail the check but are still shown.
+        # Changes below FAIL_ON (oasdiff's "info") do not fail the check but are still shown.
         report = f"\n{diff.report}" if diff.report else ""
         return Verdict(True, f"No breaking change to the API contract.{report}")
     if diff.exit_code != BREAKING_EXIT_CODE:
@@ -132,7 +160,7 @@ def check(
                 str(base),
                 str(revision),
                 "--fail-on",
-                "ERR",
+                FAIL_ON,
                 "--severity-levels",
                 str(levels),
                 "--format",

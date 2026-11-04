@@ -6,8 +6,9 @@ name: API contract
 # (scripts/api_breaking.py). Whether the file matches the code is Backend CI's drift check
 # (OpenApiContractTest); this one only judges what the change does to clients.
 #
-# It runs again when the PR's labels or description change, so adding the label and the note turns
-# a red run green without a new commit; scripts/merge_pr.py takes the newest run.
+# It runs again when the label `api-breaking`, the description or the base branch changes, so adding
+# the label and the note turns a red run green without a new commit; scripts/merge_pr.py takes the
+# newest run that was not skipped. Other label changes (sprint-N) and title edits skip the job.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled, edited]
@@ -21,13 +22,21 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: api-contract-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  # The PR's labels and description, read when the job runs (see the last step).
+  pull-requests: read
 
 jobs:
   api-breaking:
+    if: >-
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled' &&
+      github.event.action != 'edited') ||
+      github.event.label.name == 'api-breaking' ||
+      (github.event.action == 'edited' &&
+      (github.event.changes.body != null || github.event.changes.base != null))
+    # On the job, not the workflow: a skipped run must not cancel one that is checking the PR.
+    concurrency:
+      group: api-contract-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     env:
       # Pinned with its checksum from the release's checksums.txt. Dependabot does not see a
@@ -59,11 +68,21 @@ jobs:
       # made from and the comparison is exactly what merging would change - not a newer tip of the
       # base, whose own contract changes would read as the PR undoing them. A failing git command
       # stops the step; only a base without api/openapi.yaml leaves "$base" missing (nothing to
-      # compare). Labels and description come in through the environment, never the script.
+      # compare).
+      #
+      # The check is the base's scripts/api_breaking.py, not the PR's: a PR cannot loosen the check
+      # that judges it (a change to the check itself takes effect for the PRs after it). Only while
+      # the base has no check yet does the PR's run. This workflow file is the PR's under
+      # pull_request either way; a change to it is reviewed like code.
+      #
+      # Labels and description are read from the PR as it is now, not from the event: a re-run of
+      # an old run judges the current PR, never the labels it had back then. They reach the script
+      # through the environment, never the script text.
       - name: Compare the contract with the base branch
         env:
-          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-          PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           git rev-parse --verify --quiet HEAD^2 > /dev/null || {
             echo "::error::The checkout is not the PR merged into its base."
@@ -74,5 +93,13 @@ jobs:
           if [ -n "$listed" ]; then
             git show "HEAD^1:api/openapi.yaml" > "$base"
           fi
-          python3 scripts/api_breaking.py --base "$base" --revision api/openapi.yaml \
-            --oasdiff "$OASDIFF"
+          checker=scripts/api_breaking.py
+          listed=$(git ls-tree --name-only HEAD^1 -- scripts/api_breaking.py)
+          if [ -n "$listed" ]; then
+            checker="$RUNNER_TEMP/api_breaking.py"
+            git show "HEAD^1:scripts/api_breaking.py" > "$checker"
+          fi
+          PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name]')
+          PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
+          export PR_LABELS PR_BODY
+          python3 "$checker" --base "$base" --revision api/openapi.yaml --oasdiff "$OASDIFF"

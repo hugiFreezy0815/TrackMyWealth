@@ -79,6 +79,18 @@ class NoteTest(unittest.TestCase):
     def test_heading_case_trailing_hashes_and_crlf_are_accepted(self):
         self.assertEqual(note_of("## api Breaking Change ##\r\nIt breaks.\r\n"), "It breaks.")
 
+    def test_a_comment_line_in_a_code_block_does_not_end_the_section(self):
+        snippet = "Clients call the new path:\n```bash\n# old call\ncurl /api/v1/accounts\n```\nDone."
+        body = f"## API breaking change\n{snippet}\n## Test plan\n- run it\n"
+        self.assertEqual(note_of(body), snippet)
+
+    def test_a_longer_or_tilde_fence_holds_shorter_fences_and_headings(self):
+        snippet = "~~~~\n```\n## not a heading\n~~~\n~~~~\nAfter."
+        self.assertEqual(note_of(f"## API breaking change\n{snippet}\n# Next\n"), snippet)
+
+    def test_the_heading_inside_a_code_block_is_not_the_section(self):
+        self.assertEqual(note_of("```\n## API breaking change\nquoted\n```\n"), "")
+
 
 class VerdictTest(unittest.TestCase):
     def test_no_breaking_change_passes_with_or_without_the_label(self):
@@ -86,11 +98,11 @@ class VerdictTest(unittest.TestCase):
             with self.subTest(labels=labels):
                 self.assertTrue(verdict(Diff(0, "No changes detected"), labels, None).passed)
 
-    def test_warnings_below_the_failing_level_pass_and_are_shown(self):
-        warning = "0 error, 1 warning\nwarning\t[response-property-enum-value-added]"
-        result = verdict(Diff(0, warning), [], None)
+    def test_changes_below_the_failing_level_pass_and_are_shown(self):
+        info = "0 error, 0 warning, 1 info\ninfo\t[response-optional-property-added]"
+        result = verdict(Diff(0, info), [], None)
         self.assertTrue(result.passed)
-        self.assertIn("response-property-enum-value-added", result.message)
+        self.assertIn("response-optional-property-added", result.message)
 
     def test_a_breaking_change_fails_and_lists_the_change(self):
         result = verdict(BREAKING, [], None)
@@ -123,14 +135,17 @@ class VerdictTest(unittest.TestCase):
 
 
 class CheckTest(unittest.TestCase):
-    def test_compares_base_with_revision_failing_on_errors_with_the_overrides(self):
+    def test_compares_base_with_revision_failing_on_warnings_with_the_overrides(self):
         oasdiff = FakeOasdiff(Diff(0, ""))
         revision = FIXTURES / "additive.yaml"
         self.assertTrue(check(BASE, revision, [], None, oasdiff).passed)
         args = oasdiff.calls[0]
         self.assertEqual(args[:3], ["breaking", str(BASE), str(revision)])
-        self.assertEqual(args[args.index("--fail-on") + 1], "ERR")
-        self.assertEqual(oasdiff.levels, "response-optional-property-removed ERR\n")
+        self.assertEqual(args[args.index("--fail-on") + 1], "WARN")
+        self.assertEqual(
+            oasdiff.levels,
+            "response-optional-property-removed ERR\nresponse-property-enum-value-added ERR\n",
+        )
 
     def test_a_base_without_a_contract_passes_without_running_oasdiff(self):
         oasdiff = FakeOasdiff(BREAKING)
@@ -175,8 +190,8 @@ OASDIFF = os.environ.get("OASDIFF") or shutil.which("oasdiff")
 class RealOasdiffTest(unittest.TestCase):
     """The acceptance criteria of #372 against the real oasdiff."""
 
-    def check(self, fixture: str, labels=(), body=None):
-        return check(BASE, FIXTURES / fixture, list(labels), body, api_breaking.run_oasdiff(OASDIFF))
+    def check(self, fixture: str, labels=(), body=None, base: Path = BASE):
+        return check(base, FIXTURES / fixture, list(labels), body, api_breaking.run_oasdiff(OASDIFF))
 
     def test_a_removed_response_field_fails_and_is_listed(self):
         result = self.check("field-removed.yaml")
@@ -189,6 +204,12 @@ class RealOasdiffTest(unittest.TestCase):
         self.assertFalse(result.passed, result.message)
         self.assertIn("request-parameter-became-required", result.message)
         self.assertIn("status", result.message)
+
+    def test_a_value_added_to_a_response_enum_fails_and_is_listed(self):
+        result = self.check("enum-value-added.yaml", base=FIXTURES / "enum-base.yaml")
+        self.assertFalse(result.passed, result.message)
+        self.assertIn("response-property-enum-value-added", result.message)
+        self.assertIn("LOAN", result.message)
 
     def test_a_declared_break_passes(self):
         self.assertTrue(self.check("field-removed.yaml", [LABEL], NOTE).passed)

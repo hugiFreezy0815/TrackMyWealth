@@ -354,19 +354,25 @@ file client code is generated from. `./mvnw verify` keeps it in step with the co
 `.github/workflows/api-contract.yml` (job `api-breaking`) keeps the contract from breaking by
 accident. On every PR touching `backend/**` or `api/**` it compares `main`'s `api/openapi.yaml` with
 the PR's using [oasdiff](https://www.oasdiff.com/) (`oasdiff breaking`, pinned version and checksum)
-and fails on a breaking change, listing each one: a removed endpoint, parameter or response field, an
-optional parameter or request field made required, a narrowed type or enum. ADR 0006 allows
-additive changes only inside `/api/v1`, so a new endpoint, a new optional field or parameter passes.
-Removing any response field counts as breaking, though oasdiff rates it only "info" when the field
-is optional: the backend sends every field of a response, so clients rely on all of them
-(`SEVERITY_OVERRIDES` in `scripts/api_breaking.py`). An intended break passes only with both
+and fails on a breaking change - anything oasdiff rates "error" or "warning" - listing each one: a
+removed endpoint, parameter or response field, an optional parameter or request field made required,
+a narrowed type or enum. ADR 0006 allows additive changes only inside `/api/v1`, so a new endpoint,
+a new optional field or parameter passes (oasdiff's "info" changes are listed but do not fail).
+Removing any response field and adding a value to a response enum count as breaking, though oasdiff
+rates them lower: the backend sends every field of a response, so clients rely on all of them, and
+a client handling each enum value fails on one it does not know (`SEVERITY_OVERRIDES` in
+`scripts/api_breaking.py`).
+The job runs `main`'s copy of that script, so a PR cannot loosen the check that judges it; a change
+to the check applies from the next PR on. An intended break passes only with both
 
 - the label `api-breaking` on the PR, and
 - a `## API breaking change` section in the PR description saying what breaks for clients and why.
 
-The job runs again when labels or the description change, so adding both turns it green without a
-new commit. While `main` has no `api/openapi.yaml`, there is nothing to compare and it passes. To run
-the check locally (with oasdiff installed, e.g. `brew install oasdiff`):
+The job runs again when the `api-breaking` label, the description or the base branch changes, and
+reads label and description from the PR as it is then, so adding both turns it green without a new
+commit (and re-running an old run judges the PR as it is now). Other label changes skip the job.
+While `main` has no `api/openapi.yaml`, there is nothing to compare and it passes. To run the check
+locally (with oasdiff installed, e.g. `brew install oasdiff`):
 
 ```bash
 git show origin/main:api/openapi.yaml > /tmp/main-openapi.yaml
