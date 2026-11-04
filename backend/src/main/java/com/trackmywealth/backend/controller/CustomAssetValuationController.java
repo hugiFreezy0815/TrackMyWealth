@@ -4,6 +4,7 @@ import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CustomAssetValuationService;
+import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -31,6 +32,7 @@ public class CustomAssetValuationController {
     this.customAssetValuationService = customAssetValuationService;
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
   @Operation(
       operationId = "recordAccountValuation",
       summary = "Record a manual valuation of an asset")

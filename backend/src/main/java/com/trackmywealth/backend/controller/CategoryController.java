@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategoryService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -54,6 +55,7 @@ public class CategoryController {
     return withEtag(ResponseEntity.ok(), category);
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createCategory", summary = "Create a category")
   @PostMapping
   public ResponseEntity<CategoryResponse> create(
@@ -100,6 +102,7 @@ public class CategoryController {
   }
 
   /** 204 only for a never-used workspace category; otherwise 409, deactivate instead. */
+  @SuccessStatus(HttpStatus.NO_CONTENT)
   @Operation(operationId = "deleteCategory", summary = "Delete an unused category")
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(

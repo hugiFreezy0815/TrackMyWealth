@@ -334,6 +334,9 @@ management:
 springdoc:
   api-docs:
     path: /api-docs
+  # US-29-02 (#372): what the handlers answer with unless they say otherwise; springdoc's default
+  # "*/*" would leave generated clients guessing. A handler answering anything else documents it.
+  default-produces-media-type: application/json
   swagger-ui:
     path: /api-docs/ui
 

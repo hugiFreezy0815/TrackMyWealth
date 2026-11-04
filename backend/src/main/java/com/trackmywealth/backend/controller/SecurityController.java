@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.SecurityCreation;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SecurityService;
+import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -57,6 +58,7 @@ public class SecurityController {
    * latter case {@value #IGNORED_FIELDS_HEADER} names the supplied values that differ from the
    * stored ones and were ignored, so a client can tell its assumption was wrong.
    */
+  @SuccessStatus({HttpStatus.CREATED, HttpStatus.OK})
   @Operation(operationId = "findOrCreateSecurity", summary = "Find a security or create it")
   @PostMapping
   public ResponseEntity<SecurityResponse> findOrCreate(

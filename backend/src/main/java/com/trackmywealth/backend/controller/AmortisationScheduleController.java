@@ -5,12 +5,14 @@ import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AmortisationScheduleService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -47,6 +49,7 @@ public class AmortisationScheduleController {
     return amortisationScheduleService.list(accountId, actor);
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
   @Operation(
       operationId = "createAmortisationEntry",
       summary = "Add an amortisation schedule entry")
@@ -76,6 +79,7 @@ public class AmortisationScheduleController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @SuccessStatus(HttpStatus.NO_CONTENT)
   @Operation(
       operationId = "deleteAmortisationEntry",
       summary = "Delete an amortisation schedule entry")

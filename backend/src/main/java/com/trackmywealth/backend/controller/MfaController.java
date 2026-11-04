@@ -6,9 +6,11 @@ import com.trackmywealth.backend.dto.MfaEnrollmentRequest;
 import com.trackmywealth.backend.dto.MfaEnrollmentResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.MfaService;
+import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,6 +46,7 @@ public class MfaController {
     return ResponseEntity.ok(mfaService.enroll(principal.userId(), request.password()));
   }
 
+  @SuccessStatus(HttpStatus.NO_CONTENT)
   @Operation(
       operationId = "confirmMfa",
       summary = "Confirm the authenticator app with a first code")
@@ -55,6 +58,7 @@ public class MfaController {
     return ResponseEntity.noContent().build();
   }
 
+  @SuccessStatus(HttpStatus.NO_CONTENT)
   @Operation(operationId = "disableMfa", summary = "Turn off two-factor sign-in")
   @PostMapping("/disable")
   public ResponseEntity<Void> disable(

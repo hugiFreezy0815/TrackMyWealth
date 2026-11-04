@@ -29,15 +29,21 @@ import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.TransferRecheckService;
 import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.SuccessStatus;
+import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.Entity;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
@@ -398,6 +404,20 @@ class ArchitectureTest {
   // by an id the code chose, never springdoc's fallback (the method name, numbered on a clash).
   // Every controller springdoc documents: @RestController, but also a @Controller with
   // @ResponseBody handlers.
+  private static final Map<String, HttpStatus> NON_200_SUCCESS =
+      Map.of(
+          "CREATED", HttpStatus.CREATED,
+          "ACCEPTED", HttpStatus.ACCEPTED,
+          "NO_CONTENT", HttpStatus.NO_CONTENT);
+
+  // Factories that answer a fixed status without naming the HttpStatus constant.
+  private static final Map<String, HttpStatus> STATUS_FACTORIES =
+      Map.of(
+          ResponseEntity.class.getName() + "#created", HttpStatus.CREATED,
+          ResponseEntity.class.getName() + "#accepted", HttpStatus.ACCEPTED,
+          ResponseEntity.class.getName() + "#noContent", HttpStatus.NO_CONTENT,
+          VersionedResponse.class.getName() + "#created", HttpStatus.CREATED);
+
   private static final DescribedPredicate<JavaClass> API_CONTROLLERS =
       CanBeAnnotated.Predicates.annotatedWith(Controller.class)
           .or(CanBeAnnotated.Predicates.metaAnnotatedWith(Controller.class))
@@ -427,6 +447,20 @@ class ArchitectureTest {
               "generated clients call operations by their id (#372): it must be chosen, stable and"
                   + " unique - annotate the method with @Operation(operationId = ..., summary = ...)");
 
+  // US-29-02 (#372): springdoc documents every success as 200; a handler answering 201, 202 or 204
+  // must say so, or api/openapi.yaml promises clients the wrong status.
+  @ArchTest
+  static final ArchRule api_operations_declare_a_non_200_success_status =
+      methods()
+          .that()
+          .areDeclaredInClassesThat(API_CONTROLLERS)
+          .and()
+          .areMetaAnnotatedWith(RequestMapping.class)
+          .should(declareTheSuccessStatusesTheyAnswerWith())
+          .because(
+              "springdoc cannot see the status inside a ResponseEntity and documents 200 (#372) -"
+                  + " annotate the method with @SuccessStatus");
+
   @ArchTest
   static final ArchRule no_standard_streams =
       GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
@@ -453,6 +487,48 @@ class ArchitectureTest {
           events.add(
               SimpleConditionEvent.violated(
                   method, method.getFullName() + " has no @Operation operationId and summary"));
+        }
+      }
+    };
+  }
+
+  private static ArchCondition<JavaMethod> declareTheSuccessStatusesTheyAnswerWith() {
+    return new ArchCondition<>("declare the non-200 success statuses they answer with") {
+      @Override
+      public void check(JavaMethod method, ConditionEvents events) {
+        Set<HttpStatus> answered = EnumSet.noneOf(HttpStatus.class);
+        method
+            .getFieldAccesses()
+            .forEach(
+                access -> {
+                  if (access.getTargetOwner().isEquivalentTo(HttpStatus.class)
+                      && NON_200_SUCCESS.containsKey(access.getName())) {
+                    answered.add(NON_200_SUCCESS.get(access.getName()));
+                  }
+                });
+        method
+            .getMethodCallsFromSelf()
+            .forEach(
+                call -> {
+                  HttpStatus status =
+                      STATUS_FACTORIES.get(call.getTargetOwner().getName() + "#" + call.getName());
+                  if (status != null) {
+                    answered.add(status);
+                  }
+                });
+        Set<HttpStatus> declared = EnumSet.noneOf(HttpStatus.class);
+        method
+            .tryGetAnnotationOfType(SuccessStatus.class)
+            .ifPresent(annotation -> declared.addAll(List.of(annotation.value())));
+        answered.removeAll(declared);
+        if (!answered.isEmpty()) {
+          events.add(
+              SimpleConditionEvent.violated(
+                  method,
+                  method.getFullName()
+                      + " answers "
+                      + answered
+                      + " without declaring it in @SuccessStatus"));
         }
       }
     };

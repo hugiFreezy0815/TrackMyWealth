@@ -10,6 +10,7 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountListService;
 import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -71,6 +72,7 @@ public class AccountController {
         new AccountListFilter(portfolioId, type, archived), actor);
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createAccount", summary = "Create an account")
   @PostMapping
   public ResponseEntity<AccountSummaryResponse> createAccount(

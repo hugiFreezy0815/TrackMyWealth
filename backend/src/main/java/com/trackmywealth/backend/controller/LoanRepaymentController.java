@@ -4,6 +4,7 @@ import com.trackmywealth.backend.dto.CreateLoanRepaymentRequest;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.LoanRepaymentService;
+import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -35,6 +36,7 @@ public class LoanRepaymentController {
     this.loanRepaymentService = loanRepaymentService;
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "recordLoanRepayment", summary = "Record a loan repayment")
   @PostMapping
   public ResponseEntity<LoanRepaymentResponse> recordRepayment(

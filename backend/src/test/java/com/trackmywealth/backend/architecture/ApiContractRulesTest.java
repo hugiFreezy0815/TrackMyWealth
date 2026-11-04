@@ -42,6 +42,18 @@ class ApiContractRulesTest {
   }
 
   @Test
+  void aHandlerAnswering201Or204WithoutDeclaringItFails() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_declare_a_non_200_success_status.check(
+                    UNDOCUMENTED))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("createdWithoutStatus() answers [201 CREATED]")
+        .hasMessageContaining("deletedWithoutStatus() answers [204 NO_CONTENT]")
+        .hasMessageNotContaining("withoutOperation()");
+  }
+
+  @Test
   void aPlainControllerWithResponseBodyHandlersIsHeldToTheSameRules() {
     assertThatThrownBy(
             () -> ArchitectureTest.api_controllers_declare_their_tag.check(UNDOCUMENTED_PLAIN))
@@ -61,6 +73,10 @@ class ApiContractRulesTest {
         .doesNotThrowAnyException();
     assertThatCode(
             () -> ArchitectureTest.api_operations_declare_their_operation_id.check(DOCUMENTED))
+        .doesNotThrowAnyException();
+    assertThatCode(
+            () ->
+                ArchitectureTest.api_operations_declare_a_non_200_success_status.check(DOCUMENTED))
         .doesNotThrowAnyException();
   }
 }

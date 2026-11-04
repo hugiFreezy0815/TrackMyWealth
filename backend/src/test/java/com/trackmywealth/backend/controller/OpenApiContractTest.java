@@ -227,6 +227,79 @@ class OpenApiContractTest {
                             assertThat(ordered.getOrder()).isLessThan(Ordered.LOWEST_PRECEDENCE)));
   }
 
+  /**
+   * The documented success is the one the handler answers with: springdoc alone would document 200
+   * for all of them, with a body of any media type.
+   */
+  @Test
+  void successResponsesHaveTheStatusAndMediaTypeTheHandlersAnswerWith() {
+    JsonNode spec = objectMapper.readTree(json(bootstrapAdministrator()));
+
+    JsonNode created = operation(spec, "createAccount").path("responses");
+    assertThat(names(created)).contains("201").doesNotContain("200");
+    assertThat(
+            created
+                .path("201")
+                .path("content")
+                .path("application/json")
+                .path("schema")
+                .isMissingNode())
+        .isFalse();
+    assertThat(names(operation(spec, "findOrCreateSecurity").path("responses")))
+        .contains("200", "201");
+    JsonNode deleted = operation(spec, "deleteCategory").path("responses");
+    assertThat(names(deleted)).contains("204").doesNotContain("200");
+    assertThat(deleted.path("204").has("content")).isFalse();
+    assertThat(
+            names(
+                operation(spec, "getImportBatchErrors")
+                    .path("responses")
+                    .path("200")
+                    .path("content")))
+        .containsExactly("text/csv");
+
+    List<String> anyMediaType = new ArrayList<>();
+    spec.path("paths")
+        .properties()
+        .forEach(
+            path ->
+                path.getValue()
+                    .properties()
+                    .forEach(
+                        entry ->
+                            entry
+                                .getValue()
+                                .path("responses")
+                                .properties()
+                                .forEach(
+                                    response -> {
+                                      if (response.getValue().path("content").has("*/*")) {
+                                        anyMediaType.add(
+                                            entry.getKey()
+                                                + " "
+                                                + path.getKey()
+                                                + " "
+                                                + response.getKey());
+                                      }
+                                    })));
+    assertThat(anyMediaType).isEmpty();
+  }
+
+  private static JsonNode operation(JsonNode spec, String operationId) {
+    List<JsonNode> found = new ArrayList<>();
+    spec.path("paths")
+        .forEach(
+            path ->
+                path.forEach(
+                    operation -> {
+                      if (operationId.equals(operation.path("operationId").asString(""))) {
+                        found.add(operation);
+                      }
+                    }));
+    assertThat(found).as("operation %s", operationId).hasSize(1);
+    return found.get(0);
+  }
+
   private static List<String> names(JsonNode section) {
     List<String> names = new ArrayList<>();
     section.properties().forEach(entry -> names.add(entry.getKey()));

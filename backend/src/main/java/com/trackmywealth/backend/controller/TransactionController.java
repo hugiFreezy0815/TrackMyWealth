@@ -15,6 +15,7 @@ import com.trackmywealth.backend.service.TransferResolutionService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
+import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,6 +23,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -60,6 +62,7 @@ public class TransactionController {
     this.transferResolutionService = transferResolutionService;
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "recordTransaction", summary = "Record a transaction")
   @PostMapping("/transactions")
   public ResponseEntity<TransactionResponse> recordTransaction(

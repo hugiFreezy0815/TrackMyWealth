@@ -1,6 +1,9 @@
 package com.trackmywealth.fixtures.contract;
 
 import io.swagger.v3.oas.annotations.Operation;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,5 +25,17 @@ public class UndocumentedController {
   @PostMapping("/fixture")
   public String withoutOperationId() {
     return "";
+  }
+
+  @Operation(operationId = "createWithoutStatus", summary = "Answers 201 without saying so")
+  @PostMapping("/fixture/created")
+  public ResponseEntity<String> createdWithoutStatus() {
+    return ResponseEntity.status(HttpStatus.CREATED).body("");
+  }
+
+  @Operation(operationId = "deleteWithoutStatus", summary = "Answers 204 without saying so")
+  @DeleteMapping("/fixture")
+  public ResponseEntity<Void> deletedWithoutStatus() {
+    return ResponseEntity.noContent().build();
   }
 }

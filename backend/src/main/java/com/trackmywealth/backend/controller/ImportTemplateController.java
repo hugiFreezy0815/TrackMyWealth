@@ -8,6 +8,7 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
+import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -17,6 +18,7 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -71,6 +73,7 @@ public class ImportTemplateController {
     return VersionedResponse.ok(template, template.version());
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createImportTemplate", summary = "Create an import template")
   @PostMapping
   public ResponseEntity<ImportTemplateResponse> create(
@@ -127,6 +130,7 @@ public class ImportTemplateController {
   }
 
   /** 204 with every version, only while no import used it; otherwise 409, deactivate instead. */
+  @SuccessStatus(HttpStatus.NO_CONTENT)
   @Operation(operationId = "deleteImportTemplate", summary = "Delete an import template")
   @DeleteMapping(BY_ID)
   public ResponseEntity<Void> delete(

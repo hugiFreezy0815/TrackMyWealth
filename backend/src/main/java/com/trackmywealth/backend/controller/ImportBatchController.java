@@ -17,8 +17,12 @@ import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
+import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.io.IOException;
@@ -31,6 +35,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -88,6 +93,7 @@ public class ImportBatchController {
    * IMPORT_CAMT_LIMIT_EXCEEDED} and {@code IMPORT_CAMT_MULTIPLE_ACCOUNTS}.
    */
   @RetryableWhenBusy
+  @SuccessStatus(HttpStatus.CREATED)
   @Operation(operationId = "createImportBatch", summary = "Upload a statement file for import")
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<ImportBatchResponse> upload(
@@ -212,7 +218,15 @@ public class ImportBatchController {
    */
   @Operation(
       operationId = "getImportBatchErrors",
-      summary = "Download an import's row errors as CSV")
+      summary = "Download an import's row errors as CSV",
+      responses =
+          @ApiResponse(
+              responseCode = "200",
+              description = "The rows that could not be imported, as CSV",
+              content =
+                  @Content(
+                      mediaType = "text/csv",
+                      schema = @Schema(type = "string", format = "binary"))))
   @GetMapping(BY_ID + "/errors.csv")
   public ResponseEntity<byte[]> errors(
       @PathVariable UUID accountId,

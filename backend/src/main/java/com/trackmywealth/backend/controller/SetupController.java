@@ -3,6 +3,7 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.SetupService;
+import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,6 +30,7 @@ public class SetupController {
     this.setupService = setupService;
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
   @Operation(
       operationId = "setupAdministrator",
       summary = "Create the first administrator and the workspace")

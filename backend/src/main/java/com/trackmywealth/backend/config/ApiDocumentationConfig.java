@@ -7,6 +7,7 @@ import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.PagedArgumentResolver;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
 import com.trackmywealth.backend.web.SortWhitelist;
+import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.headers.Header;
@@ -35,6 +36,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 
 /**
@@ -62,6 +64,7 @@ public class ApiDocumentationConfig {
   // Any order before ApiDocumentOrder's, which must run last.
   private static final int WIRE_CONVENTIONS_ORDER = 0;
 
+  private static final String OK = "200";
   private static final String DECIMAL_FORMAT = "decimal";
   private static final String QUERY = "query";
   // springdoc's name for an undecorated Pageable parameter.
@@ -151,6 +154,34 @@ public class ApiDocumentationConfig {
                               .values()
                               .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
                         }));
+  }
+
+  /**
+   * US-29-02 (#372): an endpoint marked {@link SuccessStatus} documents the statuses it declares in
+   * place of springdoc's generated 200, which is all springdoc can infer from a {@code
+   * ResponseEntity}. Each keeps the generated body; a 204 has none.
+   */
+  @Bean
+  OperationCustomizer successStatusResponses() {
+    return (operation, handlerMethod) -> {
+      SuccessStatus declared = handlerMethod.getMethodAnnotation(SuccessStatus.class);
+      if (declared != null) {
+        documentSuccessStatuses(responsesOf(operation), declared.value());
+      }
+      return operation;
+    };
+  }
+
+  private static void documentSuccessStatuses(
+      Map<String, ApiResponse> responses, HttpStatus... statuses) {
+    ApiResponse generated = responses.remove(OK);
+    for (HttpStatus status : statuses) {
+      ApiResponse response = new ApiResponse().description(status.getReasonPhrase());
+      if (status != HttpStatus.NO_CONTENT && generated != null) {
+        response.content(generated.getContent());
+      }
+      responses.put(String.valueOf(status.value()), response);
+    }
   }
 
   /**
