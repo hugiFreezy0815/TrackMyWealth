@@ -9,12 +9,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.DataQualityWarningValues;
 import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.KeyedDate;
+import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountLoan;
@@ -516,6 +518,38 @@ class AccountValuationServiceTest {
     verify(loanRepository, times(1)).findAllById(anyCollection());
     verify(accountCurrencyService, times(1)).ownCurrencies(anyCollection());
     verify(accountDataQualityService, times(1)).warningsForAll(anyCollection(), any());
+  }
+
+  // #381 review: no accounts value to empty lists in every currency, without any query.
+  @Test
+  void anEmptyBatchRunsNoQueryAndGivesAnEmptyListPerCurrency() {
+    MultiCurrencyValuations valuations =
+        service.valueAllIn(List.of(), List.of("CHF", "EUR"), TODAY);
+
+    assertThat(valuations.in("CHF")).isEmpty();
+    assertThat(valuations.in("EUR")).isEmpty();
+    assertThat(valuations.inOwnCurrency()).isEmpty();
+    verifyNoInteractions(
+        snapshotRepository,
+        valuationRepository,
+        transactionRepository,
+        accountCurrencyService,
+        accountDataQualityService,
+        fxRateService);
+  }
+
+  // #381 review: a caller that reads only the target currencies gets no own-currency valuations.
+  @Test
+  void valuingInTheTargetCurrenciesOnlyBuildsNoOwnCurrencyValuations() {
+    withOpeningBalance("10.00");
+
+    MultiCurrencyValuations valuations =
+        service.valueAllInCurrencies(List.of(account), List.of("CHF"), TODAY);
+
+    assertThat(valuations.in("CHF")).hasSize(1);
+    assertThat(valuations.inOwnCurrency()).isEmpty();
+    assertThat(service.valueAllIn(List.of(account), List.of("CHF"), TODAY).inOwnCurrency())
+        .hasSize(1);
   }
 
   @Test
