@@ -76,7 +76,11 @@ NOTE_HEADING_LINE = re.compile(
     r"^##[ \t]+" + re.escape(NOTE_HEADING) + r"[ \t]*#*[ \t]*$", re.IGNORECASE
 )
 SECTION_END = re.compile(r"^#{1,2}[ \t]")
-FENCE = re.compile(r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})")
+# A code fence opens with three or more backticks or tildes. After backticks, the rest of the line
+# holds no backtick (CommonMark), so ```inline code``` at the start of a line opens no code block.
+FENCE = re.compile(r"^[ ]{0,3}(?P<fence>`{3,}(?=[^`]*$)|~{3,})")
+# What oasdiff reports when the documents do not differ at all: nothing worth showing.
+NO_CHANGES = re.compile(r"^\s*(no (breaking )?changes( detected| found)?\.?)?\s*$", re.IGNORECASE)
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
@@ -129,7 +133,7 @@ def verdict(diff: Diff, labels: Sequence[str], body: Optional[str]) -> Verdict:
     """Whether the PR may change the contract the way oasdiff found."""
     if diff.exit_code == 0:
         # Changes below FAIL_ON (oasdiff's "info") do not fail the check but are still shown.
-        report = f"\n{diff.report}" if diff.report else ""
+        report = "" if NO_CHANGES.match(diff.report) else f"\n{diff.report}"
         return Verdict(True, f"No breaking change to the API contract.{report}")
     if diff.exit_code != BREAKING_EXIT_CODE:
         return Verdict(
