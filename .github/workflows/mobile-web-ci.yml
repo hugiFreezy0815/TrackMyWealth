@@ -5,10 +5,16 @@ on:
     branches: [main]
     paths:
       - "mobile/**"
+      # The app's types are generated from these (#375): a contract change must regenerate them.
+      - "api/openapi.yaml"
+      - "api/problem-codes.json"
       - ".github/workflows/mobile-web-ci.yml"
   pull_request:
     paths:
       - "mobile/**"
+      # The app's types are generated from these (#375): a contract change must regenerate them.
+      - "api/openapi.yaml"
+      - "api/problem-codes.json"
       - ".github/workflows/mobile-web-ci.yml"
 
 jobs:
@@ -51,6 +57,12 @@ jobs:
 
           // NOTE: This file should not be edited and should be in your git ignore
           EOF
+
+      # US-29-05 (#375): src/api/schema.d.ts and problem-codes.generated.ts are generated from
+      # api/openapi.yaml and api/problem-codes.json and never edited by hand. A stale one fails
+      # here, named; then the type check below shows what a contract change breaks in the app.
+      - name: Check generated API types
+        run: npm run api:types:check
 
       - name: Type-check
         run: npx tsc --noEmit

@@ -64,7 +64,17 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
             ".github/workflows/api-contract.yml",
         ),
     ),
-    "build-web": ("Mobile Web CI", ("mobile/", ".github/workflows/mobile-web-ci.yml")),
+    # #375: the app's API types are generated from the contract and the problem-code registry, so
+    # a change to either runs Mobile Web CI, whose stale check then requires them regenerated.
+    "build-web": (
+        "Mobile Web CI",
+        (
+            "mobile/",
+            "api/openapi.yaml",
+            "api/problem-codes.json",
+            ".github/workflows/mobile-web-ci.yml",
+        ),
+    ),
     "android": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "ios": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "scripts": ("Scripts CI", ("scripts/", ".github/workflows/")),

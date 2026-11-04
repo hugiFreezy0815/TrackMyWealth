@@ -1,21 +1,17 @@
-import { api } from '@/api/client';
+import type { components } from '@/api/schema';
+import { typedApi } from '@/api/typed-api';
 
 /**
- * US-07-11: what a statement suggests for an account that does not exist yet
- * (`ImportAccountProposalResponse`). Advisory only; any field is null when the file does not tell.
+ * US-07-11: what a statement suggests for an account that does not exist yet. Advisory only. The
+ * institution is the template's catalogue entry, not one of the workspace's portfolios, and the
+ * identifier comes as its display value only: the identifier itself never reaches the client.
  */
-export type AccountProposal = {
-  templateId: string;
-  /** The template's institution catalogue entry, not one of the workspace's portfolios. */
-  institutionCatalogueId: string | null;
-  institutionName: string | null;
-  suggestedAccountType: string | null;
-  suggestedCurrency: string | null;
-  /** The identifier's display value; the identifier itself never reaches the client. */
-  maskedIdentifier: string | null;
-};
+export type AccountProposal = components['schemas']['ImportAccountProposalResponse'];
 
-/** The account types `POST /api/v1/accounts` accepts (backend `AccountTypeValues.PATTERN`). */
+/**
+ * The account types `POST /api/v1/accounts` accepts (backend `AccountTypeValues.PATTERN`). The
+ * contract types `accountType` as a pattern-checked string, so the list is the app's own.
+ */
 export const ACCOUNT_TYPES = [
   'CASH',
   'SAVINGS',
@@ -33,12 +29,9 @@ export const ACCOUNT_TYPES = [
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
 /** The fields of `POST /api/v1/accounts` the member has confirmed. */
-export type ConfirmedAccountDraft = {
-  portfolioId: string;
-  name: string;
-  accountType: AccountType;
-  nativeCurrency: string;
-};
+export type ConfirmedAccountDraft = Required<
+  Pick<components['schemas']['CreateAccountRequest'], 'portfolioId' | 'name' | 'nativeCurrency'>
+> & { accountType: AccountType };
 
 export function isAccountType(value: string): value is AccountType {
   return (ACCOUNT_TYPES as readonly string[]).includes(value);
@@ -75,18 +68,13 @@ export function proposeAccountFromBatch(
   accountId: string,
   batchId: string,
 ): Promise<AccountProposal> {
-  return api.post<AccountProposal>(
-    `/api/v1/accounts/${accountId}/imports/${batchId}/account-proposal`,
-  );
+  return typedApi.post('/api/v1/accounts/{accountId}/imports/{batchId}/account-proposal', {
+    params: { accountId, batchId },
+  });
 }
 
-/** As `AccountIdentifierResponse`: the registered identifier as far as it is shown. */
-export type AccountIdentifier = {
-  accountId: string;
-  kind: string;
-  identifierMasked: string | null;
-  version: number;
-};
+/** The registered identifier as far as it is shown. */
+export type AccountIdentifier = components['schemas']['AccountIdentifierResponse'];
 
 /**
  * Registers on the new account the identifier the batch's file names, read on the server: the
@@ -98,9 +86,9 @@ export function registerIdentifierFromImport(
   importAccountId: string,
   batchId: string,
 ): Promise<AccountIdentifier> {
-  return api.putVersioned<AccountIdentifier>(
-    `/api/v1/accounts/${accountId}/identifier/from-import`,
-    accountVersion,
-    { importAccountId, batchId },
-  );
+  return typedApi.put('/api/v1/accounts/{accountId}/identifier/from-import', {
+    params: { accountId },
+    version: accountVersion,
+    body: { importAccountId, batchId },
+  });
 }
