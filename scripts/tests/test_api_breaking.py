@@ -28,6 +28,7 @@ from api_breaking import (  # noqa: E402
     LABEL,
     Diff,
     check,
+    combined,
     labels_from,
     load_registry,
     note_of,
@@ -98,9 +99,11 @@ class NoteTest(unittest.TestCase):
         snippet = "~~~~\n```\n## not a heading\n~~~\n~~~~\nAfter."
         self.assertEqual(note_of(f"## API breaking change\n{snippet}\n# Next\n"), snippet)
 
-    def test_inline_code_at_the_start_of_a_line_opens_no_code_block(self):
+    def test_the_section_after_inline_code_at_the_start_of_a_line_is_found(self):
         body = "## Summary\n```/api/v1/foo``` is gone.\n" + NOTE + "## Test plan\n- run it\n"
         self.assertEqual(note_of(body), NOTE.split("\n\n", 1)[1].strip())
+
+    def test_inline_code_in_the_note_does_not_swallow_the_next_section(self):
         inline = "```GET /x``` now needs `status`.\n"
         self.assertEqual(note_of(f"## API breaking change\n{inline}## Test plan\n"), inline.strip())
 
@@ -117,10 +120,17 @@ class VerdictTest(unittest.TestCase):
     def test_no_change_at_all_adds_nothing_to_the_message(self):
         for report in ("", "\n", "No changes detected", "No breaking changes"):
             with self.subTest(report=report):
+                diff = combined([Diff(0, report), Diff(0, "")])
                 self.assertEqual(
-                    verdict(Diff(0, report), [], None).message,
-                    "No breaking change to the API contract.",
+                    verdict(diff, [], None).message, "No breaking change to the API contract."
                 )
+
+    def test_an_unchanged_contract_beside_a_new_code_shows_only_the_code(self):
+        added = "info\t[problem-code-registry] added the problem code `X`"
+        diff = combined([Diff(0, "No changes detected"), Diff(0, added)])
+        self.assertEqual(
+            verdict(diff, [], None).message, f"No breaking change to the API contract.\n{added}"
+        )
 
     def test_changes_below_the_failing_level_pass_and_are_shown(self):
         info = "0 error, 0 warning, 1 info\ninfo\t[response-optional-property-added]"

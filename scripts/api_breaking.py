@@ -79,7 +79,9 @@ SECTION_END = re.compile(r"^#{1,2}[ \t]")
 # A code fence opens with three or more backticks or tildes. After backticks, the rest of the line
 # holds no backtick (CommonMark), so ```inline code``` at the start of a line opens no code block.
 FENCE = re.compile(r"^[ ]{0,3}(?P<fence>`{3,}(?=[^`]*$)|~{3,})")
-# What oasdiff reports when the documents do not differ at all: nothing worth showing.
+# What oasdiff reports when the documents do not differ at all: nothing worth showing. Checked
+# against oasdiff 1.34.0 (OASDIFF_VERSION in api-contract.yml); should a newer version word it
+# differently, RealOasdiffTest shows the text in the message again, nothing passes that should fail.
 NO_CHANGES = re.compile(r"^\s*(no (breaking )?changes( detected| found)?\.?)?\s*$", re.IGNORECASE)
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
@@ -133,7 +135,7 @@ def verdict(diff: Diff, labels: Sequence[str], body: Optional[str]) -> Verdict:
     """Whether the PR may change the contract the way oasdiff found."""
     if diff.exit_code == 0:
         # Changes below FAIL_ON (oasdiff's "info") do not fail the check but are still shown.
-        report = "" if NO_CHANGES.match(diff.report) else f"\n{diff.report}"
+        report = f"\n{diff.report}" if diff.report else ""
         return Verdict(True, f"No breaking change to the API contract.{report}")
     if diff.exit_code != BREAKING_EXIT_CODE:
         return Verdict(
@@ -211,11 +213,12 @@ def contract_diff(base: Path, revision: Path, oasdiff: Oasdiff) -> Diff:
 
 
 def combined(diffs: Sequence[Diff]) -> Diff:
-    """One result from several comparisons: a failed comparison wins, then a breaking change."""
+    """One result from several comparisons: a failed comparison wins, then a breaking change. A
+    report that only says nothing changed is left out, so it does not stand beside another's."""
     failed = [diff for diff in diffs if diff.exit_code not in (0, BREAKING_EXIT_CODE)]
     if failed:
         return Diff(failed[0].exit_code, "\n\n".join(diff.report for diff in failed))
-    report = "\n\n".join(diff.report for diff in diffs if diff.report)
+    report = "\n\n".join(diff.report for diff in diffs if not NO_CHANGES.match(diff.report))
     breaking = any(diff.exit_code == BREAKING_EXIT_CODE for diff in diffs)
     return Diff(BREAKING_EXIT_CODE if breaking else 0, report)
 
