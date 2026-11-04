@@ -8,6 +8,7 @@ import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.PagedArgumentResolver;
 import com.trackmywealth.backend.web.SortWhitelist;
 import com.trackmywealth.backend.web.SuccessStatus;
+import io.swagger.v3.core.converter.ModelConverter;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.headers.Header;
@@ -71,6 +72,8 @@ public class ApiDocumentationConfig {
 
   // Any order before ApiDocumentOrder's, which must run last.
   private static final int WIRE_CONVENTIONS_ORDER = 0;
+  // After the wire conventions and the row codes (both 0), still before ApiDocumentOrder.
+  private static final int RESPONSE_FIELDS_ORDER = 100;
 
   private static final String OK = "200";
   private static final String UNAUTHORIZED = "401";
@@ -123,6 +126,27 @@ public class ApiDocumentationConfig {
   @Bean
   OpenApiCustomizer deterministicDocumentOrder() {
     return new OrderedOpenApiCustomizer(Ordered.LOWEST_PRECEDENCE, ApiDocumentOrder::apply);
+  }
+
+  /**
+   * US-29-07 (#451): marks each schema generated from a record with the record, for {@link
+   * #responseFieldContract()}.
+   */
+  @Bean
+  ModelConverter recordSchemaMarker() {
+    return new RecordSchemaMarker();
+  }
+
+  /**
+   * US-29-07 (#451): every response field required, the {@code @Nullable} ones nullable ({@link
+   * ResponseFieldContract}). After the wire conventions and the row codes, which add to the
+   * schemas; {@code ApiProblem} is built here and declares its own required list.
+   */
+  @Bean
+  OpenApiCustomizer responseFieldContract() {
+    return new OrderedOpenApiCustomizer(
+        RESPONSE_FIELDS_ORDER,
+        openApi -> ResponseFieldContract.apply(openApi, Set.of(API_PROBLEM_SCHEMA)));
   }
 
   @Bean
@@ -400,6 +424,9 @@ public class ApiDocumentationConfig {
         new ArraySchema()
             .description("Present on bean-validation failures; one entry per rejected field.")
             .items(validationError));
+    // #451: the keys every problem carries. Spring leaves out detail and instance when unset, and
+    // errors exists only for a validation failure: those are absent then, never null.
+    problem.setRequired(List.of("title", "status", ProblemCode.PROPERTY));
     return problem;
   }
 

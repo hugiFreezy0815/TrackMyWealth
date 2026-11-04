@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * US-07-10: what an import file says about its account, for a template that identifies accounts.
@@ -11,4 +12,7 @@ import java.util.UUID;
  * once the member has confirmed it ({@code confirmed}).
  */
 public record ImportIdentificationResponse(
-    String outcome, UUID proposedAccountId, boolean confirmationRequired, boolean confirmed) {}
+    String outcome,
+    @Nullable UUID proposedAccountId,
+    boolean confirmationRequired,
+    boolean confirmed) {}

@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One row of a template dry run (US-07-03): {@code canonical} for a {@code PARSED} row, {@code
@@ -16,12 +17,12 @@ public record ImportPreviewRowResponse(
     int rowNumber,
     String status,
     Map<String, String> rawData,
-    CanonicalImportRow canonical,
+    @Nullable CanonicalImportRow canonical,
     @Schema(
             description =
                 "Why the row is not imported: for an ERROR row the error, for a SKIPPED row the"
                     + " reason it is skipped (e.g. IMPORT_ROW_ZERO_AMOUNT). Null otherwise.")
-        ImportRowErrorResponse error,
+        @Nullable ImportRowErrorResponse error,
     @Schema(
             description =
                 "Warnings a PARSED row carries whatever account it is imported into (e.g."

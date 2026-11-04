@@ -135,7 +135,8 @@ public class ImportStatementBalanceReaderService {
     Pattern pattern = Re2Patterns.compile(rule.pattern());
     Set<String> groups = pattern.namedGroups().keySet();
     boolean hasCurrency = groups.contains(ImportStatementBalanceRule.CURRENCY_GROUP);
-    String dateFormat = rule.dateFormat() == null ? template.dateFormat() : rule.dateFormat();
+    String ruleDateFormat = rule.dateFormat();
+    String dateFormat = ruleDateFormat == null ? template.dateFormat() : ruleDateFormat;
     DateTimeFormatter formatter = ImportFileParserService.dateFormatter(dateFormat);
     boolean parentheses =
         ImportTemplateValues.AMOUNT_NEGATIVE_IN_PARENTHESES.equals(template.amountRepresentation());
@@ -172,13 +173,14 @@ public class ImportStatementBalanceReaderService {
   // of its own then is unreadable.
   private static LocalDate statementDate(
       List<String> lines, ImportStatementBalanceRule rule, String balanceDateFormat) {
-    if (rule.statementDatePattern() == null) {
+    String datePattern = rule.statementDatePattern();
+    if (datePattern == null) {
       return null;
     }
-    Pattern pattern = Re2Patterns.compile(rule.statementDatePattern());
+    Pattern pattern = Re2Patterns.compile(datePattern);
+    String dateFormat = rule.statementDateFormat();
     DateTimeFormatter formatter =
-        ImportFileParserService.dateFormatter(
-            rule.statementDateFormat() == null ? balanceDateFormat : rule.statementDateFormat());
+        ImportFileParserService.dateFormatter(dateFormat == null ? balanceDateFormat : dateFormat);
     for (String line : lines) {
       Matcher matcher = pattern.matcher(line.strip());
       LocalDate date =

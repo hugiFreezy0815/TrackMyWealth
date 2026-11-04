@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Response for {@code GET /api/v1/portfolios/{portfolioId}/view} (US-04-06, FR-INS-013): one
@@ -105,17 +106,17 @@ public record PortfolioViewResponse(
       String accountType,
       String nature,
       String currency,
-      BigDecimal balance,
-      BigDecimal valueInPortfolioCurrency,
+      @Nullable BigDecimal balance,
+      @Nullable BigDecimal valueInPortfolioCurrency,
       boolean valueKnown,
       ValueStatus valueStatus,
-      LocalDate valueSourceDate,
+      @Nullable LocalDate valueSourceDate,
       List<String> warnings,
-      Integer positionsCount,
-      LocalDate positionsAsOf,
-      BigDecimal totalReturn,
-      LocalDate dueDate,
-      UUID linkedPropertyAccountId) {
+      @Nullable Integer positionsCount,
+      @Nullable LocalDate positionsAsOf,
+      @Nullable BigDecimal totalReturn,
+      @Nullable LocalDate dueDate,
+      @Nullable UUID linkedPropertyAccountId) {
 
     public AccountRow {
       warnings = List.copyOf(warnings);

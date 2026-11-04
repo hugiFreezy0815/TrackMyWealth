@@ -1,5 +1,5 @@
 # Test fixture for scripts/tests/test_api_breaking.py (#372): base.yaml
-# plus a new optional response field, a new optional parameter and a new endpoint.
+# plus a new response field (required, like every response field: #451), a new optional parameter and a new endpoint.
 openapi: 3.1.0
 info:
   title: Fixture API
@@ -55,6 +55,11 @@ components:
   schemas:
     AccountResponse:
       type: object
+      required:
+      - id
+      - name
+      - currency
+      - institutionName
       properties:
         id:
           type: string

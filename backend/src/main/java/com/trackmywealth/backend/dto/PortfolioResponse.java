@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A portfolio as created, read or updated through {@code /api/v1/portfolios} (US-04-01, US-04-06).
@@ -16,12 +17,12 @@ import java.util.UUID;
  */
 public record PortfolioResponse(
     UUID id,
-    UUID catalogueInstitutionId,
+    @Nullable UUID catalogueInstitutionId,
     String name,
-    String country,
+    @Nullable String country,
     String institutionType,
-    String identifier,
-    String logoUrl,
+    @Nullable String identifier,
+    @Nullable String logoUrl,
     String portfolioCurrency,
     PortfolioType portfolioType,
     boolean portfolioTypeOverridden,

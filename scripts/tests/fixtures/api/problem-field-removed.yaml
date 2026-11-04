@@ -1,0 +1,63 @@
+# Test fixture for scripts/tests/test_api_breaking.py (#451): nullable-ref-base.yaml
+# with the optional problem field ApiProblem.errors removed.
+openapi: 3.1.0
+info:
+  title: Fixture API
+  version: v1
+paths:
+  /api/v1/accounts:
+    get:
+      tags:
+      - Accounts
+      summary: List the workspace's accounts
+      operationId: listAccounts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccountResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+components:
+  schemas:
+    AccountResponse:
+      type: object
+      required:
+      - id
+      - balance
+      properties:
+        id:
+          type: string
+          format: uuid
+        balance:
+          anyOf:
+          - $ref: "#/components/schemas/BalanceResponse"
+          - type: "null"
+    BalanceResponse:
+      type: object
+      required:
+      - amount
+      - currency
+      properties:
+        amount:
+          type: string
+        currency:
+          type: string
+    ApiProblem:
+      type: object
+      required:
+      - title
+      - status
+      properties:
+        title:
+          type: string
+        status:
+          type: integer

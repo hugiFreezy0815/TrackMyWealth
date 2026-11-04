@@ -4,8 +4,10 @@ import com.trackmywealth.backend.dto.CanonicalImportRow;
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.ImportLedgerRow;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
@@ -109,17 +111,21 @@ public class ImportLedgerRowService {
 
   /** The ledger amount and currency, shared with duplicate matching for foreign card purchases. */
   public static boolean isOriginalCurrencyPurchase(CanonicalImportRow row) {
+    String originalCurrency = row.originalCurrency();
     return "CREDIT_CARD_PURCHASE".equals(row.transactionType())
         && row.amount().signum() != 0
         && row.originalAmount() != null
-        && row.originalCurrency() != null
-        && !row.originalCurrency().equals(row.currency());
+        && originalCurrency != null
+        && !originalCurrency.equals(row.currency());
   }
 
   public static BigDecimal ledgerAmount(CanonicalImportRow row) {
-    return isOriginalCurrencyPurchase(row)
-        ? row.originalAmount().abs().multiply(BigDecimal.valueOf(row.amount().signum()))
-        : row.amount();
+    if (!isOriginalCurrencyPurchase(row)) {
+      return row.amount();
+    }
+    // isOriginalCurrencyPurchase: such a row has its original amount.
+    BigDecimal original = Objects.requireNonNull(row.originalAmount(), "originalAmount");
+    return original.abs().multiply(BigDecimal.valueOf(row.amount().signum()));
   }
 
   public static String ledgerCurrency(CanonicalImportRow row) {
@@ -167,19 +173,22 @@ public class ImportLedgerRowService {
     if (row.counterpartyName() != null) {
       data.put(COUNTERPARTY_KEY, row.counterpartyName());
     }
-    if (row.valueDate() != null) {
-      data.put(VALUE_DATE_KEY, row.valueDate().toString());
+    LocalDate valueDate = row.valueDate();
+    if (valueDate != null) {
+      data.put(VALUE_DATE_KEY, valueDate.toString());
     }
     if (row.iso20022BankTransactionCode() != null) {
       data.put(BANK_TRANSACTION_CODE_KEY, row.iso20022BankTransactionCode());
     }
     // The issuer's printed quote may be rounded or reciprocal. Preserve that exact
     // value for audit; the ledger's effective conversion derives from the billed amount.
-    if (row.bankExchangeRate() != null) {
-      data.put("issuerQuotedFxRate", row.bankExchangeRate().toPlainString());
+    BigDecimal quotedRate = row.bankExchangeRate();
+    if (quotedRate != null) {
+      data.put("issuerQuotedFxRate", quotedRate.toPlainString());
     }
-    if (row.originalAmount() != null) {
-      data.put("issuerOriginalAmount", row.originalAmount().toPlainString());
+    BigDecimal originalAmount = row.originalAmount();
+    if (originalAmount != null) {
+      data.put("issuerOriginalAmount", originalAmount.toPlainString());
     }
     if (row.originalCurrency() != null) {
       data.put("issuerOriginalCurrency", row.originalCurrency());

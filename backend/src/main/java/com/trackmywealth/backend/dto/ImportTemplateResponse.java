@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One version of an import template (US-07-03). {@code id} names exactly this version, which is
@@ -22,7 +23,7 @@ public record ImportTemplateResponse(
     UUID id,
     UUID familyId,
     String name,
-    UUID institutionCatalogueId,
+    @Nullable UUID institutionCatalogueId,
     String templateClass,
     String templateVersion,
     LocalDate effectiveFrom,
@@ -33,28 +34,28 @@ public record ImportTemplateResponse(
     String delimiter,
     String encoding,
     String decimalSeparator,
-    String thousandsSeparator,
+    @Nullable String thousandsSeparator,
     String dateFormat,
     int headerRowIndex,
     int preambleRowCount,
     int trailingSummaryRowCount,
     String amountRepresentation,
     String currencyMode,
-    String fixedCurrency,
+    @Nullable String fixedCurrency,
     ImportColumnMapping columnMapping,
     Map<String, String> typeMapping,
     String accountIdentificationStrategy,
-    List<String> headerColumns,
-    String headerFingerprint,
+    @Nullable List<String> headerColumns,
+    @Nullable String headerFingerprint,
     String fileFormat,
-    ImportPdfLayout pdfLayout,
+    @Nullable ImportPdfLayout pdfLayout,
     int version,
     Map<String, String> descriptionTypePatterns,
-    ImportRowFilter rowFilter,
-    ImportAccountIdentifierRule accountIdentifier,
-    ImportStatementBalanceRule statementBalance,
-    ImportHoldingsRule holdingsRule,
-    String savingsPocketPattern) {
+    @Nullable ImportRowFilter rowFilter,
+    @Nullable ImportAccountIdentifierRule accountIdentifier,
+    @Nullable ImportStatementBalanceRule statementBalance,
+    @Nullable ImportHoldingsRule holdingsRule,
+    @Nullable String savingsPocketPattern) {
 
   public ImportTemplateResponse {
     typeMapping = Collections.unmodifiableMap(new LinkedHashMap<>(typeMapping));

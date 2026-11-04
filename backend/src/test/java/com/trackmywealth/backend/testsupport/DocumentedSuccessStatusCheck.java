@@ -8,9 +8,10 @@ import org.springframework.test.context.ContextCustomizerFactory;
 import org.springframework.test.context.MergedContextConfiguration;
 
 /**
- * US-29-02 (#372): registers {@link DocumentedSuccessStatusFilter} in every Spring test context
- * (listed in {@code META-INF/spring.factories} of the test resources), so each request a test makes
- * against the running application is checked - no test class has to opt in.
+ * US-29-02 (#372): registers {@link DocumentedSuccessStatusFilter} - and, for US-29-07 (#451),
+ * {@link ResponseNullabilityAdvice} - in every Spring test context (listed in {@code
+ * META-INF/spring.factories} of the test resources), so each request a test makes against the
+ * running application is checked - no test class has to opt in.
  */
 public class DocumentedSuccessStatusCheck implements ContextCustomizerFactory {
 
@@ -29,6 +30,9 @@ public class DocumentedSuccessStatusCheck implements ContextCustomizerFactory {
       context
           .getBeanFactory()
           .registerSingleton("documentedSuccessStatusFilter", new DocumentedSuccessStatusFilter());
+      context
+          .getBeanFactory()
+          .registerSingleton("responseNullabilityAdvice", new ResponseNullabilityAdvice());
     }
   }
 }

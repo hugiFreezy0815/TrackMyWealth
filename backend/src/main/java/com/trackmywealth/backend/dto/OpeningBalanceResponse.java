@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An account's opening balance (US-25-04, FR-REC-007). Stored as the account's one {@code
@@ -22,7 +23,7 @@ public record OpeningBalanceResponse(
     BigDecimal balance,
     String currency,
     OffsetDateTime createdAt,
-    OffsetDateTime updatedAt,
+    @Nullable OffsetDateTime updatedAt,
     int version,
     List<String> warnings) {
 

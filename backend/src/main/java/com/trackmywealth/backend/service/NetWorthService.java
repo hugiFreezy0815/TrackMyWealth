@@ -12,6 +12,7 @@ import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -97,13 +98,15 @@ public class NetWorthService {
         complete = false;
         continue;
       }
+      // valueKnown: the value is there.
+      BigDecimal value = Objects.requireNonNull(valuation.value(), "value");
       approximate |= ValueBasisValues.isApproximate(valuation.valueBasis());
       // Explicit on both natures: one this code has never heard of must fail loudly rather than
       // be silently counted as a liability.
       if (ASSET.equals(valuation.nature())) {
-        totalAssets = totalAssets.add(valuation.value());
+        totalAssets = totalAssets.add(value);
       } else if (LIABILITY.equals(valuation.nature())) {
-        totalLiabilities = totalLiabilities.add(valuation.value());
+        totalLiabilities = totalLiabilities.add(value);
       } else {
         throw new IllegalStateException("Unexpected account nature '" + valuation.nature() + "'");
       }

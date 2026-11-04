@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The ledger row an import row duplicates (US-07-17), as the preview shows it next to the row: the
@@ -10,4 +11,7 @@ import java.time.LocalDate;
  * duplicateOfTransactionId}.
  */
 public record ImportDuplicateOfResponse(
-    LocalDate bookingDate, BigDecimal amount, String currency, String merchantDescription) {}
+    LocalDate bookingDate,
+    BigDecimal amount,
+    String currency,
+    @Nullable String merchantDescription) {}

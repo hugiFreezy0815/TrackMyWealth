@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -292,7 +293,8 @@ public class ImportRowCheckService {
     } else if (ImportBatchValues.WARNING_FUTURE_DATE.equals(warning)) {
       args.put(ARG_DATE, row.bookingDate().toString());
     } else if (ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED.equals(warning)) {
-      args.put(ARG_DATE, row.valueDate().toString());
+      // The parser adjusts only a value date it read.
+      args.put(ARG_DATE, Objects.requireNonNull(row.valueDate(), "valueDate").toString());
     } else if (ImportBatchValues.WARNING_CURRENCY_DIFFERS.equals(warning)) {
       args.put(ARG_CURRENCY, row.currency());
       args.put(ARG_ACCOUNT_CURRENCY, accountCurrency);

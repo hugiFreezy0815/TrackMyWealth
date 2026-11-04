@@ -13,6 +13,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -317,6 +318,91 @@ class OpenApiContractTest {
     Collections.sort(sorted);
     if (!sorted.equals(names)) {
       unsorted.add(where + ": " + names);
+    }
+  }
+
+  /**
+   * US-29-07 (#451): every property of a schema a response uses is required, a nullable record
+   * component is nullable and no other is; a schema a request uses is never a response's.
+   */
+  @Test
+  void responseFieldsAreRequiredAndNullableOnlyWhereTheBackendSendsNull() {
+    JsonNode spec = objectMapper.readTree(json(bootstrapAdministrator()));
+    JsonNode schemas = spec.path("components").path("schemas");
+
+    Set<String> responseSide = new HashSet<>();
+    Set<String> requestSide = new HashSet<>();
+    spec.path("paths")
+        .properties()
+        .forEach(
+            path ->
+                path.getValue()
+                    .properties()
+                    .forEach(
+                        operation -> {
+                          schemaRefs(operation.getValue().path("responses"), schemas, responseSide);
+                          schemaRefs(
+                              operation.getValue().path("requestBody"), schemas, requestSide);
+                          schemaRefs(operation.getValue().path("parameters"), schemas, requestSide);
+                        }));
+    schemaRefs(spec.path("components").path("responses"), schemas, responseSide);
+
+    assertThat(responseSide).contains("PortfolioListItemResponse", "ImportColumnMappingResponse");
+    assertThat(requestSide)
+        .contains("ImportColumnMapping")
+        .doesNotContain("ImportTemplateResponse");
+    assertThat(responseSide).doesNotContainAnyElementsOf(requestSide);
+    List<String> notRequired = new ArrayList<>();
+    for (String name : responseSide) {
+      if (name.equals("ApiProblem")) {
+        continue;
+      }
+      Set<String> required = new HashSet<>();
+      schemas.path(name).path("required").forEach(item -> required.add(item.asString()));
+      names(schemas.path(name).path("properties")).stream()
+          .filter(property -> !required.contains(property))
+          .forEach(property -> notRequired.add(name + "." + property));
+    }
+    assertThat(notRequired).isEmpty();
+
+    JsonNode portfolio = schemas.path("PortfolioListItemResponse").path("properties");
+    assertThat(portfolio.path("logoUrl").path("type").toString())
+        .isEqualTo("[\"string\",\"null\"]");
+    assertThat(portfolio.path("id").path("type").asString()).isEqualTo("string");
+    assertThat(schemas.path("ApiProblem").path("required").toString())
+        .contains("\"title\"", "\"status\"", "\"code\"")
+        .doesNotContain("\"detail\"");
+  }
+
+  /** A response-shaped record with a component that can be null. */
+  record NullProbe(String id, String note) {}
+
+  /**
+   * #451: "every key is required" holds only while the application's mapper writes a null component
+   * as {@code null}; a global {@code spring.jackson.default-property-inclusion} would drop it
+   * silently. And the record marks of the generation never reach the served document.
+   */
+  @Test
+  void everyKeyIsWrittenAndNoRecordMarkIsServed() {
+    assertThat(objectMapper.writeValueAsString(new NullProbe("1", null)))
+        .isEqualTo("{\"id\":\"1\",\"note\":null}");
+
+    String token = bootstrapAdministrator();
+    assertThat(json(token)).doesNotContain("x-trackmywealth-record");
+    assertThat(served(token)).doesNotContain("x-trackmywealth-record");
+  }
+
+  /** Adds the schema names {@code node} refers to, and those they refer to in turn. */
+  private static void schemaRefs(JsonNode node, JsonNode schemas, Set<String> names) {
+    if (node.isObject()) {
+      String ref = node.path("$ref").asString("");
+      String prefix = "#/components/schemas/";
+      if (ref.startsWith(prefix) && names.add(ref.substring(prefix.length()))) {
+        schemaRefs(schemas.path(ref.substring(prefix.length())), schemas, names);
+      }
+      node.properties().forEach(child -> schemaRefs(child.getValue(), schemas, names));
+    } else if (node.isArray()) {
+      node.forEach(child -> schemaRefs(child, schemas, names));
     }
   }
 

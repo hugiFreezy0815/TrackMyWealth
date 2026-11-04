@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * US-07-13 (#273): a holdings statement's batch - what its file holds and what its commit makes of
@@ -32,8 +33,8 @@ import java.util.UUID;
  * a statement's cash in other currencies is shown, not recorded.
  */
 public record ImportHoldingsResponse(
-    LocalDate snapshotDate,
-    @Schema(allowableValues = {"STATEMENT", "MEMBER"}) String dateSource,
+    @Nullable LocalDate snapshotDate,
+    @Schema(allowableValues = {"STATEMENT", "MEMBER"}) @Nullable String dateSource,
     @Schema(
             allowableValues = {
               "NEW",
@@ -48,12 +49,12 @@ public record ImportHoldingsResponse(
               "REMOVED"
             })
         String snapshot,
-    ImportSnapshotPlan.Existing existingSnapshot,
+    ImportSnapshotPlan.@Nullable Existing existingSnapshot,
     @Schema(allowableValues = {"BALANCE", "HOLDINGS"}) List<String> adds,
     List<ImportSnapshotPlan.Conflict> conflicts,
     String explanation,
-    BigDecimal balance,
-    String balanceCurrency,
+    @Nullable BigDecimal balance,
+    @Nullable String balanceCurrency,
     List<Position> positions,
     List<Cash> cashBalances,
     List<Unreadable> unreadable,
@@ -74,15 +75,15 @@ public record ImportHoldingsResponse(
    */
   public record Position(
       int rowNumber,
-      String isin,
-      String symbol,
-      String name,
+      @Nullable String isin,
+      @Nullable String symbol,
+      @Nullable String name,
       BigDecimal quantity,
       BigDecimal reportedPrice,
       BigDecimal reportedValue,
       String reportedCurrency,
       @Schema(allowableValues = {"RESOLVED", "UNRESOLVED"}) String resolution,
-      UUID securityId,
+      @Nullable UUID securityId,
       List<ImportRowErrorResponse> warnings) {
 
     public Position {

@@ -347,6 +347,12 @@ file client code is generated from. `./mvnw verify` keeps it in step with the co
 - A handler answering anything but 200 declares its statuses with `@SuccessStatus` (201, 204, or
   both 201 and 200 for a find-or-create). `ArchitectureTest` reads them from the bytecode, and in
   every test a request answered with an undeclared success status fails with a 500 that names it.
+- Every field of a response schema is `required` (the backend always sends it), and nullable only
+  where its record component is JSpecify `@Nullable` (`org.jspecify.annotations.Nullable`; ADR
+  0006, #451), so generated client types say `string` or `string | null`, never an optional field.
+  A schema shared by a request and a response gets a `<name>Response` copy for the responses;
+  request schemas keep the `required` list bean validation implies. In every test, a response
+  carrying `null` in a component not marked `@Nullable` fails with a 500 naming `Record.component`.
 - Every operation requires the bearer access token except those under `/api/v1/setup/**` and
   `/api/v1/auth/**`, and only a system administrator may call those under `/api/v1/admin/**`. Both
   lists live in `security.ApiAccessPaths`: Spring Security enforces them (`SecurityConfig`), and
@@ -359,11 +365,14 @@ the PR's using [oasdiff](https://www.oasdiff.com/) (`oasdiff breaking`, pinned v
 and fails on a breaking change - anything oasdiff rates "error" or "warning" - listing each one: a
 removed endpoint, parameter or response field, an optional parameter or request field made required,
 a narrowed type or enum. ADR 0006 allows additive changes only inside `/api/v1`, so a new endpoint,
-a new optional field or parameter passes (oasdiff's "info" changes are listed but do not fail).
-Removing any response field and adding a value to a response enum count as breaking, though oasdiff
-rates them lower: the backend sends every field of a response, so clients rely on all of them, and
-a client handling each enum value fails on one it does not know (`SEVERITY_OVERRIDES` in
-`scripts/api_breaking.py`).
+a new response field or a new optional request field or parameter passes (oasdiff's "info"
+changes are listed but do not fail).
+Removing a response field is breaking by oasdiff's own rules, since every response field is
+required (`response-required-property-removed`); so is making one nullable
+(`response-property-became-nullable`). Two changes count as breaking although oasdiff rates them
+lower (`SEVERITY_OVERRIDES` in `scripts/api_breaking.py`): adding a value to a response enum (a
+client handling each enum value fails on one it does not know), and removing an optional response
+field (only the hand-built `ApiProblem` has such fields: `detail`, `instance`, `errors`).
 Failing on oasdiff's warnings is stricter than oasdiff's own default (errors only): a change oasdiff
 says breaks only some clients, such as a new pattern or a changed format on an existing field,
 needs the declaration below too. Run the check locally (below) to see the level of each change.

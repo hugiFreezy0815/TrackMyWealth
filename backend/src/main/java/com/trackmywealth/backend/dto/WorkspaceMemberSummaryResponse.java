@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import java.time.LocalDate;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /** Returned by every {@code /api/v1/workspace-members/**} endpoint - never the entity. */
 public record WorkspaceMemberSummaryResponse(
@@ -9,5 +10,5 @@ public record WorkspaceMemberSummaryResponse(
     String displayName,
     String status,
     LocalDate memberSince,
-    LocalDate memberUntil,
+    @Nullable LocalDate memberUntil,
     int version) {}

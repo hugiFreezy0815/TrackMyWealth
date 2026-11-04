@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The result of a template dry run (US-07-03): the file was parsed in memory and nothing was
@@ -21,16 +22,16 @@ import java.util.Map;
  */
 public record ImportTemplateTestResponse(
     List<String> headerColumns,
-    String headerFingerprint,
+    @Nullable String headerFingerprint,
     int rowCount,
     int parsedRowCount,
     int errorRowCount,
     int skippedRowCount,
     Map<String, Integer> errorCounts,
     List<ImportPreviewRowResponse> rows,
-    Boolean accountIdentifierFound,
-    Integer statementBalanceCount,
-    Integer statementBalanceUnreadableCount) {
+    @Nullable Boolean accountIdentifierFound,
+    @Nullable Integer statementBalanceCount,
+    @Nullable Integer statementBalanceUnreadableCount) {
 
   public ImportTemplateTestResponse {
     headerColumns = List.copyOf(headerColumns);

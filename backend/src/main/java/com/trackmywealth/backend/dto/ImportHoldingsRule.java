@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * US-07-13 (#273, INPUT-004): how a {@code SNAPSHOT} template reads a holdings statement - its
@@ -38,22 +39,22 @@ import java.util.List;
 public record ImportHoldingsRule(
     @Schema(description = "PDF: text every statement of this layout contains.")
         @Size(max = ImportPdfLayout.MAX_MARKER_LENGTH)
-        String documentMarker,
+        @Nullable String documentMarker,
     @Schema(
             description =
                 "PDF: RE2 pattern with the one named group date, e.g. Portfolio per"
                     + " (?P<date>\\S+); its first readable match dates the snapshot.")
         @Size(max = ImportPdfLayout.MAX_PATTERN_LENGTH)
-        String datePattern,
+        @Nullable String datePattern,
     @Schema(description = "Optional: the date's format, if not the template's date format.")
         @Size(max = ImportStatementBalanceRule.MAX_DATE_FORMAT_LENGTH)
-        String dateFormat,
+        @Nullable String dateFormat,
     @Schema(
             description =
                 "PDF, optional: RE2 pattern with the one named group currency, starting a section"
                     + " of positions quoted in it, e.g. ^Aktien in (?P<currency>[A-Z]{3})$.")
         @Size(max = ImportPdfLayout.MAX_PATTERN_LENGTH)
-        String sectionPattern,
+        @Nullable String sectionPattern,
     @Schema(
             description =
                 "PDF: RE2 patterns of a position line, with the named groups quantity and value,"
@@ -65,10 +66,10 @@ public record ImportHoldingsRule(
                 "PDF, optional: RE2 pattern of a cash balance line with the named groups currency"
                     + " and amount.")
         @Size(max = ImportPdfLayout.MAX_PATTERN_LENGTH)
-        String cashPattern,
+        @Nullable String cashPattern,
     @Schema(description = "Spreadsheet: the header cells a position or cash row is read from.")
         @Valid
-        ImportHoldingsColumns columns) {
+        @Nullable ImportHoldingsColumns columns) {
 
   public static final String DATE_GROUP = "date";
   public static final String CURRENCY_GROUP = "currency";
@@ -95,14 +96,14 @@ public record ImportHoldingsRule(
    * symbol}; {@code cashAmount} with {@code currency}. At least one of the two is mapped.
    */
   public record ImportHoldingsColumns(
-      @Size(max = MAX_COLUMN_LENGTH) String isin,
-      @Size(max = MAX_COLUMN_LENGTH) String symbol,
-      @Size(max = MAX_COLUMN_LENGTH) String name,
-      @Size(max = MAX_COLUMN_LENGTH) String quantity,
-      @Size(max = MAX_COLUMN_LENGTH) String price,
-      @Size(max = MAX_COLUMN_LENGTH) String value,
+      @Size(max = MAX_COLUMN_LENGTH) @Nullable String isin,
+      @Size(max = MAX_COLUMN_LENGTH) @Nullable String symbol,
+      @Size(max = MAX_COLUMN_LENGTH) @Nullable String name,
+      @Size(max = MAX_COLUMN_LENGTH) @Nullable String quantity,
+      @Size(max = MAX_COLUMN_LENGTH) @Nullable String price,
+      @Size(max = MAX_COLUMN_LENGTH) @Nullable String value,
       @Size(max = MAX_COLUMN_LENGTH) String currency,
-      @Size(max = MAX_COLUMN_LENGTH) String cashAmount) {
+      @Size(max = MAX_COLUMN_LENGTH) @Nullable String cashAmount) {
 
     public static final int MAX_COLUMN_LENGTH = 200;
 

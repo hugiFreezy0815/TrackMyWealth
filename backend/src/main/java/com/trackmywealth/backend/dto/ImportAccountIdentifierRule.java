@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import org.jspecify.annotations.Nullable;
 
 /**
  * US-07-10: where an import file names its account, for a template whose {@code
@@ -17,11 +18,11 @@ import io.swagger.v3.oas.annotations.media.Schema;
 public record ImportAccountIdentifierRule(
     @Schema(description = "IBAN, MASKED_CARD or CONTRACT_NUMBER.") String kind,
     @Schema(description = "PREAMBLE_LINE: the text the identifier's line starts with.")
-        String label,
+        @Nullable String label,
     @Schema(
             description =
                 "PREAMBLE_LINE, optional: an RE2 pattern with one capture group for the identifier"
                     + " in the rest of the line.")
-        String pattern,
+        @Nullable String pattern,
     @Schema(description = "COLUMN: the source column, by header name or 0-based index.")
-        String column) {}
+        @Nullable String column) {}

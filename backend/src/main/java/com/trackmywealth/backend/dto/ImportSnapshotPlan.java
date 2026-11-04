@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * US-07-31 (#366): what committing a statement would do to the imported snapshot of its account and
@@ -59,9 +60,9 @@ public record ImportSnapshotPlan(
       UUID id,
       UUID importBatchId,
       String importFileName,
-      BigDecimal balance,
+      @Nullable BigDecimal balance,
       int holdingsCount,
-      UUID reconciliationResultId) {}
+      @Nullable UUID reconciliationResultId) {}
 
   /**
    * One difference. For {@code BALANCE}: the two balances. For {@code HOLDING}: one security's
@@ -69,9 +70,9 @@ public record ImportSnapshotPlan(
    */
   public record Conflict(
       @Schema(allowableValues = {"BALANCE", "HOLDING"}) String part,
-      UUID securityId,
-      String isin,
-      String securityName,
-      BigDecimal existingValue,
-      BigDecimal statementValue) {}
+      @Nullable UUID securityId,
+      @Nullable String isin,
+      @Nullable String securityName,
+      @Nullable BigDecimal existingValue,
+      @Nullable BigDecimal statementValue) {}
 }

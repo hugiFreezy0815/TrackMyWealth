@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One account's current value, expressed in {@code currency} - the DM-17 uniform valuation result
@@ -68,14 +69,14 @@ public record AccountValuation(
     String nature,
     String nativeCurrency,
     String currency,
-    BigDecimal value,
-    BigDecimal conversionRate,
-    LocalDate conversionRateDate,
+    @Nullable BigDecimal value,
+    @Nullable BigDecimal conversionRate,
+    @Nullable LocalDate conversionRateDate,
     boolean conversionRateCarriedForward,
     boolean conversionRateStale,
     boolean valueKnown,
-    String valueBasis,
-    LocalDate valueSourceDate,
+    @Nullable String valueBasis,
+    @Nullable LocalDate valueSourceDate,
     boolean valueSourceStale,
     List<String> warnings) {
 

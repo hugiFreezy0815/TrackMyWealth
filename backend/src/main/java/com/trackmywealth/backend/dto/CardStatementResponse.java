@@ -3,6 +3,7 @@ package com.trackmywealth.backend.dto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The card's current statement cycle (US-09-03, FR-CC-008/009): the most recently closed period as
@@ -26,6 +27,6 @@ public record CardStatementResponse(
     LocalDate periodStart,
     LocalDate periodEnd,
     LocalDate dueDate,
-    BigDecimal closingBalance,
+    @Nullable BigDecimal closingBalance,
     String currency,
     boolean paid) {}

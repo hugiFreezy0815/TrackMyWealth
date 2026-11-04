@@ -30,6 +30,9 @@ import org.springframework.web.util.ContentCachingResponseWrapper;
  * sent, for every request any test makes - including a handler declaring
  * {@code @SuccessStatus(201)} that answers 200.
  *
+ * <p>US-29-07 (#451): a body with a null the contract declares never null ({@link
+ * ResponseNullabilityAdvice}) fails the request the same way, naming the record components.
+ *
  * <p>The response body is held back until the check has passed (nothing is committed before), then
  * written unchanged, with a {@code Content-Length}. No API handler streams or answers
  * asynchronously; one that does fails here loudly rather than losing its body.
@@ -58,7 +61,8 @@ public class DocumentedSuccessStatusFilter extends OncePerRequestFilter implemen
               + "): teach it to, before such a handler is added");
     }
     Optional<String> violation =
-        violation(request.getAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE), held);
+        violation(request.getAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE), held)
+            .or(() -> undeclaredNull(request));
     if (violation.isEmpty()) {
       held.copyBodyToResponse();
       return;
@@ -70,6 +74,15 @@ public class DocumentedSuccessStatusFilter extends OncePerRequestFilter implemen
     response.setContentType(MediaType.TEXT_PLAIN_VALUE);
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
     response.getWriter().write(violation.get());
+  }
+
+  /**
+   * US-29-07 (#451): what {@link ResponseNullabilityAdvice} found in the body, if anything - a null
+   * the contract declares impossible.
+   */
+  static Optional<String> undeclaredNull(HttpServletRequest request) {
+    return Optional.ofNullable(request.getAttribute(ResponseNullabilityAdvice.FINDING))
+        .map(String::valueOf);
   }
 
   /** The finding for a handler that answered {@code response}'s status; empty when documented. */

@@ -42,11 +42,12 @@ LABEL = "api-breaking"
 NOTE_HEADING = "API breaking change"
 
 # oasdiff rules raised to error level, in its severity-levels file format ("<rule id> <level>").
-# response-optional-property-removed is "info" in oasdiff: a client must not rely on an optional
-# property being there. Ours do: the backend serializes every field of a response record, a null one
-# as null (no @JsonInclude), and none is marked required in the document, so without this a removed
-# response field would not count as breaking at all. A new value of a response enum breaks a client
-# that handles each value and fails on one it does not know, whatever level oasdiff gives it.
+# A new value of a response enum breaks a client that handles each value and fails on one it does
+# not know, whatever level oasdiff gives it. Removing a response field is an error by oasdiff's own
+# rule (response-required-property-removed), since every record-backed response field is required
+# (#451). response-optional-property-removed is "info" in oasdiff, and it still matters: the
+# hand-built ApiProblem keeps detail, instance and errors optional (absent when unset), and a
+# client that renders validation errors breaks when errors goes.
 SEVERITY_OVERRIDES = {
     "response-optional-property-removed": "ERR",
     "response-property-enum-value-added": "ERR",

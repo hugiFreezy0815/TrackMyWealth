@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * US-07-12: the balance an import file states, and what its commit makes of it.
@@ -33,11 +34,11 @@ import java.util.List;
 public record ImportStatementBalanceResponse(
     @Schema(allowableValues = {"FOUND", "OUT_OF_RANGE", "NOT_FOUND", "UNREADABLE", "AMBIGUOUS"})
         String outcome,
-    LocalDate date,
-    BigDecimal balance,
-    String currency,
-    LocalDate openingDate,
-    BigDecimal openingBalance,
+    @Nullable LocalDate date,
+    @Nullable BigDecimal balance,
+    @Nullable String currency,
+    @Nullable LocalDate openingDate,
+    @Nullable BigDecimal openingBalance,
     @Schema(
             allowableValues = {
               "NEW",
@@ -50,11 +51,11 @@ public record ImportStatementBalanceResponse(
               "WITHDRAWN",
               "REMOVED"
             })
-        String snapshot,
-    ImportSnapshotPlan.Existing existingSnapshot,
+        @Nullable String snapshot,
+    ImportSnapshotPlan.@Nullable Existing existingSnapshot,
     @Schema(allowableValues = {"BALANCE"}) List<String> adds,
     List<ImportSnapshotPlan.Conflict> conflicts,
-    String explanation) {
+    @Nullable String explanation) {
 
   public ImportStatementBalanceResponse {
     adds = List.copyOf(adds);

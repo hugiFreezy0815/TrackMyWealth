@@ -3,6 +3,7 @@ package com.trackmywealth.backend.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Which source column feeds which canonical field (US-07-03, FR-IMP-021), stored as {@code
@@ -23,28 +24,28 @@ import java.util.Map;
         "Source column per canonical field: a header cell's text, or a 0-based column index"
             + " written as digits (files without a header row, or repeated header names).")
 public record ImportColumnMapping(
-    @Schema(description = "Required.") String bookingDate,
-    String valueDate,
+    @Schema(description = "Required.") @Nullable String bookingDate,
+    @Nullable String valueDate,
     @Schema(description = "Required for SINGLE_SIGNED_COLUMN and NEGATIVE_IN_PARENTHESES.")
-        String amount,
-    @Schema(description = "Required for SEPARATE_DEBIT_CREDIT.") String debitAmount,
-    @Schema(description = "Required for SEPARATE_DEBIT_CREDIT.") String creditAmount,
-    @Schema(description = "Required for currency mode PER_ROW.") String currency,
-    String description,
-    String counterpartyName,
-    String externalId,
-    String transactionType,
-    String mcc,
-    String iso20022BankTransactionCode,
-    String notes,
-    String originalAmount,
-    String originalCurrency,
-    String exchangeRate,
+        @Nullable String amount,
+    @Schema(description = "Required for SEPARATE_DEBIT_CREDIT.") @Nullable String debitAmount,
+    @Schema(description = "Required for SEPARATE_DEBIT_CREDIT.") @Nullable String creditAmount,
+    @Schema(description = "Required for currency mode PER_ROW.") @Nullable String currency,
+    @Nullable String description,
+    @Nullable String counterpartyName,
+    @Nullable String externalId,
+    @Nullable String transactionType,
+    @Nullable String mcc,
+    @Nullable String iso20022BankTransactionCode,
+    @Nullable String notes,
+    @Nullable String originalAmount,
+    @Nullable String originalCurrency,
+    @Nullable String exchangeRate,
     @Schema(
             description =
                 "A reference several bookings share, e.g. both legs of a currency exchange; never"
                     + " a booking's own id.")
-        String groupReference) {
+        @Nullable String groupReference) {
 
   /** Backward-compatible constructor for templates without a group reference. */
   public ImportColumnMapping(

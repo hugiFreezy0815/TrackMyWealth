@@ -29,6 +29,11 @@ components:
   schemas:
     AccountResponse:
       type: object
+      required:
+      - id
+      - name
+      - currency
+      - kind
       properties:
         id:
           type: string

@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One loan or mortgage payment and its split (US-10-02, FR-CF-006).
@@ -30,12 +31,12 @@ public record LoanRepaymentResponse(
     LocalDate bookingDate,
     BigDecimal amount,
     String currency,
-    BigDecimal interestAmount,
-    BigDecimal principalAmount,
+    @Nullable BigDecimal interestAmount,
+    @Nullable BigDecimal principalAmount,
     String splitSource,
     boolean splitEstimated,
-    UUID amortisationScheduleEntryId,
-    String externalId,
+    @Nullable UUID amortisationScheduleEntryId,
+    @Nullable String externalId,
     List<TransactionResponse> transactions,
     OffsetDateTime createdAt) {
 

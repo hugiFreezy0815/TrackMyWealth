@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * US-07-10: an account's registered identifier as far as it is shown: {@code kind} ({@code IBAN},
@@ -13,6 +14,6 @@ import java.util.UUID;
 public record AccountIdentifierResponse(
     UUID accountId,
     String kind,
-    String identifierMasked,
+    @Nullable String identifierMasked,
     int version,
-    String contractIdentifierMasked) {}
+    @Nullable String contractIdentifierMasked) {}

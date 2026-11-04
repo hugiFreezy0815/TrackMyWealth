@@ -151,6 +151,15 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- US-29-07 (#451): @Nullable marks a response record component that can be null, and
+             the contract declares it nullable (ADR 0006). Spring's own null-safety annotations;
+             declared, not only inherited from spring-core, because the code uses them directly.
+             Version managed by Spring Boot. -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+
         <!-- US-02-04: RFC 6238 TOTP secret generation, otpauth:// URI building, and code
              verification (with the library's own clock-skew tolerance). No QR-image rendering
              module pulled in - the mobile client renders the QR from the returned otpauth:// URI. -->

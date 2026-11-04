@@ -3,6 +3,7 @@ package com.trackmywealth.backend.dto;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An account as {@code /api/v1/accounts} returns it.
@@ -28,9 +29,9 @@ public record AccountSummaryResponse(
     boolean discretionary,
     boolean manualValuation,
     boolean countsAsSaving,
-    UUID savingsPocketAccountId,
+    @Nullable UUID savingsPocketAccountId,
     String status,
-    OffsetDateTime archivedAt,
+    @Nullable OffsetDateTime archivedAt,
     int version,
     List<String> warnings,
     ReconciliationStatusResponse reconciliation) {

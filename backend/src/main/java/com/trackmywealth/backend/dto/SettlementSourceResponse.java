@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A card's settlement-source account (US-09-02). {@code settlementSourceAccountId} is {@code null}
@@ -8,4 +9,4 @@ import java.util.UUID;
  * never reveals an account id the caller has no access to.
  */
 public record SettlementSourceResponse(
-    UUID cardAccountId, UUID settlementSourceAccountId, int version) {}
+    UUID cardAccountId, @Nullable UUID settlementSourceAccountId, int version) {}

@@ -16859,17 +16859,23 @@ components:
         nativeCurrency:
           type: string
         value:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         conversionRate:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         conversionRateDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         conversionRateCarriedForward:
           type: boolean
@@ -16878,7 +16884,9 @@ components:
         valueKnown:
           type: boolean
         valueSourceDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         valueSourceStale:
           type: boolean
@@ -16886,6 +16894,20 @@ components:
           type: array
           items:
             type: string
+      required:
+      - accountId
+      - conversionRate
+      - conversionRateCarriedForward
+      - conversionRateDate
+      - conversionRateStale
+      - name
+      - nativeCurrency
+      - nature
+      - value
+      - valueKnown
+      - valueSourceDate
+      - valueSourceStale
+      - warnings
     AccountIdentifierFromImportRequest:
       type: object
       properties:
@@ -16926,12 +16948,22 @@ components:
         kind:
           type: string
         identifierMasked:
-          type: string
+          type:
+          - string
+          - "null"
         version:
           type: integer
           format: int32
         contractIdentifierMasked:
-          type: string
+          type:
+          - string
+          - "null"
+      required:
+      - accountId
+      - contractIdentifierMasked
+      - identifierMasked
+      - kind
+      - version
     AccountListItemResponse:
       type: object
       properties:
@@ -16957,14 +16989,18 @@ components:
         archived:
           type: boolean
         balance:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         workspaceCurrency:
           type: string
         balanceInWorkspaceCurrency:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
@@ -16982,12 +17018,32 @@ components:
           type: string
           format: date
         valueSourceDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         warnings:
           type: array
           items:
             type: string
+      required:
+      - accountType
+      - archived
+      - asOf
+      - balance
+      - balanceInWorkspaceCurrency
+      - currency
+      - id
+      - name
+      - nature
+      - portfolioId
+      - portfolioName
+      - valueKnown
+      - valueSourceDate
+      - valueStatus
+      - version
+      - warnings
+      - workspaceCurrency
     AccountRow:
       type: object
       properties:
@@ -17003,12 +17059,16 @@ components:
         currency:
           type: string
         balance:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         valueInPortfolioCurrency:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
@@ -17023,29 +17083,58 @@ components:
           - UNRECONCILED
           - UNKNOWN
         valueSourceDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         warnings:
           type: array
           items:
             type: string
         positionsCount:
-          type: integer
+          type:
+          - integer
+          - "null"
           format: int32
         positionsAsOf:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         totalReturn:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         dueDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         linkedPropertyAccountId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
+      required:
+      - accountId
+      - accountType
+      - balance
+      - currency
+      - dueDate
+      - linkedPropertyAccountId
+      - name
+      - nature
+      - positionsAsOf
+      - positionsCount
+      - totalReturn
+      - valueInPortfolioCurrency
+      - valueKnown
+      - valueSourceDate
+      - valueStatus
+      - warnings
     AccountSnapshotResponse:
       type: object
       properties:
@@ -17059,7 +17148,9 @@ components:
           type: string
           format: date
         balance:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
@@ -17073,7 +17164,9 @@ components:
           type: string
           format: date-time
         updatedAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         version:
           type: integer
@@ -17082,6 +17175,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SnapshotHoldingResponse"
+      required:
+      - accountId
+      - balance
+      - createdAt
+      - currency
+      - holdings
+      - id
+      - openingBalance
+      - snapshotDate
+      - source
+      - updatedAt
+      - version
     AccountSummaryResponse:
       type: object
       properties:
@@ -17116,12 +17221,16 @@ components:
         countsAsSaving:
           type: boolean
         savingsPocketAccountId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         status:
           type: string
         archivedAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         version:
           type: integer
@@ -17132,6 +17241,27 @@ components:
             type: string
         reconciliation:
           $ref: "#/components/schemas/ReconciliationStatusResponse"
+      required:
+      - accountType
+      - archivedAt
+      - countsAsSaving
+      - discretionary
+      - hasAmortisation
+      - hasContributionLimit
+      - hasStatementCycle
+      - hasTransactions
+      - holdsPositions
+      - id
+      - manualValuation
+      - name
+      - nativeCurrency
+      - nature
+      - portfolioId
+      - reconciliation
+      - savingsPocketAccountId
+      - status
+      - version
+      - warnings
     AccountValuation:
       type: object
       properties:
@@ -17147,17 +17277,23 @@ components:
         currency:
           type: string
         value:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         conversionRate:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         conversionRateDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         conversionRateCarriedForward:
           type: boolean
@@ -17166,9 +17302,13 @@ components:
         valueKnown:
           type: boolean
         valueBasis:
-          type: string
+          type:
+          - string
+          - "null"
         valueSourceDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         valueSourceStale:
           type: boolean
@@ -17176,6 +17316,22 @@ components:
           type: array
           items:
             type: string
+      required:
+      - accountId
+      - conversionRate
+      - conversionRateCarriedForward
+      - conversionRateDate
+      - conversionRateStale
+      - currency
+      - name
+      - nativeCurrency
+      - nature
+      - value
+      - valueBasis
+      - valueKnown
+      - valueSourceDate
+      - valueSourceStale
+      - warnings
     AmortisationScheduleEntryRequest:
       type: object
       properties:
@@ -17237,6 +17393,16 @@ components:
         createdAt:
           type: string
           format: date-time
+      required:
+      - accountId
+      - createdAt
+      - currency
+      - dueDate
+      - id
+      - interestComponent
+      - principalComponent
+      - remainingBalance
+      - version
     ApiProblem:
       type: object
       description: RFC 9457 problem detail extended with a stable application code
@@ -17331,6 +17497,10 @@ components:
                 type: string
               message:
                 type: string
+      required:
+      - code
+      - status
+      - title
     AuthTokensResponse:
       type: object
       properties:
@@ -17343,6 +17513,11 @@ components:
         expiresInSeconds:
           type: integer
           format: int64
+      required:
+      - accessToken
+      - expiresInSeconds
+      - refreshToken
+      - tokenType
     CanonicalImportRow:
       type: object
       properties:
@@ -17350,7 +17525,9 @@ components:
           type: string
           format: date
         valueDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         amount:
           type: string
@@ -17362,35 +17539,73 @@ components:
         transactionType:
           type: string
         description:
-          type: string
+          type:
+          - string
+          - "null"
         counterpartyName:
-          type: string
+          type:
+          - string
+          - "null"
         externalId:
-          type: string
+          type:
+          - string
+          - "null"
         mcc:
-          type: string
+          type:
+          - string
+          - "null"
         iso20022BankTransactionCode:
-          type: string
+          type:
+          - string
+          - "null"
         notes:
-          type: string
+          type:
+          - string
+          - "null"
         originalAmount:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         originalCurrency:
-          type: string
+          type:
+          - string
+          - "null"
         bankExchangeRate:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         valueDateAdjusted:
           type: boolean
         groupReference:
-          type: string
+          type:
+          - string
+          - "null"
         savingsPocket:
           type: boolean
+      required:
+      - amount
+      - bankExchangeRate
+      - bookingDate
+      - counterpartyName
+      - currency
+      - description
+      - externalId
+      - groupReference
+      - iso20022BankTransactionCode
+      - mcc
+      - notes
+      - originalAmount
+      - originalCurrency
+      - savingsPocket
+      - transactionType
+      - valueDate
+      - valueDateAdjusted
     CardStatementResponse:
       type: object
       properties:
@@ -17407,7 +17622,9 @@ components:
           type: string
           format: date
         closingBalance:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
@@ -17415,6 +17632,14 @@ components:
           type: string
         paid:
           type: boolean
+      required:
+      - cardAccountId
+      - closingBalance
+      - currency
+      - dueDate
+      - paid
+      - periodEnd
+      - periodStart
     Cash:
       type: object
       properties:
@@ -17430,6 +17655,11 @@ components:
             on requests; JSON numbers remain accepted for compatibility.
         recorded:
           type: boolean
+      required:
+      - amount
+      - currency
+      - recorded
+      - rowNumber
     CashFlowResponse:
       type: object
       properties:
@@ -17453,6 +17683,13 @@ components:
             $ref: "#/components/schemas/CurrencyAmount"
         complete:
           type: boolean
+      required:
+      - complete
+      - income
+      - month
+      - pendingReview
+      - saving
+      - spending
     CategorizationRuleResponse:
       type: object
       properties:
@@ -17477,6 +17714,15 @@ components:
         version:
           type: integer
           format: int32
+      required:
+      - active
+      - categoryId
+      - createdAt
+      - id
+      - matchType
+      - matchValue
+      - priority
+      - version
     CategoryResponse:
       type: object
       properties:
@@ -17484,7 +17730,9 @@ components:
           type: string
           format: uuid
         parentId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         code:
           type: string
@@ -17506,6 +17754,18 @@ components:
         version:
           type: integer
           format: int32
+      required:
+      - active
+      - code
+      - customised
+      - id
+      - level
+      - nameDe
+      - nameEn
+      - parentId
+      - protectedCategory
+      - systemDefault
+      - version
     Conflict:
       type: object
       properties:
@@ -17515,22 +17775,39 @@ components:
           - BALANCE
           - HOLDING
         securityId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         isin:
-          type: string
+          type:
+          - string
+          - "null"
         securityName:
-          type: string
+          type:
+          - string
+          - "null"
         existingValue:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         statementValue:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
+      required:
+      - existingValue
+      - isin
+      - part
+      - securityId
+      - securityName
+      - statementValue
     Contents:
       type: object
       properties:
@@ -17548,6 +17825,12 @@ components:
           format: int64
         gicsStructureVersion:
           type: string
+      required:
+      - catalogueInstitutions
+      - defaultCategories
+      - fallbackSectors
+      - gicsStructureVersion
+      - sourceCodeMappings
     CorrectTransactionRequest:
       type: object
       properties:
@@ -17970,7 +18253,9 @@ components:
         currency:
           type: string
         amount:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
@@ -17980,6 +18265,12 @@ components:
           type: boolean
         conversionRateStale:
           type: boolean
+      required:
+      - amount
+      - conversionRateCarriedForward
+      - conversionRateStale
+      - currency
+      - valueKnown
     CurrentUserResponse:
       type: object
       properties:
@@ -17993,6 +18284,11 @@ components:
         sessionId:
           type: string
           format: uuid
+      required:
+      - language
+      - role
+      - sessionId
+      - userId
     CustomAssetValuationResponse:
       type: object
       properties:
@@ -18017,6 +18313,14 @@ components:
         createdAt:
           type: string
           format: date-time
+      required:
+      - accountId
+      - createdAt
+      - currency
+      - id
+      - source
+      - valuationDate
+      - value
     EditUserRequest:
       type: object
       properties:
@@ -18041,7 +18345,9 @@ components:
         importFileName:
           type: string
         balance:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
@@ -18049,8 +18355,17 @@ components:
           type: integer
           format: int32
         reconciliationResultId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
+      required:
+      - balance
+      - holdingsCount
+      - id
+      - importBatchId
+      - importFileName
+      - reconciliationResultId
     FxImportSettingsResponse:
       type: object
       properties:
@@ -18067,6 +18382,7 @@ components:
           - "6"
           - "12"
           - "24"
+          - null
         intervalSource:
           type: string
           enum:
@@ -18077,10 +18393,14 @@ components:
         cronZone:
           type: string
         nextRunAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         lastRateDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         allowedIntervalHours:
           type: array
@@ -18090,6 +18410,16 @@ components:
         version:
           type: integer
           format: int32
+      required:
+      - allowedIntervalHours
+      - cron
+      - cronZone
+      - enabled
+      - intervalHours
+      - intervalSource
+      - lastRateDate
+      - nextRunAt
+      - version
     ImportAccountIdentifierRule:
       type: object
       properties:
@@ -18106,6 +18436,33 @@ components:
         column:
           type: string
           description: "COLUMN: the source column, by header name or 0-based index."
+    ImportAccountIdentifierRuleResponse:
+      type: object
+      properties:
+        kind:
+          type: string
+          description: "IBAN, MASKED_CARD or CONTRACT_NUMBER."
+        label:
+          type:
+          - string
+          - "null"
+          description: "PREAMBLE_LINE: the text the identifier's line starts with."
+        pattern:
+          type:
+          - string
+          - "null"
+          description: "PREAMBLE_LINE, optional: an RE2 pattern with one capture group\
+            \ for the identifier in the rest of the line."
+        column:
+          type:
+          - string
+          - "null"
+          description: "COLUMN: the source column, by header name or 0-based index."
+      required:
+      - column
+      - kind
+      - label
+      - pattern
     ImportAccountProposalResponse:
       type: object
       properties:
@@ -18114,12 +18471,16 @@ components:
           format: uuid
           description: The template version the file was read with.
         institutionCatalogueId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
           description: "The institution catalogue entry of the template, not a workspace\
             \ institution."
         institutionName:
-          type: string
+          type:
+          - string
+          - "null"
           description: "That catalogue entry's name, for display."
         suggestedAccountType:
           type: string
@@ -18131,6 +18492,13 @@ components:
           type: string
           description: "The account identifier the file names, masked: an IBAN's last\
             \ four characters, or a card number as masked as the statement had it."
+      required:
+      - institutionCatalogueId
+      - institutionName
+      - maskedIdentifier
+      - suggestedAccountType
+      - suggestedCurrency
+      - templateId
     ImportBatchCountsResponse:
       type: object
       properties:
@@ -18158,6 +18526,15 @@ components:
         imported:
           type: integer
           format: int32
+      required:
+      - duplicates
+      - errors
+      - imported
+      - included
+      - newRows
+      - skipped
+      - total
+      - warnings
     ImportBatchResponse:
       type: object
       properties:
@@ -18172,16 +18549,24 @@ components:
         sourceKind:
           type: string
         sourceFileName:
-          type: string
+          type:
+          - string
+          - "null"
         templateId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         templateVersion:
-          type: string
+          type:
+          - string
+          - "null"
         counts:
           $ref: "#/components/schemas/ImportBatchCountsResponse"
         sameFileImportedIn:
-          $ref: "#/components/schemas/ImportSameFileResponse"
+          anyOf:
+          - $ref: "#/components/schemas/ImportSameFileResponse"
+          - type: "null"
         templateCandidates:
           type: array
           items:
@@ -18190,25 +18575,59 @@ components:
           type: string
           format: date-time
         parsedAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         committedAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         rolledBackAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         rollbackReason:
-          type: string
+          type:
+          - string
+          - "null"
         accountIdentification:
-          $ref: "#/components/schemas/ImportIdentificationResponse"
+          anyOf:
+          - $ref: "#/components/schemas/ImportIdentificationResponse"
+          - type: "null"
         statementBalance:
-          $ref: "#/components/schemas/ImportStatementBalanceResponse"
+          anyOf:
+          - $ref: "#/components/schemas/ImportStatementBalanceResponse"
+          - type: "null"
         holdings:
-          $ref: "#/components/schemas/ImportHoldingsResponse"
+          anyOf:
+          - $ref: "#/components/schemas/ImportHoldingsResponse"
+          - type: "null"
         version:
           type: integer
           format: int32
+      required:
+      - accountId
+      - accountIdentification
+      - committedAt
+      - counts
+      - holdings
+      - id
+      - parsedAt
+      - rollbackReason
+      - rolledBackAt
+      - sameFileImportedIn
+      - sourceFileName
+      - sourceKind
+      - statementBalance
+      - status
+      - templateCandidates
+      - templateId
+      - templateVersion
+      - uploadedAt
+      - version
     ImportColumnMapping:
       type: object
       description: "Source column per canonical field: a header cell's text, or a\
@@ -18256,6 +18675,105 @@ components:
           type: string
           description: "A reference several bookings share, e.g. both legs of a currency\
             \ exchange; never a booking's own id."
+    ImportColumnMappingResponse:
+      type: object
+      description: "Source column per canonical field: a header cell's text, or a\
+        \ 0-based column index written as digits (files without a header row, or repeated\
+        \ header names)."
+      properties:
+        bookingDate:
+          type:
+          - string
+          - "null"
+          description: Required.
+        valueDate:
+          type:
+          - string
+          - "null"
+        amount:
+          type:
+          - string
+          - "null"
+          description: Required for SINGLE_SIGNED_COLUMN and NEGATIVE_IN_PARENTHESES.
+        debitAmount:
+          type:
+          - string
+          - "null"
+          description: Required for SEPARATE_DEBIT_CREDIT.
+        creditAmount:
+          type:
+          - string
+          - "null"
+          description: Required for SEPARATE_DEBIT_CREDIT.
+        currency:
+          type:
+          - string
+          - "null"
+          description: Required for currency mode PER_ROW.
+        description:
+          type:
+          - string
+          - "null"
+        counterpartyName:
+          type:
+          - string
+          - "null"
+        externalId:
+          type:
+          - string
+          - "null"
+        transactionType:
+          type:
+          - string
+          - "null"
+        mcc:
+          type:
+          - string
+          - "null"
+        iso20022BankTransactionCode:
+          type:
+          - string
+          - "null"
+        notes:
+          type:
+          - string
+          - "null"
+        originalAmount:
+          type:
+          - string
+          - "null"
+        originalCurrency:
+          type:
+          - string
+          - "null"
+        exchangeRate:
+          type:
+          - string
+          - "null"
+        groupReference:
+          type:
+          - string
+          - "null"
+          description: "A reference several bookings share, e.g. both legs of a currency\
+            \ exchange; never a booking's own id."
+      required:
+      - amount
+      - bookingDate
+      - counterpartyName
+      - creditAmount
+      - currency
+      - debitAmount
+      - description
+      - exchangeRate
+      - externalId
+      - groupReference
+      - iso20022BankTransactionCode
+      - mcc
+      - notes
+      - originalAmount
+      - originalCurrency
+      - transactionType
+      - valueDate
     ImportDuplicateOfResponse:
       type: object
       properties:
@@ -18270,7 +18788,14 @@ components:
         currency:
           type: string
         merchantDescription:
-          type: string
+          type:
+          - string
+          - "null"
+      required:
+      - amount
+      - bookingDate
+      - currency
+      - merchantDescription
     ImportHoldingsColumns:
       type: object
       properties:
@@ -18306,17 +18831,80 @@ components:
           type: string
           maxLength: 200
           minLength: 0
+    ImportHoldingsColumnsResponse:
+      type: object
+      properties:
+        isin:
+          type:
+          - string
+          - "null"
+          maxLength: 200
+          minLength: 0
+        symbol:
+          type:
+          - string
+          - "null"
+          maxLength: 200
+          minLength: 0
+        name:
+          type:
+          - string
+          - "null"
+          maxLength: 200
+          minLength: 0
+        quantity:
+          type:
+          - string
+          - "null"
+          maxLength: 200
+          minLength: 0
+        price:
+          type:
+          - string
+          - "null"
+          maxLength: 200
+          minLength: 0
+        value:
+          type:
+          - string
+          - "null"
+          maxLength: 200
+          minLength: 0
+        currency:
+          type: string
+          maxLength: 200
+          minLength: 0
+        cashAmount:
+          type:
+          - string
+          - "null"
+          maxLength: 200
+          minLength: 0
+      required:
+      - cashAmount
+      - currency
+      - isin
+      - name
+      - price
+      - quantity
+      - symbol
+      - value
     ImportHoldingsResponse:
       type: object
       properties:
         snapshotDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         dateSource:
-          type: string
+          type:
+          - string
+          - "null"
           enum:
           - STATEMENT
           - MEMBER
+          - null
         snapshot:
           type: string
           enum:
@@ -18331,7 +18919,9 @@ components:
           - WITHDRAWN
           - REMOVED
         existingSnapshot:
-          $ref: "#/components/schemas/Existing"
+          anyOf:
+          - $ref: "#/components/schemas/Existing"
+          - type: "null"
         adds:
           type: array
           enum:
@@ -18346,12 +18936,16 @@ components:
         explanation:
           type: string
         balance:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         balanceCurrency:
-          type: string
+          type:
+          - string
+          - "null"
         positions:
           type: array
           items:
@@ -18369,6 +18963,21 @@ components:
           format: int32
         readyToCommit:
           type: boolean
+      required:
+      - adds
+      - balance
+      - balanceCurrency
+      - cashBalances
+      - conflicts
+      - dateSource
+      - existingSnapshot
+      - explanation
+      - positions
+      - readyToCommit
+      - snapshot
+      - snapshotDate
+      - unreadable
+      - unresolvedCount
     ImportHoldingsRule:
       type: object
       properties:
@@ -18415,18 +19024,91 @@ components:
           $ref: "#/components/schemas/ImportHoldingsColumns"
           description: "Spreadsheet: the header cells a position or cash row is read\
             \ from."
+    ImportHoldingsRuleResponse:
+      type: object
+      properties:
+        documentMarker:
+          type:
+          - string
+          - "null"
+          description: "PDF: text every statement of this layout contains."
+          maxLength: 200
+          minLength: 0
+        datePattern:
+          type:
+          - string
+          - "null"
+          description: "PDF: RE2 pattern with the one named group date, e.g. Portfolio\
+            \ per (?P<date>\\S+); its first readable match dates the snapshot."
+          maxLength: 1000
+          minLength: 0
+        dateFormat:
+          type:
+          - string
+          - "null"
+          description: "Optional: the date's format, if not the template's date format."
+          maxLength: 30
+          minLength: 0
+        sectionPattern:
+          type:
+          - string
+          - "null"
+          description: "PDF, optional: RE2 pattern with the one named group currency,\
+            \ starting a section of positions quoted in it, e.g. ^Aktien in (?P<currency>[A-Z]{3})$."
+          maxLength: 1000
+          minLength: 0
+        positionPatterns:
+          type: array
+          description: "PDF: RE2 patterns of a position line, with the named groups\
+            \ quantity and value, isin and/or symbol, and optionally price, name and\
+            \ currency."
+          items:
+            type: string
+            maxLength: 1000
+            minLength: 0
+          maxItems: 5
+          minItems: 0
+        cashPattern:
+          type:
+          - string
+          - "null"
+          description: "PDF, optional: RE2 pattern of a cash balance line with the\
+            \ named groups currency and amount."
+          maxLength: 1000
+          minLength: 0
+        columns:
+          anyOf:
+          - $ref: "#/components/schemas/ImportHoldingsColumnsResponse"
+          - type: "null"
+          description: "Spreadsheet: the header cells a position or cash row is read\
+            \ from."
+      required:
+      - cashPattern
+      - columns
+      - dateFormat
+      - datePattern
+      - documentMarker
+      - positionPatterns
+      - sectionPattern
     ImportIdentificationResponse:
       type: object
       properties:
         outcome:
           type: string
         proposedAccountId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         confirmationRequired:
           type: boolean
         confirmed:
           type: boolean
+      required:
+      - confirmationRequired
+      - confirmed
+      - outcome
+      - proposedAccountId
     ImportParseRequest:
       type: object
       properties:
@@ -18522,6 +19204,119 @@ components:
             \ stays in it."
           maxLength: 100
           minLength: 0
+    ImportPdfLayoutResponse:
+      type: object
+      description: "Line-based extraction of a PDF statement: one booking per line\
+        \ that recordStartPattern finds, its cells the capture groups of rowPattern,\
+        \ named by columns, and, with headerLabels, the words under each header label."
+      properties:
+        columns:
+          type: array
+          description: "Names of rowPattern's capture groups, in order; each at most\
+            \ 100 characters."
+          items:
+            type: string
+          maxItems: 50
+          minItems: 0
+        rowPattern:
+          type: string
+          description: RE2 pattern matched against a whole booking line; one group
+            per column.
+          maxLength: 1000
+          minLength: 0
+        documentMarker:
+          type: string
+          description: Literal text every statement of this layout contains.
+          maxLength: 200
+          minLength: 0
+        recordStartPattern:
+          type: string
+          description: RE2 pattern; a line on which it finds a match is a booking
+            line.
+          maxLength: 1000
+          minLength: 0
+        headerLabels:
+          type: array
+          description: "Optional (text layer only): the labels of the booking table's\
+            \ header line, in order. Each word of a booking line becomes the cell\
+            \ of the label above it."
+          items:
+            type: string
+          maxItems: 50
+          minItems: 0
+        continuationColumn:
+          type:
+          - string
+          - "null"
+          description: "Optional: the column that lines following a booking line,\
+            \ and no booking themselves, are appended to."
+          maxLength: 100
+          minLength: 0
+        sectionPattern:
+          type:
+          - string
+          - "null"
+          description: "Optional RE2 pattern; a line on which it finds a match starts\
+            \ a section, whose first capture group is the sectionColumn cell of its\
+            \ bookings."
+          maxLength: 1000
+          minLength: 0
+        sectionColumn:
+          type:
+          - string
+          - "null"
+          description: "Optional: the column holding the section pattern's first group."
+          maxLength: 100
+          minLength: 0
+        balanceLinePattern:
+          type:
+          - string
+          - "null"
+          description: "Optional RE2 pattern; a line on which it finds a match states\
+            \ a balance (its first capture group) and is never a booking. Include\
+            \ carry-forward lines at page breaks, or they continue the page's last\
+            \ booking."
+          maxLength: 1000
+          minLength: 0
+        balanceColumn:
+          type:
+          - string
+          - "null"
+          description: "Optional: the column holding each booking's running balance;\
+            \ every booking is then checked against the balance before it."
+          maxLength: 100
+          minLength: 0
+        continuationEndPattern:
+          type:
+          - string
+          - "null"
+          description: "Optional RE2 pattern; a line on which it finds a match ends\
+            \ the booking above it, and no line continues a booking until the next\
+            \ booking line."
+          maxLength: 1000
+          minLength: 0
+        flowColumn:
+          type:
+          - string
+          - "null"
+          description: "Optional (with headerLabels): the label of free text that\
+            \ may run on under the next labels; a word following it at word spacing\
+            \ stays in it."
+          maxLength: 100
+          minLength: 0
+      required:
+      - balanceColumn
+      - balanceLinePattern
+      - columns
+      - continuationColumn
+      - continuationEndPattern
+      - documentMarker
+      - flowColumn
+      - headerLabels
+      - recordStartPattern
+      - rowPattern
+      - sectionColumn
+      - sectionPattern
     ImportPreviewRowResponse:
       type: object
       properties:
@@ -18535,9 +19330,13 @@ components:
           additionalProperties:
             type: string
         canonical:
-          $ref: "#/components/schemas/CanonicalImportRow"
+          anyOf:
+          - $ref: "#/components/schemas/CanonicalImportRow"
+          - type: "null"
         error:
-          $ref: "#/components/schemas/ImportRowErrorResponse"
+          anyOf:
+          - $ref: "#/components/schemas/ImportRowErrorResponse"
+          - type: "null"
           description: "Why the row is not imported: for an ERROR row the error, for\
             \ a SKIPPED row the reason it is skipped (e.g. IMPORT_ROW_ZERO_AMOUNT).\
             \ Null otherwise."
@@ -18548,6 +19347,13 @@ components:
             otherwise.
           items:
             $ref: "#/components/schemas/ImportRowErrorResponse"
+      required:
+      - canonical
+      - error
+      - rawData
+      - rowNumber
+      - status
+      - warnings
     ImportRollbackModifiedResponse:
       type: object
       properties:
@@ -18558,6 +19364,9 @@ components:
           type: array
           items:
             type: string
+      required:
+      - reasons
+      - transactionId
     ImportRollbackRequest:
       type: object
       properties:
@@ -18594,6 +19403,14 @@ components:
           items:
             type: string
             format: uuid
+      required:
+      - batch
+      - deletedTransactionCount
+      - modified
+      - reversalTransactionIds
+      - rollback
+      - unmatchedTransactionIds
+      - voidedTransactionIds
     ImportRowErrorResponse:
       type: object
       properties:
@@ -18649,6 +19466,10 @@ components:
             type: string
         message:
           type: string
+      required:
+      - args
+      - code
+      - message
     ImportRowFilter:
       type: object
       properties:
@@ -18662,6 +19483,22 @@ components:
             type: string
           maxItems: 32
           minItems: 0
+    ImportRowFilterResponse:
+      type: object
+      properties:
+        column:
+          type: string
+          description: "Source column name or 0-based column index, like other mappings."
+        acceptedValues:
+          type: array
+          description: "Accepted values, compared after trimming and ignoring case."
+          items:
+            type: string
+          maxItems: 32
+          minItems: 0
+      required:
+      - acceptedValues
+      - column
     ImportRowInclusionRequest:
       type: object
       properties:
@@ -18684,19 +19521,27 @@ components:
           additionalProperties:
             type: string
         canonical:
-          $ref: "#/components/schemas/CanonicalImportRow"
+          anyOf:
+          - $ref: "#/components/schemas/CanonicalImportRow"
+          - type: "null"
         duplicateOfTransactionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         duplicateOf:
-          $ref: "#/components/schemas/ImportDuplicateOfResponse"
+          anyOf:
+          - $ref: "#/components/schemas/ImportDuplicateOfResponse"
+          - type: "null"
           description: "For a row with a duplicateOfTransactionId, that ledger row:\
             \ its booking date, amount, currency and description. The duplicate rule\
             \ compares booking date, amount and currency only (US-07-17), so the descriptions\
             \ may differ; the member can force the row in. Null exactly when duplicateOfTransactionId\
             \ is."
         error:
-          $ref: "#/components/schemas/ImportRowErrorResponse"
+          anyOf:
+          - $ref: "#/components/schemas/ImportRowErrorResponse"
+          - type: "null"
           description: "Why the row is not imported: for an ERROR row the error, for\
             \ a SKIPPED row the reason it is skipped (e.g. IMPORT_ROW_ZERO_AMOUNT).\
             \ Null otherwise."
@@ -18705,7 +19550,9 @@ components:
           items:
             $ref: "#/components/schemas/ImportRowErrorResponse"
         resultingTransactionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         recheck:
           type:
@@ -18723,6 +19570,19 @@ components:
           - NEW
           - REPOINTED
           - DUPLICATE
+          - null
+      required:
+      - canonical
+      - duplicateOf
+      - duplicateOfTransactionId
+      - error
+      - included
+      - rawData
+      - recheck
+      - resultingTransactionId
+      - rowNumber
+      - status
+      - warnings
     ImportSameFileResponse:
       type: object
       properties:
@@ -18732,6 +19592,9 @@ components:
         committedAt:
           type: string
           format: date-time
+      required:
+      - batchId
+      - committedAt
     ImportStatementBalanceResponse:
       type: object
       properties:
@@ -18744,25 +19607,37 @@ components:
           - UNREADABLE
           - AMBIGUOUS
         date:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         balance:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         currency:
-          type: string
+          type:
+          - string
+          - "null"
         openingDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         openingBalance:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         snapshot:
-          type: string
+          type:
+          - string
+          - "null"
           enum:
           - NEW
           - COMPLETES
@@ -18773,8 +19648,11 @@ components:
           - DELETED
           - WITHDRAWN
           - REMOVED
+          - null
         existingSnapshot:
-          $ref: "#/components/schemas/Existing"
+          anyOf:
+          - $ref: "#/components/schemas/Existing"
+          - type: "null"
         adds:
           type: array
           enum:
@@ -18786,7 +19664,21 @@ components:
           items:
             $ref: "#/components/schemas/Conflict"
         explanation:
-          type: string
+          type:
+          - string
+          - "null"
+      required:
+      - adds
+      - balance
+      - conflicts
+      - currency
+      - date
+      - existingSnapshot
+      - explanation
+      - openingBalance
+      - openingDate
+      - outcome
+      - snapshot
     ImportStatementBalanceRule:
       type: object
       properties:
@@ -18817,6 +19709,47 @@ components:
             \ the balance lines'."
           maxLength: 30
           minLength: 0
+    ImportStatementBalanceRuleResponse:
+      type: object
+      properties:
+        pattern:
+          type: string
+          description: "RE2 pattern with the named groups date and amount, and optionally\
+            \ currency and sign, e.g. Kontostand vom (?P<date>\\S+): (?P<amount>\\\
+            S+). A statement with sections in several currencies needs the currency\
+            \ group: without it, every balance is taken to be in the account's currency.\
+            \ The date group may be left out when statementDatePattern gives the date."
+          maxLength: 1000
+          minLength: 0
+        dateFormat:
+          type:
+          - string
+          - "null"
+          description: "Optional: the date's format, if not the template's date format."
+          maxLength: 30
+          minLength: 0
+        statementDatePattern:
+          type:
+          - string
+          - "null"
+          description: "Optional RE2 pattern with the one named group date, e.g. Abrechnung\
+            \ vom \\S+ bis (?P<date>\\S+): its first match in the file with a readable\
+            \ date dates every balance line that has no date of its own."
+          maxLength: 1000
+          minLength: 0
+        statementDateFormat:
+          type:
+          - string
+          - "null"
+          description: "Optional: the format of statementDatePattern's date, if not\
+            \ the balance lines'."
+          maxLength: 30
+          minLength: 0
+      required:
+      - dateFormat
+      - pattern
+      - statementDateFormat
+      - statementDatePattern
     ImportTemplateCandidateResponse:
       type: object
       properties:
@@ -18824,6 +19757,9 @@ components:
           $ref: "#/components/schemas/ImportTemplateResponse"
         match:
           type: string
+      required:
+      - match
+      - template
     ImportTemplateRequest:
       type: object
       properties:
@@ -18939,7 +19875,9 @@ components:
         name:
           type: string
         institutionCatalogueId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         templateClass:
           type: string
@@ -18963,7 +19901,9 @@ components:
         decimalSeparator:
           type: string
         thousandsSeparator:
-          type: string
+          type:
+          - string
+          - "null"
         dateFormat:
           type: string
         headerRowIndex:
@@ -18980,9 +19920,11 @@ components:
         currencyMode:
           type: string
         fixedCurrency:
-          type: string
+          type:
+          - string
+          - "null"
         columnMapping:
-          $ref: "#/components/schemas/ImportColumnMapping"
+          $ref: "#/components/schemas/ImportColumnMappingResponse"
         typeMapping:
           type: object
           additionalProperties:
@@ -18990,15 +19932,21 @@ components:
         accountIdentificationStrategy:
           type: string
         headerColumns:
-          type: array
+          type:
+          - array
+          - "null"
           items:
             type: string
         headerFingerprint:
-          type: string
+          type:
+          - string
+          - "null"
         fileFormat:
           type: string
         pdfLayout:
-          $ref: "#/components/schemas/ImportPdfLayout"
+          anyOf:
+          - $ref: "#/components/schemas/ImportPdfLayoutResponse"
+          - type: "null"
         version:
           type: integer
           format: int32
@@ -19007,15 +19955,62 @@ components:
           additionalProperties:
             type: string
         rowFilter:
-          $ref: "#/components/schemas/ImportRowFilter"
+          anyOf:
+          - $ref: "#/components/schemas/ImportRowFilterResponse"
+          - type: "null"
         accountIdentifier:
-          $ref: "#/components/schemas/ImportAccountIdentifierRule"
+          anyOf:
+          - $ref: "#/components/schemas/ImportAccountIdentifierRuleResponse"
+          - type: "null"
         statementBalance:
-          $ref: "#/components/schemas/ImportStatementBalanceRule"
+          anyOf:
+          - $ref: "#/components/schemas/ImportStatementBalanceRuleResponse"
+          - type: "null"
         holdingsRule:
-          $ref: "#/components/schemas/ImportHoldingsRule"
+          anyOf:
+          - $ref: "#/components/schemas/ImportHoldingsRuleResponse"
+          - type: "null"
         savingsPocketPattern:
-          type: string
+          type:
+          - string
+          - "null"
+      required:
+      - accountIdentificationStrategy
+      - accountIdentifier
+      - active
+      - amountRepresentation
+      - canEdit
+      - columnMapping
+      - currencyMode
+      - current
+      - dateFormat
+      - decimalSeparator
+      - delimiter
+      - descriptionTypePatterns
+      - effectiveFrom
+      - encoding
+      - familyId
+      - fileFormat
+      - fixedCurrency
+      - headerColumns
+      - headerFingerprint
+      - headerRowIndex
+      - holdingsRule
+      - id
+      - institutionCatalogueId
+      - name
+      - pdfLayout
+      - preambleRowCount
+      - rowFilter
+      - savingsPocketPattern
+      - statementBalance
+      - systemProvided
+      - templateClass
+      - templateVersion
+      - thousandsSeparator
+      - trailingSummaryRowCount
+      - typeMapping
+      - version
     ImportTemplateTestResponse:
       type: object
       properties:
@@ -19024,7 +20019,9 @@ components:
           items:
             type: string
         headerFingerprint:
-          type: string
+          type:
+          - string
+          - "null"
         rowCount:
           type: integer
           format: int32
@@ -19047,13 +20044,31 @@ components:
           items:
             $ref: "#/components/schemas/ImportPreviewRowResponse"
         accountIdentifierFound:
-          type: boolean
+          type:
+          - boolean
+          - "null"
         statementBalanceCount:
-          type: integer
+          type:
+          - integer
+          - "null"
           format: int32
         statementBalanceUnreadableCount:
-          type: integer
+          type:
+          - integer
+          - "null"
           format: int32
+      required:
+      - accountIdentifierFound
+      - errorCounts
+      - errorRowCount
+      - headerColumns
+      - headerFingerprint
+      - parsedRowCount
+      - rowCount
+      - rows
+      - skippedRowCount
+      - statementBalanceCount
+      - statementBalanceUnreadableCount
     InstitutionCatalogueEntrySummaryResponse:
       type: object
       properties:
@@ -19067,9 +20082,20 @@ components:
         institutionType:
           type: string
         identifier:
-          type: string
+          type:
+          - string
+          - "null"
         logoUrl:
-          type: string
+          type:
+          - string
+          - "null"
+      required:
+      - country
+      - id
+      - identifier
+      - institutionType
+      - logoUrl
+      - name
     LoanRepaymentResponse:
       type: object
       properties:
@@ -19093,12 +20119,16 @@ components:
         currency:
           type: string
         interestAmount:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         principalAmount:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
@@ -19107,10 +20137,14 @@ components:
         splitEstimated:
           type: boolean
         amortisationScheduleEntryId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         externalId:
-          type: string
+          type:
+          - string
+          - "null"
         transactions:
           type: array
           items:
@@ -19118,6 +20152,21 @@ components:
         createdAt:
           type: string
           format: date-time
+      required:
+      - amortisationScheduleEntryId
+      - amount
+      - bookingDate
+      - createdAt
+      - currency
+      - externalId
+      - id
+      - interestAmount
+      - loanAccountId
+      - payingAccountId
+      - principalAmount
+      - splitEstimated
+      - splitSource
+      - transactions
     LoginRequest:
       type: object
       properties:
@@ -19136,9 +20185,17 @@ components:
         mfaRequired:
           type: boolean
         mfaChallengeToken:
-          type: string
+          type:
+          - string
+          - "null"
         tokens:
-          $ref: "#/components/schemas/AuthTokensResponse"
+          anyOf:
+          - $ref: "#/components/schemas/AuthTokensResponse"
+          - type: "null"
+      required:
+      - mfaChallengeToken
+      - mfaRequired
+      - tokens
     MfaConfirmRequest:
       type: object
       properties:
@@ -19174,6 +20231,9 @@ components:
           type: string
         otpauthUri:
           type: string
+      required:
+      - otpauthUri
+      - secret
     MfaVerifyRequest:
       type: object
       properties:
@@ -19222,6 +20282,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AccountValuation"
+      required:
+      - accounts
+      - approximate
+      - asOf
+      - complete
+      - currency
+      - netWorth
+      - totalAssets
+      - totalLiabilities
+      - warnings
     OpeningBalanceRequest:
       type: object
       properties:
@@ -19265,7 +20335,9 @@ components:
           type: string
           format: date-time
         updatedAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         version:
           type: integer
@@ -19274,6 +20346,16 @@ components:
           type: array
           items:
             type: string
+      required:
+      - accountId
+      - balance
+      - createdAt
+      - currency
+      - date
+      - id
+      - updatedAt
+      - version
+      - warnings
     PageMetadata:
       type: object
       properties:
@@ -19289,6 +20371,11 @@ components:
         totalPages:
           type: integer
           format: int32
+      required:
+      - number
+      - size
+      - totalElements
+      - totalPages
     PageResponseImportBatchResponse:
       type: object
       properties:
@@ -19298,6 +20385,9 @@ components:
             $ref: "#/components/schemas/ImportBatchResponse"
         page:
           $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseImportRowResponse:
       type: object
       properties:
@@ -19307,6 +20397,9 @@ components:
             $ref: "#/components/schemas/ImportRowResponse"
         page:
           $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseInstitutionCatalogueEntrySummaryResponse:
       type: object
       properties:
@@ -19316,6 +20409,9 @@ components:
             $ref: "#/components/schemas/InstitutionCatalogueEntrySummaryResponse"
         page:
           $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseReconciliationResultResponse:
       type: object
       properties:
@@ -19325,6 +20421,9 @@ components:
             $ref: "#/components/schemas/ReconciliationResultResponse"
         page:
           $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseTransactionResponse:
       type: object
       properties:
@@ -19334,6 +20433,9 @@ components:
             $ref: "#/components/schemas/TransactionResponse"
         page:
           $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PortfolioListItemResponse:
       type: object
       properties:
@@ -19346,14 +20448,20 @@ components:
         name:
           type: string
         catalogueInstitutionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         institutionType:
           type: string
         country:
-          type: string
+          type:
+          - string
+          - "null"
         logoUrl:
-          type: string
+          type:
+          - string
+          - "null"
         portfolioType:
           type: string
           enum:
@@ -19398,6 +20506,25 @@ components:
         asOf:
           type: string
           format: date
+      required:
+      - activeAccountCount
+      - asOf
+      - catalogueInstitutionId
+      - complete
+      - country
+      - id
+      - institutionType
+      - logoUrl
+      - name
+      - personalAssetsDefault
+      - portfolioCurrency
+      - portfolioType
+      - portfolioTypeOverridden
+      - total
+      - totalInWorkspaceCurrency
+      - valueStatus
+      - version
+      - workspaceCurrency
     PortfolioResponse:
       type: object
       properties:
@@ -19405,18 +20532,26 @@ components:
           type: string
           format: uuid
         catalogueInstitutionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         name:
           type: string
         country:
-          type: string
+          type:
+          - string
+          - "null"
         institutionType:
           type: string
         identifier:
-          type: string
+          type:
+          - string
+          - "null"
         logoUrl:
-          type: string
+          type:
+          - string
+          - "null"
         portfolioCurrency:
           type: string
         portfolioType:
@@ -19438,6 +20573,20 @@ components:
         version:
           type: integer
           format: int32
+      required:
+      - catalogueInstitutionId
+      - country
+      - id
+      - identifier
+      - institutionType
+      - logoUrl
+      - name
+      - personalAssetsDefault
+      - portfolioCurrency
+      - portfolioType
+      - portfolioTypeOverridden
+      - status
+      - version
     PortfolioSummaryResponse:
       type: object
       properties:
@@ -19473,6 +20622,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AccountContribution"
+      required:
+      - accounts
+      - complete
+      - currency
+      - institutionId
+      - netValue
+      - portfolioCurrency
+      - totalAssets
+      - totalLiabilities
+      - warnings
     PortfolioViewResponse:
       type: object
       properties:
@@ -19530,6 +20689,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Section"
+      required:
+      - asOf
+      - complete
+      - name
+      - personalAssetsDefault
+      - portfolioCurrency
+      - portfolioId
+      - portfolioType
+      - portfolioTypeOverridden
+      - sections
+      - total
+      - totalInWorkspaceCurrency
+      - valueStatus
+      - warnings
+      - workspaceCurrency
     Position:
       type: object
       properties:
@@ -19537,11 +20711,17 @@ components:
           type: integer
           format: int32
         isin:
-          type: string
+          type:
+          - string
+          - "null"
         symbol:
-          type: string
+          type:
+          - string
+          - "null"
         name:
-          type: string
+          type:
+          - string
+          - "null"
         quantity:
           type: string
           format: decimal
@@ -19565,12 +20745,26 @@ components:
           - RESOLVED
           - UNRESOLVED
         securityId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         warnings:
           type: array
           items:
             $ref: "#/components/schemas/ImportRowErrorResponse"
+      required:
+      - isin
+      - name
+      - quantity
+      - reportedCurrency
+      - reportedPrice
+      - reportedValue
+      - resolution
+      - rowNumber
+      - securityId
+      - symbol
+      - warnings
     ReassignAccountPortfolioRequest:
       type: object
       properties:
@@ -19604,49 +20798,88 @@ components:
           type: string
           format: date
         differenceAmount:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         currency:
           type: string
         probableCause:
-          type: string
+          type:
+          - string
+          - "null"
         status:
           type: string
         resolvedAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         createdAt:
           type: string
           format: date-time
         resolutionNote:
-          type: string
+          type:
+          - string
+          - "null"
         resolutionTransactionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         version:
           type: integer
           format: int32
         finalized:
           type: boolean
+      required:
+      - accountId
+      - asOf
+      - createdAt
+      - currency
+      - differenceAmount
+      - finalized
+      - id
+      - probableCause
+      - resolutionNote
+      - resolutionTransactionId
+      - resolvedAt
+      - snapshotId
+      - status
+      - version
     ReconciliationStatusResponse:
       type: object
       properties:
         status:
           type: string
         reason:
-          type: string
+          type:
+          - string
+          - "null"
         asOf:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         openDifference:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         currency:
-          type: string
+          type:
+          - string
+          - "null"
+      required:
+      - asOf
+      - currency
+      - openDifference
+      - reason
+      - status
     RecordAccountSnapshotRequest:
       type: object
       properties:
@@ -19678,7 +20911,9 @@ components:
           type: string
           format: date-time
         importedBy:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         contents:
           $ref: "#/components/schemas/Contents"
@@ -19686,6 +20921,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StalenessWarning"
+      required:
+      - contents
+      - importedAt
+      - importedBy
+      - packageVersion
+      - publicationDate
+      - stalenessWarnings
     RefreshTokenRequest:
       type: object
       properties:
@@ -19746,6 +20988,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AccountRow"
+      required:
+      - accounts
+      - complete
+      - section
+      - subtotal
+      - subtotalInWorkspaceCurrency
+      - valueStatus
     SecurityCompleteness:
       type: object
       properties:
@@ -19755,6 +21004,9 @@ components:
           type: array
           items:
             type: string
+      required:
+      - complete
+      - missingFields
     SecurityResponse:
       type: object
       properties:
@@ -19762,9 +21014,13 @@ components:
           type: string
           format: uuid
         isin:
-          type: string
+          type:
+          - string
+          - "null"
         syntheticKey:
-          type: string
+          type:
+          - string
+          - "null"
         displayName:
           type: string
         legalName:
@@ -19772,17 +21028,38 @@ components:
         denominationCurrency:
           type: string
         instrumentType:
-          type: string
+          type:
+          - string
+          - "null"
         assetClass:
-          type: string
+          type:
+          - string
+          - "null"
         securityCountry:
-          type: string
+          type:
+          - string
+          - "null"
         issuerCountry:
-          type: string
+          type:
+          - string
+          - "null"
         state:
           type: string
         completeness:
           $ref: "#/components/schemas/SecurityCompleteness"
+      required:
+      - assetClass
+      - completeness
+      - denominationCurrency
+      - displayName
+      - id
+      - instrumentType
+      - isin
+      - issuerCountry
+      - legalName
+      - securityCountry
+      - state
+      - syntheticKey
     SessionSummaryResponse:
       type: object
       properties:
@@ -19790,7 +21067,9 @@ components:
           type: string
           format: uuid
         deviceLabel:
-          type: string
+          type:
+          - string
+          - "null"
         status:
           type: string
         createdAt:
@@ -19801,6 +21080,13 @@ components:
           format: date-time
         current:
           type: boolean
+      required:
+      - createdAt
+      - current
+      - deviceLabel
+      - id
+      - lastSeenAt
+      - status
     SetSettlementSourceRequest:
       type: object
       properties:
@@ -19840,7 +21126,9 @@ components:
           type: string
           format: uuid
         cardTransactionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         amount:
           type: string
@@ -19857,7 +21145,9 @@ components:
         matchBasis:
           type: string
         decidedAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         createdAt:
           type: string
@@ -19874,16 +21164,40 @@ components:
           type: string
           format: uuid
         creditTransactionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         transferFxRate:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         version:
           type: integer
           format: int32
+      required:
+      - amount
+      - cardAccountId
+      - cardTransactionId
+      - createdAt
+      - creditAccountId
+      - creditTransactionId
+      - currency
+      - debitAccountId
+      - debitTransactionId
+      - decidedAt
+      - id
+      - matchBasis
+      - matchKind
+      - paymentAccountId
+      - paymentBookingDate
+      - paymentTransactionId
+      - status
+      - transferFxRate
+      - version
     SettlementSourceResponse:
       type: object
       properties:
@@ -19891,11 +21205,17 @@ components:
           type: string
           format: uuid
         settlementSourceAccountId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         version:
           type: integer
           format: int32
+      required:
+      - cardAccountId
+      - settlementSourceAccountId
+      - version
     SetupAdministratorRequest:
       type: object
       properties:
@@ -19947,7 +21267,9 @@ components:
           type: string
           format: uuid
         isin:
-          type: string
+          type:
+          - string
+          - "null"
         securityDisplayName:
           type: string
         quantity:
@@ -19956,24 +21278,43 @@ components:
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         reportedCostBasis:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         costBasisIsEstimated:
           type: boolean
         reportedPrice:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         reportedValue:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         reportedCurrency:
-          type: string
+          type:
+          - string
+          - "null"
+      required:
+      - costBasisIsEstimated
+      - id
+      - isin
+      - quantity
+      - reportedCostBasis
+      - reportedCurrency
+      - reportedPrice
+      - reportedValue
+      - securityDisplayName
+      - securityId
     StalenessWarning:
       type: object
       properties:
@@ -19983,6 +21324,10 @@ components:
           type: string
         missingPeriod:
           type: string
+      required:
+      - code
+      - missingPeriod
+      - subject
     StatementConfigResponse:
       type: object
       properties:
@@ -19990,14 +21335,23 @@ components:
           type: string
           format: uuid
         statementDay:
-          type: integer
+          type:
+          - integer
+          - "null"
           format: int32
         dueDateOffsetDays:
-          type: integer
+          type:
+          - integer
+          - "null"
           format: int32
         version:
           type: integer
           format: int32
+      required:
+      - cardAccountId
+      - dueDateOffsetDays
+      - statementDay
+      - version
     TransactionCorrectionResponse:
       type: object
       properties:
@@ -20007,7 +21361,13 @@ components:
         transaction:
           $ref: "#/components/schemas/TransactionResponse"
         removal:
-          $ref: "#/components/schemas/TransactionRemovalResponse"
+          anyOf:
+          - $ref: "#/components/schemas/TransactionRemovalResponse"
+          - type: "null"
+      required:
+      - removal
+      - transaction
+      - version
     TransactionRemovalResponse:
       type: object
       properties:
@@ -20033,6 +21393,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TransactionResponse"
+      required:
+      - affected
+      - removal
+      - restored
+      - reversals
+      - unmatchedTransactionIds
+      - version
     TransactionResponse:
       type: object
       properties:
@@ -20057,99 +21424,153 @@ components:
         currency:
           type: string
         merchantDescription:
-          type: string
+          type:
+          - string
+          - "null"
         counterpartyName:
-          type: string
+          type:
+          - string
+          - "null"
         mcc:
-          type: string
+          type:
+          - string
+          - "null"
         notes:
-          type: string
+          type:
+          - string
+          - "null"
         source:
           type: string
         externalId:
-          type: string
+          type:
+          - string
+          - "null"
         internalTransfer:
           type: boolean
         fxRateToAccountCurrency:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         fxRateEstimated:
           type: boolean
         relatedTransactionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         createdAt:
           type: string
           format: date-time
         securityId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         quantity:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         unitPrice:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         feeAmount:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         tradeDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         settlementDate:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         grossAmount:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         taxWithheldAmount:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         netAmount:
-          type: string
+          type:
+          - string
+          - "null"
           format: decimal
           description: Exact decimal encoded as a plain JSON string. Strings are canonical
             on requests; JSON numbers remain accepted for compatibility.
         categoryId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         categoryAssignedBy:
-          type: string
+          type:
+          - string
+          - "null"
         removal:
-          type: string
+          type:
+          - string
+          - "null"
         reconciliationAdjustment:
-          type: string
+          type:
+          - string
+          - "null"
         voidedAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         voidReason:
-          type: string
+          type:
+          - string
+          - "null"
         replacesTransactionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         correctsTransactionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         restoresTransactionId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         deletedAt:
-          type: string
+          type:
+          - string
+          - "null"
           format: date-time
         counterpartyAccountId:
-          type: string
+          type:
+          - string
+          - "null"
           format: uuid
         version:
           type: integer
@@ -20158,6 +21579,47 @@ components:
           type: array
           items:
             type: string
+      required:
+      - accountId
+      - accountName
+      - amount
+      - bookingDate
+      - categoryAssignedBy
+      - categoryId
+      - correctsTransactionId
+      - counterpartyAccountId
+      - counterpartyName
+      - createdAt
+      - currency
+      - deletedAt
+      - externalId
+      - feeAmount
+      - fxRateEstimated
+      - fxRateToAccountCurrency
+      - grossAmount
+      - id
+      - internalTransfer
+      - mcc
+      - merchantDescription
+      - netAmount
+      - notes
+      - quantity
+      - reconciliationAdjustment
+      - relatedTransactionId
+      - removal
+      - replacesTransactionId
+      - restoresTransactionId
+      - securityId
+      - settlementDate
+      - source
+      - taxWithheldAmount
+      - tradeDate
+      - transactionType
+      - unitPrice
+      - version
+      - voidReason
+      - voidedAt
+      - warnings
     Unreadable:
       type: object
       properties:
@@ -20168,6 +21630,10 @@ components:
           type: string
         error:
           $ref: "#/components/schemas/ImportRowErrorResponse"
+      required:
+      - error
+      - line
+      - rowNumber
     UpdateAccountRequest:
       type: object
       properties:
@@ -20278,6 +21744,13 @@ components:
         version:
           type: integer
           format: int32
+      required:
+      - email
+      - id
+      - language
+      - role
+      - status
+      - version
     WorkspaceMemberListItemResponse:
       type: object
       properties:
@@ -20294,6 +21767,12 @@ components:
         version:
           type: integer
           format: int32
+      required:
+      - active
+      - displayName
+      - id
+      - userId
+      - version
     WorkspaceMemberSummaryResponse:
       type: object
       properties:
@@ -20308,11 +21787,20 @@ components:
           type: string
           format: date
         memberUntil:
-          type: string
+          type:
+          - string
+          - "null"
           format: date
         version:
           type: integer
           format: int32
+      required:
+      - displayName
+      - id
+      - memberSince
+      - memberUntil
+      - status
+      - version
     WorkspaceResponse:
       type: object
       properties:
@@ -20320,12 +21808,19 @@ components:
           type: string
           format: uuid
         name:
-          type: string
+          type:
+          - string
+          - "null"
         currency:
           type: string
         version:
           type: integer
           format: int32
+      required:
+      - currency
+      - id
+      - name
+      - version
   responses:
     ApiProblemResponse:
       description: Error response using the TrackMyWealth problem-detail contract.

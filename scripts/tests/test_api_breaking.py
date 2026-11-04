@@ -40,9 +40,9 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "api"
 BASE = FIXTURES / "base.yaml"
 REPORT = (
     "1 changes: 1 error, 0 warning, 0 info\n"
-    "error\t[response-optional-property-removed] at revision.yaml\n"
+    "error\t[response-required-property-removed] at revision.yaml\n"
     "\tin API GET /api/v1/accounts\n"
-    "\t\tremoved the optional property `items/currency` from the response with the `200` status"
+    "\t\tremoved the required property `items/currency` from the response with the `200` status"
 )
 NOTE = "## API breaking change\n\n`currency` moves to `balance.currency`; the mobile app reads both.\n"
 BREAKING = Diff(1, REPORT)
@@ -141,7 +141,7 @@ class VerdictTest(unittest.TestCase):
     def test_a_breaking_change_fails_and_lists_the_change(self):
         result = verdict(BREAKING, [], None)
         self.assertFalse(result.passed)
-        self.assertIn("removed the optional property `items/currency`", result.message)
+        self.assertIn("removed the required property `items/currency`", result.message)
         self.assertIn("in API GET /api/v1/accounts", result.message)
         self.assertIn(f"the '{LABEL}' label and a '## API breaking change' section", result.message)
 
@@ -159,7 +159,7 @@ class VerdictTest(unittest.TestCase):
     def test_label_and_note_together_pass_and_still_list_the_change(self):
         result = verdict(BREAKING, [LABEL], NOTE)
         self.assertTrue(result.passed)
-        self.assertIn("removed the optional property `items/currency`", result.message)
+        self.assertIn("removed the required property `items/currency`", result.message)
 
     def test_oasdiff_failing_to_compare_fails_even_with_label_and_note(self):
         result = verdict(Diff(102, "Error: failed to load revision spec"), [LABEL], NOTE)
@@ -396,10 +396,32 @@ class RealOasdiffTest(unittest.TestCase):
         return check(base, FIXTURES / fixture, list(labels), body, api_breaking.run_oasdiff(OASDIFF))
 
     def test_a_removed_response_field_fails_and_is_listed(self):
+        # Without a severity override (#451): the field is required, as every response field is.
         result = self.check("field-removed.yaml")
         self.assertFalse(result.passed, result.message)
-        self.assertIn("response-optional-property-removed", result.message)
+        self.assertIn("response-required-property-removed", result.message)
         self.assertIn("currency", result.message)
+
+    def test_a_response_field_made_nullable_fails_and_is_listed(self):
+        result = self.check("became-nullable.yaml")
+        self.assertFalse(result.passed, result.message)
+        self.assertIn("currency", result.message)
+
+    def test_a_field_removed_behind_a_nullable_reference_fails_and_is_listed(self):
+        # A nullable reference is anyOf [$ref, null] in the contract (#451); oasdiff looks inside it.
+        base = FIXTURES / "nullable-ref-base.yaml"
+        result = self.check("nullable-ref-field-removed.yaml", base=base)
+        self.assertFalse(result.passed, result.message)
+        self.assertIn("response-required-property-removed", result.message)
+        self.assertIn("BalanceResponse]/currency", result.message)
+
+    def test_an_optional_problem_field_removed_fails_and_is_listed(self):
+        # ApiProblem is hand-built and keeps optional fields: only the severity override catches it.
+        base = FIXTURES / "nullable-ref-base.yaml"
+        result = self.check("problem-field-removed.yaml", base=base)
+        self.assertFalse(result.passed, result.message)
+        self.assertIn("response-optional-property-removed", result.message)
+        self.assertIn("errors", result.message)
 
     def test_an_optional_parameter_made_required_fails_and_is_listed(self):
         result = self.check("parameter-required.yaml")

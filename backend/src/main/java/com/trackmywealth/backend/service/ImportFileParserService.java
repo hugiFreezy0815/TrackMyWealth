@@ -48,6 +48,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -230,10 +231,9 @@ public class ImportFileParserService {
 
     // #268: the column of each booking's running balance, when the layout checks one; and the
     // balance the bookings so far lead to, null while unknown.
-    int balanceColumn =
-        bookingLines == null || template.pdfLayout().balanceColumn() == null
-            ? -1
-            : columnIndex(template.pdfLayout().balanceColumn(), header);
+    String balanceColumnName =
+        bookingLines == null ? null : Objects.requireNonNull(template.pdfLayout()).balanceColumn();
+    int balanceColumn = balanceColumnName == null ? -1 : columnIndex(balanceColumnName, header);
     BigDecimal running = null;
 
     List<ParsedImportRow> rows = new ArrayList<>(data.size());
@@ -621,8 +621,8 @@ public class ImportFileParserService {
       }
     }
     requireCell(layout, layout.balanceColumn(), "pdfLayout.balanceColumn");
-    if (layout.flowColumn() != null
-        && matchesByName(layout.flowColumn(), layout.headerLabels()).size() != 1) {
+    String flowColumn = layout.flowColumn();
+    if (flowColumn != null && matchesByName(flowColumn, layout.headerLabels()).size() != 1) {
       throw invalid("pdfLayout.flowColumn", "Name one of the layout's header labels.");
     }
   }
@@ -828,9 +828,8 @@ public class ImportFileParserService {
             "accountIdentificationStrategy",
             "The template has no lines before its header row to find the identifier in.");
       }
-      if (rule.label() == null
-          || rule.label().isBlank()
-          || rule.label().length() > MAX_IDENTIFIER_LABEL_LENGTH) {
+      String label = rule.label();
+      if (label == null || label.isBlank() || label.length() > MAX_IDENTIFIER_LABEL_LENGTH) {
         throw invalid(
             ACCOUNT_IDENTIFIER + ".label",
             "Give the text the identifier's line starts with, at most "
@@ -1158,14 +1157,25 @@ public class ImportFileParserService {
     String value =
         ImportTemplateValues.ACCOUNT_PREAMBLE_LINE.equals(template.accountIdentificationStrategy())
             ? preambleIdentifier(rule, preamble)
-            : columnIdentifier(rule, data, indexOf(template, rule.column(), header));
+            : columnIdentifier(
+                rule,
+                data,
+                indexOf(
+                    template,
+                    // validateAccountIdentifier: a column rule always names its column.
+                    Objects.requireNonNull(rule.column(), "accountIdentifier.column"),
+                    header));
     return new ImportFileAccountIdentifier(rule.kind(), value);
   }
 
   // The first preamble line starting with the label; the rest of it, or the pattern's group in it.
   private static String preambleIdentifier(
       ImportAccountIdentifierRule rule, List<String> preamble) {
-    String label = rule.label().strip().toLowerCase(Locale.ROOT);
+    // validateAccountIdentifier: a preamble rule always has its label.
+    String label =
+        Objects.requireNonNull(rule.label(), "accountIdentifier.label")
+            .strip()
+            .toLowerCase(Locale.ROOT);
     // PDFs may repeat a heading without the number before the account-detail line.
     // Find the first *valid identifier*, rather than stopping at the first matching label.
     com.google.re2j.Pattern pattern =
