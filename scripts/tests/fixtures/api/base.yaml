@@ -1,5 +1,5 @@
-# Test fixture for scripts/tests/test_api_breaking.py (#372). Shaped like api/openapi.yaml: no
-# response field is marked required.
+# Test fixture for scripts/tests/test_api_breaking.py (#372). Shaped like api/openapi.yaml: every
+# response field is required (#451), and none is nullable.
 openapi: 3.1.0
 info:
   title: Fixture API
@@ -30,6 +30,10 @@ components:
   schemas:
     AccountResponse:
       type: object
+      required:
+      - id
+      - name
+      - currency
       properties:
         id:
           type: string

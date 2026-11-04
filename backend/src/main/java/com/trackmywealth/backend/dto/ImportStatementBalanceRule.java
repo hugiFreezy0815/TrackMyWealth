@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
+import org.jspecify.annotations.Nullable;
 
 /**
  * US-07-12: where an import file states the account's balance, e.g. a CSV preamble line {@code
@@ -40,19 +41,19 @@ public record ImportStatementBalanceRule(
         String pattern,
     @Schema(description = "Optional: the date's format, if not the template's date format.")
         @Size(max = MAX_DATE_FORMAT_LENGTH)
-        String dateFormat,
+        @Nullable String dateFormat,
     @Schema(
             description =
                 "Optional RE2 pattern with the one named group date, e.g. Abrechnung vom \\S+ bis"
                     + " (?P<date>\\S+): its first match in the file with a readable date dates"
                     + " every balance line that has no date of its own.")
         @Size(max = ImportPdfLayout.MAX_PATTERN_LENGTH)
-        String statementDatePattern,
+        @Nullable String statementDatePattern,
     @Schema(
             description =
                 "Optional: the format of statementDatePattern's date, if not the balance lines'.")
         @Size(max = MAX_DATE_FORMAT_LENGTH)
-        String statementDateFormat) {
+        @Nullable String statementDateFormat) {
 
   public static final String DATE_GROUP = "date";
   public static final String AMOUNT_GROUP = "amount";

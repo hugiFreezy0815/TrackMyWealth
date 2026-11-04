@@ -482,8 +482,9 @@ class ApiConventionsIntegrationTest {
     JsonNode transaction = spec.path("components").path("schemas").path("TransactionResponse");
     assertThat(transaction.path("properties").path("amount").path("type").asString())
         .isEqualTo("string");
-    assertThat(transaction.path("properties").path("quantity").path("type").asString())
-        .isEqualTo("string");
+    // #451: quantity can be null, so its type also allows null.
+    assertThat(transaction.path("properties").path("quantity").path("type").toString())
+        .isEqualTo("[\"string\",\"null\"]");
     assertThat(transaction.path("properties").path("unitPrice").path("format").asString())
         .isEqualTo("decimal");
 

@@ -3,6 +3,7 @@ package com.trackmywealth.backend.dto;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One row of {@code GET /api/v1/portfolios} (US-04-05, #381): a portfolio of the workspace with its
@@ -41,10 +42,10 @@ public record PortfolioListItemResponse(
     UUID id,
     int version,
     String name,
-    UUID catalogueInstitutionId,
+    @Nullable UUID catalogueInstitutionId,
     String institutionType,
-    String country,
-    String logoUrl,
+    @Nullable String country,
+    @Nullable String logoUrl,
     PortfolioType portfolioType,
     boolean portfolioTypeOverridden,
     boolean personalAssetsDefault,

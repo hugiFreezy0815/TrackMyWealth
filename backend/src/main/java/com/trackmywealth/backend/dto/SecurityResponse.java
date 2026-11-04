@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A shared security-master record (US-12-01). Identical for every workspace - it carries no tenant
@@ -9,14 +10,14 @@ import java.util.UUID;
  */
 public record SecurityResponse(
     UUID id,
-    String isin,
-    String syntheticKey,
+    @Nullable String isin,
+    @Nullable String syntheticKey,
     String displayName,
     String legalName,
     String denominationCurrency,
-    String instrumentType,
-    String assetClass,
-    String securityCountry,
-    String issuerCountry,
+    @Nullable String instrumentType,
+    @Nullable String assetClass,
+    @Nullable String securityCountry,
+    @Nullable String issuerCountry,
     String state,
     SecurityCompleteness completeness) {}

@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * How a PDF import template (file format {@code PDF_TEXT} or {@code PDF_OCR}) reads a statement's
@@ -101,41 +102,41 @@ public record ImportPdfLayout(
                 "Optional: the column that lines following a booking line, and no booking"
                     + " themselves, are appended to.")
         @Size(max = MAX_COLUMN_NAME_LENGTH)
-        String continuationColumn,
+        @Nullable String continuationColumn,
     @Schema(
             description =
                 "Optional RE2 pattern; a line on which it finds a match starts a section, whose"
                     + " first capture group is the sectionColumn cell of its bookings.")
         @Size(max = MAX_PATTERN_LENGTH)
-        String sectionPattern,
+        @Nullable String sectionPattern,
     @Schema(description = "Optional: the column holding the section pattern's first group.")
         @Size(max = MAX_COLUMN_NAME_LENGTH)
-        String sectionColumn,
+        @Nullable String sectionColumn,
     @Schema(
             description =
                 "Optional RE2 pattern; a line on which it finds a match states a balance (its first"
                     + " capture group) and is never a booking. Include carry-forward lines at page"
                     + " breaks, or they continue the page's last booking.")
         @Size(max = MAX_PATTERN_LENGTH)
-        String balanceLinePattern,
+        @Nullable String balanceLinePattern,
     @Schema(
             description =
                 "Optional: the column holding each booking's running balance; every booking is"
                     + " then checked against the balance before it.")
         @Size(max = MAX_COLUMN_NAME_LENGTH)
-        String balanceColumn,
+        @Nullable String balanceColumn,
     @Schema(
             description =
                 "Optional RE2 pattern; a line on which it finds a match ends the booking above it,"
                     + " and no line continues a booking until the next booking line.")
         @Size(max = MAX_PATTERN_LENGTH)
-        String continuationEndPattern,
+        @Nullable String continuationEndPattern,
     @Schema(
             description =
                 "Optional (with headerLabels): the label of free text that may run on under the next"
                     + " labels; a word following it at word spacing stays in it.")
         @Size(max = MAX_COLUMN_NAME_LENGTH)
-        String flowColumn) {
+        @Nullable String flowColumn) {
 
   public static final int MAX_COLUMNS = 50;
   public static final int MAX_PATTERN_LENGTH = 1000;

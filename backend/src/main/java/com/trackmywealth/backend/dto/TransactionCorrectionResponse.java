@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.dto;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Result of correcting a transaction (US-07-06).
  *
@@ -12,4 +14,4 @@ package com.trackmywealth.backend.dto;
  * transaction.id()} and this version, e.g. as {@code If-Match} on the next edit of the replacement.
  */
 public record TransactionCorrectionResponse(
-    int version, TransactionResponse transaction, TransactionRemovalResponse removal) {}
+    int version, TransactionResponse transaction, @Nullable TransactionRemovalResponse removal) {}

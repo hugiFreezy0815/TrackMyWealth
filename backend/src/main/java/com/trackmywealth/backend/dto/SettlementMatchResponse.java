@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A settlement match as returned by the API (US-09-02), or an own-account transfer match (US-10-01,
@@ -41,18 +42,18 @@ public record SettlementMatchResponse(
     UUID cardAccountId,
     UUID paymentAccountId,
     UUID paymentTransactionId,
-    UUID cardTransactionId,
+    @Nullable UUID cardTransactionId,
     BigDecimal amount,
     String currency,
     LocalDate paymentBookingDate,
     String status,
     String matchBasis,
-    OffsetDateTime decidedAt,
+    @Nullable OffsetDateTime decidedAt,
     OffsetDateTime createdAt,
     String matchKind,
     UUID debitAccountId,
     UUID debitTransactionId,
     UUID creditAccountId,
-    UUID creditTransactionId,
-    BigDecimal transferFxRate,
+    @Nullable UUID creditTransactionId,
+    @Nullable BigDecimal transferFxRate,
     int version) {}

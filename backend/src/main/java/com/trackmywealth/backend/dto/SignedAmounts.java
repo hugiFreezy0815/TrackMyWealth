@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
 /**
  * The signed form of a valuation, shared by every response that shows signed amounts (the Portfolio
@@ -18,6 +19,8 @@ public final class SignedAmounts {
     if (!valuation.valueKnown()) {
       return null;
     }
-    return LIABILITY.equals(valuation.nature()) ? valuation.value().negate() : valuation.value();
+    // valueKnown: the value is there.
+    BigDecimal value = Objects.requireNonNull(valuation.value(), "value");
+    return LIABILITY.equals(valuation.nature()) ? value.negate() : value;
   }
 }

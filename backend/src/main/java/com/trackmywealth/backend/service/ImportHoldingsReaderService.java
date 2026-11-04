@@ -27,6 +27,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -121,9 +122,10 @@ public class ImportHoldingsReaderService {
       throw invalid(
           "fileFormat", "A holdings statement is read from a PDF (PDF_TEXT) or a SPREADSHEET.");
     }
-    if (rule.dateFormat() != null
-        && (rule.dateFormat().length() > ImportStatementBalanceRule.MAX_DATE_FORMAT_LENGTH
-            || !ImportFileParserService.isValidDateFormat(rule.dateFormat()))) {
+    String dateFormat = rule.dateFormat();
+    if (dateFormat != null
+        && (dateFormat.length() > ImportStatementBalanceRule.MAX_DATE_FORMAT_LENGTH
+            || !ImportFileParserService.isValidDateFormat(dateFormat))) {
       throw invalid(FIELD + ".dateFormat", "The date format is not a valid date pattern.");
     }
   }
@@ -283,9 +285,9 @@ public class ImportHoldingsReaderService {
   /** Whether a PDF's text holds the rule's document marker and a readable statement date. */
   public static boolean isStatementOf(String pdfText, ImportTemplateDefinition template) {
     ImportHoldingsRule rule = template.holdingsRule();
-    return rule != null
-        && rule.documentMarker() != null
-        && pdfText.contains(rule.documentMarker())
+    String marker = rule == null ? null : rule.documentMarker();
+    return marker != null
+        && pdfText.contains(marker)
         && statementDate(List.of(pdfText.split("\\R")), template) != null;
   }
 
@@ -376,7 +378,9 @@ public class ImportHoldingsReaderService {
           ProblemCode.IMPORT_FILE_EMPTY, "The sheet ends before its header row.");
     }
     List<String> header = rows.get(headerAt).stream().map(SpreadsheetCell::text).toList();
-    ImportHoldingsColumns columns = template.holdingsRule().columns();
+    // validate: a spreadsheet holdings rule always maps its columns.
+    ImportHoldingsColumns columns =
+        Objects.requireNonNull(template.holdingsRule().columns(), "holdingsRule.columns");
     for (String column : mappedColumns(columns)) {
       if (ImportFileParserService.columnIndex(column, header) < 0) {
         throw new ImportFileRejectedException(
@@ -604,13 +608,15 @@ public class ImportHoldingsReaderService {
   // The first readable date of datePattern, or null.
   private static LocalDate statementDate(List<String> lines, ImportTemplateDefinition template) {
     ImportHoldingsRule rule = template.holdingsRule();
-    if (rule.datePattern() == null) {
+    String datePattern = rule.datePattern();
+    if (datePattern == null) {
       return null;
     }
-    Pattern pattern = Re2Patterns.compile(rule.datePattern());
+    String dateFormat = rule.dateFormat();
+    Pattern pattern = Re2Patterns.compile(datePattern);
     DateTimeFormatter formatter =
         ImportFileParserService.dateFormatter(
-            rule.dateFormat() == null ? template.dateFormat() : rule.dateFormat());
+            dateFormat == null ? template.dateFormat() : dateFormat);
     for (String line : lines) {
       Matcher matcher = pattern.matcher(line.strip());
       // A match whose date is unreadable dates nothing; a later one may.

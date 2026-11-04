@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The reconciliation signal shown with an account (FR-REC-005).
@@ -14,4 +15,8 @@ import java.time.LocalDate;
  * @param currency ISO currency of {@code openDifference}; null when there is no amount
  */
 public record ReconciliationStatusResponse(
-    String status, String reason, LocalDate asOf, BigDecimal openDifference, String currency) {}
+    String status,
+    @Nullable String reason,
+    @Nullable LocalDate asOf,
+    @Nullable BigDecimal openDifference,
+    @Nullable String currency) {}

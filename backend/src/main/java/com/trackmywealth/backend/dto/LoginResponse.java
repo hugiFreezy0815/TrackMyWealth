@@ -1,5 +1,7 @@
 package com.trackmywealth.backend.dto;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Response body for {@code POST /api/v1/auth/login}. Exactly one of {@code mfaChallengeToken} or
  * {@code tokens} is non-null: when {@code mfaRequired} is {@code true} (US-02-04), {@code
@@ -9,4 +11,4 @@ package com.trackmywealth.backend.dto;
  * mfaChallengeToken} is {@code null}.
  */
 public record LoginResponse(
-    boolean mfaRequired, String mfaChallengeToken, AuthTokensResponse tokens) {}
+    boolean mfaRequired, @Nullable String mfaChallengeToken, @Nullable AuthTokensResponse tokens) {}

@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import java.math.BigDecimal;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One reported position of a snapshot, with enough of the security to display it. {@code
@@ -11,11 +12,11 @@ import java.util.UUID;
 public record SnapshotHoldingResponse(
     UUID id,
     UUID securityId,
-    String isin,
+    @Nullable String isin,
     String securityDisplayName,
     BigDecimal quantity,
-    BigDecimal reportedCostBasis,
+    @Nullable BigDecimal reportedCostBasis,
     boolean costBasisIsEstimated,
-    BigDecimal reportedPrice,
-    BigDecimal reportedValue,
-    String reportedCurrency) {}
+    @Nullable BigDecimal reportedPrice,
+    @Nullable BigDecimal reportedValue,
+    @Nullable String reportedCurrency) {}

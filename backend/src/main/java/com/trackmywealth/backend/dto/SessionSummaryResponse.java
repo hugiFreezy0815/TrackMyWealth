@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Response body for {@code GET /api/v1/sessions} and {@code POST /api/v1/sessions/{id}/revoke}
@@ -10,7 +11,7 @@ import java.util.UUID;
  */
 public record SessionSummaryResponse(
     UUID id,
-    String deviceLabel,
+    @Nullable String deviceLabel,
     String status,
     OffsetDateTime createdAt,
     OffsetDateTime lastSeenAt,

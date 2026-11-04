@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An account snapshot and its holdings (US-25-01). {@code balance} is {@code null} for a snapshot
@@ -15,12 +16,12 @@ public record AccountSnapshotResponse(
     UUID id,
     UUID accountId,
     LocalDate snapshotDate,
-    BigDecimal balance,
+    @Nullable BigDecimal balance,
     String currency,
     String source,
     boolean openingBalance,
     OffsetDateTime createdAt,
-    OffsetDateTime updatedAt,
+    @Nullable OffsetDateTime updatedAt,
     int version,
     List<SnapshotHoldingResponse> holdings) {
 

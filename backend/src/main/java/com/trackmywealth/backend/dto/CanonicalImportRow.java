@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One parsed data row in the ledger's terms (US-07-03): what US-07-04 turns into a transaction.
@@ -27,21 +28,21 @@ import java.time.LocalDate;
  */
 public record CanonicalImportRow(
     LocalDate bookingDate,
-    LocalDate valueDate,
+    @Nullable LocalDate valueDate,
     BigDecimal amount,
     String currency,
     String transactionType,
-    String description,
-    String counterpartyName,
-    String externalId,
-    String mcc,
-    String iso20022BankTransactionCode,
-    String notes,
-    BigDecimal originalAmount,
-    String originalCurrency,
-    BigDecimal bankExchangeRate,
+    @Nullable String description,
+    @Nullable String counterpartyName,
+    @Nullable String externalId,
+    @Nullable String mcc,
+    @Nullable String iso20022BankTransactionCode,
+    @Nullable String notes,
+    @Nullable BigDecimal originalAmount,
+    @Nullable String originalCurrency,
+    @Nullable BigDecimal bankExchangeRate,
     @JsonSetter(nulls = Nulls.AS_EMPTY) boolean valueDateAdjusted,
-    String groupReference,
+    @Nullable String groupReference,
     @JsonSetter(nulls = Nulls.AS_EMPTY) boolean savingsPocket) {
 
   /** A row that belongs to no group of bookings and is no savings pocket move. */

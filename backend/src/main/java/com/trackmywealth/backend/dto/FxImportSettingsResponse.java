@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Response for {@code GET}/{@code PUT /api/v1/admin/fx-import} (US-06-07, #227): how often the FX
@@ -26,15 +27,12 @@ import java.util.List;
  */
 public record FxImportSettingsResponse(
     boolean enabled,
-    @Schema(
-            nullable = true,
-            allowableValues = {"1", "2", "6", "12", "24"})
-        Integer intervalHours,
+    @Schema(allowableValues = {"1", "2", "6", "12", "24"}) @Nullable Integer intervalHours,
     FxImportIntervalSource intervalSource,
     String cron,
     String cronZone,
-    OffsetDateTime nextRunAt,
-    LocalDate lastRateDate,
+    @Nullable OffsetDateTime nextRunAt,
+    @Nullable LocalDate lastRateDate,
     List<Integer> allowedIntervalHours,
     int version) {
 

@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.dto;
 
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One category as the calling workspace sees it (US-08-04): labels and {@code active} are the
@@ -15,7 +16,7 @@ import java.util.UUID;
  */
 public record CategoryResponse(
     UUID id,
-    UUID parentId,
+    @Nullable UUID parentId,
     String code,
     String nameEn,
     String nameDe,

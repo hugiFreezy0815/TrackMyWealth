@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -318,10 +319,14 @@ public class PortfolioService {
       warnings.addAll(contribution.warnings());
       if (!contribution.valueKnown()) {
         complete = false;
-      } else if (ASSET.equals(contribution.nature())) {
-        totalAssets = totalAssets.add(contribution.value());
       } else {
-        totalLiabilities = totalLiabilities.add(contribution.value());
+        // valueKnown: the value is there.
+        BigDecimal value = Objects.requireNonNull(contribution.value(), "value");
+        if (ASSET.equals(contribution.nature())) {
+          totalAssets = totalAssets.add(value);
+        } else {
+          totalLiabilities = totalLiabilities.add(value);
+        }
       }
     }
 

@@ -303,6 +303,10 @@ npm test                 # what CI runs
   `api-breaking` job (`.github/workflows/api-contract.yml`, oasdiff) unless the PR has the label
   `api-breaking` and a `## API breaking change` section in its description (**automated**); ADR
   0006 allows additive changes only inside `/api/v1`. See the README's "Testing & CI".
+- **Response fields (#451, ADR 0006)**: every response field is `required` in the contract. A
+  response record component that can be null is marked `org.jspecify.annotations.Nullable`, and
+  only that one is nullable in the contract (**automated**: in every test, a `null` in an
+  unmarked component fails the request with a 500 naming it).
 - **CI runners (#237)**: every workflow job names a fixed runner image (`ubuntu-24.04`, and
   `macos-26` for the iOS build), never a floating label such as `ubuntu-latest`, which GitHub moves
   to a new image on its own schedule and so changes CI underneath every open PR without a commit.

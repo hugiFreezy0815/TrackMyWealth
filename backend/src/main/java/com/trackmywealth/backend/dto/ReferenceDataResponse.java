@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Response for {@code GET /api/v1/admin/reference-data} (US-01-04, FR-REF-001/010): the reference
@@ -26,7 +27,7 @@ public record ReferenceDataResponse(
     String packageVersion,
     LocalDate publicationDate,
     OffsetDateTime importedAt,
-    UUID importedBy,
+    @Nullable UUID importedBy,
     Contents contents,
     List<StalenessWarning> stalenessWarnings) {
 

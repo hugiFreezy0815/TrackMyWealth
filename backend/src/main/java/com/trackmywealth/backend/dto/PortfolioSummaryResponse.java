@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Response for {@code GET /api/v1/portfolios/{institutionId}/summary} (US-04-03).
@@ -81,13 +82,13 @@ public record PortfolioSummaryResponse(
       String name,
       String nature,
       String nativeCurrency,
-      BigDecimal value,
-      BigDecimal conversionRate,
-      LocalDate conversionRateDate,
+      @Nullable BigDecimal value,
+      @Nullable BigDecimal conversionRate,
+      @Nullable LocalDate conversionRateDate,
       boolean conversionRateCarriedForward,
       boolean conversionRateStale,
       boolean valueKnown,
-      LocalDate valueSourceDate,
+      @Nullable LocalDate valueSourceDate,
       boolean valueSourceStale,
       List<String> warnings) {
 

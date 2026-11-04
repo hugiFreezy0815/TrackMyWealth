@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One row of {@code GET /api/v1/accounts} (US-05-06, #380): an account of the workspace with its
@@ -46,13 +47,13 @@ public record AccountListItemResponse(
     String portfolioName,
     String currency,
     boolean archived,
-    BigDecimal balance,
+    @Nullable BigDecimal balance,
     String workspaceCurrency,
-    BigDecimal balanceInWorkspaceCurrency,
+    @Nullable BigDecimal balanceInWorkspaceCurrency,
     boolean valueKnown,
     ValueStatus valueStatus,
     LocalDate asOf,
-    LocalDate valueSourceDate,
+    @Nullable LocalDate valueSourceDate,
     List<String> warnings) {
 
   public AccountListItemResponse {

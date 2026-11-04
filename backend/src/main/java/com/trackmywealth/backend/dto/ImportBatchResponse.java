@@ -3,6 +3,7 @@ package com.trackmywealth.backend.dto;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An import batch's summary (US-07-04). {@code templateId} and {@code templateVersion} are the
@@ -24,20 +25,20 @@ public record ImportBatchResponse(
     UUID accountId,
     String status,
     String sourceKind,
-    String sourceFileName,
-    UUID templateId,
-    String templateVersion,
+    @Nullable String sourceFileName,
+    @Nullable UUID templateId,
+    @Nullable String templateVersion,
     ImportBatchCountsResponse counts,
-    ImportSameFileResponse sameFileImportedIn,
+    @Nullable ImportSameFileResponse sameFileImportedIn,
     List<ImportTemplateCandidateResponse> templateCandidates,
     OffsetDateTime uploadedAt,
-    OffsetDateTime parsedAt,
-    OffsetDateTime committedAt,
-    OffsetDateTime rolledBackAt,
-    String rollbackReason,
-    ImportIdentificationResponse accountIdentification,
-    ImportStatementBalanceResponse statementBalance,
-    ImportHoldingsResponse holdings,
+    @Nullable OffsetDateTime parsedAt,
+    @Nullable OffsetDateTime committedAt,
+    @Nullable OffsetDateTime rolledBackAt,
+    @Nullable String rollbackReason,
+    @Nullable ImportIdentificationResponse accountIdentification,
+    @Nullable ImportStatementBalanceResponse statementBalance,
+    @Nullable ImportHoldingsResponse holdings,
     int version) {
 
   public ImportBatchResponse {

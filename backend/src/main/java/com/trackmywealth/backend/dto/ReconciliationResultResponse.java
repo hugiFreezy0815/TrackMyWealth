@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * One cash-scope reconciliation result in an account's history (US-25-02).
@@ -22,13 +23,13 @@ public record ReconciliationResultResponse(
     UUID accountId,
     UUID snapshotId,
     LocalDate asOf,
-    BigDecimal differenceAmount,
+    @Nullable BigDecimal differenceAmount,
     String currency,
-    String probableCause,
+    @Nullable String probableCause,
     String status,
-    OffsetDateTime resolvedAt,
+    @Nullable OffsetDateTime resolvedAt,
     OffsetDateTime createdAt,
-    String resolutionNote,
-    UUID resolutionTransactionId,
+    @Nullable String resolutionNote,
+    @Nullable UUID resolutionTransactionId,
     int version,
     boolean finalized) {}

@@ -574,10 +574,11 @@ public class ImportDuplicateService {
   // of one account (both DOCUMENT) never name a booking alike (#350).
   private static boolean fallbackApplies(
       CanonicalImportRow row, String source, ImportDuplicateCandidate candidate) {
-    return row.externalId() == null
+    String externalId = row.externalId();
+    return externalId == null
         || !source.equals(candidate.getSource())
         || candidate.getExternalId() == null
-        || isCamtReference(row.externalId()) != isCamtReference(candidate.getExternalId());
+        || isCamtReference(externalId) != isCamtReference(candidate.getExternalId());
   }
 
   private static boolean isCamtReference(String externalId) {

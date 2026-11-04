@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import java.math.BigDecimal;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Response for {@code GET /api/v1/cash-flow} (US-10-01, US-06-05): one calendar month's cash flow,
@@ -55,7 +56,7 @@ public record CashFlowResponse(
    */
   public record CurrencyAmount(
       String currency,
-      BigDecimal amount,
+      @Nullable BigDecimal amount,
       boolean valueKnown,
       boolean conversionRateCarriedForward,
       boolean conversionRateStale) {

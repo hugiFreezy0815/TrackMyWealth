@@ -57,6 +57,16 @@ class DocumentedSuccessStatusFilterTest {
   }
 
   @Test
+  void anUndeclaredNullFoundInTheBodyFailsTheRequestNamingIt() throws Exception {
+    MockHttpServletResponse response =
+        run("getFixture", HttpStatus.OK, "Fixture#getFixture answered null in [Fixture.name]");
+
+    assertThat(response.getStatus()).isEqualTo(500);
+    assertThat(response.getContentAsString(StandardCharsets.UTF_8))
+        .isEqualTo("Fixture#getFixture answered null in [Fixture.name]");
+  }
+
+  @Test
   void anAsynchronousResponseFailsLoudlyInsteadOfLosingItsBody() {
     MockHttpServletRequest request = new MockHttpServletRequest();
     request.setAsyncSupported(true);
@@ -68,12 +78,20 @@ class DocumentedSuccessStatusFilterTest {
   }
 
   private MockHttpServletResponse run(String handlerName, HttpStatus status) throws Exception {
+    return run(handlerName, status, null);
+  }
+
+  private MockHttpServletResponse run(String handlerName, HttpStatus status, String nullFinding)
+      throws Exception {
     MockHttpServletRequest request = new MockHttpServletRequest();
     MockHttpServletResponse response = new MockHttpServletResponse();
     HandlerMethod handler = handler(handlerName);
     FilterChain chain =
         (servletRequest, servletResponse) -> {
           servletRequest.setAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE, handler);
+          if (nullFinding != null) {
+            servletRequest.setAttribute(ResponseNullabilityAdvice.FINDING, nullFinding);
+          }
           HttpServletResponse http = (HttpServletResponse) servletResponse;
           http.setStatus(status.value());
           http.setHeader("ETag", "\"1\"");
