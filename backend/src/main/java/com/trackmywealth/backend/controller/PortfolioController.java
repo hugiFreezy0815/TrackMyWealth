@@ -12,6 +12,8 @@ import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.PortfolioViewService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -76,6 +78,7 @@ public class PortfolioController {
   @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
   @Operation(operationId = "createPortfolio", summary = "Create a portfolio")
   @PostMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<PortfolioResponse> createPortfolio(
       @Valid @RequestBody CreatePortfolioRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -85,6 +88,7 @@ public class PortfolioController {
 
   @Operation(operationId = "getPortfolio", summary = "Read a portfolio")
   @GetMapping("/{portfolioId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<PortfolioResponse> getPortfolio(
       @PathVariable UUID portfolioId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     PortfolioResponse portfolio = portfolioService.getPortfolio(portfolioId, actor);
@@ -96,6 +100,7 @@ public class PortfolioController {
       operationId = "updatePortfolio",
       summary = "Rename a portfolio, describe its institution or set its type")
   @PutMapping("/{portfolioId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<PortfolioResponse> updatePortfolio(
       @PathVariable UUID portfolioId,
       @Valid @RequestBody UpdatePortfolioRequest request,

@@ -3641,7 +3641,12 @@ export interface components {
   };
   parameters: never;
   requestBodies: never;
-  headers: never;
+  headers: {
+    /** @description Strong ETag of the returned resource's version, for example "7". Send it as If-Match to change or delete this version of the resource. */
+    ETag: string;
+    /** @description URL of the created resource. */
+    Location: string;
+  };
   pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -3751,6 +3756,7 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -3850,6 +3856,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -3940,6 +3947,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -4168,6 +4176,7 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -4288,6 +4297,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -4571,6 +4581,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -4798,6 +4809,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -4888,6 +4900,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -5046,6 +5059,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -5178,6 +5192,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -5451,6 +5466,8 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
+          Location: components['headers']['Location'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -5615,6 +5632,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -5844,6 +5862,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -5995,6 +6014,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -6139,6 +6159,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -6372,6 +6393,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -6555,6 +6577,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -6799,6 +6822,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -6941,6 +6965,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -7032,6 +7057,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -7178,6 +7204,7 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -7412,6 +7439,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -7631,6 +7659,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -7722,6 +7751,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -7856,6 +7886,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -7986,6 +8017,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -8317,6 +8349,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -8679,6 +8712,7 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -8794,6 +8828,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -8885,6 +8920,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -9129,6 +9165,7 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -9335,6 +9372,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -9482,6 +9520,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -9630,6 +9669,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -9774,6 +9814,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -9904,6 +9945,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -10048,6 +10090,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -10191,6 +10234,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -10630,6 +10674,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -10734,6 +10779,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -10972,6 +11018,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -11076,6 +11123,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -11200,6 +11248,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -11274,6 +11323,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -11484,6 +11534,7 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -11583,6 +11634,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -11687,6 +11739,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -11829,6 +11882,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -11971,6 +12025,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -12608,6 +12663,7 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -12722,6 +12778,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -12812,6 +12869,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -13081,6 +13139,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -13209,6 +13268,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -13421,6 +13481,7 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -13535,6 +13596,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -13734,6 +13796,8 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
+          Location: components['headers']['Location'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -14169,6 +14233,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -14259,6 +14324,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -14542,6 +14608,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -14670,6 +14737,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -15365,6 +15433,7 @@ export interface operations {
       /** @description Created */
       201: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -15478,6 +15547,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -15568,6 +15638,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -16444,6 +16515,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -16572,6 +16644,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -17267,6 +17340,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -17419,6 +17493,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -17505,6 +17580,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -17635,6 +17711,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;
@@ -17751,6 +17828,7 @@ export interface operations {
       /** @description OK */
       200: {
         headers: {
+          ETag: components['headers']['ETag'];
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
           [name: string]: unknown;

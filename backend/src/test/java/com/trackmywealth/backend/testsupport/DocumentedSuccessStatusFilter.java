@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.testsupport;
 
+import com.trackmywealth.backend.web.ResponseHeader;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,6 +30,10 @@ import org.springframework.web.util.ContentCachingResponseWrapper;
  * and cannot see one computed at runtime or built in another class. This sees the status actually
  * sent, for every request any test makes - including a handler declaring
  * {@code @SuccessStatus(201)} that answers 200.
+ *
+ * <p>US-29-09 (#455): likewise, a documented success response must carry exactly the headers its
+ * {@code @SendsHeaders} declares for its status - no declared {@code ETag} or {@code Location}
+ * missing, none sent undeclared.
  *
  * <p>US-29-07 (#451): a body with a null the contract declares never null ({@link
  * ResponseNullabilityAdvice}) fails the request the same way, naming the record components.
@@ -95,16 +100,42 @@ public class DocumentedSuccessStatusFilter extends OncePerRequestFilter implemen
       return Optional.empty();
     }
     Set<HttpStatus> documented = DocumentedHandlers.documentedSuccessStatuses(method.getMethod());
-    if (documented.contains(status)) {
-      return Optional.empty();
+    if (!documented.contains(status)) {
+      return Optional.of(
+          ("%s#%s answered %s, but api/openapi.yaml documents %s for it (#372): declare the"
+                  + " statuses it answers with @SuccessStatus, then regenerate the contract.")
+              .formatted(
+                  method.getBeanType().getSimpleName(),
+                  method.getMethod().getName(),
+                  status,
+                  documented));
     }
-    return Optional.of(
-        ("%s#%s answered %s, but api/openapi.yaml documents %s for it (#372): declare the"
-                + " statuses it answers with @SuccessStatus, then regenerate the contract.")
-            .formatted(
-                method.getBeanType().getSimpleName(),
-                method.getMethod().getName(),
-                status,
-                documented));
+    return headerViolation(method, status, response);
+  }
+
+  /**
+   * US-29-09 (#455): a documented success response carries exactly the headers the contract
+   * declares for its status - none missing, none extra.
+   */
+  private static Optional<String> headerViolation(
+      HandlerMethod method, HttpStatus status, HttpServletResponse response) {
+    Set<ResponseHeader> declared = DocumentedHandlers.documentedHeaders(method.getMethod());
+    for (ResponseHeader header : ResponseHeader.values()) {
+      boolean sent = response.getHeader(header.headerName()) != null;
+      boolean documented = declared.contains(header) && header.comesWith(status);
+      if (sent != documented) {
+        return Optional.of(
+            ("%s#%s answered %s %s the %s header, but api/openapi.yaml %s it (#455): declare the"
+                    + " headers it sends with @SendsHeaders, then regenerate the contract.")
+                .formatted(
+                    method.getBeanType().getSimpleName(),
+                    method.getMethod().getName(),
+                    status,
+                    sent ? "with" : "without",
+                    header.headerName(),
+                    sent ? "does not document" : "documents"));
+      }
+    }
+    return Optional.empty();
   }
 }

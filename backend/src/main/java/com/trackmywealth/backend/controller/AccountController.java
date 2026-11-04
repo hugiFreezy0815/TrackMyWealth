@@ -14,6 +14,8 @@ import com.trackmywealth.backend.service.AccountService;
 import com.trackmywealth.backend.service.SavingsPocketService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -86,6 +88,7 @@ public class AccountController {
   @Operation(operationId = "createAccount", summary = "Create an account")
   @ProblemCodes({ProblemCode.NOT_FOUND, ProblemCode.CONFLICT})
   @PostMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSummaryResponse> createAccount(
       @Valid @RequestBody CreateAccountRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -95,6 +98,7 @@ public class AccountController {
 
   @Operation(operationId = "getAccount", summary = "Read an account")
   @GetMapping("/{accountId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSummaryResponse> getAccount(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     AccountSummaryResponse account = accountService.getAccount(accountId, actor);
@@ -104,6 +108,7 @@ public class AccountController {
   @Operation(operationId = "updateAccount", summary = "Change an account's name and details")
   @ProblemCodes({ProblemCode.IMMUTABLE_FIELD})
   @PutMapping("/{accountId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSummaryResponse> updateAccount(
       @PathVariable UUID accountId,
       @Valid @RequestBody UpdateAccountRequest request,
@@ -118,6 +123,7 @@ public class AccountController {
   @Operation(operationId = "archiveAccount", summary = "Archive an account")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{accountId}/archive")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSummaryResponse> archiveAccount(
       @PathVariable UUID accountId,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -130,6 +136,7 @@ public class AccountController {
   @Operation(operationId = "restoreAccount", summary = "Restore an archived account")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{accountId}/restore")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSummaryResponse> restoreAccount(
       @PathVariable UUID accountId,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -144,6 +151,7 @@ public class AccountController {
       summary = "Move an account to another portfolio")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{accountId}/reassign-portfolio")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSummaryResponse> reassignPortfolio(
       @PathVariable UUID accountId,
       @Valid @RequestBody ReassignAccountPortfolioRequest request,

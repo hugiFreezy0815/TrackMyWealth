@@ -8,6 +8,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CardStatementService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -41,6 +43,7 @@ public class CardStatementController {
   @Operation(operationId = "setCardStatementConfig", summary = "Set a card's statement cycle")
   @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @PutMapping("/statement-config")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<StatementConfigResponse> setStatementConfig(
       @PathVariable UUID cardAccountId,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -55,6 +58,7 @@ public class CardStatementController {
   @Operation(operationId = "getCardStatementConfig", summary = "Read a card's statement cycle")
   @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @GetMapping("/statement-config")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<StatementConfigResponse> getStatementConfig(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     StatementConfigResponse response =

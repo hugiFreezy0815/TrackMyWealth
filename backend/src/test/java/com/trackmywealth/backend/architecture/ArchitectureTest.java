@@ -30,6 +30,7 @@ import com.trackmywealth.backend.service.PortfolioService;
 import com.trackmywealth.backend.service.TransferRecheckService;
 import com.trackmywealth.backend.testsupport.DocumentedHandlers;
 import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -451,6 +452,20 @@ class ArchitectureTest {
                   + " declare the statuses the method answers with @SuccessStatus, each set from an"
                   + " HttpStatus constant or a ResponseEntity factory");
 
+  // US-29-09 (#455): springdoc cannot see the headers set on a ResponseEntity either; @SendsHeaders
+  // documents them. Both directions, like the statuses: a header sent but not declared, and one
+  // declared but never sent or on no documented status it comes with. The bytecode half;
+  // DocumentedSuccessStatusFilter checks the headers actually sent in every test request.
+  @ArchTest
+  static final ArchRule api_operations_send_their_documented_headers =
+      methods()
+          .that(API_OPERATIONS)
+          .should(sendTheHeadersTheyDocument())
+          .because(
+              "generated clients read the ETag for If-Match and the Location of a new resource only"
+                  + " from the contract (#455) - declare the headers the method sends with"
+                  + " @SendsHeaders");
+
   @ArchTest
   static final ArchRule no_standard_streams =
       GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
@@ -516,6 +531,37 @@ class ArchitectureTest {
                       ? " in @SuccessStatus"
                       : " (springdoc's default)")
                   + " but never answers it");
+        }
+        problems.forEach(
+            problem ->
+                events.add(
+                    SimpleConditionEvent.violated(method, method.getFullName() + " " + problem)));
+      }
+    };
+  }
+
+  private static ArchCondition<JavaMethod> sendTheHeadersTheyDocument() {
+    return new ArchCondition<>("send exactly the response headers they document") {
+      @Override
+      public void check(JavaMethod method, ConditionEvents events) {
+        Set<ResponseHeader> sent = SuccessStatusEvidence.of(method).sends();
+        Set<ResponseHeader> documented = DocumentedHandlers.documentedHeaders(method.reflect());
+        Set<HttpStatus> statuses = DocumentedHandlers.documentedSuccessStatuses(method.reflect());
+        List<String> problems = new ArrayList<>();
+        for (ResponseHeader header : ResponseHeader.values()) {
+          if (sent.contains(header) && !documented.contains(header)) {
+            problems.add("sends " + header + " without declaring it in @SendsHeaders");
+          } else if (documented.contains(header) && !sent.contains(header)) {
+            problems.add("declares " + header + " in @SendsHeaders but never sends it");
+          }
+          if (documented.contains(header) && statuses.stream().noneMatch(header::comesWith)) {
+            problems.add(
+                "declares "
+                    + header
+                    + " in @SendsHeaders, but none of its success statuses "
+                    + statuses
+                    + " carries it");
+          }
         }
         problems.forEach(
             problem ->

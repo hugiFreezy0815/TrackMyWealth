@@ -7,6 +7,7 @@ import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchRule;
 import com.trackmywealth.fixtures.contract.DocumentedController;
+import com.trackmywealth.fixtures.contract.UndeclaredHeadersController;
 import com.trackmywealth.fixtures.contract.UndocumentedController;
 import com.trackmywealth.fixtures.contract.UndocumentedPlainController;
 import com.trackmywealth.fixtures.contract.ViewController;
@@ -14,9 +15,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * US-29-02 (#372): a new operation without an explicit {@code operationId}, a controller without a
- * tag, or a success status the contract does not document fails the build - {@link
- * ArchitectureTest}'s contract rules applied to fixture controllers. Only what springdoc documents
- * is held to them: not a view controller, not a {@code @Hidden} handler.
+ * tag, a success status or (US-29-09, #455) a response header the contract does not document fails
+ * the build - {@link ArchitectureTest}'s contract rules applied to fixture controllers. Only what
+ * springdoc documents is held to them: not a view controller, not a {@code @Hidden} handler.
  */
 class ApiContractRulesTest {
 
@@ -28,6 +29,8 @@ class ApiContractRulesTest {
       new ClassFileImporter().importClasses(ViewController.class);
   private static final JavaClasses DOCUMENTED =
       new ClassFileImporter().importClasses(DocumentedController.class);
+  private static final JavaClasses UNDECLARED_HEADERS =
+      new ClassFileImporter().importClasses(UndeclaredHeadersController.class);
 
   @Test
   void aControllerWithoutATagFails() {
@@ -82,6 +85,28 @@ class ApiContractRulesTest {
   }
 
   @Test
+  void aHeaderSentWithoutDeclaringItFailsNamingTheHandler() {
+    assertThatThrownBy(() -> headerRule().check(UNDECLARED_HEADERS))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("versionedWithoutHeaders() sends ETAG without declaring it")
+        .hasMessageContaining("eTagInHelperWithoutHeaders() sends ETAG without declaring it")
+        .hasMessageContaining("locationWithoutHeaders() sends LOCATION without declaring it")
+        .hasMessageContaining("locationFromHttpHeaders() sends LOCATION without declaring it");
+  }
+
+  @Test
+  void aDeclaredHeaderTheHandlerNeverSendsOrOnNoStatusThatCarriesItFails() {
+    assertThatThrownBy(() -> headerRule().check(UNDECLARED_HEADERS))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining(
+            "declaresLocationNeverSendsIt() declares LOCATION in @SendsHeaders but never sends it")
+        .hasMessageContaining(
+            "locationOnOk() declares LOCATION in @SendsHeaders, but none of its success statuses"
+                + " [200 OK] carries it")
+        .hasMessageNotContaining("locationOnOk() sends");
+  }
+
+  @Test
   void aViewControllerIsNotPartOfTheContract() {
     // Nothing in it is selected: the rules would otherwise fail for matching nothing at all.
     assertThatCode(
@@ -121,6 +146,12 @@ class ApiContractRulesTest {
         .doesNotThrowAnyException();
     // Its @Hidden handler answers 202 with neither @Operation nor @SuccessStatus.
     assertThatCode(() -> successStatusRule().check(DOCUMENTED)).doesNotThrowAnyException();
+    // Its handlers declare exactly the ETag and Location they send; the others send neither.
+    assertThatCode(() -> headerRule().check(DOCUMENTED)).doesNotThrowAnyException();
+  }
+
+  private static ArchRule headerRule() {
+    return ArchitectureTest.api_operations_send_their_documented_headers;
   }
 
   private static ArchRule successStatusRule() {

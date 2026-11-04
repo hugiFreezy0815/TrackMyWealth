@@ -8,6 +8,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountIdentifierRegistrationService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -42,6 +44,7 @@ public class AccountIdentifierController {
 
   @Operation(operationId = "getAccountIdentifier", summary = "Read an account's masked identifiers")
   @GetMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountIdentifierResponse> get(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return withEtag(registration.get(accountId, actor));
@@ -56,6 +59,7 @@ public class AccountIdentifierController {
     ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE
   })
   @PutMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountIdentifierResponse> set(
       @PathVariable UUID accountId,
       @Valid @RequestBody AccountIdentifierRequest request,
@@ -93,6 +97,7 @@ public class AccountIdentifierController {
     ProblemCode.ACCOUNT_IDENTIFICATION_UNAVAILABLE
   })
   @PutMapping("/from-import")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountIdentifierResponse> setFromImport(
       @PathVariable UUID accountId,
       @Valid @RequestBody AccountIdentifierFromImportRequest request,
@@ -109,6 +114,7 @@ public class AccountIdentifierController {
   @Operation(operationId = "clearAccountIdentifier", summary = "Remove an account's identifiers")
   @ProblemCodes({ProblemCode.ACCOUNT_IDENTIFIER_INVALID})
   @DeleteMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountIdentifierResponse> clear(
       @PathVariable UUID accountId,
       @RequestParam(required = false) String kind,

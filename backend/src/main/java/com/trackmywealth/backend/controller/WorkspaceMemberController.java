@@ -7,6 +7,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.WorkspaceMemberService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -43,6 +45,7 @@ public class WorkspaceMemberController {
 
   @Operation(operationId = "getWorkspaceMember", summary = "Read a workspace member")
   @GetMapping("/{memberId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<WorkspaceMemberSummaryResponse> getMember(
       @PathVariable UUID memberId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     WorkspaceMemberSummaryResponse response = workspaceMemberService.getMember(memberId, actor);
@@ -52,6 +55,7 @@ public class WorkspaceMemberController {
   @Operation(operationId = "deactivateWorkspaceMember", summary = "Deactivate a workspace member")
   @ProblemCodes({ProblemCode.CONFLICT})
   @PostMapping("/{memberId}/deactivate")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<WorkspaceMemberSummaryResponse> deactivateMember(
       @PathVariable UUID memberId,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,

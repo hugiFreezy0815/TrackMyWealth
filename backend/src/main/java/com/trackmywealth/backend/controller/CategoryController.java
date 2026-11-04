@@ -8,6 +8,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategoryService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -52,6 +54,7 @@ public class CategoryController {
 
   @Operation(operationId = "getCategory", summary = "Read a category")
   @GetMapping("/{id}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<CategoryResponse> get(
       @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     CategoryResponse category = categoryService.get(id, actor);
@@ -67,6 +70,7 @@ public class CategoryController {
     ProblemCode.UNPROCESSABLE
   })
   @PostMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<CategoryResponse> create(
       @Valid @RequestBody CreateCategoryRequest request,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -77,6 +81,7 @@ public class CategoryController {
   @Operation(operationId = "updateCategory", summary = "Rename a category or change its parent")
   @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.RETRY, ProblemCode.UNPROCESSABLE})
   @PutMapping("/{id}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<CategoryResponse> update(
       @PathVariable UUID id,
       @Valid @RequestBody UpdateCategoryRequest request,
@@ -91,6 +96,7 @@ public class CategoryController {
   @Operation(operationId = "deactivateCategory", summary = "Deactivate a category")
   @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @PostMapping("/{id}/deactivate")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<CategoryResponse> deactivate(
       @PathVariable UUID id,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,
@@ -104,6 +110,7 @@ public class CategoryController {
   @Operation(operationId = "activateCategory", summary = "Reactivate a category")
   @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @PostMapping("/{id}/activate")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<CategoryResponse> activate(
       @PathVariable UUID id,
       @RequestHeader(value = IfMatchVersionParser.HEADER, required = false) String ifMatch,

@@ -8,6 +8,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountSnapshotService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ProblemCodes;
+import com.trackmywealth.backend.web.ResponseHeader;
+import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,6 +47,7 @@ public class AccountSnapshotController {
       summary = "Record a balance or holdings snapshot")
   @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.RETRY, ProblemCode.UNPROCESSABLE})
   @PostMapping
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSnapshotResponse> recordSnapshot(
       @PathVariable UUID accountId,
       @Valid @RequestBody RecordAccountSnapshotRequest request,
@@ -62,6 +65,7 @@ public class AccountSnapshotController {
 
   @Operation(operationId = "getAccountSnapshot", summary = "Read a snapshot")
   @GetMapping("/{snapshotId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSnapshotResponse> getSnapshot(
       @PathVariable UUID accountId,
       @PathVariable UUID snapshotId,
@@ -73,6 +77,7 @@ public class AccountSnapshotController {
   @Operation(operationId = "replaceAccountSnapshot", summary = "Replace a snapshot")
   @ProblemCodes({ProblemCode.CONFLICT, ProblemCode.UNPROCESSABLE})
   @PutMapping("/{snapshotId}")
+  @SendsHeaders(ResponseHeader.ETAG)
   public ResponseEntity<AccountSnapshotResponse> replaceSnapshot(
       @PathVariable UUID accountId,
       @PathVariable UUID snapshotId,
