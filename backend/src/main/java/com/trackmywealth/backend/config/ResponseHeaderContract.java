@@ -20,6 +20,9 @@ final class ResponseHeaderContract {
 
   private static final String COMPONENT_REF = "#/components/headers/";
 
+  // IfMatchVersionParser.toEtag: the version number in double quotes, a strong ETag.
+  static final String ETAG_PATTERN = "^\"[0-9]+\"$";
+
   private ResponseHeaderContract() {}
 
   /** Adds the shared header components the responses refer to. */
@@ -76,7 +79,7 @@ final class ResponseHeaderContract {
                       + " "
                       + IfMatchVersionParser.HEADER
                       + " to change or delete this version of the resource.")
-              .schema(new StringSchema());
+              .schema(new StringSchema().pattern(ETAG_PATTERN));
       case LOCATION ->
           new Header()
               .required(true)

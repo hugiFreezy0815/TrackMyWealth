@@ -2,6 +2,7 @@ package com.trackmywealth.backend.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.SuccessStatus;
@@ -216,6 +217,19 @@ class ApiDocumentationContractTest {
   }
 
   @Test
+  void anAcceptedResponseGetsNoETagEitherOnlyThe200AndThe201Do() throws NoSuchMethodException {
+    Operation operation =
+        new Operation()
+            .responses(new ApiResponses().addApiResponse("200", new ApiResponse().description("")));
+
+    config.successStatusResponses().customize(operation, handler("acceptedOrOk"));
+
+    assertThat(operation.getResponses()).containsOnlyKeys("202", "200");
+    assertThat(operation.getResponses().get("202").getHeaders()).isNull();
+    assertThat(operation.getResponses().get("200").getHeaders()).containsOnlyKeys("ETag");
+  }
+
+  @Test
   void aHeaderLandsOnlyOnItsOwnResponseWhenSpringdocSharesTheHeadersMap()
       throws NoSuchMethodException {
     Map<String, Header> shared = new LinkedHashMap<>();
@@ -241,6 +255,12 @@ class ApiDocumentationContractTest {
     assertThat(headers.get("ETag").getRequired()).isTrue();
     assertThat(headers.get("ETag").getDescription()).contains("If-Match");
     assertThat(headers.get("ETag").getSchema().getType()).isEqualTo("string");
+    // The pattern is the shape IfMatchVersionParser.toEtag sends: a quoted version number.
+    String pattern = headers.get("ETag").getSchema().getPattern();
+    assertThat(IfMatchVersionParser.toEtag(7)).matches(pattern);
+    assertThat(IfMatchVersionParser.toEtag(0)).matches(pattern);
+    assertThat("7").doesNotMatch(pattern);
+    assertThat("W/\"7\"").doesNotMatch(pattern);
     assertThat(headers.get("Location").getRequired()).isTrue();
     assertThat(headers.get("Location").getSchema().getFormat()).isEqualTo("uri-reference");
   }
@@ -338,5 +358,9 @@ class ApiDocumentationContractTest {
     @SuccessStatus(HttpStatus.NO_CONTENT)
     @SendsHeaders(ResponseHeader.ETAG)
     void removed() {}
+
+    @SuccessStatus({HttpStatus.ACCEPTED, HttpStatus.OK})
+    @SendsHeaders(ResponseHeader.ETAG)
+    void acceptedOrOk() {}
   }
 }

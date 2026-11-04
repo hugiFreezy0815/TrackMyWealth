@@ -10,8 +10,8 @@ import java.lang.annotation.Target;
  * US-29-09 (#455): the response headers a handler sends on success, for the API contract. springdoc
  * cannot see headers set on a {@code ResponseEntity}; {@code ApiDocumentationConfig} documents the
  * declared ones, as required, on the success responses each comes with ({@link
- * ResponseHeader#comesWith}): the {@code ETag} on every one with a body, the {@code Location} on
- * the 201.
+ * ResponseHeader#comesWith}): the {@code ETag} on the 200 and the 201, the {@code Location} on the
+ * 201.
  *
  * <p>The declared headers must be exactly the ones the handler sends. {@code ArchitectureTest}
  * fails a handler whose bytecode sends a header it does not declare, or declares one it never

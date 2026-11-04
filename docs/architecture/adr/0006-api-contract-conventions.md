@@ -2,9 +2,9 @@
 
 ## Status
 Accepted in part. This version holds the response-field decision (US-29-07, #451) and the
-response-header decision (US-29-09, #455), both product owner decisions of 2026-11-04. US-29-01 (#371) adds the other conventions of the sprint 6
-plan (`docs/backlog/SPRINT-6.md`, decisions 1-8): naming, collections, paging, errors,
-concurrency.
+response-header decision (US-29-09, #455), both product owner decisions of 2026-11-04.
+US-29-01 (#371) adds the other conventions of the sprint 6 plan (`docs/backlog/SPRINT-6.md`,
+decisions 1-8): naming, collections, paging, errors, concurrency.
 
 ## Context
 
@@ -97,9 +97,17 @@ on Spring's ASM at startup. The ArchUnit walk is test code and cannot serve it.
 **Documented as shared components.** `components.headers.ETag` and `components.headers.Location`
 are both `required`. Each success response that carries a header refers to it by `$ref`:
 
-- `ETag`: every declared success response with a body (not a 204). Its description names
-  `If-Match`.
+- `ETag`: the declared 200 and 201, the two statuses `VersionedResponse` answers. Its description
+  names `If-Match`, and its schema is a quoted version number (`pattern: '^"[0-9]+"$'`).
 - `Location`: the 201 only, `format: uri-reference`.
+
+Which statuses a header comes with is a property of the header (`ResponseHeader#comesWith`), not
+of the handler. A handler that also answered, say, a 202 without an ETag would need a per-status
+declaration; none does today, and the per-request check below fails one that starts to.
+
+The annotation is `@SendsHeaders` with the values of the enum `ResponseHeader`, not the
+`web.ResponseHeaders` named in the PO comment on #455: the plural annotation next to the singular
+enum read as one type, and `@SendsHeaders` says what the handler does, as `@SuccessStatus` does.
 
 **Checked both ways, as the statuses are.**
 

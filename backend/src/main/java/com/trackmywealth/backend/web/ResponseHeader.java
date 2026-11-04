@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.web;
 
+import java.util.Set;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 
@@ -11,17 +12,21 @@ public enum ResponseHeader {
 
   /**
    * The strong ETag of the returned resource's version ({@link VersionedResponse}), the value a
-   * client sends back as {@code If-Match}. On every success response with a body.
+   * client sends back as {@code If-Match}. On the 200 and the 201, the two statuses {@link
+   * VersionedResponse} answers: a 202 or 206 carries no resource version, so the contract does not
+   * claim one there.
    */
-  ETAG(HttpHeaders.ETAG),
+  ETAG(HttpHeaders.ETAG, Set.of(HttpStatus.OK, HttpStatus.CREATED)),
 
   /** The URL of the resource a request created. On the 201 only. */
-  LOCATION(HttpHeaders.LOCATION);
+  LOCATION(HttpHeaders.LOCATION, Set.of(HttpStatus.CREATED));
 
   private final String wireName;
+  private final Set<HttpStatus> statuses;
 
-  ResponseHeader(String wireName) {
+  ResponseHeader(String wireName, Set<HttpStatus> statuses) {
     this.wireName = wireName;
+    this.statuses = statuses;
   }
 
   /** The header's name on the wire, as {@link HttpHeaders} spells it. */
@@ -31,9 +36,6 @@ public enum ResponseHeader {
 
   /** Whether a success response with {@code status} carries this header. */
   public boolean comesWith(HttpStatus status) {
-    return switch (this) {
-      case ETAG -> status.is2xxSuccessful() && status != HttpStatus.NO_CONTENT;
-      case LOCATION -> status == HttpStatus.CREATED;
-    };
+    return statuses.contains(status);
   }
 }

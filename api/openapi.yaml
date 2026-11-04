@@ -21992,6 +21992,7 @@ components:
       required: true
       schema:
         type: string
+        pattern: "^\"[0-9]+\"$"
     Location:
       description: URL of the created resource.
       required: true

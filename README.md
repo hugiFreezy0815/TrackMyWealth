@@ -349,7 +349,7 @@ file client code is generated from. `./mvnw verify` keeps it in step with the co
   every test a request answered with an undeclared success status fails with a 500 that names it.
 - A handler that sends `ETag` (any `VersionedResponse`) or `Location` declares it with
   `@SendsHeaders` (ADR 0006, #455). The contract then lists the header on its success responses
-  (`ETag` with every response that has a body, `Location` with the 201). `ArchitectureTest` and the
+  (`ETag` with the 200 and the 201, `Location` with the 201). `ArchitectureTest` and the
   same per-request test check fail a header sent but not declared, or declared but not sent.
 - Every field of a response schema is `required` (the backend always sends it), and nullable only
   where its record component is JSpecify `@Nullable` (`org.jspecify.annotations.Nullable`; ADR
