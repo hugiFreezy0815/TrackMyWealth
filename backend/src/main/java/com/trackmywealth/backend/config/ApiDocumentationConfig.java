@@ -7,9 +7,11 @@ import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.PagedArgumentResolver;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
 import com.trackmywealth.backend.web.SortWhitelist;
+import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.headers.Header;
+import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.IntegerSchema;
@@ -19,9 +21,13 @@ import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,8 +37,13 @@ import org.springdoc.core.customizers.OperationCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.server.PathContainer;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 /**
  * Keeps the generated OpenAPI contract aligned with EPIC-29's runtime wire conventions.
@@ -40,7 +51,9 @@ import org.springframework.http.MediaType;
  * <p>Jackson serializes every {@link BigDecimal} as an exact plain decimal string ({@link
  * JacksonConfig}); Springdoc must describe the same type or generated clients will incorrectly use
  * floating-point numbers. Every operation also accepts the optional correlation-id header and
- * advertises the shared RFC 9457 error envelope.
+ * advertises the shared RFC 9457 error envelope, and every operation outside {@link
+ * SecurityConfig#PUBLIC_API_PATTERNS} requires the bearer access token - the same list Spring
+ * Security permits, so the contract cannot claim a public operation that is not.
  */
 @Configuration
 public class ApiDocumentationConfig {
@@ -56,6 +69,15 @@ public class ApiDocumentationConfig {
   public static final String RETRYABLE_PROBLEM_RESPONSE_REF =
       "#/components/responses/" + RETRYABLE_PROBLEM_RESPONSE;
 
+  // Any order before ApiDocumentOrder's, which must run last.
+  private static final int WIRE_CONVENTIONS_ORDER = 0;
+
+  private static final String OK = "200";
+  private static final String UNAUTHORIZED = "401";
+  private static final String FORBIDDEN = "403";
+  private static final String BEARER_SCHEME = "bearerAuth";
+  private static final List<PathPattern> ADMIN_API = patterns(SecurityConfig.ADMIN_API_PATTERNS);
+  private static final List<PathPattern> PUBLIC_API = patterns(SecurityConfig.PUBLIC_API_PATTERNS);
   private static final String DECIMAL_FORMAT = "decimal";
   private static final String QUERY = "query";
   // springdoc's name for an undecorated Pageable parameter.
@@ -74,46 +96,186 @@ public class ApiDocumentationConfig {
                         + " requests; JSON numbers remain accepted for compatibility."));
   }
 
+  /**
+   * US-29-02 (#372): the document's fixed header. The server is the relative {@code /}, not the
+   * host springdoc would take from the request, so the committed {@code api/openapi.yaml} does not
+   * depend on where it was generated.
+   */
+  @Bean
+  OpenAPI apiDocument() {
+    return new OpenAPI()
+        .info(
+            new Info()
+                .title("TrackMyWealth API")
+                .version("v1")
+                .description(
+                    "The REST API of TrackMyWealth. Committed as api/openapi.yaml; the build fails"
+                        + " when it differs from the code."))
+        .servers(List.of(new Server().url("/").description("The server serving this document")));
+  }
+
+  /**
+   * US-29-02 (#372): runs after every other customizer, so whatever they added is put in a fixed
+   * order too ({@link ApiDocumentOrder}). It alone has {@link Ordered#LOWEST_PRECEDENCE}: every
+   * other {@link OpenApiCustomizer} must come earlier through {@link OrderedOpenApiCustomizer}, or
+   * it would tie with this one and could run after it ({@code OpenApiContractTest} checks).
+   */
+  @Bean
+  OpenApiCustomizer deterministicDocumentOrder() {
+    return new OrderedOpenApiCustomizer(Ordered.LOWEST_PRECEDENCE, ApiDocumentOrder::apply);
+  }
+
   @Bean
   OpenApiCustomizer apiWireConventions() {
-    return openApi -> {
-      Components components = componentsOf(openApi);
-      components.addSchemas(API_PROBLEM_SCHEMA, problemSchema());
-      components.addResponses(API_PROBLEM_RESPONSE, problemResponse());
-      components.addResponses(
-          RETRYABLE_PROBLEM_RESPONSE,
-          problemResponse()
-              .description(
-                  "The server cannot do this now; retry the same request later, after the"
-                      + " Retry-After seconds when the header is sent.")
-              .addHeaderObject(
-                  HttpHeaders.RETRY_AFTER,
-                  new Header()
-                      .description("Seconds to wait before retrying.")
-                      .schema(new IntegerSchema().format("int64"))));
+    return new OrderedOpenApiCustomizer(WIRE_CONVENTIONS_ORDER, ApiDocumentationConfig::wire);
+  }
 
-      if (openApi.getPaths() == null) {
-        return;
+  private static void wire(OpenAPI openApi) {
+    Components components = componentsOf(openApi);
+    components.addSchemas(API_PROBLEM_SCHEMA, problemSchema());
+    components.addResponses(API_PROBLEM_RESPONSE, problemResponse());
+    components.addResponses(
+        RETRYABLE_PROBLEM_RESPONSE,
+        problemResponse()
+            .description(
+                "The server cannot do this now; retry the same request later, after the"
+                    + " Retry-After seconds when the header is sent.")
+            .addHeaderObject(
+                HttpHeaders.RETRY_AFTER,
+                new Header()
+                    .description("Seconds to wait before retrying.")
+                    .schema(new IntegerSchema().format("int64"))));
+
+    components.addSecuritySchemes(
+        BEARER_SCHEME,
+        new SecurityScheme()
+            .type(SecurityScheme.Type.HTTP)
+            .scheme("bearer")
+            .bearerFormat("JWT")
+            .description(
+                "The access token from set-up, login or refresh, sent as Authorization: Bearer"
+                    + " <token>."));
+    openApi.setSecurity(List.of(new SecurityRequirement().addList(BEARER_SCHEME)));
+
+    if (openApi.getPaths() == null) {
+      return;
+    }
+    openApi
+        .getPaths()
+        .forEach(
+            (path, pathItem) ->
+                pathItem
+                    .readOperations()
+                    .forEach(
+                        operation -> {
+                          documentAuthentication(path, operation);
+                          documentCorrelationRequestHeader(operation);
+                          documentOptimisticConcurrency(operation);
+                          Map<String, ApiResponse> responses = responsesOf(operation);
+                          responses.putIfAbsent(
+                              "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
+                          responses
+                              .values()
+                              .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
+                        }));
+  }
+
+  /**
+   * US-29-02 (#372): an operation a caller without a token may call says so with an empty security
+   * requirement, overriding the document's bearer default; every other one documents the 401 it
+   * answers without a valid token, and an administration operation the 403 for anyone else.
+   */
+  private static void documentAuthentication(
+      String path, io.swagger.v3.oas.models.Operation operation) {
+    PathContainer container = PathContainer.parsePath(path);
+    if (matchesAny(PUBLIC_API, container)) {
+      operation.setSecurity(new ArrayList<>());
+      return;
+    }
+    Map<String, ApiResponse> responses = responsesOf(operation);
+    responses.putIfAbsent(UNAUTHORIZED, new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
+    if (matchesAny(ADMIN_API, container)) {
+      responses.putIfAbsent(FORBIDDEN, new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
+    }
+  }
+
+  private static boolean matchesAny(List<PathPattern> patterns, PathContainer path) {
+    return patterns.stream().anyMatch(pattern -> pattern.matches(path));
+  }
+
+  private static List<PathPattern> patterns(List<String> patterns) {
+    return patterns.stream().map(PathPatternParser.defaultInstance::parse).toList();
+  }
+
+  /**
+   * US-29-02 (#372): an endpoint marked {@link SuccessStatus} documents the statuses it declares in
+   * place of springdoc's generated 200, which is all springdoc can infer from a {@code
+   * ResponseEntity}. Each gets its own copy of the generated response's maps - media types,
+   * headers, links, examples, encodings and extensions - so adding to or removing from one leaves
+   * the others alone; the objects in them (schemas, headers) stay shared, as springdoc shares them
+   * between operations. A 204 has no body.
+   */
+  @Bean
+  OperationCustomizer successStatusResponses() {
+    return (operation, handlerMethod) -> {
+      SuccessStatus declared = handlerMethod.getMethodAnnotation(SuccessStatus.class);
+      if (declared != null) {
+        documentSuccessStatuses(responsesOf(operation), declared.value());
       }
-      openApi
-          .getPaths()
-          .values()
-          .forEach(
-              pathItem ->
-                  pathItem
-                      .readOperations()
-                      .forEach(
-                          operation -> {
-                            documentCorrelationRequestHeader(operation);
-                            documentOptimisticConcurrency(operation);
-                            Map<String, ApiResponse> responses = responsesOf(operation);
-                            responses.putIfAbsent(
-                                "default", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
-                            responses
-                                .values()
-                                .forEach(ApiDocumentationConfig::documentCorrelationResponseHeader);
-                          }));
+      return operation;
     };
+  }
+
+  private static void documentSuccessStatuses(
+      Map<String, ApiResponse> responses, HttpStatus... statuses) {
+    ApiResponse generated = responses.remove(OK);
+    for (HttpStatus status : statuses) {
+      ApiResponse response =
+          generated == null
+              ? new ApiResponse()
+              : copyOf(generated, status != HttpStatus.NO_CONTENT);
+      responses.put(String.valueOf(status.value()), response.description(status.getReasonPhrase()));
+    }
+  }
+
+  private static ApiResponse copyOf(ApiResponse generated, boolean withBody) {
+    ApiResponse copy = new ApiResponse();
+    if (generated.getHeaders() != null) {
+      copy.setHeaders(new LinkedHashMap<>(generated.getHeaders()));
+    }
+    if (generated.getLinks() != null) {
+      copy.setLinks(new LinkedHashMap<>(generated.getLinks()));
+    }
+    if (generated.getExtensions() != null) {
+      copy.setExtensions(new LinkedHashMap<>(generated.getExtensions()));
+    }
+    if (withBody && generated.getContent() != null) {
+      copy.setContent(new Content());
+      generated
+          .getContent()
+          .forEach((type, media) -> copy.getContent().addMediaType(type, copyOf(media)));
+    }
+    return copy;
+  }
+
+  private static io.swagger.v3.oas.models.media.MediaType copyOf(
+      io.swagger.v3.oas.models.media.MediaType media) {
+    io.swagger.v3.oas.models.media.MediaType copy =
+        new io.swagger.v3.oas.models.media.MediaType().schema(media.getSchema());
+    // Swagger tells "no example" from an example of null by this flag; only the latter is written.
+    if (media.getExampleSetFlag()) {
+      copy.setExample(media.getExample());
+    }
+    if (media.getExamples() != null) {
+      copy.setExamples(new LinkedHashMap<>(media.getExamples()));
+    }
+    if (media.getEncoding() != null) {
+      copy.setEncoding(new LinkedHashMap<>(media.getEncoding()));
+    }
+    if (media.getExtensions() != null) {
+      copy.setExtensions(new LinkedHashMap<>(media.getExtensions()));
+    }
+    return copy;
   }
 
   /**

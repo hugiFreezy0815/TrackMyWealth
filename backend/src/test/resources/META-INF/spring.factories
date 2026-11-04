@@ -1,0 +1,3 @@
+# US-29-02 (#372): every test context checks the success status of each request against api/openapi.yaml.
+org.springframework.test.context.ContextCustomizerFactory=\
+  com.trackmywealth.backend.testsupport.DocumentedSuccessStatusCheck

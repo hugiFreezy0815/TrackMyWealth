@@ -8,13 +8,17 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.ImportTemplateService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.RetryableWhenBusy;
+import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -39,6 +43,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
  */
 @RestController
 @RequestMapping("/api/v1/import-templates")
+@Tag(name = "Import templates")
 public class ImportTemplateController {
 
   private static final String BY_ID = "/{id}";
@@ -50,6 +55,7 @@ public class ImportTemplateController {
   }
 
   /** Current versions of the shipped and the workspace's own templates, by name. */
+  @Operation(operationId = "listImportTemplates", summary = "List the import templates")
   @GetMapping
   public List<ImportTemplateResponse> list(
       @RequestParam(required = false) UUID institutionCatalogueId,
@@ -59,6 +65,7 @@ public class ImportTemplateController {
   }
 
   /** Any version, current or retired. */
+  @Operation(operationId = "getImportTemplate", summary = "Read an import template")
   @GetMapping(BY_ID)
   public ResponseEntity<ImportTemplateResponse> get(
       @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -66,6 +73,8 @@ public class ImportTemplateController {
     return VersionedResponse.ok(template, template.version());
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
+  @Operation(operationId = "createImportTemplate", summary = "Create an import template")
   @PostMapping
   public ResponseEntity<ImportTemplateResponse> create(
       @Valid @RequestBody ImportTemplateRequest request,
@@ -85,6 +94,7 @@ public class ImportTemplateController {
    * Replaces the template. A changed parse-relevant field returns a new version with a new {@code
    * id} (FR-IMP-023); a new name or institution only returns the same one.
    */
+  @Operation(operationId = "updateImportTemplate", summary = "Change an import template")
   @PutMapping(BY_ID)
   public ResponseEntity<ImportTemplateResponse> update(
       @PathVariable UUID id,
@@ -97,6 +107,7 @@ public class ImportTemplateController {
   }
 
   /** Hides the template from detection and the default list; it stays usable for history. */
+  @Operation(operationId = "deactivateImportTemplate", summary = "Deactivate an import template")
   @PostMapping(BY_ID + "/deactivate")
   public ResponseEntity<ImportTemplateResponse> deactivate(
       @PathVariable UUID id,
@@ -107,6 +118,7 @@ public class ImportTemplateController {
     return VersionedResponse.ok(template, template.version());
   }
 
+  @Operation(operationId = "activateImportTemplate", summary = "Reactivate an import template")
   @PostMapping(BY_ID + "/activate")
   public ResponseEntity<ImportTemplateResponse> activate(
       @PathVariable UUID id,
@@ -118,6 +130,8 @@ public class ImportTemplateController {
   }
 
   /** 204 with every version, only while no import used it; otherwise 409, deactivate instead. */
+  @SuccessStatus(HttpStatus.NO_CONTENT)
+  @Operation(operationId = "deleteImportTemplate", summary = "Delete an import template")
   @DeleteMapping(BY_ID)
   public ResponseEntity<Void> delete(
       @PathVariable UUID id,
@@ -134,6 +148,9 @@ public class ImportTemplateController {
    * at once.
    */
   @RetryableWhenBusy
+  @Operation(
+      operationId = "detectImportTemplate",
+      summary = "Find the templates that can read a file")
   @PostMapping(path = "/detect", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public List<ImportTemplateCandidateResponse> detect(
       @RequestPart("file") MultipartFile file,
@@ -149,6 +166,7 @@ public class ImportTemplateController {
    * waiting helps.
    */
   @RetryableWhenBusy
+  @Operation(operationId = "testImportTemplate", summary = "Try a saved template on a file")
   @PostMapping(path = BY_ID + "/test", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ImportTemplateTestResponse testSaved(
       @PathVariable UUID id,
@@ -163,6 +181,9 @@ public class ImportTemplateController {
    * headerColumns} are not needed. Writes nothing. A 503 as for {@link #testSaved}.
    */
   @RetryableWhenBusy
+  @Operation(
+      operationId = "testUnsavedImportTemplate",
+      summary = "Try a template that is not saved yet on a file")
   @PostMapping(path = "/test", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ImportTemplateTestResponse testUnsaved(
       @RequestPart("file") MultipartFile file,

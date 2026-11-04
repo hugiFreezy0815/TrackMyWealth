@@ -5,10 +5,16 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      # #372: the drift check runs in this build, so a change to the committed contract alone
+      # (api/openapi.yaml edited by hand) is checked too.
+      - "api/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     paths:
       - "backend/**"
+      # #372: the drift check runs in this build, so a change to the committed contract alone
+      # (api/openapi.yaml edited by hand) is checked too.
+      - "api/**"
       - ".github/workflows/backend-ci.yml"
 
 jobs:
@@ -40,6 +46,9 @@ jobs:
           path: ~/.m2/wrapper
           key: maven-wrapper-${{ hashFiles('backend/.mvn/wrapper/maven-wrapper.properties') }}
 
+      # #372: a change to api/ alone (api/openapi.yaml edited by hand) runs the full verify too.
+      # The drift check (OpenApiContractTest) fails on any edit that does not match the code, so a
+      # contract-only shortcut would save nothing, and a test filter could silently match nothing.
       - name: Run tests
         run: ./mvnw -B verify
 

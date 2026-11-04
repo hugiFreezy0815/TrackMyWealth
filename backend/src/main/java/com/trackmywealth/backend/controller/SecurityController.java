@@ -5,6 +5,9 @@ import com.trackmywealth.backend.dto.SecurityCreation;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SecurityService;
+import com.trackmywealth.backend.web.SuccessStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** US-12-01: the shared security master - lookup without persistence, and find-or-create. */
 @RestController
 @RequestMapping(SecurityController.BASE_PATH)
+@Tag(name = "Securities")
 public class SecurityController {
 
   // Shared with RateLimitFilter, which limits creation per source (a write to global data).
@@ -34,6 +38,7 @@ public class SecurityController {
   }
 
   /** 200 with the existing record, 404 if none - never creates one (FR-SMD-007). */
+  @Operation(operationId = "findSecurity", summary = "Find a security by ISIN")
   @GetMapping
   public SecurityResponse lookup(
       @RequestParam String isin, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -41,6 +46,7 @@ public class SecurityController {
   }
 
   /** The only way to find a security without an ISIN again; 404 if unknown. */
+  @Operation(operationId = "getSecurity", summary = "Read a security")
   @GetMapping("/{id}")
   public SecurityResponse get(
       @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -52,6 +58,8 @@ public class SecurityController {
    * latter case {@value #IGNORED_FIELDS_HEADER} names the supplied values that differ from the
    * stored ones and were ignored, so a client can tell its assumption was wrong.
    */
+  @SuccessStatus({HttpStatus.CREATED, HttpStatus.OK})
+  @Operation(operationId = "findOrCreateSecurity", summary = "Find a security or create it")
   @PostMapping
   public ResponseEntity<SecurityResponse> findOrCreate(
       @Valid @RequestBody CreateSecurityRequest request,

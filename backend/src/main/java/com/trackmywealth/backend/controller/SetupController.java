@@ -3,6 +3,9 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.SetupService;
+import com.trackmywealth.backend.web.SuccessStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** US-01-03: the one-time initial-administrator bootstrap. See {@link SetupService}. */
 @RestController
+@Tag(name = "Setup")
 public class SetupController {
 
   // Referenced by RateLimitFilter (FR-AUT-010) so the two can never silently drift apart - the
@@ -26,6 +30,10 @@ public class SetupController {
     this.setupService = setupService;
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
+  @Operation(
+      operationId = "setupAdministrator",
+      summary = "Create the first administrator and the workspace")
   @PostMapping(ADMINISTRATOR_PATH)
   public ResponseEntity<AuthTokensResponse> bootstrapAdministrator(
       @Valid @RequestBody SetupAdministratorRequest request,

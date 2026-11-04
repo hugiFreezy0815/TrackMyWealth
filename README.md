@@ -324,9 +324,32 @@ cd backend
                      # see docs/architecture/development-standards.md
 ```
 
-`.github/workflows/backend-ci.yml` runs `./mvnw -B verify` on every push/PR touching `backend/**`,
-lints new or changed migrations with sqlfluff, and builds the Docker image. GitHub-hosted runners
-have Docker preinstalled, so no extra CI setup is needed for Testcontainers.
+`.github/workflows/backend-ci.yml` runs `./mvnw -B verify` on every push/PR touching `backend/**`
+or `api/**`, lints new or changed migrations with sqlfluff, and builds the Docker image.
+GitHub-hosted runners have Docker preinstalled, so no extra CI setup is needed for Testcontainers.
+
+**API contract (#372).** `api/openapi.yaml` is the committed OpenAPI document of the REST API, the
+file client code is generated from. `./mvnw verify` keeps it in step with the code:
+
+- `OpenApiContractTest` fails when the file differs from the document the code serves, naming
+  `api/openapi.yaml` and the first line that differs. After an intended API change, regenerate it and
+  commit it with the change:
+
+  ```bash
+  cd backend
+  ./mvnw test -Dtest=OpenApiContractTest -Dopenapi.update=true
+  ```
+
+- The same test fails on an operation without a unique `operationId`, exactly one tag or a summary;
+  `ArchitectureTest` fails on a controller without `@Tag` (or `@Hidden`, for one that is not part of
+  the API) and on a handler method without `@Operation(operationId = ..., summary = ...)`. An
+  `operationId` is a verb plus the resource: `listAccounts`, `getAccount`, `createImportBatch`.
+- A handler answering anything but 200 declares its statuses with `@SuccessStatus` (201, 204, or
+  both 201 and 200 for a find-or-create). `ArchitectureTest` reads them from the bytecode, and in
+  every test a request answered with an undeclared success status fails with a 500 that names it.
+- Every operation requires the bearer access token except those under `/api/v1/setup/**` and
+  `/api/v1/auth/**` (`SecurityConfig.PUBLIC_API_PATTERNS`, shared by Spring Security and the
+  contract).
 
 `.github/workflows/mobile-web-ci.yml` type-checks, lints, formats-checks and tests `mobile/`, then
 builds its web export (`npx expo export -p web`) on every push/PR touching `mobile/**`. It does

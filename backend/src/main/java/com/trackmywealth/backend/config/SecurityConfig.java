@@ -46,6 +46,18 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableWebSecurity
 public class SecurityConfig {
 
+  /**
+   * The API operations a caller without a token may call: the one-time setup and login/refresh.
+   * Also what the API contract marks as needing no bearer token ({@code ApiDocumentationConfig}).
+   */
+  static final List<String> PUBLIC_API_PATTERNS = List.of("/api/v1/setup/**", "/api/v1/auth/**");
+
+  /**
+   * The API operations only a system administrator may call (FR-TEN-007); anyone else gets a 403.
+   * Also what the API contract documents that 403 for ({@code ApiDocumentationConfig}).
+   */
+  static final List<String> ADMIN_API_PATTERNS = List.of("/api/v1/admin/**");
+
   @Value("${app.cors.allowed-origin-patterns:http://localhost:*}")
   private List<String> allowedOriginPatterns;
 
@@ -70,9 +82,7 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(EndpointRequest.toAnyEndpoint())
                     .hasRole("SYSTEM_ADMINISTRATOR")
-                    .requestMatchers("/api/v1/setup/**")
-                    .permitAll()
-                    .requestMatchers("/api/v1/auth/**")
+                    .requestMatchers(PUBLIC_API_PATTERNS.toArray(String[]::new))
                     .permitAll()
                     // Spring MVC's default handling of a thrown ResponseStatusException (e.g.
                     // US-01-03's "setup already completed" 409) forwards internally to /error to
@@ -84,7 +94,7 @@ public class SecurityConfig {
                     .permitAll()
                     // FR-TEN-007: administration rights are their own permission domain -
                     // gated on role alone here, deliberately never on workspace context.
-                    .requestMatchers("/api/v1/admin/**")
+                    .requestMatchers(ADMIN_API_PATTERNS.toArray(String[]::new))
                     .hasRole("SYSTEM_ADMINISTRATOR")
                     .anyRequest()
                     .authenticated())

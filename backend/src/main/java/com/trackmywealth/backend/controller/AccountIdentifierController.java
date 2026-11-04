@@ -6,6 +6,8 @@ import com.trackmywealth.backend.dto.AccountIdentifierResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountIdentifierRegistrationService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/accounts/{accountId}/identifier")
+@Tag(name = "Accounts")
 public class AccountIdentifierController {
 
   private final AccountIdentifierRegistrationService registration;
@@ -35,12 +38,16 @@ public class AccountIdentifierController {
     this.registration = registration;
   }
 
+  @Operation(operationId = "getAccountIdentifier", summary = "Read an account's masked identifiers")
   @GetMapping
   public ResponseEntity<AccountIdentifierResponse> get(
       @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return withEtag(registration.get(accountId, actor));
   }
 
+  @Operation(
+      operationId = "setAccountIdentifier",
+      summary = "Register an account's IBAN, card number or contract number")
   @PutMapping
   public ResponseEntity<AccountIdentifierResponse> set(
       @PathVariable UUID accountId,
@@ -55,6 +62,9 @@ public class AccountIdentifierController {
    * US-07-11: registers the identifier an open import batch's file names, without sending it. A 422
    * {@code ACCOUNT_IDENTIFIER_NOT_IN_FILE} when the file names none this account could take.
    */
+  @Operation(
+      operationId = "setAccountIdentifierFromImport",
+      summary = "Take an account's identifier from an imported file")
   @PutMapping("/from-import")
   public ResponseEntity<AccountIdentifierResponse> setFromImport(
       @PathVariable UUID accountId,
@@ -69,6 +79,7 @@ public class AccountIdentifierController {
    * Removes the account's identifiers; with {@code kind} ({@code IBAN}, {@code MASKED_CARD} or
    * {@code CONTRACT_NUMBER}) only that one (#323).
    */
+  @Operation(operationId = "clearAccountIdentifier", summary = "Remove an account's identifiers")
   @DeleteMapping
   public ResponseEntity<AccountIdentifierResponse> clear(
       @PathVariable UUID accountId,

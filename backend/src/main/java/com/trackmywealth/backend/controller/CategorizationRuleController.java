@@ -5,10 +5,14 @@ import com.trackmywealth.backend.dto.CreateCategorizationRuleRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategorizationRuleService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.SuccessStatus;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/categorization-rules")
+@Tag(name = "Categories")
 public class CategorizationRuleController {
 
   private final CategorizationRuleService ruleService;
@@ -35,6 +40,7 @@ public class CategorizationRuleController {
   }
 
   /** Evaluation order; inactive rules only with {@code includeInactive=true}. */
+  @Operation(operationId = "listCategorizationRules", summary = "List the categorization rules")
   @GetMapping
   public List<CategorizationRuleResponse> list(
       @RequestParam(defaultValue = "false") boolean includeInactive,
@@ -42,6 +48,8 @@ public class CategorizationRuleController {
     return ruleService.list(includeInactive, actor);
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
+  @Operation(operationId = "createCategorizationRule", summary = "Create a categorization rule")
   @PostMapping
   public ResponseEntity<CategorizationRuleResponse> create(
       @Valid @RequestBody CreateCategorizationRuleRequest request,
@@ -50,6 +58,9 @@ public class CategorizationRuleController {
     return VersionedResponse.created(response, response.version());
   }
 
+  @Operation(
+      operationId = "deactivateCategorizationRule",
+      summary = "Deactivate a categorization rule")
   @PostMapping("/{id}/deactivate")
   public ResponseEntity<CategorizationRuleResponse> deactivate(
       @PathVariable UUID id,

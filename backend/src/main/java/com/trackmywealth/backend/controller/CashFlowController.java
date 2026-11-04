@@ -3,6 +3,8 @@ package com.trackmywealth.backend.controller;
 import com.trackmywealth.backend.dto.CashFlowResponse;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CashFlowService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.YearMonth;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** US-10-01 and US-06-05: monthly cash flow, optionally converted at transaction-date FX. */
 @RestController
 @RequestMapping("/api/v1/cash-flow")
+@Tag(name = "Cash flow")
 public class CashFlowController {
 
   private final CashFlowService cashFlowService;
@@ -22,6 +25,7 @@ public class CashFlowController {
   }
 
   /** {@code month} is {@code yyyy-MM}. */
+  @Operation(operationId = "getCashFlow", summary = "Income and spending per category for a month")
   @GetMapping
   public CashFlowResponse getCashFlow(
       @RequestParam YearMonth month,

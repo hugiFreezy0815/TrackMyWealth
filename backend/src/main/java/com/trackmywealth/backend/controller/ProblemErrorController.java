@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.error.ApiErrorCode;
 import com.trackmywealth.backend.web.ProblemDetails;
+import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -24,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
  * (FR-API-005); a 404 says the same generic "Not found." as everywhere else (US-28-03). A 5xx is
  * logged with its cause and the correlation id.
  */
+// Not part of the API contract (#372): the container's error page, not an endpoint to call.
+@Hidden
 @RestController
 public class ProblemErrorController implements ErrorController {
 

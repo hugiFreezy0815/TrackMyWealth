@@ -6,6 +6,9 @@ import com.trackmywealth.backend.dto.UpdateCategoryRequest;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CategoryService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.SuccessStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** US-08-04: the workspace's category taxonomy. Rules in {@link CategoryService}. */
 @RestController
 @RequestMapping("/api/v1/categories")
+@Tag(name = "Categories")
 public class CategoryController {
 
   private final CategoryService categoryService;
@@ -35,6 +39,7 @@ public class CategoryController {
   }
 
   /** Tree order; inactive categories only with {@code includeInactive=true}. */
+  @Operation(operationId = "listCategories", summary = "List the categories")
   @GetMapping
   public List<CategoryResponse> list(
       @RequestParam(defaultValue = "false") boolean includeInactive,
@@ -42,6 +47,7 @@ public class CategoryController {
     return categoryService.list(includeInactive, actor);
   }
 
+  @Operation(operationId = "getCategory", summary = "Read a category")
   @GetMapping("/{id}")
   public ResponseEntity<CategoryResponse> get(
       @PathVariable UUID id, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -49,6 +55,8 @@ public class CategoryController {
     return withEtag(ResponseEntity.ok(), category);
   }
 
+  @SuccessStatus(HttpStatus.CREATED)
+  @Operation(operationId = "createCategory", summary = "Create a category")
   @PostMapping
   public ResponseEntity<CategoryResponse> create(
       @Valid @RequestBody CreateCategoryRequest request,
@@ -57,6 +65,7 @@ public class CategoryController {
     return withEtag(ResponseEntity.status(HttpStatus.CREATED), created);
   }
 
+  @Operation(operationId = "updateCategory", summary = "Rename a category or change its parent")
   @PutMapping("/{id}")
   public ResponseEntity<CategoryResponse> update(
       @PathVariable UUID id,
@@ -69,6 +78,7 @@ public class CategoryController {
   }
 
   /** Cascades to every subcategory. */
+  @Operation(operationId = "deactivateCategory", summary = "Deactivate a category")
   @PostMapping("/{id}/deactivate")
   public ResponseEntity<CategoryResponse> deactivate(
       @PathVariable UUID id,
@@ -80,6 +90,7 @@ public class CategoryController {
   }
 
   /** This category only; its parent must be active. */
+  @Operation(operationId = "activateCategory", summary = "Reactivate a category")
   @PostMapping("/{id}/activate")
   public ResponseEntity<CategoryResponse> activate(
       @PathVariable UUID id,
@@ -91,6 +102,8 @@ public class CategoryController {
   }
 
   /** 204 only for a never-used workspace category; otherwise 409, deactivate instead. */
+  @SuccessStatus(HttpStatus.NO_CONTENT)
+  @Operation(operationId = "deleteCategory", summary = "Delete an unused category")
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(
       @PathVariable UUID id,

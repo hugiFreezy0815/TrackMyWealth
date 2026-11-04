@@ -6,6 +6,8 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.WorkspaceMemberService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.VersionedResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** US-03-04 self-service membership and US-03-05 workspace member listing. */
 @RestController
 @RequestMapping("/api/v1/workspace-members")
+@Tag(name = "Workspace")
 public class WorkspaceMemberController {
 
   private final WorkspaceMemberService workspaceMemberService;
@@ -28,12 +31,14 @@ public class WorkspaceMemberController {
     this.workspaceMemberService = workspaceMemberService;
   }
 
+  @Operation(operationId = "listWorkspaceMembers", summary = "List the workspace's members")
   @GetMapping
   public List<WorkspaceMemberListItemResponse> listWorkspaceMembers(
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return workspaceMemberService.listWorkspaceMembers(actor);
   }
 
+  @Operation(operationId = "getWorkspaceMember", summary = "Read a workspace member")
   @GetMapping("/{memberId}")
   public ResponseEntity<WorkspaceMemberSummaryResponse> getMember(
       @PathVariable UUID memberId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
@@ -41,6 +46,7 @@ public class WorkspaceMemberController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  @Operation(operationId = "deactivateWorkspaceMember", summary = "Deactivate a workspace member")
   @PostMapping("/{memberId}/deactivate")
   public ResponseEntity<WorkspaceMemberSummaryResponse> deactivateMember(
       @PathVariable UUID memberId,
