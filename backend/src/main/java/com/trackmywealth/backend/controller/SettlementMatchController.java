@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
+import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
@@ -12,6 +13,8 @@ import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
 import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -81,17 +84,16 @@ public class SettlementMatchController {
   }
 
   /**
-   * Matches needing a decision by default ({@code status=PROPOSED}); newest first, at most 200.
-   * {@code kind} ({@code CARD_SETTLEMENT} or {@code TRANSFER}, US-10-01) narrows the list to one
-   * kind of match; without it both are listed.
+   * The settlement-match work queue. What a client can rely on (default status, order, the cap of
+   * {@value SettlementMatchService#MAX_LISTED}) is stated once, in the operation description below,
+   * and the closed value sets of {@code status} and {@code kind} in their parameter schemas.
    */
   @Operation(
       operationId = "listSettlementMatches",
       summary = "List settlement matches",
       description =
-          "Matches needing a decision by default (status=PROPOSED), newest first. kind"
-              + " (CARD_SETTLEMENT or TRANSFER) narrows the list to one kind of match; without it"
-              + " both are listed. Not paged, and cut at the newest "
+          "Matches of one status, newest first; by default those needing a decision."
+              + " Not paged, and cut at the newest "
               + SettlementMatchService.MAX_LISTED
               + " matches: a response holding exactly "
               + SettlementMatchService.MAX_LISTED
@@ -99,8 +101,28 @@ public class SettlementMatchController {
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping("/settlement-matches")
   public List<SettlementMatchResponse> list(
-      @RequestParam(required = false) String status,
-      @RequestParam(required = false) String kind,
+      @Parameter(
+              description = "The status to list.",
+              schema =
+                  @Schema(
+                      allowableValues = {
+                        SettlementMatchValues.PROPOSED,
+                        SettlementMatchValues.CONFIRMED,
+                        SettlementMatchValues.REJECTED
+                      },
+                      defaultValue = SettlementMatchValues.PROPOSED))
+          @RequestParam(required = false)
+          String status,
+      @Parameter(
+              description = "Lists one kind of match only; both kinds when absent.",
+              schema =
+                  @Schema(
+                      allowableValues = {
+                        SettlementMatchValues.CARD_SETTLEMENT,
+                        SettlementMatchValues.TRANSFER
+                      }))
+          @RequestParam(required = false)
+          String kind,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return settlementMatchService.list(status, kind, actor);
   }

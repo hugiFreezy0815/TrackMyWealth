@@ -15321,22 +15321,31 @@ paths:
       tags:
       - Credit cards
       summary: List settlement matches
-      description: "Matches needing a decision by default (status=PROPOSED), newest\
-        \ first. kind (CARD_SETTLEMENT or TRANSFER) narrows the list to one kind of\
-        \ match; without it both are listed. Not paged, and cut at the newest 200\
-        \ matches: a response holding exactly 200 matches may not be all of them."
+      description: "Matches of one status, newest first; by default those needing\
+        \ a decision. Not paged, and cut at the newest 200 matches: a response holding\
+        \ exactly 200 matches may not be all of them."
       operationId: listSettlementMatches
       parameters:
       - name: status
         in: query
+        description: The status to list.
         required: false
         schema:
           type: string
+          default: PROPOSED
+          enum:
+          - PROPOSED
+          - CONFIRMED
+          - REJECTED
       - name: kind
         in: query
+        description: Lists one kind of match only; both kinds when absent.
         required: false
         schema:
           type: string
+          enum:
+          - CARD_SETTLEMENT
+          - TRANSFER
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
