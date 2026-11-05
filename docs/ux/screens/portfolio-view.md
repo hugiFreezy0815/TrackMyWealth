@@ -136,14 +136,14 @@ a cost basis the % is "–" with the explanation "No cost basis yet" (M24, insuf
 
 "{sourceKind}: last import {date} · {count, plural, one {# transaction} other {# transactions}}"
 from GAP-ROWS (#482) `lastImport` (`importedAt`, `transactionCount`, `fileFormat`). The "Import
-statement" button opens the import flow (M08). It is hidden if no import screen is in sprint 7.
+statement" button opens [Import statement (S7)](import-statement.md) with the account picker.
 No last import: "No import yet" + the button.
 
 ## States
 
 | State | Rule |
 |---|---|
-| Empty portfolio (no accounts, `sections` empty) | `EmptyState`: "No accounts in {name} yet" / "Add an account or import a statement." with "Add account" (M17; hidden if not in sprint 7). The total shows 0.00 as sent. |
+| Empty portfolio (no accounts, `sections` empty) | `EmptyState`: "No accounts in {name} yet" / "Add an account or import a statement." with "Add account" → [S6](add-account.md) and "Import statement" → [S7](import-statement.md). The total shows 0.00 as sent. |
 | Negative total | Shown as sent, with minus and loss colour (e.g. a "Home" portfolio with a mortgage larger than the property value). Never clamped to 0, never hidden (FR-NAV-15). |
 | Personal assets default (`personalAssetsDefault=true`) | Same layout. Shows no institution or import footer. Type badge "Personal assets". |
 | Estimated / stale / unreconciled / unknown | Badges per row, per section and on the total, each with the status the server sends for that level. |

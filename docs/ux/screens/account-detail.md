@@ -151,6 +151,7 @@ sorted by amount, the date headers are dropped and each row shows its date.
 | ⋯ → Archive account | Confirmation: "Archive {name}? It stays in your history but no longer counts towards your totals." | `POST /api/v1/accounts/{accountId}/archive` with `If-Match: "{version}"`. Afterwards reload 1–2, and S1/S2 must reload |
 | Archived banner → Restore | | `POST /api/v1/accounts/{accountId}/restore` with `If-Match` |
 | "+" add transaction (M18) | **Hidden** in sprint 7 | |
+| ⋯ → Import statement | [S7](import-statement.md) for this account | see S7 |
 | Tap the value | Explanation sheet: value basis, `asOf`, `valueSourceDate`, the status explanation, `warnings[]` | loaded data |
 
 Errors on these actions:
@@ -164,7 +165,7 @@ Errors on these actions:
 
 | State | Rule |
 |---|---|
-| No transactions yet (`hasTransactions=true`, empty page 0, no filter) | `EmptyState` "No transactions yet" / "Import a statement or add a transaction." Actions are hidden when their screens aren't in sprint 7. |
+| No transactions yet (`hasTransactions=true`, empty page 0, no filter) | `EmptyState` "No transactions yet" / "Import a statement to see its transactions." with "Import statement" → [S7](import-statement.md) for this account. (Adding a transaction by hand is not in sprint 7.) |
 | Filter returns nothing | "No uncategorised transactions" with a "Show all" button. |
 | Account without a ledger (`hasTransactions=false`, e.g. a manually valued property) | No list and no filters. The text reads "The value of this account comes from {valueBasis}" (manual valuation, loan statement…), with the value's date. |
 | Archived (`status = ARCHIVED`) | Archived banner. Changing actions are disabled with the reason "Restore the account to change it". The list stays readable. |
