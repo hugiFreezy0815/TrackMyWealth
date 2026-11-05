@@ -33,13 +33,15 @@ data source. Every such difference is listed under "Differences from Figma" in t
   [`docs/api/error-codes.md`](../../api/error-codes.md). Paging and the refresh rule follow
   [`docs/api/conventions.md`](../../api/conventions.md).
 - **#376 (information architecture) has a proposed implementation:** see
-  [UX-01 information architecture](../01-information-architecture.md). Until PO approval the
-  navigation decision is provisional: phone Overview + More; web Overview + Settings, with
-  portfolio tabs **inside** Overview rather than a duplicate top-level Portfolios screen.
-  Investments and Cash Flow are hidden in Sprint 7 (the S1 cash-flow teaser remains).
-  Breakpoints: <600px phone, 600–1023px tablet, ≥1024px desktop.
-  Approval of #376 and ADR 0007 (#384) is still required before treating the navigation
-  as accepted for implementation.
+  [UX-01 information architecture](../01-information-architecture.md).
+  **PO-approved (2026-11-05):** hide Investments and Cash Flow navigation entries until
+  their full screens are implemented. They must not appear as disabled tabs or placeholders
+  on mobile or in the web sidebar; the S1 cash-flow teaser remains visible.
+  Other navigation details remain provisional: phone Overview + More, web Overview +
+  Settings, with portfolio tabs **inside** Overview rather than a duplicate top-level
+  Portfolios screen. Breakpoints: <600px phone, 600–1023px tablet, ≥1024px desktop.
+  Approval of the remaining #376 decisions and ADR 0007 (#384) is still required
+  before treating the entire proposal as accepted.
 - **#378 (visual foundations) is not merged yet.** Component names used here (`Amount`,
   `ValueStatusBadge`, `ScopeBar`, `PortfolioTabs`, `SectionCard`, `AccountRow`,
   `TransactionRow`, `EmptyState`, `ErrorBanner`, `LoadingSkeleton`, `ValueChart`,

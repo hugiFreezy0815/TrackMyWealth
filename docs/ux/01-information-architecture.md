@@ -20,7 +20,7 @@ Read directly from the file, not just screenshots linked by issue descriptions:
 The **existing Figma mockups, not the ASCII diagrams below, are the visual reference** for
 the approved Sprint-7 screens. Their navigation includes future areas (for example Cash flow
 and Investments) which the approved [S1–S7 specifications](screens/README.md) intentionally
-hide until those screens ship. The Web W06 frame uses a **248 px sidebar**, and its content
+hide until those screens ship. **PO decision (2026-11-05): hide these navigation entries completely until the respective screens are implemented; never show disabled or placeholder tabs.** The Web W06 frame uses a **248 px sidebar**, and its content
 includes a table and a contextual detail panel; these proportions must be respected in the
 #384 benchmark. The wireframes below express **routes and responsive behavior**, not an
 alternative brand or design language. The Figma design system page defines current
@@ -47,7 +47,7 @@ The MVP is the seven approved [S1–S7 screens](screens/README.md). These are pr
 | Notifications, search, transaction creation/correction | Hidden | None | Follow-up sprint |
 | Administration / reference data | Not part of regular member navigation | Separate guarded admin surface, never visible to regular members | Admin capability and product scope |
 
-**Clarification of existing mockups:** M/W screens showing Investments, Cash flow or Budget as active navigation items are future navigation proposals, **not permission to ship placeholders** in Sprint 7. The single account data source and portfolio tabs match S1/S2.
+**Approved navigation visibility (PO, 2026-11-05):** M/W screens showing Investments, Cash flow or Budget as active navigation items are future navigation proposals, **not permission to ship placeholders or disabled links** in Sprint 7. Hide the Investments and Cash Flow navigation entries everywhere (mobile bottom tabs and desktop sidebar) until their screens are implemented and in scope. Preserve the Cash Flow teaser on S1; preserve depot/account sections of S2. The sidebar and mobile navigation must derive the visible entries from the same feature/scope inventory. The single account data source and portfolio tabs match S1/S2.
 
 ## 2. Navigation tree and stable routes
 
@@ -227,11 +227,12 @@ The time budget for statement import assumes a **small supported file** with una
 4. Sign-out, missing access, offline, optimistic-concurrency conflict and no-data states each have a defined recovery.
 5. Localised copy does not show “workspace”, “household” or “container” to a regular member, and an empty name shows the exact EN/DE fallback.
 
-### PO sign-off requested
+### Product-owner decisions and outstanding sign-off
 
-- Confirm the MVP navigation: **Overview + More/Settings only**, with portfolio tabs *inside* Overview; Cash flow and Investments remain hidden even though their future mockups exist.
-- Confirm the proposed **600px / 1024px** breakpoints, Figma's **248px sidebar**, and 360px desktop detail rail, subject to accessibility/zoom.
-- Approve the first-run target and its manual starting-value fallback; usability verification remains a Sprint-7 prototype check.
-- Revisit the web-native component split only after #384's measurements and ADR review.
+- **Approved 2026-11-05:** hide **Investments** and **Cash Flow** navigation entries until their screens are actually implemented; do **not** render disabled tabs or placeholder pages. This is a visibility decision, not approval of every detail in this document.
+- **Pending:** confirm the remaining MVP navigation details (Overview + More/Settings and portfolio tabs inside Overview), if not already established by the approved S1–S7 specifications.
+- **Pending:** confirm the proposed **600px / 1024px** breakpoints, Figma's **248px sidebar**, and 360px desktop detail rail, subject to accessibility/zoom.
+- **Pending:** approve the first-run target and its manual starting-value fallback; usability verification remains a Sprint-7 prototype check.
+- **Pending:** decide the web-native component split after #384's measurements and ADR review.
 
-**No claim of PO approval is made by this document.**
+**Only the hide-unimplemented-navigation decision is explicitly approved by the PO here.**
