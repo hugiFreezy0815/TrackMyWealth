@@ -16,7 +16,13 @@ export type SortField = 'bookingDate' | 'description' | 'account' | 'category' |
 export type SortDirection = 'asc' | 'desc';
 
 const categories = ['Groceries', 'Transport', 'Housing', 'Salary', 'Other'] as const;
-const merchants = ['Sample shop', 'Demo railway', 'Example landlord', 'Test payroll', 'Illustrative café'] as const;
+const merchants = [
+  'Sample shop',
+  'Demo railway',
+  'Example landlord',
+  'Test payroll',
+  'Illustrative café',
+] as const;
 const accounts = ['Demo current account', 'Demo card', 'Demo savings'] as const;
 
 export function createTransactions(count: number): DemoTransaction[] {

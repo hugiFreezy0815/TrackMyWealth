@@ -90,15 +90,25 @@ function NativeWebList({
             paddingHorizontal: 12,
           }}
         >
-          <Text style={{ width: '15%', fontSize: 12, color: colors.secondary }}>{row.bookingDate}</Text>
+          <Text style={{ width: '15%', fontSize: 12, color: colors.secondary }}>
+            {row.bookingDate}
+          </Text>
           <Text style={{ width: '31%', fontSize: 13, color: colors.navy }} numberOfLines={1}>
             {row.description}
           </Text>
           <Text style={{ width: '21%', fontSize: 12, color: colors.secondary }} numberOfLines={1}>
             {row.account}
           </Text>
-          <Text style={{ width: '17%', fontSize: 12, color: colors.secondary }}>{row.category}</Text>
-          <Text style={{ width: '16%', fontSize: 12, color: row.amount < 0 ? '#a32626' : colors.primary }}>
+          <Text style={{ width: '17%', fontSize: 12, color: colors.secondary }}>
+            {row.category}
+          </Text>
+          <Text
+            style={{
+              width: '16%',
+              fontSize: 12,
+              color: row.amount < 0 ? '#a32626' : colors.primary,
+            }}
+          >
             {money(row)}
           </Text>
         </Pressable>
@@ -134,16 +144,27 @@ function DomTable({
       style={{ height: WINDOW_HEIGHT, overflowY: 'auto', background: colors.surface }}
       onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
     >
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 13 }}>
+      <table
+        style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 13 }}
+      >
         <thead style={{ position: 'sticky', top: 0, background: '#ecf1f4', zIndex: 1 }}>
           <tr>
             {columns.map((column) => (
-              <th key={column.field} scope="col" style={{ width: column.width, textAlign: 'left', padding: 10 }}>
+              <th
+                key={column.field}
+                scope="col"
+                style={{ width: column.width, textAlign: 'left', padding: 10 }}
+              >
                 <button
                   type="button"
                   onClick={() => onSort(column.field)}
                   aria-sort={undefined}
-                  style={{ cursor: 'pointer', background: 'transparent', border: 0, color: colors.navy }}
+                  style={{
+                    cursor: 'pointer',
+                    background: 'transparent',
+                    border: 0,
+                    color: colors.navy,
+                  }}
                 >
                   {column.label} {sortField === column.field ? (sortDir === 'asc' ? '↑' : '↓') : ''}
                 </button>
@@ -153,7 +174,9 @@ function DomTable({
         </thead>
         <tbody>
           {range.above > 0 && (
-            <tr aria-hidden="true"><td colSpan={5} style={{ height: range.above, padding: 0 }} /></tr>
+            <tr aria-hidden="true">
+              <td colSpan={5} style={{ height: range.above, padding: 0 }} />
+            </tr>
           )}
           {rows.slice(range.start, range.end).map((row, index) => (
             <tr
@@ -167,24 +190,40 @@ function DomTable({
               {rowText(row).map((value, cell) => (
                 <td
                   key={cell}
-                  style={{ borderBottom: `1px solid ${colors.border}`, padding: '8px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  style={{
+                    borderBottom: `1px solid ${colors.border}`,
+                    padding: '8px 10px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
                 >
                   {cell === 1 ? (
                     <button
                       type="button"
                       onClick={() => onSelect(row.id)}
                       aria-label={`Select ${row.description}`}
-                      style={{ background: 'transparent', border: 0, cursor: 'pointer', textAlign: 'left', color: colors.navy }}
+                      style={{
+                        background: 'transparent',
+                        border: 0,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        color: colors.navy,
+                      }}
                     >
                       {value}
                     </button>
-                  ) : value}
+                  ) : (
+                    value
+                  )}
                 </td>
               ))}
             </tr>
           ))}
           {range.below > 0 && (
-            <tr aria-hidden="true"><td colSpan={5} style={{ height: range.below, padding: 0 }} /></tr>
+            <tr aria-hidden="true">
+              <td colSpan={5} style={{ height: range.below, padding: 0 }} />
+            </tr>
           )}
         </tbody>
       </table>
@@ -202,7 +241,10 @@ export default function WebTransactionSpike() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scrollY, setScrollY] = useState(0);
   const [renderMs, setRenderMs] = useState<number | null>(null);
-  const [scrollStats, setScrollStats] = useState<{ frames: number; over50ms: number }>({ frames: 0, over50ms: 0 });
+  const [scrollStats, setScrollStats] = useState<{ frames: number; over50ms: number }>({
+    frames: 0,
+    over50ms: 0,
+  });
   const lastScroll = useRef<number | null>(null);
   const started = useRef<number>(0);
   const all = useMemo(() => createTransactions(count), [count]);
@@ -242,19 +284,25 @@ export default function WebTransactionSpike() {
     lastScroll.current = null;
   }, []);
 
-  const sort = useCallback((field: SortField) => {
-    setSortDir((old) => (sortField === field && old === 'asc' ? 'desc' : 'asc'));
-    setSortField(field);
-    setScrollY(0);
-  }, [sortField]);
+  const sort = useCallback(
+    (field: SortField) => {
+      setSortDir((old) => (sortField === field && old === 'asc' ? 'desc' : 'asc'));
+      setSortField(field);
+      setScrollY(0);
+    },
+    [sortField],
+  );
 
-  const moveSelection = useCallback((delta: number) => {
-    if (!rows.length) return;
-    const i = rows.findIndex((r) => r.id === selectedId);
-    const next = Math.min(rows.length - 1, Math.max(0, i + delta));
-    setSelectedId(rows[next].id);
-    setScrollY(next * ROW_HEIGHT);
-  }, [rows, selectedId]);
+  const moveSelection = useCallback(
+    (delta: number) => {
+      if (!rows.length) return;
+      const i = rows.findIndex((r) => r.id === selectedId);
+      const next = Math.min(rows.length - 1, Math.max(0, i + delta));
+      setSelectedId(rows[next].id);
+      setScrollY(next * ROW_HEIGHT);
+    },
+    [rows, selectedId],
+  );
 
   const saveCsv = () => {
     const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
@@ -267,40 +315,123 @@ export default function WebTransactionSpike() {
   };
 
   if (Platform.OS !== 'web') {
-    return <View style={{ padding: 24 }}><Text>Web-only architecture experiment. Open in a browser.</Text></View>;
+    return (
+      <View style={{ padding: 24 }}>
+        <Text>Web-only architecture experiment. Open in a browser.</Text>
+      </View>
+    );
   }
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', minHeight: '100vh', background: colors.canvas, padding: 24, color: colors.navy }}>
+    <div
+      style={{
+        fontFamily: 'system-ui, sans-serif',
+        minHeight: '100vh',
+        background: colors.canvas,
+        padding: 24,
+        color: colors.navy,
+      }}
+    >
       <main style={{ maxWidth: 1280, margin: 'auto' }}>
         <h1 style={{ marginBottom: 4 }}>Transaction list · architecture spike #384</h1>
         <p style={{ color: colors.secondary }}>
           Disposable synthetic benchmark based on Figma W06 (248px sidebar, table and detail panel).
           Not a production screen. Compare the two implementations with the same rows.
         </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', margin: '16px 0' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 14,
+            alignItems: 'center',
+            margin: '16px 0',
+          }}
+        >
           <fieldset style={{ borderColor: colors.border }}>
             <legend>Renderer</legend>
-            <label><input type="radio" name="renderer" checked={mode === 'rnw'} onChange={() => chooseMode('rnw')} /> React Native Web</label>{' '}
-            <label><input type="radio" name="renderer" checked={mode === 'dom'} onChange={() => chooseMode('dom')} /> React DOM table</label>
+            <label>
+              <input
+                type="radio"
+                name="renderer"
+                checked={mode === 'rnw'}
+                onChange={() => chooseMode('rnw')}
+              />{' '}
+              React Native Web
+            </label>{' '}
+            <label>
+              <input
+                type="radio"
+                name="renderer"
+                checked={mode === 'dom'}
+                onChange={() => chooseMode('dom')}
+              />{' '}
+              React DOM table
+            </label>
           </fieldset>
-          <label>Rows <select value={count} onChange={(e) => { setCount(Number(e.target.value) as 1_000 | 10_000); setScrollY(0); }}>
-            <option value={1_000}>1,000</option><option value={10_000}>10,000</option>
-          </select></label>
-          <label>Search <input aria-label="Search description or account" value={search} onChange={(e) => { setSearch(e.target.value); setScrollY(0); }} /></label>
-          <label>Category <select value={category} onChange={(e) => { setCategory(e.target.value); setScrollY(0); }}>
-            <option value="">All</option>{['Groceries', 'Transport', 'Housing', 'Salary', 'Other'].map((x) => <option key={x}>{x}</option>)}
-          </select></label>
-          <label>Sort <select value={sortField} onChange={(e) => sort(e.target.value as SortField)}>
-            {columns.map((x) => <option key={x.field} value={x.field}>{x.label}</option>)}
-          </select></label>
-          <button type="button" onClick={() => setSortDir((v) => v === 'asc' ? 'desc' : 'asc')} aria-label="Reverse sort">{sortDir === 'asc' ? 'Ascending ↑' : 'Descending ↓'}</button>
-          <button type="button" onClick={saveCsv}>Download filtered CSV</button>
+          <label>
+            Rows{' '}
+            <select
+              value={count}
+              onChange={(e) => {
+                setCount(Number(e.target.value) as 1_000 | 10_000);
+                setScrollY(0);
+              }}
+            >
+              <option value={1_000}>1,000</option>
+              <option value={10_000}>10,000</option>
+            </select>
+          </label>
+          <label>
+            Search{' '}
+            <input
+              aria-label="Search description or account"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setScrollY(0);
+              }}
+            />
+          </label>
+          <label>
+            Category{' '}
+            <select
+              value={category}
+              onChange={(e) => {
+                setCategory(e.target.value);
+                setScrollY(0);
+              }}
+            >
+              <option value="">All</option>
+              {['Groceries', 'Transport', 'Housing', 'Salary', 'Other'].map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Sort{' '}
+            <select value={sortField} onChange={(e) => sort(e.target.value as SortField)}>
+              {columns.map((x) => (
+                <option key={x.field} value={x.field}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => setSortDir((v) => (v === 'asc' ? 'desc' : 'asc'))}
+            aria-label="Reverse sort"
+          >
+            {sortDir === 'asc' ? 'Ascending ↑' : 'Descending ↓'}
+          </button>
+          <button type="button" onClick={saveCsv}>
+            Download filtered CSV
+          </button>
         </div>
         <p aria-live="polite" style={{ fontSize: 13 }}>
-          {rows.length.toLocaleString()} filtered transactions · {range.end - range.start} virtualised rows mounted
-          · post-change paint callback: {renderMs ?? '–'} ms · scroll events: {scrollStats.frames}
-          · gaps &gt;50ms: {scrollStats.over50ms}.
+          {rows.length.toLocaleString()} filtered transactions · {range.end - range.start}{' '}
+          virtualised rows mounted · post-change paint callback: {renderMs ?? '–'} ms · scroll
+          events: {scrollStats.frames}· gaps &gt;50ms: {scrollStats.over50ms}.
         </p>
         <div
           tabIndex={0}
@@ -314,7 +445,13 @@ export default function WebTransactionSpike() {
             }
           }}
           aria-label="Transaction list. Up and down arrows move selection; Enter moves to details."
-          style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, border: `1px solid ${colors.border}`, background: colors.surface }}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) 300px',
+            gap: 16,
+            border: `1px solid ${colors.border}`,
+            background: colors.surface,
+          }}
         >
           <section style={{ minWidth: 0 }} aria-label="Transaction table">
             {mode === 'rnw' ? (
@@ -322,14 +459,33 @@ export default function WebTransactionSpike() {
                 <div style={{ padding: 12, borderBottom: `1px solid ${colors.border}` }}>
                   React Native Web View/Pressable/ScrollView rows, virtualised
                 </div>
-                <NativeWebList rows={rows} scrollY={scrollY} selectedId={selectedId} onScroll={changeScroll} onSelect={setSelectedId} />
+                <NativeWebList
+                  rows={rows}
+                  scrollY={scrollY}
+                  selectedId={selectedId}
+                  onScroll={changeScroll}
+                  onSelect={setSelectedId}
+                />
               </>
             ) : (
-              <DomTable rows={rows} scrollY={scrollY} selectedId={selectedId} onScroll={changeScroll}
-                onSelect={setSelectedId} onSort={sort} sortField={sortField} sortDir={sortDir} />
+              <DomTable
+                rows={rows}
+                scrollY={scrollY}
+                selectedId={selectedId}
+                onScroll={changeScroll}
+                onSelect={setSelectedId}
+                onSort={sort}
+                sortField={sortField}
+                sortDir={sortDir}
+              />
             )}
           </section>
-          <aside id="spike-details" tabIndex={-1} aria-label="Selected transaction details" style={{ padding: 16, borderLeft: `1px solid ${colors.border}` }}>
+          <aside
+            id="spike-details"
+            tabIndex={-1}
+            aria-label="Selected transaction details"
+            style={{ padding: 16, borderLeft: `1px solid ${colors.border}` }}
+          >
             <h2 style={{ fontSize: 18, marginTop: 0 }}>Details</h2>
             {selected ? (
               <dl>
@@ -340,7 +496,9 @@ export default function WebTransactionSpike() {
                   </React.Fragment>
                 ))}
               </dl>
-            ) : <p>Choose a transaction row to inspect it.</p>}
+            ) : (
+              <p>Choose a transaction row to inspect it.</p>
+            )}
           </aside>
         </div>
         <p style={{ color: colors.secondary, fontSize: 12 }}>

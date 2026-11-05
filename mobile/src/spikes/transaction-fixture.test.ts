@@ -26,7 +26,13 @@ describe('issue 384 synthetic transactions', () => {
   });
 
   it('exports only the filtered dataset with escaped CSV values', () => {
-    const selected = selectTransactions(createTransactions(1_000), 'Sample shop', '', 'bookingDate', 'desc');
+    const selected = selectTransactions(
+      createTransactions(1_000),
+      'Sample shop',
+      '',
+      'bookingDate',
+      'desc',
+    );
     const csv = toCsv(selected);
     expect(csv.split('\r\n')).toHaveLength(selected.length + 2);
     expect(csv).toContain('"Sample shop #00001"');

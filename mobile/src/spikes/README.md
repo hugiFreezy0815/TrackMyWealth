@@ -62,12 +62,12 @@ repeat 5 times with a fixed browser build/hardware, and record median and p95:
 
 Sample results table for human completion:
 
-| Renderer | Rows | Initial median/p95 ms | Scroll long tasks / frame drops | Filtering ms | A11y observations | Bundle bytes |
-|---|---:|---|---|---|---|---|
-| React Native Web | 1,000 | **not measured** | not measured | not measured | not tested | not measured |
-| React Native Web | 10,000 | **not measured** | not measured | not measured | not tested | not measured |
-| React DOM | 1,000 | **not measured** | not measured | not measured | not tested | not measured |
-| React DOM | 10,000 | **not measured** | not measured | not measured | not tested | not measured |
+| Renderer         |   Rows | Initial median/p95 ms | Scroll long tasks / frame drops | Filtering ms | A11y observations | Bundle bytes |
+| ---------------- | -----: | --------------------- | ------------------------------- | ------------ | ----------------- | ------------ |
+| React Native Web |  1,000 | **not measured**      | not measured                    | not measured | not tested        | not measured |
+| React Native Web | 10,000 | **not measured**      | not measured                    | not measured | not tested        | not measured |
+| React DOM        |  1,000 | **not measured**      | not measured                    | not measured | not tested        | not measured |
+| React DOM        | 10,000 | **not measured**      | not measured                    | not measured | not tested        | not measured |
 
 ## Decision criteria for ADR 0007
 
