@@ -1,0 +1,38 @@
+name: Temporary spike formatter for issue 384
+
+on:
+  push:
+    branches: [feature/384-web-client-spike]
+    paths: [.github/workflows/format-384.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Format experiment with repository Prettier
+        run: npx prettier --write src/app/spike-web-transactions.tsx src/spikes/README.md src/spikes/transaction-fixture.test.ts src/spikes/transaction-fixture.ts
+      - name: Commit formatting
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/src/app/spike-web-transactions.tsx mobile/src/spikes
+          if ! git diff --cached --quiet; then
+            git commit -m "style(spike): apply repository Prettier formatting"
+            git pull --rebase origin feature/384-web-client-spike
+            git push origin HEAD:feature/384-web-client-spike
+          fi
