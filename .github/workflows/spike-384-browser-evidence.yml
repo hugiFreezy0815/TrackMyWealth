@@ -37,6 +37,13 @@ jobs:
         run: |
           npm install --no-save --package-lock=false playwright@1.56.1
           npx playwright install --with-deps chromium
+      - name: Generate Expo ambient type declarations
+        run: |
+          cat > expo-env.d.ts << 'EOF'
+          /// <reference types="expo/types" />
+
+          // NOTE: This file should not be edited and should be in your git ignore
+          EOF
       - name: Typecheck and synthetic fixture tests
         run: |
           npx tsc --noEmit
