@@ -441,9 +441,6 @@ closes it once `main` is green again.
 
 ## Where to start as a developer
 
-For the implemented pagination contract (page envelope, size cap, sort whitelists and
-client refresh after imports), see [API conventions](docs/api/conventions.md#paging).
-
 Read `docs/user-stories/README.md` first — it lists every epic with development-ready stories,
 which migrations each depends on, and a suggested build sequence (foundation → tenancy/auth →
 workspace/institution/account → transaction ledger/imports/reconciliation → investment
@@ -451,6 +448,10 @@ core → budgeting/net worth/consolidated reporting). The working backlog is Git
 `epic-NN`, `priority-must|should`, and `sprint-N` for the current sprint) on the repository's
 project board; `docs/user-stories/` keeps the full story texts, including epics not yet turned
 into issues.
+
+For the implemented pagination contract (page envelope, size cap, sort whitelists, which lists
+are not paged, and client refresh after imports), see
+[API conventions](docs/api/conventions.md#paging).
 
 ## Loading the backlog into GitHub Issues
 

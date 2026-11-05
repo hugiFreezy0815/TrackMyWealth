@@ -4,18 +4,50 @@ This page documents the **paging contract** implemented in
 [US-29-03 (#373)](https://github.com/hugiFreezy0815/TrackMyWealth/issues/373).
 The other conventions (resource naming, errors, concurrency, decimals, dates, uploads and
 authentication) belong to [US-29-01 (#371)](https://github.com/hugiFreezy0815/TrackMyWealth/issues/371),
-which will extend this page. Until then, the committed [OpenAPI contract](../../api/openapi.yaml)
-and [development standards](../architecture/development-standards.md) are the reference for those
-topics. Do not infer rules for other endpoints from this section.
+which will extend this page. Until then, the committed [OpenAPI contract](../../api/openapi.yaml),
+the [error codes](error-codes.md) and the
+[development standards](../architecture/development-standards.md) are the reference for those
+topics. The paging design itself is recorded in
+[ADR 0006](../architecture/adr/0006-api-contract-conventions.md). Do not infer rules for other
+endpoints from this section.
 
 ## Paging
 
 ### Which collections are paged?
 
 Large collections expose `page`, `size` and `sort` query parameters and return the same
-`PageResponse<T>` envelope. Small bounded collections, such as the account and portfolio lists,
-return an ordinary JSON array; they do not accept this pagination contract. The committed OpenAPI
-contract identifies which operation is paged and defines its response schema.
+`PageResponse<T>` envelope; the six paged operations are listed under [Sorting](#sorting). The
+committed OpenAPI contract identifies which operation is paged and defines its response schema.
+
+Every other collection is a **bounded list**: it returns an ordinary JSON array, ignores `page`,
+`size` and `sort`, and is always complete. Its upper bound comes from the data it holds, not
+from a server cap, except where the table says so:
+
+| Bounded list | What bounds it | Server cap |
+| --- | --- | --- |
+| `GET /api/v1/accounts` | The workspace's accounts: tens, not thousands | None |
+| `GET /api/v1/portfolios` | The workspace's active portfolios: a handful | None |
+| `GET /api/v1/categories` | The workspace's category tree, at most 3 levels deep | None |
+| `GET /api/v1/categorization-rules` | The workspace's own rules, maintained by hand | None |
+| `GET /api/v1/import-templates` | Shipped templates plus the workspace's own, current versions only | None |
+| `GET /api/v1/workspace-members` | Members of the workspace: 1 in the MVP | None |
+| `GET /api/v1/sessions` | The caller's own active sessions | None |
+| `GET /api/v1/accounts/{accountId}/transactions/deleted` | Removals of the last 30 days that can still be restored | None |
+| `GET /api/v1/settlement-matches` | Matches of the requested `status` (default `PROPOSED`), newest first | **200** |
+| `GET /api/v1/accounts/{accountId}/snapshots` | Manually recorded snapshots of one account | None |
+| `GET /api/v1/accounts/{accountId}/valuations` | Manually recorded valuations of one asset | None |
+| `GET /api/v1/accounts/{accountId}/repayments` | Recorded repayments of one loan, about one a month | None |
+| `GET /api/v1/accounts/{accountId}/amortisation-schedule` | One loan's schedule, one entry per instalment | None |
+
+The two `POST` operations that answer with an array are bounded the same way:
+`POST /api/v1/import-templates/detect` returns at most one candidate per available template, and
+`POST /api/v1/accounts/{cardAccountId}/settlement-matches/run` returns the matches of one card.
+
+The last four lists grow with the age of an account and have no server cap. If one of them
+could exceed a few hundred items, it must move to the paged contract (an `api-breaking` change)
+rather than gain an ad-hoc limit. Settlement matches are the one list cut at a server cap: it
+returns the newest 200, so a client showing exactly 200 matches must not present them as all of
+them.
 
 The server owns the envelope rather than serializing Spring Data's `Page`. An empty first page is:
 
@@ -87,8 +119,11 @@ a unique tie-breaker, so equal visible sort values have a deterministic order. T
 follows the direction of the first requested sort field unless it is itself the sortable field
 (`rowNumber` for import rows). Clients do not specify or override that tie-breaker.
 
+Unlike a blank `page=` or `size=`, a blank `sort=` is **not** treated as absent: it names no
+field and is refused. To get the default order, leave `sort` out.
+
 An unknown field (including an entity property not present in the response whitelist), duplicate
-field, malformed direction or otherwise malformed `sort` returns HTTP 400 with
+field, blank, malformed direction or otherwise malformed `sort` returns HTTP 400 with
 `code: "INVALID_SORT"`; it is **not silently ignored**. The problem `detail` names the allowed
 fields. Clients should handle the stable `code`, not parse the human-readable `detail`.
 
@@ -121,7 +156,8 @@ same totals. This is why the refresh rule above is necessary.
 - `PagingIntegrationTest`, `PagedArgumentResolverTest`, `SortWhitelistTest` and
   `ApiConventionsIntegrationTest` test the behavior and the published schema.
 
-The backend's ArchUnit rules reject `Page` or `Slice` return values in controllers and require
-every controller `Pageable` or `Sort` argument to have `@Paged`. When introducing a new paged
+The backend's ArchUnit rules reject `Page` or `Slice` return values in controllers, and a
+controller takes paging only as a `@Paged Pageable`: a bare `Pageable`, or any `Sort` parameter
+(annotated or not), fails the build. When introducing a new paged
 endpoint, declare its whitelist, default sort and tie-breaker, update its OpenAPI contract and
 generated app types, and update this table in the same change.
