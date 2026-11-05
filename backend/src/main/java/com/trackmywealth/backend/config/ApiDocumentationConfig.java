@@ -330,13 +330,15 @@ public class ApiDocumentationConfig {
           .map(parameter -> parameter.getParameterAnnotation(Paged.class))
           .filter(Objects::nonNull)
           .findFirst()
-          .ifPresent(paged -> documentPaging(operation, SortWhitelist.of(paged)));
+          .ifPresent(paged -> documentPaging(operation, SortWhitelist.of(paged), paged.allowSort()));
       return operation;
     };
   }
 
   private static void documentPaging(
-      io.swagger.v3.oas.models.Operation operation, SortWhitelist whitelist) {
+      io.swagger.v3.oas.models.Operation operation,
+      SortWhitelist whitelist,
+      boolean allowSort) {
     Set<String> pagingNames =
         Set.of(
             PAGEABLE_PARAMETER,
@@ -368,26 +370,28 @@ public class ApiDocumentationConfig {
                     .minimum(BigDecimal.ONE)
                     .maximum(BigDecimal.valueOf(PagingValues.MAX_SIZE))
                     ._default(PagingValues.DEFAULT_SIZE)));
-    List<String> sortValues = new ArrayList<>();
-    for (String field : whitelist.fieldNames()) {
-      sortValues.add(field);
-      sortValues.add(field + ",asc");
-      sortValues.add(field + ",desc");
+    if (allowSort) {
+      List<String> sortValues = new ArrayList<>();
+      for (String field : whitelist.fieldNames()) {
+        sortValues.add(field);
+        sortValues.add(field + ",asc");
+        sortValues.add(field + ",desc");
+      }
+      StringSchema sortValue = new StringSchema();
+      sortValue.setEnum(sortValues);
+      operation.addParametersItem(
+          new Parameter()
+              .name(PagedArgumentResolver.SORT)
+              .in(QUERY)
+              .required(false)
+              .explode(true)
+              .description(
+                  "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: "
+                      + whitelist.defaultSort()
+                      + ". The order always ends with a unique tie-breaker, so pages never"
+                      + " overlap.")
+              .schema(new ArraySchema().items(sortValue)));
     }
-    StringSchema sortValue = new StringSchema();
-    sortValue.setEnum(sortValues);
-    operation.addParametersItem(
-        new Parameter()
-            .name(PagedArgumentResolver.SORT)
-            .in(QUERY)
-            .required(false)
-            .explode(true)
-            .description(
-                "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: "
-                    + whitelist.defaultSort()
-                    + ". The order always ends with a unique tie-breaker, so pages never"
-                    + " overlap.")
-            .schema(new ArraySchema().items(sortValue)));
     responsesOf(operation).putIfAbsent("400", new ApiResponse().$ref(PROBLEM_RESPONSE_REF));
   }
 

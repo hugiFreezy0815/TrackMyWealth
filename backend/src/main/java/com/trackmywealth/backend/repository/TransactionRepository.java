@@ -289,20 +289,25 @@ public interface TransactionRepository
    * V50) or any row since corrected (a replacement corrects it, V49) can no longer be restored and
    * is left out, as is a withdrawn reconciliation adjustment (US-25-03): only its result decides.
    */
+  String RESTORABLE_WHERE =
+      " FROM transaction t WHERE t.account_id = :accountId AND ("
+          + " (t.deleted_at IS NOT NULL AND t.deleted_at >= :since)"
+          + " OR (t.voided_at IS NOT NULL AND t.voided_at >= :since"
+          + " AND NOT EXISTS (SELECT 1 FROM transaction r"
+          + " WHERE r.restores_transaction_id = t.id)))"
+          + " AND t.reconciliation_result_id IS NULL"
+          + " AND NOT EXISTS (SELECT 1 FROM transaction c"
+          + " WHERE c.corrects_transaction_id = t.id)";
+
   @Query(
-      value =
-          "SELECT * FROM transaction t WHERE t.account_id = :accountId AND ("
-              + " (t.deleted_at IS NOT NULL AND t.deleted_at >= :since)"
-              + " OR (t.voided_at IS NOT NULL AND t.voided_at >= :since"
-              + " AND NOT EXISTS (SELECT 1 FROM transaction r"
-              + " WHERE r.restores_transaction_id = t.id)))"
-              + " AND t.reconciliation_result_id IS NULL"
-              + " AND NOT EXISTS (SELECT 1 FROM transaction c"
-              + " WHERE c.corrects_transaction_id = t.id)"
-              + " ORDER BY COALESCE(t.deleted_at, t.voided_at) DESC, t.id DESC",
+      value = "SELECT t.*" + RESTORABLE_WHERE
+          + " ORDER BY COALESCE(t.deleted_at, t.voided_at) DESC, t.id DESC",
+      countQuery = "SELECT COUNT(*)" + RESTORABLE_WHERE,
       nativeQuery = true)
-  List<Transaction> findRestorableByAccountIdSince(
-      @Param(ACCOUNT_ID) UUID accountId, @Param("since") OffsetDateTime since);
+  Page<Transaction> findRestorableByAccountIdSince(
+      @Param(ACCOUNT_ID) UUID accountId,
+      @Param("since") OffsetDateTime since,
+      Pageable pageable);
 
   /**
    * US-07-07: the rows voided together with {@code headId} - a card purchase's FEE row or a

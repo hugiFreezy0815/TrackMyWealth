@@ -26,6 +26,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import com.trackmywealth.backend.dto.PagingValues;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -597,12 +602,19 @@ public class TransactionRemovalService {
    * restored or corrected - most recently removed first.
    */
   @Transactional(readOnly = true)
-  public List<TransactionResponse> listRestorable(
-      UUID accountId, AuthenticatedUserPrincipal actor) {
+  public Page<TransactionResponse> listRestorable(
+      UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account);
-    return transactionService.toResponses(
-        transactionRepository.findRestorableByAccountIdSince(accountId, restoreWindowStart()));
+    Pageable bounded = PagingValues.requireBounded(pageable, "id");
+    // Native SQL orders by COALESCE(deleted_at, voided_at), which is not a single entity
+    // property. Strip the annotation's internal sort to avoid rewriting the fixed SQL order.
+    Pageable nativePage = PageRequest.of(bounded.getPageNumber(), bounded.getPageSize());
+    Page<Transaction> rows =
+        transactionRepository.findRestorableByAccountIdSince(
+            accountId, restoreWindowStart(), nativePage);
+    return new PageImpl<>(
+        transactionService.toResponses(rows.getContent()), bounded, rows.getTotalElements());
   }
 
   /**

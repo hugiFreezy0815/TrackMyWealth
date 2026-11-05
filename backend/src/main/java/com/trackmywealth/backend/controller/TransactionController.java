@@ -244,11 +244,20 @@ public class TransactionController {
    */
   @Operation(
       operationId = "listRemovedTransactions",
-      summary = "List an account's removed transactions")
+      summary = "List an account's removed transactions",
+      description =
+          "Fixed newest-removal-first order (COALESCE(deletedAt, voidedAt) descending, id"
+              + " descending); only page and size are accepted, not sort.")
   @GetMapping("/transactions/deleted")
-  public List<TransactionResponse> listRestorableTransactions(
-      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transactionRemovalService.listRestorable(accountId, actor);
+  public PageResponse<TransactionResponse> listRestorableTransactions(
+      @PathVariable UUID accountId,
+      @Paged(
+              sort = @SortField(name = "removedAt", properties = "deletedAt"),
+              defaultSort = "removedAt,desc",
+              allowSort = false)
+          Pageable pageable,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return PageResponse.of(transactionRemovalService.listRestorable(accountId, pageable, actor));
   }
 
   /**
