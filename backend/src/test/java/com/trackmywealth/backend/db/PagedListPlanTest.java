@@ -174,8 +174,7 @@ class PagedListPlanTest {
     Pageable page =
         PageRequest.of(0, PAGE_SIZE, sort(AccountSnapshotController.class, "listSnapshots"));
     Plans plans =
-        asRuntimeRole(
-            () -> snapshots.findByAccountIdAndWithdrawnAtIsNull(fixture.account(), page));
+        asRuntimeRole(() -> snapshots.findByAccountIdAndWithdrawnAtIsNull(fixture.account(), page));
 
     assertThat(plans.page()).contains("idx_account_snapshot_paged");
     assertSortFree(plans);

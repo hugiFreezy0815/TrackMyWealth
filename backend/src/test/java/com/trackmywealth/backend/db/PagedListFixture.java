@@ -33,7 +33,10 @@ final class PagedListFixture {
   // 1000 samples the whole table: the plans follow PostgreSQL's cost model, not luck.
   private static final String EXACT_STATISTICS = "SET default_statistics_target = 1000";
   private static final String[] TABLES = {
-    "transaction", "import_batch", "account_snapshot", "reconciliation_result",
+    "transaction",
+    "import_batch",
+    "account_snapshot",
+    "reconciliation_result",
     "institution_catalogue"
   };
 
