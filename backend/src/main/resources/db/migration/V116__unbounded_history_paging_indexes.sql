@@ -25,5 +25,5 @@ ON settlement_match (card_account_id, status, created_at DESC, id DESC);
 -- Restore list's fixed order is an expression, not a single entity sort property.
 -- Keep inactive rows visible to the native query even though Hibernate excludes them.
 CREATE INDEX idx_transaction_restorable_paged
-ON transaction (account_id, (COALESCE(deleted_at, voided_at)) DESC, id DESC)
+ON transaction (account_id, (coalesce(deleted_at, voided_at)) DESC, id DESC)
 WHERE deleted_at IS NOT NULL OR voided_at IS NOT NULL;

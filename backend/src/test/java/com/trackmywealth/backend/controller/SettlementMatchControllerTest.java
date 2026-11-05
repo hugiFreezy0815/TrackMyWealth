@@ -1219,9 +1219,9 @@ class SettlementMatchControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
+        .expectBody(SettlementMatchRunResponse.class)
         .returnResult()
-        .getResponseBody().content();
+        .getResponseBody();
   }
 
   private static List<UUID> ids(List<SettlementMatchResponse> matches) {
