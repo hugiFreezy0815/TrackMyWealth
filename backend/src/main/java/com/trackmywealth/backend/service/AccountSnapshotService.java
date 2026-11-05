@@ -24,6 +24,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.trackmywealth.backend.dto.PagingValues;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -192,14 +195,15 @@ public class AccountSnapshotService {
 
   /** Newest first; two sources on the same date are ordered by source name. */
   @Transactional(readOnly = true)
-  public List<AccountSnapshotResponse> list(UUID accountId, AuthenticatedUserPrincipal actor) {
+  public Page<AccountSnapshotResponse> list(
+      UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account);
-    List<AccountSnapshot> snapshots =
-        snapshotRepository.findByAccountIdAndWithdrawnAtIsNullOrderBySnapshotDateDescSourceAsc(
-            accountId);
+    Page<AccountSnapshot> snapshots =
+        snapshotRepository.findByAccountIdAndWithdrawnAtIsNull(
+            accountId, PagingValues.requireBounded(pageable, "id"));
     if (snapshots.isEmpty()) {
-      return List.of();
+      return snapshots.map(snapshot -> toResponse(snapshot, List.of(), Map.of()));
     }
     // Two queries for the whole list, not two per snapshot.
     Map<UUID, List<SnapshotHolding>> holdingsBySnapshot =
@@ -213,14 +217,12 @@ public class AccountSnapshotService {
                 .flatMap(List::stream)
                 .map(SnapshotHolding::getSecurityId)
                 .collect(Collectors.toSet()));
-    return snapshots.stream()
-        .map(
-            snapshot ->
-                toResponse(
-                    snapshot,
-                    holdingsBySnapshot.getOrDefault(snapshot.getId(), List.of()),
-                    securities))
-        .toList();
+    return snapshots.map(
+        snapshot ->
+            toResponse(
+                snapshot,
+                holdingsBySnapshot.getOrDefault(snapshot.getId(), List.of()),
+                securities));
   }
 
   @Transactional(readOnly = true)

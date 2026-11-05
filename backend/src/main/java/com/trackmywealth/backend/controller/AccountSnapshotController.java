@@ -16,6 +16,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
+import com.trackmywealth.backend.dto.PageResponse;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.Paged.SortField;
+import org.springframework.data.domain.Pageable;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -58,9 +62,12 @@ public class AccountSnapshotController {
 
   @Operation(operationId = "listAccountSnapshots", summary = "List an account's snapshots")
   @GetMapping
-  public List<AccountSnapshotResponse> listSnapshots(
-      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return accountSnapshotService.list(accountId, actor);
+  public PageResponse<AccountSnapshotResponse> listSnapshots(
+      @PathVariable UUID accountId,
+      @Paged(sort = @SortField(name = "snapshotDate"), defaultSort = "snapshotDate,desc")
+          Pageable pageable,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return PageResponse.of(accountSnapshotService.list(accountId, pageable, actor));
   }
 
   @Operation(operationId = "getAccountSnapshot", summary = "Read a snapshot")

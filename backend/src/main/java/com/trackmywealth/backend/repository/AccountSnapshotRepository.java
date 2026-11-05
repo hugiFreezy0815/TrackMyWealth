@@ -6,6 +6,8 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -16,8 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot, UUID> {
 
-  List<AccountSnapshot> findByAccountIdAndWithdrawnAtIsNullOrderBySnapshotDateDescSourceAsc(
-      UUID accountId);
+  Page<AccountSnapshot> findByAccountIdAndWithdrawnAtIsNull(UUID accountId, Pageable pageable);
 
   Optional<AccountSnapshot> findByIdAndAccountId(UUID id, UUID accountId);
 
