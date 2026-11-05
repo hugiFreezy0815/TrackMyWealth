@@ -32,16 +32,20 @@ data source. Every such difference is listed under "Differences from Figma" in t
   Types come from `mobile/src/api/schema.d.ts` (`npm run api:types`). Error handling follows
   [`docs/api/error-codes.md`](../../api/error-codes.md). Paging and the refresh rule follow
   [`docs/api/conventions.md`](../../api/conventions.md).
-- **#376 (information architecture) has a proposed implementation:** see
+- **#376 (information architecture) is PO-approved as the Sprint-7 navigation and
+  onboarding baseline (2026-11-05):** see
   [UX-01 information architecture](../01-information-architecture.md).
-  **PO-approved (2026-11-05):** hide Investments and Cash Flow navigation entries until
-  their full screens are implemented. They must not appear as disabled tabs or placeholders
-  on mobile or in the web sidebar; the S1 cash-flow teaser remains visible.
-  Other navigation details remain provisional: phone Overview + More, web Overview +
-  Settings, with portfolio tabs **inside** Overview rather than a duplicate top-level
-  Portfolios screen. Breakpoints: <600px phone, 600–1023px tablet, ≥1024px desktop.
-  Approval of the remaining #376 decisions and ADR 0007 (#384) is still required
-  before treating the entire proposal as accepted.
+  Mobile navigation is **Overview + More**, desktop sidebar navigation is **Overview +
+  Settings**, and portfolio tabs live **inside** Overview; there is no duplicate
+  top-level Portfolios view. Investments and Cash Flow navigation entries are hidden
+  until their full screens are implemented; never show disabled tabs or placeholders.
+  S1's cash-flow teaser and S2's depot sections remain visible. Viewport breakpoints
+  are <600px phone, 600–1023px tablet, and ≥1024px desktop, with Figma's 248px sidebar
+  and a nominal 360px context rail. The optional overview name falls back to
+  All portfolios / Alle Portfolios. Onboarding offers statement import or an
+  applicable manual opening balance / valuation and targets **under ten minutes**,
+  subject to measurement in Sprint 7. **ADR 0007 (#384) remains proposed** until
+  actual browser performance and accessibility evidence is reviewed.
 - **#378 (visual foundations) is not merged yet.** Component names used here (`Amount`,
   `ValueStatusBadge`, `ScopeBar`, `PortfolioTabs`, `SectionCard`, `AccountRow`,
   `TransactionRow`, `EmptyState`, `ErrorBanner`, `LoadingSkeleton`, `ValueChart`,

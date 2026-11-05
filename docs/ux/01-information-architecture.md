@@ -1,6 +1,6 @@
 # UX-01 — Information architecture and first-run journey
 
-> **Status:** Proposed for product-owner approval · issue [#376](https://github.com/hugiFreezy0815/TrackMyWealth/issues/376) · Sprint 6
+> **Status:** PO-approved implementation baseline (2026-11-05); usability validation pending · issue [#376](https://github.com/hugiFreezy0815/TrackMyWealth/issues/376) · Sprint 6
 >
 > **Authority:** Sprint-7 screen specifications in [`screens/README.md`](screens/README.md), the PO's 2026-10-20 terminology decision, and the 2026-11-05 S1–S7 scope decision. When a screen wireframe and a screen specification disagree, the *screen specification wins*.
 
@@ -227,12 +227,17 @@ The time budget for statement import assumes a **small supported file** with una
 4. Sign-out, missing access, offline, optimistic-concurrency conflict and no-data states each have a defined recovery.
 5. Localised copy does not show “workspace”, “household” or “container” to a regular member, and an empty name shows the exact EN/DE fallback.
 
-### Product-owner decisions and outstanding sign-off
+### Product-owner decisions and validation gates
 
-- **Approved 2026-11-05:** hide **Investments** and **Cash Flow** navigation entries until their screens are actually implemented; do **not** render disabled tabs or placeholder pages. This is a visibility decision, not approval of every detail in this document.
-- **Pending:** confirm the remaining MVP navigation details (Overview + More/Settings and portfolio tabs inside Overview), if not already established by the approved S1–S7 specifications.
-- **Pending:** confirm the proposed **600px / 1024px** breakpoints, Figma's **248px sidebar**, and 360px desktop detail rail, subject to accessibility/zoom.
-- **Pending:** approve the first-run target and its manual starting-value fallback; usability verification remains a Sprint-7 prototype check.
-- **Pending:** decide the web-native component split after #384's measurements and ADR review.
+**Approved 2026-11-05 (Sprint 7 implementation baseline):**
 
-**Only the hide-unimplemented-navigation decision is explicitly approved by the PO here.**
+1. **Navigation:** phone bottom tabs are **Overview** and **More**; desktop sidebar destinations are **Overview** and **Settings**. The first Overview tab displays the optional overview name (falling back to *All portfolios / Alle Portfolios*); individual portfolios live in the Overview tab strip, not in a duplicate top-level Portfolios section. **Investments** and **Cash Flow** navigation entries remain completely hidden until the corresponding screens are implemented — never render disabled tabs or placeholder pages. S1's cash-flow teaser and S2's depot sections remain visible.
+2. **Responsive layout:** use CSS viewport breakpoints **below 600px phone**, **600–1023px tablet**, and **from 1024px desktop**. Respect Figma's **248px desktop sidebar** and a **nominal 360px contextual detail panel**, collapsing or stacking content where necessary for screen-reader accessibility, 200% zoom, and narrower viewports. These are starting layout rules; accessibility defects must be corrected in implementation.
+3. **First-run journey:** the overview name is optional with the documented EN/DE fallback. After adding a portfolio and account, offer **statement import or an appropriate manual opening balance / valuation** (with account-type exceptions from S6). Adopt **under ten minutes as a usability target**, **not** a measured or guaranteed outcome. A Sprint-7 user test must record real elapsed times and recovery paths.
+
+**Still pending outside the above product decisions:**
+
+- **ADR 0007 / #384:** choose Expo RNW, a semantic React DOM grid inside Expo web, or a separate React web app only after browser performance measurements, keyboard/screen-reader audit, and explicit architecture approval. This document does **not** approve that technical choice.
+- **Implementation validation:** verify S1–S7 at 390px, 800px and 1440px (plus 200% zoom), confirm accessibility, and conduct the first-run usability test. These checks do **not** retract the approved product decisions; they may require implementation refinements.
+
+**The PO approved decisions 1–3; no benchmark results or accessibility test outcomes are claimed.**
