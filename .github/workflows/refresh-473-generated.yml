@@ -42,5 +42,6 @@ jobs:
           git add api/openapi.yaml mobile/src/api/schema.d.ts
           if ! git diff --cached --quiet; then
             git commit -m "chore(api): regenerate canonical contract and mobile types"
+            git pull --rebase origin feature/473-paginate-unbounded-lists
             git push origin HEAD:feature/473-paginate-unbounded-lists
           fi
