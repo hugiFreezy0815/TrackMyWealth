@@ -27,9 +27,10 @@ const percentile = (values, fraction) => {
   return a[Math.min(a.length - 1, Math.ceil(a.length * fraction) - 1)];
 };
 
-for (const renderer of ['rnw', 'dom']) {
+benchmark: for (const renderer of ['rnw', 'dom']) {
   for (const size of [1000, 10000]) {
     for (let run = 1; run <= repeats; run++) {
+      console.log('START', renderer, size, run);
       const context = await browser.newContext({
         viewport: { width: 1440, height: 900 },
         acceptDownloads: true,
@@ -53,12 +54,12 @@ for (const renderer of ['rnw', 'dom']) {
       const startedAt = Date.now();
       const href = origin + '/spike-web-transactions?renderer=' + renderer + '&rows=' + size;
       try {
-        await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 180000 });
-        await page.locator('[data-benchmark-list="' + renderer + '"]').waitFor({ timeout: 180000 });
+        await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await page.locator('[data-benchmark-list="' + renderer + '"]').waitFor({ timeout: 45000 });
         await page.waitForFunction(
           (expected) => Number(document.querySelector('[data-benchmark-count]')?.getAttribute('data-benchmark-count')) === expected,
           size,
-          { timeout: 180000 },
+          { timeout: 45000 },
         );
         const firstVisibleMs = Date.now() - startedAt;
         const initialMounted = renderer === 'dom'
@@ -146,9 +147,11 @@ for (const renderer of ['rnw', 'dom']) {
         console.log(renderer, size, run, JSON.stringify(records.at(-1)));
       } catch (error) {
         errors.push({ renderer, size, run, error: String(error) });
+        console.error('FAIL', renderer, size, run, String(error));
       } finally {
         await context.close();
       }
+      if (errors.length) break benchmark;
     }
   }
 }
