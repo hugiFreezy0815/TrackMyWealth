@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Slot, ThemeProvider, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { View, useColorScheme } from 'react-native';
+import { Platform, View, useColorScheme } from 'react-native';
 
 import { loadServerUrl } from '@/api/server-url';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
@@ -15,6 +15,7 @@ SplashScreen.preventAutoHideAsync();
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const pathname = usePathname();
   const [session, setSession] = useState(sessionSnapshot);
   const [restoring, setRestoring] = useState(true);
 
@@ -27,6 +28,12 @@ export default function TabLayout() {
       .finally(() => setRestoring(false));
     return unsubscribe;
   }, []);
+
+  // The synthetic, web-only benchmark must not require real credentials or hit any backend.
+  // This bypass exists ONLY on the disposable experiment branch; do not merge it to main.
+  if (Platform.OS === 'web' && pathname === '/spike-web-transactions') {
+    return <Slot />;
+  }
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
