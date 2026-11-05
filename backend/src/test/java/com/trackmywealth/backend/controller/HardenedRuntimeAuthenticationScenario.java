@@ -12,7 +12,9 @@ import com.trackmywealth.backend.dto.MfaVerifyRequest;
 import com.trackmywealth.backend.dto.RefreshTokenRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.WorkspaceResponse;
+import com.trackmywealth.backend.testsupport.MutableClock;
 import com.trackmywealth.backend.testsupport.RoleSplitScripts;
+import com.trackmywealth.backend.testsupport.TestClockConfig;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import java.io.IOException;
 import java.sql.Connection;
@@ -23,9 +25,12 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -44,8 +49,15 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * <p>Run on both databases the split meets: a fresh one ({@link
  * HardenedRuntimeAuthenticationHttpTest}) and an existing single-role installation that is split
  * afterwards ({@link UpgradedRoleSplitAuthenticationHttpTest}). Each subclass owns its container.
+ *
+ * <p>The TOTP codes come from the server's own clock, a {@link MutableClock} held still for the
+ * whole scenario (#465). On the real clock, a code built just before a 30-second boundary was two
+ * steps old by the time the server checked it, and the MFA confirmation failed with 401 now and
+ * then in a loaded full build. The clock is set to the real time when the test starts, so whatever
+ * else reads it sees today; access and refresh tokens and the database do not read it at all.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestClockConfig.class)
 abstract class HardenedRuntimeAuthenticationScenario {
 
   static final String SUPERUSER = "trackmywealth";
@@ -94,6 +106,15 @@ abstract class HardenedRuntimeAuthenticationScenario {
   abstract String jdbcUrl();
 
   @LocalServerPort int port;
+
+  @Autowired MutableClock clock;
+
+  // Real time, held still: every code a test builds is for a fixed step, whatever the build's load.
+  // Here rather than in a test, so a test added later gets it too.
+  @BeforeEach
+  void holdTheClockAtRealTime() {
+    clock.set(Instant.now());
+  }
 
   @Test
   void anActiveMemberReachesOnlyTheirWorkspaceAndAnInactiveOneIsRefusedEverywhere()
@@ -148,15 +169,32 @@ abstract class HardenedRuntimeAuthenticationScenario {
 
     setMemberStatus("INACTIVE");
 
+    // Each refusal is pinned to its detail, so a 401 for another reason fails the test. The
+    // token was accepted a moment ago, so only the filter's eligibility check can refuse it now.
     authorized(setup.accessToken())
         .get()
         .uri("/api/v1/workspace")
         .exchange()
         .expectStatus()
-        .isUnauthorized();
-    loginRequest().expectStatus().isUnauthorized();
-    // A fresh, never used step: only the member's status can refuse it.
-    verifyMfa(pendingChallenge, codeAtStep(secret, 1)).expectStatus().isUnauthorized();
+        .isUnauthorized()
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Sign in to continue.");
+    // The same detail as a wrong password, on purpose (no password oracle); the password is right.
+    loginRequest()
+        .expectStatus()
+        .isUnauthorized()
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Invalid email or password.");
+    // A fresh, never used step, refused as an ineligible challenge rather than as a wrong code.
+    verifyMfa(pendingChallenge, codeAtStep(secret, 1))
+        .expectStatus()
+        .isUnauthorized()
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Invalid or expired challenge.");
+    // Refused as ineligible, not as an expired or reused token.
     client()
         .post()
         .uri("/api/v1/auth/refresh")
@@ -164,7 +202,10 @@ abstract class HardenedRuntimeAuthenticationScenario {
         .body(new RefreshTokenRequest(verified.refreshToken()))
         .exchange()
         .expectStatus()
-        .isUnauthorized();
+        .isUnauthorized()
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Invalid refresh token.");
   }
 
   // Enrolls and confirms TOTP; the confirmation uses the step before the ones verified later, so
@@ -223,9 +264,9 @@ abstract class HardenedRuntimeAuthenticationScenario {
         .exchange();
   }
 
-  // The code of the current TOTP step plus offset; the server accepts one step either side.
+  // The code of the server's current TOTP step plus offset; it accepts one step either side.
   private String codeAtStep(String secret, int offset) throws Exception {
-    long step = Math.floorDiv(Instant.now().getEpochSecond(), TOTP_PERIOD_SECONDS);
+    long step = Math.floorDiv(clock.instant().getEpochSecond(), TOTP_PERIOD_SECONDS);
     return codeGenerator.generate(secret, step + offset);
   }
 
