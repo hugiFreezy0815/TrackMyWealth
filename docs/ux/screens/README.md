@@ -37,9 +37,11 @@ data source. Every such difference is listed under "Differences from Figma" in t
   `PeriodSwitch`, `ChangeChip`) are the inventory #378 must define. The list at the end of this
   file says which screen uses which.
 - **#379 (glossary and copy) owns the final wording.** The EN/DE texts here are drafts with
-  their message keys, written as complete ICU messages. German uses the informal "du" form, as
-  the PO wrote it in #377 ("Name deiner Übersicht"). The error catalogue still uses "Sie"; #379
-  decides which form wins.
+  their message keys, written as complete ICU messages.
+- **German addresses the member with "du" (PO decision 2026-11-05).** Every German text in the
+  app uses the informal form ("Name deiner Übersicht", "Bitte lade neu"). The DE texts in
+  `docs/api/error-codes.md` still use "Sie". #379 rewrites them, and the app uses its own
+  "du" texts for every message key.
 
 ## Rules for every screen
 
@@ -109,16 +111,15 @@ data source. Every such difference is listed under "Differences from Figma" in t
 
 ## Gaps and their owner stories
 
-The PO decided on 2026-11-05 to file the history, positions, transaction-read and
-transaction-history gaps for sprint 7 (label `sprint-7`, Iteration 7). The breakdown and
-row-detail gaps were found while writing these specs and are filed without a sprint; the PO
-decides. Each UI element stays hidden until its story merges.
+The PO decided on 2026-11-05 to put every gap below into sprint 7 (label `sprint-7`,
+Iteration 7). Each UI element stays hidden until its story merges, so the UI stories never wait
+on the backend.
 
 | Gap | Screen | Owner story |
 |---|---|---|
 | Net-worth and portfolio value history (chart), period change, contribution vs. market/FX split, per-portfolio and per-class change | S1, S2 | #477 (US-11-06) |
-| Net worth broken down by the Portfolio View's sections (Cash & savings, Depot, Pillar 3a, Property & mortgage…) | S1 | #481 (US-11-05, no sprint yet) |
-| Portfolio View: masked IBAN/card number, reconciliation state per account, card statement date, institution name, FX rate, last import per portfolio | S2, S3 | #482 (US-04-09, no sprint yet) |
+| Net worth broken down by the Portfolio View's sections (Cash & savings, Depot, Pillar 3a, Property & mortgage…) | S1 | #481 (US-11-05) |
+| Portfolio View: masked IBAN/card number, reconciliation state per account, card statement date, institution name, FX rate, last import per portfolio | S2, S3 | #482 (US-04-09) |
 | Depot positions (name, ISIN, units, value, unrealised gain) | S2 | #478 (US-15-05) |
 | Single-transaction read (deep link), portfolio name, counter-account name, bank code, import batch, amount in account currency | S3, S4 | #479 (US-07-37) |
 | Transaction change history | S4 | #480 (US-07-38) |
