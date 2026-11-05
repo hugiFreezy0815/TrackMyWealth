@@ -25,6 +25,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -108,11 +109,16 @@ abstract class HardenedRuntimeAuthenticationScenario {
 
   @Autowired MutableClock clock;
 
+  // Real time, held still: every code a test builds is for a fixed step, whatever the build's load.
+  // Here rather than in a test, so a test added later gets it too.
+  @BeforeEach
+  void holdTheClockAtRealTime() {
+    clock.set(Instant.now());
+  }
+
   @Test
   void anActiveMemberReachesOnlyTheirWorkspaceAndAnInactiveOneIsRefusedEverywhere()
       throws Exception {
-    // Real time, held still: every code below is for a fixed step, whatever the build's load.
-    clock.set(Instant.now());
     assertThat(runtimeBypassesRls())
         .as("the application connects as a role bound by RLS")
         .isFalse();
@@ -163,15 +169,32 @@ abstract class HardenedRuntimeAuthenticationScenario {
 
     setMemberStatus("INACTIVE");
 
+    // Each refusal is pinned to its detail, so a 401 for another reason fails the test. The
+    // token was accepted a moment ago, so only the filter's eligibility check can refuse it now.
     authorized(setup.accessToken())
         .get()
         .uri("/api/v1/workspace")
         .exchange()
         .expectStatus()
-        .isUnauthorized();
-    loginRequest().expectStatus().isUnauthorized();
-    // A fresh, never used step: only the member's status can refuse it.
-    verifyMfa(pendingChallenge, codeAtStep(secret, 1)).expectStatus().isUnauthorized();
+        .isUnauthorized()
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Sign in to continue.");
+    // The same detail as a wrong password, on purpose (no password oracle); the password is right.
+    loginRequest()
+        .expectStatus()
+        .isUnauthorized()
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Invalid email or password.");
+    // A fresh, never used step, refused as an ineligible challenge rather than as a wrong code.
+    verifyMfa(pendingChallenge, codeAtStep(secret, 1))
+        .expectStatus()
+        .isUnauthorized()
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Invalid or expired challenge.");
+    // Refused as ineligible, not as an expired or reused token.
     client()
         .post()
         .uri("/api/v1/auth/refresh")
@@ -179,7 +202,10 @@ abstract class HardenedRuntimeAuthenticationScenario {
         .body(new RefreshTokenRequest(verified.refreshToken()))
         .exchange()
         .expectStatus()
-        .isUnauthorized();
+        .isUnauthorized()
+        .expectBody()
+        .jsonPath("$.detail")
+        .isEqualTo("Invalid refresh token.");
   }
 
   // Enrolls and confirms TOTP; the confirmation uses the step before the ones verified later, so
