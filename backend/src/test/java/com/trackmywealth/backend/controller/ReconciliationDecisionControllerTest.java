@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CashFlowResponse;
@@ -50,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -1141,17 +1143,17 @@ class ReconciliationDecisionControllerTest {
   }
 
   private List<TransactionResponse> restorable() {
-    TransactionResponse[] body =
+    PageResponse<TransactionResponse> body =
         client()
             .get()
             .uri("/api/v1/accounts/" + cash.id() + "/transactions/deleted")
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(TransactionResponse[].class)
+            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
             .returnResult()
             .getResponseBody();
-    return body == null ? List.of() : List.of(body);
+    return body == null ? List.of() : body.content();
   }
 
   private List<TransactionResponse> ledger() {

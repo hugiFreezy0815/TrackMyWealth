@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
@@ -45,6 +46,7 @@ import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -715,16 +717,17 @@ class OpeningBalanceControllerTest {
     OpeningBalanceResponse opening =
         recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
 
-    AccountSnapshotResponse[] snapshots =
+    List<AccountSnapshotResponse> snapshots =
         client(token)
             .get()
             .uri("/api/v1/accounts/" + cash.id() + "/snapshots")
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(AccountSnapshotResponse[].class)
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
     assertThat(snapshots)
         .singleElement()
         .satisfies(
