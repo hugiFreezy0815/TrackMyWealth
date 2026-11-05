@@ -1343,7 +1343,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List settlement matches */
+    /**
+     * List settlement matches
+     * @description Matches of one status, newest first; by default those needing a decision. Not paged, and cut at the newest 200 matches: a response holding exactly 200 matches may not be all of them.
+     */
     get: operations['listSettlementMatches'];
     put?: never;
     post?: never;
@@ -16415,8 +16418,10 @@ export interface operations {
   listSettlementMatches: {
     parameters: {
       query?: {
-        status?: string;
-        kind?: string;
+        /** @description The status to list. */
+        status?: 'PROPOSED' | 'CONFIRMED' | 'REJECTED';
+        /** @description Lists one kind of match only; both kinds when absent. */
+        kind?: 'CARD_SETTLEMENT' | 'TRANSFER';
       };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
