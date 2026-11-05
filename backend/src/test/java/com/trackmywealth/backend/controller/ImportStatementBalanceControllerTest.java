@@ -572,7 +572,8 @@ class ImportStatementBalanceControllerTest {
         .isOk()
         .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
         .returnResult()
-        .getResponseBody().content();
+        .getResponseBody()
+        .content();
   }
 
   private List<ReconciliationResultResponse> results() {

@@ -330,15 +330,14 @@ public class ApiDocumentationConfig {
           .map(parameter -> parameter.getParameterAnnotation(Paged.class))
           .filter(Objects::nonNull)
           .findFirst()
-          .ifPresent(paged -> documentPaging(operation, SortWhitelist.of(paged), paged.allowSort()));
+          .ifPresent(
+              paged -> documentPaging(operation, SortWhitelist.of(paged), paged.allowSort()));
       return operation;
     };
   }
 
   private static void documentPaging(
-      io.swagger.v3.oas.models.Operation operation,
-      SortWhitelist whitelist,
-      boolean allowSort) {
+      io.swagger.v3.oas.models.Operation operation, SortWhitelist whitelist, boolean allowSort) {
     Set<String> pagingNames =
         Set.of(
             PAGEABLE_PARAMETER,

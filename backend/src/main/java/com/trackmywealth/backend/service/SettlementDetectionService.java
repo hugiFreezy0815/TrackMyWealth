@@ -154,7 +154,9 @@ public class SettlementDetectionService {
     detectForCard(cardAccountId, FULL_HISTORY);
   }
 
-  /** Counts newly proposed matches while re-running detection, without reading the match history. */
+  /**
+   * Counts newly proposed matches while re-running detection, without reading the match history.
+   */
   @Transactional
   public int countNewProposalsForCard(UUID cardAccountId) {
     return detectForCard(cardAccountId, FULL_HISTORY);

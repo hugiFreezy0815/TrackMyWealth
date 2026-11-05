@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.LoanPaymentPlan;
 import com.trackmywealth.backend.dto.LoanPaymentSplit;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
 import com.trackmywealth.backend.dto.LoanRepaymentSplitValues;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountLoan;
 import com.trackmywealth.backend.entity.AccountMortgage;
@@ -29,13 +30,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import com.trackmywealth.backend.dto.PagingValues;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -226,8 +226,7 @@ public class LoanRepaymentService {
     }
     Page<LoanPayment> payments =
         loanPaymentRepository.findVisibleInEffect(loan.getId(), readablePayerIds, bounded);
-    return new PageImpl<>(
-        toResponses(payments.getContent()), bounded, payments.getTotalElements());
+    return new PageImpl<>(toResponses(payments.getContent()), bounded, payments.getTotalElements());
   }
 
   /**

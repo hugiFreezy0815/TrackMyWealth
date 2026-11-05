@@ -1,13 +1,17 @@
 package com.trackmywealth.backend.controller;
 
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
+import com.trackmywealth.backend.dto.SettlementMatchRunResponse;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SettlementMatchService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
@@ -17,12 +21,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.SettlementMatchRunResponse;
-import com.trackmywealth.backend.web.Paged;
-import com.trackmywealth.backend.web.Paged.SortField;
-import org.springframework.data.domain.Pageable;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -123,7 +123,8 @@ public class SettlementMatchController {
       @Paged(sort = @SortField(name = "createdAt"), defaultSort = "createdAt,desc")
           Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return PageResponse.of(settlementMatchService.list(status, kind, cardAccountId, pageable, actor));
+    return PageResponse.of(
+        settlementMatchService.list(status, kind, cardAccountId, pageable, actor));
   }
 
   @Operation(operationId = "confirmSettlementMatch", summary = "Confirm a settlement match")

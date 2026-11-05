@@ -11,9 +11,9 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
-import com.trackmywealth.backend.dto.SettlementMatchRunResponse;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
+import com.trackmywealth.backend.dto.SettlementMatchRunResponse;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -913,8 +913,7 @@ class SettlementMatchControllerTest {
     UUID otherCard = createAccount(token, "Another Card", "CREDIT_CARD", "CHF").id();
     insertProposedMatches(otherCard, accounts.current(), 7);
 
-    String url =
-        "/api/v1/settlement-matches?status=PROPOSED&cardAccountId=" + accounts.card();
+    String url = "/api/v1/settlement-matches?status=PROPOSED&cardAccountId=" + accounts.card();
     PageResponse<SettlementMatchResponse> first =
         client(token)
             .get()
@@ -922,8 +921,7 @@ class SettlementMatchControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(
-                new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
             .returnResult()
             .getResponseBody();
     PageResponse<SettlementMatchResponse> second =
@@ -933,8 +931,7 @@ class SettlementMatchControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(
-                new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
             .returnResult()
             .getResponseBody();
 
@@ -1267,7 +1264,8 @@ class SettlementMatchControllerTest {
         .isOk()
         .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
         .returnResult()
-        .getResponseBody().content();
+        .getResponseBody()
+        .content();
   }
 
   private SettlementMatchRunResponse run(String token, UUID card) {

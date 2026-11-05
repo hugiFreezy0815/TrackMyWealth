@@ -300,14 +300,14 @@ public interface TransactionRepository
           + " WHERE c.corrects_transaction_id = t.id)";
 
   @Query(
-      value = "SELECT t.*" + RESTORABLE_WHERE
-          + " ORDER BY COALESCE(t.deleted_at, t.voided_at) DESC, t.id DESC",
+      value =
+          "SELECT t.*"
+              + RESTORABLE_WHERE
+              + " ORDER BY COALESCE(t.deleted_at, t.voided_at) DESC, t.id DESC",
       countQuery = "SELECT COUNT(*)" + RESTORABLE_WHERE,
       nativeQuery = true)
   Page<Transaction> findRestorableByAccountIdSince(
-      @Param(ACCOUNT_ID) UUID accountId,
-      @Param("since") OffsetDateTime since,
-      Pageable pageable);
+      @Param(ACCOUNT_ID) UUID accountId, @Param("since") OffsetDateTime since, Pageable pageable);
 
   /**
    * US-07-07: the rows voided together with {@code headId} - a card purchase's FEE row or a

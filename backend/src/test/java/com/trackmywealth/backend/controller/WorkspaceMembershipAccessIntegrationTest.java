@@ -196,7 +196,8 @@ class WorkspaceMembershipAccessIntegrationTest {
             .isOk()
             .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
             .returnResult()
-            .getResponseBody().content();
+            .getResponseBody()
+            .content();
     assertThat(snapshots)
         .singleElement()
         .satisfies(

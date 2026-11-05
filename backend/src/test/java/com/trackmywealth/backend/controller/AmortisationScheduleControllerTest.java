@@ -2,11 +2,11 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
@@ -105,7 +105,8 @@ class AmortisationScheduleControllerTest {
             .expectStatus()
             .isOk()
             .expectBody(
-                new ParameterizedTypeReference<PageResponse<AmortisationScheduleEntryResponse>>() {})
+                new ParameterizedTypeReference<
+                    PageResponse<AmortisationScheduleEntryResponse>>() {})
             .returnResult()
             .getResponseBody();
 
@@ -358,9 +359,11 @@ class AmortisationScheduleControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<PageResponse<AmortisationScheduleEntryResponse>>() {})
+        .expectBody(
+            new ParameterizedTypeReference<PageResponse<AmortisationScheduleEntryResponse>>() {})
         .returnResult()
-        .getResponseBody().content();
+        .getResponseBody()
+        .content();
   }
 
   private UUID createMortgage(String token) {
