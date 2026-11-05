@@ -42,19 +42,27 @@ LABEL = "api-breaking"
 NOTE_HEADING = "API breaking change"
 
 # oasdiff rules raised to error level, in its severity-levels file format ("<rule id> <level>").
-# A new value of a response enum breaks a client that handles each value and fails on one it does
-# not know, whatever level oasdiff gives it. Removing a response field is an error by oasdiff's own
-# rule (response-required-property-removed), since every record-backed response field is required
-# (#451). response-optional-property-removed is "info" in oasdiff, and it still matters: the
-# hand-built ApiProblem keeps detail, instance and errors optional (absent when unset), and a
-# client that renders validation errors breaks when errors goes.
+# Removing a response field is an error by oasdiff's own rule (response-required-property-removed),
+# since every record-backed response field is required (#451). response-optional-property-removed
+# is "info" in oasdiff, and it still matters: the hand-built ApiProblem keeps detail, instance and
+# errors optional (absent when unset), and a client that renders validation errors breaks when
+# errors goes.
+# Enums (#452): the app shows a neutral fallback for a response enum value it does not know, so a
+# new response value is a warning that allow_response_enum_additions lets pass (still listed).
+# Request enums stay strict in both places a client sends one, a body property and a parameter:
+# the self-hosted backend may be older than the app, and an app built against the newer value
+# would send one that backend rejects. A removed response value is declared too, since a screen
+# built for it loses its meaning.
 SEVERITY_OVERRIDES = {
     "response-optional-property-removed": "ERR",
-    "response-property-enum-value-added": "ERR",
+    "response-property-enum-value-added": "WARN",
+    "request-property-enum-value-added": "ERR",
+    "request-parameter-enum-value-added": "ERR",
+    "response-property-enum-value-removed": "ERR",
 }
 
-# The lowest level that fails the check: oasdiff's warnings are changes that break some clients, and
-# a PR that means them declares them like an error. Only "info" changes pass undeclared (and shown).
+# Other warnings still break some clients. Keep --fail-on WARN, then exempt only a report that
+# contains response-enum additions and no other warnings or errors. Everything remains visible.
 FAIL_ON = "WARN"
 
 # `oasdiff breaking --fail-on WARN` exits with 1 when it found such a change; anything else but 0
@@ -198,7 +206,7 @@ def contract_diff(base: Path, revision: Path, oasdiff: Oasdiff) -> Diff:
         levels.write_text(
             "".join(f"{rule} {level}\n" for rule, level in SEVERITY_OVERRIDES.items())
         )
-        return oasdiff(
+        diff = oasdiff(
             [
                 "breaking",
                 str(base),
@@ -211,6 +219,35 @@ def contract_diff(base: Path, revision: Path, oasdiff: Oasdiff) -> Diff:
                 "text",
             ]
         )
+        return allow_response_enum_additions(diff)
+
+
+# The CI gate uses '--fail-on WARN' to reject warnings that can still break old clients.
+# Exempt only this one compatibility-safe rule, rather than lowering FAIL_ON to ERR (which would
+# also silently permit unrelated breaking warnings). Fail closed if oasdiff changes its format.
+# The warning remains in the report, visible in the API contract job log.
+_OASDIFF_SUMMARY = re.compile(
+    r"^\s*\d+ changes?:\s*(\d+) errors?,\s*(\d+) warnings?,\s*\d+ infos?\s*$"
+)
+_OASDIFF_FINDING = re.compile(r"^(error|warning)\s+\[([^]]+)\]", re.MULTILINE)
+
+
+def allow_response_enum_additions(diff: Diff) -> Diff:
+    """Keep only added response enum values as non-failing warnings; all other changes fail."""
+    if diff.exit_code != BREAKING_EXIT_CODE:
+        return diff
+    summary = _OASDIFF_SUMMARY.match(diff.report.splitlines()[0]) if diff.report else None
+    findings = _OASDIFF_FINDING.findall(diff.report)
+    if not summary or int(summary.group(1)) or not findings:
+        return diff
+    if len(findings) != int(summary.group(2)):
+        return diff
+    if all(
+        severity == "warning" and rule == "response-property-enum-value-added"
+        for severity, rule in findings
+    ):
+        return Diff(0, diff.report)
+    return diff
 
 
 def combined(diffs: Sequence[Diff]) -> Diff:

@@ -1,14 +1,24 @@
 import { useState } from 'react';
 import { Button, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { labelFor, UNKNOWN_ENUM_LABELS } from '@/api/enum-label';
 import { ThemedText } from '@/components/themed-text';
 
 import {
   ACCOUNT_TYPES,
+  type AccountType,
+  isAccountType,
   type AccountProposal,
   type ConfirmedAccountDraft,
   prepareAccountDraft,
 } from './account-proposal';
+
+// These display strings are built only from the exact set of account types this app knows.
+// A newer server's suggestion is rendered as "Other", not silently treated as a known type.
+const ACCOUNT_TYPE_LABELS = Object.fromEntries(ACCOUNT_TYPES.map((type) => [type, type])) as Record<
+  AccountType,
+  string
+>;
 
 /** One of the workspace's portfolios, as the member chose it. */
 export type ChosenPortfolio = { id: string; name: string };
@@ -30,7 +40,9 @@ export function AccountProposalReview({ proposal, portfolio, onConfirm, onCancel
   const [name, setName] = useState('');
   // The contract (#460): the type is always suggested; the currency is null when the statement's
   // rows have several or none, and then the member enters it.
-  const [accountType, setAccountType] = useState<string>(proposal.suggestedAccountType);
+  const [accountType, setAccountType] = useState<string>(
+    isAccountType(proposal.suggestedAccountType) ? proposal.suggestedAccountType : '',
+  );
   const [currency, setCurrency] = useState(proposal.suggestedCurrency ?? '');
   const [error, setError] = useState<string | null>(null);
 
@@ -63,6 +75,10 @@ export function AccountProposalReview({ proposal, portfolio, onConfirm, onCancel
         placeholder="Account name"
         style={styles.input}
       />
+      <ThemedText>
+        Suggested account type:{' '}
+        {labelFor(ACCOUNT_TYPE_LABELS, proposal.suggestedAccountType, UNKNOWN_ENUM_LABELS.en)}
+      </ThemedText>
       <ThemedText>Account type</ThemedText>
       <View accessibilityRole="radiogroup" accessibilityLabel="Account type" style={styles.types}>
         {ACCOUNT_TYPES.map((type) => (

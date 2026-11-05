@@ -29,6 +29,7 @@ from api_breaking import (  # noqa: E402
     Diff,
     check,
     combined,
+    allow_response_enum_additions,
     labels_from,
     load_registry,
     note_of,
@@ -168,6 +169,44 @@ class VerdictTest(unittest.TestCase):
         self.assertIn("exit code 102", result.message)
 
 
+class ResponseEnumCompatibilityTest(unittest.TestCase):
+    """#452: only a pure response-enum addition is safe without an api-breaking declaration."""
+
+    def test_added_response_values_pass_and_remain_visible_in_the_job_log(self):
+        report = (
+            "1 changes: 0 error, 1 warning, 0 info\n"
+            "warning\t[response-property-enum-value-added] at revision.yaml\n"
+            "\tin API GET /api/v1/accounts\n"
+            "\t\tadded value `ART` to response enum"
+        )
+        result = allow_response_enum_additions(Diff(1, report))
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("response-property-enum-value-added", result.report)
+        self.assertTrue(verdict(result, [], None).passed)
+
+    def test_other_warnings_and_mixed_reports_are_still_breaking(self):
+        safe = "warning\t[response-property-enum-value-added] at revision.yaml"
+        unsafe = "warning\t[request-parameter-became-required] at revision.yaml"
+        for report in (
+            "1 changes: 0 error, 1 warning, 0 info\n" + unsafe,
+            "2 changes: 0 error, 2 warning, 0 info\n" + safe + "\n" + unsafe,
+            "2 changes: 1 error, 1 warning, 0 info\n"
+            + "error\t[response-required-property-removed] at revision.yaml\n"
+            + safe,
+            "1 changes: 0 error, 1 warning, 0 info\n"
+            + "warning\t[request-property-enum-value-added] at revision.yaml",
+        ):
+            with self.subTest(report=report):
+                self.assertEqual(allow_response_enum_additions(Diff(1, report)).exit_code, 1)
+
+    def test_an_unexpected_report_or_tool_failure_fails_closed(self):
+        safe = "warning\t[response-property-enum-value-added] at revision.yaml"
+        for report in ("", safe, "2 changes: 0 error, 2 warning, 0 info\n" + safe):
+            with self.subTest(report=report):
+                self.assertEqual(allow_response_enum_additions(Diff(1, report)).exit_code, 1)
+        self.assertEqual(allow_response_enum_additions(Diff(2, safe)).exit_code, 2)
+
+
 class CheckTest(unittest.TestCase):
     def test_compares_base_with_revision_failing_on_warnings_with_the_overrides(self):
         oasdiff = FakeOasdiff(Diff(0, ""))
@@ -178,7 +217,11 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(args[args.index("--fail-on") + 1], "WARN")
         self.assertEqual(
             oasdiff.levels,
-            "response-optional-property-removed ERR\nresponse-property-enum-value-added ERR\n",
+            "response-optional-property-removed ERR\n"
+            "response-property-enum-value-added WARN\n"
+            "request-property-enum-value-added ERR\n"
+            "request-parameter-enum-value-added ERR\n"
+            "response-property-enum-value-removed ERR\n",
         )
 
     def test_a_base_without_a_contract_passes_without_running_oasdiff(self):
@@ -429,11 +472,28 @@ class RealOasdiffTest(unittest.TestCase):
         self.assertIn("request-parameter-became-required", result.message)
         self.assertIn("status", result.message)
 
-    def test_a_value_added_to_a_response_enum_fails_and_is_listed(self):
+    def test_a_value_added_to_a_response_enum_passes_and_is_listed(self):
         result = self.check("enum-value-added.yaml", base=FIXTURES / "enum-base.yaml")
-        self.assertFalse(result.passed, result.message)
+        self.assertTrue(result.passed, result.message)
         self.assertIn("response-property-enum-value-added", result.message)
         self.assertIn("LOAN", result.message)
+
+    def test_a_value_removed_from_a_response_enum_remains_breaking(self):
+        result = self.check("response-enum-value-removed.yaml", base=FIXTURES / "enum-base.yaml")
+        self.assertFalse(result.passed, result.message)
+        self.assertIn("SECURITIES", result.message)
+
+    def test_a_value_added_to_a_request_enum_remains_breaking(self):
+        result = self.check("request-enum-value-added.yaml", base=FIXTURES / "request-enum-base.yaml")
+        self.assertFalse(result.passed, result.message)
+        self.assertIn("ART", result.message)
+
+    def test_a_value_added_to_a_request_parameter_enum_remains_breaking(self):
+        base = FIXTURES / "parameter-enum-base.yaml"
+        result = self.check("parameter-enum-value-added.yaml", base=base)
+        self.assertFalse(result.passed, result.message)
+        self.assertIn("request-parameter-enum-value-added", result.message)
+        self.assertIn("ART", result.message)
 
     def test_a_declared_break_passes(self):
         self.assertTrue(self.check("field-removed.yaml", [LABEL], NOTE).passed)

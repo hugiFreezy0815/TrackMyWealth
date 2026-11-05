@@ -1,8 +1,9 @@
 # ADR 0006: API contract, paging and client generation
 
 ## Status
-Accepted in part. This version holds the response-field decision (US-29-07, #451) and the
-response-header decision (US-29-09, #455), both product owner decisions of 2026-11-04.
+Accepted in part. This version holds the response-field decision (US-29-07, #451), the
+response-header decision (US-29-09, #455), both product owner decisions of 2026-11-04, and the
+enum-value decision (US-29-08, #452).
 US-29-01 (#371) adds the other conventions of the sprint 6 plan (`docs/backlog/SPRINT-6.md`,
 decisions 1-8): naming, collections, paging, errors, concurrency.
 
@@ -131,3 +132,45 @@ template and uploading an import batch. The other 201s (`VersionedResponse.creat
 - Adding a header to a response is additive. Removing one, or making it optional, is breaking.
 - A new handler that sends either header must declare it in the same PR, or the build fails and
   names the handler.
+
+## Enum values (US-29-08, #452)
+
+### Context
+
+The backend is self-hosted (for example on a NAS) and the app comes from the store, so they update
+separately, and either one can be newer. About 28 response enums exist, for example `valueStatus`
+and `portfolioType`. The generated types (#375) make each one a string union. TypeScript checks
+that union at compile time, but at runtime an older app still receives a value a newer backend
+added. A `switch` or a lookup map without a default then renders nothing or throws. oasdiff rates
+a new response enum value a warning, so until #452 every such addition needed the `api-breaking`
+declaration, although adding a value is the normal way these enums grow.
+
+### Decision
+
+**Clients tolerate unknown response values.** The app shows a response enum through `labelFor`
+(`mobile/src/api/enum-label.ts`). A value it does not know gets a neutral label ("Other" /
+"Sonstiges"), is never treated as one of the known values, and is logged once in development,
+never in production. `DisplayEnum<K>` widens the generated union where a value is displayed, so
+the screen has to handle the unknown case, and the known values stay checked. ESLint enforces it
+in app code (`mobile/eslint.config.js`): every `switch` has a `default`, that `default` does not
+throw, and a `*_LABELS`, `*_ICONS` or `*_COLORS` map is read through `labelFor`, never indexed.
+
+**A new response value is additive.** `scripts/api_breaking.py` keeps oasdiff's warning for
+`response-property-enum-value-added` and lets a report pass that contains only that warning. The
+change stays listed in the job log. Rejected: lowering the gate to fail on errors only, which
+would let every other oasdiff warning pass unseen too.
+
+**Request enums and removed values stay breaking.** Adding a value to a request enum, in a body
+property or a parameter, is raised to an error. An app built against the newer value would send it
+to an older backend, and that backend rejects it. Removing a response value is an error too, since
+a screen built around it loses its meaning.
+
+### Consequences
+
+- A PR may add a response enum value without a declaration. The backend may send it as soon as the
+  PR is merged, and older apps show the neutral label for it.
+- A screen that needs a value's own label, icon or colour gets it in an app release. Until then the
+  neutral label shows.
+- A new request enum value, or a removed response value, needs the `api-breaking` label and a note.
+- Lint sees display maps only by their name. A map named differently and indexed directly is not
+  reported, so name such maps `*_LABELS`, `*_ICONS` or `*_COLORS`.
