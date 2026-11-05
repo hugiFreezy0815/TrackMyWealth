@@ -449,6 +449,10 @@ core → budgeting/net worth/consolidated reporting). The working backlog is Git
 project board; `docs/user-stories/` keeps the full story texts, including epics not yet turned
 into issues.
 
+For the implemented pagination contract (page envelope, size cap, sort whitelists, which lists
+are not paged, and client refresh after imports), see
+[API conventions](docs/api/conventions.md#paging).
+
 ## Loading the backlog into GitHub Issues
 
 `scripts/create_github_issues.py` creates a GitHub Issue for every user story in
