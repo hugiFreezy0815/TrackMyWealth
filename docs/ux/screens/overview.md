@@ -31,7 +31,7 @@ portfolios, and each one opens the [Portfolio View](portfolio-view.md).
 | First tab, no name | "All portfolios" / "Alle Portfolios" (`overview.tab.allPortfolios`); never "Total", never "Gesamtvermögen", never stored as the name | `name` is `null` |
 | Portfolio tabs | One per active portfolio, **in the order the server sends** (creation order) | `GET /api/v1/portfolios` → `[].name` |
 | Tab icon | `InstitutionLogo` from `logoUrl`; when `null`: the house icon if `personalAssetsDefault`, else initials of `name` (Figma "Custom initials") | `logoUrl`, `personalAssetsDefault`, `name` |
-| Last tab | "+ Add portfolio" / "+ Portfolio hinzufügen" (`overview.tab.addPortfolio`) → Add portfolio flow (M14, W11) | - |
+| Last tab | "+ Add portfolio" / "+ Portfolio hinzufügen" (`overview.tab.addPortfolio`) → [Add portfolio (S5)](add-portfolio.md) | - |
 
 - Phone: the strip scrolls horizontally, and the selected tab scrolls into view.
 - Web: the strip wraps to a second line instead of scrolling.
@@ -77,7 +77,7 @@ October cash flow                              Details
 ### Web (W01)
 
 - Sidebar on the left. The header holds the title, Search (hidden in sprint 7),
-  "Import statement" and "Add account" (hidden until their screens exist) and the bell (hidden).
+  "Import statement" (→ S7 with the account picker), "Add account" (→ S6 with a portfolio picker) and the bell (hidden).
 - Main column: the net-worth card, then Assets/Liabilities, then the asset-class tiles in one
   row of four.
 - Right column (360 px): the Portfolios list, then the cash-flow card.
@@ -154,7 +154,7 @@ change, reload everything.
 | Action | Result | Request |
 |---|---|---|
 | Tap a portfolio tab or row | Opens S2 for that portfolio | - |
-| "+ Add portfolio" tab / "Add your first portfolio" | Add portfolio flow (M14/W11) | `POST /api/v1/portfolios` (not in these specs) |
+| "+ Add portfolio" tab / "Add your first portfolio" | [Add portfolio (S5)](add-portfolio.md), then [Add account (S6)](add-account.md) | `POST /api/v1/portfolios`, `POST /api/v1/accounts` |
 | Scope bar → currency | Reloads the figures in that currency | see above |
 | Period switch | Reloads the chart and change | GAP-HISTORY (#477) |
 | "Review" in the data-status banner | 1 account: S3 for that account. More: a sheet listing those accounts, each opening S3 | - |

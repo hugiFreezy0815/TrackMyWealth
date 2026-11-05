@@ -1,6 +1,6 @@
 # Screen specifications: sprint 7 (UX-02, #377)
 
-These specs describe the four screens the frontend developer builds in sprint 7
+These specs describe the seven screens the frontend developer builds in sprint 7
 (2026-11-10 to 2026-11-23). Each spec lists every field with its label key, its format and the
 endpoint and response field it comes from. It also covers every state, every action with the
 request it sends, and the accessibility rules.
@@ -11,6 +11,15 @@ request it sends, and the accessibility rules.
 | S2 | Portfolio View: one tab per portfolio, one section per account type | [portfolio-view.md](portfolio-view.md) | M05, M06 / W02, W03 |
 | S3 | Account detail with its paged transaction list | [account-detail.md](account-detail.md) | **M25** (new: EN 115:2999, DE 115:3443), M10 / W06 |
 | S4 | Transaction detail with category change and change history | [transaction-detail.md](transaction-detail.md) | M21 / W06 side panel |
+| S5 | Add portfolio (catalogue or own) | [add-portfolio.md](add-portfolio.md) | M14 / W11 |
+| S6 | Add account and its starting value (opening balance or valuation) | [add-account.md](add-account.md) | M17, M16 / dialog like W11 |
+| S7 | Import statement: file, review with duplicates, commit | [import-statement.md](import-statement.md) | M08, M09 / W05 |
+
+**Sprint-7 scope (PO decision 2026-11-05).** S1–S7 are in. They cover the first-run journey:
+add a portfolio, add an account, import a statement or enter an opening balance, see the
+overview. Not in sprint 7 (hidden, never disabled): edit/correct a transaction, add a
+transaction by hand, removed transactions and restore, import history and rollback (M19),
+holdings import (#367), notifications, search, the Cash flow and Investments tabs.
 
 Figma file: <https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth>. The mockups
 show the intended look. Where a mockup and a spec disagree, **the spec wins**: the mockups
@@ -123,6 +132,7 @@ on the backend.
 | Depot positions (name, ISIN, units, value, unrealised gain) | S2 | #478 (US-15-05) |
 | Single-transaction read (deep link), portfolio name, counter-account name, bank code, import batch, amount in account currency | S3, S4 | #479 (US-07-37) |
 | Transaction change history | S4 | #480 (US-07-38) |
+| Catalogue: import formats per institution, country filter | S5 | #484 (US-04-10) |
 | Interest rate on a savings account ("2.25% p.a.") | S2 | not in the MVP data model: dropped from the screen |
 | Allocation and Performance sub-tabs of a depot | S2 | EPIC 16/17: later, tabs not shown |
 | "Always categorise as…" merchant rule from the category picker (W06) | S4 | categorisation rules exist in the API but are not in sprint 7's screens; later story |
@@ -146,3 +156,9 @@ on the backend.
 | `HistoryTimeline` | | | | ✓ |
 | `EmptyState`, `ErrorBanner`, `LoadingSkeleton`, `OfflineBanner`, `ConflictDialog` | ✓ | ✓ | ✓ | ✓ |
 | `InstitutionLogo` (Figma 71:210) | ✓ | ✓ | ✓ | |
+
+S5–S7 use `InstitutionLogo`, `Amount`, `EmptyState`, `ErrorBanner`, `LoadingSkeleton` and
+`OfflineBanner` from above, plus: `Stepper` (step header), `ChipGroup` (radio chips),
+`TextField`, `AmountField` (locale-aware decimal input that emits a `DecimalString`),
+`CurrencyPicker`, `DateField`, `FilePicker` (document picker / drop zone with progress),
+`CountTile`, `ImportRow` (with include `Switch`) and `BottomSheet` / `Dialog`.
