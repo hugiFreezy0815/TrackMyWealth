@@ -54,6 +54,9 @@
     "ACCOUNT_IDENTIFIER_IN_USE": {"statuses": [409], "reaction": "FIX_INPUT", "deprecated": false},
     "ACCOUNT_IDENTIFIER_NOT_IN_FILE": {"statuses": [422], "reaction": "SHOW", "deprecated": false},
     "ACCOUNT_IDENTIFICATION_UNAVAILABLE": {"statuses": [503], "reaction": "SHOW", "deprecated": false},
+    "SAVINGS_POCKET_NOT_APPLICABLE": {"statuses": [422], "reaction": "SHOW", "deprecated": false},
+    "SAVINGS_POCKET_UNSUITABLE": {"statuses": [422], "reaction": "FIX_INPUT", "deprecated": false},
+    "SAVINGS_POCKET_IN_USE": {"statuses": [409], "reaction": "FIX_INPUT", "deprecated": false},
     "LOCKED": {"statuses": [423], "reaction": "RETRY_LATER", "deprecated": false},
     "RATE_LIMITED": {"statuses": [429], "reaction": "RETRY_LATER", "deprecated": false},
     "INTERNAL": {"statuses": [500], "reaction": "REPORT", "deprecated": false}
@@ -93,6 +96,7 @@
     "IMPORT_ROW_VALUE_DATE_ADJUSTED": {"kind": "ROW_WARNING", "deprecated": false},
     "IMPORT_ROW_SAVINGS_POCKET_CREATED": {"kind": "ROW_WARNING", "deprecated": false},
     "IMPORT_ROW_SAVINGS_POCKET_UNAVAILABLE": {"kind": "ROW_WARNING", "deprecated": false},
+    "IMPORT_ROW_SAVINGS_POCKET_OTHER_CURRENCY": {"kind": "ROW_WARNING", "deprecated": false},
     "IMPORT_ROW_BEFORE_OPENING_BALANCE": {"kind": "ROW_WARNING", "deprecated": false},
     "HOLDING_VALUE_UNREADABLE": {"kind": "HOLDINGS_LINE_ERROR", "deprecated": false},
     "HOLDING_CURRENCY_MISSING": {"kind": "HOLDINGS_LINE_ERROR", "deprecated": false},

@@ -73,6 +73,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
           ProblemCode.ACCOUNT_IDENTIFIER_IN_USE,
           "Another account of this workspace is already registered with this identifier.");
     }
+    if (rootMessage.contains("uq_account_savings_pocket")) {
+      // #325 follow-up: a pocket belongs to one account (V101); a writer that skipped the import
+      // locks of SavingsPocketService#linkPocket raced past its check.
+      return conflict(
+          ProblemCode.SAVINGS_POCKET_IN_USE,
+          "This account is already the savings pocket of another account.");
+    }
     if (rootMessage.contains("account_type_immutable")) {
       return conflict(
           ProblemCode.IMMUTABLE_FIELD,

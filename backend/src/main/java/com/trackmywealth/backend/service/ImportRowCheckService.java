@@ -276,9 +276,14 @@ public class ImportRowCheckService {
    * template dry run shows them too (#334). Part of {@link #warnings}.
    */
   public static List<String> rowWarnings(CanonicalImportRow row) {
-    return row.valueDateAdjusted()
-        ? List.of(ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED)
-        : List.of();
+    List<String> warnings = new ArrayList<>(2);
+    if (row.valueDateAdjusted()) {
+      warnings.add(ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED);
+    }
+    if (row.savingsPocketOtherCurrency()) {
+      warnings.add(ImportBatchValues.WARNING_SAVINGS_POCKET_OTHER_CURRENCY);
+    }
+    return warnings;
   }
 
   /**
@@ -295,7 +300,8 @@ public class ImportRowCheckService {
     } else if (ImportBatchValues.WARNING_VALUE_DATE_ADJUSTED.equals(warning)) {
       // The parser adjusts only a value date it read.
       args.put(ARG_DATE, Objects.requireNonNull(row.valueDate(), "valueDate").toString());
-    } else if (ImportBatchValues.WARNING_CURRENCY_DIFFERS.equals(warning)) {
+    } else if (ImportBatchValues.WARNING_CURRENCY_DIFFERS.equals(warning)
+        || ImportBatchValues.WARNING_SAVINGS_POCKET_OTHER_CURRENCY.equals(warning)) {
       args.put(ARG_CURRENCY, row.currency());
       args.put(ARG_ACCOUNT_CURRENCY, accountCurrency);
     }

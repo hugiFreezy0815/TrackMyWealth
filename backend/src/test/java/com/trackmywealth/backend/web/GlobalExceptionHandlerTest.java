@@ -95,6 +95,20 @@ class GlobalExceptionHandlerTest {
         .containsEntry(ProblemCode.PROPERTY, ProblemCode.ACCOUNT_IDENTIFIER_IN_USE.name());
   }
 
+  // #325 follow-up: a pocket belongs to one account (V101's unique index).
+  @Test
+  void aSecondLinkOfOnePocketIsTheServicesOwnConflict() {
+    ProblemDetail problem =
+        handler.handleDataIntegrityViolation(
+            violationWithRootMessage(
+                "ERROR: duplicate key value violates unique constraint"
+                    + " \"uq_account_savings_pocket\""));
+
+    assertThat(problem.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+    assertThat(problem.getProperties())
+        .containsEntry(ProblemCode.PROPERTY, ProblemCode.SAVINGS_POCKET_IN_USE.name());
+  }
+
   @Test
   void aRacingDuplicateCategoryCodeIsTranslatedToAConflictTellingTheCallerToRetry() {
     ProblemDetail problem =

@@ -25,6 +25,11 @@ import org.jspecify.annotations.Nullable;
  * savingsPocket}: the row moves money between the account and its savings pocket (the template's
  * {@code savingsPocketPattern}); it is a {@code TRANSFER}, and the commit books the other leg on
  * the pocket. Rows stored before either existed read as {@code null} and {@code false}.
+ *
+ * <p>{@code savingsPocketOtherCurrency} (#325 follow-up): the row matches the savings pocket
+ * pattern but is in another currency than the account, so the ledger cannot take it as a transfer;
+ * it is typed like any other row and warns about it ({@code
+ * IMPORT_ROW_SAVINGS_POCKET_OTHER_CURRENCY}). Rows stored before it existed read as {@code false}.
  */
 public record CanonicalImportRow(
     LocalDate bookingDate,
@@ -43,7 +48,8 @@ public record CanonicalImportRow(
     @Nullable BigDecimal bankExchangeRate,
     @JsonSetter(nulls = Nulls.AS_EMPTY) boolean valueDateAdjusted,
     @Nullable String groupReference,
-    @JsonSetter(nulls = Nulls.AS_EMPTY) boolean savingsPocket) {
+    @JsonSetter(nulls = Nulls.AS_EMPTY) boolean savingsPocket,
+    @JsonSetter(nulls = Nulls.AS_EMPTY) boolean savingsPocketOtherCurrency) {
 
   /** A row that belongs to no group of bookings and is no savings pocket move. */
   public CanonicalImportRow(
@@ -79,6 +85,7 @@ public record CanonicalImportRow(
         bankExchangeRate,
         valueDateAdjusted,
         null,
+        false,
         false);
   }
 

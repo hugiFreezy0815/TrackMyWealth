@@ -1,10 +1,19 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.entity.Account;
+import com.trackmywealth.backend.error.ApiException;
+import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.AccountRepository;
+import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,18 +33,41 @@ import org.springframework.transaction.annotation.Transactional;
  * the account's currency. Otherwise the move is imported as a one-sided transfer, pending the
  * member's review; a second pocket is never created. The preview warns about both cases ({@link
  * #previewWarning}).
+ *
+ * <p>The member can link another account as the pocket ({@link #linkPocket}), e.g. when the one the
+ * import created was archived: the PO's "until the member links a pocket" (#325, decision 1). Only
+ * a pocket that can take the moves is accepted, and pockets never nest: a pocket has no pocket of
+ * its own. A link is never removed, so an import never creates a second pocket on its own.
  */
 @Service
 public class SavingsPocketService {
 
   private static final String ACTIVE = "ACTIVE";
+  private static final String VERSIONED_RESOURCE = "account";
 
   private final AccountRepository accountRepository;
   private final AccountService accountService;
+  private final AccountLookupService accountLookupService;
+  private final AccessControlService accessControlService;
+  private final VersionPreconditionService versionPreconditionService;
+  private final ImportLockService importLockService;
+  private final EntityManager entityManager;
 
-  public SavingsPocketService(AccountRepository accountRepository, AccountService accountService) {
+  public SavingsPocketService(
+      AccountRepository accountRepository,
+      AccountService accountService,
+      AccountLookupService accountLookupService,
+      AccessControlService accessControlService,
+      VersionPreconditionService versionPreconditionService,
+      ImportLockService importLockService,
+      EntityManager entityManager) {
     this.accountRepository = accountRepository;
     this.accountService = accountService;
+    this.accountLookupService = accountLookupService;
+    this.accessControlService = accessControlService;
+    this.versionPreconditionService = versionPreconditionService;
+    this.importLockService = importLockService;
+    this.entityManager = entityManager;
   }
 
   /**
@@ -73,6 +105,68 @@ public class SavingsPocketService {
     return usablePocket(account, linked.get());
   }
 
+  /**
+   * #325 follow-up: links {@code pocketAccountId} as the savings pocket of {@code accountId}, in
+   * place of the one it has, if any. The next commits book the account's pocket moves there; moves
+   * imported before stay as they are.
+   *
+   * <p>Both accounts are cleared for the member before anything is locked, so no caller can hold
+   * the lock of an account it cannot see. Then it takes both import locks, in id order as every
+   * writer does: a commit books onto either the old pocket or the new one, never half and half, and
+   * two links that share an account run one after the other, so neither a second account can take
+   * the same pocket nor two accounts become each other's pocket. Both are read again under their
+   * row locks before any rule is checked.
+   *
+   * @throws ApiException 422 {@code SAVINGS_POCKET_NOT_APPLICABLE} when the account can have no
+   *     pocket (a card, a loan, no transactions, or itself another account's pocket); 422 {@code
+   *     SAVINGS_POCKET_UNSUITABLE} when the pocket cannot take its moves (the account itself, not
+   *     active, no transactions, a card or loan, another currency, or it has a pocket of its own);
+   *     409 {@code SAVINGS_POCKET_IN_USE} when the pocket is already another account's
+   */
+  @Transactional
+  public AccountSummaryResponse linkPocket(
+      UUID accountId,
+      UUID pocketAccountId,
+      Integer expectedVersion,
+      AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
+    accessControlService.requireAccountAccess(actor, account);
+    if (accountId.equals(pocketAccountId)) {
+      throw unsuitable("An account cannot be its own savings pocket.");
+    }
+    Account pocket = accountLookupService.findAccountOrThrow(pocketAccountId, actor);
+    accessControlService.requireAccountAccess(actor, pocket);
+
+    importLockService.lockAccounts(List.of(accountId, pocketAccountId));
+    // Read before the locks, so possibly stale: read both again, the lower id first.
+    Stream.of(account, pocket)
+        .sorted(Comparator.comparing(Account::getId))
+        .forEach(locked -> entityManager.refresh(locked, LockModeType.PESSIMISTIC_WRITE));
+
+    versionPreconditionService.requireCurrent(
+        expectedVersion, account.getVersion(), VERSIONED_RESOURCE);
+    if (!canHavePocket(account) || accountRepository.existsBySavingsPocketAccountId(accountId)) {
+      throw new ApiException(
+          ProblemCode.SAVINGS_POCKET_NOT_APPLICABLE,
+          "A card, a loan, an account without transactions or the savings pocket of another"
+              + " account has no savings pocket.");
+    }
+    if (usablePocket(account, pocket).isEmpty() || pocket.getSavingsPocketAccountId() != null) {
+      throw unsuitable(
+          "The savings pocket must be an active account in the account's currency that holds"
+              + " transactions, is no card or loan and has no savings pocket of its own.");
+    }
+    if (accountRepository.existsBySavingsPocketAccountIdAndIdNot(pocketAccountId, accountId)) {
+      throw new ApiException(
+          ProblemCode.SAVINGS_POCKET_IN_USE,
+          "This account is already the savings pocket of another account.");
+    }
+    if (!pocketAccountId.equals(account.getSavingsPocketAccountId())) {
+      accountRepository.relinkSavingsPocket(accountId, pocketAccountId);
+    }
+    return accountService.getAccount(accountId, actor);
+  }
+
   // A pocket move is an own-account transfer: cards settle and loans are repaid instead.
   private static boolean canHavePocket(Account account) {
     return account.isHasTransactions()
@@ -81,10 +175,17 @@ public class SavingsPocketService {
   }
 
   private Optional<Account> usablePocket(Account account, UUID pocketId) {
-    return accountRepository
-        .findById(pocketId)
-        .filter(pocket -> ACTIVE.equals(pocket.getStatus()))
+    return accountRepository.findById(pocketId).flatMap(pocket -> usablePocket(account, pocket));
+  }
+
+  private static Optional<Account> usablePocket(Account account, Account pocket) {
+    return Optional.of(pocket)
+        .filter(candidate -> ACTIVE.equals(candidate.getStatus()))
         .filter(SavingsPocketService::canHavePocket)
-        .filter(pocket -> pocket.getNativeCurrency().equals(account.getNativeCurrency()));
+        .filter(candidate -> candidate.getNativeCurrency().equals(account.getNativeCurrency()));
+  }
+
+  private static ApiException unsuitable(String detail) {
+    return new ApiException(ProblemCode.SAVINGS_POCKET_UNSUITABLE, detail);
   }
 }
