@@ -172,8 +172,7 @@ class ApiDocumentationContractTest {
   }
 
   @Test
-  void anEmptySuccessStatusDeclarationKeepsSpringdocsGeneratedOk()
-      throws NoSuchMethodException {
+  void anEmptySuccessStatusDeclarationKeepsSpringdocsGeneratedOk() throws NoSuchMethodException {
     Operation operation = generated();
     ApiResponse generatedOk = operation.getResponses().get("200");
 
