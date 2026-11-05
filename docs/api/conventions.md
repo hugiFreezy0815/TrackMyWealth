@@ -43,11 +43,20 @@ The two `POST` operations that answer with an array are bounded the same way:
 `POST /api/v1/import-templates/detect` returns at most one candidate per available template, and
 `POST /api/v1/accounts/{cardAccountId}/settlement-matches/run` returns the matches of one card.
 
-The last four lists grow with the age of an account and have no server cap. If one of them
-could exceed a few hundred items, it must move to the paged contract (an `api-breaking` change)
-rather than gain an ad-hoc limit. Settlement matches are the one list cut at a server cap: it
-returns the newest 200, so a client showing exactly 200 matches must not present them as all of
-them.
+**Rule:** a collection stays a plain array only when the domain bounds it. Any collection that
+grows over time is paged, and a plain array is never cut at a server cap, because a client cannot
+tell a cut list from a complete one. This follows Google AIP-158 (list methods are paged from
+the start, since adding paging later breaks clients) and the Zalando guidelines.
+
+**Known exceptions**, to be paged by
+[US-29-13 (#473)](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473):
+
+- Settlement matches are cut at the newest 200. Until #473, a client showing exactly 200 matches
+  must not present them as all of them.
+- Snapshots, valuations, repayments and the amortisation schedule grow with the age of an
+  account and have no cap.
+
+Do not build list screens on these five arrays; #473 changes their response to `PageResponse`.
 
 The server owns the envelope rather than serializing Spring Data's `Page`. An empty first page is:
 
