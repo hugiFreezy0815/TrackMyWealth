@@ -220,6 +220,43 @@ class LoanRepaymentControllerTest {
   }
 
   @Test
+  void repaymentPagesKeepTotalsForTiedBookingDates() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse paying = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse loan = createLoanWithoutRate(token, "20000.00");
+
+    repay(token, loan.id(), payment(paying.id(), "500.00", null, null));
+    repay(token, loan.id(), payment(paying.id(), "600.00", null, null));
+
+    PageResponse<LoanRepaymentResponse> first =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + loan.id() + "/repayments?page=0&size=1")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<LoanRepaymentResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+    PageResponse<LoanRepaymentResponse> second =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + loan.id() + "/repayments?page=1&size=1")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<LoanRepaymentResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(first.page().totalElements()).isEqualTo(2);
+    assertThat(first.page().totalPages()).isEqualTo(2);
+    assertThat(first.content()).hasSize(1);
+    assertThat(second.content()).hasSize(1);
+    assertThat(first.content().get(0).id()).isNotEqualTo(second.content().get(0).id());
+  }
+
+  @Test
   void anExtraRepaymentAgainstTheScheduleIsFlaggedAsAnEstimate() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse current = createAccount(token, "CASH", "CHF");

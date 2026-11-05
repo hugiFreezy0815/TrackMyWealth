@@ -158,6 +158,40 @@ class CustomAssetValuationControllerTest {
   }
 
   @Test
+  void valuationPagesKeepTotalsAndDateOrder() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
+    recordValuation(
+        token,
+        account.id(),
+        new CreateCustomAssetValuationRequest(
+            LocalDate.of(2026, 1, 1), new BigDecimal("40000.00")));
+    recordValuation(
+        token,
+        account.id(),
+        new CreateCustomAssetValuationRequest(
+            LocalDate.of(2026, 6, 1), new BigDecimal("45000.00")));
+
+    PageResponse<CustomAssetValuationResponse> second =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + account.id() + "/valuations?page=1&size=1")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<CustomAssetValuationResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(second.page().totalElements()).isEqualTo(2);
+    assertThat(second.page().totalPages()).isEqualTo(2);
+    assertThat(second.content())
+        .extracting(CustomAssetValuationResponse::valuationDate)
+        .containsExactly(LocalDate.of(2026, 1, 1));
+  }
+
+  @Test
   void theValuationAsOfADateIsTheLatestOneOnOrBeforeItNeverAnInterpolation() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");

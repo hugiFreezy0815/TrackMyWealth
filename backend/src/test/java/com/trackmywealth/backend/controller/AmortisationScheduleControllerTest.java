@@ -87,6 +87,36 @@ class AmortisationScheduleControllerTest {
   }
 
   @Test
+  void schedulePagesPreserveChronologicalOrderAndTotals() {
+    String token = bootstrapAdministrator();
+    UUID mortgage = createMortgage(token);
+    post(token, mortgage, entry(APRIL, "798.00", "1202.00", "497598.00"))
+        .expectStatus()
+        .isCreated();
+    post(token, mortgage, entry(MARCH, "800.00", "1200.00", "498800.00"))
+        .expectStatus()
+        .isCreated();
+
+    PageResponse<AmortisationScheduleEntryResponse> second =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + mortgage + "/amortisation-schedule?page=1&size=1")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<AmortisationScheduleEntryResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(second.page().totalElements()).isEqualTo(2);
+    assertThat(second.page().totalPages()).isEqualTo(2);
+    assertThat(second.content())
+        .extracting(AmortisationScheduleEntryResponse::dueDate)
+        .containsExactly(APRIL);
+  }
+
+  @Test
   void entriesAreCreatedListedInDueDateOrderReplacedAndDeleted() {
     String token = bootstrapAdministrator();
     UUID mortgage = createMortgage(token);
