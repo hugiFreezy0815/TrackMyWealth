@@ -1,0 +1,30 @@
+# #452: a request enum addition must remain a declared API break.
+openapi: 3.1.0
+info:
+  title: Fixture API
+  version: v1
+paths:
+  /api/v1/accounts:
+    post:
+      operationId: createAccount
+      responses:
+        "201":
+          description: Created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAccountRequest"
+components:
+  schemas:
+    CreateAccountRequest:
+      type: object
+      required:
+      - kind
+      properties:
+        kind:
+          type: string
+          enum:
+          - CASH
+          - SECURITIES

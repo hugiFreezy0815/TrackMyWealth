@@ -1,0 +1,48 @@
+# Test fixture for scripts/tests/test_api_breaking.py (#452): parameter-enum-base.yaml
+# with ART added to the query parameter's enum; a request enum addition stays breaking.
+openapi: 3.1.0
+info:
+  title: Fixture API
+  version: v1
+paths:
+  /api/v1/accounts:
+    get:
+      tags:
+      - Accounts
+      summary: List the workspace's accounts
+      operationId: listAccounts
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - CASH
+          - SECURITIES
+          - ART
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccountResponse"
+components:
+  schemas:
+    AccountResponse:
+      type: object
+      required:
+      - id
+      - name
+      - currency
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        currency:
+          type: string

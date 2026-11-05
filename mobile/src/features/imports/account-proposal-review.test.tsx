@@ -80,6 +80,39 @@ describe('AccountProposalReview', () => {
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ nativeCurrency: 'CHF' }));
   });
 
+  it('keeps the form usable when a newer server suggests an unknown account type', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const onConfirm = jest.fn();
+    try {
+      await render(
+        <AccountProposalReview
+          proposal={{ ...proposal, suggestedAccountType: 'ART' }}
+          portfolio={{ id: 'portfolio', name: 'Synthetic Bank Basel' }}
+          onConfirm={onConfirm}
+          onCancel={jest.fn()}
+        />,
+      );
+
+      expect(screen.getByText('Suggested account type: Other')).toBeTruthy();
+      expect(screen.getByText('Portfolio: Synthetic Bank Basel')).toBeTruthy();
+      expect(screen.getByText('Account identifier: 123456******1234')).toBeTruthy();
+      expect(screen.queryByRole('radio', { selected: true })).toBeNull();
+
+      await fireEvent.changeText(screen.getByLabelText('Account name'), 'Art account');
+      await fireEvent.press(screen.getByText('Confirm new account details'));
+      expect(onConfirm).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toBeTruthy();
+
+      await fireEvent.press(screen.getByRole('radio', { name: 'CASH' }));
+      await fireEvent.press(screen.getByText('Confirm new account details'));
+      expect(onConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({ accountType: 'CASH', name: 'Art account' }),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('asks for a portfolio before anything can be confirmed', async () => {
     const onConfirm = jest.fn();
     await render(

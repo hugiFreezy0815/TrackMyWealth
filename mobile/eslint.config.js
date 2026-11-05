@@ -38,6 +38,36 @@ module.exports = defineConfig([
     },
   },
   {
+    // #452: a newer self-hosted backend can send an enum value this app does not know, and the
+    // generated union cannot stop that at runtime. ESLint names the file and line of each break:
+    // - every switch has a default branch (ESLint cannot tell an API enum switch from another, so
+    //   the rule covers all of them; the app has no switch that would need an exception);
+    // - that default does not throw, which would crash the screen on the new value: it renders the
+    //   neutral fallback instead (labelFor in @/api/enum-label);
+    // - a display map (a *_LABELS, *_ICONS or *_COLORS constant) is read through labelFor, never
+    //   indexed directly, so an unknown value gets the fallback instead of undefined.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}', 'src/api/schema.d.ts', 'src/api/enum-label.ts'],
+    rules: {
+      'default-case': 'error',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            'SwitchCase:not([test]) > ThrowStatement, SwitchCase:not([test]) > BlockStatement > ThrowStatement',
+          message:
+            'A newer backend can send a value this switch does not know (#452): render the neutral fallback (labelFor) instead of throwing.',
+        },
+        {
+          selector:
+            'MemberExpression[computed=true][object.name=/^[A-Z][A-Z0-9_]*_(LABELS|ICONS|COLORS)$/]',
+          message:
+            'Read an API enum display map through labelFor (@/api/enum-label), so an unknown value gets the neutral fallback (#452).',
+        },
+      ],
+    },
+  },
+  {
     ignores: ['dist/*'],
   },
 ]);

@@ -375,18 +375,22 @@ file client code is generated from. `./mvnw verify` keeps it in step with the co
 `.github/workflows/api-contract.yml` (job `api-breaking`) keeps the contract from breaking by
 accident. On every PR touching `backend/**` or `api/**` it compares `main`'s `api/openapi.yaml` with
 the PR's using [oasdiff](https://www.oasdiff.com/) (`oasdiff breaking`, pinned version and checksum)
-and fails on a breaking change - anything oasdiff rates "error" or "warning" - listing each one: a
+and fails on a breaking change - anything oasdiff rates "error" or "warning" except the
+explicitly allowed new response-enum values (#452) - listing each one: a
 removed endpoint, parameter or response field, an optional parameter or request field made required,
 a narrowed type or enum. ADR 0006 allows additive changes only inside `/api/v1`, so a new endpoint,
 a new response field or a new optional request field or parameter passes (oasdiff's "info"
 changes are listed but do not fail).
 Removing a response field is breaking by oasdiff's own rules, since every response field is
 required (`response-required-property-removed`); so is making one nullable
-(`response-property-became-nullable`). Two changes count as breaking although oasdiff rates them
-lower (`SEVERITY_OVERRIDES` in `scripts/api_breaking.py`): adding a value to a response enum (a
-client handling each enum value fails on one it does not know), and removing an optional response
-field (only the hand-built `ApiProblem` has such fields: `detail`, `instance`, `errors`).
-Failing on oasdiff's warnings is stricter than oasdiff's own default (errors only): a change oasdiff
+(`response-property-became-nullable`). `SEVERITY_OVERRIDES` in `scripts/api_breaking.py`
+still treats removing an optional response field (the hand-built `ApiProblem` fields `detail`,
+`instance` and `errors`), adding a request enum value, or removing a response enum value as
+breaking. **Only adding a response enum value** is a permitted warning: the app uses a neutral
+EN/DE fallback for unknown enum values, keeps known-value type checks, and logs unknown values
+only in development (#452). The new value remains listed in the API contract job log, but does not
+require an `api-breaking` declaration. Other warnings and all errors still fail.
+Failing on oasdiff's other warnings is stricter than oasdiff's own default (errors only): a change oasdiff
 says breaks only some clients, such as a new pattern or a changed format on an existing field,
 needs the declaration below too. Run the check locally (below) to see the level of each change.
 The job runs `main`'s copy of that script, so a PR cannot loosen the script that judges it; a change
