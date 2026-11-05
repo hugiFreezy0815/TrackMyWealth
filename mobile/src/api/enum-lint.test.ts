@@ -1,15 +1,11 @@
-/**
- * @jest-environment node
- */
-
 // #452: the lint rules that keep screens working when a newer backend sends an enum value this
 // app does not know. Linting snippets through the project's own ESLint config proves each rule is
 // active for app code and that its report names the file.
 //
-// ESLint runs in a child Node process, once for all snippets: in-process, its async work can
-// touch jest-expo's lazily installed globals after the test file has finished, which Jest rejects
-// ("require a file outside of the scope of the test code"). The child also loads
-// eslint.config.js exactly as `expo lint` does.
+// ESLint runs in a child Node process, once for all snippets, so it stays out of the Jest runtime
+// and loads eslint.config.js exactly as `expo lint` does. The file keeps jest-expo's default
+// environment: under `@jest-environment node`, Mobile Web CI failed the suite with "require a file
+// outside of the scope of the test code" from Expo's lazily installed globals (expo/src/winter).
 
 type ChildProcess = {
   spawnSync: (
