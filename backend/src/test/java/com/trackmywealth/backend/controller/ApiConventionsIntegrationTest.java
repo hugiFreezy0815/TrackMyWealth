@@ -836,7 +836,7 @@ class ApiConventionsIntegrationTest {
                 }
               }
             });
-    assertThat(paged).hasSize(6);
+    assertThat(paged).hasSize(12);
   }
 
   private static JsonNode parameter(JsonNode operation, String name) {
