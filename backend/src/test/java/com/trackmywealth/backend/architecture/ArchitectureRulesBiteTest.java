@@ -3,6 +3,7 @@ package com.trackmywealth.backend.architecture;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import archfixture.config.ClientCoupledConfig;
+import com.trackmywealth.fixtures.contract.InvalidSuccessStatusController;
 import archfixture.controller.PageLeakingController;
 import archfixture.controller.StrayEntityController;
 import archfixture.controller.UncheckedSortController;
@@ -140,6 +141,44 @@ class ArchitectureRulesBiteTest {
         .hasMessageContaining("UncheckedSortController.pageable")
         .hasMessageContaining("UncheckedSortController.sort")
         .hasMessageNotContaining("UncheckedSortController.whitelisted");
+  }
+
+  // #457: every new guard bites on a deliberately invalid documented handler, including a
+  // response factory in another class. A plain return still has Spring's implicit 200.
+  private static final JavaClasses INVALID_SUCCESS_STATUSES =
+      new ClassFileImporter().importClasses(InvalidSuccessStatusController.class);
+
+  @Test
+  void anEmptySuccessStatusDeclarationFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("emptyStatus() declares an empty @SuccessStatus");
+  }
+
+  @Test
+  void aNon2xxSuccessStatusDeclarationFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("nonSuccessStatus() declares non-2xx @SuccessStatus value 400 BAD_REQUEST");
+  }
+
+  @Test
+  void anUnseenResponseStatusFromAnotherClassFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("externalStatus() returns an HttpEntity/ResponseEntity")
+        .hasMessageContaining("externalStatusDeclaredOk() returns an HttpEntity/ResponseEntity")
+        .hasMessageContaining("add a justified per-handler exemption")
+        .hasMessageNotContaining("simpleImplicitOk()");
   }
 
   static class WorkspaceImpersonatingService {
