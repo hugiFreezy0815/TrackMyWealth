@@ -441,6 +441,9 @@ closes it once `main` is green again.
 
 ## Where to start as a developer
 
+For the implemented pagination contract (page envelope, size cap, sort whitelists and
+client refresh after imports), see [API conventions](docs/api/conventions.md#paging).
+
 Read `docs/user-stories/README.md` first — it lists every epic with development-ready stories,
 which migrations each depends on, and a suggested build sequence (foundation → tenancy/auth →
 workspace/institution/account → transaction ledger/imports/reconciliation → investment
