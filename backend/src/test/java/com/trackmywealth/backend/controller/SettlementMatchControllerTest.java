@@ -906,6 +906,64 @@ class SettlementMatchControllerTest {
   }
 
   @Test
+  void moreThanTwoHundredMatchesArePagedWithAccurateCardFilteredTotals() {
+    String token = bootstrapAdministrator();
+    Accounts accounts = accountsWithSource(token);
+    insertProposedMatches(accounts.card(), accounts.current(), 250);
+    UUID otherCard = createAccount(token, "Another Card", "CREDIT_CARD", "CHF").id();
+    insertProposedMatches(otherCard, accounts.current(), 7);
+
+    String url =
+        "/api/v1/settlement-matches?status=PROPOSED&cardAccountId=" + accounts.card();
+    PageResponse<SettlementMatchResponse> first =
+        client(token)
+            .get()
+            .uri(url + "&size=1000")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+    PageResponse<SettlementMatchResponse> second =
+        client(token)
+            .get()
+            .uri(url + "&page=1&size=200")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(first.page().number()).isZero();
+    assertThat(first.page().size()).isEqualTo(200);
+    assertThat(first.page().totalElements()).isEqualTo(250);
+    assertThat(first.page().totalPages()).isEqualTo(2);
+    assertThat(first.content()).hasSize(200);
+    assertThat(second.content()).hasSize(50);
+    assertThat(second.page().totalElements()).isEqualTo(250);
+    assertThat(
+            java.util.stream.Stream.concat(first.content().stream(), second.content().stream())
+                .map(SettlementMatchResponse::id)
+                .toList())
+        .hasSize(250)
+        .doesNotHaveDuplicates();
+
+    client(token)
+        .get()
+        .uri(url + "&sort=paymentAccountId")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT");
+  }
+
+  @Test
   void listingMatchesDoesNotIssueAQueryPerMatch() {
     String token = bootstrapAdministrator();
     Accounts a = accountsWithSource(token);
