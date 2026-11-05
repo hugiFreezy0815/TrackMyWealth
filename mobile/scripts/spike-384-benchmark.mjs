@@ -68,7 +68,8 @@ benchmark: for (const renderer of ['rnw', 'dom']) {
         assert(initialMounted > 0 && initialMounted <= 45,
           'Expected windowed rows; found ' + initialMounted + ' in ' + renderer);
 
-        const category = page.getByLabel('Category', { exact: true });
+        // Deterministic markup positions; record accessible labels separately in the AX audit.
+        const category = page.locator('select').nth(1);
         const beforeFilter = await page.evaluate(() => performance.now());
         await category.selectOption('Transport');
         await page.waitForFunction(
@@ -78,7 +79,7 @@ benchmark: for (const renderer of ['rnw', 'dom']) {
         await page.evaluate(() => new Promise((resolve) =>
           requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const filterMs = round((await page.evaluate(() => performance.now())) - beforeFilter);
-        await page.getByLabel('Sort', { exact: true }).selectOption('amount');
+        await page.locator('select').nth(2).selectOption('amount');
         const listRoot = page.locator('div[aria-label^="Transaction list."]');
         await listRoot.focus();
         await page.keyboard.press('ArrowDown');
@@ -148,6 +149,10 @@ benchmark: for (const renderer of ['rnw', 'dom']) {
       } catch (error) {
         errors.push({ renderer, size, run, error: String(error) });
         console.error('FAIL', renderer, size, run, String(error));
+        console.error('DEBUG current URL', page.url());
+        console.error('DEBUG select count', await page.locator('select').count().catch(() => -1));
+        console.error('DEBUG label text', JSON.stringify(await page.locator('label').allTextContents().catch(() => [])));
+        console.error('DEBUG visible body', (await page.locator('body').innerText().catch(() => '')).slice(0, 1500));
       } finally {
         await context.close();
       }
