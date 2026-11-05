@@ -19,44 +19,51 @@ Large collections expose `page`, `size` and `sort` query parameters and return t
 `PageResponse<T>` envelope; the six paged operations are listed under [Sorting](#sorting). The
 committed OpenAPI contract identifies which operation is paged and defines its response schema.
 
-Every other collection is a **bounded list**: it returns an ordinary JSON array, ignores `page`,
-`size` and `sort`, and is always complete. Its upper bound comes from the data it holds, not
-from a server cap, except where the table says so:
+Every other collection returns an ordinary JSON array and ignores `page`, `size` and `sort`.
+Most of them are **bounded lists**: always complete, with an upper bound that comes from the
+data they hold rather than from a server cap. The arrays that are not bounded yet are listed
+under [Known exceptions](#known-exceptions); do not treat those as complete or small.
 
-| Bounded list | What bounds it | Server cap |
-| --- | --- | --- |
-| `GET /api/v1/accounts` | The workspace's accounts: tens, not thousands | None |
-| `GET /api/v1/portfolios` | The workspace's active portfolios: a handful | None |
-| `GET /api/v1/categories` | The workspace's category tree, at most 3 levels deep | None |
-| `GET /api/v1/categorization-rules` | The workspace's own rules, maintained by hand | None |
-| `GET /api/v1/import-templates` | Shipped templates plus the workspace's own, current versions only | None |
-| `GET /api/v1/workspace-members` | Members of the workspace: 1 in the MVP | None |
-| `GET /api/v1/sessions` | The caller's own active sessions | None |
-| `GET /api/v1/accounts/{accountId}/transactions/deleted` | Removals of the last 30 days that can still be restored | None |
-| `GET /api/v1/settlement-matches` | Matches of the requested `status` (default `PROPOSED`), newest first | **200** |
-| `GET /api/v1/accounts/{accountId}/snapshots` | Manually recorded snapshots of one account | None |
-| `GET /api/v1/accounts/{accountId}/valuations` | Manually recorded valuations of one asset | None |
-| `GET /api/v1/accounts/{accountId}/repayments` | Recorded repayments of one loan, about one a month | None |
-| `GET /api/v1/accounts/{accountId}/amortisation-schedule` | One loan's schedule, one entry per instalment | None |
-
-The two `POST` operations that answer with an array are bounded the same way:
-`POST /api/v1/import-templates/detect` returns at most one candidate per available template, and
-`POST /api/v1/accounts/{cardAccountId}/settlement-matches/run` returns the matches of one card.
+| Bounded list | What bounds it |
+| --- | --- |
+| `GET /api/v1/accounts` | The workspace's accounts: tens, not thousands |
+| `GET /api/v1/portfolios` | The workspace's active portfolios: a handful |
+| `GET /api/v1/categories` | The workspace's category tree, at most 3 levels deep |
+| `GET /api/v1/categorization-rules` | The workspace's own rules, maintained by hand |
+| `GET /api/v1/import-templates` | Shipped templates plus the workspace's own, current versions only |
+| `GET /api/v1/workspace-members` | Members of the workspace: 1 in the MVP |
+| `GET /api/v1/sessions` | The caller's own active sessions |
+| `POST /api/v1/import-templates/detect` | At most one candidate per available template |
 
 **Rule:** a collection stays a plain array only when the domain bounds it. Any collection that
 grows over time is paged, and a plain array is never cut at a server cap, because a client cannot
 tell a cut list from a complete one. This follows Google AIP-158 (list methods are paged from
 the start, since adding paging later breaks clients) and the Zalando guidelines.
 
-**Known exceptions**, to be paged by
-[US-29-13 (#473)](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473):
+#### Known exceptions
 
-- Settlement matches are cut at the newest 200. Until #473, a client showing exactly 200 matches
-  must not present them as all of them.
-- Snapshots, valuations, repayments and the amortisation schedule grow with the age of an
-  account and have no cap.
+These plain arrays break the rule today. They have no bound the client can rely on, and one of
+them is cut at a cap:
 
-Do not build list screens on these five arrays; #473 changes their response to `PageResponse`.
+| Plain array | Why it is not bounded | Paged by |
+| --- | --- | --- |
+| `GET /api/v1/settlement-matches` | **Cut at the newest 200** matches of the requested `status` (default `PROPOSED`) | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
+| `GET /api/v1/accounts/{accountId}/snapshots` | Every snapshot recorded for the account, piling up over its life; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
+| `GET /api/v1/accounts/{accountId}/valuations` | Every valuation recorded for the asset, piling up over its life; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
+| `GET /api/v1/accounts/{accountId}/repayments` | About one repayment a month for the life of the loan; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
+| `GET /api/v1/accounts/{accountId}/amortisation-schedule` | One entry per due date, entered from the lender's schedule. The loan's term limits it, but the server limits neither the term nor the number of entries, and a 30-year monthly mortgage already has 360 | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
+| `GET /api/v1/accounts/{accountId}/transactions/deleted` | The 30-day window limits how old a removal can be, not how many there are. Rolling back an import that someone has worked on voids all of its rows at once, so a single rollback can put thousands of rows in the list; no cap | Not scheduled yet |
+| `POST /api/v1/accounts/{cardAccountId}/settlement-matches/run` | Every match the card has ever had, in every status, one more with each statement; no cap | Not scheduled yet |
+
+Each of these will change its response to `PageResponse`, which is a breaking change. Until
+then, a client that shows one of them must:
+
+- treat the array as possibly incomplete or large, and never label its length as a total;
+- for the settlement-match queue, read `status=PROPOSED` (optionally narrowed by `kind`) and
+  fetch it again after each confirm or reject. A decided match leaves the queue, so older
+  proposals move up into the newest 200. When a response holds exactly 200 matches, say that
+  more may be waiting rather than presenting the list as complete. Do not use the `run`
+  response as a way round the cap, because it is not bounded either.
 
 The server owns the envelope rather than serializing Spring Data's `Page`. An empty first page is:
 
