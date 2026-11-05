@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/spike-384-browser-evidence.yml"
       - "mobile/src/app/spike-web-transactions.tsx"
+      - "mobile/src/app/_layout.tsx"
       - "mobile/src/spikes/**"
       - "mobile/scripts/spike-384-benchmark.mjs"
   workflow_dispatch:
