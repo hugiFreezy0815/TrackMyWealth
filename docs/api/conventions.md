@@ -52,10 +52,11 @@ them is cut at a cap:
 | `GET /api/v1/accounts/{accountId}/valuations` | Every valuation recorded for the asset, piling up over its life; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
 | `GET /api/v1/accounts/{accountId}/repayments` | About one repayment a month for the life of the loan; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
 | `GET /api/v1/accounts/{accountId}/amortisation-schedule` | One entry per due date, entered from the lender's schedule. The loan's term limits it, but the server limits neither the term nor the number of entries, and a 30-year monthly mortgage already has 360 | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
-| `GET /api/v1/accounts/{accountId}/transactions/deleted` | The 30-day window limits how old a removal can be, not how many there are. Rolling back an import that someone has worked on voids all of its rows at once, so a single rollback can put thousands of rows in the list; no cap | Not scheduled yet |
-| `POST /api/v1/accounts/{cardAccountId}/settlement-matches/run` | Every match the card has ever had, in every status, one more with each statement; no cap | Not scheduled yet |
+| `GET /api/v1/accounts/{accountId}/transactions/deleted` | The 30-day window limits how old a removal can be, not how many there are. Rolling back an import that someone has worked on voids all of its rows at once, so a single rollback can put thousands of rows in the list; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
+| `POST /api/v1/accounts/{cardAccountId}/settlement-matches/run` | Every match the card has ever had, in every status, one more with each statement; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
 
-Each of these will change its response to `PageResponse`, which is a breaking change. Until
+Each list will change its response to `PageResponse`, and the `run` action will stop returning
+matches and answer with a summary instead; both are breaking changes. Until
 then, a client that shows one of them must:
 
 - treat the array as possibly incomplete or large, and never label its length as a total;
