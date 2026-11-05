@@ -3,7 +3,6 @@ package com.trackmywealth.backend.architecture;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import archfixture.config.ClientCoupledConfig;
-import com.trackmywealth.fixtures.contract.InvalidSuccessStatusController;
 import archfixture.controller.PageLeakingController;
 import archfixture.controller.StrayEntityController;
 import archfixture.controller.UncheckedSortController;
@@ -18,6 +17,7 @@ import com.trackmywealth.backend.architecture.leak.controller.LeakyController;
 import com.trackmywealth.backend.architecture.leak.dto.LeakyResponse;
 import com.trackmywealth.backend.architecture.leak.entity.LeakedEntity;
 import com.trackmywealth.backend.client.EcbFxRateProvider;
+import com.trackmywealth.fixtures.contract.InvalidSuccessStatusController;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -165,7 +165,8 @@ class ArchitectureRulesBiteTest {
                 ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
                     INVALID_SUCCESS_STATUSES))
         .isInstanceOf(AssertionError.class)
-        .hasMessageContaining("nonSuccessStatus() declares non-2xx @SuccessStatus value 400 BAD_REQUEST");
+        .hasMessageContaining(
+            "nonSuccessStatus() declares non-2xx @SuccessStatus value 400 BAD_REQUEST");
   }
 
   @Test
