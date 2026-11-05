@@ -4,6 +4,28 @@
 >
 > **Authority:** Sprint-7 screen specifications in [`screens/README.md`](screens/README.md), the PO's 2026-10-20 terminology decision, and the 2026-11-05 S1–S7 scope decision. When a screen wireframe and a screen specification disagree, the *screen specification wins*.
 
+## Figma references reviewed (2026-11-05)
+
+**Source design:** [TrackMyWealth Figma](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=0-1).
+Read directly from the file, not just screenshots linked by issue descriptions:
+
+| Interaction | Mobile frame | Web frame | Relevance |
+|---|---|---|---|
+| Sign-in and setup | [M01](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=21-124), [M02](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=21-209), [M20 empty state](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=91-2675) | [W10 sign-up](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=35-1516) | Onboarding names the overview, selects currency and guides empty data |
+| First Overview | [M03](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=21-295) | [W01](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=29-124) | Portfolio tab strip, net worth, status and cash flow teaser |
+| Portfolio view | [M05](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=62-2128) | [W02](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=65-2549) | A portfolio is a tab within Overview |
+| Transaction list and detail | [M10](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=25-797), [M25 account detail](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=115-2999) | [W06](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=32-1072) | Dense web table, inline category/filter controls, selected detail panel |
+| Settings | [M13](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=25-1388) | [W09](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=65-2889) | Preferences and overview-name editing |
+
+The **existing Figma mockups, not the ASCII diagrams below, are the visual reference** for
+the approved Sprint-7 screens. Their navigation includes future areas (for example Cash flow
+and Investments) which the approved [S1–S7 specifications](screens/README.md) intentionally
+hide until those screens ship. The Web W06 frame uses a **248 px sidebar**, and its content
+includes a table and a contextual detail panel; these proportions must be respected in the
+#384 benchmark. The wireframes below express **routes and responsive behavior**, not an
+alternative brand or design language. The Figma design system page defines current
+colour/typography/components; #378 makes those tokens normative after PO approval.
+
 ## 1. Scope and vocabulary
 
 The first tab is **Overview**, showing all portfolios and named with the user's own overview name; the word *workspace* is only a technical backend/API term and **never appears in the app**. A user may call the first tab “My finances” or leave it blank, in which case it displays **All portfolios / Alle Portfolios**. Subsequent tabs represent the server-ordered, user-named portfolios (for example “Yuh” and “PostFinance”). Institutions are banks/brokers associated with portfolios; an account belongs to one portfolio; a **Depot** is a securities account, not a portfolio.
@@ -62,7 +84,7 @@ Breakpoints are **CSS viewport widths**, not physical device model names: phone 
 
 | Dimension | Phone (<600px) | Tablet (600–1023px) | Desktop web (>=1024px) |
 |---|---|---|---|
-| Primary navigation | Bottom tabs: Overview, More; hide future areas | Bottom tabs or compact side rail when landscape/space permits; same two destinations | Persistent sidebar: Overview, Settings/More; future areas absent |
+| Primary navigation | Bottom tabs: Overview, More; hide future areas | Bottom tabs or compact side rail when landscape/space permits; same two destinations | Persistent **248 px** sidebar (W01/W06): Overview, Settings/More; future areas absent |
 | Portfolio navigation | Horizontal scrollable strip **inside S1**, with selected tab scrolled into view | Scrollable/wrapping portfolio strip; 2-column cards where specs allow | Strip wraps; portfolio tabs share the Overview route |
 | Contextual action | Prominent “+ Add portfolio” in tab strip; import within S2/S3 | Same actions, no hidden affordance | Sidebar-independent toolbar on content screens |
 | Content | One column; cards/rows stacked | One/two columns subject to screen spec; avoid squeezed tables | Main content + 360px optional detail rail; S3 transaction table uses all required columns |
@@ -208,7 +230,7 @@ The time budget for statement import assumes a **small supported file** with una
 ### PO sign-off requested
 
 - Confirm the MVP navigation: **Overview + More/Settings only**, with portfolio tabs *inside* Overview; Cash flow and Investments remain hidden even though their future mockups exist.
-- Confirm the proposed **600px / 1024px** breakpoints and 360px desktop detail rail, subject to accessibility/zoom.
+- Confirm the proposed **600px / 1024px** breakpoints, Figma's **248px sidebar**, and 360px desktop detail rail, subject to accessibility/zoom.
 - Approve the first-run target and its manual starting-value fallback; usability verification remains a Sprint-7 prototype check.
 - Revisit the web-native component split only after #384's measurements and ADR review.
 
