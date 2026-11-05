@@ -48,8 +48,11 @@ public class SettlementMatchService {
   // fx_rate.rate and settlement_match.transfer_fx_rate are NUMERIC(20,10).
   private static final int FX_RATE_SCALE = 10;
 
-  // The list is a work queue, not a history browser: bounded, newest first.
-  static final int MAX_LISTED = 200;
+  /**
+   * The most matches {@link #list} returns: the list is a work queue, not a history browser -
+   * bounded, newest first. Public so the API contract states the same number.
+   */
+  public static final int MAX_LISTED = 200;
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;

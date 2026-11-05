@@ -85,7 +85,17 @@ public class SettlementMatchController {
    * {@code kind} ({@code CARD_SETTLEMENT} or {@code TRANSFER}, US-10-01) narrows the list to one
    * kind of match; without it both are listed.
    */
-  @Operation(operationId = "listSettlementMatches", summary = "List settlement matches")
+  @Operation(
+      operationId = "listSettlementMatches",
+      summary = "List settlement matches",
+      description =
+          "Matches needing a decision by default (status=PROPOSED), newest first. kind"
+              + " (CARD_SETTLEMENT or TRANSFER) narrows the list to one kind of match; without it"
+              + " both are listed. Not paged, and cut at the newest "
+              + SettlementMatchService.MAX_LISTED
+              + " matches: a response holding exactly "
+              + SettlementMatchService.MAX_LISTED
+              + " matches may not be all of them.")
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping("/settlement-matches")
   public List<SettlementMatchResponse> list(

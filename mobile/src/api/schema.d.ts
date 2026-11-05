@@ -1343,7 +1343,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List settlement matches */
+    /**
+     * List settlement matches
+     * @description Matches needing a decision by default (status=PROPOSED), newest first. kind (CARD_SETTLEMENT or TRANSFER) narrows the list to one kind of match; without it both are listed. Not paged, and cut at the newest 200 matches: a response holding exactly 200 matches may not be all of them.
+     */
     get: operations['listSettlementMatches'];
     put?: never;
     post?: never;
