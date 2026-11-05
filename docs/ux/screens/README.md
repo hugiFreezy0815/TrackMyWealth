@@ -32,14 +32,14 @@ data source. Every such difference is listed under "Differences from Figma" in t
   Types come from `mobile/src/api/schema.d.ts` (`npm run api:types`). Error handling follows
   [`docs/api/error-codes.md`](../../api/error-codes.md). Paging and the refresh rule follow
   [`docs/api/conventions.md`](../../api/conventions.md).
-- **#376 (information architecture) is not merged yet.** These specs assume the navigation
-  shown in Figma:
-  - Phone: a tab bar with Overview, Portfolios, Investments, Cash flow and More.
-  - Web (≥ 1024 px): a sidebar with the same sections plus Settings, and a right-hand
-    detail panel.
-  - Tablet (600–1023 px): the phone layout, with lists in two columns where the spec says so.
-
-  If #376 decides otherwise, only the "Entry points" lines of each spec change.
+- **#376 (information architecture) has a proposed implementation:** see
+  [UX-01 information architecture](../01-information-architecture.md). Until PO approval the
+  navigation decision is provisional: phone Overview + More; web Overview + Settings, with
+  portfolio tabs **inside** Overview rather than a duplicate top-level Portfolios screen.
+  Investments and Cash Flow are hidden in Sprint 7 (the S1 cash-flow teaser remains).
+  Breakpoints: <600px phone, 600–1023px tablet, ≥1024px desktop.
+  Approval of #376 and ADR 0007 (#384) is still required before treating the navigation
+  as accepted for implementation.
 - **#378 (visual foundations) is not merged yet.** Component names used here (`Amount`,
   `ValueStatusBadge`, `ScopeBar`, `PortfolioTabs`, `SectionCard`, `AccountRow`,
   `TransactionRow`, `EmptyState`, `ErrorBanner`, `LoadingSkeleton`, `ValueChart`,
