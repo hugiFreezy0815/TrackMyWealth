@@ -926,7 +926,8 @@ public interface TransactionRepository
   /**
    * US-07-04 duplicate rule 2: the account's live rows booked from {@code from} to {@code to} -
    * neither soft-deleted, voided, a reversal nor a reconciliation adjustment, of any source. Read
-   * through {@code idx_transaction_account_date}; the rest of the match is compared in memory.
+   * through the {@code (account_id, booking_date)} prefix of {@code
+   * idx_transaction_account_date_order} (V115); the rest of the match is compared in memory.
    */
   @Query(
       value =
