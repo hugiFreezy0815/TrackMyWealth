@@ -32,14 +32,20 @@ data source. Every such difference is listed under "Differences from Figma" in t
   Types come from `mobile/src/api/schema.d.ts` (`npm run api:types`). Error handling follows
   [`docs/api/error-codes.md`](../../api/error-codes.md). Paging and the refresh rule follow
   [`docs/api/conventions.md`](../../api/conventions.md).
-- **#376 (information architecture) is not merged yet.** These specs assume the navigation
-  shown in Figma:
-  - Phone: a tab bar with Overview, Portfolios, Investments, Cash flow and More.
-  - Web (≥ 1024 px): a sidebar with the same sections plus Settings, and a right-hand
-    detail panel.
-  - Tablet (600–1023 px): the phone layout, with lists in two columns where the spec says so.
-
-  If #376 decides otherwise, only the "Entry points" lines of each spec change.
+- **#376 (information architecture) is PO-approved as the Sprint-7 navigation and
+  onboarding baseline (2026-11-05):** see
+  [UX-01 information architecture](../01-information-architecture.md).
+  Mobile navigation is **Overview + More**, desktop sidebar navigation is **Overview +
+  Settings**, and portfolio tabs live **inside** Overview; there is no duplicate
+  top-level Portfolios view. Investments and Cash Flow navigation entries are hidden
+  until their full screens are implemented; never show disabled tabs or placeholders.
+  S1's cash-flow teaser and S2's depot sections remain visible. Viewport breakpoints
+  are <600px phone, 600–1023px tablet, and ≥1024px desktop, with Figma's 248px sidebar
+  and a nominal 360px context rail. The optional overview name falls back to
+  All portfolios / Alle Portfolios. Onboarding offers statement import or an
+  applicable manual opening balance / valuation and targets **under ten minutes**,
+  subject to measurement in Sprint 7. **ADR 0007 (#384) remains proposed** until
+  actual browser performance and accessibility evidence is reviewed.
 - **#378 (visual foundations) is not merged yet.** Component names used here (`Amount`,
   `ValueStatusBadge`, `ScopeBar`, `PortfolioTabs`, `SectionCard`, `AccountRow`,
   `TransactionRow`, `EmptyState`, `ErrorBanner`, `LoadingSkeleton`, `ValueChart`,
