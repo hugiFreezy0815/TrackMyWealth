@@ -34,6 +34,11 @@ public @interface Paged {
    */
   String tieBreaker() default "id";
 
+  /**
+   * Whether clients may submit sort parameters. False for collections with a fixed database order.
+   */
+  boolean allowSort() default true;
+
   /** A sortable field: its wire name and the entity properties it orders by, in that order. */
   @Documented
   @Target({})

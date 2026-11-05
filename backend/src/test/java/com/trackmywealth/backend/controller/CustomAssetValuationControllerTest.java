@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.CustomAssetValuationService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
@@ -145,15 +146,51 @@ class CustomAssetValuationControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<CustomAssetValuationResponse>>() {})
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<CustomAssetValuationResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
 
     assertThat(valuations).hasSize(2);
     assertThat(valuations.get(0).valuationDate()).isEqualTo(LocalDate.of(2026, 6, 1));
     assertThat(valuations.get(0).value()).isEqualByComparingTo("45000.0000");
     assertThat(valuations.get(1).valuationDate()).isEqualTo(LocalDate.of(2026, 1, 1));
     assertThat(valuations.get(1).value()).isEqualByComparingTo("40000.0000");
+  }
+
+  @Test
+  void valuationPagesKeepTotalsAndDateOrder() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
+    recordValuation(
+        token,
+        account.id(),
+        new CreateCustomAssetValuationRequest(
+            LocalDate.of(2026, 1, 1), new BigDecimal("40000.00")));
+    recordValuation(
+        token,
+        account.id(),
+        new CreateCustomAssetValuationRequest(
+            LocalDate.of(2026, 6, 1), new BigDecimal("45000.00")));
+
+    PageResponse<CustomAssetValuationResponse> second =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + account.id() + "/valuations?page=1&size=1")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<CustomAssetValuationResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(second.page().totalElements()).isEqualTo(2);
+    assertThat(second.page().totalPages()).isEqualTo(2);
+    assertThat(second.content())
+        .extracting(CustomAssetValuationResponse::valuationDate)
+        .containsExactly(LocalDate.of(2026, 1, 1));
   }
 
   @Test

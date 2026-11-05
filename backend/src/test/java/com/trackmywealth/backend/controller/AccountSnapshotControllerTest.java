@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
@@ -339,13 +340,41 @@ class AccountSnapshotControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<AccountSnapshotResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
 
     assertThat(snapshots)
         .extracting(AccountSnapshotResponse::snapshotDate)
         .containsExactly(today(), today().minusMonths(1));
+  }
+
+  @Test
+  void snapshotPagesKeepTotalsAndNewestDateOrder() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token, "History", "CASH");
+    recordOk(token, account.id(), balanceOnly(today().minusMonths(1), "100.00"));
+    recordOk(token, account.id(), balanceOnly(today(), "200.00"));
+
+    PageResponse<AccountSnapshotResponse> second =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + account.id() + "/snapshots?page=1&size=1")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(second.page().number()).isEqualTo(1);
+    assertThat(second.page().size()).isEqualTo(1);
+    assertThat(second.page().totalElements()).isEqualTo(2);
+    assertThat(second.page().totalPages()).isEqualTo(2);
+    assertThat(second.content())
+        .extracting(AccountSnapshotResponse::snapshotDate)
+        .containsExactly(today().minusMonths(1));
   }
 
   @Test

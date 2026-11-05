@@ -2,6 +2,7 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AmortisationScheduleEntry;
 import com.trackmywealth.backend.error.ApiException;
@@ -14,9 +15,10 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -71,12 +73,12 @@ public class AmortisationScheduleService {
 
   /** The schedule, earliest due date first. */
   @Transactional(readOnly = true)
-  public List<AmortisationScheduleEntryResponse> list(
-      UUID accountId, AuthenticatedUserPrincipal actor) {
+  public Page<AmortisationScheduleEntryResponse> list(
+      UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = requireLoan(accountId, false, actor);
-    return entryRepository.findByAccountIdOrderByDueDateAsc(account.getId()).stream()
-        .map(AmortisationScheduleService::toResponse)
-        .toList();
+    return entryRepository
+        .findByAccountId(account.getId(), PagingValues.requireBounded(pageable, "id"))
+        .map(AmortisationScheduleService::toResponse);
   }
 
   @Transactional

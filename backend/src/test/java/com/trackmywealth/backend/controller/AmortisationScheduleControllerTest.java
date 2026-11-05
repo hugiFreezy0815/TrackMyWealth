@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
@@ -83,6 +84,37 @@ class AmortisationScheduleControllerTest {
         statement.execute(sql);
       }
     }
+  }
+
+  @Test
+  void schedulePagesPreserveChronologicalOrderAndTotals() {
+    String token = bootstrapAdministrator();
+    UUID mortgage = createMortgage(token);
+    post(token, mortgage, entry(APRIL, "798.00", "1202.00", "497598.00"))
+        .expectStatus()
+        .isCreated();
+    post(token, mortgage, entry(MARCH, "800.00", "1200.00", "498800.00"))
+        .expectStatus()
+        .isCreated();
+
+    PageResponse<AmortisationScheduleEntryResponse> second =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + mortgage + "/amortisation-schedule?page=1&size=1")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(
+                new ParameterizedTypeReference<
+                    PageResponse<AmortisationScheduleEntryResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(second.page().totalElements()).isEqualTo(2);
+    assertThat(second.page().totalPages()).isEqualTo(2);
+    assertThat(second.content())
+        .extracting(AmortisationScheduleEntryResponse::dueDate)
+        .containsExactly(APRIL);
   }
 
   @Test
@@ -327,9 +359,11 @@ class AmortisationScheduleControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<AmortisationScheduleEntryResponse>>() {})
+        .expectBody(
+            new ParameterizedTypeReference<PageResponse<AmortisationScheduleEntryResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody()
+        .content();
   }
 
   private UUID createMortgage(String token) {

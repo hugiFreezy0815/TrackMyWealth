@@ -155,6 +155,14 @@ public class SettlementDetectionService {
   }
 
   /**
+   * Counts newly proposed matches while re-running detection, without reading the match history.
+   */
+  @Transactional
+  public int countNewProposalsForCard(UUID cardAccountId) {
+    return detectForCard(cardAccountId, FULL_HISTORY);
+  }
+
+  /**
    * Serialises everything that decides or applies a match for one card behind that card's account
    * row: two writes racing on the same card would each read the same "nothing proposed yet" state
    * and both insert the same proposal, and two members deciding competing proposals would each hold
@@ -177,11 +185,11 @@ public class SettlementDetectionService {
   // Runs matching for one card. A card with no (usable) settlement source has nothing to do.
   // oneSidedSince bounds only the one-sided balance check; pairing is bounded by the card's
   // unmatched credits instead.
-  private void detectForCard(UUID cardAccountId, LocalDate oneSidedSince) {
+  private int detectForCard(UUID cardAccountId, LocalDate oneSidedSince) {
     lockCard(cardAccountId);
     AccountCreditCard card = accountCreditCardRepository.findById(cardAccountId).orElse(null);
     if (card == null || card.getSettlementSourceAccountId() == null) {
-      return;
+      return 0;
     }
     Account cardAccount = card.getAccount();
     Account source = accountRepository.findById(card.getSettlementSourceAccountId()).orElse(null);
@@ -189,7 +197,7 @@ public class SettlementDetectionService {
     // need the payment converted at some rate; not built. Not to be confused with US-09-04's
     // foreign-currency card purchases, a different leg entirely.
     if (source == null || !source.getNativeCurrency().equals(cardAccount.getNativeCurrency())) {
-      return;
+      return 0;
     }
     String currency = cardAccount.getNativeCurrency();
 
@@ -221,6 +229,7 @@ public class SettlementDetectionService {
       }
     }
 
+    int proposed = 0;
     for (Transaction payment : pairable.values()) {
       List<Transaction> candidates = creditsByPayment.get(payment.getId());
       boolean unambiguous =
@@ -230,7 +239,7 @@ public class SettlementDetectionService {
       } else {
         // Ambiguous - or unambiguous, but a member has already said this payment is not a
         // settlement: either way the system does not decide, it proposes.
-        proposePairs(cardAccount, payment, candidates, known);
+        proposed += proposePairs(cardAccount, payment, candidates, known);
       }
     }
 
@@ -239,9 +248,10 @@ public class SettlementDetectionService {
         transactionRepository.findPaymentsEqualToCardBalance(
             source.getId(), cardAccountId, currency, PAYMENT_TYPES, oneSidedSince)) {
       if (!creditsByPayment.containsKey(payment.getId())) {
-        proposeOneSided(cardAccount, payment);
+        proposed += proposeOneSided(cardAccount, payment);
       }
     }
+    return proposed;
   }
 
   /**
@@ -322,7 +332,7 @@ public class SettlementDetectionService {
     settlementMatchRepository.saveAllAndFlush(competitors);
   }
 
-  private void proposePairs(
+  private int proposePairs(
       Account cardAccount,
       Transaction payment,
       List<Transaction> candidates,
@@ -331,8 +341,9 @@ public class SettlementDetectionService {
     if (oneSided != null && SettlementMatchValues.CONFIRMED.equals(oneSided.getStatus())) {
       // A member already confirmed this payment on its own; equal credits cannot be told apart, so
       // it stays as confirmed rather than being replaced by a guess.
-      return;
+      return 0;
     }
+    int created = 0;
     for (Transaction credit : candidates) {
       if (pair(known, payment, credit) != null) {
         continue;
@@ -342,16 +353,19 @@ public class SettlementDetectionService {
       proposal.setMatchBasis(SettlementMatchValues.LEG_PAIR);
       proposal.setStatus(SettlementMatchValues.PROPOSED);
       settlementMatchRepository.saveAndFlush(proposal);
+      created++;
     }
+    return created;
   }
 
   // The query behind this only returns payments equal to the card's balance that no match of any
   // status has been made for, so there is nothing left to guard here.
-  private void proposeOneSided(Account cardAccount, Transaction payment) {
+  private int proposeOneSided(Account cardAccount, Transaction payment) {
     SettlementMatch proposal = newMatch(cardAccount, payment);
     proposal.setMatchBasis(SettlementMatchValues.BALANCE_EQUALS_PAYMENT);
     proposal.setStatus(SettlementMatchValues.PROPOSED);
     settlementMatchRepository.saveAndFlush(proposal);
+    return 1;
   }
 
   private SettlementMatch newMatch(Account cardAccount, Transaction payment) {

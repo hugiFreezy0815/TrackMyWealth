@@ -19,6 +19,7 @@ import com.trackmywealth.backend.dto.ImportStatementBalanceResponse;
 import com.trackmywealth.backend.dto.ImportStatementBalanceRule;
 import com.trackmywealth.backend.dto.ImportTemplateRequest;
 import com.trackmywealth.backend.dto.ImportTemplateResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -870,9 +871,10 @@ class HoldingsImportControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<AccountSnapshotResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody()
+        .content();
   }
 
   private static void expectProblem(

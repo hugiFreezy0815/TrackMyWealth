@@ -61,6 +61,12 @@ public class PagedArgumentResolver implements HandlerMethodArgumentResolver {
             // supportsParameter admits only a parameter that carries @Paged.
             key ->
                 SortWhitelist.of(Objects.requireNonNull(key.getParameterAnnotation(Paged.class))));
+    Paged declaration = Objects.requireNonNull(parameter.getParameterAnnotation(Paged.class));
+    if (!declaration.allowSort() && sort != null) {
+      throw new ApiException(
+          ProblemCode.INVALID_SORT,
+          "This collection has a fixed newest-removal-first order; sort is not supported.");
+    }
     return PageRequest.of(
         page, size, whitelist.resolve(sort == null ? List.of() : Arrays.asList(sort)));
   }

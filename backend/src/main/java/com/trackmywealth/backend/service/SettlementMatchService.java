@@ -1,7 +1,9 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
+import com.trackmywealth.backend.dto.SettlementMatchRunResponse;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.entity.Account;
@@ -22,7 +24,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,12 +50,6 @@ public class SettlementMatchService {
 
   // fx_rate.rate and settlement_match.transfer_fx_rate are NUMERIC(20,10).
   private static final int FX_RATE_SCALE = 10;
-
-  /**
-   * The most matches {@link #list} returns: the list is a work queue, not a history browser -
-   * bounded, newest first. Public so the API contract states the same number.
-   */
-  public static final int MAX_LISTED = 200;
 
   private final AccountLookupService accountLookupService;
   private final AccessControlService accessControlService;
@@ -141,7 +138,7 @@ public class SettlementMatchService {
    * change, and an earlier source's matches must not be revealed through the new one.
    */
   @Transactional
-  public List<SettlementMatchResponse> run(UUID cardAccountId, AuthenticatedUserPrincipal actor) {
+  public SettlementMatchRunResponse run(UUID cardAccountId, AuthenticatedUserPrincipal actor) {
     Account card = requireCard(cardAccountId, actor);
     UUID sourceId = extensionOf(card).getSettlementSourceAccountId();
     if (sourceId == null) {
@@ -151,24 +148,18 @@ public class SettlementMatchService {
     accessControlService.requireAccountAccess(
         actor, accountLookupService.findAccountOrThrow(sourceId, actor));
 
-    settlementDetectionService.detectForCard(cardAccountId);
-    Set<UUID> editable = editableAccountIds(actor);
-    return settlementMatchRepository.findByCardAccountId(cardAccountId).stream()
-        .filter(m -> editable.contains(m.getPaymentTransaction().getAccount().getId()))
-        .map(this::toResponse)
-        .toList();
+    return new SettlementMatchRunResponse(
+        settlementDetectionService.countNewProposalsForCard(cardAccountId));
   }
 
-  /**
-   * The matches with the given {@code status} (default {@code PROPOSED}, i.e. what needs a
-   * decision) that the caller may act on: newest first, at most {@value #MAX_LISTED}. The access
-   * filter is part of the query, so the cap applies to the caller's own matches and another
-   * member's cannot crowd them out. {@code kind} (US-10-01) keeps one kind of match only; {@code
-   * null} keeps both.
-   */
+  /** A paged match queue, filtered by both accessible accounts before counting and slicing. */
   @Transactional(readOnly = true)
-  public List<SettlementMatchResponse> list(
-      String status, String kind, AuthenticatedUserPrincipal actor) {
+  public Page<SettlementMatchResponse> list(
+      String status,
+      String kind,
+      UUID cardAccountId,
+      Pageable pageable,
+      AuthenticatedUserPrincipal actor) {
     String wanted = status == null ? SettlementMatchValues.PROPOSED : status;
     if (!SettlementMatchValues.STATUSES.contains(wanted)) {
       throw new ResponseStatusException(
@@ -178,15 +169,18 @@ public class SettlementMatchService {
       throw new ResponseStatusException(
           HttpStatus.BAD_REQUEST, "kind must be one of CARD_SETTLEMENT, TRANSFER.");
     }
+    Pageable bounded = PagingValues.requireBounded(pageable, "id");
+    if (cardAccountId != null) {
+      accessControlService.requireAccountAccess(
+          actor, accountLookupService.findAccountOrThrow(cardAccountId, actor));
+    }
     Set<UUID> editable = editableAccountIds(actor);
     if (editable.isEmpty()) {
-      return List.of();
+      return Page.empty(bounded);
     }
     return settlementMatchRepository
-        .findActionable(wanted, kind, editable, PageRequest.of(0, MAX_LISTED))
-        .stream()
-        .map(this::toResponse)
-        .toList();
+        .findActionable(wanted, kind, cardAccountId, editable, bounded)
+        .map(this::toResponse);
   }
 
   /**

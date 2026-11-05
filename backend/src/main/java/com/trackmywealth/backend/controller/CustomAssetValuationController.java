@@ -2,16 +2,19 @@ package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.CustomAssetValuationService;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -50,8 +53,11 @@ public class CustomAssetValuationController {
 
   @Operation(operationId = "listAccountValuations", summary = "List an asset's manual valuations")
   @GetMapping
-  public List<CustomAssetValuationResponse> listValuations(
-      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return customAssetValuationService.listValuations(accountId, actor);
+  public PageResponse<CustomAssetValuationResponse> listValuations(
+      @PathVariable UUID accountId,
+      @Paged(sort = @SortField(name = "valuationDate"), defaultSort = "valuationDate,desc")
+          Pageable pageable,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return PageResponse.of(customAssetValuationService.listValuations(accountId, pageable, actor));
   }
 }

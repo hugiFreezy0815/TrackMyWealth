@@ -15,6 +15,7 @@ import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.ReconciliationAdjustmentValues;
 import com.trackmywealth.backend.dto.ReconciliationDecisionRequest;
 import com.trackmywealth.backend.dto.ReconciliationResultResponse;
@@ -54,6 +55,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -1141,17 +1143,17 @@ class ReconciliationDecisionControllerTest {
   }
 
   private List<TransactionResponse> restorable() {
-    TransactionResponse[] body =
+    PageResponse<TransactionResponse> body =
         client()
             .get()
             .uri("/api/v1/accounts/" + cash.id() + "/transactions/deleted")
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(TransactionResponse[].class)
+            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
             .returnResult()
             .getResponseBody();
-    return body == null ? List.of() : List.of(body);
+    return body == null ? List.of() : body.content();
   }
 
   private List<TransactionResponse> ledger() {

@@ -2,10 +2,12 @@ package com.trackmywealth.backend.db;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.controller.AccountSnapshotController;
 import com.trackmywealth.backend.controller.ImportBatchController;
 import com.trackmywealth.backend.controller.InstitutionCatalogueController;
 import com.trackmywealth.backend.controller.ReconciliationController;
 import com.trackmywealth.backend.controller.TransactionController;
+import com.trackmywealth.backend.repository.AccountSnapshotRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
@@ -92,6 +94,7 @@ class PagedListPlanTest {
   @Autowired PlatformTransactionManager transactionManager;
   @Autowired EntityManager entityManager;
   @Autowired TransactionRepository transactions;
+  @Autowired AccountSnapshotRepository snapshots;
   @Autowired ImportBatchRepository importBatches;
   @Autowired ReconciliationResultRepository reconciliations;
   @Autowired InstitutionCatalogueRepository catalogue;
@@ -164,6 +167,17 @@ class PagedListPlanTest {
       assertSortFree(plans);
       assertIndexOnlyCount(plans);
     }
+  }
+
+  @Test
+  void snapshotHistoryReadsTheAccountOrderIndexUnderRowLevelSecurity() {
+    Pageable page =
+        PageRequest.of(0, PAGE_SIZE, sort(AccountSnapshotController.class, "listSnapshots"));
+    Plans plans =
+        asRuntimeRole(() -> snapshots.findByAccountIdAndWithdrawnAtIsNull(fixture.account(), page));
+
+    assertThat(plans.page()).contains("idx_account_snapshot_paged");
+    assertSortFree(plans);
   }
 
   @Test
