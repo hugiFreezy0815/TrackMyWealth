@@ -1,0 +1,75 @@
+name: Disposable US-384 Web Architecture Benchmark
+# Runs exclusively on the unmerged historical-experiment branch.
+on:
+  push:
+    branches: [spike/384-evidence-only]
+    paths:
+      - ".github/workflows/spike-384-browser-evidence.yml"
+      - "mobile/src/app/spike-web-transactions.tsx"
+      - "mobile/src/spikes/**"
+      - "mobile/scripts/spike-384-benchmark.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_NO_TELEMETRY: "1"
+      SPIKE_REPEATS: "5"
+      SPIKE_BASE_URL: "http://localhost:8081"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install the exact Expo lockfile
+        run: npm ci
+      - name: Install disposable Playwright runner and Chromium
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Typecheck and synthetic fixture tests
+        run: |
+          npx tsc --noEmit
+          npx jest --ci src/spikes/transaction-fixture.test.ts
+      - name: Start the disposable Expo web route
+        run: |
+          CI=1 npx expo start --web --port 8081 > /tmp/spike-384-expo.log 2>&1 &
+          echo "$!" > /tmp/spike-384-expo.pid
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent --output /dev/null http://localhost:8081/spike-web-transactions; then
+              echo "Expo route is serving"
+              exit 0
+            fi
+            sleep 2
+          done
+          tail -100 /tmp/spike-384-expo.log
+          exit 1
+      - name: Compare both renderers with 1000 and 10000 rows
+        run: node scripts/spike-384-benchmark.mjs
+      - name: Export combined web bundle to record deployment size
+        run: |
+          npx expo export -p web
+          node -e "const fs=require('fs'),path=require('path');let total=0, files=0;function walk(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(p.endsWith('.js')){total+=fs.statSync(p).size;files++}}}walk('dist');fs.appendFileSync('spike-reports/spike-384-bundle.txt','Combined (both renderers) JS assets: '+files+' files, '+total+' uncompressed bytes\n');"
+      - name: Upload result, traces and synthetic screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: spike-384-chromium-evidence
+          path: |
+            mobile/spike-reports/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Include browser/server failures in the job log
+        if: failure()
+        run: |
+          tail -100 /tmp/spike-384-expo.log || true
