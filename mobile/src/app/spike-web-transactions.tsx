@@ -232,8 +232,18 @@ function DomTable({
 }
 
 export default function WebTransactionSpike() {
-  const [mode, setMode] = useState<Mode>('rnw');
-  const [count, setCount] = useState<1_000 | 10_000>(1_000);
+  const [mode, setMode] = useState<Mode>(() =>
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('renderer') === 'dom'
+      ? 'dom'
+      : 'rnw',
+  );
+  const [count, setCount] = useState<1_000 | 10_000>(() =>
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('rows') === '10000'
+      ? 10_000
+      : 1_000,
+  );
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [sortField, setSortField] = useState<SortField>('bookingDate');
@@ -332,7 +342,7 @@ export default function WebTransactionSpike() {
         color: colors.navy,
       }}
     >
-      <main style={{ maxWidth: 1280, margin: 'auto' }}>
+      <main data-benchmark-mode={mode} style={{ maxWidth: 1280, margin: 'auto' }}>
         <h1 style={{ marginBottom: 4 }}>Transaction list · architecture spike #384</h1>
         <p style={{ color: colors.secondary }}>
           Disposable synthetic benchmark based on Figma W06 (248px sidebar, table and detail panel).
@@ -428,7 +438,7 @@ export default function WebTransactionSpike() {
             Download filtered CSV
           </button>
         </div>
-        <p aria-live="polite" style={{ fontSize: 13 }}>
+        <p data-benchmark-count={rows.length} aria-live="polite" style={{ fontSize: 13 }}>
           {rows.length.toLocaleString()} filtered transactions · {range.end - range.start}{' '}
           virtualised rows mounted · post-change paint callback: {renderMs ?? '–'} ms · scroll
           events: {scrollStats.frames}· gaps &gt;50ms: {scrollStats.over50ms}.
@@ -453,7 +463,7 @@ export default function WebTransactionSpike() {
             background: colors.surface,
           }}
         >
-          <section style={{ minWidth: 0 }} aria-label="Transaction table">
+          <section data-benchmark-list={mode} style={{ minWidth: 0 }} aria-label="Transaction table">
             {mode === 'rnw' ? (
               <>
                 <div style={{ padding: 12, borderBottom: `1px solid ${colors.border}` }}>
