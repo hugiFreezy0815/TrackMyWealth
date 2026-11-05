@@ -463,9 +463,10 @@ class TransactionRemovalControllerTest {
         PreparedStatement statement =
             connection.prepareStatement(
                 "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
-                    + " booking_date, amount, currency, source, deleted_at)"
+                    + " booking_date, amount, currency, source, deleted_at, deleted_by)"
                     + " SELECT a.workspace_id, a.id, 'EXPENSE', CURRENT_DATE, -g, 'CHF',"
-                    + " 'MANUAL', now() FROM account a CROSS JOIN generate_series(1, ?) g"
+                    + " 'MANUAL', now(), (SELECT id FROM app_user LIMIT 1)"
+                    + " FROM account a CROSS JOIN generate_series(1, ?) g"
                     + " WHERE a.id = ?")) {
       statement.setInt(1, 300);
       statement.setObject(2, account.id());
