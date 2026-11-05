@@ -574,7 +574,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List an account's removed transactions */
+    /**
+     * List an account's removed transactions
+     * @description Fixed newest-removal-first order (COALESCE(deletedAt, voidedAt) descending, id descending); only page and size are accepted, not sort.
+     */
     get: operations['listRemovedTransactions'];
     put?: never;
     post?: never;
@@ -1345,7 +1348,7 @@ export interface paths {
     };
     /**
      * List settlement matches
-     * @description Matches of one status, newest first; by default those needing a decision. Not paged, and cut at the newest 200 matches: a response holding exactly 200 matches may not be all of them.
+     * @description Matches of one status, newest first; by default those needing a decision.
      */
     get: operations['listSettlementMatches'];
     put?: never;
@@ -3013,14 +3016,6 @@ export interface components {
       content: components['schemas']['CustomAssetValuationResponse'][];
       page: components['schemas']['PageMetadata'];
     };
-    PageResponseLoanRepaymentResponse: {
-      content: components['schemas']['LoanRepaymentResponse'][];
-      page: components['schemas']['PageMetadata'];
-    };
-    PageResponseSettlementMatchResponse: {
-      content: components['schemas']['SettlementMatchResponse'][];
-      page: components['schemas']['PageMetadata'];
-    };
     PageResponseImportBatchResponse: {
       content: components['schemas']['ImportBatchResponse'][];
       page: components['schemas']['PageMetadata'];
@@ -3033,8 +3028,16 @@ export interface components {
       content: components['schemas']['InstitutionCatalogueEntrySummaryResponse'][];
       page: components['schemas']['PageMetadata'];
     };
+    PageResponseLoanRepaymentResponse: {
+      content: components['schemas']['LoanRepaymentResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
     PageResponseReconciliationResultResponse: {
       content: components['schemas']['ReconciliationResultResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
+    PageResponseSettlementMatchResponse: {
+      content: components['schemas']['SettlementMatchResponse'][];
       page: components['schemas']['PageMetadata'];
     };
     PageResponseTransactionResponse: {
@@ -3345,10 +3348,6 @@ export interface components {
       /** Format: uuid */
       categoryId: string;
     };
-    SettlementMatchRunResponse: {
-      /** Format: int32 */
-      newlyProposed: number;
-    };
     SettlementMatchResponse: {
       /** Format: uuid */
       id: string;
@@ -3390,6 +3389,10 @@ export interface components {
       transferFxRate: DecimalString | null;
       /** Format: int32 */
       version: number;
+    };
+    SettlementMatchRunResponse: {
+      /** Format: int32 */
+      newlyProposed: number;
     };
     SettlementSourceResponse: {
       /** Format: uuid */

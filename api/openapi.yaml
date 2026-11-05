@@ -535,7 +535,7 @@ paths:
       - name: sort
         in: query
         description: "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT.\
-          \ Default: dueDate,desc. The order always ends with a unique tie-breaker,\
+          \ Default: dueDate,asc. The order always ends with a unique tie-breaker,\
           \ so pages never overlap."
         required: false
         explode: true
@@ -644,10 +644,10 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - UNPROCESSABLE
-      - INVALID_SORT
       - INTERNAL
     post:
       tags:
@@ -5670,9 +5670,9 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
-      - INVALID_SORT
       - INTERNAL
     post:
       tags:
@@ -6275,9 +6275,9 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
-      - INVALID_SORT
       - INTERNAL
     post:
       tags:
@@ -6990,6 +6990,8 @@ paths:
       tags:
       - Transactions
       summary: List an account's removed transactions
+      description: "Fixed newest-removal-first order (COALESCE(deletedAt, voidedAt)\
+        \ descending, id descending); only page and size are accepted, not sort."
       operationId: listRemovedTransactions
       parameters:
       - name: accountId
@@ -7102,9 +7104,9 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
-      - INVALID_SORT
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions/{transactionId}:
     put:
@@ -8447,9 +8449,9 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
-      - INVALID_SORT
       - INTERNAL
     post:
       tags:
@@ -15480,8 +15482,7 @@ paths:
       - Credit cards
       summary: List settlement matches
       description: "Matches of one status, newest first; by default those needing\
-        \ a decision. Not paged, and cut at the newest 200 matches: a response holding\
-        \ exactly 200 matches may not be all of them."
+        \ a decision."
       operationId: listSettlementMatches
       parameters:
       - name: status
@@ -15504,6 +15505,13 @@ paths:
           enum:
           - CARD_SETTLEMENT
           - TRANSFER
+      - name: cardAccountId
+        in: query
+        description: Only matches belonging to this card or credited account.
+        required: false
+        schema:
+          type: string
+          format: uuid
       - name: page
         in: query
         description: Zero-based page number.
@@ -15539,13 +15547,6 @@ paths:
             - createdAt
             - "createdAt,asc"
             - "createdAt,desc"
-      - name: cardAccountId
-        in: query
-        description: Only matches belonging to this card or credited account.
-        required: false
-        schema:
-          type: string
-          format: uuid
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -15630,9 +15631,9 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
-      - INVALID_SORT
       - INTERNAL
   /api/v1/settlement-matches/{matchId}/confirm:
     post:
@@ -20974,30 +20975,6 @@ components:
       required:
       - content
       - page
-    PageResponseLoanRepaymentResponse:
-      type: object
-      properties:
-        content:
-          type: array
-          items:
-            $ref: "#/components/schemas/LoanRepaymentResponse"
-        page:
-          $ref: "#/components/schemas/PageMetadata"
-      required:
-      - content
-      - page
-    PageResponseSettlementMatchResponse:
-      type: object
-      properties:
-        content:
-          type: array
-          items:
-            $ref: "#/components/schemas/SettlementMatchResponse"
-        page:
-          $ref: "#/components/schemas/PageMetadata"
-      required:
-      - content
-      - page
     PageResponseImportBatchResponse:
       type: object
       properties:
@@ -21034,6 +21011,18 @@ components:
       required:
       - content
       - page
+    PageResponseLoanRepaymentResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoanRepaymentResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseReconciliationResultResponse:
       type: object
       properties:
@@ -21041,6 +21030,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ReconciliationResultResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
+    PageResponseSettlementMatchResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/SettlementMatchResponse"
         page:
           $ref: "#/components/schemas/PageMetadata"
       required:
@@ -21732,15 +21733,6 @@ components:
           format: uuid
       required:
       - categoryId
-    SettlementMatchRunResponse:
-      type: object
-      description: Bounded result of re-running a card's settlement matching. Only proposals inserted by this run are counted; a repeated idempotent run answers zero. Match history lives in the paged GET list.
-      properties:
-        newlyProposed:
-          type: integer
-          format: int32
-      required:
-      - newlyProposed
     SettlementMatchResponse:
       type: object
       properties:
@@ -21829,6 +21821,14 @@ components:
       - status
       - transferFxRate
       - version
+    SettlementMatchRunResponse:
+      type: object
+      properties:
+        newlyProposed:
+          type: integer
+          format: int32
+      required:
+      - newlyProposed
     SettlementSourceResponse:
       type: object
       properties:
