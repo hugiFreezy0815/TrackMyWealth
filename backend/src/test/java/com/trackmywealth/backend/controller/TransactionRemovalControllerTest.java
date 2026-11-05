@@ -2672,9 +2672,9 @@ class TransactionRemovalControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<TransactionResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody().content();
   }
 
   // The signed ledger sum on a past date, which statements, snapshots and matching read.
@@ -2782,9 +2782,9 @@ class TransactionRemovalControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<SettlementMatchResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
         .returnResult()
-        .getResponseBody()
+        .getResponseBody().content()
         .stream()
         .map(SettlementMatchResponse::id)
         .toList();

@@ -3,6 +3,7 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
@@ -145,9 +146,9 @@ class CustomAssetValuationControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<CustomAssetValuationResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<CustomAssetValuationResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody().content();
 
     assertThat(valuations).hasSize(2);
     assertThat(valuations.get(0).valuationDate()).isEqualTo(LocalDate.of(2026, 6, 1));

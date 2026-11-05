@@ -993,9 +993,9 @@ class TransferControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<SettlementMatchResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody().content();
   }
 
   private CashFlowResponse cashFlow(String token) {

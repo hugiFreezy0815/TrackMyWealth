@@ -2,6 +2,7 @@ package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
@@ -327,9 +328,9 @@ class AmortisationScheduleControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<AmortisationScheduleEntryResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<AmortisationScheduleEntryResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody().content();
   }
 
   private UUID createMortgage(String token) {

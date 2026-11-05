@@ -836,9 +836,9 @@ class LoanRepaymentControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<LoanRepaymentResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<LoanRepaymentResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody().content();
   }
 
   private void scheduleEntry(
@@ -977,9 +977,9 @@ class LoanRepaymentControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<SettlementMatchResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody().content();
   }
 
   private AccountSummaryResponse createAccount(String token, String type, String currency) {

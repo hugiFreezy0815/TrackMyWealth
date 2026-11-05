@@ -3,6 +3,7 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
@@ -339,9 +340,9 @@ class AccountSnapshotControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<AccountSnapshotResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody().content();
 
     assertThat(snapshots)
         .extracting(AccountSnapshotResponse::snapshotDate)

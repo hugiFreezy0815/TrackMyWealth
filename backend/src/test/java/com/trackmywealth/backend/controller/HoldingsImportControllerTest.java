@@ -3,6 +3,7 @@ package com.trackmywealth.backend.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
 
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
@@ -870,9 +871,9 @@ class HoldingsImportControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<AccountSnapshotResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody().content();
   }
 
   private static void expectProblem(

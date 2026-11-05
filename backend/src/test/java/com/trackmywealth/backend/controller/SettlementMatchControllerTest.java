@@ -11,6 +11,7 @@ import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
+import com.trackmywealth.backend.dto.SettlementMatchRunResponse;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
@@ -291,11 +292,11 @@ class SettlementMatchControllerTest {
     cardCredit(token, a.card(), "1200.00", SEP_3);
     decide(token, matches(token, "CONFIRMED").get(0).id(), "reject", HttpStatus.OK);
 
-    List<SettlementMatchResponse> first = run(token, a.card());
-    List<SettlementMatchResponse> second = run(token, a.card());
+    SettlementMatchRunResponse first = run(token, a.card());
+    SettlementMatchRunResponse second = run(token, a.card());
 
-    assertThat(first).singleElement().satisfies(m -> assertThat(m.status()).isEqualTo("REJECTED"));
-    assertThat(second).extracting(SettlementMatchResponse::id).isEqualTo(ids(first));
+    assertThat(first.newlyProposed()).isZero();
+    assertThat(second.newlyProposed()).isZero();
     assertThat(matches(token, null)).isEmpty();
     assertThat(matches(token, "CONFIRMED")).isEmpty();
   }
@@ -898,7 +899,8 @@ class SettlementMatchControllerTest {
     assertThat(matches(token, "PROPOSED"))
         .extracting(SettlementMatchResponse::id)
         .containsExactlyElementsOf(expected);
-    assertThat(run(token, a.card()))
+    assertThat(run(token, a.card()).newlyProposed()).isZero();
+    assertThat(matches(token, "PROPOSED"))
         .extracting(SettlementMatchResponse::id)
         .containsExactlyElementsOf(expected);
   }
@@ -1205,21 +1207,21 @@ class SettlementMatchControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<SettlementMatchResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody().content();
   }
 
-  private List<SettlementMatchResponse> run(String token, UUID card) {
+  private SettlementMatchRunResponse run(String token, UUID card) {
     return client(token)
         .post()
         .uri("/api/v1/accounts/" + card + "/settlement-matches/run")
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<SettlementMatchResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody().content();
   }
 
   private static List<UUID> ids(List<SettlementMatchResponse> matches) {
