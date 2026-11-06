@@ -144,9 +144,11 @@ record SuccessStatusEvidence(
               unit.getName() + " calls " + target.owner().getSimpleName() + "#" + target.name());
         } else if (own.contains(target.owner())) {
           target.member().ifPresent(member -> enqueueWithLambdas(member, pending));
-        } else if (target.returnType().isAssignableTo(ResponseEntity.class)) {
-          // Seeing 200 from another branch does not make this external return safe.
-          // Only the known status factories above may manufacture a ResponseEntity unseen.
+        } else if (target.returnType().isAssignableTo(ResponseEntity.class)
+            && !target.owner().isAssignableTo(ResponseEntity.HeadersBuilder.class)) {
+          // ResponseEntity's own builder body()/build() completes an already visible status.
+          // Unknown factories outside that builder API remain unsafe even if another branch
+          // exposes a known 200/201.
           externalResponseFactories.add(unit.getName() + " calls " + name);
         }
       }
