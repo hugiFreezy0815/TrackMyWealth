@@ -119,10 +119,12 @@ cd backend
     the MDC onto `@Async` threads; work started on another executor must copy it the same way.
   - **Success status declarations (#457).** A documented handler's `@SuccessStatus` is never
     empty and may name only 2xx statuses. The ArchUnit bytecode rule must be able to establish
-    the status of every `ResponseEntity`/`HttpEntity` return from the handler's own methods,
-    lambdas or a recognised response factory. A status built in a different class is not
-    presumed to be 200; construct its status in the controller, use a recognised response
-    factory, or add an explicit, individually justified exception to
+    the status of every `ResponseEntity` return from the handler's own methods,
+    lambdas or a recognised response factory. An ordinary `HttpEntity` response has Spring's
+    implicit 200, since it cannot assign an HTTP status. A response factory in a different
+    class is not presumed to be 200, **even when another branch has a known status**; construct
+    its status in the controller, use a recognised response factory, or add an explicit,
+    individually justified exception to
     `ArchitectureTest.REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS`. The defensive OpenAPI
     customizer keeps the generated 200 if an empty annotation slips through, but ArchUnit
     still fails the build. `ArchitectureRulesBiteTest` proves these guards reject deliberate
