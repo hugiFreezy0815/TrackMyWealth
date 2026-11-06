@@ -1,16 +1,15 @@
 # ADR 0007 review handoff (#384)
 
-**Purpose:** Lets a reviewer or tester who has not followed #384 assess the proposed web-client
-decision and run the human acceptance tests.  
-**Decision document:** [ADR 0007](../0007-web-client-approach.md), status **Proposed**.  
+**Purpose:** Lets a reviewer or tester who has not followed #384 see the evidence behind the
+web-client decision and repeat the acceptance tests.  
+**Decision document:** [ADR 0007](../0007-web-client-approach.md), status **Accepted** (Option B, PO, 2026-11-06).  
 **Issue:** [#384](https://github.com/hugiFreezy0815/TrackMyWealth/issues/384).
 **Raw evidence:** [this folder](README.md).
 
-This file is a checklist and test record, not sign-off. Nothing in it shows that a
-screen-reader test or PO approval has happened until the review record in section 4 says so
-with a name and date.
+This file is the test record behind the decision. The decision itself, with the accepted
+residual risks, is in the ADR's Decision section.
 
-## 1. Decision to review: Option B (proposed, not accepted)
+## 1. Decision: Option B (accepted by the PO, 2026-11-06)
 
 Keep **one Expo Router app** for native and web. For the dense desktop transaction view, use a
 **semantic HTML `<table>` in a web-specific React DOM component**, with a React Native list on
@@ -27,7 +26,7 @@ uses `Platform.OS` checks, not duplicate components.
 | Option | Architectural assessment | Decision consequence |
 | --- | --- | --- |
 | A: RNW list in Expo web | Shares more presentation code, but the tested `Pressable`-row design exposed **zero column headers** to Chromium's accessibility tree. RNW `role` props (`table`, `row`, `cell`) were **not** tried. | Needs equivalent, tested table semantics and navigation before it could be chosen. |
-| **B: semantic DOM table in Expo web** | Exposes native table headers, keeps the single app, auth and router, and has no material measured bundle-size cost against the RNW-only export. | **Proposed**, pending the checks in section 4 and explicit PO approval. |
+| **B: semantic DOM table in Expo web** | Exposes native table headers, keeps the single app, auth and router, and has no material measured bundle-size cost against the RNW-only export. | **Accepted** by the PO on 2026-11-06. |
 | C: separate React web app | Independent web UI, but duplicates the app shell, authentication, routing, state and deployment. **Not benchmarked**: no separate React app was built. | Consider only if concrete, irreducible Expo limitations are demonstrated. |
 
 Do **not** build an ARIA spreadsheet/grid interaction model by default. Use native table
@@ -153,7 +152,7 @@ On Windows use **NVDA + Chrome**; on macOS use **VoiceOver + Safari**. In Safari
 *Settings → Advanced → Press Tab to highlight each item on a webpage*, or Tab skips buttons.
 Record the actual OS, browser, screen-reader version, viewport, zoom, speech and focus.
 
-| ID | Action | Pass when (proposed, not yet approved by the PO) |
+| ID | Action | Pass when |
 | --- | --- | --- |
 | AT-01 | From the address bar, Tab through filters, sort controls, table and first row; reverse with Shift+Tab. | Every control and a row are reachable in a logical order without a mouse; focus is always visible. |
 | AT-02 | DOM mode: jump to the table (NVDA `T`; VoiceOver `VO+Cmd+T`), move by cells (NVDA `Ctrl+Alt+Arrows`; VoiceOver `VO+Arrows`), read a row (VoiceOver `VO+R`). | The table is announced as a table; moving between cells announces the column name with the value; amounts are read with sign and currency. |
@@ -174,7 +173,7 @@ Add one row per test run. Automated results never count as a screen-reader Pass.
 
 | ID | Tester + date | OS / browser / AT / viewport | Renderer + rows | Result | Notes / evidence |
 | --- | --- | --- | --- | --- | --- |
-| PERF-01 | Claude Code (automated), 2026-11-06 | macOS 26.7.1, Apple M5, Chrome 156 headless, 1440×900; no throttling and 4× CPU throttling | Both, 1k and 10k, 5 cold + 5 warm each | **Pass on medians** (against the proposed criteria above) | Medians: first visible 78–107 ms (4×: 255–383 ms), filter 45–60 ms (4×: 53–67 ms), 0 frames over 50 ms while scrolling; 5 such frames in 3 of 80 runs, all unthrottled cold. First visible within about 10 % between renderers; filtering 10k rows unthrottled: DOM 45 ms, RNW 58 ms. [Results](perf-01-results.json), [traces](perf-01-traces). |
+| PERF-01 | Claude Code (automated), 2026-11-06 | macOS 26.7.1, Apple M5, Chrome 156 headless, 1440×900; no throttling and 4× CPU throttling | Both, 1k and 10k, 5 cold + 5 warm each | **Pass on medians** (against the criteria above) | Medians: first visible 78–107 ms (4×: 255–383 ms), filter 45–60 ms (4×: 53–67 ms), 0 frames over 50 ms while scrolling; 5 such frames in 3 of 80 runs, all unthrottled cold. First visible within about 10 % between renderers; filtering 10k rows unthrottled: DOM 45 ms, RNW 58 ms. [Results](perf-01-results.json), [traces](perf-01-traces). |
 | AT-01 (keyboard only) | Claude Code (automated), 2026-11-06 | Chrome 156 headless, real Tab presses | Both, 10k | **Pass, with remark** | Every control reachable, focus visible, Shift+Tab works. First row at Tab stop 9 (RNW) / 14 (DOM: five header sort buttons first). |
 | AT-03 (state only) | Claude Code (automated), 2026-11-06 | as above | Both, 10k | **Fail (spike)** | DOM: no header gets `aria-sort` after sorting; RNW has no headers. See risk 1. |
 | AT-05 (keyboard only) | Claude Code (automated), 2026-11-06 | as above | Both, 10k | **Fail (spike)** | After 60 × ArrowDown the list does not scroll; the selected row is off-screen (DOM) or unmounted (RNW). See risk 3. |
@@ -211,10 +210,10 @@ way.
 - [x] Automated keyboard and zoom checks (AT-01, AT-03, AT-05..AT-07), 2026-11-06.
 - [x] Independent architecture/UX review of this proposal and its limits (2026-11-06: accepted with corrections; corrections applied and confirmed in a second pass).
 - [x] VoiceOver results (AT-01..AT-04, macOS 26.7.1 / Safari 27.0), 2026-11-06: pass; RNW AT-02 not run (no table semantics).
-- [ ] NVDA results (AT-01..AT-04, Windows + Chrome), or the PO accepts the missing NVDA test as a residual risk.
-- [ ] Owners for risks 1, 3, 5, 6, 7 in #494 and for the component inventory in #378.
-- [ ] **PO approves Option A, B or C explicitly, with date and accepted residual risks.**
-- [ ] ADR 0007 status changed from Proposed to Accepted in a separate change.
-- [ ] #384 closed only after its Definition of Done is met.
+- [x] NVDA not tested: accepted by the PO as a residual risk on 2026-11-06. An NVDA + Chrome check of the #494 table is required before the web launch.
+- [x] Owners for risks 1, 3, 5, 6, 7 in #494 and for the component inventory in #378 (issue comments, 2026-11-06).
+- [x] **PO approved Option B on 2026-11-06, with the residual risks listed in the ADR's Decision section.**
+- [x] ADR 0007 status changed from Proposed to Accepted in a separate change.
+- [x] #384 closed by the merge of the Accepted change: ADR merged and approved, spike kept at tag `spike-384-evidence`, not merged.
 
-**PO decision:** Pending. **Signer / date:** Not recorded. **Accepted residual risks:** Not recorded.
+**PO decision:** Option B. **Signer / date:** hugiFreezy0815 (PO), 2026-11-06. **Accepted residual risks:** see the [ADR's Decision section](../0007-web-client-approach.md#decision-po-2026-11-06).
