@@ -191,7 +191,7 @@ class ArchitectureRulesBiteTest {
                     INVALID_SUCCESS_STATUSES))
         .isInstanceOf(AssertionError.class)
         .hasMessageContaining(
-            "mixedLocalAndExternal() uses external ResponseEntity status factories")
+            "mixedLocalAndExternal(boolean) uses external ResponseEntity status factories")
         .hasMessageContaining("ExternalResponses#created");
   }
 
