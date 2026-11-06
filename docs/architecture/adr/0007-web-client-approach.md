@@ -39,16 +39,23 @@ The Figma mockups provide the visual reference; do not ship screenshots as UI as
 
 ## Reproducible comparison
 
-[Throwaway branch `feature/384-web-client-spike`](https://github.com/hugiFreezy0815/TrackMyWealth/tree/feature/384-web-client-spike)
-and [draft, **do-not-merge PR #499**](https://github.com/hugiFreezy0815/TrackMyWealth/pull/499)
-contain a web-only route (`/spike-web-transactions`) plus a deterministic fixture
-and tests. Both renderers have the **same** 1,000/10,000 synthetic rows, filters,
+The disposable comparison is preserved in the historical
+[spike commit `42d22d9`](https://github.com/hugiFreezy0815/TrackMyWealth/commit/42d22d9868a808917c8e01494daed5aa9b1909b0)
+and [PR #499](https://github.com/hugiFreezy0815/TrackMyWealth/pull/499).
+Although that PR was explicitly marked **do not merge**, it was merged on
+2026-11-05. The subsequent cleanup removes its experiment route and fixtures
+from `main`; it does **not** discard the Git history or the reproducible test
+protocol. To run the benchmarks, check out the historical spike commit on a
+separate throwaway worktree, not a production application build. The historical
+commit contains a web-only route (`/spike-web-transactions`) plus a deterministic
+fixture and tests. Both renderers have the **same** 1,000/10,000 synthetic rows, filters,
 sorting with stable id tie-break, CSV export, selected-row detail and virtualised
 windowing. RNW uses `ScrollView` / `Pressable` / `Text` / `View`;
 DOM uses a native `<table>`. The RNW list's button-like semantics are *not*
 equivalent to table semantics; testing this is a main purpose of the spike.
 
-See `mobile/src/spikes/README.md` on that branch for repeatable manual steps.
+See [`mobile/src/spikes/README.md` at the historical spike commit](https://github.com/hugiFreezy0815/TrackMyWealth/blob/42d22d9868a808917c8e01494daed5aa9b1909b0/mobile/src/spikes/README.md)
+for repeatable manual steps.
 For each of four combinations (RNW/DOM × 1,000/10,000), repeat five cold/warm
 runs on fixed hardware/browser/CPU: first paint and long-task/fps traces,
 filter/sort interaction latency, DOM memory footprint, keyboard Tab/Arrow/Enter,
@@ -57,18 +64,44 @@ bundle size. Share trace artifacts with reviewers. The spike's on-screen
 requestAnimationFrame timing and scroll-event gaps are *diagnostics*, not
 reliable Core Web Vitals or a claim about accessibility.
 
-### Results — not yet collected
+### Automated browser evidence (2026-11-05)
 
-| Renderer | Rows | Initial median/p95 (ms) | Long tasks, scrolling | Keyboard + screen reader | JS bundle |
-|---|---:|---|---|---|---|
-| RNW | 1,000 | **unmeasured** | unmeasured | untested | unmeasured |
-| RNW | 10,000 | **unmeasured** | unmeasured | untested | unmeasured |
-| React DOM | 1,000 | **unmeasured** | unmeasured | untested | unmeasured |
-| React DOM | 10,000 | **unmeasured** | unmeasured | untested | unmeasured |
+**Reproducible run:** [GitHub Actions #42111099580](https://github.com/hugiFreezy0815/TrackMyWealth/actions/runs/42111099580) — successful. The result JSON is archived in [`0007-evidence/`](0007-evidence/README.md); the run's own artifact expires after 14 days. Code and procedure live at the experiment commit [`fa37fdf8`](https://github.com/hugiFreezy0815/TrackMyWealth/tree/fa37fdf8e0c18dbc4c67983ae4ddbbe0bb209994) (tag `spike-384-evidence`), whose route bypasses authentication **only for the synthetic fixture**. That commit must never be merged into production.
 
-Do not infer numbers from the Figma render, test fixture size, or green CI.
-Also do not compare a virtualised renderer with a non-virtualised renderer:
-that would measure a different variable.
+**Runner:** headless Chromium **141.0.7390.37**, Ubuntu Linux x64, 4 reported CPUs, 1440×900 viewport. **Five repetitions per case** (20 completed tests; no browser errors). Both modes used the same deterministic client-side generated dataset, filter/sort/CSV logic, fixed-height windowing and a single Expo **development** server. Results in milliseconds:
+
+| Renderer | Rows | First visible median / p95 | Filter update median / p95 | Mounted after scroll | Accessible column headers / rows |
+|---|---:|---:|---:|---:|---:|
+| React Native Web | 1,000 | 872 / **7,279*** | 49.1 / 51.6 | 25 | **0 / 0** |
+| React Native Web | 10,000 | 846 / 996 | 45.0 / 50.2 | 25 | **0 / 0** |
+| React DOM table | 1,000 | 841 / 923 | 37.2 / 42.4 | 27 | **5 / 26** |
+| React DOM table | 10,000 | 843 / 910 | 38.0 / 54.5 | 27 | **5 / 26** |
+
+*The first RNW 1,000-row run took 7,279ms and inflated that p95. It included cold development-server compilation/caching; **do not** interpret it as a production renderer regression or a valid cold-load comparison. All other first-visible medians were approximately 0.8–0.9 seconds under the same runner. First-visible measurement is a harness wall-clock metric, **not** Core Web Vitals LCP.*
+
+**Functional assertions:** all 20 cases successfully selected a row with ArrowDown and focused the detail panel with Enter. Filtered CSV exports passed for the four first runs (200 or 2,000 records according to dataset size); all cases kept at most 27 visible/spacer rows mounted. Median recorded long tasks were two in each case, totaling approximately 181–194ms per run; this is not a defensible FPS or perceived-smoothness score. Chromium's accessibility tree exposes five native table column headers and 26 row nodes in DOM mode, but none in the RNW button-row mode. The RNW design would therefore require substantially more semantic work to meet desktop table navigation expectations. The HTML table's sort direction announcement and virtualised offscreen-row usability still need a real AT audit.
+
+**Initial combined bundle evidence (2026-11-05):** the exported development benchmark app contained **8 JS assets totaling 2,126,658 uncompressed bytes**. Both implementations were compiled into that single test build, so this is not an attributable renderer comparison.
+
+**Independent Expo production web exports (2026-11-06):** [successful run #42179686520](https://github.com/hugiFreezy0815/TrackMyWealth/actions/runs/42179686520) builds the *same Expo application* twice using a disposable [renderer-isolation script](https://github.com/hugiFreezy0815/TrackMyWealth/blob/fa37fdf8e0c18dbc4c67983ae4ddbbe0bb209994/mobile/scripts/spike-384-bundle-isolation.mjs): one variant retains the React Native Web transaction list, the other the semantic React DOM table. The script removes the opposite renderer function and JSX branch from each export, checks for the selected renderer marker, uses the same lockfile/shared application code, and restores the original source afterwards.
+
+| Export variant | JS assets | Uncompressed bytes | gzip bytes | Brotli bytes |
+|---|---:|---:|---:|---:|
+| RNW-only | 8 | 2,124,017 | 533,788 | 428,290 |
+| Semantic DOM-only | 8 | 2,124,504 | 534,087 | 428,770 |
+| **DOM minus RNW** | 0 | **+487** | **+299** | **+480** |
+
+These are **whole-app export sizes**, not the standalone transaction table's bundle weight or an independently scaffolded React app. Dependencies and shared Expo Router/auth/UI modules remain common; the RNW import in the spike module is not rewritten. Consequently the measured 299-byte gzip difference is *specific to the two isolated branch builds*, not a portable estimate of a future component's size. No material bundle penalty favoring a separate React application is demonstrated. The raw report is archived in [`0007-evidence/`](0007-evidence/README.md).
+
+**Static accessibility/UX review (2026-11-06):** the spike's semantic DOM table exposes column headers, but the nested sort button sets `aria-sort={undefined}` instead of putting a direction on the sorted `<th>`. Automated keyboard tests focus an outer container programmatically; they do not prove keyboard-only Tab traversal into rows. Selection updates the React virtual window without ensuring that native scrollTop and accessible focus follow the selected row. The live status includes frequent scroll/paint diagnostics. These are **review observations** requiring production corrections and human assistive-technology verification, not claims that a real screen-reader test has passed or failed. See the [manual NVDA/VoiceOver acceptance protocol](https://github.com/hugiFreezy0815/TrackMyWealth/blob/fa37fdf8e0c18dbc4c67983ae4ddbbe0bb209994/mobile/src/spikes/ACCESSIBILITY-AUDIT.md).
+
+**Production UX boundary:** the accepted [S3 account-detail spec](https://github.com/hugiFreezy0815/TrackMyWealth/blob/main/docs/ux/screens/account-detail.md) expects a **four-column** web table (Date, Description, Category, Amount) and S4 details in a contextual panel, versus five columns in the intentionally synthetic spike. Apply the shared API, localization, visual tokens, server paging and permission logic in both platform-specific presentations; align the component inventory in #378.
+
+**Interpretation:** Both implementations handle the synthetic 10,000-row test with bounded DOM and similar first-visible time. React DOM offers browser-native table semantics and modestly lower median filter-update time at 10,000 rows (38 vs 45ms); differences of these magnitudes in a development-server benchmark are **not** proof of production speed superiority. The evidence strengthens **conditional option B (semantic DOM table inside the existing Expo web app)**, not a second standalone React application.
+
+**Not yet tested:** real NVDA/VoiceOver announcement and keyboard/virtual-scroll behavior (including sorting, focus, virtualization, and zoom), repeatable production performance traces/scroll frame drops on representative devices, and actual server-paged transaction queries. **Independent renderer-isolated Expo production web exports have been measured;** full production integration is not implied. The prototype is intentionally not a pixel-perfect Figma W06 implementation and must not enter production. ADR status remains **Proposed** pending the explicit PO decision and those acceptance checks.
+
+Do not infer missing measurements from the Figma render, synthetic row count or green CI.
 
 ## Approval gate
 
@@ -81,6 +114,8 @@ that would measure a different variable.
   update #378's component/library inventory.
 - **PO approval** and date; only then change this ADR's status to Accepted and close #384.
 
-**Do not merge** the throwaway spike branch. Only the approved ADR should
-land on `main`. Green CI is necessary but cannot replace human performance
-and assistive-technology verification.
+**Do not reintroduce** the throwaway experiment into `main`. Its historical
+commit is retained so the benchmark can still be run; production keeps only
+this **Proposed** ADR until measurements, accessibility audit and PO review are
+complete. Green CI is necessary but cannot replace human performance and
+assistive-technology verification.
