@@ -18,7 +18,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.core.annotation.AnnotatedElementUtils;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -36,8 +35,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * a fixed status, a {@link ResponseStatus}, or - for a handler not returning a {@code
  * ResponseEntity} - Spring's implicit 200. A status the bytecode cannot tell ({@code
  * ResponseEntity.status(int)}, {@code new ResponseEntity<>(body, int)}, {@code HttpStatus.valueOf})
- * is reported as {@link #unreadable}. A {@code ResponseEntity} built in another class stays unseen;
- * {@code DocumentedSuccessStatusFilter} checks the status actually sent, in every test request.
+ * is reported as {@link #unreadable}. A response factory outside the controller's own type
+ * hierarchy is recorded even if another branch already produces a known success status. The
+ * runtime {@code DocumentedSuccessStatusFilter} also checks paths exercised by tests.
  *
  * <p>US-29-09 (#455): the same walk collects the {@link ResponseHeader}s the handler {@link
  * #sends}: a {@link VersionedResponse} factory or an {@code eTag(..)} on a response builder sends
@@ -47,7 +47,10 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * check sees it.
  */
 record SuccessStatusEvidence(
-    Set<HttpStatus> answered, List<String> unreadable, Set<ResponseHeader> sends) {
+    Set<HttpStatus> answered,
+    List<String> unreadable,
+    Set<ResponseHeader> sends,
+    List<String> externalResponseFactories) {
 
   private static final Map<String, HttpStatus> STATUS_FACTORIES =
       Map.of(
@@ -80,6 +83,7 @@ record SuccessStatusEvidence(
   SuccessStatusEvidence {
     answered = Collections.unmodifiableSet(EnumSet.copyOf(answered));
     unreadable = List.copyOf(unreadable);
+    externalResponseFactories = List.copyOf(externalResponseFactories);
     sends =
         Collections.unmodifiableSet(
             sends.isEmpty() ? EnumSet.noneOf(ResponseHeader.class) : EnumSet.copyOf(sends));
@@ -89,6 +93,7 @@ record SuccessStatusEvidence(
     Set<HttpStatus> answered = EnumSet.noneOf(HttpStatus.class);
     List<String> unreadable = new ArrayList<>();
     Set<ResponseHeader> sends = EnumSet.noneOf(ResponseHeader.class);
+    List<String> externalResponseFactories = new ArrayList<>();
     implicitStatus(handler).ifPresent(answered::add);
 
     // The handler's class and the ones it inherits from: a helper may live in a base controller.
@@ -116,6 +121,7 @@ record SuccessStatusEvidence(
                 call.getTargetOwner(),
                 call.getName(),
                 isStatusFromInt(call),
+                call.getTarget().getRawReturnType(),
                 call.getTarget().resolveMember()));
       }
       for (JavaMethodReference reference : unit.getMethodReferencesFromSelf()) {
@@ -124,6 +130,7 @@ record SuccessStatusEvidence(
                 reference.getTargetOwner(),
                 reference.getName(),
                 false,
+                reference.getTarget().getRawReturnType(),
                 reference.getTarget().resolveMember()));
       }
       for (CodeUnitTarget target : targets) {
@@ -137,6 +144,10 @@ record SuccessStatusEvidence(
               unit.getName() + " calls " + target.owner().getSimpleName() + "#" + target.name());
         } else if (own.contains(target.owner())) {
           target.member().ifPresent(member -> enqueueWithLambdas(member, pending));
+        } else if (target.returnType().isAssignableTo(ResponseEntity.class)) {
+          // Seeing 200 from another branch does not make this external return safe.
+          // Only the known status factories above may manufacture a ResponseEntity unseen.
+          externalResponseFactories.add(unit.getName() + " calls " + name);
         }
       }
       unit.getConstructorCallsFromSelf().stream()
@@ -144,7 +155,7 @@ record SuccessStatusEvidence(
           .filter(call -> takesAnInt(call.getTarget().getRawParameterTypes()))
           .forEach(call -> unreadable.add(unit.getName() + " calls new ResponseEntity(..., int)"));
     }
-    return new SuccessStatusEvidence(answered, unreadable, sends);
+    return new SuccessStatusEvidence(answered, unreadable, sends, externalResponseFactories);
   }
 
   private static Optional<ResponseHeader> sentHeader(CodeUnitTarget target, String name) {
@@ -159,7 +170,11 @@ record SuccessStatusEvidence(
   }
 
   private record CodeUnitTarget(
-      JavaClass owner, String name, boolean statusFromInt, Optional<JavaMethod> member) {}
+      JavaClass owner,
+      String name,
+      boolean statusFromInt,
+      JavaClass returnType,
+      Optional<JavaMethod> member) {}
 
   // javac compiles a lambda to a synthetic lambda$<enclosing method>$<n> in the same class.
   private static void enqueueWithLambdas(JavaCodeUnit unit, Deque<JavaCodeUnit> pending) {
@@ -176,7 +191,9 @@ record SuccessStatusEvidence(
    * ResponseStatus} of the method or else its class, or 200.
    */
   private static Optional<HttpStatus> implicitStatus(JavaMethod handler) {
-    if (handler.getRawReturnType().isAssignableTo(HttpEntity.class)) {
+    // A plain HttpEntity provides a body and headers but does not set the HTTP status.
+    // ResponseEntity is different: its explicit status replaces Spring's implicit 200.
+    if (handler.getRawReturnType().isAssignableTo(ResponseEntity.class)) {
       return Optional.empty();
     }
     ResponseStatus declared =
