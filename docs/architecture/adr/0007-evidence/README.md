@@ -11,5 +11,8 @@ artifacts expire after 14 days. All data is synthetic; no real transactions.
 | `run-42179686520-isolated-bundles.json` | [#42179686520](https://github.com/hugiFreezy0815/TrackMyWealth/actions/runs/42179686520) (2026-11-06) | Renderer-isolated production web export sizes |
 | `run-42179686520-chromium-results.json` | same | Repeat of the Chromium run, for comparison |
 
+[`review-handoff.md`](review-handoff.md) lists the open acceptance gates, the human test
+protocol and the record of its results.
+
 The screenshots from those artifacts are not kept. The code that produced the
 files is at commit `fa37fdf8` (tag `spike-384-evidence`); it must not be merged.

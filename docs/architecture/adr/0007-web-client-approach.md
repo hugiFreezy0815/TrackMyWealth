@@ -2,6 +2,7 @@
 
 **Status:** Proposed — manual measurements, accessibility audit and PO approval outstanding.  
 **Issue:** [#384](https://github.com/hugiFreezy0815/TrackMyWealth/issues/384).  
+**Review handoff:** [open acceptance gates, test protocol and review record](0007-evidence/review-handoff.md). It is a checklist, **not** evidence of human accessibility testing or PO approval.  
 **Design:** [Figma W06 Transactions & categorisation](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=32-1072) and [M10 Transactions](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=25-797).
 
 ## Context
