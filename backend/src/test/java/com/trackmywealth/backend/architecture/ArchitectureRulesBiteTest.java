@@ -1,7 +1,7 @@
 package com.trackmywealth.backend.architecture;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import archfixture.config.ClientCoupledConfig;
 import archfixture.controller.PageLeakingController;
@@ -197,8 +197,7 @@ class ArchitectureRulesBiteTest {
 
   @Test
   void aPlainHttpEntityWithImplicitOkIsAllowed() {
-    JavaClasses valid =
-        new ClassFileImporter().importClasses(ValidHttpEntityController.class);
+    JavaClasses valid = new ClassFileImporter().importClasses(ValidHttpEntityController.class);
     assertThatCode(
             () ->
                 ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
