@@ -9,8 +9,8 @@ PR has no conflicts. It then squash-merges with --match-head-commit, so a commit
 check cannot be merged unverified. It never uses --admin.
 
 Which checks apply follows the workflows' own triggers: Semgrep and secret scanning run on every
-pull request, Backend CI, the API contract's breaking-change check, Mobile Web CI, Mobile Native CI
-and Scripts CI only when their part of the repository changed (REQUIRED_CHECKS).
+pull request, Backend CI, the API contract's breaking-change check, Mobile Web CI, Mobile Native CI,
+Scripts CI and UX docs CI only when their part of the repository changed (REQUIRED_CHECKS).
 scripts/tests/test_merge_pr.py keeps REQUIRED_CHECKS in step with the workflows.
 
 For every check, the newest run that was not skipped decides (latest_by_name): a re-run supersedes
@@ -78,6 +78,8 @@ REQUIRED_CHECKS: Dict[str, Tuple[str, Optional[Tuple[str, ...]]]] = {
     "android": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "ios": ("Mobile Native CI", MOBILE_NATIVE_PATHS),
     "scripts": ("Scripts CI", ("scripts/", ".github/workflows/")),
+    # #378: contrast and amount-format checks of the UX-03 visual foundations.
+    "ux-checks": ("UX docs CI", ("docs/ux/", ".github/workflows/ux-docs-ci.yml")),
 }
 
 PASSED = {"success", "skipped", "neutral"}

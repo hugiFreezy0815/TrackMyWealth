@@ -44,13 +44,14 @@ data source. Every such difference is listed under "Differences from Figma" in t
   and a nominal 360px context rail. The optional overview name falls back to
   All portfolios / Alle Portfolios. Onboarding offers statement import or an
   applicable manual opening balance / valuation and targets **under ten minutes**,
-  subject to measurement in Sprint 7. **ADR 0007 (#384) remains proposed** until
-  actual browser performance and accessibility evidence is reviewed.
-- **#378 (visual foundations) is not merged yet.** Component names used here (`Amount`,
-  `ValueStatusBadge`, `ScopeBar`, `PortfolioTabs`, `SectionCard`, `AccountRow`,
-  `TransactionRow`, `EmptyState`, `ErrorBanner`, `LoadingSkeleton`, `ValueChart`,
-  `PeriodSwitch`, `ChangeChip`) are the inventory #378 must define. The list at the end of this
-  file says which screen uses which.
+  subject to measurement in Sprint 7. **ADR 0007 (#384) is Accepted** (Option B):
+  web uses a semantic React DOM table, native uses a React Native list. Its accepted residual
+  accessibility risks are production acceptance requirements for #494.
+- **#378 (visual foundations):** [UX-03 component/token contract](../02-visual-foundations.md)
+  defines the proposed tokens, accessible value-status treatments, currency formatting, chart
+  renderer and all S1–S7 component inputs/states. It is pending independent review and PO approval
+  until #378 is closed; its [light/dark gallery](../02-visual-foundations.html) is a static
+  reference, not product code. The component map below remains the per-screen source of truth.
 - **#379 (glossary and copy) owns the final wording.** The EN/DE texts here are drafts with
   their message keys, written as complete ICU messages.
 - **German addresses the member with "du" (PO decision 2026-11-05).** Every German text in the
