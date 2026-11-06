@@ -68,6 +68,8 @@ jobs:
         run: |
           npx expo export -p web
           node -e "const fs=require('fs'),path=require('path');let total=0, files=0;function walk(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(p.endsWith('.js')){total+=fs.statSync(p).size;files++}}}walk('dist');fs.appendFileSync('spike-reports/spike-384-bundle.txt','Combined (both renderers) JS assets: '+files+' files, '+total+' uncompressed bytes\n');"
+      - name: Independently measure production web bundles for each renderer
+        run: node scripts/spike-384-bundle-isolation.mjs
       - name: Upload result, traces and synthetic screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
