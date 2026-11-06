@@ -42,7 +42,7 @@ import java.util.Set;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpEntity;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Repository;
@@ -537,16 +537,25 @@ class ArchitectureTest {
         Set<HttpStatus> neverAnswered = EnumSet.noneOf(HttpStatus.class);
         neverAnswered.addAll(documented);
         neverAnswered.removeAll(evidence.answered());
-        // A response constructed outside the controller may send any status. It is not safe to
-        // take springdoc's generated 200 on trust just because the bytecode walk saw nothing.
+        // A plain HttpEntity has Spring's implicit 200; only ResponseEntity can override it.
+        // A visible success on one branch does not justify an unseen response on another.
         boolean statusUnseen =
             evidence.answered().isEmpty()
-                && method.getRawReturnType().isAssignableTo(HttpEntity.class);
+                && method.getRawReturnType().isAssignableTo(ResponseEntity.class);
         String handlerName = method.getOwner().getName() + "#" + method.getName();
-        if (statusUnseen && !REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS.contains(handlerName)) {
-          problems.add(
-              "returns an HttpEntity/ResponseEntity with no visible status; build the response"
-                  + " status in the controller or add a justified per-handler exemption");
+        if (!REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS.contains(handlerName)) {
+          if (statusUnseen) {
+            problems.add(
+                "returns a ResponseEntity with no visible status; build the response"
+                    + " status in the controller or add a justified per-handler exemption");
+          }
+          if (!evidence.externalResponseFactories().isEmpty()) {
+            problems.add(
+                "uses external ResponseEntity status factories with no verified status: "
+                    + evidence.externalResponseFactories()
+                    + "; build the response status in the controller or add a justified"
+                    + " per-handler exemption");
+          }
         }
         if (!neverAnswered.isEmpty() && !statusUnseen) {
           problems.add(
