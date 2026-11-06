@@ -48,7 +48,7 @@ Raw files are in [this folder](README.md). What each source can and cannot suppo
 | Chromium run [#42111099580](https://github.com/hugiFreezy0815/TrackMyWealth/actions/runs/42111099580) | 20 automated cases (RNW/DOM × 1k/10k rows × five repeats) passed, including the bounded render window and scripted ArrowDown/Enter; the filtered CSV download was checked in the **first run of each of the four combinations** (4 of 20). Column-header counts in the browser accessibility tree. | Production timings (Expo **development** server), real NVDA/VoiceOver behaviour. The keyboard test focuses a container by script. |
 | Repeat Chromium test inside run [#42179686520](https://github.com/hugiFreezy0815/TrackMyWealth/actions/runs/42179686520) | Same 20 cases passed again. | Ranking the renderers by load time: first-visible medians were roughly double the first run (DOM 1,735–1,808 ms, RNW 1,503–1,629 ms) and DOM was the slower one this time. Development-server timings vary too much between runs to rank them. |
 | Export run [#42179686520](https://github.com/hugiFreezy0815/TrackMyWealth/actions/runs/42179686520) | Whole-app Expo web exports with only one renderer differ by a few hundred bytes. | The size of the table route alone, or of a separate React web app. |
-| [PERF-01](perf-01-results.json) (2026-11-06, production export, Apple M5, Chrome 156) | Production-build load, filter and scroll timings with and without 4× CPU throttling; no dropped frames while scrolling either renderer. Chrome traces in [`perf-01-traces/`](perf-01-traces). | Low-end Windows/Android hardware (CPU throttling is only a stand-in), a real network, or server paging. |
+| [PERF-01](perf-01-results.json) (2026-11-06, production export, Apple M5, Chrome 156) | Production-build load, filter and scroll timings with and without 4× CPU throttling; median 0 frames over 50 ms while scrolling, in either renderer (5 such frames in 3 of 80 runs, all unthrottled cold). Chrome traces in [`perf-01-traces/`](perf-01-traces). | Low-end Windows/Android hardware (CPU throttling is only a stand-in), a real network, or server paging. |
 | [Keyboard and zoom checks](keyboard-zoom-results.json) (2026-11-06) | Real Tab/arrow presses on the production build: Tab order, sort state, off-screen selection, filtered CSV, 320 px / 200 % zoom / forced colours. | What a screen reader announces. |
 | [PR #500](https://github.com/hugiFreezy0815/TrackMyWealth/pull/500) | The accidentally merged benchmark route and fixtures were removed from `main`. | Anything about the decision itself. |
 
@@ -153,7 +153,7 @@ On Windows use **NVDA + Chrome**; on macOS use **VoiceOver + Safari**. In Safari
 *Settings → Advanced → Press Tab to highlight each item on a webpage*, or Tab skips buttons.
 Record the actual OS, browser, screen-reader version, viewport, zoom, speech and focus.
 
-| ID | Action | Pass when |
+| ID | Action | Pass when (proposed, not yet approved by the PO) |
 | --- | --- | --- |
 | AT-01 | From the address bar, Tab through filters, sort controls, table and first row; reverse with Shift+Tab. | Every control and a row are reachable in a logical order without a mouse; focus is always visible. |
 | AT-02 | DOM mode: jump to the table (NVDA `T`; VoiceOver `VO+Cmd+T`), move by cells (NVDA `Ctrl+Alt+Arrows`; VoiceOver `VO+Arrows`), read a row (VoiceOver `VO+R`). | The table is announced as a table; moving between cells announces the column name with the value; amounts are read with sign and currency. |
@@ -162,7 +162,7 @@ Record the actual OS, browser, screen-reader version, viewport, zoom, speech and
 | AT-05 | Move the selection to a row outside the rendered window at 1k and 10k rows. | The selected row scrolls into view and keeps focus; position is announced correctly. |
 | AT-06 | Filter, reset, produce an empty result, export CSV. | The new result count is announced once and politely; the CSV holds exactly the filtered rows. |
 | AT-07 | 200 % zoom, 320 px CSS width, Windows high-contrast / forced colours. | No truncated amount or date, no sideways page scroll, focus visible. |
-| PERF-01 | Production build, both renderers at 1k and 10k, cold and warm, with traces. | First visible under 1 s and filter under 100 ms (median) on the stated hardware; no frames over 50 ms while scrolling. |
+| PERF-01 | Production build, both renderers at 1k and 10k, cold and warm, with traces. | First visible under 1 s and filter under 100 ms (median) on the stated hardware; median 0 frames over 50 ms while scrolling. |
 
 Defects found in the spike get a production mitigation and an owner in #494 or #378; the
 disposable route is never shipped. Rerun AT-01..AT-07 on the #494 table itself before it ships,
@@ -174,7 +174,7 @@ Add one row per test run. Automated results never count as a screen-reader Pass.
 
 | ID | Tester + date | OS / browser / AT / viewport | Renderer + rows | Result | Notes / evidence |
 | --- | --- | --- | --- | --- | --- |
-| PERF-01 | Claude Code (automated), 2026-11-06 | macOS 26.7.1, Apple M5, Chrome 156 headless, 1440×900; no throttling and 4× CPU throttling | Both, 1k and 10k, 5 cold + 5 warm each | **Pass** (against the criteria proposed above) | Medians: first visible 77–107 ms (4×: 255–383 ms), filter 45–60 ms (4×: 53–67 ms), no frames over 50 ms while scrolling. First visible within about 10 % between renderers; filtering 10k rows unthrottled: DOM 45 ms, RNW 58 ms. [Results](perf-01-results.json), [traces](perf-01-traces). |
+| PERF-01 | Claude Code (automated), 2026-11-06 | macOS 26.7.1, Apple M5, Chrome 156 headless, 1440×900; no throttling and 4× CPU throttling | Both, 1k and 10k, 5 cold + 5 warm each | **Pass on medians** (against the proposed criteria above) | Medians: first visible 78–107 ms (4×: 255–383 ms), filter 45–60 ms (4×: 53–67 ms), 0 frames over 50 ms while scrolling; 5 such frames in 3 of 80 runs, all unthrottled cold. First visible within about 10 % between renderers; filtering 10k rows unthrottled: DOM 45 ms, RNW 58 ms. [Results](perf-01-results.json), [traces](perf-01-traces). |
 | AT-01 (keyboard only) | Claude Code (automated), 2026-11-06 | Chrome 156 headless, real Tab presses | Both, 10k | **Pass, with remark** | Every control reachable, focus visible, Shift+Tab works. First row at Tab stop 9 (RNW) / 14 (DOM: five header sort buttons first). |
 | AT-03 (state only) | Claude Code (automated), 2026-11-06 | as above | Both, 10k | **Fail (spike)** | DOM: no header gets `aria-sort` after sorting; RNW has no headers. See risk 1. |
 | AT-05 (keyboard only) | Claude Code (automated), 2026-11-06 | as above | Both, 10k | **Fail (spike)** | After 60 × ArrowDown the list does not scroll; the selected row is off-screen (DOM) or unmounted (RNW). See risk 3. |
@@ -205,7 +205,7 @@ way.
 - [x] Benchmark route and fixtures removed from `main` (PR #500).
 - [x] Production-build browser traces with hardware, browser version and repeat count (PERF-01, 2026-11-06).
 - [x] Automated keyboard and zoom checks (AT-01, AT-03, AT-05..AT-07), 2026-11-06.
-- [ ] Independent architecture/UX review of this proposal and its limits (first review 2026-11-06: accept with corrections; corrections applied, confirmation pending).
+- [x] Independent architecture/UX review of this proposal and its limits (2026-11-06: accepted with corrections; corrections applied and confirmed in a second pass).
 - [ ] VoiceOver and NVDA results (AT-01..AT-04), with failures and mitigations.
 - [ ] Owners for risks 1, 3, 5, 6, 7 in #494 and for the component inventory in #378.
 - [ ] **PO approves Option A, B or C explicitly, with date and accepted residual risks.**
