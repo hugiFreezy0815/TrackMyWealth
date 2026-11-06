@@ -35,9 +35,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * a fixed status, a {@link ResponseStatus}, or - for a handler not returning a {@code
  * ResponseEntity} - Spring's implicit 200. A status the bytecode cannot tell ({@code
  * ResponseEntity.status(int)}, {@code new ResponseEntity<>(body, int)}, {@code HttpStatus.valueOf})
- * is reported as {@link #unreadable}. A response factory outside the controller's own type
- * hierarchy is recorded even if another branch already produces a known success status. The
- * runtime {@code DocumentedSuccessStatusFilter} also checks paths exercised by tests.
+ * is reported as {@link #unreadable}. A {@code ResponseEntity} built in another class stays unseen;
+ * {@code DocumentedSuccessStatusFilter} checks the status actually sent, in every test request.
  *
  * <p>US-29-09 (#455): the same walk collects the {@link ResponseHeader}s the handler {@link
  * #sends}: a {@link VersionedResponse} factory or an {@code eTag(..)} on a response builder sends
