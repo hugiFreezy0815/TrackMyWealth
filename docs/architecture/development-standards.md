@@ -117,6 +117,18 @@ cd backend
     `X-Correlation-Id` is honoured) and in the log MDC; quote it when reporting an error. Browser
     CORS must allow the header on requests and expose it on responses. `MdcTaskDecorator` carries
     the MDC onto `@Async` threads; work started on another executor must copy it the same way.
+  - **Success status declarations (#457).** A documented handler's `@SuccessStatus` is never
+    empty and may name only 2xx statuses. The ArchUnit bytecode rule must be able to establish
+    the status of every `ResponseEntity` return from the handler's own methods,
+    lambdas or a recognised response factory. An ordinary `HttpEntity` response has Spring's
+    implicit 200, since it cannot assign an HTTP status. A response factory in a different
+    class is not presumed to be 200, **even when another branch has a known status**; construct
+    its status in the controller, use a recognised response factory, or add an explicit,
+    individually justified exception to
+    `ArchitectureTest.REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS`. The defensive OpenAPI
+    customizer keeps the generated 200 if an empty annotation slips through, but ArchUnit
+    still fails the build. `ArchitectureRulesBiteTest` proves these guards reject deliberate
+    violations.
   - **OpenAPI must match the wire.** `/api-docs` describes exact decimals as strings, documents
     the optional correlation-id request/response header and the shared RFC 9457 problem response.
     `ApiConventionsIntegrationTest` guards the generated contract so runtime serialization and

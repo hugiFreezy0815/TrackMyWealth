@@ -43,6 +43,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
@@ -438,10 +439,11 @@ class ArchitectureTest {
                   + " unique - annotate the method with @Operation(operationId = ..., summary = ...),"
                   + " or @Hidden when it is not part of the API");
 
-  // US-29-02 (#372): springdoc documents every success as 200; @SuccessStatus documents the
-  // statuses a handler answers instead. Both directions: an answered status not documented, and a
-  // documented one never answered (which would replace the real 200 in the contract). The bytecode
-  // half; DocumentedSuccessStatusFilter checks the status actually sent in every test request.
+  // US-29-02 (#372) and US-29-10 (#457): springdoc documents every success as 200;
+  // @SuccessStatus documents the statuses a handler answers instead. Reject empty or non-2xx
+  // declarations, statuses that cannot be read, and discrepancies in either direction. A response
+  // built in an external helper cannot silently inherit springdoc's assumed 200. The runtime
+  // DocumentedSuccessStatusFilter checks every response a test actually sends.
   @ArchTest
   static final ArchRule api_operations_answer_their_documented_success_statuses =
       methods()
@@ -501,6 +503,10 @@ class ArchitectureTest {
     return type.isAnnotatedWith(Controller.class) || type.isMetaAnnotatedWith(Controller.class);
   }
 
+  // Any exception here must name a specific handler and explain why its response status cannot
+  // be expressed in the controller. Never exempt an entire controller or a helper class (#457).
+  private static final Set<String> REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS = Set.of();
+
   private static ArchCondition<JavaMethod> answerTheSuccessStatusesTheyDocument() {
     return new ArchCondition<>("answer exactly the success statuses they document") {
       @Override
@@ -508,6 +514,17 @@ class ArchitectureTest {
         SuccessStatusEvidence evidence = SuccessStatusEvidence.of(method);
         Set<HttpStatus> documented = DocumentedHandlers.documentedSuccessStatuses(method.reflect());
         List<String> problems = new ArrayList<>();
+        SuccessStatus declared = method.tryGetAnnotationOfType(SuccessStatus.class).orElse(null);
+        if (declared != null) {
+          if (declared.value().length == 0) {
+            problems.add("declares an empty @SuccessStatus; declare at least one 2xx status");
+          }
+          for (HttpStatus status : declared.value()) {
+            if (!status.is2xxSuccessful()) {
+              problems.add("declares non-2xx @SuccessStatus value " + status);
+            }
+          }
+        }
         if (!evidence.unreadable().isEmpty()) {
           problems.add("sets a status this rule cannot read: " + evidence.unreadable());
         }
@@ -517,13 +534,30 @@ class ArchitectureTest {
         if (!undocumented.isEmpty()) {
           problems.add("answers " + undocumented + " without declaring it in @SuccessStatus");
         }
-        Set<HttpStatus> neverAnswered = EnumSet.copyOf(documented);
+        Set<HttpStatus> neverAnswered = EnumSet.noneOf(HttpStatus.class);
+        neverAnswered.addAll(documented);
         neverAnswered.removeAll(evidence.answered());
-        // A ResponseEntity built in another class shows no status here: only springdoc's default
-        // 200 is taken on trust then (the runtime check still sees it); a declared one is not.
-        boolean defaultTakenOnTrust =
-            evidence.answered().isEmpty() && documented.equals(EnumSet.of(HttpStatus.OK));
-        if (!neverAnswered.isEmpty() && !defaultTakenOnTrust) {
+        // A plain HttpEntity has Spring's implicit 200; only ResponseEntity can override it.
+        // A visible success on one branch does not justify an unseen response on another.
+        boolean statusUnseen =
+            evidence.answered().isEmpty()
+                && method.getRawReturnType().isAssignableTo(ResponseEntity.class);
+        String handlerName = method.getOwner().getName() + "#" + method.getName();
+        if (!REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS.contains(handlerName)) {
+          if (statusUnseen) {
+            problems.add(
+                "returns a ResponseEntity with no visible status; build the response"
+                    + " status in the controller or add a justified per-handler exemption");
+          }
+          if (!evidence.externalResponseFactories().isEmpty()) {
+            problems.add(
+                "uses external ResponseEntity status factories with no verified status: "
+                    + evidence.externalResponseFactories()
+                    + "; build the response status in the controller or add a justified"
+                    + " per-handler exemption");
+          }
+        }
+        if (!neverAnswered.isEmpty() && !statusUnseen) {
           problems.add(
               "documents "
                   + neverAnswered

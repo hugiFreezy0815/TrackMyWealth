@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.architecture;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import archfixture.config.ClientCoupledConfig;
@@ -17,6 +18,7 @@ import com.trackmywealth.backend.architecture.leak.controller.LeakyController;
 import com.trackmywealth.backend.architecture.leak.dto.LeakyResponse;
 import com.trackmywealth.backend.architecture.leak.entity.LeakedEntity;
 import com.trackmywealth.backend.client.EcbFxRateProvider;
+import com.trackmywealth.fixtures.contract.InvalidSuccessStatusController;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -140,6 +142,78 @@ class ArchitectureRulesBiteTest {
         .hasMessageContaining("UncheckedSortController.pageable")
         .hasMessageContaining("UncheckedSortController.sort")
         .hasMessageNotContaining("UncheckedSortController.whitelisted");
+  }
+
+  // #457: every new guard bites on a deliberately invalid documented handler, including a
+  // response factory in another class. A plain return still has Spring's implicit 200.
+  private static final JavaClasses INVALID_SUCCESS_STATUSES =
+      new ClassFileImporter().importClasses(InvalidSuccessStatusController.class);
+
+  @Test
+  void anEmptySuccessStatusDeclarationFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("emptyStatus() declares an empty @SuccessStatus");
+  }
+
+  @Test
+  void aNon2xxSuccessStatusDeclarationFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining(
+            "nonSuccessStatus() declares non-2xx @SuccessStatus value 400 BAD_REQUEST");
+  }
+
+  @Test
+  void anUnseenResponseStatusFromAnotherClassFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("externalStatus() returns a ResponseEntity")
+        .hasMessageContaining("externalStatusDeclaredOk() returns a ResponseEntity")
+        .hasMessageContaining("add a justified per-handler exemption")
+        .hasMessageNotContaining("simpleImplicitOk()");
+  }
+
+  @Test
+  void aMixedLocalAndExternalResponseStatusFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining(
+            "mixedLocalAndExternal(boolean) uses external ResponseEntity status factories")
+        .hasMessageContaining("ExternalResponses#created");
+  }
+
+  @Test
+  void aPlainHttpEntityWithImplicitOkIsAllowed() {
+    JavaClasses valid = new ClassFileImporter().importClasses(ValidHttpEntityController.class);
+    assertThatCode(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    valid))
+        .doesNotThrowAnyException();
+  }
+
+  @org.springframework.web.bind.annotation.RestController
+  static class ValidHttpEntityController {
+    @io.swagger.v3.oas.annotations.Operation(
+        operationId = "plainHttpEntity",
+        summary = "A plain HttpEntity returns implicit 200")
+    @org.springframework.web.bind.annotation.GetMapping("/fixture/status/plain-entity")
+    public org.springframework.http.HttpEntity<String> simpleHttpEntity() {
+      return new org.springframework.http.HttpEntity<>("ok");
+    }
   }
 
   static class WorkspaceImpersonatingService {
