@@ -98,9 +98,22 @@ These are **whole-app export sizes**, not the standalone transaction table's bun
 
 **Production UX boundary:** the accepted [S3 account-detail spec](https://github.com/hugiFreezy0815/TrackMyWealth/blob/main/docs/ux/screens/account-detail.md) expects a **four-column** web table (Date, Description, Category, Amount) and S4 details in a contextual panel, versus five columns in the intentionally synthetic spike. Apply the shared API, localization, visual tokens, server paging and permission logic in both platform-specific presentations; align the component inventory in #378.
 
-**Interpretation:** Both implementations handle the synthetic 10,000-row test with bounded DOM and similar first-visible time. React DOM offers browser-native table semantics and modestly lower median filter-update time at 10,000 rows (38 vs 45ms); differences of these magnitudes in a development-server benchmark are **not** proof of production speed superiority. The evidence strengthens **conditional option B (semantic DOM table inside the existing Expo web app)**, not a second standalone React application.
+### Production-build traces (PERF-01, 2026-11-06)
 
-**Not yet tested:** real NVDA/VoiceOver announcement and keyboard/virtual-scroll behavior (including sorting, focus, virtualization, and zoom), repeatable production performance traces/scroll frame drops on representative devices, and actual server-paged transaction queries. **Independent renderer-isolated Expo production web exports have been measured;** full production integration is not implied. The prototype is intentionally not a pixel-perfect Figma W06 implementation and must not enter production. ADR status remains **Proposed** pending the explicit PO decision and those acceptance checks.
+The spike at tag `spike-384-evidence` was built with `expo export -p web`, served from `127.0.0.1` and measured in Google Chrome 156 (headless) on an Apple M5 MacBook (10 cores, 24 GB, macOS 26.7.1), 1440×900, with no throttling and with 4× CPU throttling as a stand-in for a slower laptop. Five cold (empty cache) and five warm loads per case; one Chrome trace per case. Medians in milliseconds ([results](0007-evidence/perf-01-results.json), [traces](0007-evidence/perf-01-traces)):
+
+| Renderer | Rows | First visible (cold) | First visible, 4× CPU | Filter | Filter, 4× CPU | Scroll frames > 50 ms |
+|---|---:|---:|---:|---:|---:|---:|
+| React Native Web | 1,000 | 78 | 265 | 57 | 67 | 0 |
+| React Native Web | 10,000 | 107 | 383 | 58 | 58 | 0 |
+| React DOM table | 1,000 | 78 | 259 | 52 | 57 | 0 |
+| React DOM table | 10,000 | 96 | 368 | 45 | 56 | 0 |
+
+In a production build both renderers load about eight to eleven times faster than on the development server and close to each other; neither drops frames while scrolling. Every load logs React error #418 (hydration mismatch) because the spike reads `?renderer`/`?rows` only in the browser; this affects both renderers equally. Not covered: low-end Windows/Android hardware, a real network, server paging. Automated keyboard and zoom checks on the same build are recorded in the [review handoff](0007-evidence/review-handoff.md#review-record); they confirmed that the spike does not scroll the selected row into view and truncates amounts at 200 % zoom, in both renderers.
+
+**Interpretation:** Both implementations handle the synthetic 10,000-row test with bounded DOM. First-visible times cannot rank the renderers: a repeat of the development-server test in run [#42179686520](https://github.com/hugiFreezy0815/TrackMyWealth/actions/runs/42179686520) measured roughly double the times above, with DOM the slower one (1,735–1,808 ms vs 1,503–1,629 ms), and the production build shows them within about 10 %. React DOM offers browser-native table semantics and modestly lower median filter-update time at 10,000 rows (38 vs 45ms); differences of these magnitudes in a development-server benchmark are **not** proof of production speed superiority. The evidence strengthens **conditional option B (semantic DOM table inside the existing Expo web app)**, not a second standalone React application.
+
+**Not yet tested:** real NVDA/VoiceOver announcements, performance on low-end Windows/Android hardware, and actual server-paged transaction queries. Production-build traces and automated keyboard/zoom checks were added on 2026-11-06 (see above). **Independent renderer-isolated Expo production web exports have been measured;** full production integration is not implied. The prototype is intentionally not a pixel-perfect Figma W06 implementation and must not enter production. ADR status remains **Proposed** pending the explicit PO decision and those acceptance checks.
 
 Do not infer missing measurements from the Figma render, synthetic row count or green CI.
 

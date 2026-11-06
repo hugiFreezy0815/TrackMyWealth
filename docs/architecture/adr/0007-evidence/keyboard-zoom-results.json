@@ -1,0 +1,183 @@
+{
+  "generatedAt": "2026-11-06T13:07:25.156Z",
+  "test": "Automated keyboard and zoom checks (AT-01, AT-03 state, AT-05, AT-06, AT-07) on the production export of tag spike-384-evidence; real key presses, no scripted focus. NOT a screen-reader test.",
+  "browser": "Google Chrome 156.0.8078.80 (headless), macOS",
+  "results": [
+    {
+      "id": "AT-01",
+      "renderer": "dom",
+      "rows": 10000,
+      "result": "A transaction row is reached by Tab at stop 14",
+      "focusWithoutVisibleIndicator": [],
+      "tabStops": [
+        "input \"\"",
+        "select \"1,00010,000\"",
+        "input \"Search description or account\"",
+        "select \"AllGroceriesTransportHousingSalaryOther\"",
+        "select \"DateDescriptionAccountCategoryAmount\"",
+        "button \"Reverse sort\"",
+        "button \"Download filtered CSV\"",
+        "div \"Transaction list. Up and down arrows move selection; Enter m\"",
+        "button \"Date ↓\"",
+        "button \"Description\"",
+        "button \"Account\"",
+        "button \"Category\"",
+        "button \"Amount\"",
+        "button \"Select Test payroll #00004\"",
+        "button \"Select Example landlord #00003\""
+      ],
+      "shiftTabWorks": true
+    },
+    {
+      "id": "AT-03 (sort state)",
+      "renderer": "dom",
+      "rows": 10000,
+      "result": "Sorted, but no header has aria-sort",
+      "headers": [
+        "Date=none",
+        "Description=none",
+        "Account=none",
+        "Category=none",
+        "Amount ↓=none"
+      ]
+    },
+    {
+      "id": "AT-05",
+      "renderer": "dom",
+      "rows": 10000,
+      "selectedRowInDom": true,
+      "selectedRowVisible": false,
+      "scrollTop": 0,
+      "focusStillOnList": true,
+      "detailsShowSomething": true,
+      "result": "After 60 × ArrowDown the selected row is mounted but outside the visible scroll area (scrollTop 0)"
+    },
+    {
+      "id": "AT-06",
+      "renderer": "dom",
+      "rows": 10000,
+      "result": "CSV holds 2000 rows for a filter showing 2000 (match); empty search shows 0 rows",
+      "liveRegionTextOnEmpty": [
+        "0 filtered transactions · 0 virtualised rows mounted · post-change paint callback: 27.7 ms · scroll events: 0· gaps >50m"
+      ]
+    },
+    {
+      "id": "AT-07 320px",
+      "renderer": "dom",
+      "rows": 10000,
+      "result": "page scrolls sideways (341px content in 320px); 90 clipped cells/controls; focus indicator visible",
+      "pageScrollsSideways": true,
+      "pageWidth": 341,
+      "viewport": 320,
+      "clippedElements": 90,
+      "focusIndicatorVisible": true
+    },
+    {
+      "id": "AT-07 200% zoom",
+      "renderer": "dom",
+      "rows": 10000,
+      "result": "no sideways page scroll; 82 clipped cells/controls; focus indicator visible",
+      "pageScrollsSideways": false,
+      "pageWidth": 720,
+      "viewport": 720,
+      "clippedElements": 82,
+      "focusIndicatorVisible": true
+    },
+    {
+      "id": "AT-07 forced colors",
+      "renderer": "dom",
+      "rows": 10000,
+      "result": "no sideways page scroll; 0 clipped cells/controls; focus indicator visible",
+      "pageScrollsSideways": false,
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "clippedElements": 0,
+      "focusIndicatorVisible": true
+    },
+    {
+      "id": "AT-01",
+      "renderer": "rnw",
+      "rows": 10000,
+      "result": "A transaction row is reached by Tab at stop 9",
+      "focusWithoutVisibleIndicator": [],
+      "tabStops": [
+        "input \"\"",
+        "select \"1,00010,000\"",
+        "input \"Search description or account\"",
+        "select \"AllGroceriesTransportHousingSalaryOther\"",
+        "select \"DateDescriptionAccountCategoryAmount\"",
+        "button \"Reverse sort\"",
+        "button \"Download filtered CSV\"",
+        "div \"Transaction list. Up and down arrows move selection; Enter m\"",
+        "button[button] \"2026-10-31, Test payroll #00004, Demo current account, Salar\"",
+        "button[button] \"2026-10-31, Example landlord #00003, Demo savings, Housing, \"",
+        "button[button] \"2026-10-31, Demo railway #00002, Demo card, Transport, − CHF\"",
+        "button[button] \"2026-10-31, Sample shop #00001, Demo current account, Grocer\"",
+        "button[button] \"2026-10-30, Example landlord #00008, Demo card, Housing, − C\"",
+        "button[button] \"2026-10-30, Demo railway #00007, Demo current account, Trans\"",
+        "button[button] \"2026-10-30, Sample shop #00006, Demo savings, Groceries, − C\""
+      ],
+      "shiftTabWorks": true
+    },
+    {
+      "id": "AT-03 (sort state)",
+      "renderer": "rnw",
+      "rows": 10000,
+      "result": "No column headers exist; sort direction cannot be exposed on a header",
+      "headers": []
+    },
+    {
+      "id": "AT-05",
+      "renderer": "rnw",
+      "rows": 10000,
+      "selectedRowInDom": false,
+      "selectedRowVisible": null,
+      "scrollTop": 0,
+      "focusStillOnList": true,
+      "detailsShowSomething": true,
+      "result": "After 60 × ArrowDown the selected row is not mounted / not marked selected (scrollTop 0)"
+    },
+    {
+      "id": "AT-06",
+      "renderer": "rnw",
+      "rows": 10000,
+      "result": "CSV holds 2000 rows for a filter showing 2000 (match); empty search shows 0 rows",
+      "liveRegionTextOnEmpty": [
+        "0 filtered transactions · 0 virtualised rows mounted · post-change paint callback: 4.4 ms · scroll events: 0· gaps >50ms"
+      ]
+    },
+    {
+      "id": "AT-07 320px",
+      "renderer": "rnw",
+      "rows": 10000,
+      "result": "page scrolls sideways (341px content in 320px); 36 clipped cells/controls; focus indicator visible",
+      "pageScrollsSideways": true,
+      "pageWidth": 341,
+      "viewport": 320,
+      "clippedElements": 36,
+      "focusIndicatorVisible": true
+    },
+    {
+      "id": "AT-07 200% zoom",
+      "renderer": "rnw",
+      "rows": 10000,
+      "result": "no sideways page scroll; 30 clipped cells/controls; focus indicator visible",
+      "pageScrollsSideways": false,
+      "pageWidth": 720,
+      "viewport": 720,
+      "clippedElements": 30,
+      "focusIndicatorVisible": true
+    },
+    {
+      "id": "AT-07 forced colors",
+      "renderer": "rnw",
+      "rows": 10000,
+      "result": "no sideways page scroll; 0 clipped cells/controls; focus indicator visible",
+      "pageScrollsSideways": false,
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "clippedElements": 0,
+      "focusIndicatorVisible": true
+    }
+  ]
+}
