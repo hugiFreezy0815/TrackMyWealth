@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.architecture;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import archfixture.config.ClientCoupledConfig;
 import archfixture.controller.PageLeakingController;
@@ -176,10 +177,44 @@ class ArchitectureRulesBiteTest {
                 ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
                     INVALID_SUCCESS_STATUSES))
         .isInstanceOf(AssertionError.class)
-        .hasMessageContaining("externalStatus() returns an HttpEntity/ResponseEntity")
-        .hasMessageContaining("externalStatusDeclaredOk() returns an HttpEntity/ResponseEntity")
+        .hasMessageContaining("externalStatus() returns a ResponseEntity")
+        .hasMessageContaining("externalStatusDeclaredOk() returns a ResponseEntity")
         .hasMessageContaining("add a justified per-handler exemption")
         .hasMessageNotContaining("simpleImplicitOk()");
+  }
+
+  @Test
+  void aMixedLocalAndExternalResponseStatusFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining(
+            "mixedLocalAndExternal() uses external ResponseEntity status factories")
+        .hasMessageContaining("ExternalResponses#created");
+  }
+
+  @Test
+  void aPlainHttpEntityWithImplicitOkIsAllowed() {
+    JavaClasses valid =
+        new ClassFileImporter().importClasses(ValidHttpEntityController.class);
+    assertThatCode(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    valid))
+        .doesNotThrowAnyException();
+  }
+
+  @org.springframework.web.bind.annotation.RestController
+  static class ValidHttpEntityController {
+    @io.swagger.v3.oas.annotations.Operation(
+        operationId = "plainHttpEntity",
+        summary = "A plain HttpEntity returns implicit 200")
+    @org.springframework.web.bind.annotation.GetMapping("/fixture/status/plain-entity")
+    public org.springframework.http.HttpEntity<String> simpleHttpEntity() {
+      return new org.springframework.http.HttpEntity<>("ok");
+    }
   }
 
   static class WorkspaceImpersonatingService {
