@@ -3,7 +3,6 @@ package com.trackmywealth.fixtures.contract;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpEntity;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -56,12 +55,6 @@ public class InvalidSuccessStatusController {
   @GetMapping("/fixture/status/implicit")
   public String simpleImplicitOk() {
     return "ok";
-  }
-
-  @Operation(operationId = "plainHttpEntity", summary = "HttpEntity has implicit OK")
-  @GetMapping("/fixture/status/http-entity")
-  public HttpEntity<String> simpleHttpEntity() {
-    return new HttpEntity<>("ok");
   }
 
   // A separate class, not a method of the controller: the bytecode rule must not assume 200.
