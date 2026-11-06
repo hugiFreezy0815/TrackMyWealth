@@ -180,7 +180,11 @@ Add one row per test run. Automated results never count as a screen-reader Pass.
 | AT-05 (keyboard only) | Claude Code (automated), 2026-11-06 | as above | Both, 10k | **Fail (spike)** | After 60 × ArrowDown the list does not scroll; the selected row is off-screen (DOM) or unmounted (RNW). See risk 3. |
 | AT-06 (no AT) | Claude Code (automated), 2026-11-06 | as above | Both, 10k | **Pass, with remark** | CSV holds exactly the 2,000 filtered rows. The live region reads performance diagnostics (risk 5). |
 | AT-07 | Claude Code (automated), 2026-11-06 | Chrome 156: 320×640, 720×450 @2× (200 %), forced colours | Both, 10k | **Fail (spike)** | Dates and amounts truncated at 200 %; sideways scroll at 320 px; forced colours OK. See risk 6. |
-| AT-01..AT-04 with VoiceOver | Unassigned | macOS, Safari, VoiceOver | DOM and RNW, 1k | Not run | Human test. |
+| AT-01 with VoiceOver | hugiFreezy0815 (PO), 2026-11-06 | macOS 26.7.1, Safari 27.0, VoiceOver | DOM and RNW, 1k | **Pass** | A transaction row is reachable by Tab and Shift+Tab with VoiceOver on; focus visible. Speech not transcribed. |
+| AT-02 with VoiceOver | hugiFreezy0815 (PO), 2026-11-06 | as above | DOM, 1k | **Pass** | Table found and navigable; column names read with cell values. Speech not transcribed. |
+| AT-02 with VoiceOver | — | as above | RNW | **Not run** | Known RNW limitation: the RNW list exposes no table or column headers (accessibility tree, risk for Option A). |
+| AT-03 with VoiceOver | hugiFreezy0815 (PO), 2026-11-06 | as above | DOM and RNW, 1k | **Pass** | The new order is announced through the sort menu and the Ascending/Descending button. The table header carries no sort state (risk 1); production uses the S3 sort menu, which does not need it. |
+| AT-04 with VoiceOver | hugiFreezy0815 (PO), 2026-11-06 | as above | DOM and RNW, 1k | **Pass** | Selection announced; details receive focus and are read; return to the row works. Speech not transcribed. |
 | AT-01..AT-04 with NVDA | Unassigned | Windows, Chrome, NVDA | DOM and RNW, 1k | Not run | Human test; needs a Windows machine. |
 
 The spike failures are expected: it is throwaway code. They become requirements for #494 (risks
@@ -206,7 +210,8 @@ way.
 - [x] Production-build browser traces with hardware, browser version and repeat count (PERF-01, 2026-11-06).
 - [x] Automated keyboard and zoom checks (AT-01, AT-03, AT-05..AT-07), 2026-11-06.
 - [x] Independent architecture/UX review of this proposal and its limits (2026-11-06: accepted with corrections; corrections applied and confirmed in a second pass).
-- [ ] VoiceOver and NVDA results (AT-01..AT-04), with failures and mitigations.
+- [x] VoiceOver results (AT-01..AT-04, macOS 26.7.1 / Safari 27.0), 2026-11-06: pass; RNW AT-02 not run (no table semantics).
+- [ ] NVDA results (AT-01..AT-04, Windows + Chrome), or the PO accepts the missing NVDA test as a residual risk.
 - [ ] Owners for risks 1, 3, 5, 6, 7 in #494 and for the component inventory in #378.
 - [ ] **PO approves Option A, B or C explicitly, with date and accepted residual risks.**
 - [ ] ADR 0007 status changed from Proposed to Accepted in a separate change.
