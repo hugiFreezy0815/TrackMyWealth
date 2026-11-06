@@ -3,6 +3,8 @@ package com.trackmywealth.fixtures.contract;
 import com.trackmywealth.backend.web.SuccessStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpEntity;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,10 +43,25 @@ public class InvalidSuccessStatusController {
     return ExternalResponses.ok();
   }
 
+  @Operation(operationId = "mixedSuccessStatus", summary = "One visible and one external status")
+  @GetMapping("/fixture/status/mixed")
+  public ResponseEntity<String> mixedLocalAndExternal(@RequestParam boolean create) {
+    if (create) {
+      return ExternalResponses.created();
+    }
+    return ResponseEntity.ok("existing");
+  }
+
   @Operation(operationId = "implicitSuccessStatus", summary = "Normal implicit OK")
   @GetMapping("/fixture/status/implicit")
   public String simpleImplicitOk() {
     return "ok";
+  }
+
+  @Operation(operationId = "plainHttpEntity", summary = "HttpEntity has implicit OK")
+  @GetMapping("/fixture/status/http-entity")
+  public HttpEntity<String> simpleHttpEntity() {
+    return new HttpEntity<>("ok");
   }
 
   // A separate class, not a method of the controller: the bytecode rule must not assume 200.
