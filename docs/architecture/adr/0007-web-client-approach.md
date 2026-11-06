@@ -1,8 +1,8 @@
 # ADR 0007 — Web client architecture and transaction-table spike
 
-**Status:** Proposed — manual measurements, accessibility audit and PO approval outstanding.  
+**Status:** Accepted — Option B, approved by the PO on 2026-11-06.  
 **Issue:** [#384](https://github.com/hugiFreezy0815/TrackMyWealth/issues/384).  
-**Review handoff:** [open acceptance gates, test protocol and review record](0007-evidence/review-handoff.md). It is a checklist, **not** evidence of human accessibility testing or PO approval.  
+**Review handoff:** [acceptance gates, test protocol and review record](0007-evidence/review-handoff.md), with every test behind this decision.  
 **Design:** [Figma W06 Transactions & categorisation](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=32-1072) and [M10 Transactions](https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth?node-id=25-797).
 
 ## Context
@@ -27,16 +27,47 @@ and never fetches 10,000 genuine ledger rows merely to sort them in JavaScript**
 | **B. Semantic React DOM table inside Expo web** | Browser table headers, focus semantics and keyboard behaviour; retains one app, router, API and domain code | Web-specific list presentation and testing; native fallback needed |
 | C. Independent React web application | Maximum web independence | Second application, duplicated auth/route/state code and release burden |
 
-**Conditional architecture recommendation: B, but no accepted decision yet.**
-Prefer the single Expo app and use a web-specific semantic React DOM grid for dense tables.
-Keep React Native views for native phone/tablet, and share typed API, queries, formatting and
-mutations. Option A remains valid if its keyboard/accessibility behaviour is equivalent.
-Option C requires demonstrated irreducible limitations of A and B, and explicit PO approval.
+## Decision (PO, 2026-11-06)
 
-If B is accepted, place web-only DOM widgets in `*.web.tsx` and native alternatives
-in `*.native.tsx` or equivalent platform adapters. Never create a second sign-in
-flow, calculate totals on the client, or ship experiment code into the product.
-The Figma mockups provide the visual reference; do not ship screenshots as UI assets.
+**Option B is accepted.** The web client stays inside the one Expo Router app. Dense tabular
+views on web use a **semantic React DOM `<table>`**; iOS and Android use a native list.
+
+- **Fork only the presentation component**, for example `transaction-table.web.tsx` next to
+  `transaction-table.tsx`. Routes stay shared, because Expo Router needs a platform-neutral
+  route; everything else uses `Platform.OS` checks, as the development standards require.
+- **Shared on all platforms:** the generated API types and authenticated client, TanStack Query
+  hooks, server paging and the page-0 refresh, `DecimalString` formatting with react-intl,
+  design tokens and mutations. No second sign-in flow, no client-side totals, no experiment code
+  in the product. The Figma mockups are a visual reference, not UI assets.
+- **No new scaffold for sprint 7.** #494 builds the account-detail table under this decision, and
+  #378 lists DataTable as one component with a web and a native presentation.
+
+**Why not A (React Native Web rows):** the `Pressable`-row list exposed no table semantics. It had
+0 column headers in Chromium's accessibility tree, and VoiceOver could not navigate it as a table.
+Matching a native table would need custom ARIA work, with no measured benefit in return.
+
+**Why not C (separate React web app):** the measurements show no performance or size advantage
+that would pay for it. Both renderers perform alike in the production build, and the
+whole-app bundle difference is 299 bytes gzipped. C would duplicate the app shell,
+authentication, routing, state and deployment.
+
+**Performance criteria:** in production, the web table meets Google's Core Web Vitals "good"
+thresholds at the 75th percentile: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1. For benchmarks like
+PERF-01, the internal budget is first visible under 1 s and filter under 100 ms (median), with a
+median of 0 frames over 50 ms while scrolling.
+
+**Accepted residual risks:**
+
+1. **NVDA is untested.** Only VoiceOver was run. An NVDA + Chrome check of the #494 table is
+   required before the web version launches.
+2. **Two presentation components** (web table and native list) must be kept in step.
+3. **The spike's defects become requirements for #494:** the selected row is not scrolled into
+   view, dates and amounts are cut off at 200 % zoom, `aria-selected` is used on plain rows, and
+   the live region is noisy. AT-01..AT-07 are rerun on the #494 table.
+4. **Performance was measured only on fast hardware** with synthetic data. Core Web Vitals are
+   checked on the real #494 screen.
+5. **Real-data parity is verified in #494, not in the spike:** filtering, server paging and
+   sorting with real data, keyboard navigation and detail selection (approval gate, first item).
 
 ## Reproducible comparison
 
@@ -115,23 +146,26 @@ In the production build both renderers are close to each other. The development-
 
 **Screen readers:** VoiceOver (macOS 26.7.1, Safari 27.0) passed AT-01..AT-04 on 2026-11-06 in both renderers, except AT-02 in RNW mode, which was not run because the RNW list exposes no table; see the [review record](0007-evidence/review-handoff.md#review-record). Keyboard-only selection scrolling (AT-05) and 200 % zoom (AT-07) still fail in the spike and are production requirements for #494.
 
-**Not yet tested:** NVDA announcements, performance on low-end Windows/Android hardware, and actual server-paged transaction queries. Production-build traces and automated keyboard/zoom checks were added on 2026-11-06 (see above). **Independent renderer-isolated Expo production web exports have been measured;** full production integration is not implied. The prototype is intentionally not a pixel-perfect Figma W06 implementation and must not enter production. ADR status remains **Proposed** pending the explicit PO decision and those acceptance checks.
+**Not tested in the spike:** NVDA announcements, performance on low-end Windows/Android hardware, and actual server-paged transaction queries. These are accepted residual risks (see Decision) and are checked in #494. The prototype is intentionally not a pixel-perfect Figma W06 implementation and must not enter production.
 
 Do not infer missing measurements from the Figma render, synthetic row count or green CI.
 
 ## Approval gate
 
+Outcome on 2026-11-06:
+
 - Full functionality parity for filtering, server-side pageable/sortable real data,
-  keyboard navigation, detail selection and CSV of **filtered** rows.
-- Real NVDA/VoiceOver checks, with defects and mitigations recorded, not merely
-  an automated accessibility pass.
-- Browser performance traces with hardware, browser version and repeat count.
-- Explicit decision A/B/C and why rejected alternatives were rejected;
-  update #378's component/library inventory.
-- **PO approval** and date; only then change this ADR's status to Accepted and close #384.
+  keyboard navigation, detail selection and CSV of **filtered** rows: **moved to #494**
+  (residual risk 5). The spike proved the renderers with synthetic data only.
+- Real NVDA/VoiceOver checks, with defects and mitigations recorded: **VoiceOver passed**
+  AT-01..AT-04 in both renderers (RNW AT-02 not run: no table). NVDA is residual risk 1.
+- Browser performance traces with hardware, browser version and repeat count: **done**
+  (PERF-01).
+- Explicit decision A/B/C and why the alternatives were rejected: **done** (Decision);
+  #378's component inventory updated by the comment on #378.
+- **PO approval** and date: **2026-11-06**; status changed to Accepted, closing #384.
 
 **Do not reintroduce** the throwaway experiment into `main`. Its historical
-commit is retained so the benchmark can still be run; production keeps only
-this **Proposed** ADR until measurements, accessibility audit and PO review are
-complete. Green CI is necessary but cannot replace human performance and
-assistive-technology verification.
+commit is retained (tag `spike-384-evidence`) so the benchmark can still be run.
+Green CI is necessary but cannot replace human performance and assistive-technology
+verification; the #494 table repeats the checks above.
