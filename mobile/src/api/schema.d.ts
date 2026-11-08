@@ -594,7 +594,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /** Read one transaction */
+    get: operations['getAccountTransaction'];
     /** Correct a transaction */
     put: operations['correctTransaction'];
     post?: never;
@@ -3486,12 +3487,22 @@ export interface components {
       unmatchedTransactionIds: string[];
       restored: components['schemas']['TransactionResponse'][];
     };
+    TransactionImportBatchResponse: {
+      /** Format: uuid */
+      id: string;
+      fileFormat: string;
+      /** Format: date-time */
+      uploadedAt: string;
+    };
     TransactionResponse: {
       /** Format: uuid */
       id: string;
       /** Format: uuid */
       accountId: string;
       accountName: string;
+      /** Format: uuid */
+      portfolioId: string | null;
+      portfolioName: string | null;
       transactionType: string;
       /** Format: date */
       bookingDate: string;
@@ -3572,6 +3583,14 @@ export interface components {
       deletedAt: string | null;
       /** Format: uuid */
       counterpartyAccountId: string | null;
+      counterpartyAccountName: string | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      amountInAccountCurrency: DecimalString | null;
+      bankTransactionCode: string | null;
+      importBatch: components['schemas']['TransactionImportBatchResponse'] | null;
       /** Format: int32 */
       version: number;
       warnings: string[];
@@ -8841,6 +8860,92 @@ export interface operations {
        *     - `UNPROCESSABLE`: Well-formed, but breaks a business rule; detail names the rule.
        */
       422: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+       */
+      500: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      default: components['responses']['ApiProblemResponse'];
+    };
+  };
+  getAccountTransaction: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
+        'X-Correlation-Id'?: string;
+      };
+      path: {
+        accountId: string;
+        transactionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          ETag: components['headers']['ETag'];
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TransactionResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+       */
+      401: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+       */
+      404: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
