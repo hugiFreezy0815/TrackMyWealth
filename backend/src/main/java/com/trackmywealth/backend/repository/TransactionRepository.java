@@ -169,7 +169,9 @@ public interface TransactionRepository
   // from the request, and ends with the id as a unique tie-breaker.
   Page<Transaction> findByAccountId(UUID accountId, Pageable pageable);
 
-  /** US-07-37: scoped detail read; @SQLRestriction hides only soft-deleted rows, not voided ones. */
+  /**
+   * US-07-37: scoped detail read; @SQLRestriction hides only soft-deleted rows, not voided ones.
+   */
   Optional<Transaction> findByIdAndAccountId(UUID id, UUID accountId);
 
   // FR-CAT-013: the account's rows in one category - with UNCATEGORIZED, the actionable list.
@@ -251,9 +253,9 @@ public interface TransactionRepository
               // workspace's history); the explicit >= keeps the exact configured threshold.
               + " AND t.merchant_description % :merchant"
               + " AND similarity(t.merchant_description, :merchant) >= :threshold"
-              // The latest log row counts only while it still describes the current category: a
-              // reset to automatic that landed in UNCATEGORIZED writes no row of its own
-              // (US-08-02).
+              // The latest log row counts only while it still describes the current category: an
+              // older reset to automatic that landed in UNCATEGORIZED wrote no row of its own
+              // (US-08-02); a newer one writes RESET (US-07-38), which the IN list leaves out.
               + " AND (SELECT CASE WHEN l.category_id = t.category_id THEN l.assigned_by END"
               + " FROM transaction_categorization_log l WHERE l.transaction_id = t.id"
               + " ORDER BY l.assigned_at DESC, l.id DESC LIMIT 1) IN ('RULE', 'USER')"

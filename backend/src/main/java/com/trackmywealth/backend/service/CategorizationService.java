@@ -310,7 +310,7 @@ public class CategorizationService {
       transactionRepository.saveAndFlush(transaction);
       logRepository.save(
           TransactionCategorizationLog.ofMemberReset(
-              transaction.getId(), null, null, actor.userId()));
+              transaction.getId(), null, null, null, null, actor.userId()));
       return Optional.empty();
     }
     String[] assignedBy = {null};
@@ -319,12 +319,18 @@ public class CategorizationService {
         Set.of(),
         null,
         (row, decision) -> {
-          // Avoid an indistinguishable second log row from apply(). The reset log replaces it.
+          // Instead of apply(): its automatic row could not be told apart from a re-run of the
+          // rules. The reset row keeps the rule and confidence, so unchanged() still holds after.
           row.setCategoryId(decision.categoryId());
           transactionRepository.save(row);
           logRepository.save(
               TransactionCategorizationLog.ofMemberReset(
-                  row.getId(), decision.categoryId(), decision.assignedBy(), actor.userId()));
+                  row.getId(),
+                  decision.categoryId(),
+                  decision.assignedBy(),
+                  decision.ruleId(),
+                  decision.confidence(),
+                  actor.userId()));
           assignedBy[0] = decision.assignedBy();
         });
     transactionRepository.flush();
@@ -382,9 +388,10 @@ public class CategorizationService {
   }
 
   // How each given row got its current category: its latest log row, where that row still
-  // describes the category the transaction holds (LatestCategoryAssignment#describes). A row with
-  // no category, or whose latest log row is stale (e.g. an override reset to UNCATEGORIZED), is
-  // absent. One query for the given rows, which callers keep to a page.
+  // describes the category the transaction holds (LatestCategoryAssignment#describes) and is not a
+  // reset that assigned nothing (RESET, US-07-38). A row with no category, or whose latest log row
+  // is stale (e.g. an older override reset to UNCATEGORIZED), is absent. One query for the given
+  // rows, which callers keep to a page.
   private Map<UUID, LatestCategoryAssignment> currentAssignments(List<Transaction> transactions) {
     Map<UUID, UUID> currentCategory = new HashMap<>();
     for (Transaction transaction : transactions) {
@@ -399,7 +406,7 @@ public class CategorizationService {
     for (LatestCategoryAssignment latest :
         logRepository.findLatestAssignments(currentCategory.keySet())) {
       if (latest.describes(currentCategory.get(latest.getTransactionId()))
-          && !"RESET".equals(latest.getAssignedBy())) {
+          && !TransactionCategorizationLog.ASSIGNED_BY_RESET.equals(latest.getAssignedBy())) {
         current.put(latest.getTransactionId(), latest);
       }
     }

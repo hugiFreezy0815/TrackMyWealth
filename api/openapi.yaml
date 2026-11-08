@@ -7573,148 +7573,6 @@ paths:
       - UNPROCESSABLE
       - RECONCILIATION_ADJUSTMENT_LOCKED
       - INTERNAL
-  /api/v1/accounts/{accountId}/transactions/{transactionId}/history:
-    get:
-      tags:
-      - Transactions
-      summary: Read transaction change history
-      operationId: getTransactionHistory
-      parameters:
-      - name: accountId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: transactionId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: page
-        in: query
-        description: Zero-based page number.
-        required: false
-        schema:
-          type: integer
-          format: int32
-          default: 0
-          minimum: 0
-      - name: size
-        in: query
-        description: "Items per page; a larger value is capped to 200, and page.size\
-          \ in the response says the size applied."
-        required: false
-        schema:
-          type: integer
-          format: int32
-          default: 50
-          maximum: 200
-          minimum: 1
-      - name: sort
-        in: query
-        description: "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT.\
-          \ Default: occurredAt,desc. The order always ends with a unique tie-breaker,\
-          \ so pages never overlap."
-        required: false
-        explode: true
-        schema:
-          type: array
-          items:
-            type: string
-            enum:
-            - occurredAt
-            - "occurredAt,asc"
-            - "occurredAt,desc"
-      - name: X-Correlation-Id
-        in: header
-        description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
-          \ otherwise the server generates a UUID."
-        required: false
-        schema:
-          type: string
-          maxLength: 64
-          minLength: 8
-          pattern: "[A-Za-z0-9._-]{8,64}"
-      responses:
-        "200":
-          description: OK
-          headers:
-            X-Correlation-Id:
-              description: Correlation id assigned to this request.
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PageResponseTransactionHistoryEntryResponse"
-        "400":
-          description: |-
-            Problem codes:
-            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
-            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
-          headers:
-            X-Correlation-Id:
-              description: Correlation id assigned to this request.
-              schema:
-                type: string
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ApiProblem"
-        "401":
-          description: |-
-            Problem codes:
-            - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
-          headers:
-            X-Correlation-Id:
-              description: Correlation id assigned to this request.
-              schema:
-                type: string
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ApiProblem"
-        "404":
-          description: |-
-            Problem codes:
-            - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
-          headers:
-            X-Correlation-Id:
-              description: Correlation id assigned to this request.
-              schema:
-                type: string
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ApiProblem"
-        "500":
-          description: |-
-            Problem codes:
-            - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
-          headers:
-            X-Correlation-Id:
-              description: Correlation id assigned to this request.
-              schema:
-                type: string
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ApiProblem"
-        default:
-          headers:
-            X-Correlation-Id:
-              description: Correlation id assigned to this request.
-              schema:
-                type: string
-          $ref: "#/components/responses/ApiProblemResponse"
-      x-problem-codes:
-      - VALIDATION_FAILED
-      - INVALID_SORT
-      - UNAUTHENTICATED
-      - NOT_FOUND
-      - INTERNAL
   /api/v1/accounts/{accountId}/transactions/{transactionId}/category:
     put:
       tags:
@@ -8051,6 +7909,148 @@ paths:
       - VERSION_REQUIRED
       - VERSION_CONFLICT
       - RECONCILIATION_ADJUSTMENT_LOCKED
+      - INTERNAL
+  /api/v1/accounts/{accountId}/transactions/{transactionId}/history:
+    get:
+      tags:
+      - Transactions
+      summary: Read transaction change history
+      operationId: getTransactionHistory
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: transactionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
+      - name: sort
+        in: query
+        description: "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT.\
+          \ Default: occurredAt,desc. The order always ends with a unique tie-breaker,\
+          \ so pages never overlap."
+        required: false
+        explode: true
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - occurredAt
+            - "occurredAt,asc"
+            - "occurredAt,desc"
+      - name: X-Correlation-Id
+        in: header
+        description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
+          \ otherwise the server generates a UUID."
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          minLength: 8
+          pattern: "[A-Za-z0-9._-]{8,64}"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageResponseTransactionHistoryEntryResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "401":
+          description: |-
+            Problem codes:
+            - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "404":
+          description: |-
+            Problem codes:
+            - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "500":
+          description: |-
+            Problem codes:
+            - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        default:
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+      x-problem-codes:
+      - VALIDATION_FAILED
+      - INVALID_SORT
+      - UNAUTHENTICATED
+      - NOT_FOUND
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions/{transactionId}/restore:
     post:
@@ -22264,6 +22264,62 @@ components:
       - removal
       - transaction
       - version
+    TransactionHistoryEntryResponse:
+      type: object
+      properties:
+        occurredAt:
+          type: string
+          format: date-time
+        kind:
+          type: string
+          description: "Open set; a client shows an unknown kind generically. Known:\
+            \ IMPORTED, CREATED, CATEGORY_ASSIGNED (automatic, or an older reset),\
+            \ CATEGORY_CHANGED (a member's choice), CATEGORY_RESET (a member's reset\
+            \ to automatic), CORRECTED, VOIDED, DELETED, RESTORED."
+        actorDisplayName:
+          type:
+          - string
+          - "null"
+          description: The workspace member's display name; null for a system step.
+        fromCategoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+          description: "Category kinds: the category before. Null when the row had\
+            \ no category, e.g. a type that is never categorized."
+        toCategoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+          description: "Category kinds: the category after."
+        relatedTransactionId:
+          type:
+          - string
+          - "null"
+          format: uuid
+          description: "CORRECTED: the row this one corrects. VOIDED: the reversing\
+            \ entry. RESTORED: the voided row this copy restores."
+        importBatch:
+          anyOf:
+          - $ref: "#/components/schemas/TransactionImportBatchResponse"
+          - type: "null"
+          description: "IMPORTED: the import the row came from."
+        reason:
+          type:
+          - string
+          - "null"
+          description: "VOIDED: the reason given."
+      required:
+      - actorDisplayName
+      - fromCategoryId
+      - importBatch
+      - kind
+      - occurredAt
+      - reason
+      - relatedTransactionId
+      - toCategoryId
     TransactionImportBatchResponse:
       type: object
       properties:
@@ -22311,50 +22367,6 @@ components:
       - reversals
       - unmatchedTransactionIds
       - version
-    TransactionHistoryEntryResponse:
-      type: object
-      properties:
-        occurredAt:
-          type: string
-          format: date-time
-        kind:
-          type: string
-        actorDisplayName:
-          type:
-          - string
-          - "null"
-        fromCategoryId:
-          type:
-          - string
-          - "null"
-          format: uuid
-        toCategoryId:
-          type:
-          - string
-          - "null"
-          format: uuid
-        relatedTransactionId:
-          type:
-          - string
-          - "null"
-          format: uuid
-        importBatch:
-          anyOf:
-          - $ref: "#/components/schemas/TransactionImportBatchResponse"
-          - type: "null"
-        reason:
-          type:
-          - string
-          - "null"
-      required:
-      - occurredAt
-      - kind
-      - actorDisplayName
-      - fromCategoryId
-      - toCategoryId
-      - relatedTransactionId
-      - importBatch
-      - reason
     TransactionResponse:
       type: object
       properties:

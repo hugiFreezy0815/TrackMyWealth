@@ -31,3 +31,6 @@ ADD CONSTRAINT transaction_categorization_log_assigned_by_check CHECK (
 -- Query the complete, paged history of a correction chain without scanning unrelated logs.
 CREATE INDEX idx_transaction_categorization_log_history
 ON transaction_categorization_log (transaction_id, assigned_at DESC, id DESC);
+
+-- V13's single-column index is a prefix of the new one, which serves every lookup it served.
+DROP INDEX idx_transaction_categorization_log_transaction;

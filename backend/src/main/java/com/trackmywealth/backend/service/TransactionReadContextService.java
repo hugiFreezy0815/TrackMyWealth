@@ -2,9 +2,9 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
+import com.trackmywealth.backend.dto.TransactionImportBatchResponse;
 import com.trackmywealth.backend.dto.TransactionReadAccountDetails;
 import com.trackmywealth.backend.dto.TransactionReadContext;
-import com.trackmywealth.backend.dto.TransactionImportBatchResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ImportTemplate;
@@ -24,9 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * US-07-37: enrichment shared by account and workspace transaction lists and a direct read.
  *
- * <p>One account/portfolio query and at most two bulk import queries for an arbitrary page;
- * never a query per transaction. Access to the transactions is checked by the caller first.
- * Raw source JSON and imported statement content are never returned.
+ * <p>One account/portfolio query and at most two bulk import queries for an arbitrary page; never a
+ * query per transaction. Access to the transactions is checked by the caller first. Raw source JSON
+ * and imported statement content are never returned.
  */
 @Service
 public class TransactionReadContextService {
@@ -74,7 +74,8 @@ public class TransactionReadContextService {
             row ->
                 accounts.put(
                     (UUID) row[0],
-                    new TransactionReadAccountDetails((String) row[1], (UUID) row[2], (String) row[3])));
+                    new TransactionReadAccountDetails(
+                        (String) row[1], (UUID) row[2], (String) row[3])));
 
     if (batchIds.isEmpty()) {
       return new TransactionReadContext(accounts, Map.of());

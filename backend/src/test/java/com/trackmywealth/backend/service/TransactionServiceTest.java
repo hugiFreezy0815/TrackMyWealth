@@ -1,7 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.TransactionReadContext;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -13,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.dto.CreateTransactionRequest;
+import com.trackmywealth.backend.dto.TransactionReadContext;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Transaction;
@@ -82,8 +81,7 @@ class TransactionServiceTest {
 
   @BeforeEach
   void setUp() {
-    when(readContextService.load(any()))
-        .thenReturn(TransactionReadContext.EMPTY);
+    when(readContextService.load(any())).thenReturn(TransactionReadContext.EMPTY);
     depot = new Account();
     ReflectionTestUtils.setField(depot, "id", ACCOUNT);
     depot.setWorkspace(new Workspace());

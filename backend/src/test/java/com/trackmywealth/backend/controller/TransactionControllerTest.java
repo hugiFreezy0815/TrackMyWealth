@@ -19,8 +19,8 @@ import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
-import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.TransactionHistoryEntryResponse;
+import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.FxRate;
@@ -37,6 +37,7 @@ import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -139,8 +140,11 @@ class TransactionControllerTest {
     AccountSummaryResponse other = createCashAccount(token);
     UUID id = insertLedgerRow(card.id(), "-17.00", false);
     UUID category = jdbcUuid("SELECT id FROM category WHERE code = ? LIMIT 1", "UNCATEGORIZED");
-    UUID actor = jdbcUuid("SELECT id FROM app_user WHERE workspace_member_id = ? LIMIT 1",
-            jdbcUuid("SELECT id FROM workspace_member WHERE workspace_id = ? LIMIT 1",
+    UUID actor =
+        jdbcUuid(
+            "SELECT id FROM app_user WHERE workspace_member_id = ? LIMIT 1",
+            jdbcUuid(
+                "SELECT id FROM workspace_member WHERE workspace_id = ? LIMIT 1",
                 jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", card.id())));
     try (Connection connection = dataSource.getConnection();
         PreparedStatement log =
@@ -160,22 +164,40 @@ class TransactionControllerTest {
     var page =
         client(token)
             .get()
-            .uri("/api/v1/accounts/" + card.id() + "/transactions/" + id
-                + "/history?page=0&size=50")
+            .uri(
+                "/api/v1/accounts/" + card.id() + "/transactions/" + id + "/history?page=0&size=50")
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionHistoryEntryResponse>>() {})
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<TransactionHistoryEntryResponse>>() {})
             .returnResult()
             .getResponseBody();
     assertThat(page.content()).hasSize(50);
     assertThat(page.page().totalElements()).isEqualTo(121);
     assertThat(page.content().get(0).actorDisplayName()).isNotBlank();
+    assertThat(page.content())
+        .extracting(TransactionHistoryEntryResponse::occurredAt)
+        .as("newest first by default")
+        .isSortedAccordingTo(Comparator.reverseOrder());
+    assertThat(page.content())
+        .extracting(TransactionHistoryEntryResponse::kind)
+        .containsOnly("CATEGORY_CHANGED");
+
+    PageResponse<TransactionHistoryEntryResponse> last =
+        history(token, card.id(), id, "page=2&size=50");
+    assertThat(last.content()).hasSize(21);
+    assertThat(last.content().get(20).kind()).as("the oldest entry").isEqualTo("CREATED");
+    PageResponse<TransactionHistoryEntryResponse> oldestFirst =
+        history(token, card.id(), id, "sort=occurredAt,asc&size=10");
+    assertThat(oldestFirst.content().get(0).kind()).isEqualTo("CREATED");
+    assertThat(oldestFirst.content())
+        .extracting(TransactionHistoryEntryResponse::occurredAt)
+        .isSortedAccordingTo(Comparator.naturalOrder());
 
     client(token)
         .get()
-        .uri("/api/v1/accounts/" + card.id() + "/transactions/" + id
-            + "/history?sort=amount,asc")
+        .uri("/api/v1/accounts/" + card.id() + "/transactions/" + id + "/history?sort=amount,asc")
         .exchange()
         .expectStatus()
         .isBadRequest()
@@ -218,10 +240,12 @@ class TransactionControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionHistoryEntryResponse>>() {})
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<TransactionHistoryEntryResponse>>() {})
             .returnResult()
             .getResponseBody();
-    assertThat(page.content()).extracting(TransactionHistoryEntryResponse::kind)
+    assertThat(page.content())
+        .extracting(TransactionHistoryEntryResponse::kind)
         .contains("CORRECTED", "VOIDED", "CREATED");
     assertThat(page.content())
         .filteredOn(entry -> entry.kind().equals("CORRECTED"))
@@ -231,6 +255,26 @@ class TransactionControllerTest {
         .filteredOn(entry -> entry.kind().equals("VOIDED"))
         .extracting(TransactionHistoryEntryResponse::reason)
         .containsExactly("test");
+  }
+
+  private PageResponse<TransactionHistoryEntryResponse> history(
+      String token, UUID accountId, UUID transactionId, String query) {
+    return client(token)
+        .get()
+        .uri(
+            "/api/v1/accounts/"
+                + accountId
+                + "/transactions/"
+                + transactionId
+                + "/history?"
+                + query)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(
+            new ParameterizedTypeReference<PageResponse<TransactionHistoryEntryResponse>>() {})
+        .returnResult()
+        .getResponseBody();
   }
 
   // --- US-07-37 (#479): direct read and list enrichment --------------------------------------

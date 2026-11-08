@@ -5,15 +5,15 @@ import com.trackmywealth.backend.dto.CreateTransactionRequest;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
+import com.trackmywealth.backend.dto.TransactionHistoryEntryResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
-import com.trackmywealth.backend.dto.TransactionHistoryEntryResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.TransactionCorrectionService;
+import com.trackmywealth.backend.service.TransactionHistoryService;
 import com.trackmywealth.backend.service.TransactionRemovalService;
 import com.trackmywealth.backend.service.TransactionService;
-import com.trackmywealth.backend.service.TransactionHistoryService;
 import com.trackmywealth.backend.service.TransferResolutionService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
@@ -143,7 +143,8 @@ public class TransactionController {
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    TransactionResponse response = transactionService.getTransaction(accountId, transactionId, actor);
+    TransactionResponse response =
+        transactionService.getTransaction(accountId, transactionId, actor);
     return VersionedResponse.ok(response, response.version());
   }
 
