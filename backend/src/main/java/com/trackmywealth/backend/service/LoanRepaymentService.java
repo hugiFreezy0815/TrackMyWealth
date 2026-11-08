@@ -5,6 +5,7 @@ import com.trackmywealth.backend.dto.LoanPaymentPlan;
 import com.trackmywealth.backend.dto.LoanPaymentSplit;
 import com.trackmywealth.backend.dto.LoanRepaymentResponse;
 import com.trackmywealth.backend.dto.LoanRepaymentSplitValues;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountLoan;
 import com.trackmywealth.backend.entity.AccountMortgage;
@@ -32,6 +33,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -203,28 +207,26 @@ public class LoanRepaymentService {
    * externalId}.
    */
   @Transactional(readOnly = true)
-  public List<LoanRepaymentResponse> list(UUID loanAccountId, AuthenticatedUserPrincipal actor) {
+  public Page<LoanRepaymentResponse> list(
+      UUID loanAccountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account loan = accountLookupService.findAccountOrThrow(loanAccountId, actor);
     accessControlService.requireAccountAccess(actor, loan);
-    List<LoanPayment> payments = loanPaymentRepository.findInEffectByLoanAccountId(loan.getId());
-    if (payments.isEmpty()) {
-      return List.of();
-    }
-    // Access to the loan is checked on the loan; the paying account is checked on its own, so a
-    // paying account outside the caller's workspace never has its transaction details, notes or
-    // id serialized through this endpoint.
+    Pageable bounded = PagingValues.requireBounded(pageable, "id");
+    // Filter the paying account in SQL, not after LIMIT/OFFSET: otherwise totals and page
+    // boundaries could disclose inaccessible payments or silently omit readable ones.
     UUID memberId = accessControlService.requireActingMember(actor);
     Set<UUID> readablePayerIds =
         accessControlService
-            .accountsWithAccess(
-                memberId, payments.stream().map(LoanPayment::getPayingAccount).distinct().toList())
+            .accountsWithAccess(memberId, accountRepository.findByWorkspaceId(actor.workspaceId()))
             .stream()
             .map(Account::getId)
             .collect(Collectors.toSet());
-    return toResponses(
-        payments.stream()
-            .filter(payment -> readablePayerIds.contains(payment.getPayingAccount().getId()))
-            .toList());
+    if (readablePayerIds.isEmpty()) {
+      return Page.empty(bounded);
+    }
+    Page<LoanPayment> payments =
+        loanPaymentRepository.findVisibleInEffect(loan.getId(), readablePayerIds, bounded);
+    return new PageImpl<>(toResponses(payments.getContent()), bounded, payments.getTotalElements());
   }
 
   /**

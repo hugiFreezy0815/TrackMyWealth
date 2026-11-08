@@ -15,6 +15,7 @@ import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.OpeningBalanceRequest;
 import com.trackmywealth.backend.dto.OpeningBalanceResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
@@ -48,6 +49,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -715,16 +717,17 @@ class OpeningBalanceControllerTest {
     OpeningBalanceResponse opening =
         recordOk(token, cash.id(), request(openingDate, "1000.00", "CHF"));
 
-    AccountSnapshotResponse[] snapshots =
+    List<AccountSnapshotResponse> snapshots =
         client(token)
             .get()
             .uri("/api/v1/accounts/" + cash.id() + "/snapshots")
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(AccountSnapshotResponse[].class)
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
     assertThat(snapshots)
         .singleElement()
         .satisfies(

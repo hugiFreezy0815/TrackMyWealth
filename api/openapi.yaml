@@ -512,6 +512,41 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
+      - name: sort
+        in: query
+        description: "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT.\
+          \ Default: dueDate,asc. The order always ends with a unique tie-breaker,\
+          \ so pages never overlap."
+        required: false
+        explode: true
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - dueDate
+            - "dueDate,asc"
+            - "dueDate,desc"
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -533,13 +568,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/AmortisationScheduleEntryResponse"
+                $ref: "#/components/schemas/PageResponseAmortisationScheduleEntryResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -610,6 +644,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - UNPROCESSABLE
@@ -5516,6 +5551,41 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
+      - name: sort
+        in: query
+        description: "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT.\
+          \ Default: bookingDate,desc. The order always ends with a unique tie-breaker,\
+          \ so pages never overlap."
+        required: false
+        explode: true
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - bookingDate
+            - "bookingDate,asc"
+            - "bookingDate,desc"
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -5537,13 +5607,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/LoanRepaymentResponse"
+                $ref: "#/components/schemas/PageResponseLoanRepaymentResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -5601,6 +5670,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -6086,6 +6156,41 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
+      - name: sort
+        in: query
+        description: "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT.\
+          \ Default: snapshotDate,desc. The order always ends with a unique tie-breaker,\
+          \ so pages never overlap."
+        required: false
+        explode: true
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - snapshotDate
+            - "snapshotDate,asc"
+            - "snapshotDate,desc"
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -6107,13 +6212,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/AccountSnapshotResponse"
+                $ref: "#/components/schemas/PageResponseAccountSnapshotResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -6171,6 +6275,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -6885,6 +6990,9 @@ paths:
       tags:
       - Transactions
       summary: List an account's removed transactions
+      description: "Fixed order: most recently removed first (deletedAt, or voidedAt\
+        \ for a voided row, descending), then id descending. Takes page and size only;\
+        \ any sort is a 400 INVALID_SORT."
       operationId: listRemovedTransactions
       parameters:
       - name: accountId
@@ -6893,6 +7001,26 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -6914,13 +7042,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/TransactionResponse"
+                $ref: "#/components/schemas/PageResponseTransactionResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -6978,6 +7105,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -8203,6 +8331,41 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
+      - name: sort
+        in: query
+        description: "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT.\
+          \ Default: valuationDate,desc. The order always ends with a unique tie-breaker,\
+          \ so pages never overlap."
+        required: false
+        explode: true
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - valuationDate
+            - "valuationDate,asc"
+            - "valuationDate,desc"
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -8224,13 +8387,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CustomAssetValuationResponse"
+                $ref: "#/components/schemas/PageResponseCustomAssetValuationResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -8288,6 +8450,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -8445,9 +8608,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SettlementMatchResponse"
+                $ref: "#/components/schemas/SettlementMatchRunResponse"
         "400":
           description: |-
             Problem codes:
@@ -15332,8 +15493,7 @@ paths:
       - Credit cards
       summary: List settlement matches
       description: "Matches of one status, newest first; by default those needing\
-        \ a decision. Not paged, and cut at the newest 200 matches: a response holding\
-        \ exactly 200 matches may not be all of them."
+        \ a decision."
       operationId: listSettlementMatches
       parameters:
       - name: status
@@ -15356,6 +15516,48 @@ paths:
           enum:
           - CARD_SETTLEMENT
           - TRANSFER
+      - name: cardAccountId
+        in: query
+        description: Only matches belonging to this card or credited account.
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        description: Zero-based page number.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+          minimum: 0
+      - name: size
+        in: query
+        description: "Items per page; a larger value is capped to 200, and page.size\
+          \ in the response says the size applied."
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+          maximum: 200
+          minimum: 1
+      - name: sort
+        in: query
+        description: "Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT.\
+          \ Default: createdAt,desc. The order always ends with a unique tie-breaker,\
+          \ so pages never overlap."
+        required: false
+        explode: true
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - createdAt
+            - "createdAt,asc"
+            - "createdAt,desc"
       - name: X-Correlation-Id
         in: header
         description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
@@ -15377,13 +15579,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SettlementMatchResponse"
+                $ref: "#/components/schemas/PageResponseSettlementMatchResponse"
         "400":
           description: |-
             Problem codes:
             - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+            - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
           headers:
             X-Correlation-Id:
               description: Correlation id assigned to this request.
@@ -15441,6 +15642,7 @@ paths:
           $ref: "#/components/responses/ApiProblemResponse"
       x-problem-codes:
       - VALIDATION_FAILED
+      - INVALID_SORT
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
@@ -20761,6 +20963,42 @@ components:
       - size
       - totalElements
       - totalPages
+    PageResponseAccountSnapshotResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccountSnapshotResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
+    PageResponseAmortisationScheduleEntryResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AmortisationScheduleEntryResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
+    PageResponseCustomAssetValuationResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomAssetValuationResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseImportBatchResponse:
       type: object
       properties:
@@ -20797,6 +21035,18 @@ components:
       required:
       - content
       - page
+    PageResponseLoanRepaymentResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoanRepaymentResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
     PageResponseReconciliationResultResponse:
       type: object
       properties:
@@ -20804,6 +21054,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ReconciliationResultResponse"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+      required:
+      - content
+      - page
+    PageResponseSettlementMatchResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/SettlementMatchResponse"
         page:
           $ref: "#/components/schemas/PageMetadata"
       required:
@@ -21583,6 +21845,18 @@ components:
       - status
       - transferFxRate
       - version
+    SettlementMatchRunResponse:
+      type: object
+      properties:
+        newlyProposed:
+          type: integer
+          format: int32
+        newlyConfirmed:
+          type: integer
+          format: int32
+      required:
+      - newlyConfirmed
+      - newlyProposed
     SettlementSourceResponse:
       type: object
       properties:

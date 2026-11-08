@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalValues;
@@ -27,6 +28,9 @@ import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -597,12 +601,20 @@ public class TransactionRemovalService {
    * restored or corrected - most recently removed first.
    */
   @Transactional(readOnly = true)
-  public List<TransactionResponse> listRestorable(
-      UUID accountId, AuthenticatedUserPrincipal actor) {
+  public Page<TransactionResponse> listRestorable(
+      UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account);
-    return transactionService.toResponses(
-        transactionRepository.findRestorableByAccountIdSince(accountId, restoreWindowStart()));
+    // The native query fixes the order (COALESCE(deleted_at, voided_at) DESC, id DESC); the page
+    // must not carry a Sort, which Spring Data would append to it.
+    Page<Transaction> rows =
+        transactionRepository.findRestorableByAccountIdSince(
+            accountId, restoreWindowStart(), PagingValues.requireBoundedFixedOrder(pageable));
+    // One batched conversion for the page, not one lookup per row.
+    return new PageImpl<>(
+        transactionService.toResponses(rows.getContent()),
+        rows.getPageable(),
+        rows.getTotalElements());
   }
 
   /**

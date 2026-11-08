@@ -454,6 +454,78 @@ class TransactionRemovalControllerTest {
     assertThat(countRows(card.id())).isEqualTo(1);
   }
 
+  @Test
+  void threeHundredRemovedTransactionsArePagedWithoutOverlapOrOtherAccounts() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token, "CASH", "CHF");
+    AccountSummaryResponse other = createAccount(token, "CASH", "CHF");
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, source, deleted_at, deleted_by)"
+                    + " SELECT a.workspace_id, a.id, 'EXPENSE', CURRENT_DATE, -g, 'CHF',"
+                    + " 'MANUAL', now(), (SELECT id FROM app_user LIMIT 1)"
+                    + " FROM account a CROSS JOIN generate_series(1, ?) g"
+                    + " WHERE a.id = ?")) {
+      statement.setInt(1, 300);
+      statement.setObject(2, account.id());
+      statement.executeUpdate();
+      statement.setInt(1, 11);
+      statement.setObject(2, other.id());
+      statement.executeUpdate();
+    }
+
+    String path = "/api/v1/accounts/" + account.id() + "/transactions/deleted";
+    PageResponse<TransactionResponse> first =
+        client(token)
+            .get()
+            .uri(path + "?size=1000")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+    PageResponse<TransactionResponse> second =
+        client(token)
+            .get()
+            .uri(path + "?page=1&size=200")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(first.page().size()).isEqualTo(200);
+    assertThat(first.page().totalElements()).isEqualTo(300);
+    assertThat(first.page().totalPages()).isEqualTo(2);
+    assertThat(first.content()).hasSize(200);
+    assertThat(second.content()).hasSize(100);
+    assertThat(second.page().totalElements()).isEqualTo(300);
+    assertThat(
+            java.util.stream.Stream.concat(first.content().stream(), second.content().stream())
+                .map(TransactionResponse::id)
+                .toList())
+        .hasSize(300)
+        .doesNotHaveDuplicates();
+
+    client(token)
+        .get()
+        .uri(path + "?sort=bookingDate")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT")
+        .jsonPath("$.detail")
+        .value(
+            detail ->
+                assertThat(detail.toString()).contains("fixed order (most recently removed first"));
+  }
+
   // --- T1: manual entry, soft delete ------------------------------------------------------------
 
   @Test
@@ -2672,9 +2744,10 @@ class TransactionRemovalControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<TransactionResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody()
+        .content();
   }
 
   // The signed ledger sum on a past date, which statements, snapshots and matching read.
@@ -2782,9 +2855,10 @@ class TransactionRemovalControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<SettlementMatchResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
         .returnResult()
         .getResponseBody()
+        .content()
         .stream()
         .map(SettlementMatchResponse::id)
         .toList();

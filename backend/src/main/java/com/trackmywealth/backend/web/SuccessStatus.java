@@ -17,6 +17,12 @@ import org.springframework.http.HttpStatus;
  * handler answers: {@code ArchitectureTest} fails a handler whose bytecode answers a success status
  * it does not declare, or declares one it never answers, and in tests every request to a documented
  * handler that answers an undeclared success status fails ({@code DocumentedSuccessStatusFilter}).
+ *
+ * <p>US-29-10 (#457): the value is never empty and names only 2xx statuses. The status must be set
+ * in the controller, from an {@link HttpStatus} constant or a {@code ResponseEntity}/{@code
+ * VersionedResponse} factory: a response, response builder or status taken from another class fails
+ * the build unless the handler is listed, with its reason, in {@code
+ * ArchitectureTest.REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS}.
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)

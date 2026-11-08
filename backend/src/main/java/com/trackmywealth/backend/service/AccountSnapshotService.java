@@ -1,6 +1,7 @@
 package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
+import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SnapshotHoldingRequest;
@@ -27,6 +28,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -190,16 +193,21 @@ public class AccountSnapshotService {
     return toResponse(snapshot, holdings, securities);
   }
 
-  /** Newest first; two sources on the same date are ordered by source name. */
+  /**
+   * One page of the account's snapshots in the order {@code pageable} carries (by default newest
+   * first). Snapshots on the same date are ordered by {@code id}, the tie-breaker every page ends
+   * with (#473); their source no longer takes part in the order.
+   */
   @Transactional(readOnly = true)
-  public List<AccountSnapshotResponse> list(UUID accountId, AuthenticatedUserPrincipal actor) {
+  public Page<AccountSnapshotResponse> list(
+      UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account);
-    List<AccountSnapshot> snapshots =
-        snapshotRepository.findByAccountIdAndWithdrawnAtIsNullOrderBySnapshotDateDescSourceAsc(
-            accountId);
+    Page<AccountSnapshot> snapshots =
+        snapshotRepository.findByAccountIdAndWithdrawnAtIsNull(
+            accountId, PagingValues.requireBounded(pageable, "id"));
     if (snapshots.isEmpty()) {
-      return List.of();
+      return snapshots.map(snapshot -> toResponse(snapshot, List.of(), Map.of()));
     }
     // Two queries for the whole list, not two per snapshot.
     Map<UUID, List<SnapshotHolding>> holdingsBySnapshot =
@@ -213,14 +221,12 @@ public class AccountSnapshotService {
                 .flatMap(List::stream)
                 .map(SnapshotHolding::getSecurityId)
                 .collect(Collectors.toSet()));
-    return snapshots.stream()
-        .map(
-            snapshot ->
-                toResponse(
-                    snapshot,
-                    holdingsBySnapshot.getOrDefault(snapshot.getId(), List.of()),
-                    securities))
-        .toList();
+    return snapshots.map(
+        snapshot ->
+            toResponse(
+                snapshot,
+                holdingsBySnapshot.getOrDefault(snapshot.getId(), List.of()),
+                securities));
   }
 
   @Transactional(readOnly = true)

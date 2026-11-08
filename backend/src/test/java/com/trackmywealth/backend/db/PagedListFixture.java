@@ -22,6 +22,11 @@ import java.util.UUID;
  *       shared by every workspace, so these rows fill {@code idx_transaction_category}.
  *   <li>500 import batches, 500 snapshots with a cash reconciliation result each, and 500 active
  *       catalogue entries.
+ *   <li>US-29-13 (#473): two custom assets with 3,000 valuations each, a loan with 2,000 schedule
+ *       entries and 3,000 repayments from the large account, a card with 3,000 proposed settlement
+ *       matches, and an account whose 1,000 rows were removed (half deleted, half voided).
+ *   <li>The other tenant's 20,000 proposed settlement matches: they share the queue's status, so a
+ *       status-led index would read them all.
  * </ul>
  */
 final class PagedListFixture {
@@ -33,22 +38,49 @@ final class PagedListFixture {
   // 1000 samples the whole table: the plans follow PostgreSQL's cost model, not luck.
   private static final String EXACT_STATISTICS = "SET default_statistics_target = 1000";
   private static final String[] TABLES = {
-    "transaction", "import_batch", "reconciliation_result", "institution_catalogue"
+    "transaction",
+    "import_batch",
+    "account_snapshot",
+    "reconciliation_result",
+    "institution_catalogue",
+    "custom_asset_valuation",
+    "amortisation_schedule_entry",
+    "loan_payment",
+    "settlement_match"
   };
 
+  /** Rows of each #473 list in the fixture's workspace. */
+  static final int HISTORY_ROWS = 3_000;
+
+  /**
+   * Removed rows in the restore list's account: fewer than the other lists hold, because they also
+   * sit in transaction, whose category statistics decide the ledger tests' plans.
+   */
+  static final int REMOVED_ROWS = 1_000;
+
+  /** The other tenant's proposed settlement matches. */
+  static final int OTHER_TENANT_ROWS = 20_000;
+
   /** The fixture's ids the paged reads filter on. */
-  record Ids(UUID workspace, UUID account, UUID uncategorized) {}
+  record Ids(
+      UUID workspace,
+      UUID account,
+      UUID uncategorized,
+      UUID asset,
+      UUID loan,
+      UUID card,
+      UUID rolledBack) {}
 
   private PagedListFixture() {}
 
   static Ids seed(Connection admin) throws SQLException {
     UUID workspace =
         returningUuid(admin, "INSERT INTO workspace (name) VALUES ('Index test') RETURNING id");
-    UUID account = insertAccount(admin, workspace, "Large account");
-    UUID otherAccount = insertAccount(admin, workspace, "Other account");
+    UUID account = insertAccount(admin, workspace, "Large account", "CASH");
+    UUID otherAccount = insertAccount(admin, workspace, "Other account", "CASH");
     UUID otherTenant =
         returningUuid(admin, "INSERT INTO workspace (name) VALUES ('Other tenant') RETURNING id");
-    UUID otherTenantAccount = insertAccount(admin, otherTenant, "Fresh import");
+    UUID otherTenantAccount = insertAccount(admin, otherTenant, "Fresh import", "CASH");
     UUID uncategorized = systemCategory(admin, "UNCATEGORIZED");
     UUID groceries = systemCategory(admin, "GROCERIES");
 
@@ -86,7 +118,111 @@ final class PagedListFixture {
         "INSERT INTO institution_catalogue (name, country, institution_type)"
             + " SELECT 'Index fixture ' || lpad(g::TEXT, 5, '0'), 'CH', 'BANK'"
             + " FROM generate_series(1, 500) AS g");
-    return new Ids(workspace, account, uncategorized);
+    History history = seedHistory(admin, workspace, account, groceries);
+    seedOtherTenantQueue(admin, otherTenant, otherTenantAccount);
+    return new Ids(
+        workspace,
+        account,
+        uncategorized,
+        history.asset(),
+        history.loan(),
+        history.card(),
+        history.rolledBack());
+  }
+
+  private record History(UUID asset, UUID loan, UUID card, UUID rolledBack) {}
+
+  // #473's lists in the fixture's workspace. Each date-ordered list gets distinct dates where the
+  // schema demands them (valuation, schedule) and repeated ones elsewhere, so the id tie-breaker
+  // takes part in the order.
+  private static History seedHistory(Connection admin, UUID workspace, UUID account, UUID groceries)
+      throws SQLException {
+    UUID user = returningUuid(admin, REMOVER);
+    UUID asset = insertAccount(admin, workspace, "House", "CUSTOM_ASSET");
+    UUID otherAsset = insertAccount(admin, workspace, "Car", "CUSTOM_ASSET");
+    for (UUID custom : new UUID[] {asset, otherAsset}) {
+      execute(
+          admin,
+          "INSERT INTO custom_asset_valuation (account_id, valuation_date, value, currency)"
+              + " SELECT ?, CURRENT_DATE - g, 500000 + g, 'CHF' FROM generate_series(1, ?) AS g",
+          custom,
+          HISTORY_ROWS);
+    }
+    UUID loan = insertAccount(admin, workspace, "Mortgage", "LOAN");
+    execute(
+        admin,
+        "INSERT INTO amortisation_schedule_entry (account_id, due_date, interest_component,"
+            + " principal_component, remaining_balance)"
+            + " SELECT ?, CURRENT_DATE + g, 100, 900, 2000000 - 900 * g"
+            + " FROM generate_series(1, 2000) AS g",
+        loan);
+    // Each repayment's principal row is one of the large account's ledger rows (one each).
+    execute(
+        admin,
+        "INSERT INTO loan_payment (workspace_id, loan_account_id, paying_account_id, booking_date,"
+            + " currency, total_amount, interest_amount, principal_amount, split_source,"
+            + " split_estimated, principal_transaction_id, created_by)"
+            + " SELECT ?, ?, account_id, booking_date, 'CHF', 1000, 100, 900, 'STATED', FALSE, id, ?"
+            + " FROM transaction WHERE account_id = ? ORDER BY id LIMIT ?",
+        workspace,
+        loan,
+        user,
+        account,
+        HISTORY_ROWS);
+    UUID card = insertAccount(admin, workspace, "Card", "CREDIT_CARD");
+    insertProposedMatches(admin, card, account, HISTORY_ROWS);
+    UUID rolledBack = insertAccount(admin, workspace, "Rolled back", "CASH");
+    insertRemovedTransactions(admin, workspace, rolledBack, REMOVED_ROWS, groceries, user);
+    return new History(asset, loan, card, rolledBack);
+  }
+
+  // The other tenant's queue lives in settlement_match only, so the transaction table's
+  // statistics - which the ledger tests' plans follow - are not changed by it.
+  private static void seedOtherTenantQueue(
+      Connection admin, UUID otherTenant, UUID otherTenantAccount) throws SQLException {
+    UUID otherCard = insertAccount(admin, otherTenant, "Other card", "CREDIT_CARD");
+    insertProposedMatches(admin, otherCard, otherTenantAccount, OTHER_TENANT_ROWS);
+  }
+
+  private static final String REMOVER =
+      "INSERT INTO app_user (email, password_hash) VALUES ('index-fixture@example.test', 'x')"
+          + " RETURNING id";
+
+  // One-sided proposals: a match needs only a payment row (and no card row).
+  private static void insertProposedMatches(Connection admin, UUID card, UUID paying, int count)
+      throws SQLException {
+    execute(
+        admin,
+        "INSERT INTO settlement_match (workspace_id, card_account_id, payment_transaction_id,"
+            + " status, match_basis, created_at)"
+            + " SELECT workspace_id, ?, id, 'PROPOSED', 'BALANCE_EQUALS_PAYMENT',"
+            + " now() - (row_number() OVER (ORDER BY id) * INTERVAL '1 minute')"
+            + " FROM transaction WHERE account_id = ? ORDER BY id DESC LIMIT ?",
+        card,
+        paying,
+        count);
+  }
+
+  // Removed within the 30-day restore window, every other row voided, the others deleted. They are
+  // in category, as every ledger row is, so the category statistics stay as the ledger tests need.
+  private static void insertRemovedTransactions(
+      Connection admin, UUID owner, UUID target, int count, UUID category, UUID remover)
+      throws SQLException {
+    execute(
+        admin,
+        "INSERT INTO transaction (workspace_id, account_id, transaction_type, booking_date,"
+            + " amount, currency, category_id, deleted_at, deleted_by, voided_at, void_reason)"
+            + " SELECT ?, ?, 'EXPENSE', CURRENT_DATE - (g % 365), -1 - (g % 200), 'CHF', ?,"
+            + " CASE WHEN g % 2 = 1 THEN now() - (g * INTERVAL '10 seconds') END,"
+            + " CASE WHEN g % 2 = 1 THEN ?::UUID END,"
+            + " CASE WHEN g % 2 = 0 THEN now() - (g * INTERVAL '10 seconds') END,"
+            + " CASE WHEN g % 2 = 0 THEN 'Import rolled back' END"
+            + " FROM generate_series(1, ?) AS g",
+        owner,
+        target,
+        category,
+        remover,
+        count);
   }
 
   /**
@@ -102,13 +238,15 @@ final class PagedListFixture {
     }
   }
 
-  private static UUID insertAccount(Connection admin, UUID owner, String name) throws SQLException {
+  private static UUID insertAccount(Connection admin, UUID owner, String name, String type)
+      throws SQLException {
     return returningUuid(
         admin,
         "INSERT INTO account (workspace_id, portfolio_id, account_type, name,"
-            + " native_currency) SELECT ?, id, 'CASH', ?, 'CHF'"
+            + " native_currency) SELECT ?, id, ?, ?, 'CHF'"
             + " FROM portfolio WHERE workspace_id = ? RETURNING id",
         owner,
+        type,
         name,
         owner);
   }

@@ -24,7 +24,6 @@ import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -49,6 +48,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/accounts/{accountId}")
 @Tag(name = "Transactions")
 public class TransactionController {
+
+  // The restore list's order is COALESCE(deleted_at, voided_at), which no single response field
+  // carries (TransactionRepository.findRestorableByAccountIdSince).
+  private static final String RESTORE_LIST_ORDER =
+      "most recently removed first (deletedAt, or voidedAt for a voided row, descending), then id"
+          + " descending";
 
   private final TransactionService transactionService;
   private final TransactionCorrectionService transactionCorrectionService;
@@ -244,11 +249,17 @@ public class TransactionController {
    */
   @Operation(
       operationId = "listRemovedTransactions",
-      summary = "List an account's removed transactions")
+      summary = "List an account's removed transactions",
+      description =
+          "Fixed order: "
+              + RESTORE_LIST_ORDER
+              + ". Takes page and size only; any sort is a 400 INVALID_SORT.")
   @GetMapping("/transactions/deleted")
-  public List<TransactionResponse> listRestorableTransactions(
-      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return transactionRemovalService.listRestorable(accountId, actor);
+  public PageResponse<TransactionResponse> listRestorableTransactions(
+      @PathVariable UUID accountId,
+      @Paged(fixedOrder = RESTORE_LIST_ORDER) Pageable pageable,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return PageResponse.of(transactionRemovalService.listRestorable(accountId, pageable, actor));
   }
 
   /**

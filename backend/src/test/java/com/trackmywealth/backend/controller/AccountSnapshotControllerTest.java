@@ -10,6 +10,7 @@ import com.trackmywealth.backend.dto.CreateSecurityRequest;
 import com.trackmywealth.backend.dto.CreateUserRequest;
 import com.trackmywealth.backend.dto.LoginRequest;
 import com.trackmywealth.backend.dto.LoginResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.SecurityResponse;
@@ -339,13 +340,51 @@ class AccountSnapshotControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<AccountSnapshotResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
 
     assertThat(snapshots)
         .extracting(AccountSnapshotResponse::snapshotDate)
         .containsExactly(today(), today().minusMonths(1));
+  }
+
+  // #473 AC: 120 snapshots, page=1&size=50 -> snapshots 51-100 and page 1, 50, 120, 3.
+  @Test
+  void aLongSnapshotHistoryIsPagedNewestFirst() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(token, "History", "CASH");
+    for (int day = 0; day < 120; day++) {
+      recordOk(token, account.id(), balanceOnly(today().minusDays(day), "100.00"));
+    }
+
+    PageResponse<AccountSnapshotResponse> second =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + account.id() + "/snapshots?page=1&size=50")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(second.page()).isEqualTo(new PageResponse.PageMetadata(1, 50, 120, 3));
+    // Newest first: the 51st to the 100th snapshot are 50 to 99 days old.
+    assertThat(second.content())
+        .extracting(AccountSnapshotResponse::snapshotDate)
+        .containsExactlyElementsOf(
+            java.util.stream.IntStream.range(50, 100).mapToObj(today()::minusDays).toList());
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + account.id() + "/snapshots?sort=unknown")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT");
   }
 
   @Test

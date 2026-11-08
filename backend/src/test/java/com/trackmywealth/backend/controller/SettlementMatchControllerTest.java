@@ -13,6 +13,7 @@ import com.trackmywealth.backend.dto.LoginResponse;
 import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
+import com.trackmywealth.backend.dto.SettlementMatchRunResponse;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
@@ -291,13 +292,57 @@ class SettlementMatchControllerTest {
     cardCredit(token, a.card(), "1200.00", SEP_3);
     decide(token, matches(token, "CONFIRMED").get(0).id(), "reject", HttpStatus.OK);
 
-    List<SettlementMatchResponse> first = run(token, a.card());
-    List<SettlementMatchResponse> second = run(token, a.card());
+    SettlementMatchRunResponse first = run(token, a.card());
+    SettlementMatchRunResponse second = run(token, a.card());
 
-    assertThat(first).singleElement().satisfies(m -> assertThat(m.status()).isEqualTo("REJECTED"));
-    assertThat(second).extracting(SettlementMatchResponse::id).isEqualTo(ids(first));
+    assertThat(first).isEqualTo(SettlementMatchRunResponse.NOTHING);
+    assertThat(second).isEqualTo(SettlementMatchRunResponse.NOTHING);
     assertThat(matches(token, null)).isEmpty();
     assertThat(matches(token, "CONFIRMED")).isEmpty();
+  }
+
+  // #473: run answers what this run did, never the card's match history. The legs go in through
+  // SQL, so the write-time detection has not seen them yet and the run is the first to match.
+  @Test
+  void runningMatchingCountsOnlyWhatThisRunProposedAndConfirmed() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    insertLeg(a.current(), "WITHDRAWAL", "-1200.00", SEP_3); // one exact pair: confirmed
+    insertLeg(a.card(), "SETTLEMENT", "1200.00", SEP_3);
+    insertLeg(a.current(), "WITHDRAWAL", "-500.00", SEP_3); // two payments, one credit: proposed
+    insertLeg(a.current(), "WITHDRAWAL", "-500.00", SEP_4);
+    insertLeg(a.card(), "SETTLEMENT", "500.00", SEP_4);
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + a.card() + "/settlement-matches/run")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.newlyProposed")
+        .isEqualTo(2)
+        .jsonPath("$.newlyConfirmed")
+        .isEqualTo(1)
+        .jsonPath("$.length()")
+        .isEqualTo(2);
+
+    assertThat(run(token, a.card())).isEqualTo(SettlementMatchRunResponse.NOTHING);
+    assertThat(matches(token, "PROPOSED")).hasSize(2);
+    assertThat(matches(token, "CONFIRMED")).hasSize(1);
+  }
+
+  @Test
+  void listingTheMatchesOfAnUnknownCardIsNotFound() {
+    String token = bootstrapAdministrator();
+    accountsWithSource(token);
+
+    client(token)
+        .get()
+        .uri("/api/v1/settlement-matches?cardAccountId=" + UUID.randomUUID())
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
   }
 
   @Test
@@ -898,9 +943,65 @@ class SettlementMatchControllerTest {
     assertThat(matches(token, "PROPOSED"))
         .extracting(SettlementMatchResponse::id)
         .containsExactlyElementsOf(expected);
-    assertThat(run(token, a.card()))
+    assertThat(run(token, a.card())).isEqualTo(SettlementMatchRunResponse.NOTHING);
+    assertThat(matches(token, "PROPOSED"))
         .extracting(SettlementMatchResponse::id)
         .containsExactlyElementsOf(expected);
+  }
+
+  @Test
+  void moreThanTwoHundredMatchesArePagedWithAccurateCardFilteredTotals() {
+    String token = bootstrapAdministrator();
+    Accounts accounts = accountsWithSource(token);
+    insertProposedMatches(accounts.card(), accounts.current(), 250);
+    UUID otherCard = createAccount(token, "Another Card", "CREDIT_CARD", "CHF").id();
+    insertProposedMatches(otherCard, accounts.current(), 7);
+
+    String url = "/api/v1/settlement-matches?status=PROPOSED&cardAccountId=" + accounts.card();
+    PageResponse<SettlementMatchResponse> first =
+        client(token)
+            .get()
+            .uri(url + "&size=1000")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+    PageResponse<SettlementMatchResponse> second =
+        client(token)
+            .get()
+            .uri(url + "&page=1&size=200")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(first.page().number()).isZero();
+    assertThat(first.page().size()).isEqualTo(200);
+    assertThat(first.page().totalElements()).isEqualTo(250);
+    assertThat(first.page().totalPages()).isEqualTo(2);
+    assertThat(first.content()).hasSize(200);
+    assertThat(second.content()).hasSize(50);
+    assertThat(second.page().totalElements()).isEqualTo(250);
+    assertThat(
+            java.util.stream.Stream.concat(first.content().stream(), second.content().stream())
+                .map(SettlementMatchResponse::id)
+                .toList())
+        .hasSize(250)
+        .doesNotHaveDuplicates();
+
+    client(token)
+        .get()
+        .uri(url + "&sort=paymentAccountId")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT");
   }
 
   @Test
@@ -1037,6 +1138,24 @@ class SettlementMatchControllerTest {
         statement.setObject(5, transactionId);
         statement.executeUpdate();
       }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  // A ledger row written straight to the table: no detection runs for it.
+  private void insertLeg(UUID accountId, String type, String amount, LocalDate date) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency) SELECT workspace_id, id, ?, ?, ?, 'CHF'"
+                    + " FROM account WHERE id = ?")) {
+      statement.setString(1, type);
+      statement.setObject(2, date);
+      statement.setBigDecimal(3, new BigDecimal(amount));
+      statement.setObject(4, accountId);
+      assertThat(statement.executeUpdate()).isEqualTo(1);
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }
@@ -1205,19 +1324,20 @@ class SettlementMatchControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<SettlementMatchResponse>>() {})
+        .expectBody(new ParameterizedTypeReference<PageResponse<SettlementMatchResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody()
+        .content();
   }
 
-  private List<SettlementMatchResponse> run(String token, UUID card) {
+  private SettlementMatchRunResponse run(String token, UUID card) {
     return client(token)
         .post()
         .uri("/api/v1/accounts/" + card + "/settlement-matches/run")
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<SettlementMatchResponse>>() {})
+        .expectBody(SettlementMatchRunResponse.class)
         .returnResult()
         .getResponseBody();
   }

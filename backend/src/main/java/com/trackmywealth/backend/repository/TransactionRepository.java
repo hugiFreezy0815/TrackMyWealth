@@ -283,26 +283,33 @@ public interface TransactionRepository
   @Query(value = "SELECT * FROM transaction WHERE id = :id FOR UPDATE", nativeQuery = true)
   Optional<Transaction> findByIdIncludingDeletedForUpdate(@Param("id") UUID id);
 
+  // The restore list's FROM and WHERE, shared by its page and count queries.
+  String RESTORABLE_WHERE =
+      " FROM transaction t WHERE t.account_id = :accountId AND ("
+          + " (t.deleted_at IS NOT NULL AND t.deleted_at >= :since)"
+          + " OR (t.voided_at IS NOT NULL AND t.voided_at >= :since"
+          + " AND NOT EXISTS (SELECT 1 FROM transaction r"
+          + " WHERE r.restores_transaction_id = t.id)))"
+          + " AND t.reconciliation_result_id IS NULL"
+          + " AND NOT EXISTS (SELECT 1 FROM transaction c"
+          + " WHERE c.corrects_transaction_id = t.id)";
+
   /**
    * US-07-02/07-07 (FR-LIF-006): the account's rows still restorable - soft-deleted or voided at or
-   * after {@code since} - most recently removed first. A void already restored (a row restores it,
-   * V50) or any row since corrected (a replacement corrects it, V49) can no longer be restored and
-   * is left out, as is a withdrawn reconciliation adjustment (US-25-03): only its result decides.
+   * after {@code since} - most recently removed first, then by id (#473: the fixed order of a paged
+   * list, so {@code pageable} must be unsorted). A void already restored (a row restores it, V50)
+   * or any row since corrected (a replacement corrects it, V49) can no longer be restored and is
+   * left out, as is a withdrawn reconciliation adjustment (US-25-03): only its result decides.
    */
   @Query(
       value =
-          "SELECT * FROM transaction t WHERE t.account_id = :accountId AND ("
-              + " (t.deleted_at IS NOT NULL AND t.deleted_at >= :since)"
-              + " OR (t.voided_at IS NOT NULL AND t.voided_at >= :since"
-              + " AND NOT EXISTS (SELECT 1 FROM transaction r"
-              + " WHERE r.restores_transaction_id = t.id)))"
-              + " AND t.reconciliation_result_id IS NULL"
-              + " AND NOT EXISTS (SELECT 1 FROM transaction c"
-              + " WHERE c.corrects_transaction_id = t.id)"
+          "SELECT t.*"
+              + RESTORABLE_WHERE
               + " ORDER BY COALESCE(t.deleted_at, t.voided_at) DESC, t.id DESC",
+      countQuery = "SELECT COUNT(*)" + RESTORABLE_WHERE,
       nativeQuery = true)
-  List<Transaction> findRestorableByAccountIdSince(
-      @Param(ACCOUNT_ID) UUID accountId, @Param("since") OffsetDateTime since);
+  Page<Transaction> findRestorableByAccountIdSince(
+      @Param(ACCOUNT_ID) UUID accountId, @Param("since") OffsetDateTime since, Pageable pageable);
 
   /**
    * US-07-07: the rows voided together with {@code headId} - a card purchase's FEE row or a

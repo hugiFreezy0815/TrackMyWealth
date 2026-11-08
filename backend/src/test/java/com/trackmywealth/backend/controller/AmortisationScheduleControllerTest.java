@@ -6,6 +6,7 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryRequest;
 import com.trackmywealth.backend.dto.AmortisationScheduleEntryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
@@ -83,6 +84,49 @@ class AmortisationScheduleControllerTest {
         statement.execute(sql);
       }
     }
+  }
+
+  // #473: a 30-year monthly mortgage has 360 entries; paged earliest due date first.
+  @Test
+  void aLongScheduleIsPagedEarliestDueDateFirst() {
+    String token = bootstrapAdministrator();
+    UUID mortgage = createMortgage(token);
+    for (int month = 0; month < 120; month++) {
+      post(
+              token,
+              mortgage,
+              entry(MARCH.plusMonths(month), "800.00", "1200.00", (498800 - 1200 * month) + ".00"))
+          .expectStatus()
+          .isCreated();
+    }
+
+    PageResponse<AmortisationScheduleEntryResponse> second =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + mortgage + "/amortisation-schedule?page=1&size=50")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(
+                new ParameterizedTypeReference<
+                    PageResponse<AmortisationScheduleEntryResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(second.page()).isEqualTo(new PageResponse.PageMetadata(1, 50, 120, 3));
+    assertThat(second.content())
+        .extracting(AmortisationScheduleEntryResponse::dueDate)
+        .containsExactlyElementsOf(
+            java.util.stream.IntStream.range(50, 100).mapToObj(MARCH::plusMonths).toList());
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + mortgage + "/amortisation-schedule?sort=unknown")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT");
   }
 
   @Test
@@ -327,9 +371,11 @@ class AmortisationScheduleControllerTest {
         .exchange()
         .expectStatus()
         .isOk()
-        .expectBody(new ParameterizedTypeReference<List<AmortisationScheduleEntryResponse>>() {})
+        .expectBody(
+            new ParameterizedTypeReference<PageResponse<AmortisationScheduleEntryResponse>>() {})
         .returnResult()
-        .getResponseBody();
+        .getResponseBody()
+        .content();
   }
 
   private UUID createMortgage(String token) {

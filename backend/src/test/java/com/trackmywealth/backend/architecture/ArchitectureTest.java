@@ -6,6 +6,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaCodeUnit;
 import com.tngtech.archunit.core.domain.JavaFieldAccess;
 import com.tngtech.archunit.core.domain.JavaMethod;
@@ -38,11 +39,14 @@ import jakarta.persistence.Entity;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
@@ -438,15 +442,22 @@ class ArchitectureTest {
                   + " unique - annotate the method with @Operation(operationId = ..., summary = ...),"
                   + " or @Hidden when it is not part of the API");
 
-  // US-29-02 (#372): springdoc documents every success as 200; @SuccessStatus documents the
-  // statuses a handler answers instead. Both directions: an answered status not documented, and a
-  // documented one never answered (which would replace the real 200 in the contract). The bytecode
-  // half; DocumentedSuccessStatusFilter checks the status actually sent in every test request.
+  // US-29-10 (#457): handlers whose success status comes from another class, named
+  // Controller#method like REVIEWED_RAW_NOT_FOUND_METHODS, each with the reason its status cannot
+  // be set in the controller. Never exempt an entire controller or a helper class; an entry must
+  // name exactly one API operation (reviewed_external_status_handlers_exist).
+  static final Set<String> REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS = Set.of();
+
+  // US-29-02 (#372) and US-29-10 (#457): springdoc documents every success as 200;
+  // @SuccessStatus documents the statuses a handler answers instead. Reject empty or non-2xx
+  // declarations, statuses that cannot be read, and discrepancies in either direction. A response
+  // built in an external helper cannot silently inherit springdoc's assumed 200. The runtime
+  // DocumentedSuccessStatusFilter checks every response a test actually sends.
   @ArchTest
   static final ArchRule api_operations_answer_their_documented_success_statuses =
       methods()
           .that(API_OPERATIONS)
-          .should(answerTheSuccessStatusesTheyDocument())
+          .should(answerTheSuccessStatusesTheyDocument(REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS))
           .because(
               "springdoc cannot see the status inside a ResponseEntity and documents 200 (#372) -"
                   + " declare the statuses the method answers with @SuccessStatus, each set from an"
@@ -501,13 +512,59 @@ class ArchitectureTest {
     return type.isAnnotatedWith(Controller.class) || type.isMetaAnnotatedWith(Controller.class);
   }
 
-  private static ArchCondition<JavaMethod> answerTheSuccessStatusesTheyDocument() {
+  @ArchTest
+  static void reviewed_external_status_handlers_exist(JavaClasses classes) {
+    List<String> problems =
+        unmatchedHandlerExemptions(REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS, classes);
+    if (!problems.isEmpty()) {
+      throw new AssertionError(
+          "REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS must name exactly one API operation each"
+              + " (#457): "
+              + problems);
+    }
+  }
+
+  /** The entries of {@code reviewed} that name no API operation in {@code classes}, or several. */
+  static List<String> unmatchedHandlerExemptions(Set<String> reviewed, JavaClasses classes) {
+    Map<String, Long> operations =
+        classes.stream()
+            .flatMap(type -> type.getMethods().stream())
+            .filter(API_OPERATIONS)
+            .collect(Collectors.groupingBy(ArchitectureTest::handlerName, Collectors.counting()));
+    return reviewed.stream()
+        .sorted()
+        .filter(entry -> operations.getOrDefault(entry, 0L) != 1L)
+        .map(
+            entry ->
+                entry
+                    + (operations.containsKey(entry)
+                        ? " is overloaded; rename the handler"
+                        : " is no API operation"))
+        .toList();
+  }
+
+  private static String handlerName(JavaMethod method) {
+    return method.getOwner().getSimpleName() + "#" + method.getName();
+  }
+
+  static ArchCondition<JavaMethod> answerTheSuccessStatusesTheyDocument(Set<String> reviewed) {
     return new ArchCondition<>("answer exactly the success statuses they document") {
       @Override
       public void check(JavaMethod method, ConditionEvents events) {
         SuccessStatusEvidence evidence = SuccessStatusEvidence.of(method);
         Set<HttpStatus> documented = DocumentedHandlers.documentedSuccessStatuses(method.reflect());
         List<String> problems = new ArrayList<>();
+        SuccessStatus declared = method.tryGetAnnotationOfType(SuccessStatus.class).orElse(null);
+        if (declared != null) {
+          if (declared.value().length == 0) {
+            problems.add("declares an empty @SuccessStatus; declare at least one 2xx status");
+          }
+          for (HttpStatus status : declared.value()) {
+            if (!status.is2xxSuccessful()) {
+              problems.add("declares non-2xx @SuccessStatus value " + status);
+            }
+          }
+        }
         if (!evidence.unreadable().isEmpty()) {
           problems.add("sets a status this rule cannot read: " + evidence.unreadable());
         }
@@ -517,13 +574,29 @@ class ArchitectureTest {
         if (!undocumented.isEmpty()) {
           problems.add("answers " + undocumented + " without declaring it in @SuccessStatus");
         }
-        Set<HttpStatus> neverAnswered = EnumSet.copyOf(documented);
+        Set<HttpStatus> neverAnswered = EnumSet.noneOf(HttpStatus.class);
+        neverAnswered.addAll(documented);
         neverAnswered.removeAll(evidence.answered());
-        // A ResponseEntity built in another class shows no status here: only springdoc's default
-        // 200 is taken on trust then (the runtime check still sees it); a declared one is not.
-        boolean defaultTakenOnTrust =
-            evidence.answered().isEmpty() && documented.equals(EnumSet.of(HttpStatus.OK));
-        if (!neverAnswered.isEmpty() && !defaultTakenOnTrust) {
+        // A plain HttpEntity has Spring's implicit 200; only ResponseEntity can override it.
+        // A visible success on one branch does not justify an unseen response on another.
+        boolean statusUnseen =
+            evidence.answered().isEmpty()
+                && method.getRawReturnType().isAssignableTo(ResponseEntity.class);
+        if (!reviewed.contains(handlerName(method))) {
+          if (statusUnseen) {
+            problems.add(
+                "returns a ResponseEntity with no visible status; build the response"
+                    + " status in the controller or add a justified per-handler exemption");
+          }
+          if (!evidence.externalStatusSources().isEmpty()) {
+            problems.add(
+                "takes a response or status from another class, which this rule cannot read: "
+                    + evidence.externalStatusSources()
+                    + "; build the response status in the controller or add a justified"
+                    + " per-handler exemption");
+          }
+        }
+        if (!neverAnswered.isEmpty() && !statusUnseen) {
           problems.add(
               "documents "
                   + neverAnswered

@@ -2,9 +2,12 @@ package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.LoanPayment;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -28,6 +31,16 @@ public interface LoanPaymentRepository extends JpaRepository<LoanPayment, UUID> 
           + IN_EFFECT
           + " order by p.bookingDate desc, p.createdAt desc")
   List<LoanPayment> findInEffectByLoanAccountId(@Param("loanAccountId") UUID loanAccountId);
+
+  /** Paged payment history, with the caller-visible paying accounts filtered before counting. */
+  @Query(
+      "select p from LoanPayment p where p.loanAccount.id = :loanAccountId"
+          + " and p.payingAccount.id in :payingAccountIds and"
+          + IN_EFFECT)
+  Page<LoanPayment> findVisibleInEffect(
+      @Param("loanAccountId") UUID loanAccountId,
+      @Param("payingAccountIds") Collection<UUID> payingAccountIds,
+      Pageable pageable);
 
   /**
    * #337: the loan's payments still in effect booked in [{@code from}, {@code to}], earliest first,

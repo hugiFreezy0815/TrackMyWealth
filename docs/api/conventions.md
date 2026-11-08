@@ -16,13 +16,11 @@ endpoints from this section.
 ### Which collections are paged?
 
 Large collections expose `page`, `size` and `sort` query parameters and return the same
-`PageResponse<T>` envelope; the six paged operations are listed under [Sorting](#sorting). The
+`PageResponse<T>` envelope; the twelve paged operations are listed under [Sorting](#sorting). The
 committed OpenAPI contract identifies which operation is paged and defines its response schema.
 
 Every other collection returns an ordinary JSON array and ignores `page`, `size` and `sort`.
-Most of them are **bounded lists**: always complete, with an upper bound that comes from the
-data they hold rather than from a server cap. The arrays that are not bounded yet are listed
-under [Known exceptions](#known-exceptions); do not treat those as complete or small.
+These are **bounded lists**: always complete, with an upper bound from their domain rather than a server cap.
 
 | Bounded list | What bounds it |
 | --- | --- |
@@ -40,31 +38,19 @@ grows over time is paged, and a plain array is never cut at a server cap, becaus
 tell a cut list from a complete one. This follows Google AIP-158 (list methods are paged from
 the start, since adding paging later breaks clients) and the Zalando guidelines.
 
-#### Known exceptions
+#### Pagination of formerly unbounded lists (#473)
 
-These plain arrays break the rule today. They have no bound the client can rely on, and one of
-them is cut at a cap:
+Six historical collections now return `PageResponse<T>` instead of arrays. The settlement-match
+queue is no longer cut at 200; filter by `status` (default `PROPOSED`), optionally `kind`
+and `cardAccountId`, then follow `page.totalPages` to read the entire visible result.
+After confirming, rejecting, importing or rerunning matching, refresh from page 0.
 
-| Plain array | Why it is not bounded | Paged by |
-| --- | --- | --- |
-| `GET /api/v1/settlement-matches` | **Cut at the newest 200** matches of the requested `status` (default `PROPOSED`) | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
-| `GET /api/v1/accounts/{accountId}/snapshots` | Every snapshot recorded for the account, piling up over its life; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
-| `GET /api/v1/accounts/{accountId}/valuations` | Every valuation recorded for the asset, piling up over its life; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
-| `GET /api/v1/accounts/{accountId}/repayments` | About one repayment a month for the life of the loan; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
-| `GET /api/v1/accounts/{accountId}/amortisation-schedule` | One entry per due date, entered from the lender's schedule. The loan's term limits it, but the server limits neither the term nor the number of entries, and a 30-year monthly mortgage already has 360 | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
-| `GET /api/v1/accounts/{accountId}/transactions/deleted` | The 30-day window limits how old a removal can be, not how many there are. Rolling back an import that someone has worked on voids all of its rows at once, so a single rollback can put thousands of rows in the list; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
-| `POST /api/v1/accounts/{cardAccountId}/settlement-matches/run` | Every match the card has ever had, in every status, one more with each statement; no cap | [#473](https://github.com/hugiFreezy0815/TrackMyWealth/issues/473) |
-
-Each list will change its response to `PageResponse`, and the `run` action will stop returning
-matches and answer with a summary instead; both are breaking changes. Until
-then, a client that shows one of them must:
-
-- treat the array as possibly incomplete or large, and never label its length as a total;
-- for the settlement-match queue, read `status=PROPOSED` (optionally narrowed by `kind`) and
-  fetch it again after each confirm or reject. A decided match leaves the queue, so older
-  proposals move up into the newest 200. When a response holds exactly 200 matches, say that
-  more may be waiting rather than presenting the list as complete. Do not use the `run`
-  response as a way round the cap, because it is not bounded either.
+`POST /api/v1/accounts/{cardAccountId}/settlement-matches/run` is an action, **not a paged
+list**. It answers what this run changed, never the card's match history:
+`{ "newlyProposed": 2, "newlyConfirmed": 1 }` counts the proposals it added and the exact,
+unambiguous pairs it confirmed itself. Matches that already existed are not counted, so running
+it again answers `0` for both. Read the matches through the paged GET endpoint
+(`?cardAccountId=…&status=…`).
 
 The server owns the envelope rather than serializing Spring Data's `Page`. An empty first page is:
 
@@ -114,8 +100,9 @@ GET /api/v1/accounts/{accountId}/transactions?page=1&size=50&sort=bookingDate,de
 
 ### Sorting
 
-Each paged endpoint declares a whitelist of **response field names**. Use `sort=<field>`,
-`sort=<field>,asc` or `sort=<field>,desc`, with lower-case direction and no extra spaces.
+Each paged endpoint except the deleted-transactions restore list declares a whitelist of
+**response field names**. Use `sort=<field>`, `sort=<field>,asc` or `sort=<field>,desc`, with
+lower-case direction and no extra spaces.
 Omitting the direction means ascending; omitting `sort` entirely uses the endpoint default.
 Multiple `sort` parameters are allowed and applied in request order, but each field may appear
 only once. The field names and spellings must match the published OpenAPI `sort` parameter enum.
@@ -128,6 +115,12 @@ only once. The field names and spellings must match the published OpenAPI `sort`
 | `GET /api/v1/accounts/{accountId}/imports/{batchId}/rows` | `rowNumber` | `rowNumber,asc` | `rowNumber` |
 | `GET /api/v1/accounts/{accountId}/reconciliations` | `createdAt` | `createdAt,desc` | `id` |
 | `GET /api/v1/institutions/catalogue` | `name` | `name,asc` | `id` |
+| `GET /api/v1/accounts/{accountId}/snapshots` | `snapshotDate` | `snapshotDate,desc` | `id` |
+| `GET /api/v1/accounts/{accountId}/valuations` | `valuationDate` | `valuationDate,desc` | `id` |
+| `GET /api/v1/accounts/{accountId}/repayments` | `bookingDate` | `bookingDate,desc` | `id` |
+| `GET /api/v1/accounts/{accountId}/amortisation-schedule` | `dueDate` | `dueDate,asc` | `id` |
+| `GET /api/v1/settlement-matches` | `createdAt` | `createdAt,desc` | `id` |
+| `GET /api/v1/accounts/{accountId}/transactions/deleted` | **None: fixed order** | Most recently removed first (`deletedAt`, or `voidedAt` for a voided row, descending) | `id`, descending |
 
 `bookingDate` sorts first by booking date and then by creation time before the final `id`
 tie-breaker. `amount` sorts by the transaction's value in the **account currency**, not
@@ -143,6 +136,10 @@ An unknown field (including an entity property not present in the response white
 field, blank, malformed direction or otherwise malformed `sort` returns HTTP 400 with
 `code: "INVALID_SORT"`; it is **not silently ignored**. The problem `detail` names the allowed
 fields. Clients should handle the stable `code`, not parse the human-readable `detail`.
+The deleted-transactions restore list has a **fixed order**: its OpenAPI operation documents no
+`sort` parameter, and any `sort` value returns `INVALID_SORT` with a `detail` naming that order.
+The order runs over two fields (a deleted row's `deletedAt`, a voided row's `voidedAt`), so no
+single response field could be offered as a sort field.
 
 ### Offset paging and refresh after imports
 

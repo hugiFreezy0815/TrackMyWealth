@@ -38,6 +38,23 @@ class PagingValuesTest {
   }
 
   @Test
+  void aFixedOrderPageMustBeBoundedAndUnsorted() {
+    Pageable page = PageRequest.of(3, PagingValues.MAX_SIZE);
+
+    assertThat(PagingValues.requireBoundedFixedOrder(page)).isSameAs(page);
+    assertThatThrownBy(
+            () -> PagingValues.requireBoundedFixedOrder(PageRequest.of(0, 50, Sort.by("id"))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must not carry a sort");
+    assertThatThrownBy(() -> PagingValues.requireBoundedFixedOrder(Pageable.unpaged()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must be paged");
+    assertThatThrownBy(() -> PagingValues.requireBoundedFixedOrder(PageRequest.of(0, 201)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("at most 200");
+  }
+
+  @Test
   void aPageWithoutTheTieBreakerLastIsRefused() {
     assertThatThrownBy(() -> PagingValues.requireBounded(PageRequest.of(0, 50), "id"))
         .isInstanceOf(IllegalArgumentException.class)

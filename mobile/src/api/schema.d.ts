@@ -574,7 +574,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List an account's removed transactions */
+    /**
+     * List an account's removed transactions
+     * @description Fixed order: most recently removed first (deletedAt, or voidedAt for a voided row, descending), then id descending. Takes page and size only; any sort is a 400 INVALID_SORT.
+     */
     get: operations['listRemovedTransactions'];
     put?: never;
     post?: never;
@@ -1345,7 +1348,7 @@ export interface paths {
     };
     /**
      * List settlement matches
-     * @description Matches of one status, newest first; by default those needing a decision. Not paged, and cut at the newest 200 matches: a response holding exactly 200 matches may not be all of them.
+     * @description Matches of one status, newest first; by default those needing a decision.
      */
     get: operations['listSettlementMatches'];
     put?: never;
@@ -3003,6 +3006,18 @@ export interface components {
       /** Format: int32 */
       totalPages: number;
     };
+    PageResponseAccountSnapshotResponse: {
+      content: components['schemas']['AccountSnapshotResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
+    PageResponseAmortisationScheduleEntryResponse: {
+      content: components['schemas']['AmortisationScheduleEntryResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
+    PageResponseCustomAssetValuationResponse: {
+      content: components['schemas']['CustomAssetValuationResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
     PageResponseImportBatchResponse: {
       content: components['schemas']['ImportBatchResponse'][];
       page: components['schemas']['PageMetadata'];
@@ -3015,8 +3030,16 @@ export interface components {
       content: components['schemas']['InstitutionCatalogueEntrySummaryResponse'][];
       page: components['schemas']['PageMetadata'];
     };
+    PageResponseLoanRepaymentResponse: {
+      content: components['schemas']['LoanRepaymentResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
     PageResponseReconciliationResultResponse: {
       content: components['schemas']['ReconciliationResultResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
+    PageResponseSettlementMatchResponse: {
+      content: components['schemas']['SettlementMatchResponse'][];
       page: components['schemas']['PageMetadata'];
     };
     PageResponseTransactionResponse: {
@@ -3368,6 +3391,12 @@ export interface components {
       transferFxRate: DecimalString | null;
       /** Format: int32 */
       version: number;
+    };
+    SettlementMatchRunResponse: {
+      /** Format: int32 */
+      newlyProposed: number;
+      /** Format: int32 */
+      newlyConfirmed: number;
     };
     SettlementSourceResponse: {
       /** Format: uuid */
@@ -4064,7 +4093,14 @@ export interface operations {
   };
   listAmortisationEntries: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+        /** @description Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: dueDate,asc. The order always ends with a unique tie-breaker, so pages never overlap. */
+        sort?: ('dueDate' | 'dueDate,asc' | 'dueDate,desc')[];
+      };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
@@ -4084,12 +4120,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AmortisationScheduleEntryResponse'][];
+          'application/json': components['schemas']['PageResponseAmortisationScheduleEntryResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -8135,7 +8172,14 @@ export interface operations {
   };
   listLoanRepayments: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+        /** @description Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: bookingDate,desc. The order always ends with a unique tie-breaker, so pages never overlap. */
+        sort?: ('bookingDate' | 'bookingDate,asc' | 'bookingDate,desc')[];
+      };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
@@ -8155,12 +8199,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['LoanRepaymentResponse'][];
+          'application/json': components['schemas']['PageResponseLoanRepaymentResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -8615,7 +8660,14 @@ export interface operations {
   };
   listAccountSnapshots: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+        /** @description Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: snapshotDate,desc. The order always ends with a unique tie-breaker, so pages never overlap. */
+        sort?: ('snapshotDate' | 'snapshotDate,asc' | 'snapshotDate,desc')[];
+      };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
@@ -8635,12 +8687,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AccountSnapshotResponse'][];
+          'application/json': components['schemas']['PageResponseAccountSnapshotResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -9272,7 +9325,12 @@ export interface operations {
   };
   listRemovedTransactions: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+      };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
@@ -9292,12 +9350,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['TransactionResponse'][];
+          'application/json': components['schemas']['PageResponseTransactionResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -10366,7 +10425,14 @@ export interface operations {
   };
   listAccountValuations: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+        /** @description Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: valuationDate,desc. The order always ends with a unique tie-breaker, so pages never overlap. */
+        sort?: ('valuationDate' | 'valuationDate,asc' | 'valuationDate,desc')[];
+      };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
         'X-Correlation-Id'?: string;
@@ -10386,12 +10452,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['CustomAssetValuationResponse'][];
+          'application/json': components['schemas']['PageResponseCustomAssetValuationResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {
@@ -10573,7 +10640,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['SettlementMatchResponse'][];
+          'application/json': components['schemas']['SettlementMatchRunResponse'];
         };
       };
       /**
@@ -16426,6 +16493,14 @@ export interface operations {
         status?: 'PROPOSED' | 'CONFIRMED' | 'REJECTED';
         /** @description Lists one kind of match only; both kinds when absent. */
         kind?: 'CARD_SETTLEMENT' | 'TRANSFER';
+        /** @description Only matches belonging to this card or credited account. */
+        cardAccountId?: string;
+        /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+        /** @description Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: createdAt,desc. The order always ends with a unique tie-breaker, so pages never overlap. */
+        sort?: ('createdAt' | 'createdAt,asc' | 'createdAt,desc')[];
       };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
@@ -16444,12 +16519,13 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['SettlementMatchResponse'][];
+          'application/json': components['schemas']['PageResponseSettlementMatchResponse'];
         };
       };
       /**
        * @description Problem codes:
        *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
        */
       400: {
         headers: {

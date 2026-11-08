@@ -194,9 +194,10 @@ class WorkspaceMembershipAccessIntegrationTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<AccountSnapshotResponse>>() {})
+            .expectBody(new ParameterizedTypeReference<PageResponse<AccountSnapshotResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
     assertThat(snapshots)
         .singleElement()
         .satisfies(

@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -118,16 +119,26 @@ public interface SettlementMatchRepository extends JpaRepository<SettlementMatch
   // RLS confines the rows to the caller's workspace.
   // accountIds must not be empty.
   @Query(
-      "SELECT m FROM SettlementMatch m JOIN FETCH m.cardAccount JOIN FETCH m.paymentTransaction p"
-          + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction c"
-          + " WHERE m.status = :status AND m.cardAccount.id IN :accountIds"
-          + " AND p.account.id IN :accountIds"
-          + " AND (:matchKind IS NULL OR m.matchKind = :matchKind)"
-          + HIDDEN_LEG_EXCLUDED
-          + " ORDER BY m.createdAt DESC, m.id DESC")
-  List<SettlementMatch> findActionable(
+      value =
+          "SELECT m FROM SettlementMatch m JOIN FETCH m.cardAccount JOIN FETCH m.paymentTransaction p"
+              + " JOIN FETCH p.account LEFT JOIN FETCH m.cardTransaction c"
+              + " WHERE m.status = :status AND m.cardAccount.id IN :accountIds"
+              + " AND p.account.id IN :accountIds"
+              + " AND (:cardAccountId IS NULL OR m.cardAccount.id = :cardAccountId)"
+              + " AND (:matchKind IS NULL OR m.matchKind = :matchKind)"
+              + HIDDEN_LEG_EXCLUDED,
+      countQuery =
+          "SELECT COUNT(m) FROM SettlementMatch m JOIN m.paymentTransaction p"
+              + " LEFT JOIN m.cardTransaction c"
+              + " WHERE m.status = :status AND m.cardAccount.id IN :accountIds"
+              + " AND p.account.id IN :accountIds"
+              + " AND (:cardAccountId IS NULL OR m.cardAccount.id = :cardAccountId)"
+              + " AND (:matchKind IS NULL OR m.matchKind = :matchKind)"
+              + HIDDEN_LEG_EXCLUDED)
+  Page<SettlementMatch> findActionable(
       @Param("status") String status,
       @Param("matchKind") String matchKind,
+      @Param("cardAccountId") UUID cardAccountId,
       @Param("accountIds") Collection<UUID> accountIds,
       Pageable pageable);
 

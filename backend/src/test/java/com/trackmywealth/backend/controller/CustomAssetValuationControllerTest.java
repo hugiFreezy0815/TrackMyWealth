@@ -7,6 +7,7 @@ import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CustomAssetValuationResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.service.CustomAssetValuationService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
@@ -145,15 +146,71 @@ class CustomAssetValuationControllerTest {
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(new ParameterizedTypeReference<List<CustomAssetValuationResponse>>() {})
+            .expectBody(
+                new ParameterizedTypeReference<PageResponse<CustomAssetValuationResponse>>() {})
             .returnResult()
-            .getResponseBody();
+            .getResponseBody()
+            .content();
 
     assertThat(valuations).hasSize(2);
     assertThat(valuations.get(0).valuationDate()).isEqualTo(LocalDate.of(2026, 6, 1));
     assertThat(valuations.get(0).value()).isEqualByComparingTo("45000.0000");
     assertThat(valuations.get(1).valuationDate()).isEqualTo(LocalDate.of(2026, 1, 1));
     assertThat(valuations.get(1).value()).isEqualByComparingTo("40000.0000");
+  }
+
+  // #473 AC: pages 0 and 1 hold every valuation exactly once, newest first. (The AC's "60 on the
+  // same date" cannot occur: custom_asset_valuation is UNIQUE (account_id, valuation_date), V5;
+  // tied dates are tested on repayments.)
+  @Test
+  void sixtyValuationsArePagedNewestFirstWithoutOverlap() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse account = createCustomAssetAccount(token, "CHF");
+    LocalDate first = LocalDate.of(2021, 1, 1);
+    for (int month = 0; month < 60; month++) {
+      recordValuation(
+          token,
+          account.id(),
+          new CreateCustomAssetValuationRequest(
+              first.plusMonths(month), new BigDecimal(40000 + month)));
+    }
+
+    PageResponse<CustomAssetValuationResponse> page0 = valuationPage(token, account.id(), 0);
+    PageResponse<CustomAssetValuationResponse> page1 = valuationPage(token, account.id(), 1);
+
+    assertThat(page0.page()).isEqualTo(new PageResponse.PageMetadata(0, 50, 60, 2));
+    assertThat(page0.content()).hasSize(50);
+    assertThat(page1.content()).hasSize(10);
+    List<CustomAssetValuationResponse> both =
+        java.util.stream.Stream.concat(page0.content().stream(), page1.content().stream()).toList();
+    assertThat(both).extracting(CustomAssetValuationResponse::id).doesNotHaveDuplicates();
+    assertThat(both)
+        .extracting(CustomAssetValuationResponse::valuationDate)
+        .isSortedAccordingTo(java.util.Comparator.reverseOrder())
+        .startsWith(first.plusMonths(59))
+        .endsWith(first);
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + account.id() + "/valuations?sort=unknown")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT");
+  }
+
+  private PageResponse<CustomAssetValuationResponse> valuationPage(
+      String token, UUID accountId, int page) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + accountId + "/valuations?page=" + page + "&size=50")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<PageResponse<CustomAssetValuationResponse>>() {})
+        .returnResult()
+        .getResponseBody();
   }
 
   @Test
