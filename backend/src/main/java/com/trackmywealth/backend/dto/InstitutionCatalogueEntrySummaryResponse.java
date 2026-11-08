@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.dto;
 
+import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
@@ -9,4 +10,5 @@ public record InstitutionCatalogueEntrySummaryResponse(
     String country,
     String institutionType,
     @Nullable String identifier,
-    @Nullable String logoUrl) {}
+    @Nullable String logoUrl,
+    List<String> importFormats) {}
