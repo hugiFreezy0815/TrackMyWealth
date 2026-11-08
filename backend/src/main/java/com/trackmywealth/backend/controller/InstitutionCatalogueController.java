@@ -7,8 +7,6 @@ import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.ArraySchema;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
@@ -42,8 +40,7 @@ public class InstitutionCatalogueController {
       @Parameter(
               description =
                   "US-04-10: ISO 3166-1 alpha-2 country codes, repeated or comma-separated;"
-                      + " blank values are ignored. Any other value is a 400 VALIDATION_FAILED.",
-              array = @ArraySchema(schema = @Schema(pattern = "^[A-Za-z]{2}$")))
+                      + " blank values are ignored. Any other value (such as a three-letter code) is a 400 VALIDATION_FAILED.")
           @RequestParam(name = "country", required = false)
           List<String> country,
       @Paged(sort = @SortField(name = "name"), defaultSort = "name,asc") Pageable pageable) {

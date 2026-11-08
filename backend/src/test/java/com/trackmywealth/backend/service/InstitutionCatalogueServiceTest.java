@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.trackmywealth.backend.entity.InstitutionCatalogueListingRow;
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;

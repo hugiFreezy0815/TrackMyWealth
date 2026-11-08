@@ -13850,6 +13850,9 @@ paths:
           type: string
       - name: country
         in: query
+        description: "US-04-10: ISO 3166-1 alpha-2 country codes, repeated or comma-separated;\
+          \ blank values are ignored. Any other value (such as a three-letter code)\
+          \ is a 400 VALIDATION_FAILED."
         required: false
         schema:
           type: array
@@ -20452,8 +20455,16 @@ components:
           - "null"
         importFormats:
           type: array
+          description: "US-04-10: the file formats a statement of this institution\
+            \ can be imported in, sorted; empty when it has to be entered by hand."
           items:
             type: string
+            enum:
+            - CAMT
+            - CSV
+            - PDF
+            - SPREADSHEET
+          uniqueItems: true
       required:
       - country
       - id
