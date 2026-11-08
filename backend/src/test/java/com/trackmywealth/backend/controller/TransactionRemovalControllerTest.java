@@ -23,10 +23,12 @@ import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
+import com.trackmywealth.backend.dto.TransactionHistoryEntryResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
+import com.trackmywealth.backend.service.CategorizationService;
 import com.trackmywealth.backend.service.ImportLockService;
 import com.trackmywealth.backend.service.SettlementDetectionService;
 import com.trackmywealth.backend.testsupport.AccountRequests;
@@ -119,6 +121,8 @@ class TransactionRemovalControllerTest {
 
   @Autowired ImportLockService importLockService;
 
+  @Autowired CategorizationService categorizationService;
+
   @BeforeEach
   void cleanDatabase() throws Exception {
     try (Connection connection = dataSource.getConnection();
@@ -131,6 +135,7 @@ class TransactionRemovalControllerTest {
               "DELETE FROM categorization_rule",
               // reversals first: they reference their originals
               LedgerCleanup.DELETE_ALL_TRANSACTIONS,
+              "DELETE FROM import_batch",
               "DELETE FROM account_credit_card",
               "DELETE FROM account_securities",
               "DELETE FROM account",
@@ -149,6 +154,148 @@ class TransactionRemovalControllerTest {
         statement.execute(sql);
       }
     }
+  }
+
+  // --- US-07-38 (#480): change history across the void, restore and correction chain -----------
+
+  @Test
+  void anImportedRowsHistoryShowsItsCategoryDecisionsVoidAndRestoreNewestFirst() {
+    String token = bootstrapAdministrator();
+    String member = memberName("admin@example.com");
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    UUID batch = insertImportBatch(card.id());
+    UUID imported = insertImportedFromBatch(card.id(), batch, "COOP PRONTO BERN");
+    UUID groceries = defaultCategory("GROCERIES");
+    UUID shopping = defaultCategory("SHOPPING");
+    createMerchantRule(token, "coop", groceries);
+    categorizationService.recategorizeWorkspace(workspaceOf(card.id()));
+
+    // A member changes the rules' category, then resets it to automatic.
+    client(token)
+        .put()
+        .uri(rowUri(card.id(), imported) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetTransactionCategoryRequest(shopping))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    List<TransactionHistoryEntryResponse> changed = history(token, card.id(), imported);
+    assertThat(changed)
+        .extracting(TransactionHistoryEntryResponse::kind)
+        .containsExactly("CATEGORY_CHANGED", "CATEGORY_ASSIGNED", "IMPORTED");
+    assertThat(changed.get(0))
+        .satisfies(
+            entry -> {
+              assertThat(entry.actorDisplayName()).isEqualTo(member);
+              assertThat(entry.fromCategoryId()).isEqualTo(groceries);
+              assertThat(entry.toCategoryId()).isEqualTo(shopping);
+            });
+    assertThat(changed.get(1))
+        .satisfies(
+            entry -> {
+              assertThat(entry.actorDisplayName()).as("a system step").isNull();
+              assertThat(entry.fromCategoryId()).isEqualTo(defaultCategory("UNCATEGORIZED"));
+              assertThat(entry.toCategoryId()).isEqualTo(groceries);
+            });
+    assertThat(changed.get(2))
+        .satisfies(
+            entry -> {
+              assertThat(entry.actorDisplayName()).isNull();
+              assertThat(entry.importBatch().id()).isEqualTo(batch);
+              assertThat(entry.importBatch().fileFormat()).isEqualTo("CSV");
+              assertThat(entry.importBatch().uploadedAt()).isEqualTo(entry.occurredAt());
+            });
+
+    client(token)
+        .delete()
+        .uri(rowUri(card.id(), imported) + "/category")
+        .headers(CurrentVersion.ifMatch(dataSource, "transaction", imported))
+        .exchange()
+        .expectStatus()
+        .isOk();
+    assertThat(history(token, card.id(), imported).get(0))
+        .satisfies(
+            entry -> {
+              assertThat(entry.kind()).isEqualTo("CATEGORY_RESET");
+              assertThat(entry.actorDisplayName()).isEqualTo(member);
+              assertThat(entry.fromCategoryId()).isEqualTo(shopping);
+              assertThat(entry.toCategoryId()).isEqualTo(groceries);
+            });
+
+    TransactionRemovalResponse voided = remove(token, card.id(), imported, "Duplicate import");
+    TransactionResponse copy = restore(token, card.id(), imported).restored().get(0);
+
+    List<TransactionHistoryEntryResponse> restored = history(token, card.id(), copy.id());
+    assertThat(restored)
+        .extracting(TransactionHistoryEntryResponse::kind)
+        .containsExactly(
+            "CATEGORY_ASSIGNED",
+            "RESTORED",
+            "VOIDED",
+            "CATEGORY_RESET",
+            "CATEGORY_CHANGED",
+            "CATEGORY_ASSIGNED",
+            "IMPORTED");
+    assertThat(restored.get(1))
+        .satisfies(
+            entry -> {
+              assertThat(entry.relatedTransactionId()).isEqualTo(imported);
+              assertThat(entry.actorDisplayName()).isEqualTo(member);
+            });
+    assertThat(restored.get(2))
+        .satisfies(
+            entry -> {
+              assertThat(entry.relatedTransactionId())
+                  .as("the reversing entry")
+                  .isEqualTo(voided.reversals().get(0).id());
+              assertThat(entry.reason()).isEqualTo("Duplicate import");
+              assertThat(entry.actorDisplayName()).isEqualTo(member);
+            });
+  }
+
+  @Test
+  void aCorrectionsHistoryIncludesTheRowItReplaced() {
+    String token = bootstrapAdministrator();
+    String member = memberName("admin@example.com");
+    AccountSummaryResponse card = createAccount(token, "CREDIT_CARD", "CHF");
+    TransactionResponse original = record(token, card.id(), purchase("-85.00"));
+
+    TransactionResponse replacement =
+        correct(token, card.id(), original, "-80.00", null, "Corrected shop", "fixed", null)
+            .transaction();
+
+    List<TransactionHistoryEntryResponse> entries = history(token, card.id(), replacement.id());
+    // The removal and the replacement are one write; the original's creation came before both.
+    List<String> lifecycle =
+        entries.stream()
+            .map(TransactionHistoryEntryResponse::kind)
+            .filter(kind -> !kind.startsWith("CATEGORY_"))
+            .toList();
+    assertThat(lifecycle.subList(0, 2)).containsExactlyInAnyOrder("CORRECTED", "DELETED");
+    assertThat(lifecycle)
+        .as("the replacement's own creation is its CORRECTED entry")
+        .hasSize(3)
+        .endsWith("CREATED");
+    assertThat(entries)
+        .filteredOn(entry -> entry.kind().equals("CORRECTED"))
+        .singleElement()
+        .satisfies(
+            entry -> {
+              assertThat(entry.relatedTransactionId()).isEqualTo(original.id());
+              assertThat(entry.actorDisplayName()).isEqualTo(member);
+            });
+    assertThat(entries)
+        .filteredOn(entry -> entry.kind().equals("DELETED"))
+        .singleElement()
+        .satisfies(entry -> assertThat(entry.actorDisplayName()).isEqualTo(member));
+    // The replaced row itself is soft-deleted: its own history is no longer readable.
+    client(token)
+        .get()
+        .uri(rowUri(card.id(), original.id()) + "/history")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
   }
 
   // --- US-07-06: correction ---------------------------------------------------------------------
@@ -2412,6 +2559,92 @@ class TransactionRemovalControllerTest {
         null,
         null,
         null);
+  }
+
+  private List<TransactionHistoryEntryResponse> history(
+      String token, UUID accountId, UUID transactionId) {
+    return client(token)
+        .get()
+        .uri(rowUri(accountId, transactionId) + "/history")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(
+            new ParameterizedTypeReference<PageResponse<TransactionHistoryEntryResponse>>() {})
+        .returnResult()
+        .getResponseBody()
+        .content();
+  }
+
+  private String memberName(String email) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT m.display_name FROM workspace_member m"
+                    + " JOIN app_user u ON u.workspace_member_id = m.id WHERE u.email = ?")) {
+      statement.setString(1, email);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        assertThat(resultSet.next()).isTrue();
+        return resultSet.getString(1);
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private UUID workspaceOf(UUID accountId) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement("SELECT workspace_id FROM account WHERE id = ?")) {
+      statement.setObject(1, accountId);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        assertThat(resultSet.next()).isTrue();
+        return (UUID) resultSet.getObject(1);
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  // A committed CSV import, uploaded an hour ago (synthetic: no real statement data).
+  private UUID insertImportBatch(UUID accountId) {
+    UUID id = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO import_batch (id, workspace_id, account_id, status, uploaded_at)"
+                    + " SELECT ?, workspace_id, id, 'COMMITTED', now() - INTERVAL '1 hour'"
+                    + " FROM account WHERE id = ?")) {
+      statement.setObject(1, id);
+      statement.setObject(2, accountId);
+      statement.executeUpdate();
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+    return id;
+  }
+
+  // A purchase as that import left it: source CSV, in the batch, not yet categorized.
+  private UUID insertImportedFromBatch(UUID accountId, UUID batchId, String merchant) {
+    UUID id = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, source, import_batch_id,"
+                    + " merchant_description) SELECT ?, workspace_id, id, ?, ?, -42.50, 'CHF',"
+                    + " 'CSV', ?, ? FROM account WHERE id = ?")) {
+      statement.setObject(1, id);
+      statement.setString(2, PURCHASE);
+      statement.setObject(3, today());
+      statement.setObject(4, batchId);
+      statement.setString(5, merchant);
+      statement.setObject(6, accountId);
+      statement.executeUpdate();
+    } catch (SQLException e) {
+      throw new IllegalStateException(e);
+    }
+    return id;
   }
 
   private static String rowUri(UUID accountId, UUID transactionId) {
