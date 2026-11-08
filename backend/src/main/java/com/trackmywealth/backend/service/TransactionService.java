@@ -10,6 +10,8 @@ import com.trackmywealth.backend.dto.LoanPaymentPlan;
 import com.trackmywealth.backend.dto.PagingValues;
 import com.trackmywealth.backend.dto.TransactionRemovalValues;
 import com.trackmywealth.backend.dto.TransactionResponse;
+import com.trackmywealth.backend.dto.TransactionReadAccountDetails;
+import com.trackmywealth.backend.dto.TransactionReadContext;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.Transaction;
@@ -1407,11 +1409,11 @@ public class TransactionService {
       String categoryAssignedBy,
       Map<UUID, LocalDate> openingBalanceDates,
       Map<UUID, String> adjustmentStates,
-      TransactionReadContextService.Context context) {
+      TransactionReadContext context) {
     UUID accountId = transaction.getAccount().getId();
-    TransactionReadContextService.AccountDetails account = context.accounts().get(accountId);
+    TransactionReadAccountDetails account = context.accounts().get(accountId);
     UUID counterpartyAccountId = transaction.getCounterpartyAccountId();
-    TransactionReadContextService.AccountDetails counterparty =
+    TransactionReadAccountDetails counterparty =
         counterpartyAccountId == null ? null : context.accounts().get(counterpartyAccountId);
     return new TransactionResponse(
         transaction.getId(),
@@ -1503,7 +1505,7 @@ public class TransactionService {
     Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(transactions);
     Map<UUID, String> adjustmentStates =
         reconciliationAdjustmentService.adjustmentStates(transactions);
-    TransactionReadContextService.Context context = readContextService.load(transactions);
+    TransactionReadContext context = readContextService.load(transactions);
     return transactions.stream()
         .map(
             transaction ->
