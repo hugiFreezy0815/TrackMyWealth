@@ -58,6 +58,10 @@ public class TransactionCategorizationLog {
   @Column(name = "assigned_by_user_id", updatable = false, columnDefinition = UUID_COLUMN)
   private UUID assignedByUserId;
 
+  // US-07-38: a reset has an actor but is not an override. Never change an old log row.
+  @Column(name = "is_reset", nullable = false, updatable = false)
+  private boolean reset;
+
   @Generated(event = EventType.INSERT)
   @Column(name = "assigned_at", insertable = false, updatable = false)
   private OffsetDateTime assignedAt;
@@ -87,6 +91,16 @@ public class TransactionCategorizationLog {
     return log;
   }
 
+  /** The automatic decision selected when a member reset their override. */
+  public static TransactionCategorizationLog ofMemberReset(
+      UUID transactionId, UUID categoryId, String assignedBy, UUID userId) {
+    TransactionCategorizationLog log =
+        new TransactionCategorizationLog(transactionId, categoryId, assignedBy, null, null);
+    log.reset = true;
+    log.assignedByUserId = userId;
+    return log;
+  }
+
   public UUID getId() {
     return id;
   }
@@ -109,6 +123,10 @@ public class TransactionCategorizationLog {
 
   public boolean isUserOverride() {
     return userOverride;
+  }
+
+  public boolean isReset() {
+    return reset;
   }
 
   public UUID getAssignedByUserId() {
