@@ -20,6 +20,7 @@ import com.trackmywealth.backend.dto.PortfolioSummaryResponse;
 import com.trackmywealth.backend.dto.SecurityResponse;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.TransactionResponse;
+import com.trackmywealth.backend.dto.TransactionHistoryEntryResponse;
 import com.trackmywealth.backend.dto.UserSummaryResponse;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.FxRate;
@@ -127,6 +128,107 @@ class TransactionControllerTest {
         statement.execute("DELETE FROM " + table);
       }
     }
+  }
+
+  // --- US-07-38 (#480): complete, paged history -----------------------------------------------
+
+  @Test
+  void historyPaginatesAllCategoryChangesAndEnforcesSortAndAccountAccess() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    AccountSummaryResponse other = createCashAccount(token);
+    UUID id = insertLedgerRow(card.id(), "-17.00", false);
+    UUID category = jdbcUuid("SELECT id FROM category WHERE code = 'UNCATEGORIZED' LIMIT 1", null);
+    UUID actor = jdbcUuid("SELECT id FROM app_user LIMIT 1", null);
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement log =
+            connection.prepareStatement(
+                "INSERT INTO transaction_categorization_log"
+                    + " (transaction_id, category_id, assigned_by, assigned_by_user_id,"
+                    + " is_user_override, is_reset) VALUES (?, ?, 'USER', ?, true, false)")) {
+      for (int index = 0; index < 120; index++) {
+        log.setObject(1, id);
+        log.setObject(2, category);
+        log.setObject(3, actor);
+        log.addBatch();
+      }
+      log.executeBatch();
+    }
+
+    var page =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + card.id() + "/transactions/" + id
+                + "/history?page=0&size=50")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionHistoryEntryResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+    assertThat(page.content()).hasSize(50);
+    assertThat(page.page().totalElements()).isEqualTo(121);
+    assertThat(page.content().get(0).actorDisplayName()).isNotBlank();
+
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + card.id() + "/transactions/" + id
+            + "/history?sort=amount,asc")
+        .exchange()
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT");
+
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + other.id() + "/transactions/" + id + "/history")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+  }
+
+  @Test
+  void historyShowsVoidsRestoresAndCorrectionChain() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    UUID original = insertLedgerRow(card.id(), "-12.00", true);
+    UUID replacement = UUID.randomUUID();
+    UUID workspace = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", card.id());
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency, corrects_transaction_id)"
+                    + " VALUES (?, ?, ?, 'CREDIT_CARD_PURCHASE', CURRENT_DATE, -12, 'CHF', ?)")) {
+      statement.setObject(1, replacement);
+      statement.setObject(2, workspace);
+      statement.setObject(3, card.id());
+      statement.setObject(4, original);
+      statement.executeUpdate();
+    }
+
+    var page =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + card.id() + "/transactions/" + replacement + "/history")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionHistoryEntryResponse>>() {})
+            .returnResult()
+            .getResponseBody();
+    assertThat(page.content()).extracting(TransactionHistoryEntryResponse::kind)
+        .contains("CORRECTED", "VOIDED", "CREATED");
+    assertThat(page.content())
+        .filteredOn(entry -> entry.kind().equals("CORRECTED"))
+        .extracting(TransactionHistoryEntryResponse::relatedTransactionId)
+        .containsExactly(original);
+    assertThat(page.content())
+        .filteredOn(entry -> entry.kind().equals("VOIDED"))
+        .extracting(TransactionHistoryEntryResponse::reason)
+        .containsExactly("test");
   }
 
   // --- US-07-37 (#479): direct read and list enrichment --------------------------------------
