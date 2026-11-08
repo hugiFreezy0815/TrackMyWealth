@@ -146,6 +146,89 @@ class PortfolioControllerTest {
   }
 
   @Test
+  void catalogueCountryFilterUsesServerSideCountAndSupportsCommaSeparatedValues() {
+    String token = bootstrapAdministrator();
+    PageResponse<InstitutionCatalogueEntrySummaryResponse> swiss =
+        catalogue(token, "?country=CH&page=0&size=2");
+    assertThat(swiss.page().totalElements()).isEqualTo(3);
+    assertThat(swiss.content()).hasSize(2).allMatch(entry -> "CH".equals(entry.country()));
+
+    PageResponse<InstitutionCatalogueEntrySummaryResponse> germany =
+        catalogue(token, "?country=DE&query=DKB");
+    assertThat(germany.page().totalElements()).isEqualTo(1);
+    assertThat(germany.content().get(0).name()).isEqualTo("DKB");
+
+    assertThat(catalogue(token, "?country=CH,DE").page().totalElements()).isEqualTo(6);
+    assertThat(catalogue(token, "?country=CH&country=DE").page().totalElements()).isEqualTo(6);
+    assertThat(catalogue(token, "?country=%20").page().totalElements()).isEqualTo(6);
+    assertThat(catalogue(token, "?country=XX").page().totalElements()).isZero();
+  }
+
+  @Test
+  void catalogueRejectsMalformedCountryWithValidationProblemCode() {
+    String token = bootstrapAdministrator();
+    client(token)
+        .get()
+        .uri("/api/v1/institutions/catalogue?country=chx")
+        .exchange()
+        .expectStatus()
+        .isBadRequest()
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("VALIDATION_FAILED");
+  }
+
+  @Test
+  void catalogueShowsSortedDistinctFormatsFromShippedTemplatesAndCamtFlag() {
+    String token = bootstrapAdministrator();
+    var postFinance = catalogue(token, "?query=PostFinance").content().get(0);
+    assertThat(postFinance.importFormats()).containsExactly("CAMT", "CSV", "PDF");
+    var dkb = catalogue(token, "?query=DKB").content().get(0);
+    // V19 advertises CAMT053 for DKB as well as V75's shipped CSV template.
+    assertThat(dkb.importFormats()).containsExactly("CAMT", "CSV");
+  }
+
+  @Test
+  void inactiveTemplateDoesNotContributeItsFormat() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID id = UUID.fromString("35cd132b-78f1-4480-93a7-e59e0fd18f9f");
+    try {
+      try (Connection connection = dataSource.getConnection();
+          var statement =
+              connection.prepareStatement(
+                  "UPDATE import_template SET is_active = false WHERE id = ?")) {
+        statement.setObject(1, id);
+        assertThat(statement.executeUpdate()).isEqualTo(1);
+      }
+      assertThat(catalogue(token, "?query=PostFinance").content().get(0).importFormats())
+          .containsExactly("CAMT", "CSV");
+    } finally {
+      try (Connection connection = dataSource.getConnection();
+          var statement =
+              connection.prepareStatement(
+                  "UPDATE import_template SET is_active = true WHERE id = ?")) {
+        statement.setObject(1, id);
+        statement.executeUpdate();
+      }
+    }
+  }
+
+  private PageResponse<InstitutionCatalogueEntrySummaryResponse> catalogue(
+      String token, String params) {
+    return client(token)
+        .get()
+        .uri("/api/v1/institutions/catalogue" + params)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(
+            new ParameterizedTypeReference<
+                PageResponse<InstitutionCatalogueEntrySummaryResponse>>() {})
+        .returnResult()
+        .getResponseBody();
+  }
+
+  @Test
   void creatingFromACatalogueEntryDefaultsCurrencyFromCountryAndLinksTheCatalogueId() {
     String token = bootstrapAdministrator();
     var postFinance = searchCatalogue(token, "Post").content().get(0);
