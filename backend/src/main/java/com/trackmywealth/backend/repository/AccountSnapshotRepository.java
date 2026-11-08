@@ -65,9 +65,31 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
   List<AccountSnapshot> findLatestWithBalance(
       @Param("accountIds") Collection<UUID> accountIds, @Param("asOf") LocalDate asOf);
 
+  /**
+   * US-25-02/#482: newest observed balance per account, excluding opening, withdrawn and
+   * holdings-only snapshots. Same order as findLatestObserved, id tie-break included, in one
+   * PostgreSQL query.
+   */
+  @Query(
+      value =
+          """
+          SELECT DISTINCT ON (account_id) *
+          FROM account_snapshot
+          WHERE account_id IN (:accountIds)
+            AND is_opening_balance = false
+            AND balance IS NOT NULL
+            AND withdrawn_at IS NULL
+          ORDER BY account_id, snapshot_date DESC, created_at DESC, id
+          """,
+      nativeQuery = true)
+  List<AccountSnapshot> findLatestObservedForAccounts(
+      @Param("accountIds") Collection<UUID> accountIds);
+
   // US-25-02: the newest observed balance, excluding the synthetic opening-balance starting point.
+  // The id breaks a tie of two snapshots stated in one transaction (same created_at), so this and
+  // findLatestObservedForAccounts always pick the same row (#482).
   Optional<AccountSnapshot>
-      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
+      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDescIdAsc(
           UUID accountId);
 
   // US-25-02: the observed balance immediately before a snapshot, used to bound best-effort cause
@@ -81,7 +103,7 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
    * snapshots (US-07-12) left out.
    */
   default Optional<AccountSnapshot> findLatestObserved(UUID accountId) {
-    return findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
+    return findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDescIdAsc(
         accountId);
   }
 
