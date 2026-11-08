@@ -575,7 +575,7 @@ public class CategorizationService {
     JsonNode root = objectMapper.readTree(rawSourceData);
     text(root.path("purposeCode"))
         .ifPresent(code -> codes.add(new TransactionSourceCode(ISO20022_PURPOSE, code)));
-    text(root.path("bankTransactionCode"))
+    text(root.path(ImportLedgerRowService.BANK_TRANSACTION_CODE_KEY))
         .ifPresent(code -> codes.add(new TransactionSourceCode(ISO20022_BTC, code)));
     JsonNode mcc = root.path("mcc");
     if (mcc.isIntegralNumber()) {

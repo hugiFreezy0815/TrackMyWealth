@@ -126,7 +126,8 @@ public class TransactionController {
       @PathVariable UUID accountId,
       @PathVariable UUID transactionId,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    TransactionResponse response = transactionService.getTransaction(accountId, transactionId, actor);
+    TransactionResponse response =
+        transactionService.getTransaction(accountId, transactionId, actor);
     return VersionedResponse.ok(response, response.version());
   }
 

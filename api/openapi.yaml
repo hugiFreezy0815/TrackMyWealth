@@ -22118,6 +22118,12 @@ components:
           format: uuid
         fileFormat:
           type: string
+          description: Statement format the transaction was imported from.
+          enum:
+          - CSV
+          - SPREADSHEET
+          - PDF
+          - CAMT
         uploadedAt:
           type: string
           format: date-time

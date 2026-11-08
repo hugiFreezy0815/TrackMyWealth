@@ -3481,7 +3481,11 @@ export interface components {
     TransactionImportBatchResponse: {
       /** Format: uuid */
       id: string;
-      fileFormat: string;
+      /**
+       * @description Statement format the transaction was imported from.
+       * @enum {string}
+       */
+      fileFormat: 'CSV' | 'SPREADSHEET' | 'PDF' | 'CAMT';
       /** Format: date-time */
       uploadedAt: string;
     };

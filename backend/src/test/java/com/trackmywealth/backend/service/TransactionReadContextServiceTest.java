@@ -1,8 +1,7 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.TransactionReadContext;
-
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -11,7 +10,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
+import com.trackmywealth.backend.dto.TransactionReadContext;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
 import com.trackmywealth.backend.entity.ImportTemplate;
@@ -41,18 +42,36 @@ class TransactionReadContextServiceTest {
     when(batch.getSourceKind()).thenReturn("DOCUMENT");
 
     assertThat(TransactionReadContextService.formatOf(batch, null)).isEqualTo("CAMT");
-    assertThat(
-            TransactionReadContextService.formatOf(batch, ImportTemplateValues.FORMAT_PDF_TEXT))
+    assertThat(TransactionReadContextService.formatOf(batch, ImportTemplateValues.FORMAT_PDF_TEXT))
+        .isEqualTo("PDF");
+    assertThat(TransactionReadContextService.formatOf(batch, ImportTemplateValues.FORMAT_PDF_OCR))
         .isEqualTo("PDF");
     assertThat(
-            TransactionReadContextService.formatOf(batch, ImportTemplateValues.FORMAT_PDF_OCR))
-        .isEqualTo("PDF");
-    assertThat(
-            TransactionReadContextService.formatOf(
-                batch, ImportTemplateValues.FORMAT_SPREADSHEET))
+            TransactionReadContextService.formatOf(batch, ImportTemplateValues.FORMAT_SPREADSHEET))
         .isEqualTo("SPREADSHEET");
     assertThat(TransactionReadContextService.formatOf(batch, ImportTemplateValues.FORMAT_CSV))
         .isEqualTo("CSV");
+  }
+
+  @Test
+  void csvBatchWithoutTemplateIsCsv() {
+    ImportBatch batch = mock(ImportBatch.class);
+    when(batch.getSourceKind()).thenReturn(ImportBatchValues.SOURCE_CSV);
+
+    assertThat(TransactionReadContextService.formatOf(batch, null)).isEqualTo("CSV");
+  }
+
+  @Test
+  void unknownSourceKindOrTemplateFormatFailsInsteadOfBeingMislabelled() {
+    ImportBatch batch = mock(ImportBatch.class);
+    when(batch.getSourceKind()).thenReturn("MT940");
+
+    assertThatThrownBy(() -> TransactionReadContextService.formatOf(batch, null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("MT940");
+    assertThatThrownBy(() -> TransactionReadContextService.formatOf(batch, "XLS_LEGACY"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("XLS_LEGACY");
   }
 
   @Test

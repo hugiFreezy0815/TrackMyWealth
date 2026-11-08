@@ -222,6 +222,25 @@ class TransactionControllerTest {
     TransactionResponse perAccount = listTransactions(token, cash.id(), "").content().get(0);
     assertThat(perAccount.importBatch().fileFormat()).isEqualTo("CAMT");
     assertThat(perAccount.bankTransactionCode()).isEqualTo("PMNT-CCRD-POSD");
+
+    // The workspace-wide ledger sends the same row shape (AC: both lists carry the new fields).
+    TransactionResponse workspaceWide =
+        client(token)
+            .get()
+            .uri("/api/v1/transactions")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
+            .returnResult()
+            .getResponseBody()
+            .content()
+            .get(0);
+    assertThat(workspaceWide.id()).isEqualTo(transactionId);
+    assertThat(workspaceWide.portfolioId()).isEqualTo(detail.portfolioId());
+    assertThat(workspaceWide.portfolioName()).isEqualTo(detail.portfolioName());
+    assertThat(workspaceWide.bankTransactionCode()).isEqualTo("PMNT-CCRD-POSD");
+    assertThat(workspaceWide.importBatch()).isEqualTo(detail.importBatch());
   }
 
   @Test
@@ -288,6 +307,45 @@ class TransactionControllerTest {
         .exchange()
         .expectStatus()
         .isNotFound();
+  }
+
+  @Test
+  void directReadOfAnotherWorkspacesTransactionIsNotFound() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    UUID foreignAccount = accountInAnotherWorkspace();
+    UUID foreignTransaction = insertLedgerRow(foreignAccount, "-9.00", false);
+
+    // Neither under one of the caller's own accounts nor under the foreign account itself.
+    for (String path :
+        List.of(
+            "/api/v1/accounts/" + card.id() + "/transactions/" + foreignTransaction,
+            "/api/v1/accounts/" + foreignAccount + "/transactions/" + foreignTransaction)) {
+      client(token).get().uri(path).exchange().expectStatus().isNotFound();
+    }
+  }
+
+  // Workspace B, set up directly: this instance's API only ever bootstraps one workspace.
+  private UUID accountInAnotherWorkspace() throws Exception {
+    UUID workspace = UUID.randomUUID();
+    UUID account = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement insertWorkspace =
+            connection.prepareStatement(
+                "INSERT INTO workspace (id, name) VALUES (?, 'Workspace B')");
+        PreparedStatement insertAccount =
+            connection.prepareStatement(
+                "INSERT INTO account (id, workspace_id, portfolio_id, account_type,"
+                    + " name, native_currency) SELECT ?, ?, id, 'CASH', 'B checking', 'CHF'"
+                    + " FROM portfolio WHERE workspace_id = ?")) {
+      insertWorkspace.setObject(1, workspace);
+      insertWorkspace.executeUpdate();
+      insertAccount.setObject(1, account);
+      insertAccount.setObject(2, workspace);
+      insertAccount.setObject(3, workspace);
+      assertThat(insertAccount.executeUpdate()).isEqualTo(1);
+    }
+    return account;
   }
 
   private TransactionResponse getTransaction(String token, UUID accountId, UUID transactionId) {
