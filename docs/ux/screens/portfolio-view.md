@@ -68,8 +68,7 @@ Overview
 
 ## Requests
 
-1. `GET /api/v1/portfolios/{portfolioId}/view` → `PortfolioViewResponse`: everything except
-   the GAP parts.
+1. `GET /api/v1/portfolios/{portfolioId}/view` → `PortfolioViewResponse`: the complete header, rows and import footer, including #482.
 2. For each account in a `DEPOT` section: `GET /api/v1/accounts/{accountId}/positions`
    (**delivered by #478**: latest holdings snapshot, server-valued positions).
 3. `GET /api/v1/portfolios/{portfolioId}/history?period=1M` (**GAP-HISTORY (#477)**).
@@ -81,14 +80,14 @@ That way the name, logo and total never flash empty.
 
 | # | Element | Label key (EN / DE draft) | Format | Source: `/portfolios/{id}/view` → field |
 |---|---|---|---|---|
-| 1 | Logo | | `InstitutionLogo` | `/portfolios` list → `logoUrl` (not in the view response) |
+| 1 | Logo | | `InstitutionLogo` | `/portfolios` list → `logoUrl` (also in the view response) |
 | 2 | Name | | title | `name` |
 | 3 | Type badge | `portfolioType.{BANK,PORTFOLIO,PILLAR_3A,PENSION_FUND,CRYPTO,PERSONAL_ASSETS,MIXED}` "Bank", "Portfolio", "Pillar 3a", "Pension fund", "Crypto", "Personal assets", "Mixed" | neutral badge | `portfolioType`; unknown value ⇒ no badge |
-| 4 | Subtitle | `portfolio.subtitle` "Institution {institution} · {country} · portfolio currency {currency}"; without an institution: "Portfolio currency {currency}" | | institution and country from the `/portfolios` list item (`institutionType`, `country`, catalogue name); `portfolioCurrency`. *The catalogue's display name is not in the list item; until GAP-ROWS (#482) adds `institutionName`, show only "Portfolio currency {currency}"* |
+| 4 | Subtitle | `portfolio.subtitle` "Institution {institution} · {country} · portfolio currency {currency}"; without an institution: "Portfolio currency {currency}" | | institution and country from the `/portfolios` list item (`institutionType`, `country`, catalogue name); `portfolioCurrency`. `institutionName` is available on the view and list item; without it show only "Portfolio currency {currency}" |
 | 5 | Total | | `Amount`, large; may be **negative** | `total`, `portfolioCurrency` |
 | 6 | Status | `ValueStatusBadge`; `total.incomplete` | | `valueStatus`, `complete`, `warnings[]` |
 | 7 | Converted total | `amount.approx` "≈ {amount}" | | `totalInWorkspaceCurrency`, `workspaceCurrency`; only if the currencies differ |
-| 8 | FX hint `[advanced]` | `fx.rate` "1 {from} = {rate} {to} · {date}" | ⓘ opens explanation | **Not in the view response.** Sprint 7 shows only the ⓘ explanation "Converted at the rate of {asOf}", without the rate. The rate comes with GAP-ROWS (#482) (`conversionRate`, `conversionRateDate` on the view) |
+| 8 | FX hint `[advanced]` | `fx.rate` "1 {from} = {rate} {to} · {date}" | ⓘ opens explanation | `conversionRate`, `conversionRateDate` from #482 (informational: the workspace total is still independently converted account-by-account) |
 | 9 | Change chip, chart, period switch | as S1 #8–#11 | | **GAP-HISTORY (#477)** (portfolio scope) |
 
 ## Sections
@@ -112,11 +111,11 @@ Every row comes from `sections[].accounts[]` (`AccountRow`) and opens [Account d
 
 | Section | Row line 1 | Row line 2 | Right side | Extra |
 |---|---|---|---|---|
-| Cash & savings | `name` | account type label (`accountType.{code}`) · masked identifier (**GAP-ROWS (#482)** `maskedIdentifier`) | `balance` in `currency`; if `currency ≠ portfolioCurrency`: `valueInPortfolioCurrency` as "≈ …" | `ValueStatusBadge`; "✓ Reconciled" chip when **GAP-ROWS (#482)** `reconciliationStatus = RECONCILED` |
+| Cash & savings | `name` | account type label (`accountType.{code}`) · masked identifier (`maskedIdentifier`, delivered #482) | `balance` in `currency`; if `currency ≠ portfolioCurrency`: `valueInPortfolioCurrency` as "≈ …" | `ValueStatusBadge`; "✓ Reconciled" chip when `reconciliationStatus = RECONCILED` (delivered #482) |
 | Pillar 3a, Pension | `name` | type label · "as of {valueSourceDate}" | value | `totalReturn` as `ChangeChip` "Total return {percent}" **only when not null**. The server sends `null` until performance is calculated (EPIC 15/16, PO decision on #390), so in sprint 7 the chip never shows. The code path is built and tested with a non-null fixture |
 | Depot | `name` | "{positionsCount, plural, one {# position} other {# positions}} · as of {positionsAsOf}" | value | `totalReturn` chip; then up to **5 positions** (delivered by #478, sorted by account-currency value desc as sent) as `PositionRow`; "Show all {n} positions" opens S3 for the depot. Sub-tabs Allocation/Performance: **not shown** (EPIC 16/17) |
 | Crypto | as Depot | | | as Depot |
-| Cards | `name` | type label · "statement {date}" (**GAP-ROWS (#482)** `statementDate`) | `balance` (negative) | Due chip `card.dueIn` "{days, plural, one {Due in # day} other {Due in # days}}" from `dueDate`. Day count = calendar days from today to `dueDate`. This is date arithmetic, not a money figure. Overdue: "Due {date}" in the warning colour |
+| Cards | `name` | type label · "statement {date}" (`statementDate`, delivered #482) | `balance` (negative) | Due chip `card.dueIn` "{days, plural, one {Due in # day} other {Due in # days}}" from `dueDate`. Day count = calendar days from today to `dueDate`. This is date arithmetic, not a money figure. Overdue: "Due {date}" in the warning colour |
 | Property & mortgage | `name` | "Manual value · {valueSourceDate}" for a manually valued asset; type label for the mortgage | value | A mortgage with `linkedPropertyAccountId` is indented under its property |
 | Other | `name` | type label | value | |
 
@@ -136,10 +135,10 @@ sends `null` rather than a figure that may mix currencies (FR-PERF-018). The % i
 - The row amount is `balance` in the account's own `currency`. The portfolio-currency value is
   only shown "≈" when the currencies differ.
 
-## Footer: data source (GAP-ROWS (#482))
+## Footer: data source (delivered #482)
 
 "{sourceKind}: last import {date} · {count, plural, one {# transaction} other {# transactions}}"
-from GAP-ROWS (#482) `lastImport` (`importedAt`, `transactionCount`, `fileFormat`). The "Import
+from `lastImport` (`uploadedAt`, `transactionCount`, `fileFormat`). The "Import
 statement" button opens [Import statement (S7)](import-statement.md) with the account picker.
 No last import: "No import yet" + the button.
 
@@ -174,7 +173,7 @@ No last import: "No import yet" + the button.
 | "+7.8% YTD (TWR)" | "Total return {percent}" once `totalReturn` is sent; hidden in sprint 7 | `totalReturn` is `null` until EPIC 15/16; TWR is EPIC 16 |
 | W02 "Cash flow · October" per portfolio | Hidden | `/cash-flow` is workspace-wide only |
 | W02 "Edit" portfolio details | Hidden | Edit portfolio is not a sprint-7 screen |
-| "1 EUR = 0.9362 CHF · 20 Oct" | ⓘ explanation without the rate, until GAP-ROWS (#482) | The view doesn't send the rate |
+| "1 EUR = 0.9362 CHF · 20 Oct" | Rate and valuation date shown when resolvable (#482) | Informational rate; workspace total uses account-by-account conversions |
 
 ## Acceptance checks for the UI story
 

@@ -172,7 +172,7 @@ class PdfStatementIdentificationControllerTest {
             .returnResult()
             .getResponseBody();
 
-    assertThat(registered.identifierMasked()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(registered.identifierMasked()).isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
     assertThat(registered.contractIdentifierMasked()).isEqualTo("\u2022\u2022\u2022\u20225009");
     assertThat(
             upload(lbs, ShippedTemplateFixtures.lbsStatement(), LBS)

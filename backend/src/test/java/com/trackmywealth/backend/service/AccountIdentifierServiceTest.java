@@ -115,7 +115,7 @@ class AccountIdentifierServiceTest {
   @Test
   void theDisplayValueShowsAnIbansLastFourAndACardAsMasked() {
     assertThat(AccountIdentifierService.masked("DE89370400440532013000", IBAN))
-        .isEqualTo("\u2022\u2022\u2022\u20223000");
+        .isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
     assertThat(AccountIdentifierService.masked("123456******7890", CARD))
         .isEqualTo("123456******7890");
   }

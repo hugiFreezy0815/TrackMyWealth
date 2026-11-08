@@ -197,12 +197,12 @@ class ImportBatchControllerTest {
         CurrentVersion.storedEtag(result, dataSource, "account", account);
 
     assertThat(registered.kind()).isEqualTo("IBAN");
-    assertThat(registered.identifierMasked()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(registered.identifierMasked()).isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
     Map<String, Object> stored =
         rowsOf("SELECT identifier_hash, identifier_masked FROM account WHERE id = ?", account)
             .get(0);
     assertThat((String) stored.get("identifier_hash")).matches("[0-9a-f]{64}");
-    assertThat(stored.get("identifier_masked")).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(stored.get("identifier_masked")).isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
     assertThat((String) single("SELECT row_to_json(a)::text FROM account a WHERE id = ?", account))
         .doesNotContain(EXAMPLE_IBAN_DIGITS)
         .doesNotContain("0532");
@@ -318,7 +318,7 @@ class ImportBatchControllerTest {
             .getResponseBody();
 
     assertThat(added.kind()).isEqualTo("IBAN");
-    assertThat(added.identifierMasked()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(added.identifierMasked()).isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
     assertThat(added.contractIdentifierMasked()).isEqualTo("\u2022\u2022\u2022\u20225009");
     Map<String, Object> stored =
         rowsOf(
@@ -428,7 +428,7 @@ class ImportBatchControllerTest {
         .isOk();
 
     AccountIdentifierResponse withoutContract = clearIdentifier(account, "?kind=CONTRACT_NUMBER");
-    assertThat(withoutContract.identifierMasked()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(withoutContract.identifierMasked()).isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
     assertThat(withoutContract.contractIdentifierMasked()).isNull();
 
     client()
@@ -592,7 +592,7 @@ class ImportBatchControllerTest {
     assertThat(proposal.templateId()).isEqualTo(template);
     assertThat(proposal.suggestedAccountType()).isEqualTo("CASH");
     assertThat(proposal.suggestedCurrency()).isEqualTo("CHF");
-    assertThat(proposal.maskedIdentifier()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(proposal.maskedIdentifier()).isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
     assertThat(count("SELECT count(*) FROM account")).isEqualTo(accounts);
     assertThat(count("SELECT count(*) FROM import_batch")).isZero();
     assertThat(count("SELECT count(*) FROM import_file")).isZero();
@@ -641,7 +641,7 @@ class ImportBatchControllerTest {
             .expectBody(ImportAccountProposalResponse.class)
             .returnResult()
             .getResponseBody();
-    assertThat(proposal.maskedIdentifier()).isEqualTo("\u2022\u2022\u2022\u20223000");
+    assertThat(proposal.maskedIdentifier()).isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
     assertThat(proposal.suggestedCurrency()).isEqualTo("CHF");
 
     UUID created = createAccount("Aus Kontoauszug", proposal.suggestedCurrency());
@@ -653,7 +653,7 @@ class ImportBatchControllerTest {
             .returnResult()
             .getResponseBody();
     assertThat(registered)
-        .contains("\u2022\u2022\u2022\u20223000")
+        .contains("DE89 \u2022\u2022\u2022\u2022 3000")
         .doesNotContain(EXAMPLE_IBAN_DIGITS);
 
     ImportBatchResponse again =

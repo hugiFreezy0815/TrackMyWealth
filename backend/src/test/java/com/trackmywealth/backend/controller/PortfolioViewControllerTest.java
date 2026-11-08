@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
+import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
@@ -28,6 +29,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +40,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 import javax.sql.DataSource;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -82,12 +87,14 @@ class PortfolioViewControllerTest {
     registry.add("spring.datasource.username", postgres::getUsername);
     registry.add("spring.datasource.password", postgres::getPassword);
     registry.add("app.rate-limit.enabled", () -> "false");
+    registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
   }
 
   @LocalServerPort int port;
 
   @Autowired DataSource dataSource;
   @Autowired FxRateRepository fxRateRepository;
+  @Autowired EntityManagerFactory entityManagerFactory;
 
   @BeforeEach
   void cleanDatabase() throws Exception {
@@ -98,6 +105,8 @@ class PortfolioViewControllerTest {
       for (String table :
           List.of(
               "fx_rate",
+              "reconciliation_result",
+              "import_batch",
               "snapshot_holding",
               "account_snapshot",
               "custom_asset_valuation",
@@ -504,6 +513,9 @@ class PortfolioViewControllerTest {
     assertThat(view.total()).isEqualByComparingTo("0");
     assertThat(view.complete()).isTrue();
     assertThat(view.valueStatus()).isEqualTo(ValueStatus.CURRENT);
+    assertThat(view.conversionRate()).isNull();
+    assertThat(view.conversionRateDate()).isNull();
+    assertThat(view.lastImport()).isNull();
   }
 
   @Test
@@ -533,6 +545,8 @@ class PortfolioViewControllerTest {
     assertThat(view.total()).isEqualByComparingTo("1180");
     assertThat(view.workspaceCurrency()).isEqualTo("CHF");
     assertThat(view.totalInWorkspaceCurrency()).isEqualByComparingTo("1120");
+    assertThat(view.conversionRate()).isEqualByComparingTo("0.9500000000");
+    assertThat(view.conversionRateDate()).isEqualTo(today());
   }
 
   // FR-CON-008: the portfolio tabs and the workspace tab show the same money. Every portfolio's
@@ -672,9 +686,104 @@ class PortfolioViewControllerTest {
     assertThat(view.sections().get(1).section()).isEqualTo(PortfolioSection.CARDS);
     // Closed today: the current statement is due 20 days from now.
     assertThat(cardRow.dueDate()).isEqualTo(today().plusDays(20));
+    assertThat(cardRow.statementDate()).isEqualTo(today());
     assertThat(cardRow.positionsCount()).isNull();
     assertThat(cardRow.positionsAsOf()).isNull();
     assertThat(cardRow.balance()).isEqualByComparingTo("0");
+  }
+
+
+  @Test
+  void portfolioRowsShowOnlyMaskedIdentifiersAndMatchedReconciliation() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse bank = createPortfolio(token, "DKB", "CHF");
+    UUID cash = createAccount(token, cash("Giro", bank.id())).id();
+    seedSnapshot(cash, today().minusDays(10), "100.0000", true);
+    seedSnapshot(cash, today().minusDays(1), "100.0000", false);
+    // This fixture is already server-masked; the view must never read an identifier hash.
+    execute("UPDATE account SET identifier_masked = ? WHERE id = ?",
+        "DE89 •••• 3000", cash);
+    PortfolioViewResponse view = getView(token, bank.id());
+    AccountRow row = view.sections().get(0).accounts().get(0);
+    assertThat(row.maskedIdentifier()).isEqualTo("DE89 •••• 3000");
+    assertThat(row.reconciliationStatus()).isEqualTo(ReconciliationStatusValues.RECONCILED);
+    assertThat(view.toString()).doesNotContain("370400440532013000");
+    assertThat(view.institutionName()).isNull();
+    assertThat(view.logoUrl()).isNull();
+  }
+
+  @Test
+  void aDifferenceAndMissingOpeningAreNotMisreportedAsReconciled() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse bank = createPortfolio(token, "Bank", "CHF");
+    UUID difference = createAccount(token, cash("Difference", bank.id())).id();
+    UUID withoutOpening = createAccount(token, cash("No opening", bank.id())).id();
+    seedSnapshot(difference, today().minusDays(5), "100.0000", true);
+    seedSnapshot(difference, today().minusDays(1), "120.0000", false);
+    seedSnapshot(withoutOpening, today().minusDays(1), "20.0000", false);
+
+    List<AccountRow> rows = getView(token, bank.id()).sections().get(0).accounts();
+    assertThat(rows.get(0).reconciliationStatus())
+        .isEqualTo(ReconciliationStatusValues.OPEN_DIFFERENCE);
+    assertThat(rows.get(1).reconciliationStatus())
+        .isEqualTo(ReconciliationStatusValues.NOT_RECONCILABLE);
+  }
+
+  @Test
+  void latestImportUsesCommittedBatchesOnlyAndCountsImportedTransactions() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse bank = createPortfolio(token, "Bank", "CHF");
+    UUID account = createAccount(token, cash("Cash", bank.id())).id();
+    UUID old = UUID.randomUUID();
+    UUID newest = UUID.randomUUID();
+    UUID rolledBack = UUID.randomUUID();
+    execute(
+        "INSERT INTO import_batch (id, workspace_id, account_id, status, source_kind,"
+            + " imported_row_count, committed_at) SELECT ?, workspace_id, id, 'COMMITTED',"
+            + " 'CSV', 41, ? FROM account WHERE id = ?",
+        old, OffsetDateTime.parse("2026-10-18T12:00:00+02:00"), account);
+    execute(
+        "INSERT INTO import_batch (id, workspace_id, account_id, status, source_kind,"
+            + " imported_row_count, committed_at) SELECT ?, workspace_id, id, 'COMMITTED',"
+            + " 'DOCUMENT', 12, ? FROM account WHERE id = ?",
+        newest, OffsetDateTime.parse("2026-10-19T12:00:00+02:00"), account);
+    execute(
+        "INSERT INTO import_batch (id, workspace_id, account_id, status, source_kind,"
+            + " imported_row_count, committed_at, rolled_back_at, rolled_back_by, rollback_reason)"
+            + " SELECT ?, workspace_id, id, 'ROLLED_BACK', 'CSV', 99, ?, now(),"
+            + " (SELECT id FROM app_user LIMIT 1), 'test' FROM account WHERE id = ?",
+        rolledBack, OffsetDateTime.parse("2026-10-20T12:00:00+02:00"), account);
+
+    PortfolioViewResponse.LastImport last = getView(token, bank.id()).lastImport();
+    assertThat(last).isNotNull();
+    assertThat(last.fileFormat()).isEqualTo("DOCUMENT");
+    assertThat(last.transactionCount()).isEqualTo(12);
+    assertThat(last.uploadedAt()).isNotNull();
+  }
+
+  @Test
+  void moreAccountsDoNotAddPortfolioViewQueries() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse bank = createPortfolio(token, "Bank", "CHF");
+    UUID first = createAccount(token, cash("Cash 0", bank.id())).id();
+    seedSnapshot(first, today().minusDays(10), "100.0000", true);
+    seedSnapshot(first, today().minusDays(1), "100.0000", false);
+    long one = statementsFor(() -> assertThat(getView(token, bank.id()).sections().get(0).accounts()).hasSize(1));
+    for (int i = 1; i <= 5; i++) {
+      UUID account = createAccount(token, cash("Cash " + i, bank.id())).id();
+      seedSnapshot(account, today().minusDays(10), "100.0000", true);
+      seedSnapshot(account, today().minusDays(1), "100.0000", false);
+    }
+    long six = statementsFor(() -> assertThat(getView(token, bank.id()).sections().get(0).accounts()).hasSize(6));
+    assertThat(one).isPositive();
+    assertThat(six).isEqualTo(one);
+  }
+
+  private long statementsFor(Runnable action) {
+    Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+    statistics.clear();
+    action.run();
+    return statistics.getPrepareStatementCount();
   }
 
   // --- Review of #438 ------------------------------------------------------------------------
