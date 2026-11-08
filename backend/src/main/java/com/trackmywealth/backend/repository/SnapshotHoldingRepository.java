@@ -35,8 +35,9 @@ public interface SnapshotHoldingRepository extends JpaRepository<SnapshotHolding
 
   /**
    * US-04-06: per account, the number of positions in its newest snapshot that lists any - newest
-   * by snapshot date, then by when it was recorded, withdrawn snapshots (US-07-12) left out - and
-   * that snapshot's date. An account without such a snapshot has no row.
+   * by snapshot date, then by when it was recorded, then by id (the same order as US-15-05's
+   * positions endpoint), withdrawn snapshots (US-07-12) left out - and that snapshot's date. An
+   * account without such a snapshot has no row.
    *
    * <p>A snapshot without holdings is skipped: it may be a balance-only statement that says nothing
    * about positions, so it cannot count as "no positions". The count can therefore be older than
@@ -53,7 +54,8 @@ public interface SnapshotHoldingRepository extends JpaRepository<SnapshotHolding
           JOIN snapshot_holding AS holding ON holding.snapshot_id = snapshot.id
           WHERE snapshot.account_id IN (:accountIds) AND snapshot.withdrawn_at IS NULL
           GROUP BY snapshot.account_id, snapshot.id, snapshot.snapshot_date, snapshot.created_at
-          ORDER BY snapshot.account_id, snapshot.snapshot_date DESC, snapshot.created_at DESC
+          ORDER BY snapshot.account_id, snapshot.snapshot_date DESC, snapshot.created_at DESC,
+              snapshot.id DESC
           """,
       nativeQuery = true)
   List<AccountPositionCount> countPositionsInNewestHoldingsSnapshot(

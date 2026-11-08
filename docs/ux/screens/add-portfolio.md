@@ -57,8 +57,8 @@ preview sit in one row above "Cancel" and "Create portfolio".
 | Step | Request |
 |---|---|
 | Load and search the catalogue | `GET /api/v1/institutions/catalogue?query={q}&page=0&size=50&sort=name,asc` → `PageResponse<InstitutionCatalogueEntrySummaryResponse>` (`id`, `name`, `country`, `institutionType`, `identifier`, `logoUrl`). Search is debounced by 300 ms; an empty query lists everything. Infinite scroll uses the paging rules |
-| Country chips | **GAP-CATALOGUE (#484)** adds a `country` filter. Until then the chips are hidden and the list is only grouped by `country` under headers (the grouping follows the server's sort; nothing is filtered on the client) |
-| Supported formats line | **GAP-CATALOGUE (#484)** adds `importFormats` (CSV, PDF, CAMT, SPREADSHEET) per entry. Until then the line shows only the type label (`institutionType.{code}`) |
+| Country chips | Delivered by #484: the server filters countries before paging and computes the filtered total; the chips use the country parameter. |
+| Supported formats line | Delivered by #484: `importFormats` (CSV, PDF, CAMT, SPREADSHEET) per entry, sorted by the server. |
 | Create | `POST /api/v1/portfolios` with `{ catalogueInstitutionId, name, portfolioCurrency }`; or for "create your own": `{ name, country, institutionType, portfolioCurrency }` → 201 `PortfolioResponse` (+ `Location`, `ETag`) |
 
 ## Fields
@@ -103,7 +103,7 @@ There is no "Personal assets" entry: that portfolio exists by default (FR-NAV-16
 
 | Figma | Spec | Why |
 |---|---|---|
-| "Bank · CSV · PDF · CAMT" and country chips | type only, grouped by country, until GAP-CATALOGUE (#484) | the catalogue sends no formats and has no country filter yet |
+| "Bank · CSV · PDF · CAMT" and country chips | Delivered by #484 | the catalogue now exposes formats and a server-side country filter |
 | W11 "Personal assets" card | dropped | it exists by default |
 
 ## Acceptance checks for the UI story

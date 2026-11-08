@@ -42,6 +42,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -1475,7 +1476,7 @@ public class TransactionService {
         transaction.getFxRateToAccountCurrency() == null
             ? null
             : transaction.getAmountInAccountCurrency(),
-        extractBankTransactionCode(transaction.getRawSourceData()),
+        bankTransactionCode(objectMapper, transaction.getRawSourceData()),
         transaction.getImportBatchId() == null
             ? null
             : context.imports().get(transaction.getImportBatchId()),
@@ -1537,11 +1538,13 @@ public class TransactionService {
    * US-07-37: only the named ISO 20022 or proprietary bank code is exposed. Other raw JSON, which
    * can contain personal financial data from the imported file, remains private.
    */
-  private String extractBankTransactionCode(String rawSourceData) {
+  static @Nullable String bankTransactionCode(
+      ObjectMapper objectMapper, @Nullable String rawSourceData) {
     if (rawSourceData == null) {
       return null;
     }
-    JsonNode code = objectMapper.readTree(rawSourceData).path("bankTransactionCode");
+    JsonNode code =
+        objectMapper.readTree(rawSourceData).path(ImportLedgerRowService.BANK_TRANSACTION_CODE_KEY);
     return code.isString() && !code.stringValue().isBlank() ? code.stringValue() : null;
   }
 

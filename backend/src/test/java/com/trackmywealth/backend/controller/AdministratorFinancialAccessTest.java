@@ -17,6 +17,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -117,7 +118,10 @@ class AdministratorFinancialAccessTest {
     String memberToken = login("member@example.com");
     UUID foreignAccount = accountInAnotherWorkspace();
 
-    for (String path : financialReadPaths(foreignAccount)) {
+    UUID foreignTransaction = transactionIn(foreignAccount);
+    List<String> paths = new ArrayList<>(financialReadPaths(foreignAccount));
+    paths.add("/api/v1/accounts/" + foreignAccount + "/transactions/" + foreignTransaction);
+    for (String path : paths) {
       String asAdmin = denial(adminToken, path);
       String asMember = denial(memberToken, path);
       assertThat(asAdmin).as(path).isEqualTo(asMember);
@@ -144,8 +148,15 @@ class AdministratorFinancialAccessTest {
       }
     }
     UUID portfolio = membersAccount.portfolioId();
+    // US-07-37: the direct transaction read follows the same rule as the account's list.
+    String transactionPath =
+        "/api/v1/accounts/"
+            + membersAccount.id()
+            + "/transactions/"
+            + recordExpense(memberToken, membersAccount.id());
     for (String path :
         List.of(
+            transactionPath,
             "/api/v1/net-worth",
             "/api/v1/transactions",
             "/api/v1/cash-flow?month=2026-09",
@@ -300,6 +311,23 @@ class AdministratorFinancialAccessTest {
         + " (404)";
   }
 
+  private UUID recordExpense(String token, UUID accountId) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/transactions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            "{\"transactionType\":\"EXPENSE\",\"bookingDate\":\"2026-09-01\","
+                + "\"amount\":-10,\"currency\":\"CHF\"}")
+        .exchange()
+        .expectStatus()
+        .isCreated()
+        .expectBody(TransactionResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .id();
+  }
+
   private AccountSummaryResponse createAccount(String token) {
     return client(token)
         .post()
@@ -331,6 +359,21 @@ class AdministratorFinancialAccessTest {
       statement.executeUpdate();
     }
     return account;
+  }
+
+  private UUID transactionIn(UUID accountId) throws Exception {
+    UUID id = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency) SELECT ?, workspace_id, id, 'EXPENSE',"
+                    + " CURRENT_DATE, -10, 'CHF' FROM account WHERE id = ?")) {
+      statement.setObject(1, id);
+      statement.setObject(2, accountId);
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+    return id;
   }
 
   // A member never stays without its login (V110), so the link and the member go together.

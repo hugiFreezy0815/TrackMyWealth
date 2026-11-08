@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,16 +26,19 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.InOrder;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * US-07-01: the investment rules {@link TransactionService} owns for {@code BUY}, {@code SELL} and
@@ -55,10 +60,11 @@ class TransactionServiceTest {
   private final SecurityRepository securityRepository = mock(SecurityRepository.class);
   private final TransactionReadContextService readContextService =
       mock(TransactionReadContextService.class);
+  private final AccessControlService accessControlService = mock(AccessControlService.class);
   private final TransactionService service =
       new TransactionService(
           accountLookupService,
-          mock(AccessControlService.class),
+          accessControlService,
           transactionRepository,
           mock(AccountCreditCardRepository.class),
           mock(SettlementDetectionService.class),
@@ -508,6 +514,58 @@ class TransactionServiceTest {
         null,
         null,
         null);
+  }
+
+  // --- US-07-37 (#479): direct read ---------------------------------------------------------
+
+  @Nested
+  class DirectRead {
+
+    private final UUID transactionId = UUID.randomUUID();
+
+    @Test
+    void checksAccountAccessBeforeLookingUpTheTransactionAndRepliesNotFoundForAMiss() {
+      when(transactionRepository.findByIdAndAccountId(transactionId, ACCOUNT))
+          .thenReturn(Optional.empty());
+      ResponseStatusException notFound = new ResponseStatusException(HttpStatus.NOT_FOUND);
+      when(accessControlService.denyAsNotFound(ACTOR, "Transaction", transactionId))
+          .thenReturn(notFound);
+
+      assertThatThrownBy(() -> service.getTransaction(ACCOUNT, transactionId, ACTOR))
+          .isSameAs(notFound);
+
+      InOrder order = inOrder(accountLookupService, accessControlService, transactionRepository);
+      order.verify(accountLookupService).findAccountOrThrow(ACCOUNT, ACTOR);
+      order.verify(accessControlService).requireAccountAccess(ACTOR, depot);
+      order.verify(transactionRepository).findByIdAndAccountId(transactionId, ACCOUNT);
+    }
+
+    @Test
+    void aDeniedAccountNeverReachesTheTransactionLookup() {
+      ResponseStatusException denied = new ResponseStatusException(HttpStatus.NOT_FOUND);
+      doThrow(denied).when(accessControlService).requireAccountAccess(ACTOR, depot);
+
+      assertThatThrownBy(() -> service.getTransaction(ACCOUNT, transactionId, ACTOR))
+          .isSameAs(denied);
+      verify(transactionRepository, never()).findByIdAndAccountId(any(), any());
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      nullValues = "NULL",
+      value = {
+        "{\"bankTransactionCode\":\"PMNT-CCRD-POSD\"}|PMNT-CCRD-POSD",
+        "{\"bankTransactionCode\":\"  \"}|NULL",
+        "{\"bankTransactionCode\":42}|NULL",
+        "{\"mcc\":\"5411\"}|NULL",
+        "[]|NULL",
+        "NULL|NULL"
+      })
+  void onlyANonBlankStringBankCodeIsExposed(String rawSourceData, String expected) {
+    assertThat(TransactionService.bankTransactionCode(JsonMapper.builder().build(), rawSourceData))
+        .isEqualTo(expected);
   }
 
   private static BigDecimal decimal(String value) {

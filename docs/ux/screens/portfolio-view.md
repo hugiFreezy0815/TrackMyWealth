@@ -42,7 +42,7 @@ Overview
 └────────────────────────────────────────────────────┘
 ┌ [↗] Depot                           EUR 58'930.20 ┐
 │ (↗ Total return +7.8%)            ← null until EPIC 15/16 │
-│ [iS] iShares Core MSCI World   30'512.55         > │  ← GAP-POSITIONS (#478)
+│ [iS] iShares Core MSCI World   30'512.55         > │  ← positions API delivered (#478)
 │      310 units · IE00B4L5Y983  +11.2%              │
 │ …                                                  │
 │ 3 positions · as of 30 Sep 2026        Open depot >│
@@ -71,7 +71,7 @@ Overview
 1. `GET /api/v1/portfolios/{portfolioId}/view` → `PortfolioViewResponse`: everything except
    the GAP parts.
 2. For each account in a `DEPOT` section: `GET /api/v1/accounts/{accountId}/positions`
-   (**GAP-POSITIONS (#478)**).
+   (**delivered by #478**: latest holdings snapshot, server-valued positions).
 3. `GET /api/v1/portfolios/{portfolioId}/history?period=1M` (**GAP-HISTORY (#477)**).
 
 The header uses the tab's `PortfolioListItemResponse` (already loaded by S1) until (1) arrives.
@@ -114,16 +114,20 @@ Every row comes from `sections[].accounts[]` (`AccountRow`) and opens [Account d
 |---|---|---|---|---|
 | Cash & savings | `name` | account type label (`accountType.{code}`) · masked identifier (**GAP-ROWS (#482)** `maskedIdentifier`) | `balance` in `currency`; if `currency ≠ portfolioCurrency`: `valueInPortfolioCurrency` as "≈ …" | `ValueStatusBadge`; "✓ Reconciled" chip when **GAP-ROWS (#482)** `reconciliationStatus = RECONCILED` |
 | Pillar 3a, Pension | `name` | type label · "as of {valueSourceDate}" | value | `totalReturn` as `ChangeChip` "Total return {percent}" **only when not null**. The server sends `null` until performance is calculated (EPIC 15/16, PO decision on #390), so in sprint 7 the chip never shows. The code path is built and tested with a non-null fixture |
-| Depot | `name` | "{positionsCount, plural, one {# position} other {# positions}} · as of {positionsAsOf}" | value | `totalReturn` chip; then up to **5 positions** (GAP-POSITIONS (#478), sorted by value desc as sent) as `PositionRow`; "Show all {n} positions" opens S3 for the depot. Sub-tabs Allocation/Performance: **not shown** (EPIC 16/17) |
+| Depot | `name` | "{positionsCount, plural, one {# position} other {# positions}} · as of {positionsAsOf}" | value | `totalReturn` chip; then up to **5 positions** (delivered by #478, sorted by account-currency value desc as sent) as `PositionRow`; "Show all {n} positions" opens S3 for the depot. Sub-tabs Allocation/Performance: **not shown** (EPIC 16/17) |
 | Crypto | as Depot | | | as Depot |
 | Cards | `name` | type label · "statement {date}" (**GAP-ROWS (#482)** `statementDate`) | `balance` (negative) | Due chip `card.dueIn` "{days, plural, one {Due in # day} other {Due in # days}}" from `dueDate`. Day count = calendar days from today to `dueDate`. This is date arithmetic, not a money figure. Overdue: "Due {date}" in the warning colour |
 | Property & mortgage | `name` | "Manual value · {valueSourceDate}" for a manually valued asset; type label for the mortgage | value | A mortgage with `linkedPropertyAccountId` is indented under its property |
 | Other | `name` | type label | value | |
 
-`PositionRow` (GAP-POSITIONS (#478)) has: logo initials of the name, `displayName`, the line
-"{quantity} units · {isin}", `value` in the account currency, and `unrealisedGainPercent` as a
+`PositionRow` (delivered by #478) has: logo initials of the name, `displayName`, the line
+"{quantity} units · {isin}", `valueInAccountCurrency`, and `unrealisedGainPercent` as a
 signed % with gain/loss colour **plus sign**. `costBasisEstimated` adds "Estimated". Without
 a cost basis the % is "–" with the explanation "No cost basis yet" (M24, insufficient data).
+A holding in another currency than the depot (`priceCurrency` ≠ `currency`) has no gain either,
+even with a `costBasis`: the statement's cost basis has no currency of its own, so the server
+sends `null` rather than a figure that may mix currencies (FR-PERF-018). The % is then "–" with
+"Gain not available in {priceCurrency}".
 
 ### Value of a row
 

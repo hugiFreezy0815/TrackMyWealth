@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +31,15 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class TransactionReadContextService {
+
+  // Both PDF template kinds are one public format: the client cares about the file, not the reader.
+  private static final Map<String, String> PUBLIC_TEMPLATE_FORMATS =
+      Map.of(
+          ImportTemplateValues.FORMAT_CSV, TransactionImportBatchResponse.FORMAT_CSV,
+          ImportTemplateValues.FORMAT_SPREADSHEET,
+              TransactionImportBatchResponse.FORMAT_SPREADSHEET,
+          ImportTemplateValues.FORMAT_PDF_TEXT, TransactionImportBatchResponse.FORMAT_PDF,
+          ImportTemplateValues.FORMAT_PDF_OCR, TransactionImportBatchResponse.FORMAT_PDF);
 
   private final EntityManager entityManager;
   private final ImportBatchRepository batchRepository;
@@ -105,21 +115,25 @@ public class TransactionReadContextService {
     return new TransactionReadContext(accounts, imports);
   }
 
-  /** Normalize internal formats to the formats accepted by the public import API. */
-  static String formatOf(ImportBatch batch, String templateFormat) {
-    if (ImportTemplateValues.FORMAT_PDF_TEXT.equals(templateFormat)
-        || ImportTemplateValues.FORMAT_PDF_OCR.equals(templateFormat)) {
-      return "PDF";
+  /**
+   * Normalizes internal formats to the public import vocabulary. A batch that names a template
+   * reports that template's format (a template a batch used is never deleted); one without a
+   * template is a CAMT statement (#350) when it is a document, otherwise a CSV file. Anything else
+   * cannot pass the database's check constraints, so it fails loudly instead of being mislabelled.
+   */
+  static String formatOf(ImportBatch batch, @Nullable String templateFormat) {
+    if (templateFormat != null) {
+      String format = PUBLIC_TEMPLATE_FORMATS.get(templateFormat);
+      if (format == null) {
+        throw new IllegalStateException("Unknown import template format " + templateFormat);
+      }
+      return format;
     }
-    if (ImportTemplateValues.FORMAT_SPREADSHEET.equals(templateFormat)) {
-      return ImportTemplateValues.FORMAT_SPREADSHEET;
-    }
-    if (ImportTemplateValues.FORMAT_CSV.equals(templateFormat)) {
-      return ImportTemplateValues.FORMAT_CSV;
-    }
-    // A DOCUMENT batch with no template is CAMT (#350); PDFs and spreadsheets name a template.
-    return ImportBatchValues.SOURCE_DOCUMENT.equals(batch.getSourceKind())
-        ? "CAMT"
-        : ImportTemplateValues.FORMAT_CSV;
+    return switch (batch.getSourceKind()) {
+      case ImportBatchValues.SOURCE_DOCUMENT -> TransactionImportBatchResponse.FORMAT_CAMT;
+      case ImportBatchValues.SOURCE_CSV -> TransactionImportBatchResponse.FORMAT_CSV;
+      default ->
+          throw new IllegalStateException("Unknown import source kind " + batch.getSourceKind());
+    };
   }
 }
