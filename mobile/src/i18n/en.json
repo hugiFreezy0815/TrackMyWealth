@@ -1,0 +1,20 @@
+{
+  "nav.overview": "Overview",
+  "nav.more": "More",
+  "nav.settings": "Settings",
+  "overview.allPortfolios": "All portfolios",
+  "date.today": "Today",
+  "date.yesterday": "Yesterday",
+  "value.hidden": "hidden",
+  "value.unknown": "Value unknown",
+  "total.incomplete": "Not all values are included",
+  "valueStatus.estimated": "Estimated",
+  "valueStatus.stale": "Price from {date}",
+  "valueStatus.unreconciled": "Differs from statement",
+  "valueStatus.unknown": "Value unknown",
+  "import.rows": "{count, plural, one {# transaction} other {# transactions}}",
+  "error.offline": "You are offline. Showing saved data.",
+  "error.conflict": "This item changed meanwhile. Review and save again.",
+  "error.retry": "Try again",
+  "error.generic": "Something went wrong."
+}
