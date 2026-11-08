@@ -25,6 +25,19 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
   Optional<AccountSnapshot> findByAccountIdAndSnapshotDateAndSourceAndWithdrawnAtIsNull(
       UUID accountId, LocalDate snapshotDate, String source);
 
+  /**
+   * US-15-05: newest non-withdrawn snapshot that actually contains holdings. A newer balance-only
+   * snapshot must not hide these positions. The caller requests one row with PageRequest.of(0, 1).
+   * Sort mirrors the portfolio's positionsAsOf source (#390).
+   */
+  @Query(
+      "SELECT s FROM AccountSnapshot s WHERE s.account.id = :accountId"
+          + " AND s.withdrawnAt IS NULL"
+          + " AND EXISTS (SELECT h.id FROM SnapshotHolding h WHERE h.snapshotId = s.id)"
+          + " ORDER BY s.snapshotDate DESC, s.createdAt DESC, s.id DESC")
+  List<AccountSnapshot> findNewestWithHoldings(
+      @Param("accountId") UUID accountId, Pageable pageable);
+
   // US-25-04: V58's partial unique index allows at most one.
   Optional<AccountSnapshot> findByAccountIdAndOpeningBalanceTrue(UUID accountId);
 

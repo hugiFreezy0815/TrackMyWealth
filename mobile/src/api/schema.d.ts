@@ -356,6 +356,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/accounts/{accountId}/positions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read positions from the account's newest holdings snapshot */
+    get: operations['getAccountPositions'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/accounts/{accountId}/reassign-portfolio': {
     parameters: {
       query?: never;
@@ -1686,6 +1703,64 @@ export interface components {
       /** Format: date */
       valueSourceDate: string | null;
       warnings: string[];
+    };
+    AccountPositionResponse: {
+      /** Format: uuid */
+      securityId: string;
+      displayName: string;
+      isin: string | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      quantity: DecimalString;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      price: DecimalString | null;
+      /** @description Currency of price and value, as the statement printed them. */
+      priceCurrency: string | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      value: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      valueInAccountCurrency: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Cost basis as the statement printed it, never converted.
+       */
+      costBasis: DecimalString | null;
+      costBasisEstimated: boolean;
+      /**
+       * Format: decimal
+       * @description valueInAccountCurrency minus costBasis. Null without a cost basis or value, and when priceCurrency differs from the account currency: the cost basis carries no currency, so the gain would not be certain.
+       */
+      unrealisedGain: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description unrealisedGain in percent of costBasis; null when unrealisedGain is.
+       */
+      unrealisedGainPercent: DecimalString | null;
+      /** @enum {string} */
+      valueStatus: 'CURRENT' | 'ESTIMATED' | 'STALE' | 'UNRECONCILED' | 'UNKNOWN';
+    };
+    AccountPositionsResponse: {
+      /** Format: uuid */
+      accountId: string;
+      currency: string;
+      /** Format: date */
+      asOf: string | null;
+      /** @enum {string} */
+      source: 'HOLDINGS_SNAPSHOT';
+      complete: boolean;
+      /** @description All holdings of one snapshot, by valueInAccountCurrency descending (unknown values last), then securityId. Not paged: a snapshot holds at most 2000 holdings, the most one holdings import accepts. */
+      positions: components['schemas']['AccountPositionResponse'][];
     };
     AccountRow: {
       /** Format: uuid */
@@ -7432,6 +7507,104 @@ export interface operations {
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+       */
+      500: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      default: components['responses']['ApiProblemResponse'];
+    };
+  };
+  getAccountPositions: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
+        'X-Correlation-Id'?: string;
+      };
+      path: {
+        accountId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AccountPositionsResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+       */
+      401: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+       */
+      404: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `POSITIONS_NOT_APPLICABLE`: This account does not hold securities positions.
+       */
+      422: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
