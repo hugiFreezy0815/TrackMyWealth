@@ -206,17 +206,18 @@ class TransactionControllerTest {
     assertThat(detail.importBatch().uploadedAt()).isNotNull();
     assertThat(detail.portfolioId()).isEqualTo(cash.portfolioId());
 
-    String rawJson =
+    byte[] rawJson =
         client(token)
             .get()
             .uri("/api/v1/accounts/" + cash.id() + "/transactions/" + transactionId)
             .exchange()
             .expectStatus()
             .isOk()
-            .expectBody(String.class)
+            .expectBody()
             .returnResult()
             .getResponseBody();
-    assertThat(rawJson).doesNotContain("private", "rawSourceData", "cells");
+    assertThat(new String(rawJson, java.nio.charset.StandardCharsets.UTF_8))
+        .doesNotContain("private", "rawSourceData", "cells");
 
     TransactionResponse perAccount = listTransactions(token, cash.id(), "").content().get(0);
     assertThat(perAccount.importBatch().fileFormat()).isEqualTo("CAMT");
