@@ -327,7 +327,10 @@ class PagedListPlanTest {
     Pageable page =
         PageRequest.of(0, PAGE_SIZE, sort(InstitutionCatalogueController.class, "searchCatalogue"));
 
-    Plans plans = asRuntimeRole(() -> catalogue.findByActiveTrue(page));
+    // US-04-10: the native page query keeps the ordered index; the formats subquery runs per row
+    // of the page and sorts nothing. A name or country filter may instead sort its few matches,
+    // which at reference-catalogue size is cheaper than a further index.
+    Plans plans = asRuntimeRole(() -> catalogue.searchCatalogue(null, null, page));
 
     assertThat(plans.page()).contains("idx_institution_catalogue_active_name_order");
     assertSortFree(plans);
@@ -474,12 +477,23 @@ class PagedListPlanTest {
       for (String entry : window.split(PLAN_ENTRY)) {
         // The window ends inside the end marker's own entry, cut before the marker: an entry
         // without a plan node is that remnant, not a read.
-        if (entry.contains("Query Text:") && entry.contains("(cost=") && !entry.contains(marker)) {
+        if (entry.contains("Query Text:")
+            && entry.contains("(cost=")
+            && !entry.contains(marker)
+            && !isDriverMetadata(entry)) {
           plans.add(entry);
         }
       }
       assertThat(plans).as("plans logged for the read").isNotEmpty();
       return new Plans(List.copyOf(plans));
+    }
+
+    // The driver's own column-metadata lookup (pgjdbc PgResultSetMetaData), which Hibernate
+    // triggers when it maps a native query to an interface projection (US-04-10's catalogue
+    // listing). It reads pg_catalog, not the application's tables, and the driver caches its
+    // answer per connection, so it is no part of the page's plan.
+    private static boolean isDriverMetadata(String entry) {
+      return entry.contains("Query Text: SELECT c.oid, a.attnum, a.attname, c.relname, n.nspname");
     }
 
     String page() {

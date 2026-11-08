@@ -48,7 +48,7 @@ TODAY · 20 OCT
 
 ### Depot (`holdsPositions = true`, M06)
 
-The header shows "Market value". Below it are the tabs **Positions** (GAP-POSITIONS (#478), the full
+The header shows "Market value". Below it are the tabs **Positions** (delivered by #478, the full
 list as in S2's `PositionRow`) and **Activity** (the transaction list of this spec). The
 "Performance" tab is not shown (EPIC 16).
 
@@ -72,7 +72,7 @@ list as in S2's `PositionRow`) and **Activity** (the transaction list of this sp
 4. Count for the chip: `GET /api/v1/accounts/{accountId}/transactions?uncategorized=true&size=1`
    → `page.totalElements`.
 5. `GET /api/v1/categories` (once per session, cached): category names for the chips.
-6. Depot: `GET /api/v1/accounts/{accountId}/positions` (GAP-POSITIONS (#478)).
+6. Depot: `GET /api/v1/accounts/{accountId}/positions` (delivered by #478).
 
 Request 3 needs `hasTransactions = true` from request 1. Without it, skip 3 and 4 (see States).
 

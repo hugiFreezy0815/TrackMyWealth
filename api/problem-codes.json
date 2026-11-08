@@ -12,6 +12,7 @@
     "ACCOUNT_ARCHIVED": {"statuses": [409], "reaction": "SHOW", "deprecated": false},
     "IMMUTABLE_FIELD": {"statuses": [409], "reaction": "FIX_INPUT", "deprecated": false},
     "UNPROCESSABLE": {"statuses": [422], "reaction": "FIX_INPUT", "deprecated": false},
+    "POSITIONS_NOT_APPLICABLE": {"statuses": [422], "reaction": "SHOW", "deprecated": false},
     "OPENING_BALANCE_NOT_APPLICABLE": {"statuses": [422], "reaction": "SHOW", "deprecated": false},
     "OPENING_BALANCE_AFTER_FIRST_TRANSACTION": {"statuses": [409], "reaction": "FIX_INPUT", "deprecated": false},
     "OPENING_BALANCE_NOT_RECORDED": {"statuses": [404], "reaction": "SHOW", "deprecated": false},

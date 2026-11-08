@@ -6,7 +6,9 @@ import com.trackmywealth.backend.service.InstitutionCatalogueService;
 import com.trackmywealth.backend.web.Paged;
 import com.trackmywealth.backend.web.Paged.SortField;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,7 +37,13 @@ public class InstitutionCatalogueController {
   @GetMapping("/catalogue")
   public PageResponse<InstitutionCatalogueEntrySummaryResponse> searchCatalogue(
       @RequestParam(required = false) String query,
+      @Parameter(
+              description =
+                  "US-04-10: ISO 3166-1 alpha-2 country codes, repeated or comma-separated;"
+                      + " blank values are ignored. Any other value (such as a three-letter code) is a 400 VALIDATION_FAILED.")
+          @RequestParam(name = "country", required = false)
+          List<String> country,
       @Paged(sort = @SortField(name = "name"), defaultSort = "name,asc") Pageable pageable) {
-    return PageResponse.of(institutionCatalogueService.searchCatalogue(query, pageable));
+    return PageResponse.of(institutionCatalogueService.searchCatalogue(query, country, pageable));
   }
 }
