@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>TrackMyWealth — UX-03 visual foundations reference</title>
+  <link rel="stylesheet" href="./02-visual-foundations.css">
+</head>
+<body>
+  <main class="reference" id="main">
+    <header class="reference-header">
+      <div>
+        <div class="eyebrow">UX-03 · #378 · Figma design system</div>
+        <h1>Visual foundations</h1>
+        <p class="intro">A static, synthetic reference for semantic colours, currency formatting,
+          status language, components and accessible charts. Not a product screen or API client.</p>
+      </div>
+      <div class="utility" role="group" aria-label="Preview theme">
+        <button class="control" id="system" type="button" aria-pressed="true">System</button>
+        <button class="control" id="light" type="button" aria-pressed="false">Light</button>
+        <button class="control" id="dark" type="button" aria-pressed="false">Dark</button>
+      </div>
+      <div class="utility">
+        <button class="control" id="toggle-amounts" type="button" aria-pressed="false">Hide amounts</button>
+      </div>
+    </header>
+    <section class="sheet" aria-labelledby="tokens-heading">
+      <h2 id="tokens-heading">Semantic palette</h2>
+      <p class="caption">Figma Read me + Design System → Foundations · colour (38:324). Swatches update with the theme.
+        Dark tertiary text and text on teal actions include WCAG AA overrides documented in the spec.</p>
+      <div class="swatches" id="swatches"></div>
+    </section>
+
+    <section class="sheet" aria-labelledby="amount-heading">
+      <h2 id="amount-heading">Amounts · value status · completeness</h2>
+      <p class="caption">All amounts and categories below are invented. Negative and unknown values are never shown
+        by colour alone. In the product the API supplies totals and status; formatting does not calculate a total.</p>
+      <div class="gallery-grid">
+        <article class="hero">
+          <div class="hero-title">Net worth · synthetic workspace</div>
+          <div class="number-l" data-sensitive>CHF&nbsp;478'160.56</div>
+          <div class="kpi-footer"><span class="change"><span aria-hidden="true">↗</span>
+            <span data-sensitive>+CHF&nbsp;6'842.10 · +1.45%</span></span>
+            <span class="status estimated"><span aria-hidden="true">≈</span> Estimated</span></div>
+          <p class="note">Approximate: one balance uses an estimated source value. As of 20 Oct 2026.</p>
+        </article>
+        <article class="hero">
+          <div class="hero-title">Liabilities · synthetic</div>
+          <div class="number-l" data-sensitive>−CHF&nbsp;601'202.36</div>
+          <div class="kpi-footer"><span class="status unreconciled"><span aria-hidden="true">⚠</span> Differs from statement</span></div>
+          <p class="note">The ledger and bank statement disagree. Open the account detail for the difference.</p>
+        </article>
+        <article class="hero">
+          <div class="hero-title">Value not available</div>
+          <div class="number-l"><span aria-hidden="true">–</span><span class="visually-hidden">Value unknown</span></div>
+          <div class="kpi-footer"><span class="status unknown"><span aria-hidden="true">?</span> Value unknown</span>
+            <span class="status incomplete"><span aria-hidden="true">!</span> Not all values included</span></div>
+          <p class="note">Unknown is not zero. An incomplete total must keep the server-provided warning.</p>
+        </article>
+      </div>
+      <h3 style="margin-top:18px">Exact locale examples (display only)</h3>
+      <div class="gallery-grid">
+        <article class="card-list"><article><span class="eyebrow">de-CH / CHF</span>
+          <div class="number-m" lang="de-CH" data-sensitive>−CHF&nbsp;1'234.50</div>
+          <div class="note">ASCII apostrophe groups (UX-02 overrides ICU's ’); code, no-break space, number.</div>
+        </article></article>
+        <article class="card-list"><article><span class="eyebrow">de-DE / EUR</span>
+          <div class="number-m" lang="de-DE" data-sensitive>−EUR&nbsp;1.234,50</div>
+          <div class="note">Comma decimal separator; code before the number, unlike ICU's "-1.234,50 EUR".</div>
+        </article></article>
+        <article class="card-list"><article><span class="eyebrow">en / CHF</span>
+          <div class="number-m" lang="en" data-sensitive>−CHF&nbsp;1,234.50</div>
+          <div class="note">True minus sign (U+2212). Dynamic Type / 200% zoom must not truncate.</div>
+        </article></article>
+      </div>
+      <div class="status-group" role="group" aria-label="Value status examples">
+        <span class="status positive"><span aria-hidden="true">↗</span> Gain</span>
+        <span class="status negative"><span aria-hidden="true">↘</span> Loss</span>
+        <span class="status estimated"><span aria-hidden="true">≈</span> Estimated</span>
+        <span class="status stale"><span aria-hidden="true">◷</span> Price from 20 Oct 2026</span>
+        <span class="status unreconciled"><span aria-hidden="true">⚠</span> Differs from statement</span>
+        <span class="status incomplete"><span aria-hidden="true">!</span> Incomplete total</span>
+      </div>
+      <div class="warning-note"><strong>Incomplete value:</strong> Not all values are included.
+        A total uses the API's own status and warning list, never client-calculated completeness.</div>
+    </section>
+
+    <section class="sheet" aria-labelledby="components-heading">
+      <h2 id="components-heading">Shared component patterns</h2>
+      <p class="caption">Figma atoms (14:206), scope selector (15:197), KPI card (15:219), navigation (15:25).
+        Controls have 44px minimum targets and keyboard-visible focus.</p>
+      <div class="gallery-grid">
+        <article>
+          <h3>ScopeBar</h3>
+          <button class="scope" type="button" aria-label="Scope: All portfolios, Swiss francs; change scope">
+            <span aria-hidden="true">◎</span><span>All portfolios · CHF</span><span aria-hidden="true">⌄</span>
+          </button>
+          <p class="note" style="margin-top:10px">Scope always visible; never present a scope the API has not authorised.</p>
+        </article>
+        <article>
+          <h3>SectionHeader · actions</h3>
+          <div class="row-between">
+            <span class="text-strong">Accounts</span><button class="control" type="button">View all</button>
+          </div>
+          <p class="note" style="margin-top:10px">Actions have stable, translated labels; unavailable ones are hidden per UX-02.</p>
+        </article>
+        <article>
+          <h3>EmptyState · LoadingSkeleton</h3>
+          <div class="skeleton" aria-hidden="true"></div>
+          <div class="skeleton" aria-hidden="true" style="width:45%"></div>
+          <p class="note">Loading …</p><p class="text-strong" style="margin-top:10px">No transactions found</p>
+          <p class="note">Try another filter. The action and message are supplied as a complete translation.</p>
+        </article>
+      </div>
+      <div class="gallery-grid" style="margin-top:16px">
+        <article class="card-list"><article>
+          <h3>TransactionRow · phone</h3>
+          <div class="row-between"><div><strong>Groceries</strong><p class="note">20 Oct · Card payment</p></div>
+            <strong class="number-m" data-sensitive>−CHF&nbsp;84.35</strong></div>
+          <div class="status-group"><span class="status stale"><span aria-hidden="true">◷</span> Price from 18 Oct 2026</span></div>
+        </article></article>
+        <article class="card-list"><article>
+          <h3>ErrorBanner · Retry</h3><div class="error-note" role="alert">Could not load accounts.
+            <button class="control" type="button" style="margin-top:8px" aria-label="Retry loading accounts">Retry</button>
+          </div>
+        </article></article>
+        <article class="card-list"><article>
+          <h3>OfflineBanner</h3><div class="warning-note" role="status">Offline. Showing previously loaded values.
+            Changes are unavailable until you reconnect.</div>
+        </article></article>
+      </div>
+    </section>
+
+    <section class="sheet" aria-labelledby="table-heading">
+      <h2 id="table-heading">Semantic DataTable · web / Account detail S3</h2>
+      <p class="caption">Four columns per approved S3 specification. Native mobile shows a date-grouped
+        TransactionRow list instead. Sorting and filters operate through the server's paged API.</p>
+      <div class="table-wrap">
+        <table>
+          <caption class="visually-hidden">Synthetic transactions for one account</caption>
+          <thead><tr><th scope="col">Date</th><th scope="col">Description</th>
+            <th scope="col">Category</th><th scope="col" style="text-align:right">Amount</th></tr></thead>
+          <tbody>
+            <tr><td>20 Oct 2026</td><td>Groceries</td><td>Food</td>
+              <td class="amount-cell negative" data-sensitive>−CHF&nbsp;84.35</td></tr>
+            <tr><td>18 Oct 2026</td><td>Salary</td><td>Income</td>
+              <td class="amount-cell positive" data-sensitive>+CHF&nbsp;4'500.00</td></tr>
+            <tr><td>16 Oct 2026</td><td>Transfer</td><td>Internal transfer</td>
+              <td class="amount-cell negative" data-sensitive>−CHF&nbsp;250.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Reference only: an actual sortable header needs its direction on the
+        &lt;th&gt; element, meaningful action labels, and real NVDA / VoiceOver verification (#494).</p>
+    </section>
+
+    <section class="sheet" aria-labelledby="chart-heading">
+      <h2 id="chart-heading">ValueChart · synthetic composition</h2>
+      <p class="caption">The chart must have a text equivalent and labelled legend. Rendering library selection:
+        react-native-svg (native/web SVG primitives); this static SVG is a reference, not a screenshot asset.</p>
+      <div class="gallery-grid">
+        <div class="framed-chart">
+          <svg role="img" aria-labelledby="chart-title chart-desc" viewBox="0 0 440 160">
+            <title id="chart-title">Illustrative value history</title>
+            <desc id="chart-desc">A synthetic line rises from 80 to 114 arbitrary units, dips and then ends at 119.</desc>
+            <path d="M20 130H420" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="1"/>
+            <path class="positive-line" d="M20 120L96 103L170 110L245 66L320 84L420 37"/>
+            <circle cx="420" cy="37" r="5" fill="var(--chart-1)"/>
+          </svg>
+          <p class="note">Example only · show server-provided date, start/end value and change in product.</p>
+        </div>
+        <div class="framed-chart">
+          <div class="row-between">
+            <div><h3>Assets vs liabilities</h3><p class="note">Relative proportions only</p></div>
+          </div>
+          <div class="stack" role="img" data-sensitive-graphic data-sensitive-label="Composition hidden"
+            aria-label="Example composition: assets 67 percent and liabilities 33 percent">
+            <span class="first" style="width:67%"></span>
+            <span class="second" style="width:33%"></span>
+          </div>
+          <div class="legend"><span><i class="first" aria-hidden="true"></i>Assets <span data-sensitive>67%</span></span>
+            <span><i class="second" aria-hidden="true"></i>Liabilities <span data-sensitive>33%</span></span></div>
+          <p class="note" style="margin-top:10px">The server owns real percentages; charts never derive financial totals.
+            Series are separated by a 2px surface gap and each reaches 3:1 against the card.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="reference-footer">
+      <p><strong>Source:</strong> Figma design file <a href="https://www.figma.com/design/5iqhBoU58DIwEokRNL1Cbw/TrackMyWealth">
+        TrackMyWealth</a>, Design System page, nodes 38:324 / 38:468, M03 and W06.
+        The approved <a href="./screens/README.md">Sprint 7 UX-02 specs</a> take precedence over mockup content.
+        This is a deliberately static documentation artifact; not the product UI.</p>
+    </footer>
+  </main>
+  <script>
+    (() => {
+      const html = document.documentElement;
+      const system = window.matchMedia('(prefers-color-scheme: dark)');
+      const themeButtons = ['system', 'light', 'dark'].map((id) => document.getElementById(id));
+      let mode = 'system';
+      function applyTheme() {
+        html.dataset.theme = mode === 'system' ? (system.matches ? 'dark' : 'light') : mode;
+        for (const button of themeButtons) button.setAttribute('aria-pressed', String(button.id === mode));
+        buildSwatches();
+      }
+      themeButtons.forEach((button) => button.addEventListener('click', () => { mode = button.id; applyTheme(); }));
+      system.addEventListener('change', () => { if (mode === 'system') applyTheme(); });
+
+      const names = ['bg-canvas','bg-surface','bg-subtle','bg-inverse','border-default','border-strong',
+        'border-interactive','text-primary','text-secondary','text-tertiary','text-on-brand',
+        'brand-primary','brand-primary-hover','brand-link','brand-subtle','status-gain','status-gain-subtle',
+        'status-loss','status-loss-subtle','status-warning','status-warning-subtle','status-info',
+        'status-info-subtle','chart-1','chart-2','chart-3','chart-4','chart-5','chart-6','chart-other'];
+      function buildSwatches() {
+        const styles = getComputedStyle(html);
+        const fragment = document.createDocumentFragment();
+        for (const name of names) {
+          const value = styles.getPropertyValue('--' + name).trim();
+          const swatch = document.createElement('div');
+          swatch.className = 'swatch';
+          const visual = document.createElement('div');
+          visual.className = 'swatch-color';
+          visual.style.background = value;
+          visual.setAttribute('aria-hidden', 'true');
+          const description = document.createElement('div');
+          description.className = 'swatch-desc';
+          const title = document.createElement('strong');
+          title.textContent = name.replace('-', '/');
+          const hex = document.createElement('small');
+          hex.textContent = value;
+          description.append(title, hex);
+          swatch.append(visual, description);
+          fragment.append(swatch);
+        }
+        document.getElementById('swatches').replaceChildren(fragment);
+      }
+
+      // Masking keeps the real content only in memory (not in an attribute, title or offscreen
+      // text), shows •••• and gives assistive technology "Amount hidden" as real text.
+      const original = new WeakMap();
+      function masked() {
+        const fragment = document.createDocumentFragment();
+        const dots = document.createElement('span');
+        dots.setAttribute('aria-hidden', 'true');
+        dots.textContent = '••••';
+        const label = document.createElement('span');
+        label.className = 'visually-hidden';
+        label.textContent = 'Amount hidden';
+        fragment.append(dots, label);
+        return fragment;
+      }
+      const maskButton = document.getElementById('toggle-amounts');
+      maskButton.addEventListener('click', () => {
+        const hide = maskButton.getAttribute('aria-pressed') !== 'true';
+        maskButton.setAttribute('aria-pressed', String(hide));
+        for (const node of document.querySelectorAll('[data-sensitive]')) {
+          if (hide) {
+            original.set(node, [...node.childNodes]);
+            node.replaceChildren(masked());
+          } else {
+            node.replaceChildren(...original.get(node));
+          }
+        }
+        // A proportional graphic gives the ratio away by its geometry: swap it for a neutral bar.
+        for (const node of document.querySelectorAll('[data-sensitive-graphic]')) {
+          if (hide) {
+            original.set(node, [...node.childNodes]);
+            const placeholder = document.createElement('span');
+            placeholder.className = 'placeholder';
+            node.replaceChildren(placeholder);
+          } else {
+            node.replaceChildren(...original.get(node));
+          }
+        }
+        for (const node of document.querySelectorAll('[data-sensitive-label]')) {
+          if (hide) {
+            original.set(node, node.getAttribute('aria-label'));
+            node.setAttribute('aria-label', node.dataset.sensitiveLabel);
+          } else {
+            node.setAttribute('aria-label', original.get(node));
+          }
+        }
+      });
+      applyTheme();
+    })();
+  </script>
+</body>
+</html>

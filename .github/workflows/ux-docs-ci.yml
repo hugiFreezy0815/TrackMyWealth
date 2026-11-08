@@ -1,0 +1,35 @@
+name: UX docs CI
+
+# #378: the UX-03 visual foundations are a contract for the app (#488). Their two executable
+# checks - WCAG contrast of every colour pairing and the normative amount strings - run whenever
+# the UX docs or this workflow change. Dependency-free Node scripts, so nothing to install.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/ux/**"
+      - ".github/workflows/ux-docs-ci.yml"
+  pull_request:
+    paths:
+      - "docs/ux/**"
+      - ".github/workflows/ux-docs-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ux-checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Contrast of every colour pairing (WCAG 2.2 AA)
+        run: node docs/ux/check-visual-contrast.mjs
+
+      - name: Normative amount strings
+        run: node docs/ux/check-amount-format.mjs

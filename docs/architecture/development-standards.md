@@ -294,8 +294,8 @@ npm test                 # what CI runs
   merge only with `scripts/merge_pr.py <pr-number>` (convention). It squash-merges only a PR that
   is up to date with `main`, conflict-free, and whose checks all passed on its current head - the
   always-run Semgrep and secret scanning plus Backend CI, the API contract's breaking-change check
-  (#372), Mobile Web CI or Scripts CI where the PR changes their part of the repository - pinned
-  to that head commit, never with `--admin`. When Backend CI, Semgrep or secret scanning is red on
+  (#372), Mobile Web CI, Scripts CI or UX docs CI (#378) where the PR changes their part of the
+  repository - pinned to that head commit, never with `--admin`. When Backend CI, Semgrep or secret scanning is red on
   `main`, the "Main health" workflow keeps a `[CI] main is red: <workflow>` issue open until it is
   green again; fix `main` first.
 - **API contract (#372)**: `api/openapi.yaml` is committed and kept in step with the code by
