@@ -13848,6 +13848,13 @@ paths:
         required: false
         schema:
           type: string
+      - name: country
+        in: query
+        required: false
+        schema:
+          type: array
+          items:
+            type: string
       - name: page
         in: query
         description: Zero-based page number.
@@ -20443,10 +20450,15 @@ components:
           type:
           - string
           - "null"
+        importFormats:
+          type: array
+          items:
+            type: string
       required:
       - country
       - id
       - identifier
+      - importFormats
       - institutionType
       - logoUrl
       - name
