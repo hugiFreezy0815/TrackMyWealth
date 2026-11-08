@@ -7,11 +7,13 @@ import com.trackmywealth.backend.dto.SetTransactionCategoryRequest;
 import com.trackmywealth.backend.dto.TransactionCorrectionResponse;
 import com.trackmywealth.backend.dto.TransactionRemovalResponse;
 import com.trackmywealth.backend.dto.TransactionResponse;
+import com.trackmywealth.backend.dto.TransactionHistoryEntryResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.TransactionCorrectionService;
 import com.trackmywealth.backend.service.TransactionRemovalService;
 import com.trackmywealth.backend.service.TransactionService;
+import com.trackmywealth.backend.service.TransactionHistoryService;
 import com.trackmywealth.backend.service.TransferResolutionService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
 import com.trackmywealth.backend.web.Paged;
@@ -59,16 +61,19 @@ public class TransactionController {
   private final TransactionCorrectionService transactionCorrectionService;
   private final TransactionRemovalService transactionRemovalService;
   private final TransferResolutionService transferResolutionService;
+  private final TransactionHistoryService transactionHistoryService;
 
   public TransactionController(
       TransactionService transactionService,
       TransactionCorrectionService transactionCorrectionService,
       TransactionRemovalService transactionRemovalService,
-      TransferResolutionService transferResolutionService) {
+      TransferResolutionService transferResolutionService,
+      TransactionHistoryService transactionHistoryService) {
     this.transactionService = transactionService;
     this.transactionCorrectionService = transactionCorrectionService;
     this.transactionRemovalService = transactionRemovalService;
     this.transferResolutionService = transferResolutionService;
+    this.transactionHistoryService = transactionHistoryService;
   }
 
   @SuccessStatus(HttpStatus.CREATED)
@@ -116,6 +121,18 @@ public class TransactionController {
         transactionCorrectionService.correct(
             accountId, transactionId, request, IfMatchVersionParser.parse(ifMatch), actor);
     return VersionedResponse.ok(response, response.version());
+  }
+
+  /** A complete, paged, account-scoped audit trail of category and lifecycle changes. */
+  @Operation(operationId = "getTransactionHistory", summary = "Read transaction change history")
+  @GetMapping("/transactions/{transactionId}/history")
+  public PageResponse<TransactionHistoryEntryResponse> history(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @Paged(sort = @SortField(name = "occurredAt"), defaultSort = "occurredAt,desc")
+          Pageable pageable,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return transactionHistoryService.history(accountId, transactionId, pageable, actor);
   }
 
   /** US-07-37: direct-linkable transaction detail, with the current strong ETag. */
