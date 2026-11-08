@@ -1,5 +1,8 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.TransactionReadAccountDetails;
+import com.trackmywealth.backend.dto.TransactionReadContext;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -105,7 +108,7 @@ class TransactionReadContextServiceTest {
 
   @Test
   void emptyPageSkipsEveryQuery() {
-    assertThat(service.load(List.of())).isEqualTo(TransactionReadContextService.Context.EMPTY);
+    assertThat(service.load(List.of())).isEqualTo(TransactionReadContext.EMPTY);
     org.mockito.Mockito.verifyNoInteractions(entityManager, batches, templates);
   }
 }
