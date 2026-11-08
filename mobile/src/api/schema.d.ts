@@ -9851,7 +9851,7 @@ export interface operations {
   getTransactionHistory: {
     parameters: {
       query?: {
-          /** @description Zero-based page number. */
+        /** @description Zero-based page number. */
         page?: number;
         /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
         size?: number;
@@ -9860,9 +9860,6 @@ export interface operations {
           | 'occurredAt'
           | 'occurredAt,asc'
           | 'occurredAt,desc'
-          | 'amount'
-          | 'amount,asc'
-          | 'amount,desc'
         )[];
       };
       header?: {
