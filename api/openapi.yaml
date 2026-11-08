@@ -22368,11 +22368,14 @@ components:
       - accountId
       - accountName
       - amount
+      - amountInAccountCurrency
+      - bankTransactionCode
       - bookingDate
       - categoryAssignedBy
       - categoryId
       - correctsTransactionId
       - counterpartyAccountId
+      - counterpartyAccountName
       - counterpartyName
       - createdAt
       - currency
@@ -22383,11 +22386,14 @@ components:
       - fxRateToAccountCurrency
       - grossAmount
       - id
+      - importBatch
       - internalTransfer
       - mcc
       - merchantDescription
       - netAmount
       - notes
+      - portfolioId
+      - portfolioName
       - quantity
       - reconciliationAdjustment
       - relatedTransactionId
