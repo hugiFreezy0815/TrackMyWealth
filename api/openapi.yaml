@@ -21350,6 +21350,10 @@ components:
           type: array
           items:
             type: string
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetWorthSectionResponse"
         accounts:
           type: array
           items:
@@ -21361,9 +21365,48 @@ components:
       - complete
       - currency
       - netWorth
+      - sections
       - totalAssets
       - totalLiabilities
       - warnings
+    NetWorthSectionResponse:
+      type: object
+      properties:
+        section:
+          type: string
+          enum:
+          - CASH_AND_SAVINGS
+          - PILLAR_3A
+          - PENSION
+          - DEPOT
+          - CRYPTO
+          - CARDS
+          - PROPERTY_AND_MORTGAGE
+          - OTHER
+        subtotal:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        complete:
+          type: boolean
+        valueStatus:
+          type: string
+          enum:
+          - CURRENT
+          - ESTIMATED
+          - STALE
+          - UNRECONCILED
+          - UNKNOWN
+        accountCount:
+          type: integer
+          format: int32
+      required:
+      - accountCount
+      - complete
+      - section
+      - subtotal
+      - valueStatus
     OpeningBalanceRequest:
       type: object
       properties:

@@ -62,7 +62,7 @@ Overview
 │ ████████████████████████████░░░░░░░░░░░░░░░░░░░░    │
 │ Includes Mortgage (−CHF 600'000.00) and DKB Visa…   │
 └─────────────────────────────────────────────────────┘
-┌ Cash & savings ┐ ┌ Depot        ┐                     ← GAP-BREAKDOWN (#481)
+┌ Cash & savings ┐ ┌ Depot        ┐                     ← Section breakdown delivered (#481)
 ┌ Pillar 3a      ┐ ┌ Property & mortgage ┐
 Portfolios                                    See all
 ┌ [PF] PostFinance       CHF 64'820.40  > ┐
@@ -105,7 +105,7 @@ workspace currency (`GET /api/v1/workspace` → `currency`).
 | 13 | Liabilities | `overview.liabilities` "Liabilities" / "Verbindlichkeiten" | `Amount`, negative sign, loss colour | `/net-worth` → `totalLiabilities` (sent signed: shown as sent) |
 | 14 | Assets/liabilities bar | decorative (`aria-hidden`), the amounts above carry the meaning | bar split in the ratio of the two amounts | 12, 13. Visual proportion only; no figure is shown from it |
 | 15 | "Includes …" line | `overview.liabilities.includes` "Includes {first} and {second}" / "…and {count} more" | names + `Amount` | `/net-worth` → `accounts[]` with `nature = LIABILITY` and `valueKnown`, the two largest by absolute `value` first. Hidden when there are no liabilities |
-| 16 | Section tiles | `section.*`, **the same keys as the Portfolio View** (Cash & savings, Pillar 3a, Pension, Depot, Crypto, Credit card, Property & mortgage, Other) | `Amount` + change for the selected period | **GAP-BREAKDOWN (#481)** → `/net-worth` `sections[]` (`section`, `subtotal`, `valueStatus`, `complete`) in server order; change from **GAP-HISTORY (#477)** `sections[].change`. Hidden until #481 merges; the change line is hidden until #477. Only sections the server sends are shown. Phone: 2 columns; web: up to 4 per row |
+| 16 | Section tiles | `section.*`, **the same keys as the Portfolio View** (Cash & savings, Pillar 3a, Pension, Depot, Crypto, Credit card, Property & mortgage, Other) | `Amount` + change for the selected period | **Delivered (#481)** → `/net-worth` `sections[]` (`section`, `subtotal`, `valueStatus`, `complete`) in server order; change from **GAP-HISTORY (#477)** `sections[].change`. The section subtotal is available with #481; the change line remains hidden until #477. Only sections the server sends are shown. Phone: 2 columns; web: up to 4 per row |
 | 17 | Portfolios header | `overview.portfolios` "Portfolios" + "See all" | | "See all" → Portfolios tab (#376). Hidden if that tab isn't built in sprint 7 |
 | 18 | Portfolio row: logo, name | | | `GET /api/v1/portfolios` → `logoUrl`, `name` |
 | 19 | Portfolio row: subtitle | `portfolio.row.subtitle` "{count, plural, one {# account} other {# accounts}} · {currency}" | | `activeAccountCount`, `portfolioCurrency`; personal-assets default: `portfolio.row.personalAssets` "Property, vehicles and more" |
@@ -128,7 +128,7 @@ Fire these in parallel. Each card renders as its own data arrives, with a skelet
 3. `GET /api/v1/net-worth?currency=Cur`: net-worth and assets/liabilities cards.
 4. `GET /api/v1/accounts`: only to count `UNRECONCILED` for the data-status banner.
 5. `GET /api/v1/cash-flow?month=…&currency=Cur`: cash-flow card.
-6. GAP-HISTORY (#477) and GAP-BREAKDOWN (#481) endpoints once they exist.
+6. GAP-HISTORY (#477) endpoint once it exists. Section breakdown (#481) is included in request 3.
 
 Changing the scope currency reloads 3, 5 and 6. Pull-to-refresh (phone) or the browser reload
 (web) reloads everything. After the member returns from an import, commit, rollback or account
@@ -207,7 +207,7 @@ sends `{ "name": null }`.
 | "Prices 20 Oct, 17:35" | "As of 20 Oct" | `/net-worth` sends `asOf` as a date |
 | Scope "All accounts · CHF" with an account filter | Currency only | `/net-worth` has no account scope |
 | Bell, Search, Import/Add buttons (W01) | Hidden | Not in sprint 7 |
-| Chart, change chip, class tiles, portfolio % | Hidden until GAP-HISTORY (#477) / GAP-BREAKDOWN (#481) merge | Rule 1 |
+| Chart, change chip, portfolio % | Hidden until GAP-HISTORY (#477) merges; class tiles use the delivered /net-worth sections (#481) | Rule 1 |
 | Tiles "Investments", "Pension (3a)", "Real estate" (gross CHF 850'000) | Portfolio View section names: "Depot", "Pillar 3a", "Property & mortgage" (net of the mortgage) | One section vocabulary across the overview and the portfolio tabs (#481); the gross property value stays visible in Assets |
 | Tile change "this month" | Change for the selected chart period | One period control for the whole card set (#477) |
 

@@ -3055,7 +3055,30 @@ export interface components {
       complete: boolean;
       approximate: boolean;
       warnings: string[];
+      sections: components['schemas']['NetWorthSectionResponse'][];
       accounts: components['schemas']['AccountValuation'][];
+    };
+    NetWorthSectionResponse: {
+      /** @enum {string} */
+      section:
+        | 'CASH_AND_SAVINGS'
+        | 'PILLAR_3A'
+        | 'PENSION'
+        | 'DEPOT'
+        | 'CRYPTO'
+        | 'CARDS'
+        | 'PROPERTY_AND_MORTGAGE'
+        | 'OTHER';
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      subtotal: DecimalString;
+      complete: boolean;
+      /** @enum {string} */
+      valueStatus: 'CURRENT' | 'ESTIMATED' | 'STALE' | 'UNRECONCILED' | 'UNKNOWN';
+      /** Format: int32 */
+      accountCount: number;
     };
     OpeningBalanceRequest: {
       /** Format: date */
