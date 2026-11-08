@@ -17,7 +17,7 @@ or removes the transaction.
 ## Entry points
 
 - A row in Account detail (S3). Phone: a pushed screen. Web: the right panel of S3.
-- Deep link `/accounts/{accountId}/transactions/{transactionId}` (**GAP-TXN-READ (#479)** single
+- Deep link `/accounts/{accountId}/transactions/{transactionId}` (**delivered by #479** single
   read). Until that merges, a deep link opens S3 for the account instead.
 
 ## Layout
@@ -38,8 +38,8 @@ or removes the transaction.
 │ Counterparty                       Migros AG │
 │ Notes                                    –   │
 │ ▸ Details                                    │  ← [advanced] block
-│   Bank code              PMNT-CCRD-POSD      │  ← GAP-TXN-READ (#479)
-│   Source            CAMT.053 · import #14    │  ← GAP-TXN-READ (#479)
+│   Bank code              PMNT-CCRD-POSD      │  ← delivered by #479
+│   Source            CAMT.053 · import #14    │  ← delivered by #479
 │   MCC                                  5411  │
 │   Bank reference         2026102012345       │
 └──────────────────────────────────────────────┘
@@ -67,9 +67,8 @@ marked as voided.
 ## Requests
 
 1. The `TransactionResponse` from S3's loaded page (instant render). Then
-   `GET /api/v1/accounts/{accountId}/transactions/{transactionId}` (**GAP-TXN-READ (#479)**) for the
-   fresh version and the extra fields. Until GAP-TXN-READ (#479) merges, the screen uses the row from
-   S3 only, and its `version` is the one for `If-Match`.
+   `GET /api/v1/accounts/{accountId}/transactions/{transactionId}` (**delivered by #479**) for the
+   fresh version and the extra fields. The direct read supplies the current `ETag` and all transaction-detail fields.
 2. `GET /api/v1/categories` (cached from S3).
 3. `GET /api/v1/accounts/{accountId}/transactions/{transactionId}/history`
    (**GAP-TXN-HISTORY (#480)**).
@@ -80,20 +79,20 @@ marked as voided.
 | # | Element | Label key (EN / DE draft) | Format | Source: `TransactionResponse` → field |
 |---|---|---|---|---|
 | 1 | Amount | | `Amount`, large, signed; voided ⇒ struck through | `amount`, `currency` |
-| 2 | Converted amount `[advanced]` | "≈ {amount} at {rate}" | | **GAP-TXN-READ (#479)** `amountInAccountCurrency`; `fxRateToAccountCurrency`; shown only when `currency ≠` the account currency |
+| 2 | Converted amount `[advanced]` | "≈ {amount} at {rate}" | | **delivered by #479** `amountInAccountCurrency`; `fxRateToAccountCurrency`; shown only when `currency ≠` the account currency |
 | 3 | Summary line | "{title} · {date} · {type}" | | title as in S3; `bookingDate`; `transactionType.{code}` |
 | 4 | Source badge | `txn.source.{MANUAL,CSV,DOCUMENT,API,AGGREGATOR}` "Entered by hand", "Imported", "Imported", "Bank connection", "Bank connection" | neutral | `source` |
 | 5 | Lifecycle badge | "Voided on {date}: {voidReason}" / "Reversal" / "Corrected" / "Restored" / "Statement adjustment" | warning/neutral | `voidedAt`, `voidReason`, `replacesTransactionId`, `correctsTransactionId`, `restoresTransactionId`, `reconciliationAdjustment` |
 | 6 | Estimated rate badge | `txn.fxEstimated` "Estimated rate" | | `fxRateEstimated` |
-| 7 | Account | `txn.account` "Account" / "Konto" | "{portfolio} · {account}" | **GAP-TXN-READ (#479)** `portfolioName`; `accountName` |
+| 7 | Account | `txn.account` "Account" / "Konto" | "{portfolio} · {account}" | **delivered by #479** `portfolioName`; `accountName` |
 | 8 | Category | `txn.category` "Category" / "Kategorie" | "{parent} › {name}" + "(by you)" / "(automatic)" | `categoryId` → `/categories`; `categoryAssignedBy = USER` ⇒ "by you" (`txn.category.byMember`), any other value ⇒ "automatic" (`txn.category.automatic`). Row hidden when `categoryId = null` (type not categorised). `internalTransfer` ⇒ "Internal transfer: not counted as income or spending", no picker |
 | 9 | Booking date | `txn.bookingDate` | long date | `bookingDate` |
 | 10 | Counterparty | `txn.counterparty` "Counterparty" / "Gegenpartei" | | `counterpartyName`; hidden if `null` |
-| 11 | Transfer to/from | `txn.transferAccount` "Other account" | link to S3 | **GAP-TXN-READ (#479)** `counterpartyAccountName`; `counterpartyAccountId`. Hidden if `null` |
+| 11 | Transfer to/from | `txn.transferAccount` "Other account" | link to S3 | **delivered by #479** `counterpartyAccountName`; `counterpartyAccountId`. Hidden if `null` |
 | 12 | Notes | `txn.notes` | multi-line | `notes`; "–" if `null` |
 | 13 | Trade fields (BUY/SELL/DIVIDEND) | `txn.security`, `txn.quantity`, `txn.unitPrice`, `txn.fee`, `txn.tradeDate`, `txn.settlementDate`, `txn.gross`, `txn.taxWithheld`, `txn.net` | | `securityId` (name via `GET /api/v1/securities/{id}`), `quantity`, `unitPrice`, `feeAmount`, `tradeDate`, `settlementDate`, `grossAmount`, `taxWithheldAmount`, `netAmount`; each row hidden when `null` |
-| 14 | Bank code `[advanced]` | `txn.bankCode` "Bank code" / "Bankcode" | monospace | **GAP-TXN-READ (#479)** `bankTransactionCode` |
-| 15 | Source detail `[advanced]` | `txn.sourceDetail` "{format} · import from {date}" | link to import history (M19, not in sprint 7: plain text) | **GAP-TXN-READ (#479)** `importBatch` (`id`, `fileFormat`, `uploadedAt`). Figma's "import #14" becomes a date, because batches have no sequence number |
+| 14 | Bank code `[advanced]` | `txn.bankCode` "Bank code" / "Bankcode" | monospace | **delivered by #479** `bankTransactionCode` |
+| 15 | Source detail `[advanced]` | `txn.sourceDetail` "{format} · import from {date}" | link to import history (M19, not in sprint 7: plain text) | **delivered by #479** `importBatch` (`id`, `fileFormat`, `uploadedAt`). Figma's "import #14" becomes a date, because batches have no sequence number |
 | 16 | MCC `[advanced]` | `txn.mcc` "Merchant category" | | `mcc` |
 | 17 | Bank reference `[advanced]` | `txn.externalId` "Bank reference" | | `externalId` |
 | 18 | Warnings | | ⚠ list | `warnings[]`, as in S3 |
