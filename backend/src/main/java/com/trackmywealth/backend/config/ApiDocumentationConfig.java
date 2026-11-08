@@ -251,7 +251,16 @@ public class ApiDocumentationConfig {
   }
 
   private static void documentSuccessStatuses(
-      Map<String, ApiResponse> responses, HttpStatus... statuses) {
+      Map<String, ApiResponse> responses, HttpStatus... declared) {
+    // Defensive against an invalid @SuccessStatus({}) or a non-2xx value: document only the
+    // declared successes, and keep springdoc's generated success response when none is left
+    // rather than deleting the only 2xx response. ArchitectureTest rejects such a declaration
+    // during verification (#457); this only keeps the contract sane if one slips through.
+    HttpStatus[] statuses =
+        Arrays.stream(declared).filter(HttpStatus::is2xxSuccessful).toArray(HttpStatus[]::new);
+    if (statuses.length == 0) {
+      return;
+    }
     ApiResponse generated = responses.remove(OK);
     ApiResponse template = generated != null ? generated : firstGenerated(responses, statuses);
     for (HttpStatus status : statuses) {
