@@ -298,13 +298,13 @@ public class CategorizationService {
   }
 
   /**
-   * US-08-02 "reset to automatic": runs the automatic layers again as for a new row and returns how
-   * the category was assigned (empty for UNCATEGORIZED). A type the engine never categorizes goes
-   * back to having no category. The override log row stays as history; it stops counting because it
-   * no longer describes the current category, or a newer automatic row follows it.
+   * US-07-38: reset is a first-class member event even when the automatic result is UNCATEGORIZED.
+   * The log records the member and the new category without setting the override bit. The previous
+   * override remains immutable. This method is called only while the row is locked by the caller.
    */
   @Transactional
-  public Optional<String> resetToAutomatic(Transaction transaction) {
+  public Optional<String> resetToAutomatic(
+      Transaction transaction, AuthenticatedUserPrincipal actor) {
     if (!CATEGORIZED_TYPES.contains(transaction.getTransactionType())) {
       transaction.setCategoryId(null);
       transactionRepository.saveAndFlush(transaction);
@@ -316,7 +316,12 @@ public class CategorizationService {
         Set.of(),
         null,
         (row, decision) -> {
-          apply(row, decision);
+          // Avoid an indistinguishable second log row from apply(). The reset log replaces it.
+          row.setCategoryId(decision.categoryId());
+          transactionRepository.save(row);
+          logRepository.save(
+              TransactionCategorizationLog.ofMemberReset(
+                  row.getId(), decision.categoryId(), decision.assignedBy(), actor.userId()));
           assignedBy[0] = decision.assignedBy();
         });
     transactionRepository.flush();
