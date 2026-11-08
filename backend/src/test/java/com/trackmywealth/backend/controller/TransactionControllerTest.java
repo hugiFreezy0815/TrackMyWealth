@@ -138,8 +138,10 @@ class TransactionControllerTest {
     AccountSummaryResponse card = createCard(token);
     AccountSummaryResponse other = createCashAccount(token);
     UUID id = insertLedgerRow(card.id(), "-17.00", false);
-    UUID category = jdbcUuid("SELECT id FROM category WHERE code = 'UNCATEGORIZED' LIMIT 1", null);
-    UUID actor = jdbcUuid("SELECT id FROM app_user LIMIT 1", null);
+    UUID category = jdbcUuid("SELECT id FROM category WHERE code = ? LIMIT 1", "UNCATEGORIZED");
+    UUID actor = jdbcUuid("SELECT id FROM app_user WHERE workspace_member_id = ? LIMIT 1",
+            jdbcUuid("SELECT id FROM workspace_member WHERE workspace_id = ? LIMIT 1",
+                jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", card.id())));
     try (Connection connection = dataSource.getConnection();
         PreparedStatement log =
             connection.prepareStatement(
