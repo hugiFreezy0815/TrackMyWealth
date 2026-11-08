@@ -3478,6 +3478,13 @@ export interface components {
       transaction: components['schemas']['TransactionResponse'];
       removal: components['schemas']['TransactionRemovalResponse'] | null;
     };
+    TransactionImportBatchResponse: {
+      /** Format: uuid */
+      id: string;
+      fileFormat: string;
+      /** Format: date-time */
+      uploadedAt: string;
+    };
     TransactionRemovalResponse: {
       removal: string;
       /** Format: int32 */
@@ -3486,13 +3493,6 @@ export interface components {
       reversals: components['schemas']['TransactionResponse'][];
       unmatchedTransactionIds: string[];
       restored: components['schemas']['TransactionResponse'][];
-    };
-    TransactionImportBatchResponse: {
-      /** Format: uuid */
-      id: string;
-      fileFormat: string;
-      /** Format: date-time */
-      uploadedAt: string;
     };
     TransactionResponse: {
       /** Format: uuid */
