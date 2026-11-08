@@ -76,6 +76,8 @@ public enum ProblemCode {
       FIX_INPUT,
       "Well-formed, but breaks a business rule; detail names the rule.",
       HttpStatus.UNPROCESSABLE_CONTENT),
+  POSITIONS_NOT_APPLICABLE(
+      SHOW, "This account does not hold securities positions.", HttpStatus.UNPROCESSABLE_CONTENT),
   OPENING_BALANCE_NOT_APPLICABLE(
       SHOW,
       "This account takes no opening balance: a loan, a mortgage or a manually valued asset has a"

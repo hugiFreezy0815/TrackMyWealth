@@ -4649,6 +4649,119 @@ paths:
       - VERSION_CONFLICT
       - OPENING_BALANCE_NOT_RECORDED
       - INTERNAL
+  /api/v1/accounts/{accountId}/positions:
+    get:
+      tags:
+      - Account values
+      summary: Read positions from the account's newest holdings snapshot
+      operationId: getAccountPositions
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Correlation-Id
+        in: header
+        description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
+          \ otherwise the server generates a UUID."
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          minLength: 8
+          pattern: "[A-Za-z0-9._-]{8,64}"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountPositionsResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "401":
+          description: |-
+            Problem codes:
+            - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "404":
+          description: |-
+            Problem codes:
+            - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "422":
+          description: |-
+            Problem codes:
+            - `POSITIONS_NOT_APPLICABLE`: This account does not hold securities positions.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "500":
+          description: |-
+            Problem codes:
+            - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        default:
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+      x-problem-codes:
+      - VALIDATION_FAILED
+      - UNAUTHENTICATED
+      - NOT_FOUND
+      - POSITIONS_NOT_APPLICABLE
+      - INTERNAL
   /api/v1/accounts/{accountId}/reassign-portfolio:
     post:
       tags:
@@ -17587,6 +17700,129 @@ components:
       - version
       - warnings
       - workspaceCurrency
+    AccountPositionResponse:
+      type: object
+      properties:
+        securityId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        isin:
+          type:
+          - string
+          - "null"
+        quantity:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        price:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        priceCurrency:
+          type:
+          - string
+          - "null"
+          description: "Currency of price and value, as the statement printed them."
+        value:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        valueInAccountCurrency:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        costBasis:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: "Cost basis as the statement printed it, never converted."
+        costBasisEstimated:
+          type: boolean
+        unrealisedGain:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: "valueInAccountCurrency minus costBasis. Null without a cost\
+            \ basis or value, and when priceCurrency differs from the account currency:\
+            \ the cost basis carries no currency, so the gain would not be certain."
+        unrealisedGainPercent:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: unrealisedGain in percent of costBasis; null when unrealisedGain
+            is.
+        valueStatus:
+          type: string
+          enum:
+          - CURRENT
+          - ESTIMATED
+          - STALE
+          - UNRECONCILED
+          - UNKNOWN
+      required:
+      - costBasis
+      - costBasisEstimated
+      - displayName
+      - isin
+      - price
+      - priceCurrency
+      - quantity
+      - securityId
+      - unrealisedGain
+      - unrealisedGainPercent
+      - value
+      - valueInAccountCurrency
+      - valueStatus
+    AccountPositionsResponse:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        asOf:
+          type:
+          - string
+          - "null"
+          format: date
+        source:
+          type: string
+          enum:
+          - HOLDINGS_SNAPSHOT
+        complete:
+          type: boolean
+        positions:
+          type: array
+          description: "All holdings of one snapshot, by valueInAccountCurrency descending\
+            \ (unknown values last), then securityId. Not paged: a snapshot holds\
+            \ at most 2000 holdings, the most one holdings import accepts."
+          items:
+            $ref: "#/components/schemas/AccountPositionResponse"
+          maxItems: 2000
+          minItems: 0
+      required:
+      - accountId
+      - asOf
+      - complete
+      - currency
+      - positions
+      - source
     AccountRow:
       type: object
       properties:
@@ -17978,6 +18214,7 @@ components:
           - ACCOUNT_ARCHIVED
           - IMMUTABLE_FIELD
           - UNPROCESSABLE
+          - POSITIONS_NOT_APPLICABLE
           - OPENING_BALANCE_NOT_APPLICABLE
           - OPENING_BALANCE_AFTER_FIRST_TRANSACTION
           - OPENING_BALANCE_NOT_RECORDED
