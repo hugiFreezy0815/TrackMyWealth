@@ -12,7 +12,7 @@ export async function invalidateFinancialData(
     client.invalidateQueries({ queryKey: ['cash-flow'] }),
     ...(accountId ? [
       client.invalidateQueries({ queryKey: queryKeys.account(accountId) }),
-      client.invalidateQueries({ queryKey: ['accounts', accountId, 'transactions'] }),
+      client.resetQueries({ queryKey: ['accounts', accountId, 'transactions'] }),
     ] : []),
     ...(accountId && batchId ? [
       client.invalidateQueries({ queryKey: queryKeys.importBatch(accountId, batchId) }),

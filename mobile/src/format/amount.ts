@@ -20,7 +20,7 @@ export function formatAmount(
   options: AmountOptions = {},
 ): string {
   if (options.masked) return HIDDEN;
-  if (!options.valueKnown && options.valueKnown !== undefined || value === null) return UNKNOWN;
+  if (options.valueKnown === false || value === null) return UNKNOWN;
   if (typeof value !== 'string' || !PLAIN_DECIMAL.test(value)) {
     throw new TypeError('Expected a plain DecimalString');
   }

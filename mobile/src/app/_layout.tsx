@@ -1,3 +1,5 @@
+import '@/i18n/polyfills';
+
 import { useEffect, useState } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 
