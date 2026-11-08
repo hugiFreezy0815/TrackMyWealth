@@ -17,8 +17,8 @@ or removes the transaction.
 ## Entry points
 
 - A row in Account detail (S3). Phone: a pushed screen. Web: the right panel of S3.
-- Deep link `/accounts/{accountId}/transactions/{transactionId}` (**delivered by #479** single
-  read). Until that merges, a deep link opens S3 for the account instead.
+- Deep link `/accounts/{accountId}/transactions/{transactionId}` (single-record read
+  delivered by #479). The screen loads the transaction directly and uses its current ETag.
 
 ## Layout
 
