@@ -17907,6 +17907,17 @@ components:
           - string
           - "null"
           format: uuid
+        maskedIdentifier:
+          type:
+          - string
+          - "null"
+        reconciliationStatus:
+          type: string
+        statementDate:
+          type:
+          - string
+          - "null"
+          format: date
       required:
       - accountId
       - accountType
@@ -17914,10 +17925,13 @@ components:
       - currency
       - dueDate
       - linkedPropertyAccountId
+      - maskedIdentifier
       - name
       - nature
       - positionsAsOf
       - positionsCount
+      - reconciliationStatus
+      - statementDate
       - totalReturn
       - valueInPortfolioCurrency
       - valueKnown
@@ -20912,6 +20926,21 @@ components:
       - institutionType
       - logoUrl
       - name
+    LastImport:
+      type: object
+      properties:
+        uploadedAt:
+          type: string
+          format: date-time
+        fileFormat:
+          type: string
+        transactionCount:
+          type: integer
+          format: int32
+      required:
+      - fileFormat
+      - transactionCount
+      - uploadedAt
     LinkSavingsPocketRequest:
       type: object
       properties:
@@ -21338,6 +21367,10 @@ components:
           format: uuid
         institutionType:
           type: string
+        institutionName:
+          type:
+          - string
+          - "null"
         country:
           type:
           - string
@@ -21397,6 +21430,7 @@ components:
       - complete
       - country
       - id
+      - institutionName
       - institutionType
       - logoUrl
       - name
@@ -21573,9 +21607,38 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Section"
+        institutionName:
+          type:
+          - string
+          - "null"
+        logoUrl:
+          type:
+          - string
+          - "null"
+        conversionRate:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        conversionRateDate:
+          type:
+          - string
+          - "null"
+          format: date
+        lastImport:
+          anyOf:
+          - $ref: "#/components/schemas/LastImport"
+          - type: "null"
       required:
       - asOf
       - complete
+      - conversionRate
+      - conversionRateDate
+      - institutionName
+      - lastImport
+      - logoUrl
       - name
       - personalAssetsDefault
       - portfolioCurrency

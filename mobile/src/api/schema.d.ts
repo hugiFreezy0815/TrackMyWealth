@@ -1798,6 +1798,10 @@ export interface components {
       dueDate: string | null;
       /** Format: uuid */
       linkedPropertyAccountId: string | null;
+      maskedIdentifier: string | null;
+      reconciliationStatus: string;
+      /** Format: date */
+      statementDate: string | null;
     };
     AccountSnapshotResponse: {
       /** Format: uuid */
@@ -2950,6 +2954,13 @@ export interface components {
       /** @description US-04-10: the file formats a statement of this institution can be imported in, sorted; empty when it has to be entered by hand. */
       importFormats: ('CAMT' | 'CSV' | 'PDF' | 'SPREADSHEET')[];
     };
+    LastImport: {
+      /** Format: date-time */
+      uploadedAt: string;
+      fileFormat: string;
+      /** Format: int32 */
+      transactionCount: number;
+    };
     LinkSavingsPocketRequest: {
       /** Format: uuid */
       savingsPocketAccountId: string;
@@ -3130,6 +3141,7 @@ export interface components {
       /** Format: uuid */
       catalogueInstitutionId: string | null;
       institutionType: string;
+      institutionName: string | null;
       country: string | null;
       logoUrl: string | null;
       /** @enum {string} */
@@ -3247,6 +3259,13 @@ export interface components {
       valueStatus: 'CURRENT' | 'ESTIMATED' | 'STALE' | 'UNRECONCILED' | 'UNKNOWN';
       warnings: string[];
       sections: components['schemas']['Section'][];
+      institutionName: string | null;
+      logoUrl: string | null;
+      /** Format: decimal */
+      conversionRate: DecimalString | null;
+      /** Format: date */
+      conversionRateDate: string | null;
+      lastImport: components['schemas']['LastImport'] | null;
     };
     Position: {
       /** Format: int32 */
