@@ -95,7 +95,8 @@ public class TransactionCategorizationLog {
   public static TransactionCategorizationLog ofMemberReset(
       UUID transactionId, UUID categoryId, String assignedBy, UUID userId) {
     TransactionCategorizationLog log =
-        new TransactionCategorizationLog(transactionId, categoryId, assignedBy, null, null);
+        new TransactionCategorizationLog(
+            transactionId, categoryId, assignedBy == null ? "RESET" : assignedBy, null, null);
     log.reset = true;
     log.assignedByUserId = userId;
     return log;
