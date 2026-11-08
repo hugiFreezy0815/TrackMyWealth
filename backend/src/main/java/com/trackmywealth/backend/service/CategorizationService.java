@@ -308,6 +308,9 @@ public class CategorizationService {
     if (!CATEGORIZED_TYPES.contains(transaction.getTransactionType())) {
       transaction.setCategoryId(null);
       transactionRepository.saveAndFlush(transaction);
+      logRepository.save(
+          TransactionCategorizationLog.ofMemberReset(
+              transaction.getId(), null, null, actor.userId()));
       return Optional.empty();
     }
     String[] assignedBy = {null};
