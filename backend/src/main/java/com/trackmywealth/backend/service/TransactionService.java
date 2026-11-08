@@ -778,7 +778,7 @@ public class TransactionService {
     versionPreconditionService.requireCurrent(
         expectedVersion, transaction.getVersion(), VERSIONED_RESOURCE);
     if (categorizationService.isOverridden(transaction)) {
-      categorizationService.resetToAutomatic(transaction);
+      categorizationService.resetToAutomatic(transaction, actor);
     }
     return toResponse(
         transaction, latestAssignments(List.of(transaction)).get(transaction.getId()));
