@@ -2872,6 +2872,8 @@ export interface components {
       institutionType: string;
       identifier: string | null;
       logoUrl: string | null;
+      /** @description US-04-10: the file formats a statement of this institution can be imported in, sorted; empty when it has to be entered by hand. */
+      importFormats: ('CAMT' | 'CSV' | 'PDF' | 'SPREADSHEET')[];
     };
     LinkSavingsPocketRequest: {
       /** Format: uuid */
@@ -15246,6 +15248,8 @@ export interface operations {
     parameters: {
       query?: {
         query?: string;
+        /** @description US-04-10: ISO 3166-1 alpha-2 country codes, repeated or comma-separated; blank values are ignored. Any other value (such as a three-letter code) is a 400 VALIDATION_FAILED. */
+        country?: string[];
         /** @description Zero-based page number. */
         page?: number;
         /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
