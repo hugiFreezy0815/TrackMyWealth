@@ -197,7 +197,7 @@
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
-            <version>5.5.1</version>
+            <version>6.0.0</version>
         </dependency>
 
         <!-- PdfImportReaderService counts a PDF stream's decoded size without keeping it
