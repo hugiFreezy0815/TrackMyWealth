@@ -277,7 +277,8 @@ class TransactionControllerTest {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
-                "UPDATE transaction SET deleted_at = now() WHERE id = ?")) {
+                "UPDATE transaction SET deleted_at = now(), deleted_by ="
+                    + " (SELECT id FROM app_user LIMIT 1) WHERE id = ?")) {
       statement.setObject(1, deleted);
       statement.executeUpdate();
     }
