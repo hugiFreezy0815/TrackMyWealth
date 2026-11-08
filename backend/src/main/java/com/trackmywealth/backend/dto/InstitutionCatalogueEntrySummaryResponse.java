@@ -21,4 +21,9 @@ public record InstitutionCatalogueEntrySummaryResponse(
                             + " imported in, sorted; empty when it has to be entered by hand."),
             schema = @Schema(allowableValues = {"CAMT", "CSV", "PDF", "SPREADSHEET"}),
             uniqueItems = true)
-        List<String> importFormats) {}
+        List<String> importFormats) {
+
+  public InstitutionCatalogueEntrySummaryResponse {
+    importFormats = List.copyOf(importFormats);
+  }
+}
