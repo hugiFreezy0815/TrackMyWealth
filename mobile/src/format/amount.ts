@@ -1,3 +1,5 @@
+import '@/i18n/polyfills';
+
 import type { DecimalString } from '@/api/decimal';
 
 /** The UI contract in docs/ux/check-amount-format.mjs: exact decimal strings, never Number(). */
