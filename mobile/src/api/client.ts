@@ -14,6 +14,7 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly body?: unknown,
+    public readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -121,10 +122,15 @@ export async function request<T>(
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => undefined);
+    const retryAfter = response.headers?.get?.('Retry-After');
+    const retryAfterSeconds = retryAfter && /^\\d+$/.test(retryAfter)
+      ? Number(retryAfter)
+      : retryAfter ? Math.max(0, (Date.parse(retryAfter) - Date.now()) / 1000) : undefined;
     throw new ApiError(
       `${options.method ?? 'GET'} ${path} failed with ${response.status}`,
       response.status,
       errorBody,
+      Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined,
     );
   }
 

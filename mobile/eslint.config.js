@@ -68,6 +68,20 @@ module.exports = defineConfig([
     },
   },
   {
+    // Screen components render ICU message keys; raw copy belongs in the locale catalogues.
+    // Apply to newly introduced feature screens; legacy auth and reference-data are migrated
+    // when their own sprint-7 screen tickets restyle them.
+    files: ['src/features/**/*.{tsx,jsx}'],
+    ignores: ['**/*.test.{ts,tsx}', 'src/features/auth/**', 'src/features/reference-data/**',
+      'src/features/imports/**'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'JSXText[value=/\\S/]',
+        message: 'Use an ICU message from src/i18n instead of a literal UI string.',
+      }],
+    },
+  },
+  {
     ignores: ['dist/*'],
   },
 ]);

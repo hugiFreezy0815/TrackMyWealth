@@ -5,6 +5,7 @@ import { ApiError, setAccessToken, setRefreshHandler } from '@/api/client';
 import { problemReaction } from '@/api/problems';
 import type { components } from '@/api/schema';
 import { typedApi } from '@/api/typed-api';
+import { queryClient } from '@/api/queries/client';
 
 type Tokens = components['schemas']['AuthTokensResponse'];
 export type Identity = components['schemas']['CurrentUserResponse'];
@@ -175,6 +176,7 @@ async function clearSession(): Promise<void> {
   challenge = null;
   identity = null;
   setAccessToken(null);
+  queryClient.clear();
   changed();
   try {
     await persist(null);
