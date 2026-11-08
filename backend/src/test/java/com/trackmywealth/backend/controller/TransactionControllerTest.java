@@ -113,6 +113,7 @@ class TransactionControllerTest {
               "account_mortgage",
               "account_loan",
               "account_securities",
+              "import_batch",
               "account_pension",
               "account",
               "admin_audit_log",
@@ -126,6 +127,237 @@ class TransactionControllerTest {
         statement.execute("DELETE FROM " + table);
       }
     }
+  }
+
+  // --- US-07-37 (#479): direct read and list enrichment --------------------------------------
+
+  @Test
+  void directReadIncludesPortfolioAndStrongEtagWhileManualProvenanceIsNull() {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    TransactionResponse created = recordWithKey(token, card.id(), "-24.00", "manual-detail");
+
+    TransactionResponse read =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + card.id() + "/transactions/" + created.id())
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectHeader()
+            .valueEquals("ETag", "\"" + created.version() + "\"")
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(read.id()).isEqualTo(created.id());
+    assertThat(read.accountName()).isEqualTo("Visa Gold");
+    assertThat(read.portfolioId()).isEqualTo(card.portfolioId());
+    assertThat(read.portfolioName()).isNotBlank();
+    assertThat(read.bankTransactionCode()).isNull();
+    assertThat(read.importBatch()).isNull();
+    assertThat(read.amountInAccountCurrency()).isNull();
+
+    TransactionResponse listed = listTransactions(token, card.id(), "").content().get(0);
+    assertThat(listed.portfolioId()).isEqualTo(read.portfolioId());
+    assertThat(listed.portfolioName()).isEqualTo(read.portfolioName());
+    assertThat(listed.importBatch()).isNull();
+  }
+
+  @Test
+  void importedCamtCodeAndBatchAreReturnedWithoutRawSourceData() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse cash = createCashAccount(token);
+    UUID batch = UUID.randomUUID();
+    UUID transactionId = UUID.randomUUID();
+    UUID workspace = jdbcUuid("SELECT workspace_id FROM account WHERE id = ?", cash.id());
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement insertBatch =
+            connection.prepareStatement(
+                "INSERT INTO import_batch"
+                    + " (id, workspace_id, account_id, source_kind, status)"
+                    + " VALUES (?, ?, ?, 'DOCUMENT', 'COMMITTED')");
+        PreparedStatement insertTransaction =
+            connection.prepareStatement(
+                "INSERT INTO transaction"
+                    + " (id, workspace_id, account_id, transaction_type, booking_date, amount,"
+                    + " currency, source, import_batch_id, raw_source_data, external_id)"
+                    + " VALUES (?, ?, ?, 'INCOME', CURRENT_DATE, 42, 'CHF', 'DOCUMENT', ?,"
+                    + " CAST(? AS jsonb), ?)")) {
+      insertBatch.setObject(1, batch);
+      insertBatch.setObject(2, workspace);
+      insertBatch.setObject(3, cash.id());
+      insertBatch.executeUpdate();
+      insertTransaction.setObject(1, transactionId);
+      insertTransaction.setObject(2, workspace);
+      insertTransaction.setObject(3, cash.id());
+      insertTransaction.setObject(4, batch);
+      insertTransaction.setString(
+          5, "{\"bankTransactionCode\":\"PMNT-CCRD-POSD\",\"cells\":{\"secret\":\"private\"}}");
+      insertTransaction.setString(6, "CAMT:NTRY:detail-test");
+      insertTransaction.executeUpdate();
+    }
+
+    TransactionResponse detail = getTransaction(token, cash.id(), transactionId);
+    assertThat(detail.bankTransactionCode()).isEqualTo("PMNT-CCRD-POSD");
+    assertThat(detail.importBatch()).isNotNull();
+    assertThat(detail.importBatch().id()).isEqualTo(batch);
+    assertThat(detail.importBatch().fileFormat()).isEqualTo("CAMT");
+    assertThat(detail.importBatch().uploadedAt()).isNotNull();
+    assertThat(detail.portfolioId()).isEqualTo(cash.portfolioId());
+
+    byte[] rawJson =
+        client(token)
+            .get()
+            .uri("/api/v1/accounts/" + cash.id() + "/transactions/" + transactionId)
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody()
+            .returnResult()
+            .getResponseBody();
+    assertThat(new String(rawJson, java.nio.charset.StandardCharsets.UTF_8))
+        .doesNotContain("private", "rawSourceData", "cells");
+
+    TransactionResponse perAccount = listTransactions(token, cash.id(), "").content().get(0);
+    assertThat(perAccount.importBatch().fileFormat()).isEqualTo("CAMT");
+    assertThat(perAccount.bankTransactionCode()).isEqualTo("PMNT-CCRD-POSD");
+
+    // The workspace-wide ledger sends the same row shape (AC: both lists carry the new fields).
+    TransactionResponse workspaceWide =
+        client(token)
+            .get()
+            .uri("/api/v1/transactions")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(new ParameterizedTypeReference<PageResponse<TransactionResponse>>() {})
+            .returnResult()
+            .getResponseBody()
+            .content()
+            .get(0);
+    assertThat(workspaceWide.id()).isEqualTo(transactionId);
+    assertThat(workspaceWide.portfolioId()).isEqualTo(detail.portfolioId());
+    assertThat(workspaceWide.portfolioName()).isEqualTo(detail.portfolioName());
+    assertThat(workspaceWide.bankTransactionCode()).isEqualTo("PMNT-CCRD-POSD");
+    assertThat(workspaceWide.importBatch()).isEqualTo(detail.importBatch());
+  }
+
+  @Test
+  void counterpartyAccountNameAndConvertedCardAmountAreIncluded() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCardWithBillingCurrency(token, "EUR", "EUR");
+    AccountSummaryResponse pocket = createCashAccount(token);
+    TransactionResponse purchase =
+        postTransaction(
+                token,
+                card.id(),
+                foreignPurchase("-50.00", "USD", "Shop", "0.9000000000", null, null))
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(TransactionResponse.class)
+            .returnResult()
+            .getResponseBody();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "UPDATE transaction SET counterparty_account_id = ?,"
+                    + " is_internal_transfer = true WHERE id = ?")) {
+      statement.setObject(1, pocket.id());
+      statement.setObject(2, purchase.id());
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+
+    TransactionResponse read = getTransaction(token, card.id(), purchase.id());
+    assertThat(read.counterpartyAccountId()).isEqualTo(pocket.id());
+    assertThat(read.counterpartyAccountName()).isEqualTo("Everyday Checking");
+    assertThat(read.amountInAccountCurrency()).isEqualByComparingTo("-45.00");
+    assertThat(listTransactions(token, card.id(), "").content().get(0).counterpartyAccountName())
+        .isEqualTo("Everyday Checking");
+  }
+
+  @Test
+  void directReadAllowsVoidsButHidesDeletedAndWrongAccountIds() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    AccountSummaryResponse other = createCashAccount(token);
+    UUID voided = insertLedgerRow(card.id(), "-8.00", true);
+    TransactionResponse read = getTransaction(token, card.id(), voided);
+    assertThat(read.voidedAt()).isNotNull();
+
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + other.id() + "/transactions/" + voided)
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+
+    UUID deleted = insertLedgerRow(card.id(), "-7.00", false);
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "UPDATE transaction SET deleted_at = now(), deleted_by ="
+                    + " (SELECT id FROM app_user LIMIT 1) WHERE id = ?")) {
+      statement.setObject(1, deleted);
+      statement.executeUpdate();
+    }
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + card.id() + "/transactions/" + deleted)
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+  }
+
+  @Test
+  void directReadOfAnotherWorkspacesTransactionIsNotFound() throws Exception {
+    String token = bootstrapAdministrator();
+    AccountSummaryResponse card = createCard(token);
+    UUID foreignAccount = accountInAnotherWorkspace();
+    UUID foreignTransaction = insertLedgerRow(foreignAccount, "-9.00", false);
+
+    // Neither under one of the caller's own accounts nor under the foreign account itself.
+    for (String path :
+        List.of(
+            "/api/v1/accounts/" + card.id() + "/transactions/" + foreignTransaction,
+            "/api/v1/accounts/" + foreignAccount + "/transactions/" + foreignTransaction)) {
+      client(token).get().uri(path).exchange().expectStatus().isNotFound();
+    }
+  }
+
+  // Workspace B, set up directly: this instance's API only ever bootstraps one workspace.
+  private UUID accountInAnotherWorkspace() throws Exception {
+    UUID workspace = UUID.randomUUID();
+    UUID account = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement insertWorkspace =
+            connection.prepareStatement(
+                "INSERT INTO workspace (id, name) VALUES (?, 'Workspace B')");
+        PreparedStatement insertAccount =
+            connection.prepareStatement(
+                "INSERT INTO account (id, workspace_id, portfolio_id, account_type,"
+                    + " name, native_currency) SELECT ?, ?, id, 'CASH', 'B checking', 'CHF'"
+                    + " FROM portfolio WHERE workspace_id = ?")) {
+      insertWorkspace.setObject(1, workspace);
+      insertWorkspace.executeUpdate();
+      insertAccount.setObject(1, account);
+      insertAccount.setObject(2, workspace);
+      insertAccount.setObject(3, workspace);
+      assertThat(insertAccount.executeUpdate()).isEqualTo(1);
+    }
+    return account;
+  }
+
+  private TransactionResponse getTransaction(String token, UUID accountId, UUID transactionId) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + accountId + "/transactions/" + transactionId)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(TransactionResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   // --- AC #1: recorded individually, balance reflects it immediately -------------------------

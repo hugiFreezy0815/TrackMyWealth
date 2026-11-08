@@ -129,9 +129,9 @@ public class AccountIdentifierService {
 
   /**
    * The display value: an IBAN's country and check digits, then a fixed mask and last four
-   * characters (never its middle); a contract number's last four; a masked card as supplied.
-   * Older registered IBANs keep their already-stored last-four-only display until re-registered:
-   * their original prefix cannot be recovered from the keyed hash.
+   * characters (never its middle); a contract number's last four; a masked card as supplied. Older
+   * registered IBANs keep their already-stored last-four-only display until re-registered: their
+   * original prefix cannot be recovered from the keyed hash.
    */
   public static String masked(String normalized, String kind) {
     if (ImportTemplateValues.IDENTIFIER_MASKED_CARD.equals(kind)) {

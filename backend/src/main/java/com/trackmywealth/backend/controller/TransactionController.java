@@ -118,6 +118,19 @@ public class TransactionController {
     return VersionedResponse.ok(response, response.version());
   }
 
+  /** US-07-37: direct-linkable transaction detail, with the current strong ETag. */
+  @Operation(operationId = "getAccountTransaction", summary = "Read one transaction")
+  @GetMapping("/transactions/{transactionId}")
+  @SendsHeaders(ResponseHeader.ETAG)
+  public ResponseEntity<TransactionResponse> getTransaction(
+      @PathVariable UUID accountId,
+      @PathVariable UUID transactionId,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    TransactionResponse response =
+        transactionService.getTransaction(accountId, transactionId, actor);
+    return VersionedResponse.ok(response, response.version());
+  }
+
   /**
    * Newest booking first unless {@code sort} asks for {@code bookingDate} or {@code amount} - the
    * latter by value in the account's currency, so a foreign-currency booking sorts by what it cost

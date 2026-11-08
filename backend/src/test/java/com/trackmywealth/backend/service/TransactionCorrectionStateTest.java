@@ -62,7 +62,8 @@ class TransactionCorrectionStateTest {
           mock(AccountDataQualityService.class),
           mock(ReconciliationService.class),
           mock(ReconciliationAdjustmentService.class),
-          mock(EntityManager.class));
+          mock(EntityManager.class),
+          mock(TransactionReadContextService.class));
 
   private Transaction row;
 

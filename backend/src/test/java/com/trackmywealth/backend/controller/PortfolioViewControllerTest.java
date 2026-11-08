@@ -1,10 +1,11 @@
 package com.trackmywealth.backend.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import com.trackmywealth.backend.dto.AccountIdentifierRequest;
 import com.trackmywealth.backend.dto.AccountSummaryResponse;
 import com.trackmywealth.backend.dto.AuthTokensResponse;
-import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.CreateAccountRequest;
 import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
@@ -16,6 +17,7 @@ import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.AccountRow;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.Section;
 import com.trackmywealth.backend.dto.ReassignAccountPortfolioRequest;
+import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.dto.SetStatementConfigRequest;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.UpdatePortfolioRequest;
@@ -23,6 +25,7 @@ import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
+import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -40,7 +43,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 import javax.sql.DataSource;
-import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +53,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -547,6 +550,8 @@ class PortfolioViewControllerTest {
     assertThat(view.totalInWorkspaceCurrency()).isEqualByComparingTo("1120");
     assertThat(view.conversionRate()).isEqualByComparingTo("0.9500000000");
     assertThat(view.conversionRateDate()).isEqualTo(today());
+    assertThat(view.conversionRateCarriedForward()).isFalse();
+    assertThat(view.conversionRateStale()).isFalse();
   }
 
   // FR-CON-008: the portfolio tabs and the workspace tab show the same money. Every portfolio's
@@ -692,24 +697,75 @@ class PortfolioViewControllerTest {
     assertThat(cardRow.balance()).isEqualByComparingTo("0");
   }
 
-
+  // #482: the server masks; the full IBAN is in neither the stored row nor the response. (The
+  // story's example "DE12 3456 7890 1234 5644 71" fails the IBAN checksum and would be refused, so
+  // a valid IBAN of the same shape stands in for it.)
   @Test
-  void portfolioRowsShowOnlyMaskedIdentifiersAndMatchedReconciliation() throws Exception {
+  void aRowShowsOnlyTheServerMaskedIbanAndItsMatchedReconciliation() throws Exception {
     String token = bootstrapAdministrator();
     PortfolioResponse bank = createPortfolio(token, "DKB", "CHF");
     UUID cash = createAccount(token, cash("Giro", bank.id())).id();
     seedSnapshot(cash, today().minusDays(10), "100.0000", true);
     seedSnapshot(cash, today().minusDays(1), "100.0000", false);
-    // This fixture is already server-masked; the view must never read an identifier hash.
-    execute("UPDATE account SET identifier_masked = ? WHERE id = ?",
-        "DE89 •••• 3000", cash);
-    PortfolioViewResponse view = getView(token, bank.id());
-    AccountRow row = view.sections().get(0).accounts().get(0);
-    assertThat(row.maskedIdentifier()).isEqualTo("DE89 •••• 3000");
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + cash + "/identifier")
+        .header(HttpHeaders.IF_MATCH, "\"" + accountVersion(cash) + "\"")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new AccountIdentifierRequest("DE89 3704 0044 0532 0130 00"))
+        .exchange()
+        .expectStatus()
+        .isOk();
+
+    String body =
+        client(token)
+            .get()
+            .uri("/api/v1/portfolios/" + bank.id() + "/view")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(String.class)
+            .returnResult()
+            .getResponseBody();
+
+    assertThat(body)
+        .contains("\"maskedIdentifier\":\"DE89 \u2022\u2022\u2022\u2022 3000\"")
+        .doesNotContain("370400440532013000")
+        .doesNotContain("3704 0044")
+        .doesNotContain("0532");
+    AccountRow row = getView(token, bank.id()).sections().get(0).accounts().get(0);
+    assertThat(row.maskedIdentifier()).isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
     assertThat(row.reconciliationStatus()).isEqualTo(ReconciliationStatusValues.RECONCILED);
-    assertThat(view.toString()).doesNotContain("370400440532013000");
-    assertThat(view.institutionName()).isNull();
-    assertThat(view.logoUrl()).isNull();
+  }
+
+  @Test
+  void aCataloguePortfolioCarriesItsInstitutionNameAndLogo() throws Exception {
+    String token = bootstrapAdministrator();
+    UUID postFinanceEntry =
+        UUID.fromString(
+            queryString("SELECT id::TEXT FROM institution_catalogue WHERE name = 'PostFinance'"));
+    PortfolioResponse linked =
+        client(token)
+            .post()
+            .uri("/api/v1/portfolios")
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(
+                new CreatePortfolioRequest(
+                    postFinanceEntry, "PostFinance", null, null, null, null, null))
+            .exchange()
+            .expectStatus()
+            .isEqualTo(HttpStatus.CREATED)
+            .expectBody(PortfolioResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+    PortfolioViewResponse view = getView(token, linked.id());
+
+    assertThat(view.institutionName()).isEqualTo("PostFinance");
+    assertThat(view.logoUrl()).isEqualTo(linked.logoUrl());
+    PortfolioViewResponse unlinked = getView(token, createPortfolio(token, "Wallet", "CHF").id());
+    assertThat(unlinked.institutionName()).isNull();
+    assertThat(unlinked.logoUrl()).isNull();
   }
 
   @Test
@@ -718,65 +774,220 @@ class PortfolioViewControllerTest {
     PortfolioResponse bank = createPortfolio(token, "Bank", "CHF");
     UUID difference = createAccount(token, cash("Difference", bank.id())).id();
     UUID withoutOpening = createAccount(token, cash("No opening", bank.id())).id();
+    UUID dismissed = createAccount(token, cash("Dismissed", bank.id())).id();
+    UUID neverObserved = createAccount(token, cash("Never", bank.id())).id();
     seedSnapshot(difference, today().minusDays(5), "100.0000", true);
     seedSnapshot(difference, today().minusDays(1), "120.0000", false);
     seedSnapshot(withoutOpening, today().minusDays(1), "20.0000", false);
+    seedSnapshot(dismissed, today().minusDays(5), "100.0000", true);
+    persistedResult(seedSnapshot(dismissed, today().minusDays(1), "90.0000", false), "DISMISSED");
 
     List<AccountRow> rows = getView(token, bank.id()).sections().get(0).accounts();
-    assertThat(rows.get(0).reconciliationStatus())
-        .isEqualTo(ReconciliationStatusValues.OPEN_DIFFERENCE);
-    assertThat(rows.get(1).reconciliationStatus())
-        .isEqualTo(ReconciliationStatusValues.NOT_RECONCILABLE);
+    assertThat(rows)
+        .extracting(AccountRow::accountId, AccountRow::reconciliationStatus)
+        .containsExactly(
+            tuple(difference, ReconciliationStatusValues.OPEN_DIFFERENCE),
+            tuple(withoutOpening, ReconciliationStatusValues.NOT_RECONCILABLE),
+            tuple(dismissed, ReconciliationStatusValues.DISMISSED_DIFFERENCE),
+            tuple(neverObserved, ReconciliationStatusValues.NEVER));
+    // The account detail tells the same story for every row.
+    for (AccountRow row : rows) {
+      assertThat(reconciliationOf(token, row.accountId())).isEqualTo(row.reconciliationStatus());
+    }
   }
 
+  // The story's footer: "File import - last import 18 Oct - 41 transactions". A rolled-back batch
+  // is not counted, the commit time decides which batch is newest and is the date shown, and the
+  // format is the public import vocabulary.
   @Test
-  void latestImportUsesCommittedBatchesOnlyAndCountsImportedTransactions() throws Exception {
+  void theLastImportIsTheNewestCommittedBatchInThePublicFormatVocabulary() throws Exception {
     String token = bootstrapAdministrator();
     PortfolioResponse bank = createPortfolio(token, "Bank", "CHF");
     UUID account = createAccount(token, cash("Cash", bank.id())).id();
-    UUID old = UUID.randomUUID();
-    UUID newest = UUID.randomUUID();
-    UUID rolledBack = UUID.randomUUID();
-    execute(
-        "INSERT INTO import_batch (id, workspace_id, account_id, status, source_kind,"
-            + " imported_row_count, committed_at) SELECT ?, workspace_id, id, 'COMMITTED',"
-            + " 'CSV', 41, ? FROM account WHERE id = ?",
-        old, OffsetDateTime.parse("2026-10-18T12:00:00+02:00"), account);
-    execute(
-        "INSERT INTO import_batch (id, workspace_id, account_id, status, source_kind,"
-            + " imported_row_count, committed_at) SELECT ?, workspace_id, id, 'COMMITTED',"
-            + " 'DOCUMENT', 12, ? FROM account WHERE id = ?",
-        newest, OffsetDateTime.parse("2026-10-19T12:00:00+02:00"), account);
-    execute(
-        "INSERT INTO import_batch (id, workspace_id, account_id, status, source_kind,"
-            + " imported_row_count, committed_at, rolled_back_at, rolled_back_by, rollback_reason)"
-            + " SELECT ?, workspace_id, id, 'ROLLED_BACK', 'CSV', 99, ?, now(),"
-            + " (SELECT id FROM app_user LIMIT 1), 'test' FROM account WHERE id = ?",
-        rolledBack, OffsetDateTime.parse("2026-10-20T12:00:00+02:00"), account);
+    OffsetDateTime october18 = OffsetDateTime.parse("2026-10-18T12:00:00+02:00");
+    // Uploaded long before an import committed later, then another uploaded later but committed
+    // earlier: the commit decides.
+    seedBatch(account, "COMMITTED", "CSV", null, 41, october18.minusDays(9), october18);
+    seedBatch(
+        account, "COMMITTED", "CSV", null, 7, october18.minusHours(1), october18.minusHours(2));
+    seedBatch(
+        account, "ROLLED_BACK", "CSV", null, 99, october18.plusDays(2), october18.plusDays(2));
 
     PortfolioViewResponse.LastImport last = getView(token, bank.id()).lastImport();
     assertThat(last).isNotNull();
-    assertThat(last.fileFormat()).isEqualTo("DOCUMENT");
-    assertThat(last.transactionCount()).isEqualTo(12);
-    assertThat(last.uploadedAt()).isNotNull();
+    assertThat(last.committedAt()).isEqualTo(october18);
+    assertThat(last.uploadedAt()).isEqualTo(october18.minusDays(9));
+    assertThat(last.fileFormat()).isEqualTo("CSV");
+    assertThat(last.transactionCount()).isEqualTo(41);
+
+    UUID pdfTemplate =
+        UUID.fromString(
+            queryString(
+                "SELECT id::TEXT FROM import_template WHERE is_system_provided AND file_format IN"
+                    + " ('PDF_TEXT', 'PDF_OCR') ORDER BY id LIMIT 1"));
+    seedBatch(
+        account,
+        "COMMITTED",
+        "DOCUMENT",
+        pdfTemplate,
+        12,
+        october18.plusDays(3),
+        october18.plusDays(3));
+    assertThat(getView(token, bank.id()).lastImport())
+        .extracting(
+            PortfolioViewResponse.LastImport::fileFormat,
+            PortfolioViewResponse.LastImport::transactionCount)
+        .containsExactly("PDF", 12);
+
+    seedBatch(
+        account, "COMMITTED", "DOCUMENT", null, 3, october18.plusDays(4), october18.plusDays(4));
+    assertThat(getView(token, bank.id()).lastImport())
+        .extracting(
+            PortfolioViewResponse.LastImport::fileFormat,
+            PortfolioViewResponse.LastImport::transactionCount)
+        .containsExactly("CAMT", 3);
   }
 
+  @Test
+  void aCarriedForwardOrStaleRateIsMarkedOnTheHeaderHint() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse dkb = createPortfolio(token, "DKB", "EUR");
+    seedFxRate("EUR", "CHF", "0.9400000000", today().minusDays(2));
+
+    PortfolioViewResponse carried = getView(token, dkb.id());
+    assertThat(carried.conversionRate()).isEqualByComparingTo("0.94");
+    assertThat(carried.conversionRateDate()).isEqualTo(today());
+    assertThat(carried.conversionRateCarriedForward()).isTrue();
+    assertThat(carried.conversionRateStale()).isFalse();
+
+    execute("DELETE FROM fx_rate");
+    // Older than app.fx.stale-after (P5D).
+    seedFxRate("EUR", "CHF", "0.9300000000", today().minusDays(20));
+    PortfolioViewResponse stale = getView(token, dkb.id());
+    assertThat(stale.conversionRateCarriedForward()).isTrue();
+    assertThat(stale.conversionRateStale()).isTrue();
+
+    PortfolioViewResponse sameCurrency = getView(token, createPortfolio(token, "Bank", "CHF").id());
+    assertThat(sameCurrency.conversionRate()).isNull();
+    assertThat(sameCurrency.conversionRateCarriedForward()).isFalse();
+    assertThat(sameCurrency.conversionRateStale()).isFalse();
+  }
+
+  // Every detail the rows carry - stored and derived reconciliation, card dates, identifiers and
+  // the last import - is read in a fixed number of statements, however many accounts there are.
   @Test
   void moreAccountsDoNotAddPortfolioViewQueries() throws Exception {
     String token = bootstrapAdministrator();
     PortfolioResponse bank = createPortfolio(token, "Bank", "CHF");
-    UUID first = createAccount(token, cash("Cash 0", bank.id())).id();
-    seedSnapshot(first, today().minusDays(10), "100.0000", true);
-    seedSnapshot(first, today().minusDays(1), "100.0000", false);
-    long one = statementsFor(() -> assertThat(getView(token, bank.id()).sections().get(0).accounts()).hasSize(1));
+    addDetailedAccounts(token, bank.id(), 0);
+    long one = statementsFor(() -> assertThat(getView(token, bank.id()).sections()).hasSize(2));
     for (int i = 1; i <= 5; i++) {
-      UUID account = createAccount(token, cash("Cash " + i, bank.id())).id();
-      seedSnapshot(account, today().minusDays(10), "100.0000", true);
-      seedSnapshot(account, today().minusDays(1), "100.0000", false);
+      addDetailedAccounts(token, bank.id(), i);
     }
-    long six = statementsFor(() -> assertThat(getView(token, bank.id()).sections().get(0).accounts()).hasSize(6));
+    long six =
+        statementsFor(
+            () -> {
+              PortfolioViewResponse view = getView(token, bank.id());
+              assertThat(view.sections().get(0).accounts())
+                  .hasSize(12)
+                  .allSatisfy(
+                      row ->
+                          assertThat(row.reconciliationStatus())
+                              .isEqualTo(ReconciliationStatusValues.RECONCILED));
+              assertThat(view.sections().get(1).accounts())
+                  .hasSize(6)
+                  .allSatisfy(row -> assertThat(row.statementDate()).isNotNull());
+              assertThat(view.lastImport()).isNotNull();
+            });
     assertThat(one).isPositive();
     assertThat(six).isEqualTo(one);
+  }
+
+  // One cash account reconciled by a stored result, one compared on the fly (no result yet), and a
+  // card with a statement cycle; each cash account with a committed import.
+  private void addDetailedAccounts(String token, UUID portfolioId, int index) throws Exception {
+    UUID stored = createAccount(token, cash("Stored " + index, portfolioId)).id();
+    seedSnapshot(stored, today().minusDays(10), "100.0000", true);
+    persistedResult(seedSnapshot(stored, today().minusDays(1), "100.0000", false), "RESOLVED");
+    UUID derived = createAccount(token, cash("Derived " + index, portfolioId)).id();
+    seedSnapshot(derived, today().minusDays(10), "100.0000", true);
+    seedSnapshot(derived, today().minusDays(1), "100.0000", false);
+    OffsetDateTime committed = OffsetDateTime.now().minusDays(index + 1L);
+    seedBatch(stored, "COMMITTED", "CSV", null, 5, committed, committed);
+    seedBatch(derived, "COMMITTED", "CSV", null, 5, committed, committed);
+    UUID card =
+        createAccount(
+                token,
+                AccountRequests.account("Card " + index, "CREDIT_CARD", "CHF")
+                    .portfolioId(portfolioId)
+                    .build())
+            .id();
+    client(token)
+        .put()
+        .uri("/api/v1/accounts/" + card + "/statement-config")
+        .headers(CurrentVersion.ifMatchForCard(dataSource, card))
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(new SetStatementConfigRequest(28, 20))
+        .exchange()
+        .expectStatus()
+        .isOk();
+  }
+
+  private void seedBatch(
+      UUID accountId,
+      String status,
+      String sourceKind,
+      UUID templateId,
+      int importedRows,
+      OffsetDateTime uploadedAt,
+      OffsetDateTime committedAt)
+      throws Exception {
+    boolean rolledBack = "ROLLED_BACK".equals(status);
+    execute(
+        "INSERT INTO import_batch (id, workspace_id, account_id, status, source_kind, template_id,"
+            + " template_version_used, imported_row_count, uploaded_at, committed_at,"
+            + " rolled_back_at, rolled_back_by, rollback_reason)"
+            + " SELECT ?, a.workspace_id, a.id, ?, ?, t.id, t.template_version, ?, ?, ?,"
+            + (rolledBack
+                ? " now(), (SELECT id FROM app_user LIMIT 1), 'test'"
+                : " NULL, NULL, NULL")
+            + " FROM account a LEFT JOIN import_template t ON t.id = ? WHERE a.id = ?",
+        UUID.randomUUID(),
+        status,
+        sourceKind,
+        importedRows,
+        uploadedAt,
+        committedAt,
+        templateId,
+        accountId);
+  }
+
+  private void persistedResult(UUID snapshotId, String status) throws Exception {
+    execute(
+        "INSERT INTO reconciliation_result (workspace_id, account_id, snapshot_id, status,"
+            + " difference_amount) SELECT workspace_id, account_id, id, ?, 10 FROM account_snapshot"
+            + " WHERE id = ?",
+        status,
+        snapshotId);
+  }
+
+  private String reconciliationOf(String token, UUID accountId) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + accountId)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(AccountSummaryResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .reconciliation()
+        .status();
+  }
+
+  private int accountVersion(UUID accountId) throws Exception {
+    return Integer.parseInt(
+        queryString("SELECT version::TEXT FROM account WHERE id = ?", accountId));
   }
 
   private long statementsFor(Runnable action) {
@@ -1150,10 +1361,14 @@ class PortfolioViewControllerTest {
   }
 
   private void seedFxRate(String base, String quote, String rate) {
+    seedFxRate(base, quote, rate, today());
+  }
+
+  private void seedFxRate(String base, String quote, String rate, LocalDate rateDate) {
     FxRate fxRate = new FxRate();
     fxRate.setBaseCurrency(base);
     fxRate.setQuoteCurrency(quote);
-    fxRate.setRateDate(today());
+    fxRate.setRateDate(rateDate);
     fxRate.setRate(new BigDecimal(rate));
     fxRate.setSource("ECB"); // app.fx.default-source
     fxRateRepository.save(fxRate);
@@ -1166,6 +1381,15 @@ class PortfolioViewControllerTest {
         statement.setObject(i + 1, parameters[i]);
       }
       statement.executeUpdate();
+    }
+  }
+
+  private String queryString(String sql) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement();
+        ResultSet result = statement.executeQuery(sql)) {
+      assertThat(result.next()).isTrue();
+      return result.getString(1);
     }
   }
 

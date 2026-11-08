@@ -199,9 +199,9 @@ public class CardStatementService {
   }
 
   /**
-   * The most recently closed statement date, including the closing day itself. Unlike the due
-   * date, this needs only the statement day configured. No account lookup: the portfolio view
-   * already loaded and authorized the card's extension in a batch.
+   * The most recently closed statement date, including the closing day itself. Unlike the due date,
+   * this needs only the statement day configured. No account lookup: the portfolio view already
+   * loaded and authorized the card's extension in a batch.
    */
   public Optional<LocalDate> currentStatementDate(AccountCreditCard extension) {
     Short statementDay = extension.getStatementDay();

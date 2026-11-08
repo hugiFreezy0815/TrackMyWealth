@@ -16,13 +16,13 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -115,63 +115,24 @@ public class ReconciliationService {
       return new ReconciliationStatusResponse(
           ReconciliationStatusValues.NEVER, null, null, null, null);
     }
-
     AccountSnapshot snapshot = latest.get();
     Optional<AccountSnapshot> opening = applicableOpening(account, snapshot.getSnapshotDate());
-    if (!cashScopeApplies(account)) {
-      return statusResponse(
-          ReconciliationStatusValues.NOT_RECONCILABLE,
-          ReconciliationStatusValues.CASH_SCOPE_NOT_APPLICABLE,
-          snapshot,
-          null);
-    }
-    if (opening.isEmpty()) {
-      return statusResponse(
-          ReconciliationStatusValues.NOT_RECONCILABLE,
-          ReconciliationStatusValues.NO_OPENING_BALANCE,
-          snapshot,
-          null);
-    }
-
-    Optional<ReconciliationResult> persisted =
-        resultRepository.findBySnapshotIdAndAffectedSecurityIdIsNull(snapshot.getId());
-    if (persisted.isPresent() && OPEN.equals(persisted.get().getStatus())) {
-      return statusResponse(
-          ReconciliationStatusValues.OPEN_DIFFERENCE,
-          null,
-          snapshot,
-          persisted.get().getDifferenceAmount());
-    }
-    if (persisted.isPresent() && DISMISSED.equals(persisted.get().getStatus())) {
-      return statusResponse(
-          ReconciliationStatusValues.DISMISSED_DIFFERENCE,
-          null,
-          snapshot,
-          persisted.get().getDifferenceAmount());
-    }
-    // An accepted difference agrees through its visible adjusting entry; the engine reopens the
-    // result as soon as it no longer does.
-    if (persisted.isPresent()
-        && List.of(RESOLVED, ACCEPTED).contains(persisted.get().getStatus())) {
-      return statusResponse(ReconciliationStatusValues.RECONCILED, null, snapshot, null);
-    }
-
-    // Backward-compatible read for a snapshot that predates this engine: compute the signal
-    // without writing from a GET. Normal source writes persist the corresponding result.
-    BigDecimal difference = difference(account, opening.get(), snapshot);
-    return statusResponse(
-        difference.signum() == 0
-            ? ReconciliationStatusValues.RECONCILED
-            : ReconciliationStatusValues.OPEN_DIFFERENCE,
-        null,
-        snapshot,
-        difference.signum() == 0 ? null : difference);
+    ReconciliationResult persisted =
+        opening.isEmpty()
+            ? null
+            : resultRepository
+                .findBySnapshotIdAndAffectedSecurityIdIsNull(snapshot.getId())
+                .orElse(null);
+    return decideWithoutLedger(account, snapshot, opening.orElse(null), persisted)
+        .orElseGet(() -> fromDifference(snapshot, difference(account, opening.get(), snapshot)));
   }
 
   /**
-   * The same account-level statuses as {@link #status(Account)}, for a portfolio's active accounts
-   * in a fixed number of queries. Even pre-engine snapshots without a persisted result are
-   * compared against the opening balance and live ledger, never assumed reconciled.
+   * #482: {@link #status(Account)}'s state for each of several accounts (a portfolio's active ones)
+   * in a fixed number of queries, whatever their count. Both go through {@link
+   * #decideWithoutLedger} and {@link #derivedDifference}, so the account detail and a portfolio row
+   * can never disagree. A snapshot that predates the engine is compared against the opening balance
+   * and the live ledger, never assumed reconciled.
    */
   @Transactional(readOnly = true)
   public Map<UUID, String> statuses(Collection<Account> accounts) {
@@ -179,83 +140,131 @@ public class ReconciliationService {
       return Map.of();
     }
     List<UUID> accountIds = accounts.stream().map(Account::getId).toList();
-    Map<UUID, Account> byAccount = new HashMap<>();
-    accounts.forEach(account -> byAccount.put(account.getId(), account));
-
     Map<UUID, AccountSnapshot> latest = new HashMap<>();
     for (AccountSnapshot snapshot : snapshotRepository.findLatestObservedForAccounts(accountIds)) {
       latest.put(snapshot.getAccount().getId(), snapshot);
     }
-    Map<UUID, String> statuses = new HashMap<>();
-    if (latest.isEmpty()) {
-      accountIds.forEach(id -> statuses.put(id, ReconciliationStatusValues.NEVER));
-      return statuses;
-    }
-
     Map<UUID, AccountSnapshot> openings = new HashMap<>();
-    for (AccountSnapshot opening : snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(accountIds)) {
-      openings.put(opening.getAccount().getId(), opening);
-    }
     Map<UUID, ReconciliationResult> persisted = new HashMap<>();
-    for (ReconciliationResult result :
-        resultRepository.findBySnapshotIdInAndAffectedSecurityIdIsNull(
-            latest.values().stream().map(AccountSnapshot::getId).toList())) {
-      persisted.put(result.getSnapshot().getId(), result);
+    if (!latest.isEmpty()) {
+      for (AccountSnapshot opening :
+          snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(accountIds)) {
+        openings.put(opening.getAccount().getId(), opening);
+      }
+      for (ReconciliationResult result :
+          resultRepository.findBySnapshotIdInAndAffectedSecurityIdIsNull(
+              latest.values().stream().map(AccountSnapshot::getId).toList())) {
+        persisted.put(result.getSnapshot().getId(), result);
+      }
     }
 
-    List<AccountSnapshot> legacy = new ArrayList<>();
+    Map<UUID, String> statuses = new HashMap<>();
+    Map<Account, AccountSnapshot> needLedger = new HashMap<>();
     for (Account account : accounts) {
-      UUID id = account.getId();
-      AccountSnapshot snapshot = latest.get(id);
+      AccountSnapshot snapshot = latest.get(account.getId());
       if (snapshot == null) {
-        statuses.put(id, ReconciliationStatusValues.NEVER);
+        statuses.put(account.getId(), ReconciliationStatusValues.NEVER);
         continue;
       }
-      AccountSnapshot opening = openings.get(id);
-      if (!cashScopeApplies(account)
-          || opening == null
-          || opening.getSnapshotDate().isAfter(snapshot.getSnapshotDate())) {
-        statuses.put(id, ReconciliationStatusValues.NOT_RECONCILABLE);
-        continue;
-      }
-      ReconciliationResult result = persisted.get(snapshot.getId());
-      String state = result == null ? null : result.getStatus();
-      if (OPEN.equals(state)) {
-        statuses.put(id, ReconciliationStatusValues.OPEN_DIFFERENCE);
-      } else if (DISMISSED.equals(state)) {
-        statuses.put(id, ReconciliationStatusValues.DISMISSED_DIFFERENCE);
-      } else if (RESOLVED.equals(state) || ACCEPTED.equals(state)) {
-        statuses.put(id, ReconciliationStatusValues.RECONCILED);
+      Optional<ReconciliationStatusResponse> decided =
+          decideWithoutLedger(
+              account,
+              snapshot,
+              applicable(account, openings.get(account.getId()), snapshot.getSnapshotDate()),
+              persisted.get(snapshot.getId()));
+      if (decided.isPresent()) {
+        statuses.put(account.getId(), decided.get().status());
       } else {
-        legacy.add(snapshot);
+        needLedger.put(account, snapshot);
       }
     }
 
-    if (!legacy.isEmpty()) {
-      Map<UUID, BigDecimal> sums = new HashMap<>();
+    if (!needLedger.isEmpty()) {
+      Map<UUID, BigDecimal> ledgers = new HashMap<>();
       for (KeyedAmount sum :
           transactionRepository.sumAmountAfterOpeningsForObservedSnapshots(
-              legacy.stream().map(AccountSnapshot::getId).toList())) {
-        sums.put(sum.key(), sum.amount());
+              needLedger.values().stream().map(AccountSnapshot::getId).toList())) {
+        ledgers.put(sum.key(), sum.amount());
       }
-      for (AccountSnapshot snapshot : legacy) {
-        Account account = byAccount.get(snapshot.getAccount().getId());
-        AccountSnapshot opening = openings.get(account.getId());
-        BigDecimal ledger = sums.getOrDefault(snapshot.getId(), BigDecimal.ZERO);
-        BigDecimal derived =
-            LIABILITY.equals(account.getNature())
-                ? opening.getBalance().subtract(ledger)
-                : opening.getBalance().add(ledger);
-        BigDecimal difference =
-            snapshot.getBalance().subtract(derived).setScale(FxRateService.MONEY_SCALE, RoundingMode.HALF_UP);
-        statuses.put(
-            account.getId(),
-            difference.signum() == 0
-                ? ReconciliationStatusValues.RECONCILED
-                : ReconciliationStatusValues.OPEN_DIFFERENCE);
-      }
+      needLedger.forEach(
+          (account, snapshot) ->
+              statuses.put(
+                  account.getId(),
+                  fromDifference(
+                          snapshot,
+                          derivedDifference(
+                              account,
+                              openings.get(account.getId()),
+                              snapshot,
+                              ledgers.getOrDefault(snapshot.getId(), BigDecimal.ZERO)))
+                      .status()));
     }
     return Map.copyOf(statuses);
+  }
+
+  /**
+   * Every status decision that needs no ledger sum, from facts already loaded: the cash scope, the
+   * applicable opening balance ({@code null} without one) and the persisted result of the
+   * snapshot's cash comparison ({@code null} without one). Empty when only comparing the ledger can
+   * tell: a snapshot that predates the engine, or one whose result was superseded.
+   */
+  private static Optional<ReconciliationStatusResponse> decideWithoutLedger(
+      Account account,
+      AccountSnapshot snapshot,
+      @Nullable AccountSnapshot opening,
+      @Nullable ReconciliationResult persisted) {
+    if (!cashScopeApplies(account)) {
+      return Optional.of(
+          statusResponse(
+              ReconciliationStatusValues.NOT_RECONCILABLE,
+              ReconciliationStatusValues.CASH_SCOPE_NOT_APPLICABLE,
+              snapshot,
+              null));
+    }
+    if (opening == null) {
+      return Optional.of(
+          statusResponse(
+              ReconciliationStatusValues.NOT_RECONCILABLE,
+              ReconciliationStatusValues.NO_OPENING_BALANCE,
+              snapshot,
+              null));
+    }
+    if (persisted == null) {
+      return Optional.empty();
+    }
+    return switch (persisted.getStatus()) {
+      case OPEN ->
+          Optional.of(
+              statusResponse(
+                  ReconciliationStatusValues.OPEN_DIFFERENCE,
+                  null,
+                  snapshot,
+                  persisted.getDifferenceAmount()));
+      case DISMISSED ->
+          Optional.of(
+              statusResponse(
+                  ReconciliationStatusValues.DISMISSED_DIFFERENCE,
+                  null,
+                  snapshot,
+                  persisted.getDifferenceAmount()));
+      // An accepted difference agrees through its visible adjusting entry; the engine reopens the
+      // result as soon as it no longer does.
+      case RESOLVED, ACCEPTED ->
+          Optional.of(statusResponse(ReconciliationStatusValues.RECONCILED, null, snapshot, null));
+      default -> Optional.empty();
+    };
+  }
+
+  // Backward-compatible read for a snapshot without a live result: the signal is computed without
+  // writing from a GET. Normal source writes persist the corresponding result.
+  private static ReconciliationStatusResponse fromDifference(
+      AccountSnapshot snapshot, BigDecimal difference) {
+    boolean agrees = difference.signum() == 0;
+    return statusResponse(
+        agrees ? ReconciliationStatusValues.RECONCILED : ReconciliationStatusValues.OPEN_DIFFERENCE,
+        null,
+        snapshot,
+        agrees ? null : difference);
   }
 
   /**
@@ -476,6 +485,13 @@ public class ReconciliationService {
                 opening.getStatedAt(),
                 snapshot.getSnapshotDate())
             .orElse(BigDecimal.ZERO);
+    return derivedDifference(account, opening, snapshot, ledger);
+  }
+
+  // The one balance formula: the opening balance plus the ledger after it (minus for a liability),
+  // compared with the observed balance at money scale.
+  private static BigDecimal derivedDifference(
+      Account account, AccountSnapshot opening, AccountSnapshot snapshot, BigDecimal ledger) {
     BigDecimal derived =
         LIABILITY.equals(account.getNature())
             ? opening.getBalance().subtract(ledger)
@@ -492,7 +508,16 @@ public class ReconciliationService {
     }
     return snapshotRepository
         .findByAccountIdAndOpeningBalanceTrue(account.getId())
-        .filter(opening -> !opening.getSnapshotDate().isAfter(asOf));
+        .map(opening -> applicable(account, opening, asOf));
+  }
+
+  // The opening balance a comparison on asOf starts from: none outside the cash scope or when the
+  // opening is dated after the observation.
+  private static @Nullable AccountSnapshot applicable(
+      Account account, @Nullable AccountSnapshot opening, LocalDate asOf) {
+    return cashScopeApplies(account) && opening != null && !opening.getSnapshotDate().isAfter(asOf)
+        ? opening
+        : null;
   }
 
   private static boolean cashScopeApplies(Account account) {

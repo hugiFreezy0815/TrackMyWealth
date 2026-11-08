@@ -36,8 +36,8 @@ Overview
 └────────────────────────────────────────────────────┘
 ┌ [▣] Cash & savings                  EUR 19'210.55 ┐
 │ Girokonto                              4'210.55  > │
-│ Current account · DE12 •••• 4471                   │  ← identifier: GAP-ROWS (#482)
-│ Tagesgeld          [✓ Reconciled]     15'000.00  > │  ← reconciled: GAP-ROWS (#482)
+│ Current account · DE12 •••• 4471                   │  ← identifier: `maskedIdentifier` (#482)
+│ Tagesgeld          [✓ Reconciled]     15'000.00  > │  ← reconciled: `reconciliationStatus` (#482)
 │ Savings                                            │
 └────────────────────────────────────────────────────┘
 ┌ [↗] Depot                           EUR 58'930.20 ┐
@@ -50,7 +50,7 @@ Overview
 ┌ [▭] Credit card                    −EUR 1'284.30 ┐
 │ Visa · statement 28 Oct          (🕓 Due in 8 days)│
 └────────────────────────────────────────────────────┘
-┌ [✓] File import · last import 18 Oct · 41 transactions ┐  ← GAP-ROWS (#482)
+┌ [✓] File import · last import 18 Oct · 41 transactions ┐  ← `lastImport` (#482)
 │ [ ⤒ Import statement ]                             │
 └────────────────────────────────────────────────────┘
 ```
@@ -64,7 +64,7 @@ Overview
   edit portfolio (not in sprint 7: hidden).
 - Right column, below: "Cash flow · {month}". It needs a per-portfolio cash flow, which
   `/cash-flow` doesn't offer, so it's **hidden in sprint 7** (see Differences).
-- Right column, last: "Data source" with the last import (GAP-ROWS (#482)).
+- Right column, last: "Data source" with the last import (`lastImport`, #482).
 
 ## Requests
 
@@ -87,7 +87,7 @@ That way the name, logo and total never flash empty.
 | 5 | Total | | `Amount`, large; may be **negative** | `total`, `portfolioCurrency` |
 | 6 | Status | `ValueStatusBadge`; `total.incomplete` | | `valueStatus`, `complete`, `warnings[]` |
 | 7 | Converted total | `amount.approx` "≈ {amount}" | | `totalInWorkspaceCurrency`, `workspaceCurrency`; only if the currencies differ |
-| 8 | FX hint `[advanced]` | `fx.rate` "1 {from} = {rate} {to} · {date}" | ⓘ opens explanation | `conversionRate`, `conversionRateDate` from #482 (informational: the workspace total is still independently converted account-by-account) |
+| 8 | FX hint `[advanced]` | `fx.rate` "1 {from} = {rate} {to} · {date}" | ⓘ opens explanation | `conversionRate`, `conversionRateDate` (#482). `{date}` is `conversionRateDate`, the valuation date. When `conversionRateCarriedForward` is true, mark the hint like a carried-forward value (PR-011); when `conversionRateStale` is true, use the stale marking. The rate is the one accounts in the portfolio currency are converted with; an account in a third currency is converted with its own rate |
 | 9 | Change chip, chart, period switch | as S1 #8–#11 | | **GAP-HISTORY (#477)** (portfolio scope) |
 
 ## Sections
@@ -137,8 +137,10 @@ sends `null` rather than a figure that may mix currencies (FR-PERF-018). The % i
 
 ## Footer: data source (delivered #482)
 
-"{sourceKind}: last import {date} · {count, plural, one {# transaction} other {# transactions}}"
-from `lastImport` (`uploadedAt`, `transactionCount`, `fileFormat`). The "Import
+"{fileFormat}: last import {date} · {count, plural, one {# transaction} other {# transactions}}"
+from `lastImport`: `{date}` is `committedAt` (when the import was committed; the newest commit
+is the one shown), `{count}` is `transactionCount`, `{fileFormat}` is one of `CSV`,
+`SPREADSHEET`, `PDF`, `CAMT` (the codes the catalogue's `importFormats` uses, see [Add portfolio](add-portfolio.md)). `uploadedAt` is not shown. The "Import
 statement" button opens [Import statement (S7)](import-statement.md) with the account picker.
 No last import: "No import yet" + the button.
 
@@ -173,7 +175,7 @@ No last import: "No import yet" + the button.
 | "+7.8% YTD (TWR)" | "Total return {percent}" once `totalReturn` is sent; hidden in sprint 7 | `totalReturn` is `null` until EPIC 15/16; TWR is EPIC 16 |
 | W02 "Cash flow · October" per portfolio | Hidden | `/cash-flow` is workspace-wide only |
 | W02 "Edit" portfolio details | Hidden | Edit portfolio is not a sprint-7 screen |
-| "1 EUR = 0.9362 CHF · 20 Oct" | Rate and valuation date shown when resolvable (#482) | Informational rate; workspace total uses account-by-account conversions |
+| "1 EUR = 0.9362 CHF · 20 Oct" | Rate and valuation date shown when resolvable, marked when carried forward or stale (#482) | Accounts in a third currency use their own rate |
 
 ## Acceptance checks for the UI story
 

@@ -67,7 +67,8 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
 
   /**
    * US-25-02/#482: newest observed balance per account, excluding opening, withdrawn and
-   * holdings-only snapshots. Same order as findLatestObserved, in one PostgreSQL query.
+   * holdings-only snapshots. Same order as findLatestObserved, id tie-break included, in one
+   * PostgreSQL query.
    */
   @Query(
       value =
@@ -85,8 +86,10 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
       @Param("accountIds") Collection<UUID> accountIds);
 
   // US-25-02: the newest observed balance, excluding the synthetic opening-balance starting point.
+  // The id breaks a tie of two snapshots stated in one transaction (same created_at), so this and
+  // findLatestObservedForAccounts always pick the same row (#482).
   Optional<AccountSnapshot>
-      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
+      findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDescIdAsc(
           UUID accountId);
 
   // US-25-02: the observed balance immediately before a snapshot, used to bound best-effort cause
@@ -100,7 +103,7 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
    * snapshots (US-07-12) left out.
    */
   default Optional<AccountSnapshot> findLatestObserved(UUID accountId) {
-    return findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(
+    return findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDescIdAsc(
         accountId);
   }
 

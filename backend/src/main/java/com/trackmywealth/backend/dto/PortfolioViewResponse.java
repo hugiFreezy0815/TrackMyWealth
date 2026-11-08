@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -29,13 +30,25 @@ import org.jspecify.annotations.Nullable;
  *     currency, each once and sorted
  * @param sections only the sections holding at least one active account, in {@link
  *     PortfolioSection} order
- * @param institutionName the catalogue institution's name, or null for an unlinked portfolio
- * @param conversionRate the informational rate for one unit of portfolio currency in workspace
- *     currency; not applied to the already independently converted account totals. Null for equal
- *     currencies or when no rate resolves
- * @param conversionRateDate the valuation date requested for the displayed rate, not necessarily
- *     the stored rate's date (a carried-forward rate can be older)
- * @param lastImport the newest still-committed batch among the portfolio's active accounts
+ * @param institutionName the catalogue institution's name, or {@code null} for a portfolio not
+ *     linked to the catalogue (#482)
+ * @param logoUrl the portfolio's logo, as in the portfolio list
+ * @param conversionRate one unit of {@code portfolioCurrency} in {@code workspaceCurrency}, for the
+ *     header's FX hint (#482). It is the rate an account held in the portfolio's currency is
+ *     converted with, so for such accounts it is the one behind {@code totalInWorkspaceCurrency};
+ *     an account in a third currency is converted with its own rate (never chained through this
+ *     one). {@code null} when the currencies are equal or no rate resolves
+ * @param conversionRateDate the date the rate was requested for ({@code asOf}, FR-CUR-011's
+ *     valuation-date convention, as in {@link PortfolioSummaryResponse}); see {@code
+ *     conversionRateCarriedForward} for an older stored rate. {@code null} with {@code
+ *     conversionRate}
+ * @param conversionRateCarriedForward {@code true} when the rate was carried forward from an
+ *     earlier date (FR-CUR-012/PR-011); always {@code false} without {@code conversionRate}
+ * @param conversionRateStale {@code true} when that earlier rate is older than {@code
+ *     app.fx.stale-after} (NFR-CON-003/PR-011); the hint must be marked as such. Implies {@code
+ *     conversionRateCarriedForward}
+ * @param lastImport the newest still-committed batch among the portfolio's active accounts; {@code
+ *     null} without one
  */
 public record PortfolioViewResponse(
     UUID portfolioId,
@@ -56,6 +69,8 @@ public record PortfolioViewResponse(
     @Nullable String logoUrl,
     @Nullable BigDecimal conversionRate,
     @Nullable LocalDate conversionRateDate,
+    boolean conversionRateCarriedForward,
+    boolean conversionRateStale,
     @Nullable LastImport lastImport) {
 
   public PortfolioViewResponse {
@@ -65,10 +80,28 @@ public record PortfolioViewResponse(
   }
 
   /**
-   * The newest committed import for an active account in the portfolio. The count is the number
-   * of rows actually imported, not duplicates or rejected rows; rolled-back batches are excluded.
+   * The newest committed import for an active account in the portfolio; rolled-back batches are
+   * excluded.
+   *
+   * @param uploadedAt when the file was uploaded
+   * @param committedAt when it was imported (committed): the "last import" date the footer shows
+   *     and the order the newest batch is chosen by
+   * @param fileFormat the public import vocabulary, as in {@link TransactionImportBatchResponse}:
+   *     both PDF reader kinds are {@code PDF}, a template-less statement document {@code CAMT}
+   * @param transactionCount the rows actually imported, not duplicates or rejected rows
    */
-  public record LastImport(OffsetDateTime uploadedAt, String fileFormat, int transactionCount) {}
+  public record LastImport(
+      OffsetDateTime uploadedAt,
+      OffsetDateTime committedAt,
+      @Schema(
+              allowableValues = {
+                TransactionImportBatchResponse.FORMAT_CSV,
+                TransactionImportBatchResponse.FORMAT_SPREADSHEET,
+                TransactionImportBatchResponse.FORMAT_PDF,
+                TransactionImportBatchResponse.FORMAT_CAMT
+              })
+          String fileFormat,
+      int transactionCount) {}
 
   /**
    * One kind of account within the portfolio.

@@ -41,6 +41,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -171,8 +172,10 @@ public class PortfolioViewService {
     allInPortfolio.forEach(valuation -> warnings.addAll(valuation.warnings()));
     allInWorkspace.forEach(valuation -> warnings.addAll(valuation.warnings()));
     PortfolioTotals totals = totalsOf(accounts, inPortfolio, inWorkspace, oneCurrency);
-    // Informational portfolio-to-workspace quote. The totals retain their existing per-account
-    // conversion paths, so cross-currency holdings are never silently re-valued through this rate.
+    // The header's FX hint: the rate an account in the portfolio's currency is converted with. The
+    // totals keep their per-account conversions, so an account in a third currency is never
+    // chained through this rate. Resolved like the valuation (same date and source), so it marks a
+    // carried-forward or stale rate the same way (PR-011).
     Optional<CurrencyConversionResult> conversion =
         oneCurrency
             ? Optional.empty()
@@ -204,6 +207,8 @@ public class PortfolioViewService {
         portfolio.getLogoUrl(),
         conversion.map(CurrencyConversionResult::rate).orElse(null),
         conversion.map(CurrencyConversionResult::requestedDate).orElse(null),
+        conversion.map(CurrencyConversionResult::carriedForward).orElse(false),
+        conversion.map(CurrencyConversionResult::stale).orElse(false),
         lastImport(accounts, portfolio.getWorkspace().getId()));
   }
 
@@ -288,7 +293,9 @@ public class PortfolioViewService {
         linkedProperties);
   }
 
-  private LastImport lastImport(List<Account> accounts, UUID workspaceId) {
+  // The newest committed batch of any active account, by commit time (id breaking a tie); a
+  // rolled-back batch is no longer COMMITTED and so never counts.
+  private @Nullable LastImport lastImport(List<Account> accounts, UUID workspaceId) {
     if (accounts.isEmpty()) {
       return null;
     }
@@ -301,18 +308,18 @@ public class PortfolioViewService {
       return null;
     }
     ImportBatch batch = latest.get(0);
-    // The committed template's exact version is retained by the batch, even when it is no
-    // longer the current template. CAMT files without a template use their stored source kind.
-    String format =
+    // A template a batch used is never deleted; the workspace scope is defence in depth.
+    String templateFormat =
         batch.getTemplateId() == null
-            ? batch.getSourceKind()
+            ? null
             : importTemplateRepository
                 .findVisibleTo(batch.getTemplateId(), workspaceId)
                 .map(ImportTemplate::getFileFormat)
-                .orElse(batch.getSourceKind());
+                .orElse(null);
     return new LastImport(
         batch.getUploadedAt(),
-        format,
+        batch.getCommittedAt(),
+        TransactionReadContextService.formatOf(batch, templateFormat),
         batch.getImportedRowCount() == null ? 0 : batch.getImportedRowCount());
   }
 

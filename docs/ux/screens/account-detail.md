@@ -41,7 +41,7 @@ TODAY · 20 OCT
 └──────────────────────────────────────────────────────┘
 18 OCT
 ┌ [▭] Amazon.de                              −USD 42.00 ┐
-│      Card payment · [Uncategorised]   ≈ EUR 39.99    │   ← ≈: GAP-TXN-READ (#479)
+│      Card payment · [Uncategorised]   ≈ EUR 39.99    │   ← ≈: delivered by #479
 └──────────────────────────────────────────────────────┘
             Showing 50 of 214 · Load more
 ```
@@ -116,7 +116,7 @@ sorted by amount, the date headers are dropped and each row shows its date.
 | 4 | Category chip | `categoryId` → `GET /categories` item: `nameDe`/`nameEn` by app language, "{parent} › {name}" on web | The category with `code = UNCATEGORIZED` (the shipped default; `categoryAssignedBy` is `null`) shows "Uncategorised" in warning style. `categoryId = null` means a type that is never categorised (settlement, trade, dividend), so there is no chip. `internalTransfer` shows "Internal transfer · excluded" (teal). A `categoryId` missing from the cached list triggers one reload of `/categories`, then "Category" as a fallback |
 | 4a | Lifecycle | `voidedAt`, `replacesTransactionId`, `correctsTransactionId`, `restoresTransactionId`, `reconciliationAdjustment` | A voided original stays listed: amount struck through, badge "Voided" / "Storniert", and the accessible label says "voided, not counted". A reversing row (`replacesTransactionId`) shows "Reversal of {date}". A correction (`correctsTransactionId`) shows "Corrected". A reconciliation adjustment has no `merchantDescription`: its title is `transactionType.VALUATION_ADJUSTMENT` "Statement adjustment" |
 | 5 | Amount | `amount`, `currency` | signed `Amount`; positive with "+" and gain colour; the sign is always shown |
-| 6 | Converted amount `[advanced]` | **GAP-TXN-READ (#479)** `amountInAccountCurrency` | "≈ {amount}" only when `currency ≠` the account currency |
+| 6 | Converted amount `[advanced]` | **delivered by #479** `amountInAccountCurrency` | "≈ {amount}" only when `currency ≠` the account currency |
 | 7 | Estimated FX | `fxRateEstimated` | "Estimated" badge next to 6 |
 | 8 | Warnings | `warnings[]` | ⚠ icon. `BOOKED_BEFORE_OPENING_BALANCE` reads "Before the opening balance: not counted in the balance". Other codes use the glossary text (#379), or a generic "Check this transaction" for an unknown code |
 

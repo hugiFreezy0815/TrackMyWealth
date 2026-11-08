@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountSnapshot;
@@ -27,6 +28,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -485,6 +487,160 @@ class ReconciliationServiceTest {
   }
 
   // A member decision on the newest snapshot's result, as US-25-03 leaves it.
+  // --- #482: the batched statuses of a portfolio's accounts ------------------------------------
+
+  @ParameterizedTest
+  @CsvSource({
+    "OPEN, OPEN_DIFFERENCE",
+    "DISMISSED, DISMISSED_DIFFERENCE",
+    "RESOLVED, RECONCILED",
+    "ACCEPTED, RECONCILED"
+  })
+  void aPersistedResultDecidesTheBatchedStatusAsItDoesTheSingleOne(
+      String persisted, String expected) {
+    ReconciliationResult result = result(persisted, "45.67", snapshot);
+    when(resultRepository.findBySnapshotIdAndAffectedSecurityIdIsNull(snapshot.getId()))
+        .thenReturn(Optional.of(result));
+    givenBatch(List.of(snapshot), List.of(opening), List.of(result));
+
+    assertThat(service.statuses(List.of(account)))
+        .containsExactly(Map.entry(account.getId(), expected));
+    assertThat(service.status(account).status()).isEqualTo(expected);
+    verify(transactionRepository, never()).sumAmountAfterOpeningsForObservedSnapshots(any());
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void withoutALiveResultTheLedgerDecidesLikeTheSingleStatus(boolean superseded) {
+    // 10000 + 2300 = 12300 against an observed 12345.67: a difference either way.
+    givenBatch(
+        List.of(snapshot),
+        List.of(opening),
+        superseded ? List.of(result("SUPERSEDED", "1.00", snapshot)) : List.of());
+    givenLedger(snapshot, "2300.00");
+    if (superseded) {
+      when(resultRepository.findBySnapshotIdAndAffectedSecurityIdIsNull(snapshot.getId()))
+          .thenReturn(Optional.of(result("SUPERSEDED", "1.00", snapshot)));
+    }
+
+    assertThat(service.statuses(List.of(account)).get(account.getId()))
+        .isEqualTo(ReconciliationStatusValues.OPEN_DIFFERENCE);
+    assertThat(service.status(account).status())
+        .isEqualTo(ReconciliationStatusValues.OPEN_DIFFERENCE);
+  }
+
+  @Test
+  void aLiabilityAgreesWhenTheLedgerReducesItsOpeningBalance() {
+    ReflectionTestUtils.setField(account, "nature", "LIABILITY");
+    AccountSnapshot owed = snapshot(SNAPSHOT_DATE, "7700.00", false);
+    givenBatch(List.of(owed), List.of(opening), List.of());
+    givenLedger(owed, "2300.00");
+
+    assertThat(service.statuses(List.of(account)).get(account.getId()))
+        .isEqualTo(ReconciliationStatusValues.RECONCILED);
+  }
+
+  @Test
+  void aSnapshotWithoutLedgerRowsSinceTheOpeningComparesAgainstTheOpeningAlone() {
+    AccountSnapshot unchanged = snapshot(SNAPSHOT_DATE, "10000.00", false);
+    givenBatch(List.of(unchanged), List.of(opening), List.of());
+    when(transactionRepository.sumAmountAfterOpeningsForObservedSnapshots(any()))
+        .thenReturn(List.of());
+
+    assertThat(service.statuses(List.of(account)).get(account.getId()))
+        .isEqualTo(ReconciliationStatusValues.RECONCILED);
+  }
+
+  @Test
+  void accountsOutsideTheComparisonAreNotReconcilableOrNeverCompared() {
+    Account depot = account();
+    depot.setHoldsPositions(true);
+    Account withoutLedger = account();
+    withoutLedger.setHasTransactions(false);
+    Account withoutOpening = account();
+    Account openedLater = account();
+    Account neverObserved = account();
+    AccountSnapshot laterOpening = snapshotOf(openedLater, SNAPSHOT_DATE.plusDays(1), "1.00", true);
+    givenBatch(
+        List.of(
+            snapshotOf(depot, SNAPSHOT_DATE, "1.00", false),
+            snapshotOf(withoutLedger, SNAPSHOT_DATE, "1.00", false),
+            snapshotOf(withoutOpening, SNAPSHOT_DATE, "1.00", false),
+            snapshotOf(openedLater, SNAPSHOT_DATE, "1.00", false)),
+        List.of(
+            snapshotOf(depot, OPENING_DATE, "1.00", true),
+            snapshotOf(withoutLedger, OPENING_DATE, "1.00", true),
+            laterOpening),
+        List.of());
+
+    assertThat(
+            service.statuses(
+                List.of(depot, withoutLedger, withoutOpening, openedLater, neverObserved)))
+        .containsOnly(
+            Map.entry(depot.getId(), ReconciliationStatusValues.NOT_RECONCILABLE),
+            Map.entry(withoutLedger.getId(), ReconciliationStatusValues.NOT_RECONCILABLE),
+            Map.entry(withoutOpening.getId(), ReconciliationStatusValues.NOT_RECONCILABLE),
+            Map.entry(openedLater.getId(), ReconciliationStatusValues.NOT_RECONCILABLE),
+            Map.entry(neverObserved.getId(), ReconciliationStatusValues.NEVER));
+    verify(transactionRepository, never()).sumAmountAfterOpeningsForObservedSnapshots(any());
+  }
+
+  @Test
+  void manyAccountsAreDecidedInOneQueryPerKindOfFact() {
+    Account second = account();
+    Account third = account();
+    AccountSnapshot secondSnapshot = snapshotOf(second, SNAPSHOT_DATE, "10000.00", false);
+    AccountSnapshot thirdSnapshot = snapshotOf(third, SNAPSHOT_DATE, "10000.00", false);
+    givenBatch(
+        List.of(snapshot, secondSnapshot, thirdSnapshot),
+        List.of(
+            opening,
+            snapshotOf(second, OPENING_DATE, "10000.00", true),
+            snapshotOf(third, OPENING_DATE, "10000.00", true)),
+        List.of(result("RESOLVED", "0.00", snapshot)));
+    when(transactionRepository.sumAmountAfterOpeningsForObservedSnapshots(any()))
+        .thenReturn(List.of());
+
+    assertThat(service.statuses(List.of(account, second, third)))
+        .hasSize(3)
+        .allSatisfy((id, status) -> assertThat(status).isEqualTo("RECONCILED"));
+    verify(snapshotRepository).findLatestObservedForAccounts(any());
+    verify(snapshotRepository).findByAccountIdInAndOpeningBalanceTrue(any());
+    verify(resultRepository).findBySnapshotIdInAndAffectedSecurityIdIsNull(any());
+    verify(transactionRepository)
+        .sumAmountAfterOpeningsForObservedSnapshots(
+            argThat(ids -> ids.size() == 2 && !ids.contains(snapshot.getId())));
+    verify(snapshotRepository, never()).findLatestObserved(any());
+  }
+
+  @Test
+  void noAccountsNeedNoQuery() {
+    assertThat(service.statuses(List.of())).isEmpty();
+    verify(snapshotRepository, never()).findLatestObservedForAccounts(any());
+  }
+
+  private void givenBatch(
+      List<AccountSnapshot> latest,
+      List<AccountSnapshot> openings,
+      List<ReconciliationResult> results) {
+    when(snapshotRepository.findLatestObservedForAccounts(any())).thenReturn(latest);
+    when(snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(any())).thenReturn(openings);
+    when(resultRepository.findBySnapshotIdInAndAffectedSecurityIdIsNull(any())).thenReturn(results);
+  }
+
+  private void givenLedger(AccountSnapshot observed, String amount) {
+    when(transactionRepository.sumAmountAfterOpeningsForObservedSnapshots(
+            List.of(observed.getId())))
+        .thenReturn(List.of(new KeyedAmount(observed.getId(), new BigDecimal(amount))));
+  }
+
+  private AccountSnapshot snapshotOf(
+      Account owner, LocalDate date, String balance, boolean openingBalance) {
+    AccountSnapshot value = snapshot(date, balance, openingBalance);
+    value.setAccount(owner);
+    return value;
+  }
+
   private ReconciliationResult decided(String status, String difference, UUID adjustmentId) {
     ReconciliationResult value = result(status, difference, snapshot);
     value.setResolutionNote("member note");
