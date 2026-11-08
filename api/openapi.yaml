@@ -22264,6 +22264,21 @@ components:
       - removal
       - transaction
       - version
+    TransactionImportBatchResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileFormat:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+      required:
+      - fileFormat
+      - id
+      - uploadedAt
     TransactionRemovalResponse:
       type: object
       properties:
@@ -22340,21 +22355,6 @@ components:
       - relatedTransactionId
       - importBatch
       - reason
-    TransactionImportBatchResponse:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        fileFormat:
-          type: string
-        uploadedAt:
-          type: string
-          format: date-time
-      required:
-      - fileFormat
-      - id
-      - uploadedAt
     TransactionResponse:
       type: object
       properties:
