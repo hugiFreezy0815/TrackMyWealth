@@ -2,6 +2,8 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.ImportTemplateValues;
+import com.trackmywealth.backend.dto.TransactionReadAccountDetails;
+import com.trackmywealth.backend.dto.TransactionReadContext;
 import com.trackmywealth.backend.dto.TransactionImportBatchResponse;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.ImportBatch;
@@ -29,20 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TransactionReadContextService {
 
-  public record AccountDetails(String name, UUID portfolioId, String portfolioName) {}
-
-  public record Context(
-      Map<UUID, AccountDetails> accounts,
-      Map<UUID, TransactionImportBatchResponse> imports) {
-
-    public static final Context EMPTY = new Context(Map.of(), Map.of());
-
-    public Context {
-      accounts = Map.copyOf(accounts);
-      imports = Map.copyOf(imports);
-    }
-  }
-
   private final EntityManager entityManager;
   private final ImportBatchRepository batchRepository;
   private final ImportTemplateRepository templateRepository;
@@ -57,9 +45,9 @@ public class TransactionReadContextService {
   }
 
   @Transactional(readOnly = true)
-  public Context load(List<Transaction> transactions) {
+  public TransactionReadContext load(List<Transaction> transactions) {
     if (transactions.isEmpty()) {
-      return Context.EMPTY;
+      return TransactionReadContext.EMPTY;
     }
     Set<UUID> accountIds = new HashSet<>();
     Set<UUID> batchIds = new HashSet<>();
@@ -74,7 +62,7 @@ public class TransactionReadContextService {
       }
     }
 
-    Map<UUID, AccountDetails> accounts = new HashMap<>();
+    Map<UUID, TransactionReadAccountDetails> accounts = new HashMap<>();
     entityManager
         .createQuery(
             "SELECT a.id, a.name, p.id, p.name FROM Account a JOIN a.portfolio p"
@@ -86,10 +74,10 @@ public class TransactionReadContextService {
             row ->
                 accounts.put(
                     (UUID) row[0],
-                    new AccountDetails((String) row[1], (UUID) row[2], (String) row[3])));
+                    new TransactionReadAccountDetails((String) row[1], (UUID) row[2], (String) row[3])));
 
     if (batchIds.isEmpty()) {
-      return new Context(accounts, Map.of());
+      return new TransactionReadContext(accounts, Map.of());
     }
     List<ImportBatch> batches = batchRepository.findAllById(batchIds);
     Set<UUID> templateIds = new HashSet<>();
@@ -113,7 +101,7 @@ public class TransactionReadContextService {
               formatOf(batch, templateFormats.get(batch.getTemplateId())),
               batch.getUploadedAt()));
     }
-    return new Context(accounts, imports);
+    return new TransactionReadContext(accounts, imports);
   }
 
   /** Normalize internal formats to the formats accepted by the public import API. */
