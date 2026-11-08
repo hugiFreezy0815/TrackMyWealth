@@ -182,7 +182,7 @@ class PortfolioControllerTest {
   void catalogueShowsSortedDistinctFormatsFromShippedTemplatesAndCamtFlag() {
     String token = bootstrapAdministrator();
     var postFinance = catalogue(token, "?query=PostFinance").content().get(0);
-    assertThat(postFinance.importFormats()).containsExactly("CAMT", "CSV", "PDF");
+    assertThat(postFinance.importFormats()).containsExactly("CAMT", "CSV", "PDF", "SPREADSHEET");
     var dkb = catalogue(token, "?query=DKB").content().get(0);
     // V19 advertises CAMT053 for DKB as well as V75's shipped CSV template.
     assertThat(dkb.importFormats()).containsExactly("CAMT", "CSV");
@@ -201,7 +201,7 @@ class PortfolioControllerTest {
         assertThat(statement.executeUpdate()).isEqualTo(1);
       }
       assertThat(catalogue(token, "?query=PostFinance").content().get(0).importFormats())
-          .containsExactly("CAMT", "CSV");
+          .containsExactly("CAMT", "CSV", "SPREADSHEET");
     } finally {
       try (Connection connection = dataSource.getConnection();
           var statement =
