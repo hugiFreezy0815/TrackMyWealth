@@ -1,0 +1,37 @@
+name: Temporary #486 dependency lockfile bootstrap
+on:
+  pull_request:
+    paths:
+      - mobile/package.json
+      - mobile/package-lock.json
+      - .github/workflows/486-lockfile-bootstrap.yml
+permissions:
+  contents: write
+jobs:
+  lock:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/486-app-foundation'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+        working-directory: mobile
+      - name: Format new source files
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx prettier --write src/api/queries src/format src/i18n src/app/_layout.tsx src/api/client.ts src/features/auth/session.ts eslint.config.js
+        working-directory: mobile
+      - name: Commit generated lockfile
+        run: |
+          if ! git diff --quiet -- mobile/package-lock.json mobile/src mobile/eslint.config.js; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add mobile/package-lock.json mobile/src mobile/eslint.config.js
+            git commit -m "chore(mobile): sync generated lockfile and format foundation (#486)"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          fi
