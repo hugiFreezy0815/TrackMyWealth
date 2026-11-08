@@ -43,7 +43,7 @@ or removes the transaction.
 │   MCC                                  5411  │
 │   Bank reference         2026102012345       │
 └──────────────────────────────────────────────┘
-Change history                                    ← GAP-TXN-HISTORY (#480)
+Change history                                    ← delivered by #480
 ┌──────────────────────────────────────────────┐
 │ 🕓 Category: Uncategorised → Groceries        │
 │    Anna Meier · 21 Oct, 09:12                │
@@ -71,7 +71,7 @@ marked as voided.
    fresh version and the extra fields. The direct read supplies the current `ETag` and all transaction-detail fields.
 2. `GET /api/v1/categories` (cached from S3).
 3. `GET /api/v1/accounts/{accountId}/transactions/{transactionId}/history`
-   (**GAP-TXN-HISTORY (#480)**).
+   (**delivered by #480**).
 4. Account context (portfolio name) from S3's account.
 
 ## Fields
@@ -96,7 +96,7 @@ marked as voided.
 | 16 | MCC `[advanced]` | `txn.mcc` "Merchant category" | | `mcc` |
 | 17 | Bank reference `[advanced]` | `txn.externalId` "Bank reference" | | `externalId` |
 | 18 | Warnings | | ⚠ list | `warnings[]`, as in S3 |
-| 19 | Change history | `txn.history.title` "Change history" / "Änderungsverlauf" | `HistoryTimeline`, newest first | **GAP-TXN-HISTORY (#480)** `entries[]`: `occurredAt`, `kind`, `actorDisplayName`, `from`, `to`. Rendering per `kind` below |
+| 19 | Change history | `txn.history.title` "Change history" / "Änderungsverlauf" | `HistoryTimeline`, newest first | **delivered by #480** `entries[]`: `occurredAt`, `kind`, `actorDisplayName`, `from`, `to`. Rendering per `kind` below |
 | 20 | Info box | `txn.correctionInfo` | info style | static text; shown only when the transaction can be corrected (`removal != null`) |
 
 Change history rendering (`kind`, the wording is a draft for #379):
