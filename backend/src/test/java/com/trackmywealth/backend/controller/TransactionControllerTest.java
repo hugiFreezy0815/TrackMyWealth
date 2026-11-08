@@ -145,7 +145,7 @@ class TransactionControllerTest {
             .expectStatus()
             .isOk()
             .expectHeader()
-            .valueEquals("ETag", "\\"" + created.version() + "\\"")
+            .valueEquals("ETag", "\"" + created.version() + "\"")
             .expectBody(TransactionResponse.class)
             .returnResult()
             .getResponseBody();
@@ -193,7 +193,7 @@ class TransactionControllerTest {
       insertTransaction.setObject(3, cash.id());
       insertTransaction.setObject(4, batch);
       insertTransaction.setString(
-          5, "{\\"bankTransactionCode\\":\\"PMNT-CCRD-POSD\\",\\"cells\\":{\\"secret\\":\\"private\\"}}");
+          5, "{\"bankTransactionCode\":\"PMNT-CCRD-POSD\",\"cells\":{\"secret\":\"private\"}}");
       insertTransaction.setString(6, "CAMT:NTRY:detail-test");
       insertTransaction.executeUpdate();
     }
