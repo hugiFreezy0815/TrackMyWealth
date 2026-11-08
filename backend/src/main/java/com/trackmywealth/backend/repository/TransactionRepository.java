@@ -169,6 +169,9 @@ public interface TransactionRepository
   // from the request, and ends with the id as a unique tie-breaker.
   Page<Transaction> findByAccountId(UUID accountId, Pageable pageable);
 
+  /** US-07-37: scoped detail read; @SQLRestriction hides only soft-deleted rows, not voided ones. */
+  Optional<Transaction> findByIdAndAccountId(UUID id, UUID accountId);
+
   // FR-CAT-013: the account's rows in one category - with UNCATEGORIZED, the actionable list.
   /**
    * US-08-02: the next page of rows an automatic re-run of one workspace's categorization considers
