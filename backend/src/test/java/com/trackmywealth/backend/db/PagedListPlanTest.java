@@ -69,8 +69,17 @@ class PagedListPlanTest {
           .withDatabaseName("trackmywealth")
           .withUsername("trackmywealth")
           .withPassword("trackmywealth")
+          // autovacuum=off: PagedListFixture.settle() analyzes the fixture itself. An
+          // auto-analyze triggered by the seed inserts uses the default statistics target (a
+          // 30,000-row sample) and, finishing after settle(), replaced its exact statistics.
           .withCommand(
-              "postgres", "-c", "fsync=off", "-c", "session_preload_libraries=auto_explain");
+              "postgres",
+              "-c",
+              "fsync=off",
+              "-c",
+              "autovacuum=off",
+              "-c",
+              "session_preload_libraries=auto_explain");
 
   @DynamicPropertySource
   static void datasourceProperties(DynamicPropertyRegistry registry) {

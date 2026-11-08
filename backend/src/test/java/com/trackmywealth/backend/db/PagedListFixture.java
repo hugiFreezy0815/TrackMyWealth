@@ -30,7 +30,8 @@ final class PagedListFixture {
 
   // ANALYZE samples 300 rows per statistics target point: 30,000 of the 120,000 transactions by
   // default, so every run had slightly different statistics and near-equal plans won at random.
-  // 1000 samples the whole table: the plans follow PostgreSQL's cost model, not luck.
+  // 1000 samples the whole table: the plans follow PostgreSQL's cost model, not luck. The setting
+  // is this session's only, so the test container runs without autovacuum (PagedListPlanTest).
   private static final String EXACT_STATISTICS = "SET default_statistics_target = 1000";
   private static final String[] TABLES = {
     "transaction", "import_batch", "reconciliation_result", "institution_catalogue"
