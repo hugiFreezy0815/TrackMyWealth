@@ -8886,7 +8886,6 @@ export interface operations {
       default: components['responses']['ApiProblemResponse'];
     };
   };
-
   getAccountSnapshot: {
     parameters: {
       query?: never;
