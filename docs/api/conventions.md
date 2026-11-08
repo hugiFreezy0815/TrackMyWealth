@@ -16,7 +16,7 @@ endpoints from this section.
 ### Which collections are paged?
 
 Large collections expose `page`, `size` and `sort` query parameters and return the same
-`PageResponse<T>` envelope; the twelve paged operations are listed under [Sorting](#sorting). The
+`PageResponse<T>` envelope; the thirteen paged operations are listed under [Sorting](#sorting). The
 committed OpenAPI contract identifies which operation is paged and defines its response schema.
 
 Every other collection returns an ordinary JSON array and ignores `page`, `size` and `sort`.
@@ -110,6 +110,7 @@ only once. The field names and spellings must match the published OpenAPI `sort`
 | Paged operation | Allowed `sort` fields | Default | Unique tie-breaker |
 | --- | --- | --- | --- |
 | `GET /api/v1/accounts/{accountId}/transactions` | `bookingDate`, `amount` | `bookingDate,desc` | `id` |
+| `GET /api/v1/accounts/{accountId}/transactions/{transactionId}/history` | `occurredAt` | `occurredAt,desc` | event id (internal) |
 | `GET /api/v1/transactions` | `bookingDate`, `amount` | `bookingDate,desc` | `id` |
 | `GET /api/v1/accounts/{accountId}/imports` | `uploadedAt` | `uploadedAt,desc` | `id` |
 | `GET /api/v1/accounts/{accountId}/imports/{batchId}/rows` | `rowNumber` | `rowNumber,asc` | `rowNumber` |
