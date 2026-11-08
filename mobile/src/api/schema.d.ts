@@ -606,6 +606,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/accounts/{accountId}/transactions/{transactionId}/history': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read transaction change history */
+    get: operations['getTransactionHistory'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/accounts/{accountId}/transactions/{transactionId}/category': {
     parameters: {
       query?: never;
@@ -3041,6 +3058,10 @@ export interface components {
       content: components['schemas']['SettlementMatchResponse'][];
       page: components['schemas']['PageMetadata'];
     };
+    PageResponseTransactionHistoryEntryResponse: {
+      content: components['schemas']['TransactionHistoryEntryResponse'][];
+      page: components['schemas']['PageMetadata'];
+    };
     PageResponseTransactionResponse: {
       content: components['schemas']['TransactionResponse'][];
       page: components['schemas']['PageMetadata'];
@@ -3486,6 +3507,20 @@ export interface components {
       reversals: components['schemas']['TransactionResponse'][];
       unmatchedTransactionIds: string[];
       restored: components['schemas']['TransactionResponse'][];
+    };
+    TransactionHistoryEntryResponse: {
+      /** Format: date-time */
+      occurredAt: string;
+      kind: string;
+      actorDisplayName: string | null;
+      /** Format: uuid */
+      fromCategoryId: string | null;
+      /** Format: uuid */
+      toCategoryId: string | null;
+      /** Format: uuid */
+      relatedTransactionId: string | null;
+      importBatch: components['schemas']['TransactionImportBatchResponse'] | null;
+      reason: string | null;
     };
     TransactionImportBatchResponse: {
       /** Format: uuid */
@@ -9787,6 +9822,106 @@ export interface operations {
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+       */
+      500: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      default: components['responses']['ApiProblemResponse'];
+    };
+  };
+  getTransactionHistory: {
+    parameters: {
+      query?: {
+          /** @description Zero-based page number. */
+        page?: number;
+        /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
+        size?: number;
+        /** @description Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: occurredAt,desc. The order always ends with a unique tie-breaker, so pages never overlap. */
+        sort?: (
+          | 'occurredAt'
+          | 'occurredAt,asc'
+          | 'occurredAt,desc'
+          | 'amount'
+          | 'amount,asc'
+          | 'amount,desc'
+        )[];
+      };
+      header?: {
+        /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
+        'X-Correlation-Id'?: string;
+      };
+      path: {
+        accountId: string;
+        transactionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PageResponseTransactionHistoryEntryResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       *     - `INVALID_SORT`: A paged list was asked to sort by a field it does not offer, or in a malformed way; detail names the field and the fields the list sorts by.
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+       */
+      401: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+       */
+      404: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;
