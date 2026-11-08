@@ -17,6 +17,10 @@ public interface ReconciliationResultRepository extends JpaRepository<Reconcilia
 
   Optional<ReconciliationResult> findBySnapshotIdAndAffectedSecurityIdIsNull(UUID snapshotId);
 
+  /** Cash-scope results of several newest snapshots, for a portfolio's batched status read. */
+  List<ReconciliationResult> findBySnapshotIdInAndAffectedSecurityIdIsNull(
+      Collection<UUID> snapshotIds);
+
   /** Every result compared against the snapshot, any scope (US-07-12, a batch's rollback). */
   List<ReconciliationResult> findBySnapshotId(UUID snapshotId);
 

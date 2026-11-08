@@ -2,6 +2,8 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountPositionCount;
 import com.trackmywealth.backend.dto.AccountValuation;
+import com.trackmywealth.backend.dto.CurrencyConversionResult;
+import com.trackmywealth.backend.dto.ImportBatchValues;
 import com.trackmywealth.backend.dto.MultiCurrencyValuations;
 import com.trackmywealth.backend.dto.PortfolioAccountDetails;
 import com.trackmywealth.backend.dto.PortfolioPlacement;
@@ -10,16 +12,21 @@ import com.trackmywealth.backend.dto.PortfolioTotals;
 import com.trackmywealth.backend.dto.PortfolioType;
 import com.trackmywealth.backend.dto.PortfolioViewResponse;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.AccountRow;
+import com.trackmywealth.backend.dto.PortfolioViewResponse.LastImport;
 import com.trackmywealth.backend.dto.PortfolioViewResponse.Section;
 import com.trackmywealth.backend.dto.SignedAmounts;
 import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.AccountCreditCard;
 import com.trackmywealth.backend.entity.AccountMortgage;
+import com.trackmywealth.backend.entity.ImportBatch;
+import com.trackmywealth.backend.entity.ImportTemplate;
 import com.trackmywealth.backend.entity.Portfolio;
 import com.trackmywealth.backend.repository.AccountCreditCardRepository;
 import com.trackmywealth.backend.repository.AccountMortgageRepository;
 import com.trackmywealth.backend.repository.AccountRepository;
+import com.trackmywealth.backend.repository.ImportBatchRepository;
+import com.trackmywealth.backend.repository.ImportTemplateRepository;
 import com.trackmywealth.backend.repository.SnapshotHoldingRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.time.LocalDate;
@@ -29,10 +36,13 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Stream;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,6 +77,11 @@ public class PortfolioViewService {
   private final AccountCreditCardRepository accountCreditCardRepository;
   private final AccountMortgageRepository accountMortgageRepository;
   private final CardStatementService cardStatementService;
+  private final ReconciliationService reconciliationService;
+  private final FxRateService fxRateService;
+  private final ImportBatchRepository importBatchRepository;
+  private final ImportTemplateRepository importTemplateRepository;
+  private final String fxDefaultSource;
 
   public PortfolioViewService(
       AccessControlService accessControlService,
@@ -78,7 +93,12 @@ public class PortfolioViewService {
       SnapshotHoldingRepository snapshotHoldingRepository,
       AccountCreditCardRepository accountCreditCardRepository,
       AccountMortgageRepository accountMortgageRepository,
-      CardStatementService cardStatementService) {
+      CardStatementService cardStatementService,
+      ReconciliationService reconciliationService,
+      FxRateService fxRateService,
+      ImportBatchRepository importBatchRepository,
+      ImportTemplateRepository importTemplateRepository,
+      @Value("${app.fx.default-source}") String fxDefaultSource) {
     this.accessControlService = accessControlService;
     this.portfolioLookupService = portfolioLookupService;
     this.accountRepository = accountRepository;
@@ -89,6 +109,11 @@ public class PortfolioViewService {
     this.accountCreditCardRepository = accountCreditCardRepository;
     this.accountMortgageRepository = accountMortgageRepository;
     this.cardStatementService = cardStatementService;
+    this.reconciliationService = reconciliationService;
+    this.fxRateService = fxRateService;
+    this.importBatchRepository = importBatchRepository;
+    this.importTemplateRepository = importTemplateRepository;
+    this.fxDefaultSource = fxDefaultSource;
   }
 
   @Transactional(readOnly = true)
@@ -146,6 +171,13 @@ public class PortfolioViewService {
     allInPortfolio.forEach(valuation -> warnings.addAll(valuation.warnings()));
     allInWorkspace.forEach(valuation -> warnings.addAll(valuation.warnings()));
     PortfolioTotals totals = totalsOf(accounts, inPortfolio, inWorkspace, oneCurrency);
+    // Informational portfolio-to-workspace quote. The totals retain their existing per-account
+    // conversion paths, so cross-currency holdings are never silently re-valued through this rate.
+    Optional<CurrencyConversionResult> conversion =
+        oneCurrency
+            ? Optional.empty()
+            : fxRateService.tryGetConversionRate(
+                portfolioCurrency, workspaceCurrency, asOf, fxDefaultSource);
 
     return new PortfolioViewResponse(
         portfolio.getId(),
@@ -165,7 +197,14 @@ public class PortfolioViewService {
         totals.complete(),
         totals.valueStatus(),
         List.copyOf(warnings),
-        sections);
+        sections,
+        portfolio.getCatalogueInstitution() == null
+            ? null
+            : portfolio.getCatalogueInstitution().getName(),
+        portfolio.getLogoUrl(),
+        conversion.map(CurrencyConversionResult::rate).orElse(null),
+        conversion.map(CurrencyConversionResult::requestedDate).orElse(null),
+        lastImport(accounts, portfolio.getWorkspace().getId()));
   }
 
   private static AccountRow toRow(
@@ -195,7 +234,10 @@ public class PortfolioViewService {
         // EPIC 15: no performance calculation exists yet (PO decision on #390).
         null,
         details.dueDates().get(id),
-        details.linkedProperties().get(id));
+        details.linkedProperties().get(id),
+        account.getIdentifierMasked(),
+        details.reconciliationStatuses().get(id),
+        details.statementDates().get(id));
   }
 
   private PortfolioAccountDetails details(
@@ -215,8 +257,12 @@ public class PortfolioViewService {
     List<UUID> cards =
         accounts.stream().filter(Account::isHasStatementCycle).map(Account::getId).toList();
     Map<UUID, LocalDate> dueDates = new HashMap<>();
+    Map<UUID, LocalDate> statementDates = new HashMap<>();
     if (!cards.isEmpty()) {
       for (AccountCreditCard card : accountCreditCardRepository.findAllById(cards)) {
+        cardStatementService
+            .currentStatementDate(card)
+            .ifPresent(date -> statementDates.put(card.getAccountId(), date));
         cardStatementService
             .currentDueDate(card)
             .ifPresent(dueDate -> dueDates.put(card.getAccountId(), dueDate));
@@ -233,7 +279,41 @@ public class PortfolioViewService {
         }
       }
     }
-    return new PortfolioAccountDetails(positionsCount, positionsAsOf, dueDates, linkedProperties);
+    return new PortfolioAccountDetails(
+        positionsCount,
+        positionsAsOf,
+        dueDates,
+        statementDates,
+        reconciliationService.statuses(accounts),
+        linkedProperties);
+  }
+
+  private LastImport lastImport(List<Account> accounts, UUID workspaceId) {
+    if (accounts.isEmpty()) {
+      return null;
+    }
+    List<ImportBatch> latest =
+        importBatchRepository.findByAccountIdInAndStatusOrderByCommittedAtDescIdDesc(
+            accounts.stream().map(Account::getId).toList(),
+            ImportBatchValues.COMMITTED,
+            PageRequest.of(0, 1));
+    if (latest.isEmpty()) {
+      return null;
+    }
+    ImportBatch batch = latest.get(0);
+    // The committed template's exact version is retained by the batch, even when it is no
+    // longer the current template. CAMT files without a template use their stored source kind.
+    String format =
+        batch.getTemplateId() == null
+            ? batch.getSourceKind()
+            : importTemplateRepository
+                .findVisibleTo(batch.getTemplateId(), workspaceId)
+                .map(ImportTemplate::getFileFormat)
+                .orElse(batch.getSourceKind());
+    return new LastImport(
+        batch.getUploadedAt(),
+        format,
+        batch.getImportedRowCount() == null ? 0 : batch.getImportedRowCount());
   }
 
   private static List<UUID> idsInSection(

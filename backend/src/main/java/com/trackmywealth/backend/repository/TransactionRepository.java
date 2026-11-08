@@ -449,6 +449,26 @@ public interface TransactionRepository
       @Param("snapshotIds") Collection<UUID> snapshotIds, @Param(AS_OF) LocalDate asOf);
 
   /**
+   * #482: backward-compatible reconciliation for newest snapshots that predate persisted results.
+   * The ledger window starts at each account's opening balance and ends at its own newest
+   * observation. This is the batched counterpart of sumAmountByAccountIdBookedAfter.
+   */
+  @Query(
+      "select new com.trackmywealth.backend.dto.KeyedAmount(observed.id, "
+          + LEDGER_SUM
+          + ") from AccountSnapshot observed, AccountSnapshot opening, Transaction t"
+          + " where observed.id in :snapshotIds"
+          + " and opening.account.id = observed.account.id and opening.openingBalance = true"
+          + " and t.account.id = observed.account.id"
+          + " and (t.bookingDate > opening.snapshotDate"
+          + " or (t.bookingDate = opening.snapshotDate and t.reconciliationResultId is not null"
+          + " and t.createdAt > coalesce(opening.updatedAt, opening.createdAt)))"
+          + " and t.bookingDate <= observed.snapshotDate"
+          + " group by observed.id")
+  List<KeyedAmount> sumAmountAfterOpeningsForObservedSnapshots(
+      @Param("snapshotIds") Collection<UUID> snapshotIds);
+
+  /**
    * US-25-04: the earliest booking date of the account's live rows - neither voided nor a reversal
    * (soft-deleted rows are gone from every JPA query anyway). Empty for an account without one.
    */

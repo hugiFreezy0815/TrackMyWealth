@@ -65,6 +65,25 @@ public interface AccountSnapshotRepository extends JpaRepository<AccountSnapshot
   List<AccountSnapshot> findLatestWithBalance(
       @Param("accountIds") Collection<UUID> accountIds, @Param("asOf") LocalDate asOf);
 
+  /**
+   * US-25-02/#482: newest observed balance per account, excluding opening, withdrawn and
+   * holdings-only snapshots. Same order as findLatestObserved, in one PostgreSQL query.
+   */
+  @Query(
+      value =
+          """
+          SELECT DISTINCT ON (account_id) *
+          FROM account_snapshot
+          WHERE account_id IN (:accountIds)
+            AND is_opening_balance = false
+            AND balance IS NOT NULL
+            AND withdrawn_at IS NULL
+          ORDER BY account_id, snapshot_date DESC, created_at DESC, id
+          """,
+      nativeQuery = true)
+  List<AccountSnapshot> findLatestObservedForAccounts(
+      @Param("accountIds") Collection<UUID> accountIds);
+
   // US-25-02: the newest observed balance, excluding the synthetic opening-balance starting point.
   Optional<AccountSnapshot>
       findFirstByAccountIdAndOpeningBalanceFalseAndBalanceIsNotNullAndWithdrawnAtIsNullOrderBySnapshotDateDescCreatedAtDesc(

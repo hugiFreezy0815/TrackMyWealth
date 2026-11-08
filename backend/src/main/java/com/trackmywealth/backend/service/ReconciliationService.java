@@ -1,5 +1,6 @@
 package com.trackmywealth.backend.service;
 
+import com.trackmywealth.backend.dto.KeyedAmount;
 import com.trackmywealth.backend.dto.ReconciliationResultValues;
 import com.trackmywealth.backend.dto.ReconciliationStatusResponse;
 import com.trackmywealth.backend.dto.ReconciliationStatusValues;
@@ -15,7 +16,11 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -161,6 +166,96 @@ public class ReconciliationService {
         null,
         snapshot,
         difference.signum() == 0 ? null : difference);
+  }
+
+  /**
+   * The same account-level statuses as {@link #status(Account)}, for a portfolio's active accounts
+   * in a fixed number of queries. Even pre-engine snapshots without a persisted result are
+   * compared against the opening balance and live ledger, never assumed reconciled.
+   */
+  @Transactional(readOnly = true)
+  public Map<UUID, String> statuses(Collection<Account> accounts) {
+    if (accounts.isEmpty()) {
+      return Map.of();
+    }
+    List<UUID> accountIds = accounts.stream().map(Account::getId).toList();
+    Map<UUID, Account> byAccount = new HashMap<>();
+    accounts.forEach(account -> byAccount.put(account.getId(), account));
+
+    Map<UUID, AccountSnapshot> latest = new HashMap<>();
+    for (AccountSnapshot snapshot : snapshotRepository.findLatestObservedForAccounts(accountIds)) {
+      latest.put(snapshot.getAccount().getId(), snapshot);
+    }
+    Map<UUID, String> statuses = new HashMap<>();
+    if (latest.isEmpty()) {
+      accountIds.forEach(id -> statuses.put(id, ReconciliationStatusValues.NEVER));
+      return statuses;
+    }
+
+    Map<UUID, AccountSnapshot> openings = new HashMap<>();
+    for (AccountSnapshot opening : snapshotRepository.findByAccountIdInAndOpeningBalanceTrue(accountIds)) {
+      openings.put(opening.getAccount().getId(), opening);
+    }
+    Map<UUID, ReconciliationResult> persisted = new HashMap<>();
+    for (ReconciliationResult result :
+        resultRepository.findBySnapshotIdInAndAffectedSecurityIdIsNull(
+            latest.values().stream().map(AccountSnapshot::getId).toList())) {
+      persisted.put(result.getSnapshot().getId(), result);
+    }
+
+    List<AccountSnapshot> legacy = new ArrayList<>();
+    for (Account account : accounts) {
+      UUID id = account.getId();
+      AccountSnapshot snapshot = latest.get(id);
+      if (snapshot == null) {
+        statuses.put(id, ReconciliationStatusValues.NEVER);
+        continue;
+      }
+      AccountSnapshot opening = openings.get(id);
+      if (!cashScopeApplies(account)
+          || opening == null
+          || opening.getSnapshotDate().isAfter(snapshot.getSnapshotDate())) {
+        statuses.put(id, ReconciliationStatusValues.NOT_RECONCILABLE);
+        continue;
+      }
+      ReconciliationResult result = persisted.get(snapshot.getId());
+      String state = result == null ? null : result.getStatus();
+      if (OPEN.equals(state)) {
+        statuses.put(id, ReconciliationStatusValues.OPEN_DIFFERENCE);
+      } else if (DISMISSED.equals(state)) {
+        statuses.put(id, ReconciliationStatusValues.DISMISSED_DIFFERENCE);
+      } else if (RESOLVED.equals(state) || ACCEPTED.equals(state)) {
+        statuses.put(id, ReconciliationStatusValues.RECONCILED);
+      } else {
+        legacy.add(snapshot);
+      }
+    }
+
+    if (!legacy.isEmpty()) {
+      Map<UUID, BigDecimal> sums = new HashMap<>();
+      for (KeyedAmount sum :
+          transactionRepository.sumAmountAfterOpeningsForObservedSnapshots(
+              legacy.stream().map(AccountSnapshot::getId).toList())) {
+        sums.put(sum.key(), sum.amount());
+      }
+      for (AccountSnapshot snapshot : legacy) {
+        Account account = byAccount.get(snapshot.getAccount().getId());
+        AccountSnapshot opening = openings.get(account.getId());
+        BigDecimal ledger = sums.getOrDefault(snapshot.getId(), BigDecimal.ZERO);
+        BigDecimal derived =
+            LIABILITY.equals(account.getNature())
+                ? opening.getBalance().subtract(ledger)
+                : opening.getBalance().add(ledger);
+        BigDecimal difference =
+            snapshot.getBalance().subtract(derived).setScale(FxRateService.MONEY_SCALE, RoundingMode.HALF_UP);
+        statuses.put(
+            account.getId(),
+            difference.signum() == 0
+                ? ReconciliationStatusValues.RECONCILED
+                : ReconciliationStatusValues.OPEN_DIFFERENCE);
+      }
+    }
+    return Map.copyOf(statuses);
   }
 
   /**
