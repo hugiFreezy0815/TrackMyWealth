@@ -3261,7 +3261,10 @@ export interface components {
       sections: components['schemas']['Section'][];
       institutionName: string | null;
       logoUrl: string | null;
-      /** Format: decimal */
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
       conversionRate: DecimalString | null;
       /** Format: date */
       conversionRateDate: string | null;
