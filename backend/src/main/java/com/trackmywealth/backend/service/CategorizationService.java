@@ -395,7 +395,8 @@ public class CategorizationService {
     Map<UUID, LatestCategoryAssignment> current = new HashMap<>();
     for (LatestCategoryAssignment latest :
         logRepository.findLatestAssignments(currentCategory.keySet())) {
-      if (latest.describes(currentCategory.get(latest.getTransactionId()))) {
+      if (latest.describes(currentCategory.get(latest.getTransactionId()))
+          && !"RESET".equals(latest.getAssignedBy())) {
         current.put(latest.getTransactionId(), latest);
       }
     }
