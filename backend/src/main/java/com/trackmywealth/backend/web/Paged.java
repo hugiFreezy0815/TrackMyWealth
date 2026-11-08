@@ -22,17 +22,32 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Paged {
 
-  /** The fields a client may sort by, named as in the response. */
-  SortField[] sort();
+  /**
+   * The fields a client may sort by, named as in the response. At least one, unless the list has a
+   * {@link #fixedOrder()}.
+   */
+  SortField[] sort() default {};
 
-  /** The order without a {@code sort} parameter: {@code <field>,<asc|desc>} of {@link #sort()}. */
-  String defaultSort();
+  /**
+   * The order without a {@code sort} parameter: {@code <field>,<asc|desc>} of {@link #sort()}.
+   * Required with {@link #sort()}; left blank for a {@link #fixedOrder()}.
+   */
+  String defaultSort() default "";
 
   /**
    * The entity property that makes the order unique, appended last in the direction of the first
    * sort field unless the order already holds it.
    */
   String tieBreaker() default "id";
+
+  /**
+   * In words, the order of a list whose query fixes it, ending with its unique tie-breaker - for an
+   * order no response field carries, such as an expression over two columns. Such a list declares
+   * no {@link #sort()} fields: any {@code sort} parameter is a 400 {@code INVALID_SORT} naming this
+   * order, and the service receives an unsorted page ({@code
+   * PagingValues.requireBoundedFixedOrder}). Blank (the default): the client chooses the order.
+   */
+  String fixedOrder() default "";
 
   /** A sortable field: its wire name and the entity properties it orders by, in that order. */
   @Documented

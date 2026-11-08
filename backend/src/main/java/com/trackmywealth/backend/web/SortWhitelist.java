@@ -15,6 +15,9 @@ import org.springframework.data.domain.Sort;
  * The sort rules of one {@link Paged} list (#373): which fields a client may sort by, the default
  * order and the unique tie-breaker. Turns the request's {@code sort} values into the entity order,
  * or refuses them with a 400 {@code INVALID_SORT} - an unknown field is never ignored silently.
+ *
+ * <p>A list with a {@link Paged#fixedOrder() fixed order} has no fields: it refuses every {@code
+ * sort} value and resolves to {@link Sort#unsorted()}, because its query states the whole order.
  */
 public final class SortWhitelist {
 
@@ -26,18 +29,34 @@ public final class SortWhitelist {
   private final Map<String, List<String>> fields;
   private final String defaultOrder;
   private final String tieBreaker;
+  // Blank for a list the client may sort.
+  private final String fixedOrderDescription;
 
-  private SortWhitelist(Map<String, List<String>> fields, String defaultOrder, String tieBreaker) {
+  private SortWhitelist(
+      Map<String, List<String>> fields,
+      String defaultOrder,
+      String tieBreaker,
+      String fixedOrderDescription) {
     this.fields = fields;
     this.defaultOrder = defaultOrder;
     this.tieBreaker = tieBreaker;
+    this.fixedOrderDescription = fixedOrderDescription;
   }
 
   /**
    * The rules {@code paged} declares. A declaration that contradicts itself (no field, a field
-   * twice, a default order outside the list) is a programming error, not a client's.
+   * twice, a default order outside the list, sort fields on a fixed order) is a programming error,
+   * not a client's.
    */
   public static SortWhitelist of(Paged paged) {
+    if (!paged.fixedOrder().isBlank()) {
+      if (paged.sort().length > 0 || !paged.defaultSort().isBlank()) {
+        throw new IllegalStateException(
+            "@Paged with a fixed order declares no sort fields and no default sort: "
+                + paged.fixedOrder());
+      }
+      return new SortWhitelist(Map.of(), "", paged.tieBreaker(), paged.fixedOrder());
+    }
     Map<String, List<String>> fields = new LinkedHashMap<>();
     for (Paged.SortField field : paged.sort()) {
       List<String> properties =
@@ -53,7 +72,8 @@ public final class SortWhitelist {
     if (fields.isEmpty() || paged.tieBreaker().isBlank()) {
       throw new IllegalStateException("@Paged needs at least one sort field and a tie-breaker");
     }
-    SortWhitelist whitelist = new SortWhitelist(fields, paged.defaultSort(), paged.tieBreaker());
+    SortWhitelist whitelist =
+        new SortWhitelist(fields, paged.defaultSort(), paged.tieBreaker(), "");
     try {
       whitelist.resolve(List.of(whitelist.defaultOrder));
     } catch (ApiException e) {
@@ -73,14 +93,33 @@ public final class SortWhitelist {
     return defaultOrder;
   }
 
+  /** Whether the list's order is fixed, so that it takes no {@code sort} parameter at all. */
+  public boolean isFixedOrder() {
+    return !fixedOrderDescription.isBlank();
+  }
+
+  /** The fixed order in words, as the API documents it; blank for a list the client may sort. */
+  public String fixedOrder() {
+    return fixedOrderDescription;
+  }
+
   /**
    * The entity order for the request's {@code sort} values ({@code null} or none: the default),
-   * ending with the tie-breaker.
+   * ending with the tie-breaker; {@link Sort#unsorted()} for a fixed order, which its query states.
    *
-   * @throws ApiException 400 {@code INVALID_SORT} for an unknown field, a field named twice or a
-   *     value that is not exactly {@code <field>}, {@code <field>,asc} or {@code <field>,desc}
+   * @throws ApiException 400 {@code INVALID_SORT} for an unknown field, a field named twice, a
+   *     value that is not exactly {@code <field>}, {@code <field>,asc} or {@code <field>,desc}, or
+   *     any value at all for a fixed order
    */
   public Sort resolve(List<String> requested) {
+    if (isFixedOrder()) {
+      if (requested != null && !requested.isEmpty()) {
+        throw invalid(
+            "This list has a fixed order (%s) and takes no sort parameter."
+                .formatted(fixedOrderDescription));
+      }
+      return Sort.unsorted();
+    }
     List<String> values =
         requested == null || requested.isEmpty() ? List.of(defaultOrder) : requested;
     List<Sort.Order> orders = new ArrayList<>();

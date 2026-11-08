@@ -112,6 +112,39 @@ class SortWhitelistTest {
             });
   }
 
+  // #473 review: a list whose query fixes its order declares that order, not a sort field.
+  @Test
+  void aFixedOrderResolvesUnsortedAndRefusesAnySortNamingTheOrder() {
+    SortWhitelist fixed = SortWhitelist.of(paged("fixed"));
+
+    assertThat(fixed.isFixedOrder()).isTrue();
+    assertThat(fixed.fixedOrder()).isEqualTo("newest removal first, then id descending");
+    assertThat(fixed.fieldNames()).isEmpty();
+    assertThat(fixed.resolve(null).isUnsorted()).isTrue();
+    assertThat(fixed.resolve(List.of()).isUnsorted()).isTrue();
+    assertThatThrownBy(() -> fixed.resolve(List.of("removedAt,desc")))
+        .isInstanceOfSatisfying(
+            ApiException.class,
+            e -> {
+              assertThat(e.getCode()).isEqualTo(ProblemCode.INVALID_SORT);
+              assertThat(e.getReason())
+                  .contains("fixed order (newest removal first, then id descending)")
+                  .contains("no sort parameter");
+            });
+    assertThat(LEDGER.isFixedOrder()).isFalse();
+    assertThat(LEDGER.fixedOrder()).isEmpty();
+  }
+
+  @Test
+  void aFixedOrderWithSortFieldsOrADefaultSortIsADeclarationError() {
+    assertThatThrownBy(() -> SortWhitelist.of(paged("fixedWithField")))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("fixed order");
+    assertThatThrownBy(() -> SortWhitelist.of(paged("fixedWithDefault")))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("fixed order");
+  }
+
   static Paged paged(String method) {
     try {
       return Declarations.class
@@ -158,5 +191,14 @@ class SortWhitelistTest {
                 sort = {},
                 defaultSort = "name,asc")
             Object pageable) {}
+
+    void fixed(@Paged(fixedOrder = "newest removal first, then id descending") Object pageable) {}
+
+    void fixedWithField(
+        @Paged(fixedOrder = "newest first", sort = @SortField(name = "removedAt"))
+            Object pageable) {}
+
+    void fixedWithDefault(
+        @Paged(fixedOrder = "newest first", defaultSort = "removedAt,desc") Object pageable) {}
   }
 }

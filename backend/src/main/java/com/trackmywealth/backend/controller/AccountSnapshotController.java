@@ -1,12 +1,15 @@
 package com.trackmywealth.backend.controller;
 
 import com.trackmywealth.backend.dto.AccountSnapshotResponse;
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.RecordAccountSnapshotRequest;
 import com.trackmywealth.backend.dto.ReplaceAccountSnapshotRequest;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.AccountSnapshotService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
@@ -15,8 +18,8 @@ import com.trackmywealth.backend.web.VersionedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -58,9 +61,12 @@ public class AccountSnapshotController {
 
   @Operation(operationId = "listAccountSnapshots", summary = "List an account's snapshots")
   @GetMapping
-  public List<AccountSnapshotResponse> listSnapshots(
-      @PathVariable UUID accountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return accountSnapshotService.list(accountId, actor);
+  public PageResponse<AccountSnapshotResponse> listSnapshots(
+      @PathVariable UUID accountId,
+      @Paged(sort = @SortField(name = "snapshotDate"), defaultSort = "snapshotDate,desc")
+          Pageable pageable,
+      @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
+    return PageResponse.of(accountSnapshotService.list(accountId, pageable, actor));
   }
 
   @Operation(operationId = "getAccountSnapshot", summary = "Read a snapshot")

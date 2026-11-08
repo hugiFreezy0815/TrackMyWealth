@@ -1,13 +1,17 @@
 package com.trackmywealth.backend.controller;
 
+import com.trackmywealth.backend.dto.PageResponse;
 import com.trackmywealth.backend.dto.SetSettlementSourceRequest;
 import com.trackmywealth.backend.dto.SettlementMatchResponse;
+import com.trackmywealth.backend.dto.SettlementMatchRunResponse;
 import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.dto.SettlementSourceResponse;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.service.SettlementMatchService;
 import com.trackmywealth.backend.web.IfMatchVersionParser;
+import com.trackmywealth.backend.web.Paged;
+import com.trackmywealth.backend.web.Paged.SortField;
 import com.trackmywealth.backend.web.ProblemCodes;
 import com.trackmywealth.backend.web.ResponseHeader;
 import com.trackmywealth.backend.web.SendsHeaders;
@@ -17,8 +21,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -72,35 +76,25 @@ public class SettlementMatchController {
     return VersionedResponse.ok(response, response.version());
   }
 
-  /** Runs matching for the card now; idempotent. Returns every match the card has. */
+  /** Runs matching for the card now; idempotent and returns only a bounded summary. */
   @Operation(
       operationId = "runSettlementMatching",
       summary = "Match card payments to statements now")
   @ProblemCodes({ProblemCode.UNPROCESSABLE})
   @PostMapping("/accounts/{cardAccountId}/settlement-matches/run")
-  public List<SettlementMatchResponse> run(
+  public SettlementMatchRunResponse run(
       @PathVariable UUID cardAccountId, @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return settlementMatchService.run(cardAccountId, actor);
   }
 
-  /**
-   * The settlement-match work queue. What a client can rely on (default status, order, the cap of
-   * {@value SettlementMatchService#MAX_LISTED}) is stated once, in the operation description below,
-   * and the closed value sets of {@code status} and {@code kind} in their parameter schemas.
-   */
+  /** Paginated settlement matches, filtered before counting to avoid leaking inaccessible rows. */
   @Operation(
       operationId = "listSettlementMatches",
       summary = "List settlement matches",
-      description =
-          "Matches of one status, newest first; by default those needing a decision."
-              + " Not paged, and cut at the newest "
-              + SettlementMatchService.MAX_LISTED
-              + " matches: a response holding exactly "
-              + SettlementMatchService.MAX_LISTED
-              + " matches may not be all of them.")
+      description = "Matches of one status, newest first; by default those needing a decision.")
   @ProblemCodes({ProblemCode.NOT_FOUND})
   @GetMapping("/settlement-matches")
-  public List<SettlementMatchResponse> list(
+  public PageResponse<SettlementMatchResponse> list(
       @Parameter(
               description = "The status to list.",
               schema =
@@ -123,8 +117,14 @@ public class SettlementMatchController {
                       }))
           @RequestParam(required = false)
           String kind,
+      @Parameter(description = "Only matches belonging to this card or credited account.")
+          @RequestParam(required = false)
+          UUID cardAccountId,
+      @Paged(sort = @SortField(name = "createdAt"), defaultSort = "createdAt,desc")
+          Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
-    return settlementMatchService.list(status, kind, actor);
+    return PageResponse.of(
+        settlementMatchService.list(status, kind, cardAccountId, pageable, actor));
   }
 
   @Operation(operationId = "confirmSettlementMatch", summary = "Confirm a settlement match")

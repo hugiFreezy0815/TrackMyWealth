@@ -31,15 +31,36 @@ public final class PagingValues {
    *     every request's paging is resolved under these rules before it reaches a service
    */
   public static Pageable requireBounded(Pageable pageable, String tieBreaker) {
-    if (pageable.isUnpaged() || pageable.getPageSize() > MAX_SIZE) {
-      throw new IllegalArgumentException(
-          "A page must be paged and at most " + MAX_SIZE + " rows long: " + pageable);
-    }
+    requirePagedWithinCap(pageable);
     List<Sort.Order> orders = pageable.getSort().toList();
     if (orders.isEmpty() || !tieBreaker.equals(orders.get(orders.size() - 1).getProperty())) {
       throw new IllegalArgumentException(
           "A page must be ordered with " + tieBreaker + " last: " + pageable.getSort());
     }
     return pageable;
+  }
+
+  /**
+   * {@code pageable} itself, for a list whose query fixes its whole order (a {@code
+   * web.Paged#fixedOrder()} list): paged, at most {@value #MAX_SIZE} rows long and unsorted, so
+   * Spring Data appends nothing to the query's own {@code ORDER BY}, which must end with a unique
+   * tie-breaker.
+   *
+   * @throws IllegalArgumentException for any other {@code Pageable}, as {@link #requireBounded}
+   */
+  public static Pageable requireBoundedFixedOrder(Pageable pageable) {
+    requirePagedWithinCap(pageable);
+    if (pageable.getSort().isSorted()) {
+      throw new IllegalArgumentException(
+          "A fixed-order page must not carry a sort: " + pageable.getSort());
+    }
+    return pageable;
+  }
+
+  private static void requirePagedWithinCap(Pageable pageable) {
+    if (pageable.isUnpaged() || pageable.getPageSize() > MAX_SIZE) {
+      throw new IllegalArgumentException(
+          "A page must be paged and at most " + MAX_SIZE + " rows long: " + pageable);
+    }
   }
 }
