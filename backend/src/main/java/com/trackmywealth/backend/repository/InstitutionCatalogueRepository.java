@@ -26,8 +26,9 @@ public interface InstitutionCatalogueRepository extends JpaRepository<Institutio
    * <p>Only shared templates ({@code workspace_id IS NULL}) count: the catalogue is the same for
    * every caller, and without that condition RLS would also let in the caller's own workspace
    * templates. {@code import_template.file_format} has no CAMT value (V99's CHECK); CAMT comes from
-   * the catalogue's {@code CAMT053} import method. A new file format must be mapped here too, or it
-   * is left out of the list.
+   * the catalogue's {@code CAMT053} import method. The formats are listed in a fixed alphabetical
+   * order rather than sorted, so the page plan has no sort of its own; a new file format must be
+   * added here in its place, or it is left out of the list.
    */
   @Query(
       value =
@@ -38,21 +39,20 @@ public interface InstitutionCatalogueRepository extends JpaRepository<Institutio
                  c.institution_type AS "institutionType",
                  c.identifier AS identifier,
                  c.logo_url AS "logoUrl",
-                 COALESCE(
-                   (SELECT string_agg(DISTINCT formats.format, ',' ORDER BY formats.format)
-                    FROM (
-                      SELECT CASE WHEN t.file_format IN ('PDF_TEXT', 'PDF_OCR')
-                                  THEN 'PDF' ELSE t.file_format END AS format
-                      FROM import_template t
-                      WHERE t.institution_catalogue_id = c.id
-                        AND t.workspace_id IS NULL
-                        AND t.is_current
-                        AND t.is_active
-                        AND t.file_format IN ('CSV', 'PDF_TEXT', 'PDF_OCR', 'SPREADSHEET')
-                      UNION ALL
-                      SELECT 'CAMT' WHERE jsonb_exists(c.available_import_methods, 'CAMT053')
-                    ) formats),
-                   '') AS "importFormats"
+                 (SELECT concat_ws(
+                           ',',
+                           CASE WHEN jsonb_exists(c.available_import_methods, 'CAMT053')
+                                THEN 'CAMT' END,
+                           CASE WHEN bool_or(t.file_format = 'CSV') THEN 'CSV' END,
+                           CASE WHEN bool_or(t.file_format IN ('PDF_TEXT', 'PDF_OCR'))
+                                THEN 'PDF' END,
+                           CASE WHEN bool_or(t.file_format = 'SPREADSHEET')
+                                THEN 'SPREADSHEET' END)
+                  FROM import_template t
+                  WHERE t.institution_catalogue_id = c.id
+                    AND t.workspace_id IS NULL
+                    AND t.is_current
+                    AND t.is_active) AS "importFormats"
           FROM institution_catalogue c
           WHERE c.is_active
             AND (CAST(:namePattern AS TEXT) IS NULL OR c.name ILIKE :namePattern)
