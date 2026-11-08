@@ -10,7 +10,9 @@ import deDE from './de-DE.json';
 export type AppLocale = 'en' | 'de' | 'de-CH' | 'de-DE';
 
 export function resolveLocale(language?: string | null, deviceLocale?: string): AppLocale {
-  const raw = language || deviceLocale ||
+  const raw =
+    language ||
+    deviceLocale ||
     (Platform.OS === 'web' && typeof navigator !== 'undefined' ? navigator.language : 'en');
   const locale = raw.replace('_', '-').toLowerCase();
   if (locale.startsWith('de-ch')) return 'de-CH';
@@ -20,13 +22,25 @@ export function resolveLocale(language?: string | null, deviceLocale?: string): 
 }
 
 export function AppIntlProvider({
-  language, children,
-}: { language?: string | null; children: ReactNode }) {
+  language,
+  children,
+}: {
+  language?: string | null;
+  children: ReactNode;
+}) {
   const locale = resolveLocale(language);
-  const messages = useMemo(() => ({
-    ...en, ...(locale.startsWith('de') ? de : {}),
-    ...(locale === 'de-CH' ? deCH : {}),
-    ...(locale === 'de-DE' ? deDE : {}),
-  }), [locale]);
-  return <IntlProvider locale={locale} defaultLocale="en" messages={messages}>{children}</IntlProvider>;
+  const messages = useMemo(
+    () => ({
+      ...en,
+      ...(locale.startsWith('de') ? de : {}),
+      ...(locale === 'de-CH' ? deCH : {}),
+      ...(locale === 'de-DE' ? deDE : {}),
+    }),
+    [locale],
+  );
+  return (
+    <IntlProvider locale={locale} defaultLocale="en" messages={messages}>
+      {children}
+    </IntlProvider>
+  );
 }

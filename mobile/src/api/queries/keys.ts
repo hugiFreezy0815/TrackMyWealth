@@ -13,8 +13,10 @@ export const queryKeys = {
   transaction: (accountId: string, transactionId: string) =>
     ['accounts', accountId, 'transactions', transactionId] as const,
   categories: (includeInactive?: boolean) => ['categories', includeInactive ?? false] as const,
-  cashFlow: (month: string, currency?: string) => ['cash-flow', month, currency ?? 'default'] as const,
-  importBatch: (accountId: string, batchId: string) => ['accounts', accountId, 'imports', batchId] as const,
+  cashFlow: (month: string, currency?: string) =>
+    ['cash-flow', month, currency ?? 'default'] as const,
+  importBatch: (accountId: string, batchId: string) =>
+    ['accounts', accountId, 'imports', batchId] as const,
   importRows: (accountId: string, batchId: string, status?: string) =>
     ['accounts', accountId, 'imports', batchId, 'rows', status ?? 'all'] as const,
 };

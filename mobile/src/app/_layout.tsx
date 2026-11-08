@@ -32,7 +32,10 @@ export default function TabLayout() {
       .then(restoreSession)
       .catch(() => undefined)
       .finally(() => setRestoring(false));
-    return () => { unsubscribe(); stopQueryEnvironment(); };
+    return () => {
+      unsubscribe();
+      stopQueryEnvironment();
+    };
   }, []);
 
   useEffect(() => {
@@ -43,21 +46,21 @@ export default function TabLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppIntlProvider language={session.identity?.language}>
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      {restoring ? (
-        <View accessibilityLabel="Restoring session">
-          <ThemedText>Restoring session…</ThemedText>
-        </View>
-      ) : session.signedIn ? (
-        <>
-          <SessionBar identity={session.identity} />
-          <AppTabs identity={session.identity} />
-        </>
-      ) : (
-        <AuthScreen mfaRequired={session.mfaRequired} />
-      )}
-    </ThemeProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <AnimatedSplashOverlay />
+          {restoring ? (
+            <View accessibilityLabel="Restoring session">
+              <ThemedText>Restoring session…</ThemedText>
+            </View>
+          ) : session.signedIn ? (
+            <>
+              <SessionBar identity={session.identity} />
+              <AppTabs identity={session.identity} />
+            </>
+          ) : (
+            <AuthScreen mfaRequired={session.mfaRequired} />
+          )}
+        </ThemeProvider>
       </AppIntlProvider>
     </QueryClientProvider>
   );

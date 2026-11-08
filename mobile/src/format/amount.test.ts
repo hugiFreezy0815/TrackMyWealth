@@ -17,7 +17,7 @@ describe('exact DecimalString display', () => {
     expect(formatAmount('1234', 'CHF', 'en', { masked: true })).toBe('••••');
     expect(a11yAmount('1234', 'CHF', 'en', { masked: true })).toBe('hidden');
   });
-  it.each(['1e3', '1,5', ' 1', '1.', '+1', ''] )('rejects non-plain decimals', (value) => {
+  it.each(['1e3', '1,5', ' 1', '1.', '+1', ''])('rejects non-plain decimals', (value) => {
     expect(() => formatAmount(value, 'CHF', 'en')).toThrow(TypeError);
   });
 });
