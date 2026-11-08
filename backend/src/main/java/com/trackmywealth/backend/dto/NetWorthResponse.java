@@ -24,6 +24,8 @@ import java.util.List;
  * @param warnings every data-quality warning ({@link DataQualityWarningValues}) carried by at least
  *     one of {@link #accounts}, each once and sorted - the headline must show them, not only the
  *     account they come from (PR-011, FR-CON-007)
+ * @param sections only occupied {@link PortfolioSection} values in Portfolio View order,
+ *     aggregating the same valuations as {@code netWorth} (US-11-05)
  * @param accounts every active account of the caller's workspace, present even when its value is
  *     unknown so a caller can see which accounts are excluded from the totals
  */
@@ -36,11 +38,13 @@ public record NetWorthResponse(
     boolean complete,
     boolean approximate,
     List<String> warnings,
+    List<NetWorthSectionResponse> sections,
     List<AccountValuation> accounts) {
 
   public NetWorthResponse {
     // Defensive/immutable copy (SpotBugs EI_EXPOSE_REP), same as PortfolioSummaryResponse.
     warnings = List.copyOf(warnings);
+    sections = List.copyOf(sections);
     accounts = List.copyOf(accounts);
   }
 }

@@ -2,6 +2,10 @@ package com.trackmywealth.backend.service;
 
 import com.trackmywealth.backend.dto.AccountValuation;
 import com.trackmywealth.backend.dto.NetWorthResponse;
+import com.trackmywealth.backend.dto.NetWorthSectionResponse;
+import com.trackmywealth.backend.dto.PortfolioPlacement;
+import com.trackmywealth.backend.dto.PortfolioSection;
+import com.trackmywealth.backend.dto.PortfolioTotals;
 import com.trackmywealth.backend.dto.ValueBasisValues;
 import com.trackmywealth.backend.entity.Account;
 import com.trackmywealth.backend.entity.Workspace;
@@ -11,11 +15,16 @@ import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import com.trackmywealth.backend.validation.CurrencyCodes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +56,7 @@ public class NetWorthService {
   private final WorkspaceRepository workspaceRepository;
   private final AccountRepository accountRepository;
   private final AccountValuationService accountValuationService;
+  private final AccountService accountService;
   private final BusinessDateService businessDateService;
 
   public NetWorthService(
@@ -54,11 +64,13 @@ public class NetWorthService {
       WorkspaceRepository workspaceRepository,
       AccountRepository accountRepository,
       AccountValuationService accountValuationService,
+      AccountService accountService,
       BusinessDateService businessDateService) {
     this.accessControlService = accessControlService;
     this.workspaceRepository = workspaceRepository;
     this.accountRepository = accountRepository;
     this.accountValuationService = accountValuationService;
+    this.accountService = accountService;
     this.businessDateService = businessDateService;
   }
 
@@ -121,6 +133,44 @@ public class NetWorthService {
         complete,
         approximate,
         List.copyOf(warnings),
+        sectionsOf(visible, valuations),
         valuations);
+  }
+
+  // US-11-05: the Portfolio View's placement (AccountService#portfolioPlacementsOf, the only place
+  // allowed to read account_type) and its signed subtotal (PortfolioTotals), over the valuations
+  // getNetWorth already has - no account is valued again or queried per section. The EnumMap
+  // keeps PortfolioSection's order; a section without accounts is never added.
+  private List<NetWorthSectionResponse> sectionsOf(
+      List<Account> visible, List<AccountValuation> valuations) {
+    Map<UUID, PortfolioPlacement> placements = accountService.portfolioPlacementsOf(visible);
+    Map<UUID, AccountValuation> valuationsById =
+        valuations.stream()
+            .collect(Collectors.toMap(AccountValuation::accountId, Function.identity()));
+    Map<PortfolioSection, List<AccountValuation>> bySection = new EnumMap<>(PortfolioSection.class);
+    for (Account account : visible) {
+      UUID id = account.getId();
+      PortfolioSection section =
+          Objects.requireNonNull(placements.get(id), "account placement").section();
+      bySection
+          .computeIfAbsent(section, ignored -> new ArrayList<>())
+          .add(Objects.requireNonNull(valuationsById.get(id), "account valuation"));
+    }
+    List<NetWorthSectionResponse> sections = new ArrayList<>(bySection.size());
+    bySection.forEach(
+        (section, sectionValuations) -> {
+          // The one-currency variant: every valuation is already in the net worth's currency,
+          // which is all that overload needs (its Javadoc's "workspace currency" is the common
+          // case, not a requirement), so total() is the subtotal in that currency.
+          PortfolioTotals totals = PortfolioTotals.of(sectionValuations);
+          sections.add(
+              new NetWorthSectionResponse(
+                  section,
+                  totals.total(),
+                  totals.complete(),
+                  totals.valueStatus(),
+                  sectionValuations.size()));
+        });
+    return sections;
   }
 }
