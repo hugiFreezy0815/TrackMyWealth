@@ -729,7 +729,10 @@ public class TransactionService {
     // A latest row that no longer describes the current category (e.g. an override reset to
     // UNCATEGORIZED) says nothing about how the category was assigned.
     return categorizationLogRepository.findLatestAssignments(categorized).stream()
-        .filter(latest -> latest.describes(currentCategory.get(latest.getTransactionId())))
+        .filter(
+            latest ->
+                latest.describes(currentCategory.get(latest.getTransactionId()))
+                    && !"RESET".equals(latest.getAssignedBy()))
         .collect(
             Collectors.toMap(
                 LatestCategoryAssignment::getTransactionId,
