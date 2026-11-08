@@ -715,6 +715,19 @@ class CategorizationControllerTest {
 
     assertThat(codeOf(reset.categoryId())).isEqualTo("GROCERIES");
     assertThat(reset.categoryAssignedBy()).isEqualTo("SOURCE_CODE");
+    assertThat(
+            jdbcUuid(
+                "SELECT assigned_by_user_id FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND is_reset = true",
+                recorded.id()))
+        .isEqualTo(jdbcUuid("SELECT id FROM app_user WHERE email = ?", "admin@example.com"));
+    assertThat(
+            jdbcValue(
+                "SELECT COUNT(*) FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND is_reset = true",
+                recorded.id()))
+        .isEqualTo(1L);
+
     createRule(token, "MERCHANT", "coop", defaultId("SHOPPING"), null);
     categorizationService.recategorizeWorkspace(workspaceOf(card.id()));
     assertThat(codeOf(categoryOf(recorded.id()))).isEqualTo("SHOPPING");
@@ -733,6 +746,13 @@ class CategorizationControllerTest {
 
     assertThat(codeOf(reset.categoryId())).isEqualTo(UNCATEGORIZED);
     assertThat(reset.categoryAssignedBy()).isNull();
+    assertThat(
+            jdbcValue(
+                "SELECT COUNT(*) FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND is_reset = true AND assigned_by = 'RESET'",
+                recorded.id()))
+        .isEqualTo(1L);
+
     assertThat(assignedByInList(token, cash.id(), recorded.id())).isNull();
     createRule(token, "MERCHANT", "unknown shop", defaultId("LEISURE"), null);
     categorizationService.recategorizeWorkspace(workspaceOf(cash.id()));
