@@ -8,6 +8,15 @@ ADD CONSTRAINT transaction_categorization_log_reset_actor CHECK (
     NOT is_reset OR (NOT is_user_override AND assigned_by_user_id IS NOT NULL)
 );
 
+-- A reset of a non-categorized type can legitimately return to a NULL category.
+ALTER TABLE transaction_categorization_log
+ALTER COLUMN category_id DROP NOT NULL;
+
+ALTER TABLE transaction_categorization_log
+ADD CONSTRAINT transaction_categorization_log_category_or_reset CHECK (
+    category_id IS NOT NULL OR is_reset
+);
+
 -- An uncategorized reset has no automatic assignment method but needs an audit row.
 ALTER TABLE transaction_categorization_log
 DROP CONSTRAINT transaction_categorization_log_assigned_by_check;
