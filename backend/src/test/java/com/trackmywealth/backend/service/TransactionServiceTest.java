@@ -1,6 +1,5 @@
 package com.trackmywealth.backend.service;
 
-import com.trackmywealth.backend.dto.TransactionReadAccountDetails;
 import com.trackmywealth.backend.dto.TransactionReadContext;
 
 import static org.assertj.core.api.Assertions.assertThat;
