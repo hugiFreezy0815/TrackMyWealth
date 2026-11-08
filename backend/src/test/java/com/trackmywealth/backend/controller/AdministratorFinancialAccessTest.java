@@ -311,23 +311,6 @@ class AdministratorFinancialAccessTest {
         + " (404)";
   }
 
-  private UUID recordExpense(String token, UUID accountId) {
-    return client(token)
-        .post()
-        .uri("/api/v1/accounts/" + accountId + "/transactions")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            "{\"transactionType\":\"EXPENSE\",\"bookingDate\":\"2026-09-01\","
-                + "\"amount\":-10,\"currency\":\"CHF\"}")
-        .exchange()
-        .expectStatus()
-        .isCreated()
-        .expectBody(TransactionResponse.class)
-        .returnResult()
-        .getResponseBody()
-        .id();
-  }
-
   private AccountSummaryResponse createAccount(String token) {
     return client(token)
         .post()

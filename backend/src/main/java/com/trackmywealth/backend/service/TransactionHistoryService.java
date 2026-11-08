@@ -9,7 +9,6 @@ import com.trackmywealth.backend.repository.TransactionHistoryRepository;
 import com.trackmywealth.backend.security.AuthenticatedUserPrincipal;
 import java.util.List;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -73,7 +72,8 @@ public class TransactionHistoryService {
             ? null
             : new TransactionImportBatchResponse(
                 event.importBatchId(),
-                fileFormat(event.importTemplateFormat(), event.importSourceKind()),
+                TransactionReadContextService.formatOf(
+                    event.importTemplateFormat(), event.importSourceKind()),
                 event.importUploadedAt());
     return new TransactionHistoryEntryResponse(
         event.occurredAt(),
@@ -84,15 +84,5 @@ public class TransactionHistoryService {
         event.relatedTransactionId(),
         batch,
         event.reason());
-  }
-
-  static String fileFormat(@Nullable String templateFormat, @Nullable String sourceKind) {
-    if ("PDF_TEXT".equals(templateFormat) || "PDF_OCR".equals(templateFormat)) {
-      return "PDF";
-    }
-    if ("SPREADSHEET".equals(templateFormat) || "CSV".equals(templateFormat)) {
-      return templateFormat;
-    }
-    return "DOCUMENT".equals(sourceKind) ? "CAMT" : "CSV";
   }
 }

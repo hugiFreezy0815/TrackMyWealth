@@ -8,21 +8,13 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
-/** US-07-38: public import provenance uses stable, non-sensitive file-format values. */
+/**
+ * US-07-38: events map to entries; import provenance uses #479's public file formats ({@link
+ * TransactionReadContextService#formatOf}).
+ */
 class TransactionHistoryServiceTest {
 
   private static final OffsetDateTime AT = OffsetDateTime.parse("2026-10-21T09:12:00Z");
-
-  @Test
-  void fileFormatUsesTemplateWhenPresentAndCamtForDocumentWithoutTemplate() {
-    assertThat(TransactionHistoryService.fileFormat("PDF_TEXT", "DOCUMENT")).isEqualTo("PDF");
-    assertThat(TransactionHistoryService.fileFormat("PDF_OCR", "DOCUMENT")).isEqualTo("PDF");
-    assertThat(TransactionHistoryService.fileFormat("CSV", "FILE")).isEqualTo("CSV");
-    assertThat(TransactionHistoryService.fileFormat("SPREADSHEET", "FILE"))
-        .isEqualTo("SPREADSHEET");
-    assertThat(TransactionHistoryService.fileFormat(null, "DOCUMENT")).isEqualTo("CAMT");
-    assertThat(TransactionHistoryService.fileFormat(null, null)).isEqualTo("CSV");
-  }
 
   @Test
   void anImportEventCarriesItsBatchWithThePublicFileFormat() {
@@ -30,12 +22,12 @@ class TransactionHistoryServiceTest {
     TransactionHistoryEntryResponse entry =
         TransactionHistoryService.toEntry(
             new TransactionHistoryEvent(
-                AT, "IMPORTED", null, null, null, null, batch, AT, null, "DOCUMENT", null));
+                AT, "IMPORTED", null, null, null, null, batch, AT, "PDF_OCR", "DOCUMENT", null));
 
     assertThat(entry.kind()).isEqualTo("IMPORTED");
     assertThat(entry.actorDisplayName()).isNull();
     assertThat(entry.importBatch().id()).isEqualTo(batch);
-    assertThat(entry.importBatch().fileFormat()).isEqualTo("CAMT");
+    assertThat(entry.importBatch().fileFormat()).as("the template's format").isEqualTo("PDF");
     assertThat(entry.importBatch().uploadedAt()).isEqualTo(AT);
   }
 
