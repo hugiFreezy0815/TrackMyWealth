@@ -36,7 +36,7 @@ public class TransactionCategorizationLog {
       columnDefinition = UUID_COLUMN)
   private UUID transactionId;
 
-  @Column(name = "category_id", nullable = false, updatable = false, columnDefinition = UUID_COLUMN)
+  @Column(name = "category_id", updatable = false, columnDefinition = UUID_COLUMN)
   private UUID categoryId;
 
   // SOURCE_CODE, RULE, TRANSACTION_TYPE, FALLBACK_MATCH or USER (V13, V37 CHECK).
