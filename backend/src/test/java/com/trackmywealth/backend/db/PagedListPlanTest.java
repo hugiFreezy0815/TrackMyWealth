@@ -106,6 +106,10 @@ class PagedListPlanTest {
   private static final Duration LOG_WAIT = Duration.ofSeconds(10);
   private static final Pattern SETTLEMENT_MATCH_INDEX =
       Pattern.compile("\\b(?:idx|uq)_settlement_match_\\w+");
+  private static final String ROWS_FILTERED = "Rows Removed by Filter:";
+  // A plan node's estimated and actual rows: "(cost=a..b rows=E width=w) (actual time=c..d rows=A".
+  private static final Pattern ESTIMATED_AND_ACTUAL_ROWS =
+      Pattern.compile("\\(cost=\\S+ rows=(\\d+) width=\\d+\\) \\(actual time=\\S+ rows=(\\d+) ");
 
   // Seeded by the first test to run (the schema exists once the context has started).
   private static PagedListFixture.Ids fixture;
@@ -189,11 +193,33 @@ class PagedListPlanTest {
           .contains("idx_transaction_account_category_order");
       assertSortFree(plans);
       assertIndexOnlyCount(plans);
-      // #520: the account's actual inbox density is 1%, not the database-wide
-      // frequency inflated by the other tenant's uncategorized rows. Page zero
-      // must not walk the date index filtering thousands of unrelated entries.
-      assertThat(plans.page()).doesNotContain("Rows Removed by Filter:");
+      // #520: no page walks another index and filters out rows that are not the account's
+      // inbox (the date index on page 0, idx_transaction_category's every-workspace rows on the
+      // last page). The account holds no removed rows, so the inbox index filters none either.
+      assertThat(plans.page()).as("uncategorized page %d", page).doesNotContain(ROWS_FILTERED);
+      // V118: the planner knows the account's own uncategorized share (1%), not the database's
+      // (about 15%, the other tenant's inbox included). The count reads the whole inbox, so its
+      // index node carries both the estimate and the actual count.
+      assertEstimateWithinFactorTwo(plans.count(), "idx_transaction_account_category_order");
     }
+  }
+
+  @Test
+  void accountCategoryStatisticsAreCollected() {
+    // V118's object, filled by the fixture's ANALYZE as autovacuum fills it in production. Without
+    // it the inbox estimate falls back to the database-wide share (#520).
+    Object[] statistics =
+        (Object[])
+            entityManager
+                .createNativeQuery(
+                    "SELECT attnames::TEXT, kinds::TEXT, most_common_vals IS NOT NULL"
+                        + " FROM pg_stats_ext WHERE statistics_name = ?1")
+                .setParameter(1, "st_transaction_account_category")
+                .getSingleResult();
+
+    assertThat(statistics[0]).isEqualTo("{account_id,category_id}");
+    assertThat((String) statistics[1]).contains("m").contains("f");
+    assertThat(statistics[2]).as("MCV list collected").isEqualTo(Boolean.TRUE);
   }
 
   @Test
@@ -415,6 +441,23 @@ class PagedListPlanTest {
     assertThat(plans.count())
         .contains("Index Only Scan", "Heap Fetches: 0")
         .doesNotContain("Seq Scan", "Bitmap Heap Scan");
+  }
+
+  /** The node reading {@code index} estimated between half and twice the rows it returned. */
+  private static void assertEstimateWithinFactorTwo(String plan, String index) {
+    String node =
+        Arrays.stream(plan.split("\n"))
+            .filter(line -> line.contains(" using " + index + " "))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("No node reads " + index + " in " + plan));
+    Matcher rows = ESTIMATED_AND_ACTUAL_ROWS.matcher(node);
+    assertThat(rows.find()).as("estimated and actual rows in %s", node).isTrue();
+    long estimated = Long.parseLong(rows.group(1));
+    long actual = Long.parseLong(rows.group(2));
+
+    assertThat(estimated)
+        .as("%s estimate (actual %d rows)", index, actual)
+        .isBetween(actual / 2, actual * 2);
   }
 
   private Plans asRuntimeRole(Supplier<?> read) {
