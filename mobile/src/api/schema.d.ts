@@ -2869,6 +2869,7 @@ export interface components {
       institutionType: string;
       identifier: string | null;
       logoUrl: string | null;
+      importFormats: string[];
     };
     LinkSavingsPocketRequest: {
       /** Format: uuid */
@@ -15179,6 +15180,7 @@ export interface operations {
     parameters: {
       query?: {
         query?: string;
+        country?: string[];
         /** @description Zero-based page number. */
         page?: number;
         /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
