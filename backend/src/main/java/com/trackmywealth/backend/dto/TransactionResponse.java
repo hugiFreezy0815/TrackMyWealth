@@ -63,6 +63,8 @@ public record TransactionResponse(
     UUID id,
     UUID accountId,
     String accountName,
+    @Nullable UUID portfolioId,
+    @Nullable String portfolioName,
     String transactionType,
     LocalDate bookingDate,
     BigDecimal amount,
@@ -98,6 +100,10 @@ public record TransactionResponse(
     @Nullable UUID restoresTransactionId,
     @Nullable OffsetDateTime deletedAt,
     @Nullable UUID counterpartyAccountId,
+    @Nullable String counterpartyAccountName,
+    @Nullable BigDecimal amountInAccountCurrency,
+    @Nullable String bankTransactionCode,
+    @Nullable TransactionImportBatchResponse importBatch,
     int version,
     List<String> warnings) {
 
