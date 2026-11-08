@@ -6,12 +6,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.trackmywealth.backend.error.ApiException;
 import com.trackmywealth.backend.error.ProblemCode;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
-import com.trackmywealth.backend.repository.InstitutionCatalogueRepository.CatalogueListing;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -23,7 +23,8 @@ import org.springframework.data.domain.Sort;
 /** US-04-10: format mapping and country normalization without a database or Spring context. */
 class InstitutionCatalogueServiceTest {
 
-  private final InstitutionCatalogueRepository repository = mock(InstitutionCatalogueRepository.class);
+  private final InstitutionCatalogueRepository repository =
+      mock(InstitutionCatalogueRepository.class);
   private final InstitutionCatalogueService service = new InstitutionCatalogueService(repository);
   private final Pageable pageable = PageRequest.of(0, 50, Sort.by("name", "id"));
 
@@ -40,12 +41,12 @@ class InstitutionCatalogueServiceTest {
 
   @Test
   void blankCountriesAreTheSameAsNoCountryFilter() {
-    when(repository.searchCatalogue(eq("Bank"), eq(null), any(Pageable.class)))
+    when(repository.searchCatalogue(eq("%Bank%"), eq(null), any(Pageable.class)))
         .thenReturn(new PageImpl<>(List.of()));
 
     service.searchCatalogue("Bank", List.of("", " , "), pageable);
 
-    verify(repository).searchCatalogue(eq("Bank"), eq(null), any(Pageable.class));
+    verify(repository).searchCatalogue(eq("%Bank%"), eq(null), any(Pageable.class));
   }
 
   @Test
@@ -54,11 +55,31 @@ class InstitutionCatalogueServiceTest {
         .isInstanceOfSatisfying(
             ApiException.class,
             exception -> assertThat(exception.getCode()).isEqualTo(ProblemCode.VALIDATION_FAILED));
+    verifyNoInteractions(repository);
+  }
+
+  @Test
+  void aQueryBecomesAContainsPatternWhoseWildcardsMatchOnlyThemselves() {
+    assertThat(InstitutionCatalogueService.containsPattern("Post")).isEqualTo("%Post%");
+    assertThat(InstitutionCatalogueService.containsPattern("50%_off\\"))
+        .isEqualTo("%50\\%\\_off\\\\%");
+    assertThat(InstitutionCatalogueService.containsPattern(null)).isNull();
+    assertThat(InstitutionCatalogueService.containsPattern("  ")).isNull();
+  }
+
+  @Test
+  void theQueryReachesTheRepositoryEscaped() {
+    when(repository.searchCatalogue(eq("%a\\_b%"), eq(null), any(Pageable.class)))
+        .thenReturn(new PageImpl<>(List.of()));
+
+    service.searchCatalogue("a_b", null, pageable);
+
+    verify(repository).searchCatalogue(eq("%a\\_b%"), eq(null), any(Pageable.class));
   }
 
   @Test
   void aggregatedFormatsAreReturnedInTheResponseAsAList() {
-    CatalogueListing entry = mock(CatalogueListing.class);
+    InstitutionCatalogueListingRow entry = mock(InstitutionCatalogueListingRow.class);
     UUID id = UUID.randomUUID();
     when(entry.getId()).thenReturn(id);
     when(entry.getName()).thenReturn("PostFinance");
@@ -76,7 +97,7 @@ class InstitutionCatalogueServiceTest {
 
   @Test
   void noFormatsMeansAnEmptyListRatherThanNull() {
-    CatalogueListing entry = mock(CatalogueListing.class);
+    InstitutionCatalogueListingRow entry = mock(InstitutionCatalogueListingRow.class);
     when(entry.getImportFormats()).thenReturn("");
     when(repository.searchCatalogue(eq(null), eq(null), any(Pageable.class)))
         .thenReturn(new PageImpl<>(List.of(entry)));

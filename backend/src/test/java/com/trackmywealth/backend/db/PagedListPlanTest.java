@@ -191,10 +191,16 @@ class PagedListPlanTest {
     Pageable page =
         PageRequest.of(0, PAGE_SIZE, sort(InstitutionCatalogueController.class, "searchCatalogue"));
 
-    Plans plans = asRuntimeRole(() -> catalogue.findByActiveTrue(page));
+    // US-04-10: the native page query, without and with its country filter, keeps the ordered
+    // index; the formats subquery runs per row of the page, not as a join to sort.
+    for (String countries : new String[] {null, "CH"}) {
+      Plans plans = asRuntimeRole(() -> catalogue.searchCatalogue(null, countries, page));
 
-    assertThat(plans.page()).contains("idx_institution_catalogue_active_name_order");
-    assertSortFree(plans);
+      assertThat(plans.page())
+          .as("countries=%s", countries)
+          .contains("idx_institution_catalogue_active_name_order");
+      assertSortFree(plans);
+    }
   }
 
   @Test

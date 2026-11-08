@@ -24,14 +24,17 @@ import com.trackmywealth.backend.testsupport.AccountRequests;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Statement;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -154,14 +157,24 @@ class PortfolioControllerTest {
     assertThat(swiss.content()).hasSize(2).allMatch(entry -> "CH".equals(entry.country()));
 
     PageResponse<InstitutionCatalogueEntrySummaryResponse> germany =
-        catalogue(token, "?country=DE&query=DKB");
+        catalogue(token, "?country=de&query=DKB");
     assertThat(germany.page().totalElements()).isEqualTo(1);
     assertThat(germany.content().get(0).name()).isEqualTo("DKB");
 
     assertThat(catalogue(token, "?country=CH,DE").page().totalElements()).isEqualTo(6);
     assertThat(catalogue(token, "?country=CH&country=DE").page().totalElements()).isEqualTo(6);
-    assertThat(catalogue(token, "?country=%20").page().totalElements()).isEqualTo(6);
     assertThat(catalogue(token, "?country=XX").page().totalElements()).isZero();
+  }
+
+  @Test
+  void blankCountryIsTheSameAsNoCountryFilter() {
+    String token = bootstrapAdministrator();
+    // Built as a query parameter, not a URI string: the client would encode a literal "%20" again.
+    for (String blank : List.of("", " ", " , ")) {
+      assertThat(catalogueWith(token, "country", blank).page().totalElements())
+          .as("country=%s", blank)
+          .isEqualTo(6);
+    }
   }
 
   @Test
@@ -179,6 +192,21 @@ class PortfolioControllerTest {
   }
 
   @Test
+  void likeWildcardsInTheQueryMatchOnlyThemselves() {
+    String token = bootstrapAdministrator();
+
+    // Each sent as a query parameter, so the server receives the character itself.
+    for (String wildcard : List.of("%", "_", "\\", "Post%", "D_B")) {
+      assertThat(catalogueMatching(token, wildcard).page().totalElements())
+          .as("query=%s", wildcard)
+          .isZero();
+    }
+    assertThat(catalogueMatching(token, "post").content())
+        .extracting(InstitutionCatalogueEntrySummaryResponse::name)
+        .containsExactly("PostFinance");
+  }
+
+  @Test
   void catalogueShowsSortedDistinctFormatsFromShippedTemplatesAndCamtFlag() {
     String token = bootstrapAdministrator();
     var postFinance = catalogue(token, "?query=PostFinance").content().get(0);
@@ -189,28 +217,156 @@ class PortfolioControllerTest {
   }
 
   @Test
-  void inactiveTemplateDoesNotContributeItsFormat() throws Exception {
+  void onlyActiveCurrentSharedTemplatesContributeTheirFormat() throws Exception {
     String token = bootstrapAdministrator();
-    UUID id = UUID.fromString("35cd132b-78f1-4480-93a7-e59e0fd18f9f");
+    UUID viac = catalogueId("VIAC");
+    assertThat(formatsOf(token, "VIAC")).doesNotContain("PDF");
+
+    List<UUID> added = new ArrayList<>();
     try {
-      try (Connection connection = dataSource.getConnection();
-          var statement =
-              connection.prepareStatement(
-                  "UPDATE import_template SET is_active = false WHERE id = ?")) {
-        statement.setObject(1, id);
-        assertThat(statement.executeUpdate()).isEqualTo(1);
-      }
-      assertThat(catalogue(token, "?query=PostFinance").content().get(0).importFormats())
-          .containsExactly("CAMT", "CSV", "SPREADSHEET");
+      added.add(cloneSharedTemplate("PDF_TEXT", viac, null, false, true));
+      assertThat(formatsOf(token, "VIAC")).as("inactive").doesNotContain("PDF");
+
+      added.add(cloneSharedTemplate("PDF_TEXT", viac, null, true, false));
+      assertThat(formatsOf(token, "VIAC")).as("superseded version").doesNotContain("PDF");
+
+      added.add(cloneSharedTemplate("PDF_TEXT", viac, null, true, true));
+      assertThat(formatsOf(token, "VIAC")).as("active and current").contains("PDF");
     } finally {
-      try (Connection connection = dataSource.getConnection();
-          var statement =
+      deleteTemplates(added);
+    }
+  }
+
+  @Test
+  void aWorkspaceOwnTemplateDoesNotChangeTheSharedCatalogue() throws Exception {
+    // The caller's own workspace template is visible to it under RLS; only the query's explicit
+    // workspace_id IS NULL keeps it out, so every caller sees the same catalogue.
+    String token = bootstrapAdministrator();
+    UUID viac = catalogueId("VIAC");
+    List<String> before = formatsOf(token, "VIAC");
+    assertThat(before).doesNotContain("SPREADSHEET");
+
+    List<UUID> added = new ArrayList<>();
+    try {
+      added.add(cloneSharedTemplate("SPREADSHEET", viac, onlyWorkspaceId(), true, true));
+
+      assertThat(formatsOf(token, "VIAC")).isEqualTo(before);
+    } finally {
+      deleteTemplates(added);
+    }
+  }
+
+  private List<String> formatsOf(String token, String name) {
+    return catalogue(token, "?query=" + name).content().get(0).importFormats();
+  }
+
+  private UUID catalogueId(String name) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        var statement =
+            connection.prepareStatement("SELECT id FROM institution_catalogue WHERE name = ?")) {
+      statement.setString(1, name);
+      try (var result = statement.executeQuery()) {
+        assertThat(result.next()).as("catalogue entry %s", name).isTrue();
+        return result.getObject(1, UUID.class);
+      }
+    }
+  }
+
+  private UUID onlyWorkspaceId() throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        Statement statement = connection.createStatement();
+        var result = statement.executeQuery("SELECT id FROM workspace")) {
+      assertThat(result.next()).isTrue();
+      UUID id = result.getObject(1, UUID.class);
+      assertThat(result.next()).as("exactly one workspace").isFalse();
+      return id;
+    }
+  }
+
+  /**
+   * A copy of any shipped template of {@code fileFormat}, moved to {@code catalogueId} in a family
+   * of its own, so a test never changes the seed templates the other tests read.
+   */
+  private UUID cloneSharedTemplate(
+      String fileFormat,
+      UUID catalogueId,
+      @Nullable UUID workspaceId,
+      boolean current,
+      boolean active)
+      throws Exception {
+    UUID id = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection()) {
+      connection.setAutoCommit(false);
+      try (Statement create = connection.createStatement();
+          var copy =
               connection.prepareStatement(
-                  "UPDATE import_template SET is_active = true WHERE id = ?")) {
+                  "INSERT INTO template_copy SELECT * FROM import_template"
+                      + " WHERE workspace_id IS NULL AND file_format = ? LIMIT 1");
+          var adjust =
+              connection.prepareStatement(
+                  "UPDATE template_copy SET id = ?, template_family_id = ?,"
+                      + " institution_catalogue_id = ?, workspace_id = ?, is_current = ?,"
+                      + " is_active = ?");
+          Statement insert = connection.createStatement()) {
+        create.execute(
+            "CREATE TEMP TABLE template_copy ON COMMIT DROP AS"
+                + " SELECT * FROM import_template WITH NO DATA");
+        copy.setString(1, fileFormat);
+        assertThat(copy.executeUpdate()).as("a shipped %s template", fileFormat).isEqualTo(1);
+        adjust.setObject(1, id);
+        adjust.setObject(2, UUID.randomUUID());
+        adjust.setObject(3, catalogueId);
+        if (workspaceId == null) {
+          adjust.setNull(4, Types.OTHER);
+        } else {
+          adjust.setObject(4, workspaceId);
+        }
+        adjust.setBoolean(5, current);
+        adjust.setBoolean(6, active);
+        adjust.executeUpdate();
+        insert.execute("INSERT INTO import_template SELECT * FROM template_copy");
+        connection.commit();
+      } finally {
+        connection.setAutoCommit(true);
+      }
+    }
+    return id;
+  }
+
+  private void deleteTemplates(List<UUID> ids) throws Exception {
+    try (Connection connection = dataSource.getConnection();
+        var statement = connection.prepareStatement("DELETE FROM import_template WHERE id = ?")) {
+      for (UUID id : ids) {
         statement.setObject(1, id);
         statement.executeUpdate();
       }
     }
+  }
+
+  private PageResponse<InstitutionCatalogueEntrySummaryResponse> catalogueMatching(
+      String token, String query) {
+    return catalogueWith(token, "query", query);
+  }
+
+  /** The value goes through the URI builder as a parameter value, encoded exactly once. */
+  private PageResponse<InstitutionCatalogueEntrySummaryResponse> catalogueWith(
+      String token, String parameter, String value) {
+    return client(token)
+        .get()
+        .uri(
+            builder ->
+                builder
+                    .path("/api/v1/institutions/catalogue")
+                    .queryParam(parameter, "{value}")
+                    .build(value))
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(
+            new ParameterizedTypeReference<
+                PageResponse<InstitutionCatalogueEntrySummaryResponse>>() {})
+        .returnResult()
+        .getResponseBody();
   }
 
   private PageResponse<InstitutionCatalogueEntrySummaryResponse> catalogue(

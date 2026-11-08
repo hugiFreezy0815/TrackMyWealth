@@ -1,29 +1,40 @@
 package com.trackmywealth.backend.repository;
 
 import com.trackmywealth.backend.entity.InstitutionCatalogue;
+import com.trackmywealth.backend.entity.InstitutionCatalogueListingRow;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public interface InstitutionCatalogueRepository extends JpaRepository<InstitutionCatalogue, UUID> {
 
-  Page<InstitutionCatalogue> findByActiveTrueAndNameContainingIgnoreCase(
-      String name, Pageable pageable);
-
-  Page<InstitutionCatalogue> findByActiveTrue(Pageable pageable);
-
-  /** The catalogue page and its import capabilities are read in one SQL statement, not N+1. */
+  /**
+   * US-04-01/US-04-10: a page of active catalogue entries with their import formats, read in one
+   * statement (plus the count) rather than one template query per entry.
+   *
+   * <p>{@code namePattern} is a complete {@code ILIKE} pattern whose wildcards the caller has
+   * already escaped with PostgreSQL's default escape character, the backslash; {@code countries} is
+   * a comma-joined list of upper-case ISO 3166-1 alpha-2 codes. Either is {@code null} for no
+   * filter.
+   *
+   * <p>Only shared templates ({@code workspace_id IS NULL}) count: the catalogue is the same for
+   * every caller, and without that condition RLS would also let in the caller's own workspace
+   * templates. {@code import_template.file_format} has no CAMT value (V99's CHECK); CAMT comes from
+   * the catalogue's {@code CAMT053} import method. A new file format must be mapped here too, or it
+   * is left out of the list.
+   */
   @Query(
       value =
           """
           SELECT c.id AS id,
                  c.name AS name,
-                 TRIM(c.country) AS country,
+                 c.country AS country,
                  c.institution_type AS "institutionType",
                  c.identifier AS identifier,
                  c.logo_url AS "logoUrl",
@@ -44,38 +55,22 @@ public interface InstitutionCatalogueRepository extends JpaRepository<Institutio
                    '') AS "importFormats"
           FROM institution_catalogue c
           WHERE c.is_active
-            AND (:query IS NULL OR c.name ILIKE CONCAT('%', :query, '%'))
-            AND (:countries IS NULL OR TRIM(c.country) = ANY(string_to_array(:countries, ',')))
+            AND (CAST(:namePattern AS TEXT) IS NULL OR c.name ILIKE :namePattern)
+            AND (CAST(:countries AS TEXT) IS NULL
+                 OR c.country = ANY(string_to_array(:countries, ',')))
           """,
       countQuery =
           """
           SELECT COUNT(*)
           FROM institution_catalogue c
           WHERE c.is_active
-            AND (:query IS NULL OR c.name ILIKE CONCAT('%', :query, '%'))
-            AND (:countries IS NULL OR TRIM(c.country) = ANY(string_to_array(:countries, ',')))
+            AND (CAST(:namePattern AS TEXT) IS NULL OR c.name ILIKE :namePattern)
+            AND (CAST(:countries AS TEXT) IS NULL
+                 OR c.country = ANY(string_to_array(:countries, ',')))
           """,
       nativeQuery = true)
-  Page<CatalogueListing> searchCatalogue(
-      @Param("query") String query,
-      @Param("countries") String countries,
+  Page<InstitutionCatalogueListingRow> searchCatalogue(
+      @Param("namePattern") @Nullable String namePattern,
+      @Param("countries") @Nullable String countries,
       Pageable pageable);
-
-  /** A scalar projection avoids loading templates as entities or exposing their internals. */
-  interface CatalogueListing {
-    UUID getId();
-
-    String getName();
-
-    String getCountry();
-
-    String getInstitutionType();
-
-    String getIdentifier();
-
-    String getLogoUrl();
-
-    /** Distinct, alphabetical CSV of API format names; empty string when unsupported. */
-    String getImportFormats();
-  }
 }
