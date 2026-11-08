@@ -40,7 +40,6 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -192,6 +191,7 @@ public class TransactionService {
   private final ReconciliationService reconciliationService;
   private final ReconciliationAdjustmentService reconciliationAdjustmentService;
   private final EntityManager entityManager;
+  private final TransactionReadContextService readContextService;
 
   public TransactionService(
       AccountLookupService accountLookupService,
@@ -211,7 +211,8 @@ public class TransactionService {
       AccountDataQualityService accountDataQualityService,
       ReconciliationService reconciliationService,
       ReconciliationAdjustmentService reconciliationAdjustmentService,
-      EntityManager entityManager) {
+      EntityManager entityManager,
+      TransactionReadContextService readContextService) {
     this.accountLookupService = accountLookupService;
     this.accessControlService = accessControlService;
     this.transactionRepository = transactionRepository;
@@ -230,6 +231,7 @@ public class TransactionService {
     this.reconciliationService = reconciliationService;
     this.reconciliationAdjustmentService = reconciliationAdjustmentService;
     this.entityManager = entityManager;
+    this.readContextService = readContextService;
   }
 
   /**
@@ -811,6 +813,23 @@ public class TransactionService {
     return transaction;
   }
 
+  /**
+   * A direct read includes voided originals but not soft-deleted transactions. The account path is
+   * checked first to prevent enumeration across accounts or workspaces.
+   */
+  @Transactional(readOnly = true)
+  public TransactionResponse getTransaction(
+      UUID accountId, UUID transactionId, AuthenticatedUserPrincipal actor) {
+    Account account = accountLookupService.findAccountOrThrow(accountId, actor);
+    accessControlService.requireAccountAccess(actor, account);
+    Transaction transaction =
+        transactionRepository
+            .findByIdAndAccountId(transactionId, accountId)
+            .orElseThrow(
+                () -> accessControlService.denyAsNotFound(actor, "Transaction", transactionId));
+    return toResponses(List.of(transaction)).get(0);
+  }
+
   private Optional<Transaction> findReplay(UUID accountId, CreateTransactionRequest request) {
     if (request.externalId() == null) {
       return Optional.empty();
@@ -1377,7 +1396,7 @@ public class TransactionService {
         categoryAssignedBy,
         openingBalanceDates(List.of(transaction)),
         reconciliationAdjustmentService.adjustmentStates(List.of(transaction)),
-        accountNames(List.of(transaction)));
+        readContextService.load(List.of(transaction)));
   }
 
   private TransactionResponse toResponse(
@@ -1385,11 +1404,18 @@ public class TransactionService {
       String categoryAssignedBy,
       Map<UUID, LocalDate> openingBalanceDates,
       Map<UUID, String> adjustmentStates,
-      Map<UUID, String> accountNames) {
+      TransactionReadContextService.Context context) {
+    UUID accountId = transaction.getAccount().getId();
+    TransactionReadContextService.AccountDetails account = context.accounts().get(accountId);
+    UUID counterpartyAccountId = transaction.getCounterpartyAccountId();
+    TransactionReadContextService.AccountDetails counterparty =
+        counterpartyAccountId == null ? null : context.accounts().get(counterpartyAccountId);
     return new TransactionResponse(
         transaction.getId(),
-        transaction.getAccount().getId(),
-        accountNames.get(transaction.getAccount().getId()),
+        accountId,
+        account == null ? transaction.getAccount().getName() : account.name(),
+        account == null ? null : account.portfolioId(),
+        account == null ? null : account.portfolioName(),
         transaction.getTransactionType(),
         transaction.getBookingDate(),
         transaction.getAmount(),
@@ -1424,7 +1450,15 @@ public class TransactionService {
         transaction.getCorrectsTransactionId(),
         transaction.getRestoresTransactionId(),
         transaction.getDeletedAt(),
-        transaction.getCounterpartyAccountId(),
+        counterpartyAccountId,
+        counterparty == null ? null : counterparty.name(),
+        transaction.getFxRateToAccountCurrency() == null
+            ? null
+            : transaction.getAmountInAccountCurrency(),
+        extractBankTransactionCode(transaction.getRawSourceData()),
+        transaction.getImportBatchId() == null
+            ? null
+            : context.imports().get(transaction.getImportBatchId()),
         VersionPreconditionService.persistedVersion(transaction.getVersion(), VERSIONED_RESOURCE),
         AccountDataQualityService.transactionWarnings(transaction, openingBalanceDates));
   }
@@ -1457,13 +1491,16 @@ public class TransactionService {
         : TransactionRemovalValues.VOID;
   }
 
-  /** Responses for many rows at once, with how each got its category (one log query). */
+  /** Responses for an entire page, with constant-query enrichment regardless of its size. */
   public List<TransactionResponse> toResponses(List<Transaction> transactions) {
+    if (transactions.isEmpty()) {
+      return List.of();
+    }
     Map<UUID, String> assignments = latestAssignments(transactions);
     Map<UUID, LocalDate> openingBalanceDates = openingBalanceDates(transactions);
     Map<UUID, String> adjustmentStates =
         reconciliationAdjustmentService.adjustmentStates(transactions);
-    Map<UUID, String> accountNames = accountNames(transactions);
+    TransactionReadContextService.Context context = readContextService.load(transactions);
     return transactions.stream()
         .map(
             transaction ->
@@ -1472,32 +1509,20 @@ public class TransactionService {
                     assignments.get(transaction.getId()),
                     openingBalanceDates,
                     adjustmentStates,
-                    accountNames))
+                    context))
         .toList();
   }
 
-  // US-07-35: every row names its account, so one list serves the per-account and the
-  // workspace-wide ledger. An account this transaction has loaded already answers from memory;
-  // the others are read in one query for the whole batch, never one per row.
-  private Map<UUID, String> accountNames(Collection<Transaction> transactions) {
-    Map<UUID, String> names = new HashMap<>();
-    Set<UUID> unloaded = new HashSet<>();
-    for (Transaction transaction : transactions) {
-      Account account = transaction.getAccount();
-      if (Hibernate.isInitialized(account)) {
-        names.put(account.getId(), account.getName());
-      } else {
-        unloaded.add(account.getId());
-      }
+  /**
+   * US-07-37: only the named ISO 20022 or proprietary bank code is exposed. Other raw JSON, which
+   * can contain personal financial data from the imported file, remains private.
+   */
+  private String extractBankTransactionCode(String rawSourceData) {
+    if (rawSourceData == null) {
+      return null;
     }
-    if (!unloaded.isEmpty()) {
-      entityManager
-          .createQuery("SELECT a.id, a.name FROM Account a WHERE a.id IN :ids", Object[].class)
-          .setParameter("ids", unloaded)
-          .getResultList()
-          .forEach(row -> names.put((UUID) row[0], (String) row[1]));
-    }
-    return names;
+    JsonNode code = objectMapper.readTree(rawSourceData).path("bankTransactionCode");
+    return code.isString() && !code.stringValue().isBlank() ? code.stringValue() : null;
   }
 
   // A correction keeps the original's raw_source_data (US-07-06) and sets a corrected MCC in it;
