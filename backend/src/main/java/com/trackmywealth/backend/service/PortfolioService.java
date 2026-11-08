@@ -235,7 +235,10 @@ public class PortfolioService {
         totals.totalInWorkspaceCurrency(),
         totals.complete(),
         totals.valueStatus(),
-        asOf);
+        asOf,
+        portfolio.getCatalogueInstitution() == null
+            ? null
+            : portfolio.getCatalogueInstitution().getName());
   }
 
   /**

@@ -2,6 +2,7 @@ package com.trackmywealth.backend.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -28,6 +29,13 @@ import org.jspecify.annotations.Nullable;
  *     currency, each once and sorted
  * @param sections only the sections holding at least one active account, in {@link
  *     PortfolioSection} order
+ * @param institutionName the catalogue institution's name, or null for an unlinked portfolio
+ * @param conversionRate the informational rate for one unit of portfolio currency in workspace
+ *     currency; not applied to the already independently converted account totals. Null for equal
+ *     currencies or when no rate resolves
+ * @param conversionRateDate the valuation date requested for the displayed rate, not necessarily
+ *     the stored rate's date (a carried-forward rate can be older)
+ * @param lastImport the newest still-committed batch among the portfolio's active accounts
  */
 public record PortfolioViewResponse(
     UUID portfolioId,
@@ -43,13 +51,24 @@ public record PortfolioViewResponse(
     boolean complete,
     ValueStatus valueStatus,
     List<String> warnings,
-    List<Section> sections) {
+    List<Section> sections,
+    @Nullable String institutionName,
+    @Nullable String logoUrl,
+    @Nullable BigDecimal conversionRate,
+    @Nullable LocalDate conversionRateDate,
+    @Nullable LastImport lastImport) {
 
   public PortfolioViewResponse {
     // Defensive/immutable copies (SpotBugs EI_EXPOSE_REP).
     warnings = List.copyOf(warnings);
     sections = List.copyOf(sections);
   }
+
+  /**
+   * The newest committed import for an active account in the portfolio. The count is the number
+   * of rows actually imported, not duplicates or rejected rows; rolled-back batches are excluded.
+   */
+  public record LastImport(OffsetDateTime uploadedAt, String fileFormat, int transactionCount) {}
 
   /**
    * One kind of account within the portfolio.
@@ -99,6 +118,9 @@ public record PortfolioViewResponse(
    * @param dueDate for a credit card: the due date of its current statement; {@code null} while its
    *     statement cycle is not configured
    * @param linkedPropertyAccountId for a mortgage: the property account it finances, if linked
+   * @param maskedIdentifier the stored server-masked IBAN or card number; never a raw identifier
+   * @param reconciliationStatus the account-level status from {@link ReconciliationStatusValues}
+   * @param statementDate the card's most recently closed statement date, if configured
    */
   public record AccountRow(
       UUID accountId,
@@ -116,7 +138,10 @@ public record PortfolioViewResponse(
       @Nullable LocalDate positionsAsOf,
       @Nullable BigDecimal totalReturn,
       @Nullable LocalDate dueDate,
-      @Nullable UUID linkedPropertyAccountId) {
+      @Nullable UUID linkedPropertyAccountId,
+      @Nullable String maskedIdentifier,
+      String reconciliationStatus,
+      @Nullable LocalDate statementDate) {
 
     public AccountRow {
       warnings = List.copyOf(warnings);
