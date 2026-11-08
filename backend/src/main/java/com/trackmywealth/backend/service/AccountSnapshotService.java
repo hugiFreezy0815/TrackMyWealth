@@ -193,7 +193,11 @@ public class AccountSnapshotService {
     return toResponse(snapshot, holdings, securities);
   }
 
-  /** Newest first; two sources on the same date are ordered by source name. */
+  /**
+   * One page of the account's snapshots in the order {@code pageable} carries (by default newest
+   * first). Snapshots on the same date are ordered by {@code id}, the tie-breaker every page ends
+   * with (#473); their source no longer takes part in the order.
+   */
   @Transactional(readOnly = true)
   public Page<AccountSnapshotResponse> list(
       UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {

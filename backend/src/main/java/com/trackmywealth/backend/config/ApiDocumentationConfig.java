@@ -330,14 +330,14 @@ public class ApiDocumentationConfig {
           .map(parameter -> parameter.getParameterAnnotation(Paged.class))
           .filter(Objects::nonNull)
           .findFirst()
-          .ifPresent(
-              paged -> documentPaging(operation, SortWhitelist.of(paged), paged.allowSort()));
+          .ifPresent(paged -> documentPaging(operation, SortWhitelist.of(paged)));
       return operation;
     };
   }
 
+  // A fixed-order list documents no sort parameter: its operation description states the order.
   private static void documentPaging(
-      io.swagger.v3.oas.models.Operation operation, SortWhitelist whitelist, boolean allowSort) {
+      io.swagger.v3.oas.models.Operation operation, SortWhitelist whitelist) {
     Set<String> pagingNames =
         Set.of(
             PAGEABLE_PARAMETER,
@@ -369,7 +369,7 @@ public class ApiDocumentationConfig {
                     .minimum(BigDecimal.ONE)
                     .maximum(BigDecimal.valueOf(PagingValues.MAX_SIZE))
                     ._default(PagingValues.DEFAULT_SIZE)));
-    if (allowSort) {
+    if (!whitelist.isFixedOrder()) {
       List<String> sortValues = new ArrayList<>();
       for (String field : whitelist.fieldNames()) {
         sortValues.add(field);

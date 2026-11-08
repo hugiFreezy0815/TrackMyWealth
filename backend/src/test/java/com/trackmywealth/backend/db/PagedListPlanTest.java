@@ -3,14 +3,23 @@ package com.trackmywealth.backend.db;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.trackmywealth.backend.controller.AccountSnapshotController;
+import com.trackmywealth.backend.controller.AmortisationScheduleController;
+import com.trackmywealth.backend.controller.CustomAssetValuationController;
 import com.trackmywealth.backend.controller.ImportBatchController;
 import com.trackmywealth.backend.controller.InstitutionCatalogueController;
+import com.trackmywealth.backend.controller.LoanRepaymentController;
 import com.trackmywealth.backend.controller.ReconciliationController;
+import com.trackmywealth.backend.controller.SettlementMatchController;
 import com.trackmywealth.backend.controller.TransactionController;
+import com.trackmywealth.backend.dto.SettlementMatchValues;
 import com.trackmywealth.backend.repository.AccountSnapshotRepository;
+import com.trackmywealth.backend.repository.AmortisationScheduleEntryRepository;
+import com.trackmywealth.backend.repository.CustomAssetValuationRepository;
 import com.trackmywealth.backend.repository.ImportBatchRepository;
 import com.trackmywealth.backend.repository.InstitutionCatalogueRepository;
+import com.trackmywealth.backend.repository.LoanPaymentRepository;
 import com.trackmywealth.backend.repository.ReconciliationResultRepository;
+import com.trackmywealth.backend.repository.SettlementMatchRepository;
 import com.trackmywealth.backend.repository.TransactionRepository;
 import com.trackmywealth.backend.testsupport.RowLevelSecurityRole;
 import com.trackmywealth.backend.web.Paged;
@@ -23,11 +32,17 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,8 +58,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * US-29-06 (#395): every paged list's page and count query, as Hibernate generates them from the
- * repositories, is read through a V115 index in page order - no {@code Sort} node.
+ * US-29-06 (#395), US-29-13 (#473): every paged list's page and count query, as Hibernate generates
+ * them from the repositories, is read through a V115 or V116 index in page order - no {@code Sort}
+ * node. The settlement-match queue is the exception: it is checked to stay inside the caller's
+ * workspace, and may sort that workspace's own queue.
  *
  * <p>The reads go through the repositories with the order the controllers' {@code @Paged}
  * whitelists resolve, so a changed derived query, entity restriction or default sort is planned as
@@ -87,6 +104,8 @@ class PagedListPlanTest {
   private static final String PLAN_ENTRY = "LOG:  duration: ";
   private static final int PAGE_SIZE = 50;
   private static final Duration LOG_WAIT = Duration.ofSeconds(10);
+  private static final Pattern SETTLEMENT_MATCH_INDEX =
+      Pattern.compile("\\b(?:idx|uq)_settlement_match_\\w+");
 
   // Seeded by the first test to run (the schema exists once the context has started).
   private static PagedListFixture.Ids fixture;
@@ -95,6 +114,10 @@ class PagedListPlanTest {
   @Autowired EntityManager entityManager;
   @Autowired TransactionRepository transactions;
   @Autowired AccountSnapshotRepository snapshots;
+  @Autowired CustomAssetValuationRepository valuations;
+  @Autowired AmortisationScheduleEntryRepository schedule;
+  @Autowired LoanPaymentRepository repayments;
+  @Autowired SettlementMatchRepository settlementMatches;
   @Autowired ImportBatchRepository importBatches;
   @Autowired ReconciliationResultRepository reconciliations;
   @Autowired InstitutionCatalogueRepository catalogue;
@@ -176,8 +199,107 @@ class PagedListPlanTest {
     Plans plans =
         asRuntimeRole(() -> snapshots.findByAccountIdAndWithdrawnAtIsNull(fixture.account(), page));
 
-    assertThat(plans.page()).contains("idx_account_snapshot_paged");
+    assertThat(plans.page()).contains("idx_account_snapshot_history_order");
     assertSortFree(plans);
+  }
+
+  // US-29-13 (#473): the lists V116 indexes, each read as its service reads it.
+
+  @Test
+  void valuationHistoryReadsItsAccountOrderIndex() {
+    Pageable page =
+        PageRequest.of(0, PAGE_SIZE, sort(CustomAssetValuationController.class, "listValuations"));
+
+    Plans plans = asRuntimeRole(() -> valuations.findByAccountId(fixture.asset(), page));
+
+    assertThat(plans.page()).contains("idx_custom_asset_valuation_history_order");
+    assertSortFree(plans);
+  }
+
+  @Test
+  void amortisationScheduleReadsItsAccountOrderIndex() {
+    Pageable page =
+        PageRequest.of(0, PAGE_SIZE, sort(AmortisationScheduleController.class, "listEntries"));
+
+    Plans plans = asRuntimeRole(() -> schedule.findByAccountId(fixture.loan(), page));
+
+    assertThat(plans.page()).contains("idx_amortisation_schedule_order");
+    assertSortFree(plans);
+  }
+
+  @Test
+  void repaymentHistoryReadsTheWorkspaceLedLoanIndexUnderRowLevelSecurity() {
+    Pageable page =
+        PageRequest.of(0, PAGE_SIZE, sort(LoanRepaymentController.class, "listRepayments"));
+
+    Plans plans =
+        asRuntimeRole(
+            () -> repayments.findVisibleInEffect(fixture.loan(), Set.of(fixture.account()), page));
+
+    assertThat(plans.page()).contains(RLS_CONTEXT).contains("idx_loan_payment_history_order");
+    assertSortFree(plans);
+  }
+
+  @Test
+  void settlementQueueReadsOnlyTheCallersWorkspaceThroughAWorkspaceLedIndex() {
+    // The other tenant holds 20,000 PROPOSED matches: a status-led index would walk them.
+    Pageable page = PageRequest.of(0, PAGE_SIZE, sort(SettlementMatchController.class, "list"));
+
+    Plans plans =
+        asRuntimeRole(
+            () ->
+                settlementMatches.findActionable(
+                    SettlementMatchValues.PROPOSED,
+                    null,
+                    null,
+                    Set.of(fixture.account(), fixture.card()),
+                    page));
+
+    assertSettlementMatchesReadWithinTheWorkspace(plans);
+  }
+
+  @Test
+  void oneCardsSettlementQueueReadsOnlyThatCardsMatches() {
+    Pageable page = PageRequest.of(0, PAGE_SIZE, sort(SettlementMatchController.class, "list"));
+
+    Plans plans =
+        asRuntimeRole(
+            () ->
+                settlementMatches.findActionable(
+                    SettlementMatchValues.PROPOSED,
+                    null,
+                    fixture.card(),
+                    Set.of(fixture.account(), fixture.card()),
+                    page));
+
+    assertSettlementMatchesReadWithinTheWorkspace(plans);
+  }
+
+  @Test
+  void restoreListReadsOnlyTheAccountsRemovedRowsThroughItsPartialIndex() {
+    // 1,000 removed rows of the account, half deleted and half voided, beside the account-wide
+    // ledgers of 50,000 rows; a fixed order, so the page is unsorted
+    // (PagingValues.requireBoundedFixedOrder). The partial index holds removed rows only, so the
+    // page and its count read the account's restore list, never its ledger. Whether PostgreSQL
+    // then follows the index order or sorts that list depends on its estimate of how many removed
+    // rows the account has (removals cluster in one account after a rollback); either way the work
+    // is bounded by the list itself (#473 review).
+    OffsetDateTime since = OffsetDateTime.now().minusDays(30);
+    for (int number : new int[] {0, PagedListFixture.REMOVED_ROWS / PAGE_SIZE - 1}) {
+      Pageable page = PageRequest.of(number, PAGE_SIZE);
+
+      Plans plans =
+          asRuntimeRole(
+              () -> transactions.findRestorableByAccountIdSince(fixture.rolledBack(), since, page));
+
+      for (String plan : List.of(plans.page(), plans.count())) {
+        assertThat(plan)
+            .as("restore page %d", number)
+            .contains(RLS_CONTEXT)
+            .contains("idx_transaction_restorable_order")
+            .doesNotContain("Seq Scan on transaction t ");
+      }
+    }
   }
 
   @Test
@@ -248,6 +370,30 @@ class PagedListPlanTest {
       }
     }
     throw new IllegalStateException(controller.getSimpleName() + "#" + method + " is not @Paged");
+  }
+
+  /**
+   * Every read of {@code settlement_match} goes through an index that starts with the caller's
+   * workspace or with one of its cards (a card belongs to one workspace), never a scan that reaches
+   * the other tenant's 20,000 proposals. The queue may still be sorted: with {@code
+   * m.cardAccount.id IN :accountIds} PostgreSQL often reads the caller's matches card by card and
+   * sorts them, which the caller's own pending matches bound, not the database (#473 review).
+   */
+  private static void assertSettlementMatchesReadWithinTheWorkspace(Plans plans) {
+    String all = String.join("\n", plans.all());
+    Matcher indexes = SETTLEMENT_MATCH_INDEX.matcher(all);
+    Set<String> used = new TreeSet<>();
+    while (indexes.find()) {
+      used.add(indexes.group());
+    }
+    assertThat(all).contains(RLS_CONTEXT).doesNotContain("Seq Scan on settlement_match");
+    assertThat(used)
+        .as("settlement_match indexes read")
+        .isNotEmpty()
+        .isSubsetOf(
+            "idx_settlement_match_queue_order",
+            "idx_settlement_match_card_queue_order",
+            "idx_settlement_match_card");
   }
 
   private static void assertSortFree(Plans plans) {
@@ -326,7 +472,9 @@ class PagedListPlanTest {
       String window = log.substring(log.indexOf(marker + "-start"), log.indexOf(marker + "-end"));
       List<String> plans = new ArrayList<>();
       for (String entry : window.split(PLAN_ENTRY)) {
-        if (entry.contains("Query Text:") && !entry.contains(marker)) {
+        // The window ends inside the end marker's own entry, cut before the marker: an entry
+        // without a plan node is that remnant, not a read.
+        if (entry.contains("Query Text:") && entry.contains("(cost=") && !entry.contains(marker)) {
           plans.add(entry);
         }
       }
@@ -350,7 +498,8 @@ class PagedListPlanTest {
 
     private static boolean isCount(String plan) {
       String query = plan.substring(plan.indexOf("Query Text:"));
-      return query.substring(0, query.indexOf('\n')).contains("count(");
+      // Hibernate writes count(, a native count query (the restore list's) COUNT(.
+      return query.substring(0, query.indexOf('\n')).toLowerCase(Locale.ROOT).contains("count(");
     }
   }
 }

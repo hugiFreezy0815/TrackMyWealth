@@ -148,8 +148,7 @@ public class SettlementMatchService {
     accessControlService.requireAccountAccess(
         actor, accountLookupService.findAccountOrThrow(sourceId, actor));
 
-    return new SettlementMatchRunResponse(
-        settlementDetectionService.countNewProposalsForCard(cardAccountId));
+    return settlementDetectionService.detectForCard(cardAccountId);
   }
 
   /** A paged match queue, filtered by both accessible accounts before counting and slicing. */

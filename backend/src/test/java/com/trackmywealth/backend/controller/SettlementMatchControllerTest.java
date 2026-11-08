@@ -295,10 +295,54 @@ class SettlementMatchControllerTest {
     SettlementMatchRunResponse first = run(token, a.card());
     SettlementMatchRunResponse second = run(token, a.card());
 
-    assertThat(first.newlyProposed()).isZero();
-    assertThat(second.newlyProposed()).isZero();
+    assertThat(first).isEqualTo(SettlementMatchRunResponse.NOTHING);
+    assertThat(second).isEqualTo(SettlementMatchRunResponse.NOTHING);
     assertThat(matches(token, null)).isEmpty();
     assertThat(matches(token, "CONFIRMED")).isEmpty();
+  }
+
+  // #473: run answers what this run did, never the card's match history. The legs go in through
+  // SQL, so the write-time detection has not seen them yet and the run is the first to match.
+  @Test
+  void runningMatchingCountsOnlyWhatThisRunProposedAndConfirmed() {
+    String token = bootstrapAdministrator();
+    Accounts a = accountsWithSource(token);
+    insertLeg(a.current(), "WITHDRAWAL", "-1200.00", SEP_3); // one exact pair: confirmed
+    insertLeg(a.card(), "SETTLEMENT", "1200.00", SEP_3);
+    insertLeg(a.current(), "WITHDRAWAL", "-500.00", SEP_3); // two payments, one credit: proposed
+    insertLeg(a.current(), "WITHDRAWAL", "-500.00", SEP_4);
+    insertLeg(a.card(), "SETTLEMENT", "500.00", SEP_4);
+
+    client(token)
+        .post()
+        .uri("/api/v1/accounts/" + a.card() + "/settlement-matches/run")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody()
+        .jsonPath("$.newlyProposed")
+        .isEqualTo(2)
+        .jsonPath("$.newlyConfirmed")
+        .isEqualTo(1)
+        .jsonPath("$.length()")
+        .isEqualTo(2);
+
+    assertThat(run(token, a.card())).isEqualTo(SettlementMatchRunResponse.NOTHING);
+    assertThat(matches(token, "PROPOSED")).hasSize(2);
+    assertThat(matches(token, "CONFIRMED")).hasSize(1);
+  }
+
+  @Test
+  void listingTheMatchesOfAnUnknownCardIsNotFound() {
+    String token = bootstrapAdministrator();
+    accountsWithSource(token);
+
+    client(token)
+        .get()
+        .uri("/api/v1/settlement-matches?cardAccountId=" + UUID.randomUUID())
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.NOT_FOUND);
   }
 
   @Test
@@ -899,7 +943,7 @@ class SettlementMatchControllerTest {
     assertThat(matches(token, "PROPOSED"))
         .extracting(SettlementMatchResponse::id)
         .containsExactlyElementsOf(expected);
-    assertThat(run(token, a.card()).newlyProposed()).isZero();
+    assertThat(run(token, a.card())).isEqualTo(SettlementMatchRunResponse.NOTHING);
     assertThat(matches(token, "PROPOSED"))
         .extracting(SettlementMatchResponse::id)
         .containsExactlyElementsOf(expected);
@@ -1094,6 +1138,24 @@ class SettlementMatchControllerTest {
         statement.setObject(5, transactionId);
         statement.executeUpdate();
       }
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  // A ledger row written straight to the table: no detection runs for it.
+  private void insertLeg(UUID accountId, String type, String amount, LocalDate date) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency) SELECT workspace_id, id, ?, ?, ?, 'CHF'"
+                    + " FROM account WHERE id = ?")) {
+      statement.setString(1, type);
+      statement.setObject(2, date);
+      statement.setBigDecimal(3, new BigDecimal(amount));
+      statement.setObject(4, accountId);
+      assertThat(statement.executeUpdate()).isEqualTo(1);
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }

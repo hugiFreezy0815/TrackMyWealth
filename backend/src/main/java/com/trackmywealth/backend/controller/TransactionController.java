@@ -49,6 +49,12 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Transactions")
 public class TransactionController {
 
+  // The restore list's order is COALESCE(deleted_at, voided_at), which no single response field
+  // carries (TransactionRepository.findRestorableByAccountIdSince).
+  private static final String RESTORE_LIST_ORDER =
+      "most recently removed first (deletedAt, or voidedAt for a voided row, descending), then id"
+          + " descending";
+
   private final TransactionService transactionService;
   private final TransactionCorrectionService transactionCorrectionService;
   private final TransactionRemovalService transactionRemovalService;
@@ -245,16 +251,13 @@ public class TransactionController {
       operationId = "listRemovedTransactions",
       summary = "List an account's removed transactions",
       description =
-          "Fixed newest-removal-first order (COALESCE(deletedAt, voidedAt) descending, id"
-              + " descending); only page and size are accepted, not sort.")
+          "Fixed order: "
+              + RESTORE_LIST_ORDER
+              + ". Takes page and size only; any sort is a 400 INVALID_SORT.")
   @GetMapping("/transactions/deleted")
   public PageResponse<TransactionResponse> listRestorableTransactions(
       @PathVariable UUID accountId,
-      @Paged(
-              sort = @SortField(name = "removedAt", properties = "deletedAt"),
-              defaultSort = "removedAt,desc",
-              allowSort = false)
-          Pageable pageable,
+      @Paged(fixedOrder = RESTORE_LIST_ORDER) Pageable pageable,
       @AuthenticationPrincipal AuthenticatedUserPrincipal actor) {
     return PageResponse.of(transactionRemovalService.listRestorable(accountId, pageable, actor));
   }

@@ -46,8 +46,11 @@ and `cardAccountId`, then follow `page.totalPages` to read the entire visible re
 After confirming, rejecting, importing or rerunning matching, refresh from page 0.
 
 `POST /api/v1/accounts/{cardAccountId}/settlement-matches/run` is an action, **not a paged
-list**. It returns `{ "newlyProposed": 0 }` (the number of proposals inserted by this run),
-never historical matches. Read newly found or confirmed matches through the paged GET endpoint.
+list**. It answers what this run changed, never the card's match history:
+`{ "newlyProposed": 2, "newlyConfirmed": 1 }` counts the proposals it added and the exact,
+unambiguous pairs it confirmed itself. Matches that already existed are not counted, so running
+it again answers `0` for both. Read the matches through the paged GET endpoint
+(`?cardAccountId=…&status=…`).
 
 The server owns the envelope rather than serializing Spring Data's `Page`. An empty first page is:
 
@@ -97,8 +100,9 @@ GET /api/v1/accounts/{accountId}/transactions?page=1&size=50&sort=bookingDate,de
 
 ### Sorting
 
-Each paged endpoint except the deleted-transactions restore list declares a whitelist of **response field names**. Use `sort=<field>`,
-`sort=<field>,asc` or `sort=<field>,desc`, with lower-case direction and no extra spaces.
+Each paged endpoint except the deleted-transactions restore list declares a whitelist of
+**response field names**. Use `sort=<field>`, `sort=<field>,asc` or `sort=<field>,desc`, with
+lower-case direction and no extra spaces.
 Omitting the direction means ascending; omitting `sort` entirely uses the endpoint default.
 Multiple `sort` parameters are allowed and applied in request order, but each field may appear
 only once. The field names and spellings must match the published OpenAPI `sort` parameter enum.
@@ -116,7 +120,7 @@ only once. The field names and spellings must match the published OpenAPI `sort`
 | `GET /api/v1/accounts/{accountId}/repayments` | `bookingDate` | `bookingDate,desc` | `id` |
 | `GET /api/v1/accounts/{accountId}/amortisation-schedule` | `dueDate` | `dueDate,asc` | `id` |
 | `GET /api/v1/settlement-matches` | `createdAt` | `createdAt,desc` | `id` |
-| `GET /api/v1/accounts/{accountId}/transactions/deleted` | **No client sort** | Most recently removed first: `COALESCE(deleted_at, voided_at) DESC` | `id DESC` |
+| `GET /api/v1/accounts/{accountId}/transactions/deleted` | **None: fixed order** | Most recently removed first (`deletedAt`, or `voidedAt` for a voided row, descending) | `id`, descending |
 
 `bookingDate` sorts first by booking date and then by creation time before the final `id`
 tie-breaker. `amount` sorts by the transaction's value in the **account currency**, not
@@ -132,8 +136,10 @@ An unknown field (including an entity property not present in the response white
 field, blank, malformed direction or otherwise malformed `sort` returns HTTP 400 with
 `code: "INVALID_SORT"`; it is **not silently ignored**. The problem `detail` names the allowed
 fields. Clients should handle the stable `code`, not parse the human-readable `detail`.
-For the deleted-transactions restore list, any supplied `sort` returns `INVALID_SORT`:
-the removal timestamp is not exposed as a sortable response field; the SQL order is fixed.
+The deleted-transactions restore list has a **fixed order**: its OpenAPI operation documents no
+`sort` parameter, and any `sort` value returns `INVALID_SORT` with a `detail` naming that order.
+The order runs over two fields (a deleted row's `deletedAt`, a voided row's `voidedAt`), so no
+single response field could be offered as a sort field.
 
 ### Offset paging and refresh after imports
 

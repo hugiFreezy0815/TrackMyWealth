@@ -6990,8 +6990,9 @@ paths:
       tags:
       - Transactions
       summary: List an account's removed transactions
-      description: "Fixed newest-removal-first order (COALESCE(deletedAt, voidedAt)\
-        \ descending, id descending); only page and size are accepted, not sort."
+      description: "Fixed order: most recently removed first (deletedAt, or voidedAt\
+        \ for a voided row, descending), then id descending. Takes page and size only;\
+        \ any sort is a 400 INVALID_SORT."
       operationId: listRemovedTransactions
       parameters:
       - name: accountId
@@ -21827,7 +21828,11 @@ components:
         newlyProposed:
           type: integer
           format: int32
+        newlyConfirmed:
+          type: integer
+          format: int32
       required:
+      - newlyConfirmed
       - newlyProposed
     SettlementSourceResponse:
       type: object

@@ -30,7 +30,6 @@ import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -606,15 +605,16 @@ public class TransactionRemovalService {
       UUID accountId, Pageable pageable, AuthenticatedUserPrincipal actor) {
     Account account = accountLookupService.findAccountOrThrow(accountId, actor);
     accessControlService.requireAccountAccess(actor, account);
-    Pageable bounded = PagingValues.requireBounded(pageable, "id");
-    // Native SQL orders by COALESCE(deleted_at, voided_at), which is not a single entity
-    // property. Strip the annotation's internal sort to avoid rewriting the fixed SQL order.
-    Pageable nativePage = PageRequest.of(bounded.getPageNumber(), bounded.getPageSize());
+    // The native query fixes the order (COALESCE(deleted_at, voided_at) DESC, id DESC); the page
+    // must not carry a Sort, which Spring Data would append to it.
     Page<Transaction> rows =
         transactionRepository.findRestorableByAccountIdSince(
-            accountId, restoreWindowStart(), nativePage);
+            accountId, restoreWindowStart(), PagingValues.requireBoundedFixedOrder(pageable));
+    // One batched conversion for the page, not one lookup per row.
     return new PageImpl<>(
-        transactionService.toResponses(rows.getContent()), bounded, rows.getTotalElements());
+        transactionService.toResponses(rows.getContent()),
+        rows.getPageable(),
+        rows.getTotalElements());
   }
 
   /**

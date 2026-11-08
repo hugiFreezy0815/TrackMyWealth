@@ -350,17 +350,19 @@ class AccountSnapshotControllerTest {
         .containsExactly(today(), today().minusMonths(1));
   }
 
+  // #473 AC: 120 snapshots, page=1&size=50 -> snapshots 51-100 and page 1, 50, 120, 3.
   @Test
-  void snapshotPagesKeepTotalsAndNewestDateOrder() {
+  void aLongSnapshotHistoryIsPagedNewestFirst() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse account = createAccount(token, "History", "CASH");
-    recordOk(token, account.id(), balanceOnly(today().minusMonths(1), "100.00"));
-    recordOk(token, account.id(), balanceOnly(today(), "200.00"));
+    for (int day = 0; day < 120; day++) {
+      recordOk(token, account.id(), balanceOnly(today().minusDays(day), "100.00"));
+    }
 
     PageResponse<AccountSnapshotResponse> second =
         client(token)
             .get()
-            .uri("/api/v1/accounts/" + account.id() + "/snapshots?page=1&size=1")
+            .uri("/api/v1/accounts/" + account.id() + "/snapshots?page=1&size=50")
             .exchange()
             .expectStatus()
             .isOk()
@@ -368,13 +370,21 @@ class AccountSnapshotControllerTest {
             .returnResult()
             .getResponseBody();
 
-    assertThat(second.page().number()).isEqualTo(1);
-    assertThat(second.page().size()).isEqualTo(1);
-    assertThat(second.page().totalElements()).isEqualTo(2);
-    assertThat(second.page().totalPages()).isEqualTo(2);
+    assertThat(second.page()).isEqualTo(new PageResponse.PageMetadata(1, 50, 120, 3));
+    // Newest first: the 51st to the 100th snapshot are 50 to 99 days old.
     assertThat(second.content())
         .extracting(AccountSnapshotResponse::snapshotDate)
-        .containsExactly(today().minusMonths(1));
+        .containsExactlyElementsOf(
+            java.util.stream.IntStream.range(50, 100).mapToObj(today()::minusDays).toList());
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + account.id() + "/snapshots?sort=unknown")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT");
   }
 
   @Test

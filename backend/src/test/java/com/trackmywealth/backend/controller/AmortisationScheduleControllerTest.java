@@ -86,21 +86,24 @@ class AmortisationScheduleControllerTest {
     }
   }
 
+  // #473: a 30-year monthly mortgage has 360 entries; paged earliest due date first.
   @Test
-  void schedulePagesPreserveChronologicalOrderAndTotals() {
+  void aLongScheduleIsPagedEarliestDueDateFirst() {
     String token = bootstrapAdministrator();
     UUID mortgage = createMortgage(token);
-    post(token, mortgage, entry(APRIL, "798.00", "1202.00", "497598.00"))
-        .expectStatus()
-        .isCreated();
-    post(token, mortgage, entry(MARCH, "800.00", "1200.00", "498800.00"))
-        .expectStatus()
-        .isCreated();
+    for (int month = 0; month < 120; month++) {
+      post(
+              token,
+              mortgage,
+              entry(MARCH.plusMonths(month), "800.00", "1200.00", (498800 - 1200 * month) + ".00"))
+          .expectStatus()
+          .isCreated();
+    }
 
     PageResponse<AmortisationScheduleEntryResponse> second =
         client(token)
             .get()
-            .uri("/api/v1/accounts/" + mortgage + "/amortisation-schedule?page=1&size=1")
+            .uri("/api/v1/accounts/" + mortgage + "/amortisation-schedule?page=1&size=50")
             .exchange()
             .expectStatus()
             .isOk()
@@ -110,11 +113,20 @@ class AmortisationScheduleControllerTest {
             .returnResult()
             .getResponseBody();
 
-    assertThat(second.page().totalElements()).isEqualTo(2);
-    assertThat(second.page().totalPages()).isEqualTo(2);
+    assertThat(second.page()).isEqualTo(new PageResponse.PageMetadata(1, 50, 120, 3));
     assertThat(second.content())
         .extracting(AmortisationScheduleEntryResponse::dueDate)
-        .containsExactly(APRIL);
+        .containsExactlyElementsOf(
+            java.util.stream.IntStream.range(50, 100).mapToObj(MARCH::plusMonths).toList());
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + mortgage + "/amortisation-schedule?sort=unknown")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT");
   }
 
   @Test

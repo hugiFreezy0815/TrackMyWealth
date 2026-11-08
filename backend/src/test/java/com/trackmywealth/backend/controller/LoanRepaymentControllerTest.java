@@ -219,41 +219,52 @@ class LoanRepaymentControllerTest {
     assertThat(payment.principalAmount()).isEqualByComparingTo("1250.00");
   }
 
+  // #473 AC: 60 rows on the same date, read as pages 0 and 1 of 50, appear exactly once each - the
+  // id tie-breaker alone orders them.
   @Test
-  void repaymentPagesKeepTotalsForTiedBookingDates() {
+  void sixtyRepaymentsOnOneDateArePagedWithoutOverlap() {
     String token = bootstrapAdministrator();
     AccountSummaryResponse paying = createAccount(token, "CASH", "CHF");
     AccountSummaryResponse loan = createLoanWithoutRate(token, "20000.00");
+    java.util.Set<UUID> recorded = new java.util.HashSet<>();
+    for (int i = 0; i < 60; i++) {
+      recorded.add(
+          repay(token, loan.id(), payment(paying.id(), (100 + i) + ".00", null, null)).id());
+    }
 
-    repay(token, loan.id(), payment(paying.id(), "500.00", null, null));
-    repay(token, loan.id(), payment(paying.id(), "600.00", null, null));
+    PageResponse<LoanRepaymentResponse> page0 = repaymentPage(token, loan.id(), 0);
+    PageResponse<LoanRepaymentResponse> page1 = repaymentPage(token, loan.id(), 1);
 
-    PageResponse<LoanRepaymentResponse> first =
-        client(token)
-            .get()
-            .uri("/api/v1/accounts/" + loan.id() + "/repayments?page=0&size=1")
-            .exchange()
-            .expectStatus()
-            .isOk()
-            .expectBody(new ParameterizedTypeReference<PageResponse<LoanRepaymentResponse>>() {})
-            .returnResult()
-            .getResponseBody();
-    PageResponse<LoanRepaymentResponse> second =
-        client(token)
-            .get()
-            .uri("/api/v1/accounts/" + loan.id() + "/repayments?page=1&size=1")
-            .exchange()
-            .expectStatus()
-            .isOk()
-            .expectBody(new ParameterizedTypeReference<PageResponse<LoanRepaymentResponse>>() {})
-            .returnResult()
-            .getResponseBody();
+    assertThat(page0.page()).isEqualTo(new PageResponse.PageMetadata(0, 50, 60, 2));
+    assertThat(page0.content()).hasSize(50);
+    assertThat(page1.content()).hasSize(10);
+    assertThat(
+            java.util.stream.Stream.concat(page0.content().stream(), page1.content().stream())
+                .map(LoanRepaymentResponse::id)
+                .toList())
+        .doesNotHaveDuplicates()
+        .containsExactlyInAnyOrderElementsOf(recorded);
+    client(token)
+        .get()
+        .uri("/api/v1/accounts/" + loan.id() + "/repayments?sort=unknown")
+        .exchange()
+        .expectStatus()
+        .isEqualTo(HttpStatus.BAD_REQUEST)
+        .expectBody()
+        .jsonPath("$.code")
+        .isEqualTo("INVALID_SORT");
+  }
 
-    assertThat(first.page().totalElements()).isEqualTo(2);
-    assertThat(first.page().totalPages()).isEqualTo(2);
-    assertThat(first.content()).hasSize(1);
-    assertThat(second.content()).hasSize(1);
-    assertThat(first.content().get(0).id()).isNotEqualTo(second.content().get(0).id());
+  private PageResponse<LoanRepaymentResponse> repaymentPage(String token, UUID loanId, int page) {
+    return client(token)
+        .get()
+        .uri("/api/v1/accounts/" + loanId + "/repayments?page=" + page + "&size=50")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(new ParameterizedTypeReference<PageResponse<LoanRepaymentResponse>>() {})
+        .returnResult()
+        .getResponseBody();
   }
 
   @Test

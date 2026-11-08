@@ -519,7 +519,11 @@ class TransactionRemovalControllerTest {
         .isEqualTo(HttpStatus.BAD_REQUEST)
         .expectBody()
         .jsonPath("$.code")
-        .isEqualTo("INVALID_SORT");
+        .isEqualTo("INVALID_SORT")
+        .jsonPath("$.detail")
+        .value(
+            detail ->
+                assertThat(detail.toString()).contains("fixed order (most recently removed first"));
   }
 
   // --- T1: manual entry, soft delete ------------------------------------------------------------

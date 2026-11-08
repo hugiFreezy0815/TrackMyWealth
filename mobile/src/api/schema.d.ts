@@ -576,7 +576,7 @@ export interface paths {
     };
     /**
      * List an account's removed transactions
-     * @description Fixed newest-removal-first order (COALESCE(deletedAt, voidedAt) descending, id descending); only page and size are accepted, not sort.
+     * @description Fixed order: most recently removed first (deletedAt, or voidedAt for a voided row, descending), then id descending. Takes page and size only; any sort is a 400 INVALID_SORT.
      */
     get: operations['listRemovedTransactions'];
     put?: never;
@@ -3393,6 +3393,8 @@ export interface components {
     SettlementMatchRunResponse: {
       /** Format: int32 */
       newlyProposed: number;
+      /** Format: int32 */
+      newlyConfirmed: number;
     };
     SettlementSourceResponse: {
       /** Format: uuid */
