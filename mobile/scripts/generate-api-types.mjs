@@ -95,8 +95,15 @@ const outputs = [
 const stale = [];
 for (const [file, text] of outputs) {
   if ((await current(file)) === text) continue;
-  if (check) stale.push(file);
-  else await writeFile(path.join(mobile, file), text);
+  if (check) {
+    stale.push(file);
+    const existing = await current(file);
+    let mismatch = 0;
+    while (mismatch < Math.min(existing?.length ?? 0, text.length) && existing[mismatch] === text[mismatch]) mismatch++;
+    console.error('GENERATED TYPE FIRST DIFF', file, mismatch);
+    console.error('EXPECTED:', JSON.stringify(text.slice(Math.max(0, mismatch - 120), mismatch + 370)));
+    console.error('CURRENT:', JSON.stringify(existing?.slice(Math.max(0, mismatch - 120), mismatch + 370)));
+  } else await writeFile(path.join(mobile, file), text);
 }
 if (stale.length > 0) {
   for (const file of stale) {
