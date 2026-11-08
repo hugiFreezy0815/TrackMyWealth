@@ -52,6 +52,8 @@ class TransactionServiceTest {
   private final AccountLookupService accountLookupService = mock(AccountLookupService.class);
   private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
   private final SecurityRepository securityRepository = mock(SecurityRepository.class);
+  private final TransactionReadContextService readContextService =
+      mock(TransactionReadContextService.class);
   private final TransactionService service =
       new TransactionService(
           accountLookupService,
@@ -71,12 +73,15 @@ class TransactionServiceTest {
           mock(AccountDataQualityService.class),
           mock(ReconciliationService.class),
           mock(ReconciliationAdjustmentService.class),
-          mock(EntityManager.class));
+          mock(EntityManager.class),
+          readContextService);
 
   private Account depot;
 
   @BeforeEach
   void setUp() {
+    when(readContextService.load(any()))
+        .thenReturn(TransactionReadContextService.Context.EMPTY);
     depot = new Account();
     ReflectionTestUtils.setField(depot, "id", ACCOUNT);
     depot.setWorkspace(new Workspace());
