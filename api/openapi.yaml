@@ -7223,6 +7223,112 @@ paths:
       - NOT_FOUND
       - INTERNAL
   /api/v1/accounts/{accountId}/transactions/{transactionId}:
+    get:
+      tags:
+      - Transactions
+      summary: Read one transaction
+      operationId: getAccountTransaction
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: transactionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Correlation-Id
+        in: header
+        description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
+          \ otherwise the server generates a UUID."
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          minLength: 8
+          pattern: "[A-Za-z0-9._-]{8,64}"
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "401":
+          description: |-
+            Problem codes:
+            - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "404":
+          description: |-
+            Problem codes:
+            - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "500":
+          description: |-
+            Problem codes:
+            - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        default:
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+      x-problem-codes:
+      - VALIDATION_FAILED
+      - UNAUTHENTICATED
+      - NOT_FOUND
+      - INTERNAL
     put:
       tags:
       - Transactions
@@ -22264,6 +22370,27 @@ components:
       - removal
       - transaction
       - version
+    TransactionImportBatchResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileFormat:
+          type: string
+          description: Statement format the transaction was imported from.
+          enum:
+          - CSV
+          - SPREADSHEET
+          - PDF
+          - CAMT
+        uploadedAt:
+          type: string
+          format: date-time
+      required:
+      - fileFormat
+      - id
+      - uploadedAt
     TransactionRemovalResponse:
       type: object
       properties:
@@ -22307,6 +22434,15 @@ components:
           format: uuid
         accountName:
           type: string
+        portfolioId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        portfolioName:
+          type:
+          - string
+          - "null"
         transactionType:
           type: string
         bookingDate:
@@ -22468,6 +22604,25 @@ components:
           - string
           - "null"
           format: uuid
+        counterpartyAccountName:
+          type:
+          - string
+          - "null"
+        amountInAccountCurrency:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        bankTransactionCode:
+          type:
+          - string
+          - "null"
+        importBatch:
+          anyOf:
+          - $ref: "#/components/schemas/TransactionImportBatchResponse"
+          - type: "null"
         version:
           type: integer
           format: int32
@@ -22479,11 +22634,14 @@ components:
       - accountId
       - accountName
       - amount
+      - amountInAccountCurrency
+      - bankTransactionCode
       - bookingDate
       - categoryAssignedBy
       - categoryId
       - correctsTransactionId
       - counterpartyAccountId
+      - counterpartyAccountName
       - counterpartyName
       - createdAt
       - currency
@@ -22494,11 +22652,14 @@ components:
       - fxRateToAccountCurrency
       - grossAmount
       - id
+      - importBatch
       - internalTransfer
       - mcc
       - merchantDescription
       - netAmount
       - notes
+      - portfolioId
+      - portfolioName
       - quantity
       - reconciliationAdjustment
       - relatedTransactionId
