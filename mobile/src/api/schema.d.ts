@@ -9856,11 +9856,7 @@ export interface operations {
         /** @description Items per page; a larger value is capped to 200, and page.size in the response says the size applied. */
         size?: number;
         /** @description Repeatable <field>[,asc|desc]; any other field is a 400 INVALID_SORT. Default: occurredAt,desc. The order always ends with a unique tie-breaker, so pages never overlap. */
-        sort?: (
-          | 'occurredAt'
-          | 'occurredAt,asc'
-          | 'occurredAt,desc'
-        )[];
+        sort?: ('occurredAt' | 'occurredAt,asc' | 'occurredAt,desc')[];
       };
       header?: {
         /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
