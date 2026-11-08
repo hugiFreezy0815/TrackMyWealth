@@ -29,13 +29,15 @@ export function formatAmount(
   const scale = new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions()
     .maximumFractionDigits;
   const negative = value.startsWith('-');
+  // This is a type-only cast: the runtime value stays a string, never a JS number.
+  const exactInput = (negative ? value.slice(1) : value) as unknown as number;
   const parts = new Intl.NumberFormat(locale, {
     style: 'decimal',
     minimumFractionDigits: scale,
     maximumFractionDigits: scale,
     roundingMode: 'halfExpand',
     useGrouping: true,
-  } as Intl.NumberFormatOptions).formatToParts((negative ? value.slice(1) : value) as unknown as number);
+  } as Intl.NumberFormatOptions).formatToParts(exactInput);
   const isZero = parts.every(
     (part) => !['integer', 'fraction'].includes(part.type) || /^0+$/.test(part.value),
   );
