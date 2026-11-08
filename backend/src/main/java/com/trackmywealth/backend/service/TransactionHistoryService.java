@@ -52,13 +52,17 @@ public class TransactionHistoryService {
             FROM transaction_categorization_log l
             JOIN chain c ON c.id = l.transaction_id
       ), events AS (
-          SELECT c.created_at AS occurred_at,
+          SELECT CASE WHEN c.import_batch_id IS NOT NULL
+                      THEN COALESCE(ib.uploaded_at, c.created_at)
+                      ELSE c.created_at END AS occurred_at,
                  CASE WHEN c.import_batch_id IS NULL THEN 'CREATED' ELSE 'IMPORTED' END AS kind,
-                 c.created_by AS actor_id,
+                 CASE WHEN c.import_batch_id IS NULL THEN c.created_by
+                      ELSE NULL::uuid END AS actor_id,
                  NULL::uuid AS from_category_id, NULL::uuid AS to_category_id,
                  NULL::uuid AS related_transaction_id, c.import_batch_id AS import_batch_id,
                  NULL::text AS reason, c.id AS event_id
             FROM chain c
+            LEFT JOIN import_batch ib ON ib.id = c.import_batch_id
           UNION ALL
           SELECT l.assigned_at,
                  CASE WHEN l.is_reset THEN 'CATEGORY_RESET'
