@@ -189,14 +189,10 @@ class PagedListPlanTest {
           .contains("idx_transaction_account_category_order");
       assertSortFree(plans);
       assertIndexOnlyCount(plans);
-      // #520: the account's actual inbox density is 1%, not the category's
-      // database-wide density inflated by the other tenant's uncategorized rows.
-      // A poor row estimate can make the planner prefer the date index on page 0.
-      if (page == 0) {
-        assertThat(plans.page())
-            .contains("idx_transaction_account_category_order")
-            .doesNotContain("Rows Removed by Filter: 4786");
-      }
+      // #520: the account's actual inbox density is 1%, not the database-wide
+      // frequency inflated by the other tenant's uncategorized rows. Page zero
+      // must not walk the date index filtering thousands of unrelated entries.
+      assertThat(plans.page()).doesNotContain("Rows Removed by Filter:");
     }
   }
 
