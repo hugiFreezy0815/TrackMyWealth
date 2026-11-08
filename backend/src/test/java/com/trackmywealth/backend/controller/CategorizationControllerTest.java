@@ -779,6 +779,12 @@ class CategorizationControllerTest {
     TransactionResponse reset = resetCategory(token, card.id(), settlement.id());
     assertThat(reset.categoryId()).isNull();
     assertThat(reset.categoryAssignedBy()).isNull();
+    assertThat(
+            jdbcValue(
+                "SELECT COUNT(*) FROM transaction_categorization_log"
+                    + " WHERE transaction_id = ? AND is_reset = true AND category_id IS NULL",
+                settlement.id()))
+        .isEqualTo(1L);
   }
 
   @Test
