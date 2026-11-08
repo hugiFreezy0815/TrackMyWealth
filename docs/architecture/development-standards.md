@@ -117,6 +117,21 @@ cd backend
     `X-Correlation-Id` is honoured) and in the log MDC; quote it when reporting an error. Browser
     CORS must allow the header on requests and expose it on responses. `MdcTaskDecorator` carries
     the MDC onto `@Async` threads; work started on another executor must copy it the same way.
+  - **Success status declarations (#457).** A documented handler's `@SuccessStatus` is never
+    empty and may name only 2xx statuses. The ArchUnit bytecode rule must be able to read the
+    status of every response the handler builds: set it in the controller (its own methods and
+    lambdas) from an `HttpStatus` constant or a `ResponseEntity`/`VersionedResponse` factory
+    (`ResponseEntity.of(Optional)` counts as 200). An ordinary `HttpEntity` response has Spring's
+    implicit 200, since it cannot carry a status. A `ResponseEntity`, a response builder, an
+    `HttpStatus` returned by another class, or a status kept in a field, fails the build **even
+    when another branch has a known status**; build the status in the controller or add an
+    individually justified `Controller#method` entry to
+    `ArchitectureTest.REVIEWED_EXTERNAL_RESPONSE_STATUS_HANDLERS` (an entry that matches no
+    operation, or an overloaded one, fails the build too). A status passed in as a method
+    parameter is still invisible to the rule; the runtime `DocumentedSuccessStatusFilter` covers
+    it on tested paths. The defensive OpenAPI customizer ignores non-2xx values and keeps the
+    generated 200 if nothing valid is declared, but ArchUnit still fails the build.
+    `ArchitectureRulesBiteTest` proves these guards reject deliberate violations.
   - **OpenAPI must match the wire.** `/api-docs` describes exact decimals as strings, documents
     the optional correlation-id request/response header and the shared RFC 9457 problem response.
     `ApiConventionsIntegrationTest` guards the generated contract so runtime serialization and

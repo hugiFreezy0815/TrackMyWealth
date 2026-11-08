@@ -1,5 +1,8 @@
 package com.trackmywealth.backend.architecture;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import archfixture.config.ClientCoupledConfig;
@@ -13,11 +16,21 @@ import archfixture.service.ProviderCoupledService;
 import archfixture.service.WebCoupledService;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.lang.ArchRule;
 import com.trackmywealth.backend.architecture.leak.controller.LeakyController;
 import com.trackmywealth.backend.architecture.leak.dto.LeakyResponse;
 import com.trackmywealth.backend.architecture.leak.entity.LeakedEntity;
 import com.trackmywealth.backend.client.EcbFxRateProvider;
+import com.trackmywealth.fixtures.contract.InvalidSuccessStatusController;
+import io.swagger.v3.oas.annotations.Operation;
+import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
  * EPIC-29 (#149) DoD: the rules that keep JPA entities off the wire are shown to fail on a
@@ -140,6 +153,138 @@ class ArchitectureRulesBiteTest {
         .hasMessageContaining("UncheckedSortController.pageable")
         .hasMessageContaining("UncheckedSortController.sort")
         .hasMessageNotContaining("UncheckedSortController.whitelisted");
+  }
+
+  // #457: every new guard bites on a deliberately invalid documented handler, including a
+  // response factory in another class. A plain return still has Spring's implicit 200.
+  private static final JavaClasses INVALID_SUCCESS_STATUSES =
+      new ClassFileImporter().importClasses(InvalidSuccessStatusController.class);
+
+  @Test
+  void anEmptySuccessStatusDeclarationFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("emptyStatus() declares an empty @SuccessStatus");
+  }
+
+  @Test
+  void aNon2xxSuccessStatusDeclarationFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining(
+            "nonSuccessStatus() declares non-2xx @SuccessStatus value 400 BAD_REQUEST");
+  }
+
+  @Test
+  void anUnseenResponseStatusFromAnotherClassFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("externalStatus() returns a ResponseEntity")
+        .hasMessageContaining("externalStatusDeclaredOk() returns a ResponseEntity")
+        .hasMessageContaining("add a justified per-handler exemption")
+        .hasMessageNotContaining("simpleImplicitOk()");
+  }
+
+  @Test
+  void aMixedLocalAndExternalResponseStatusFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining(
+            "mixedLocalAndExternal(boolean) takes a response or status from another class")
+        .hasMessageContaining("ExternalResponses#created");
+  }
+
+  // A visible 200 on one branch does not vouch for a builder, a status or a status constant from
+  // another class on the other: each of these handlers really answers an undocumented 202.
+  @Test
+  void aResponseBuilderOrStatusFromAnotherClassFailsTheBuild() {
+    assertThatThrownBy(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining(
+            "builderFromHelper(boolean) takes a response or status from another class")
+        .hasMessageContaining("ExternalResponses#accepted")
+        .hasMessageContaining(
+            "statusFromHelper(boolean) takes a response or status from another class")
+        .hasMessageContaining("ExternalResponses#queued")
+        .hasMessageContaining(
+            "statusFromField(boolean) takes a response or status from another class")
+        .hasMessageContaining("ExternalResponses#QUEUED");
+  }
+
+  @Test
+  void aReviewedHandlerMayTakeItsStatusFromAnotherClass() {
+    ArchRule exempted =
+        methods()
+            .that()
+            .areDeclaredIn(InvalidSuccessStatusController.class)
+            .should(
+                ArchitectureTest.answerTheSuccessStatusesTheyDocument(
+                    Set.of("InvalidSuccessStatusController#builderFromHelper")));
+
+    assertThatThrownBy(() -> exempted.check(INVALID_SUCCESS_STATUSES))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageNotContaining("builderFromHelper(boolean) takes a response or status")
+        .hasMessageContaining("statusFromHelper(boolean) takes a response or status");
+  }
+
+  @Test
+  void aStaleOrAmbiguousStatusExemptionFailsTheBuild() {
+    assertThat(
+            ArchitectureTest.unmatchedHandlerExemptions(
+                Set.of(
+                    "InvalidSuccessStatusController#builderFromHelper",
+                    "InvalidSuccessStatusController#removedHandler",
+                    "InvalidSuccessStatusController#overloaded"),
+                INVALID_SUCCESS_STATUSES))
+        .containsExactly(
+            "InvalidSuccessStatusController#overloaded is overloaded; rename the handler",
+            "InvalidSuccessStatusController#removedHandler is no API operation");
+  }
+
+  @Test
+  void anImplicitOrOptionalOkIsAllowed() {
+    JavaClasses valid = new ClassFileImporter().importClasses(ValidImplicitOkController.class);
+    assertThatCode(
+            () ->
+                ArchitectureTest.api_operations_answer_their_documented_success_statuses.check(
+                    valid))
+        .doesNotThrowAnyException();
+  }
+
+  @RestController
+  static class ValidImplicitOkController {
+    @Operation(operationId = "plainHttpEntity", summary = "A plain HttpEntity answers 200")
+    @GetMapping("/fixture/status/plain-entity")
+    public HttpEntity<String> simpleHttpEntity() {
+      return new HttpEntity<>("ok");
+    }
+
+    @Operation(operationId = "optionalBody", summary = "ResponseEntity.of answers 200 or 404")
+    @GetMapping("/fixture/status/optional")
+    public ResponseEntity<String> optionalBody(@RequestParam boolean present) {
+      return ResponseEntity.of(Optional.of("ok").filter(body -> present));
+    }
+
+    @Operation(operationId = "nullableBody", summary = "ResponseEntity.ofNullable answers 200")
+    @GetMapping("/fixture/status/nullable")
+    public ResponseEntity<String> nullableBody(@RequestParam boolean present) {
+      return ResponseEntity.ofNullable(present ? "ok" : null);
+    }
   }
 
   static class WorkspaceImpersonatingService {

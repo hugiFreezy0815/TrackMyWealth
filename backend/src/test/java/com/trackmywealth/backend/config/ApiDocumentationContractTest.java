@@ -172,6 +172,36 @@ class ApiDocumentationContractTest {
   }
 
   @Test
+  void anEmptySuccessStatusDeclarationKeepsSpringdocsGeneratedOk() throws NoSuchMethodException {
+    Operation operation = generated();
+    ApiResponse generatedOk = operation.getResponses().get("200");
+
+    config.successStatusResponses().customize(operation, handler("emptyStatuses"));
+
+    assertThat(operation.getResponses()).containsOnlyKeys("200");
+    assertThat(operation.getResponses().get("200")).isSameAs(generatedOk);
+  }
+
+  @Test
+  void aNon2xxSuccessStatusDeclarationKeepsSpringdocsGeneratedOk() throws NoSuchMethodException {
+    Operation operation = generated();
+    ApiResponse generatedOk = operation.getResponses().get("200");
+
+    config.successStatusResponses().customize(operation, handler("errorStatus"));
+
+    assertThat(operation.getResponses()).containsOnlyKeys("200");
+    assertThat(operation.getResponses().get("200")).isSameAs(generatedOk);
+  }
+
+  @Test
+  void aNon2xxValueBesideASuccessIsNotDocumentedAsASuccess() throws NoSuchMethodException {
+    Operation operation =
+        config.successStatusResponses().customize(generated(), handler("createdAndError"));
+
+    assertThat(operation.getResponses()).containsOnlyKeys("201");
+  }
+
+  @Test
   void anUndeclaredHandlerKeepsTheGeneratedResponse() throws NoSuchMethodException {
     Operation operation = generated();
     ApiResponse before = operation.getResponses().get("200");
@@ -336,6 +366,15 @@ class ApiDocumentationContractTest {
 
   @SuppressWarnings("unused")
   static final class Endpoints {
+
+    @SuccessStatus({})
+    void emptyStatuses() {}
+
+    @SuccessStatus(HttpStatus.BAD_REQUEST)
+    void errorStatus() {}
+
+    @SuccessStatus({HttpStatus.CREATED, HttpStatus.BAD_REQUEST})
+    void createdAndError() {}
 
     @SuccessStatus({HttpStatus.CREATED, HttpStatus.OK})
     void both() {}
