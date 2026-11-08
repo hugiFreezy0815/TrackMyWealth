@@ -33,7 +33,7 @@ export function formatAmount(
     maximumFractionDigits: scale,
     roundingMode: 'halfExpand',
     useGrouping: true,
-  } as Intl.NumberFormatOptions).formatToParts(negative ? value.slice(1) : value);
+  } as Intl.NumberFormatOptions).formatToParts((negative ? value.slice(1) : value) as unknown as number);
   const isZero = parts.every(
     (part) => !['integer', 'fraction'].includes(part.type) || /^0+$/.test(part.value),
   );
