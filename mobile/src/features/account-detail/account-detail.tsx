@@ -40,6 +40,7 @@ export type AccountDetailProps = {
   onBack: () => void;
   onTransaction: (id: string) => void;
   onImport: () => void;
+  selectedTransactionId?: string | null;
 };
 
 const SORTS: TransactionSort[] = [
@@ -50,7 +51,7 @@ const SORTS: TransactionSort[] = [
 ];
 const SORT_KEYS = ['account.newest', 'account.oldest', 'account.largest', 'account.smallest'];
 
-export function AccountDetail({ accountId, onBack, onTransaction, onImport }: AccountDetailProps) {
+export function AccountDetail({ accountId, onBack, onTransaction, onImport, selectedTransactionId }: AccountDetailProps) {
   const intl = useIntl();
   const theme = useTheme();
   const online = useSyncExternalStore(
@@ -432,6 +433,7 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
             archived={archived}
             byDate={sort.startsWith('bookingDate')}
             onOpen={onTransaction}
+            selectedTransactionId={selectedTransactionId}
             onCategory={setCategoryTarget}
           />
           {records.length ? (
