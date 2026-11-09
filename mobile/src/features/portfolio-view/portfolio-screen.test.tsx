@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
 
 import { ApiError } from '@/api/client';
@@ -70,10 +70,10 @@ function setData(data: PortfolioView | undefined, error?: Error) {
     isPending: false, isError: false, refetch: jest.fn(),
   } as unknown as ReturnType<typeof useAccountPositions>);
 }
-function mount(locale: 'en' | 'de' = 'en') {
+async function mount(locale: 'en' | 'de' = 'en') {
   const onAccount = jest.fn(), onPortfolio = jest.fn(), onAddAccount = jest.fn();
   const onMissing = jest.fn();
-  const result = render(
+  const result = await render(
     <IntlProvider locale={locale} messages={locale === 'de' ? de : en}>
       <PortfolioScreen portfolioId="p-1" overviewName="All portfolios"
         onOverview={jest.fn()} onPortfolio={onPortfolio} onAddPortfolio={jest.fn()}
