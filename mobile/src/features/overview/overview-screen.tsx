@@ -67,7 +67,11 @@ function useOnline(): boolean {
 }
 
 /** US-01-15 / S1: independent TanStack queries, no financial arithmetic in the UI. */
-export function OverviewScreen({ onAddPortfolio, onReviewAccount, onPortfolio }: OverviewScreenProps) {
+export function OverviewScreen({
+  onAddPortfolio,
+  onReviewAccount,
+  onPortfolio,
+}: OverviewScreenProps) {
   const intl = useIntl();
   const theme = useTheme();
   const { width } = useWindowDimensions();
@@ -140,7 +144,12 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount, onPortfolio }:
         <ErrorBanner error={portfolios.error} onRetry={() => void portfolios.refetch()} />
       ) : null}
       {portfolios.data ? (
-        <PortfoliosCard items={portfolioItems} hidden={hidden} intl={intl} onPortfolio={onPortfolio} />
+        <PortfoliosCard
+          items={portfolioItems}
+          hidden={hidden}
+          intl={intl}
+          onPortfolio={onPortfolio}
+        />
       ) : null}
       {waitingFor(cashFlow) ? <LoadingSkeleton count={3} /> : null}
       {cashFlow.isError ? (
