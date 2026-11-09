@@ -178,6 +178,9 @@ async function renderDetail(props: { onBack?: () => void } = {}) {
 
 async function changeCategory(currentLabel: string, pick: string) {
   await fireEvent.press(screen.getAllByLabelText(`Change category: ${currentLabel}`)[0]);
+  // A long category list scrolls inside the dialog instead of pushing Close off screen.
+  const list = await screen.findByTestId('category-picker-list');
+  expect(StyleSheet.flatten(list.props.style).maxHeight).toBeGreaterThan(0);
   await fireEvent.press(await screen.findByText(pick));
 }
 

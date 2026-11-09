@@ -1,5 +1,5 @@
 import { useIntl } from 'react-intl';
-import { Pressable, Text } from 'react-native';
+import { Pressable, ScrollView, Text, useWindowDimensions } from 'react-native';
 
 import type { TransactionSort } from '@/api/queries/resources';
 import { ActionButton, BottomSheet, Dialog, valueStatusTexts } from '@/components/shared';
@@ -120,27 +120,31 @@ export function CategoryPickerDialog({
   const intl = useIntl();
   const theme = useTheme();
   const german = intl.locale.startsWith('de');
+  const { height } = useWindowDimensions();
   return (
     <Dialog
       visible={visible}
       title={intl.formatMessage({ id: 'account.changeCategory' })}
       onClose={onClose}
     >
-      {categories
-        .filter((category) => category.active && category.code !== 'UNCATEGORIZED')
-        .map((category) => (
-          <Pressable
-            key={category.id}
-            accessibilityRole="button"
-            disabled={disabled}
-            onPress={() => onPick(category.id)}
-            style={{ minHeight: 44, justifyContent: 'center' }}
-          >
-            <Text style={{ color: theme.textPrimary }}>
-              {categoryName(category, categories, german, true)}
-            </Text>
-          </Pressable>
-        ))}
+      {/* About 30 categories: the list scrolls so the title and Close stay on screen. */}
+      <ScrollView testID="category-picker-list" style={{ maxHeight: Math.round(height * 0.6) }}>
+        {categories
+          .filter((category) => category.active && category.code !== 'UNCATEGORIZED')
+          .map((category) => (
+            <Pressable
+              key={category.id}
+              accessibilityRole="button"
+              disabled={disabled}
+              onPress={() => onPick(category.id)}
+              style={{ minHeight: 44, justifyContent: 'center' }}
+            >
+              <Text style={{ color: theme.textPrimary }}>
+                {categoryName(category, categories, german, true)}
+              </Text>
+            </Pressable>
+          ))}
+      </ScrollView>
     </Dialog>
   );
 }
