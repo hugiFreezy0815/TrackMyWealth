@@ -15,18 +15,38 @@ export type TransactionResultsProps = {
   onCategory: (transaction: Transaction) => void;
 };
 
-export function TransactionResults({ transactions, categories, archived, byDate, onOpen, onCategory }: TransactionResultsProps) {
+export function TransactionResults({
+  transactions,
+  categories,
+  archived,
+  byDate,
+  onOpen,
+  onCategory,
+}: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
   return (
     <View>
       {groupedTransactions(transactions, byDate).map((group, index) => (
         <View key={group.date ?? `amount-${index}`}>
-          {group.date ? <Text accessibilityRole="header" style={{ ...TypeScale.labelMedium, color: theme.textSecondary }}>
-            {formatRelativeDay(group.date, intl)} · {formatDate(group.date, intl.locale)}
-          </Text> : null}
-          {group.rows.map((row) => <TransactionLine key={row.id} transaction={row}
-            categories={categories} archived={archived} onOpen={onOpen} onCategory={onCategory} />)}
+          {group.date ? (
+            <Text
+              accessibilityRole="header"
+              style={{ ...TypeScale.labelMedium, color: theme.textSecondary }}
+            >
+              {formatRelativeDay(group.date, intl)} · {formatDate(group.date, intl.locale)}
+            </Text>
+          ) : null}
+          {group.rows.map((row) => (
+            <TransactionLine
+              key={row.id}
+              transaction={row}
+              categories={categories}
+              archived={archived}
+              onOpen={onOpen}
+              onCategory={onCategory}
+            />
+          ))}
         </View>
       ))}
     </View>

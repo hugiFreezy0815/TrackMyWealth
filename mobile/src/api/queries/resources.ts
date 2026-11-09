@@ -86,18 +86,20 @@ export const useUncategorizedCount = (accountId: string, enabled = true) =>
 export const useArchivedAccounts = (portfolioId: string, enabled = true) =>
   useQuery({
     queryKey: queryKeys.accounts({ portfolioId, archived: true }),
-    queryFn: () => typedApi.get('/api/v1/accounts', {
-      query: { portfolioId, archived: true },
-    }),
+    queryFn: () =>
+      typedApi.get('/api/v1/accounts', {
+        query: { portfolioId, archived: true },
+      }),
     enabled: !!portfolioId && enabled,
   });
 
 export const useAccountPositions = (accountId: string, enabled = true) =>
   useQuery({
     queryKey: queryKeys.accountPositions(accountId),
-    queryFn: () => typedApi.get('/api/v1/accounts/{accountId}/positions', {
-      params: { accountId },
-    }),
+    queryFn: () =>
+      typedApi.get('/api/v1/accounts/{accountId}/positions', {
+        params: { accountId },
+      }),
     enabled: !!accountId && enabled,
   });
 
@@ -108,10 +110,12 @@ export function useAccountArchiveAction(accountId: string) {
     mutationFn: ({ version, restore }: { version: number; restore: boolean }) =>
       restore
         ? typedApi.post('/api/v1/accounts/{accountId}/restore', {
-            params: { accountId }, version: ifMatch({ version }),
+            params: { accountId },
+            version: ifMatch({ version }),
           })
         : typedApi.post('/api/v1/accounts/{accountId}/archive', {
-            params: { accountId }, version: ifMatch({ version }),
+            params: { accountId },
+            version: ifMatch({ version }),
           }),
     onSuccess: () => invalidateFinancialData(client),
   });
@@ -121,8 +125,14 @@ export function useChangeTransactionCategory(accountId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({
-      transactionId, categoryId, version,
-    }: { transactionId: string; categoryId: string; version: number }) =>
+      transactionId,
+      categoryId,
+      version,
+    }: {
+      transactionId: string;
+      categoryId: string;
+      version: number;
+    }) =>
       typedApi.put('/api/v1/accounts/{accountId}/transactions/{transactionId}/category', {
         params: { accountId, transactionId },
         version: ifMatch({ version }),

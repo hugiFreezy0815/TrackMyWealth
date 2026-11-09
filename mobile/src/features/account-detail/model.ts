@@ -24,7 +24,9 @@ export function categoryFor(
 }
 
 export function isUncategorized(transaction: Transaction, categories: Category[]): boolean {
-  return !transaction.internalTransfer && categoryFor(transaction, categories)?.code === 'UNCATEGORIZED';
+  return (
+    !transaction.internalTransfer && categoryFor(transaction, categories)?.code === 'UNCATEGORIZED'
+  );
 }
 
 /** The server provides the category tree; the screen only formats its names. */
@@ -35,7 +37,9 @@ export function categoryName(
   includeParent = false,
 ): string {
   const name = german ? category.nameDe : category.nameEn;
-  const parent = includeParent ? categories.find((candidate) => candidate.id === category.parentId) : undefined;
+  const parent = includeParent
+    ? categories.find((candidate) => candidate.id === category.parentId)
+    : undefined;
   return parent ? `${german ? parent.nameDe : parent.nameEn} › ${name}` : name;
 }
 

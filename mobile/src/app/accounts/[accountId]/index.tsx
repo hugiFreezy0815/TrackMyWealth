@@ -14,16 +14,22 @@ export default function AccountDetailRoute() {
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
   return (
     <ShellScreen title={intl.formatMessage({ id: 'account.heading' })}>
-      <AccountDetail accountId={accountId ?? ''}
+      <AccountDetail
+        accountId={accountId ?? ''}
         onBack={() => router.replace('/overview')}
-        onTransaction={(transactionId) => router.push({
-          pathname: '/accounts/[accountId]/transactions/[transactionId]',
-          params: { accountId: accountId ?? '', transactionId },
-        })}
-        onImport={() => router.push({
-          pathname: '/accounts/[accountId]/imports/new',
-          params: { accountId: accountId ?? '' },
-        })} />
+        onTransaction={(transactionId) =>
+          router.push({
+            pathname: '/accounts/[accountId]/transactions/[transactionId]',
+            params: { accountId: accountId ?? '', transactionId },
+          })
+        }
+        onImport={() =>
+          router.push({
+            pathname: '/accounts/[accountId]/imports/new',
+            params: { accountId: accountId ?? '' },
+          })
+        }
+      />
     </ShellScreen>
   );
 }
