@@ -45,7 +45,7 @@ export function TransactionResults({
               !transaction.reconciliationAdjustment && category != null;
             const cellStyle = { padding: '12px 6px', verticalAlign: 'top', overflowWrap: 'anywhere' as const };
             return (
-              <tr key={transaction.id} data-testid={`transaction-${transaction.id}`}>
+              <tr key={transaction.id}>
                 <td style={cellStyle}>{formatDate(transaction.bookingDate, intl.locale)}</td>
                 <td style={cellStyle}>
                   <button type="button" style={{
