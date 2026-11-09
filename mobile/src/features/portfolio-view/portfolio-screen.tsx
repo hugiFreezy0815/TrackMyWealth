@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
 import {
@@ -319,6 +319,13 @@ export function PortfolioScreen({
 
   // Don't redirect while data is loading/offline. 404 alone means the portfolio was removed.
   const missing = viewQuery.error instanceof ApiError && viewQuery.error.status === 404;
+  const missingHandled = useRef(false);
+  useEffect(() => {
+    if (missing && !missingHandled.current) {
+      missingHandled.current = true;
+      onMissing();
+    }
+  }, [missing, onMissing]);
   const selectedTotal = view?.total ?? fallback?.total ?? null;
   const currency = view?.portfolioCurrency ?? fallback?.portfolioCurrency ?? '';
   const workspaceCurrency = view?.workspaceCurrency ?? fallback?.workspaceCurrency ?? '';
