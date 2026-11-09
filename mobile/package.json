@@ -33,7 +33,8 @@
     "@formatjs/intl-numberformat": "10.0.2",
     "@formatjs/intl-datetimeformat": "8.0.2",
     "@formatjs/intl-pluralrules": "7.0.2",
-    "expo-document-picker": "58.0.4"
+    "expo-document-picker": "58.0.4",
+    "@react-native-community/datetimepicker": "9.2.1"
   },
   "devDependencies": {
     "@react-native/jest-preset": "0.88.1",
