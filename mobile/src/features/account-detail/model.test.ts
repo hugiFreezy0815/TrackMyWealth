@@ -33,6 +33,7 @@ const categories: Category[] = [
   },
 ] as Category[];
 
+// Keep the financial grouping and filter logic independent of the UI renderer.
 describe('S3 account detail view model', () => {
   it('deduplicates overlapping pages while preserving server order', () => {
     expect(
