@@ -17,10 +17,12 @@ export function parseAmountInput(input: string, locale: UiLocale): DecimalString
   if (!trimmed || /[eE+]/.test(trimmed)) return null;
   const groups = locale === 'de-CH' ? /['’]/g : locale === 'de-DE' ? /\./g : /,/g;
   const decimalSeparator = locale === 'de-DE' ? ',' : '.';
-  // Do not turn malformed grouping such as "1,2,3" into a different amount.
+  // Strictly validate grouping before stripping it. This prevents silent amount changes.
   const separator = locale === 'de-CH' ? "['’]" : locale === 'de-DE' ? '\\.' : ',';
-  const dec = locale === 'de-DE' ? ',' : '\\.';
-  const validGrouping = new RegExp('^-?(?:\\\\d+|\\\\d{1,3}(?:' + separator + '\\\\d{3})+)(?:' + dec + '\\\\d+)?
+  const decimal = locale === 'de-DE' ? ',' : '\\.';
+  const validGrouping = new RegExp('^-?(?:\\d+|\\d{1,3}(?:' + separator + '\\d{3})+)(?:' + decimal + '\\d+)?$');
+  if (!validGrouping.test(trimmed)) return null;
+  const grouped = trimmed.replace(groups, '');
   const canonical = decimalSeparator === '.' ? grouped : grouped.replace(',', '.');
   const isValid = /^-?\d+(\.\d+)?$/.test(canonical);
   if (!isValid) return null;
