@@ -16,6 +16,9 @@ describe('Intl polyfills on a Hermes-like engine, device zone GMT', () => {
       ),
     ).toBe('08:30');
     expect(new Intl.PluralRules('de').select(1)).toBe('one');
+    // #491: the ISO pickers name currencies and countries in the app language.
+    expect(new Intl.DisplayNames('de', { type: 'region' }).of('CH')).toBe('Schweiz');
+    expect(new Intl.DisplayNames('en', { type: 'currency' }).of('EUR')).toBe('Euro');
     // PO decision 2026-11-09: the date order holds with the polyfill's locale data too.
     expect(formatDate('2026-10-01', 'en')).toBe('1 Oct 2026');
     expect(formatDate('2026-10-01', 'de-CH')).toBe('01.10.2026');
