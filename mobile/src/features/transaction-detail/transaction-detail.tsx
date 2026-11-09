@@ -239,10 +239,11 @@ export function TransactionDetail({
     setError(null);
     try {
       await withVersionRetry(
-        (version) => actions.remove.mutateAsync({
-          version,
-          ...(transaction.removal === 'VOID' && reason.trim() ? { reason: reason.trim() } : {}),
-        }),
+        (version) =>
+          actions.remove.mutateAsync({
+            version,
+            ...(transaction.removal === 'VOID' && reason.trim() ? { reason: reason.trim() } : {}),
+          }),
         transaction.version,
       );
       setConfirmRemove(false);

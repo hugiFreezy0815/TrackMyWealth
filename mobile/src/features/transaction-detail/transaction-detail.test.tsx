@@ -185,9 +185,13 @@ describe('S4 transaction detail', () => {
   });
 
   it('reloads the ETag and retries VERSION_REQUIRED once without losing the chosen category', async () => {
-    setCategory.mockRejectedValueOnce(new ApiError('version required', 428, {
-      code: 'VERSION_REQUIRED', status: 428, title: 'Version required',
-    }));
+    setCategory.mockRejectedValueOnce(
+      new ApiError('version required', 428, {
+        code: 'VERSION_REQUIRED',
+        status: 428,
+        title: 'Version required',
+      }),
+    );
     jest.mocked(useTransaction).mockReturnValue({
       ...success(base),
       refetch: jest.fn(async () => ({ data: { ...base, version: 8 } })),
