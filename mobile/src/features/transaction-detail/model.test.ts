@@ -53,7 +53,7 @@ describe('S4 transaction detail rules', () => {
     } as HistoryEntry;
     expect(historyDescription(entry, categories, false)).toEqual({
       key: 'txn.history.changed',
-      values: { actor: 'Anna', from: 'Groceries', to: 'Dining out', reason: '' },
+      values: { actor: 'Anna', from: 'Groceries', to: 'Dining out', reason: '', format: '', date: '' },
     });
     expect(historyDescription({ ...entry, kind: 'FUTURE_KIND' }, categories, true).key)
       .toBe('txn.history.other');
