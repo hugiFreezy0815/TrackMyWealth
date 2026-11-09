@@ -1,4 +1,5 @@
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { Image } from 'expo-image';
 import { Pressable, Text, View } from 'react-native';
 
 import type { DecimalString } from '@/api/decimal';
@@ -44,6 +45,7 @@ export function InstitutionLogo({
   name, logoUrl, size = 44,
 }: { name: string; logoUrl?: string | null; size?: number }) {
   const theme = useTheme();
+  const [failed, setFailed] = useState(false);
   // Remote logos may be blocked / become unavailable. Initials are always visible.
   const initials = name.trim().split(/\s+/).slice(0, 2).map((word) => word[0]?.toUpperCase() ?? '').join('') || '⌂';
   return (
@@ -52,7 +54,16 @@ export function InstitutionLogo({
       justifyContent: 'center', backgroundColor: theme.bgSubtle, borderRadius: Radii.control,
       borderWidth: 1, borderColor: theme.borderDefault,
     }}>
-      <Text style={{ color: theme.textPrimary, fontWeight: '600' }}>{initials}</Text>
+<Text style={{ color: theme.textPrimary, fontWeight: '600' }}>{initials}</Text>
+      {logoUrl?.startsWith('https://') && !failed ? (
+        <Image
+          source={{ uri: logoUrl }}
+          accessibilityLabel={name}
+          onError={() => setFailed(true)}
+          contentFit="contain"
+          style={{ position: 'absolute', width: Math.max(44, size) - 8, height: Math.max(44, size) - 8 }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -151,7 +162,9 @@ export function KeyValueList({ items }: { items: { key: string; label: string; v
       {items.map((item) => (
         <View key={item.key} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' }}>
           <Text style={{ color: theme.textSecondary }}>{item.label}</Text>
-          <View style={{ flexShrink: 1 }}><Text style={{ color: theme.textPrimary }}>{item.value}</Text></View>
+          <View style={{ flexShrink: 1 }}>{typeof item.value === 'string' || typeof item.value === 'number' ? (
+            <Text style={{ color: theme.textPrimary }}>{item.value}</Text>
+          ) : item.value}</View>
         </View>
       ))}
     </View>
@@ -170,6 +183,7 @@ export function Stepper({
           accessibilityState={{ selected: current === index, disabled: !onSelect || index > current }}
           disabled={!onSelect || index > current}
           accessibilityLabel={(index + 1) + '. ' + step}
+          accessibilityHint={uiMessage('ui.select', locale)}
           onPress={() => onSelect?.(index)}
           style={{
             minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12,
