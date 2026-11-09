@@ -1,5 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
-import { onlineManager } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import {
   Platform,
@@ -21,6 +20,7 @@ import {
 import { ErrorBanner, LoadingSkeleton, OfflineBanner } from '@/components/shared';
 import { Spacing } from '@/constants/theme';
 import { formatDate } from '@/format/date';
+import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { CashFlowCard } from './cash-flow-card';
@@ -38,6 +38,7 @@ import { AssetsLiabilitiesCard, NetWorthCard, type FinancialPart } from './total
 export type OverviewScreenProps = {
   onAddPortfolio: () => void;
   onReviewAccount: (accountId: string) => void;
+  onImportStatement?: () => void;
 };
 
 /** S1 web layout: two columns from 1024 px, the right one 360 px wide. */
@@ -57,16 +58,12 @@ function greetingId(hour: number): string {
   return hour < 18 ? GREETINGS.afternoon : GREETINGS.evening;
 }
 
-function useOnline(): boolean {
-  return useSyncExternalStore(
-    (notify) => onlineManager.subscribe(notify),
-    () => onlineManager.isOnline(),
-    () => true,
-  );
-}
-
 /** US-01-15 / S1: independent TanStack queries, no financial arithmetic in the UI. */
-export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScreenProps) {
+export function OverviewScreen({
+  onAddPortfolio,
+  onReviewAccount,
+  onImportStatement,
+}: OverviewScreenProps) {
   const intl = useIntl();
   const theme = useTheme();
   const { width } = useWindowDimensions();
@@ -178,6 +175,16 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScre
           style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
         >
           <Text style={{ color: theme.brandLink }}>{msg(intl, 'overview.refresh')}</Text>
+        </Pressable>
+      ) : null}
+      {onImportStatement ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={msg(intl, 'statement.title')}
+          onPress={onImportStatement}
+          style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
+        >
+          <Text style={{ color: theme.brandLink }}>{msg(intl, 'statement.title')}</Text>
         </Pressable>
       ) : null}
       {!online ? (

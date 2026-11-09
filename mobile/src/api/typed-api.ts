@@ -1,4 +1,10 @@
-import { request, type RequestOptions } from './client';
+import {
+  request,
+  requestMultipart,
+  requestText,
+  type MultipartOptions,
+  type RequestOptions,
+} from './client';
 import type { paths } from './schema';
 
 /**
@@ -140,10 +146,60 @@ function call<M extends HttpMethod>(method: M) {
   };
 }
 
+/** The POST paths whose request body is multipart/form-data (file uploads). */
+export type MultipartPath = {
+  [P in PathWith<'post'>]: Operation<P, 'post'> extends {
+    requestBody?: { content: { 'multipart/form-data': unknown } };
+  }
+    ? P
+    : never;
+}[PathWith<'post'>];
+
+/** The GET paths answered with a text document, such as a CSV export. */
+export type TextPath = {
+  [P in PathWith<'get'>]: Operation<P, 'get'> extends {
+    responses: { 200: { content: { 'text/csv': string } } };
+  }
+    ? P
+    : never;
+}[PathWith<'get'>];
+
+type MultipartResponse<P extends MultipartPath> =
+  Operation<P, 'post'> extends { responses: { 201: { content: { 'application/json': infer B } } } }
+    ? B
+    : ResponseBody<P, 'post'>;
+
+/**
+ * A multipart upload: the path and its parameters are checked against the contract like every
+ * other call; the body is the FormData the platform encodes (React Native: a `{ uri, name, type }`
+ * part, the web: a File).
+ */
+function upload<P extends MultipartPath>(
+  path: P,
+  options: PathOption<Operation<P, 'post'>> & Omit<MultipartOptions, 'body'> & { body: FormData },
+): Promise<MultipartResponse<P>> {
+  const { params, ...rest } = options as { params?: Record<string, unknown> } & MultipartOptions;
+  return requestMultipart<MultipartResponse<P>>(pathWith(path, params), rest);
+}
+
+/** A text download (a CSV export), typed by its contract path like every other call. */
+function text<P extends TextPath>(
+  path: P,
+  options: PathOption<Operation<P, 'get'>> & Pick<RequestOptions, 'renewSession' | 'signal'>,
+): Promise<string> {
+  const { params, ...rest } = options as { params?: Record<string, unknown> } & Pick<
+    RequestOptions,
+    'renewSession' | 'signal'
+  >;
+  return requestText(pathWith(path, params), rest);
+}
+
 export const typedApi = {
   get: call('get'),
   post: call('post'),
   put: call('put'),
   patch: call('patch'),
   delete: call('delete'),
+  upload,
+  text,
 };
