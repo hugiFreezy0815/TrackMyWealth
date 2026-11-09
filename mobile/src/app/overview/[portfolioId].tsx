@@ -22,7 +22,9 @@ export default function PortfolioRoute() {
         portfolioId={portfolioId ?? ''}
         overviewName={workspace.data?.name ?? null}
         onOverview={() => router.replace('/overview')}
-        onMissing={() => router.replace({ pathname: '/overview', params: { portfolioMissing: '1' } } as Href)}
+        onMissing={() =>
+          router.replace({ pathname: '/overview', params: { portfolioMissing: '1' } } as Href)
+        }
         onPortfolio={(id) =>
           router.replace({
             pathname: '/overview/[portfolioId]',
