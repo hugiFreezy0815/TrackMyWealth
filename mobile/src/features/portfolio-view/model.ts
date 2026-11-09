@@ -62,8 +62,9 @@ export const ACCOUNT_TYPE_KEYS = {
 } as const;
 
 export function isNegative(value: string | null | undefined): boolean {
-  return typeof value === 'string' && /^-0*[1-9]/.test(value) || (
-    typeof value === 'string' && /^-0*\.\d*[1-9]/.test(value)
+  return (
+    (typeof value === 'string' && /^-0*[1-9]/.test(value)) ||
+    (typeof value === 'string' && /^-0*\.\d*[1-9]/.test(value))
   );
 }
 
@@ -73,8 +74,7 @@ export function daysUntil(dueDate: string, now: Date): number | null {
   if (!match) return null;
   const [, year, month, day] = match.map(Number);
   const due = Date.UTC(year, month - 1, day);
-  if (new Date(due).getUTCMonth() !== month - 1 ||
-      new Date(due).getUTCDate() !== day) return null;
+  if (new Date(due).getUTCMonth() !== month - 1 || new Date(due).getUTCDate() !== day) return null;
   const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.round((due - today) / 86_400_000);
 }
@@ -84,7 +84,7 @@ export function accountRows(section: PortfolioSection): PortfolioAccount[] {
   // unrelated rows or move an account into a section that the backend did not send.
   if (section.section !== 'PROPERTY_AND_MORTGAGE') return section.accounts;
   const rows = section.accounts;
-  const properties = new Set(rows.map(row => row.accountId));
+  const properties = new Set(rows.map((row) => row.accountId));
   const children = new Map<string, PortfolioAccount[]>();
   for (const row of rows) {
     if (row.linkedPropertyAccountId && properties.has(row.linkedPropertyAccountId)) {
@@ -93,12 +93,16 @@ export function accountRows(section: PortfolioSection): PortfolioAccount[] {
       children.set(row.linkedPropertyAccountId, linked);
     }
   }
-  const nested = new Set([...children.values()].flat().map(row => row.accountId));
-  return rows.filter(row => !nested.has(row.accountId))
-    .flatMap(row => [row, ...(children.get(row.accountId) ?? [])]);
+  const nested = new Set([...children.values()].flat().map((row) => row.accountId));
+  return rows
+    .filter((row) => !nested.has(row.accountId))
+    .flatMap((row) => [row, ...(children.get(row.accountId) ?? [])]);
 }
 
 export function hasPositions(account: PortfolioAccount, section: PortfolioSection): boolean {
-  return ['DEPOT', 'CRYPTO'].includes(section.section) &&
-    account.positionsCount != null && account.positionsCount > 0;
+  return (
+    ['DEPOT', 'CRYPTO'].includes(section.section) &&
+    account.positionsCount != null &&
+    account.positionsCount > 0
+  );
 }
