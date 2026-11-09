@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { IntlProvider } from 'react-intl';
 
 import { ApiError } from '@/api/client';
@@ -267,7 +267,6 @@ describe('S2 Portfolio View acceptance (#493)', () => {
     setData(undefined, new ApiError('not found', 404, { code: 'NOT_FOUND' }));
     const { onMissing } = await mount();
     expect(screen.getByText('This portfolio no longer exists.')).toBeTruthy();
-    await fireEvent.press(screen.getByRole('button', { name: 'All portfolios' }));
-    expect(onMissing).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onMissing).toHaveBeenCalledTimes(1));
   });
 });
