@@ -1,7 +1,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import {
   useAccount, useAccounts, useAccountArchiveAction, useAccountPositions,
   useAccountTransactions, useArchivedAccounts, useCategories,
