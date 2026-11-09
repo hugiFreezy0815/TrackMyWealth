@@ -3813,7 +3813,8 @@ export interface components {
       currency: string;
     };
     UpdateWorkspaceNameRequest: {
-      name: string;
+      /** @description The new name, at most 60 characters after surrounding spaces are removed; null or blank clears it. */
+      name: string | null;
     };
     UserSummaryResponse: {
       /** Format: uuid */
