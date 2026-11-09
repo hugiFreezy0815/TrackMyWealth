@@ -13,6 +13,8 @@ import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSection;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
 import com.trackmywealth.backend.dto.ValueStatus;
+import com.trackmywealth.backend.dto.ValueHistoryResponse;
+import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
@@ -291,6 +293,107 @@ class NetWorthControllerTest {
     assertThat(response.sections()).isEmpty();
     assertThat(response.netWorth()).isEqualByComparingTo("0");
     assertThat(response.complete()).isTrue();
+  }
+
+  // --- US-11-06 history acceptance checks -----------------------------------------------------
+
+  @Test
+  void yearlyHistoryIsBoundedAndItsFinalPointEqualsTheCurrentNetWorth() {
+    String token = bootstrapAdministrator();
+
+    ValueHistoryResponse history = history(token, "1Y");
+    NetWorthResponse current = netWorth(token, null);
+
+    assertThat(history.points()).hasSizeLessThanOrEqualTo(54);
+    assertThat(history.points().get(history.points().size() - 1).date()).isEqualTo(today());
+    assertThat(history.points().get(history.points().size() - 1).value())
+        .isEqualByComparingTo(current.netWorth());
+    assertThat(history.change().percent()).isNull();
+    assertThat(history.complete()).isTrue();
+    assertThat(history.sections()).isEmpty();
+  }
+
+  @Test
+  void historicalSnapshotValuesAreStepsAndEstimatedBetweenObservations() {
+    String token = bootstrapAdministrator();
+    UUID gold = createAccount(token, customAsset("Gold", "PRECIOUS_METAL")).id();
+    recordValuation(token, gold, today().minusDays(25), "10000.00");
+    recordValuation(token, gold, today().minusDays(5), "12000.00");
+
+    ValueHistoryResponse history = history(token, "1M");
+
+    var between = history.points().stream()
+        .filter(point -> point.date().equals(today().minusDays(15)))
+        .findFirst().orElseThrow();
+    assertThat(between.value()).isEqualByComparingTo("10000");
+    assertThat(between.estimated()).isTrue();
+    assertThat(history.points().get(history.points().size() - 1).value())
+        .isEqualByComparingTo("12000");
+    assertThat(history.complete()).isFalse();
+    assertThat(history.warnings()).anyMatch(warning -> warning.contains("Gold"));
+  }
+
+  @Test
+  void portfolioHistoryUsesItsOwnCurrencyWhileWorkspaceHistoryUsesHistoricalFx() throws Exception {
+    String token = bootstrapAdministrator();
+    PortfolioResponse portfolio = createPortfolio(token, "DKB", "EUR");
+    UUID cash =
+        createAccount(
+                token,
+                AccountRequests.account("Euro cash", "CASH", "EUR")
+                    .portfolioId(portfolio.id()).build())
+            .id();
+    seedOpeningBalance(cash, "1000.00");
+    seedFxRate("EUR", "CHF", "0.9500000000");
+
+    ValueHistoryResponse portfolioHistory =
+        client(token).get().uri("/api/v1/portfolios/" + portfolio.id() + "/history?period=1W")
+            .exchange().expectStatus().isOk()
+            .expectBody(ValueHistoryResponse.class).returnResult().getResponseBody();
+    ValueHistoryResponse workspaceHistory = history(token, "1W");
+
+    assertThat(portfolioHistory.currency()).isEqualTo("EUR");
+    assertThat(workspaceHistory.currency()).isEqualTo("CHF");
+    assertThat(portfolioHistory.points().get(portfolioHistory.points().size() - 1).value())
+        .isEqualByComparingTo("1000");
+    assertThat(workspaceHistory.points().get(workspaceHistory.points().size() - 1).value())
+        .isEqualByComparingTo("950");
+    assertThat(portfolioHistory.sections()).isEmpty();
+    assertThat(workspaceHistory.sections())
+        .extracting(ValueHistoryResponse.SectionChange::section)
+        .contains(PortfolioSection.CASH_AND_SAVINGS);
+  }
+
+  @Test
+  void invalidHistoryPeriodIsRejectedWithValidationFailed() {
+    String token = bootstrapAdministrator();
+
+    client(token).get().uri("/api/v1/net-worth/history?period=2Y")
+        .exchange().expectStatus().isBadRequest()
+        .expectBody(String.class)
+        .value(body -> assertThat(body).contains("VALIDATION_FAILED"));
+  }
+
+  @Test
+  void portfolioListIncludesOneMonthChangeComputedOnTheServer() {
+    String token = bootstrapAdministrator();
+
+    PortfolioListItemResponse[] rows =
+        client(token).get().uri("/api/v1/portfolios")
+            .exchange().expectStatus().isOk()
+            .expectBody(PortfolioListItemResponse[].class)
+            .returnResult().getResponseBody();
+
+    assertThat(rows).isNotEmpty();
+    assertThat(rows[0].change()).isNotNull();
+    assertThat(rows[0].change().period()).isEqualTo("1M");
+    assertThat(rows[0].change().percent()).isNull();
+  }
+
+  private ValueHistoryResponse history(String token, String period) {
+    return client(token).get().uri("/api/v1/net-worth/history?period=" + period)
+        .exchange().expectStatus().isOk()
+        .expectBody(ValueHistoryResponse.class).returnResult().getResponseBody();
   }
 
   // --- Helpers ---------------------------------------------------------------------------------
