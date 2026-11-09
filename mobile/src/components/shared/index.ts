@@ -1,10 +1,18 @@
-export { Amount, displayAmount, accessibleAmount } from './amount';
-export { ValueStatusBadge, type ValueStatus } from './value-status';
+export { Amount, amountTexts, displayAmount, accessibleAmount } from './amount';
+export {
+  ValueStatusBadge,
+  isValueKnown,
+  recognizedValueStatus,
+  valueStatusTexts,
+  type KnownValueStatus,
+  type ValueStatus,
+} from './value-status';
 export {
   TextField,
   AmountField,
   CurrencyPicker,
   DateField,
+  amountInputText,
   parseAmountInput,
   isValidIsoDate,
 } from './fields';
@@ -32,3 +40,4 @@ export {
   KeyValueList,
   Stepper,
 } from './presentation';
+export { currentUiLocale, displayDate, problemMessageKey, type UiLocale } from './locale';

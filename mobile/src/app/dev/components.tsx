@@ -10,9 +10,12 @@ import {
   AmountField,
   ChangeChip,
   ChipGroup,
+  BottomSheet,
   ConflictDialog,
   CountTile,
   CurrencyPicker,
+  DateField,
+  Dialog,
   EmptyState,
   ErrorBanner,
   InstitutionLogo,
@@ -35,9 +38,11 @@ export default function ComponentGallery() {
   const theme = useTheme();
   const [selected, setSelected] = useState('all');
   const [chip, setChip] = useState('one');
-  const [rawAmount, setRawAmount] = useState("1'234.5");
+  const [amount, setAmount] = useState<string | null>('1234.5');
+  const [date, setDate] = useState<string | null>('2026-11-08');
   const [currency, setCurrency] = useState('CHF');
   const [conflict, setConflict] = useState(false);
+  const [dialog, setDialog] = useState<'dialog' | 'sheet' | null>(null);
   if (!__DEV__) return <Redirect href="/" />;
 
   return (
@@ -76,6 +81,10 @@ export default function ComponentGallery() {
         <Amount value="12345678901234567.89" currency="CHF" locale="de-CH" />
         <Amount value="9999" currency="CHF" masked />
         <Amount value={null} currency="EUR" />
+        <Amount value="1234.5" currency="CHF" valueKnown={false} />
+        <Amount value="1234.5" currency="NOT-A-CODE" />
+        <ChangeChip amount="-0.001" currency="CHF" locale="de-CH" />
+        <ChangeChip amount="-312.4" currency="EUR" percentage="−0.8%" locale="de-DE" />
         <ChangeChip amount="6842.1" currency="CHF" percentage="+1.45%" locale="de-CH" />
       </SectionCard>
       <SectionCard title="Value status (all states)">
@@ -107,14 +116,19 @@ export default function ComponentGallery() {
         />
       </SectionCard>
       <SectionCard title="Rows and totals">
-        <InstitutionLogo name="Example Bank" />
+        <View style={{ flexDirection: 'row', gap: Spacing.two }}>
+          <InstitutionLogo name="Example Bank" />
+          <InstitutionLogo name="Personal assets" personalAssetsDefault />
+        </View>
         <AccountRow
           title="Sample account"
           subtitle="Cash"
           amount="1234.50"
           currency="CHF"
           status="ESTIMATED"
+          onPress={() => {}}
         />
+        <AccountRow title="Unknown value" amount="99" currency="CHF" status="UNKNOWN" />
         <TransactionRow
           title="Sample transaction"
           date="2026-11-08"
@@ -130,10 +144,11 @@ export default function ComponentGallery() {
           label="Opening balance"
           locale="de-CH"
           currency={currency}
-          value={rawAmount}
-          onChangeValue={() => {}}
-          onChangeRawText={setRawAmount}
+          value={amount}
+          onChangeValue={setAmount}
         />
+        <Text style={{ color: theme.textSecondary }}>DecimalString: {String(amount)}</Text>
+        <DateField label="Booking date" value={date} onChange={setDate} />
         <CurrencyPicker
           label="Currency"
           value={currency}
@@ -148,7 +163,7 @@ export default function ComponentGallery() {
       <SectionCard title="States and errors">
         <EmptyState description="Example empty state" />
         <ErrorBanner onRetry={() => {}} />
-        <OfflineBanner lastUpdated="2026-11-08 12:00" />
+        <OfflineBanner lastUpdated="2026-11-08T12:00:00Z" />
         <LoadingSkeleton />
         <Text
           accessibilityRole="button"
@@ -157,6 +172,20 @@ export default function ComponentGallery() {
         >
           Show conflict dialog
         </Text>
+        <Text
+          accessibilityRole="button"
+          onPress={() => setDialog('dialog')}
+          style={{ color: theme.brandLink, padding: 14 }}
+        >
+          Show dialog
+        </Text>
+        <Text
+          accessibilityRole="button"
+          onPress={() => setDialog('sheet')}
+          style={{ color: theme.brandLink, padding: 14 }}
+        >
+          Show bottom sheet
+        </Text>
       </SectionCard>
       <ConflictDialog
         visible={conflict}
@@ -164,6 +193,12 @@ export default function ComponentGallery() {
         onReview={() => setConflict(false)}
         onDiscard={() => setConflict(false)}
       />
+      <Dialog title="Sample dialog" visible={dialog === 'dialog'} onClose={() => setDialog(null)}>
+        <Text style={{ color: theme.textSecondary }}>Synthetic dialog content.</Text>
+      </Dialog>
+      <BottomSheet title="Sample sheet" visible={dialog === 'sheet'} onClose={() => setDialog(null)}>
+        <Text style={{ color: theme.textSecondary }}>Synthetic sheet content.</Text>
+      </BottomSheet>
     </ScrollView>
   );
 }

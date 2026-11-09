@@ -1,12 +1,25 @@
 import { type ReactNode } from 'react';
-import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  Text,
+  View,
+  type DimensionValue,
+} from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { problemReaction } from '@/api/problems';
-import { Radii, Spacing } from '@/constants/theme';
+import { problemReaction, type ClientReaction } from '@/api/problems';
+import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-import { currentUiLocale, uiMessage, type UiLocale } from './locale';
+import {
+  currentUiLocale,
+  displayDate,
+  problemMessageKey,
+  uiMessage,
+  type UiLocale,
+} from './locale';
 
 export function EmptyState({
   title,
@@ -26,12 +39,14 @@ export function EmptyState({
     <View style={{ padding: Spacing.four, gap: Spacing.two, alignItems: 'center' }}>
       <Text
         accessibilityRole="header"
-        style={{ fontSize: 20, fontWeight: '600', color: theme.textPrimary }}
+        style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
       >
         {title ?? uiMessage('ui.empty', locale)}
       </Text>
       {description ? (
-        <Text style={{ color: theme.textSecondary, textAlign: 'center' }}>{description}</Text>
+        <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary, textAlign: 'center' }}>
+          {description}
+        </Text>
       ) : null}
       {actionLabel && onAction ? <ActionButton label={actionLabel} onPress={onAction} /> : null}
     </View>
@@ -64,10 +79,14 @@ export function ActionButton({
         opacity: disabled ? 0.5 : 1,
       }}
     >
-      <Text style={{ fontWeight: '600', color: theme.textOnBrand }}>{label}</Text>
+      <Text style={{ ...TypeScale.labelMedium, fontWeight: '600', color: theme.textOnBrand }}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
+const NO_RETRY_REACTIONS: readonly ClientReaction[] = ['REAUTHENTICATE', 'SHOW', 'FIX_INPUT'];
+
 export function ErrorBanner({
   error,
   message,
@@ -81,10 +100,15 @@ export function ErrorBanner({
 }) {
   const theme = useTheme();
   const reaction = error instanceof ApiError ? problemReaction(error) : null;
-  // Display an explicit supplied, user-safe message, never leak a server's raw error.
-  // Unknown problem codes have a safe generic message and status-based reaction.
+  // Spec README §8: the message key of the problem code (or of its reaction for a code without
+  // its own message or unknown to this version). A server's raw title/detail is never shown.
+  const text =
+    message ?? (reaction ? uiMessage(problemMessageKey(reaction), locale) : uiMessage('ui.error', locale));
+  // Retrying cannot help when the member must sign in again, change the input, or the same
+  // request is bound to fail again.
   const showRetry =
-    onRetry != null && (!reaction || !['REAUTHENTICATE', 'SHOW'].includes(reaction.reaction));
+    onRetry != null &&
+    (!reaction || !NO_RETRY_REACTIONS.includes(reaction.reaction));
   return (
     <View
       accessibilityRole="alert"
@@ -94,12 +118,14 @@ export function ErrorBanner({
         borderLeftWidth: 4,
         borderLeftColor: theme.statusLoss,
         backgroundColor: theme.statusLossSubtle,
-        gap: 8,
+        gap: Spacing.two,
       }}
     >
-      <Text style={{ color: theme.textPrimary }}>{message ?? uiMessage('ui.error', locale)}</Text>
+      <Text style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>{text}</Text>
       {reaction?.correlationId ? (
-        <Text style={{ fontSize: 12, color: theme.textSecondary }}>{reaction.correlationId}</Text>
+        <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
+          {reaction.correlationId}
+        </Text>
       ) : null}
       {showRetry ? <ActionButton onPress={onRetry} label={uiMessage('ui.retry', locale)} /> : null}
     </View>
@@ -109,6 +135,7 @@ export function OfflineBanner({
   lastUpdated,
   locale = currentUiLocale(),
 }: {
+  /** ISO date or date-time of the last successful load. */
   lastUpdated?: string;
   locale?: UiLocale;
 }) {
@@ -122,16 +149,18 @@ export function OfflineBanner({
         padding: Spacing.compact,
         backgroundColor: theme.statusWarningSubtle,
         borderRadius: Radii.control,
-        gap: 4,
+        gap: Spacing.one,
       }}
     >
-      <Text style={{ color: theme.textPrimary, fontWeight: '600' }}>
+      <Text style={{ ...TypeScale.labelMedium, fontWeight: '600', color: theme.textPrimary }}>
         {uiMessage('ui.offline', locale)}
       </Text>
-      <Text style={{ color: theme.textPrimary }}>{uiMessage('ui.offlineDetail', locale)}</Text>
+      <Text style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>
+        {uiMessage('ui.offlineDetail', locale)}
+      </Text>
       {lastUpdated ? (
-        <Text style={{ color: theme.textSecondary }}>
-          {uiMessage('ui.lastUpdated', locale, { date: lastUpdated })}
+        <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
+          {uiMessage('ui.lastUpdated', locale, { date: displayDate(lastUpdated, locale) })}
         </Text>
       ) : null}
     </View>
@@ -143,7 +172,7 @@ export function LoadingSkeleton({
   count = 3,
   locale = currentUiLocale(),
 }: {
-  width?: number | string;
+  width?: DimensionValue;
   height?: number;
   count?: number;
   locale?: UiLocale;
@@ -153,13 +182,13 @@ export function LoadingSkeleton({
     <View
       accessibilityLabel={uiMessage('ui.loading', locale)}
       accessibilityState={{ busy: true }}
-      style={{ gap: 12 }}
+      style={{ gap: Spacing.compact }}
     >
       {Array.from({ length: Math.max(0, Math.min(20, count)) }, (_, index) => (
         <View
           key={index}
           style={{
-            width: width as number,
+            width,
             height,
             backgroundColor: theme.bgSubtle,
             borderRadius: Radii.control,
@@ -169,36 +198,53 @@ export function LoadingSkeleton({
     </View>
   );
 }
-export function Dialog({
-  title,
-  visible,
-  onClose,
-  children,
-  locale = currentUiLocale(),
-}: {
+type DialogProps = {
   title: string;
   visible: boolean;
   onClose: () => void;
   children: ReactNode;
   locale?: UiLocale;
-}) {
+};
+
+export function Dialog({
+  title,
+  visible,
+  onClose,
+  children,
+  placement = 'center',
+  locale = currentUiLocale(),
+}: DialogProps & { placement?: 'center' | 'bottom' }) {
   const theme = useTheme();
+  const bottom = placement === 'bottom';
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+    <Modal
+      transparent
+      visible={visible}
+      animationType={bottom ? 'slide' : 'fade'}
+      onRequestClose={onClose}
+    >
       <View
-        style={{ flex: 1, justifyContent: 'center', backgroundColor: '#00000099', padding: 20 }}
+        style={{
+          flex: 1,
+          justifyContent: bottom ? 'flex-end' : 'center',
+          backgroundColor: theme.bgOverlay,
+          padding: bottom ? 0 : Spacing.four,
+        }}
       >
         <View
+          accessibilityViewIsModal
           style={{
             backgroundColor: theme.bgSurface,
-            borderRadius: Radii.card,
+            borderRadius: bottom ? 0 : Radii.card,
+            borderTopLeftRadius: Radii.card,
+            borderTopRightRadius: Radii.card,
             padding: Spacing.four,
-            gap: 16,
+            gap: Spacing.three,
           }}
         >
           <Text
             accessibilityRole="header"
-            style={{ fontWeight: '600', fontSize: 20, color: theme.textPrimary }}
+            style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
           >
             {title}
           </Text>
@@ -208,15 +254,19 @@ export function Dialog({
             onPress={onClose}
             style={{ minHeight: 44, justifyContent: 'center' }}
           >
-            <Text style={{ color: theme.brandLink }}>{uiMessage('ui.close', locale)}</Text>
+            <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
+              {uiMessage('ui.close', locale)}
+            </Text>
           </Pressable>
         </View>
       </View>
     </Modal>
   );
 }
-/** Native and web both use an accessible modal; #487 owns route-level presentation. */
-export const BottomSheet = Dialog;
+/** A modal sheet anchored to the bottom edge; #487 owns route-level presentation. */
+export function BottomSheet(props: DialogProps) {
+  return <Dialog {...props} placement="bottom" />;
+}
 
 export function ConflictDialog({
   visible,
@@ -239,7 +289,9 @@ export function ConflictDialog({
       title={uiMessage('ui.conflict', locale)}
       locale={locale}
     >
-      <Text style={{ color: theme.textSecondary }}>{uiMessage('ui.conflictDetail', locale)}</Text>
+      <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>
+        {uiMessage('ui.conflictDetail', locale)}
+      </Text>
       <ActionButton label={uiMessage('ui.reviewAgain', locale)} onPress={onReview} />
       <ActionButton label={uiMessage('ui.discard', locale)} onPress={onDiscard} />
     </Dialog>

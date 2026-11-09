@@ -1,14 +1,15 @@
 import { useState, type ReactNode } from 'react';
 import { Image } from 'expo-image';
+import { SymbolView } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
 import type { DecimalString } from '@/api/decimal';
-import { Radii, Spacing } from '@/constants/theme';
+import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-import { Amount } from './amount';
-import { currentUiLocale, uiMessage, type UiLocale } from './locale';
-import { type ValueStatus, ValueStatusBadge } from './value-status';
+import { Amount, amountTexts } from './amount';
+import { currentUiLocale, displayDate, uiMessage, type UiLocale } from './locale';
+import { isValueKnown, type ValueStatus, ValueStatusBadge, valueStatusTexts } from './value-status';
 
 export function SectionCard({
   title,
@@ -28,16 +29,15 @@ export function SectionCard({
         borderColor: theme.borderDefault,
         borderRadius: Radii.card,
         backgroundColor: theme.bgSurface,
-        gap: 12,
+        gap: Spacing.compact,
       }}
     >
-      <Text
-        accessibilityRole="header"
-        style={{ fontSize: 16, fontWeight: '600', color: theme.textPrimary }}
-      >
+      <Text accessibilityRole="header" style={{ ...TypeScale.headingSmall, color: theme.textPrimary }}>
         {title}
       </Text>
-      {description ? <Text style={{ color: theme.textSecondary }}>{description}</Text> : null}
+      {description ? (
+        <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>{description}</Text>
+      ) : null}
       {children}
     </View>
   );
@@ -55,58 +55,90 @@ export function ChangeChip({
   locale?: UiLocale;
 }) {
   const theme = useTheme();
-  const negative = amount.startsWith('-') && !/^-0+(\.0+)?$/.test(amount);
-  const color = negative ? theme.statusLoss : theme.statusGain;
-  const backgroundColor = negative ? theme.statusLossSubtle : theme.statusGainSubtle;
+  // Direction follows the displayed (rounded) amount, so "-0.001" is a neutral "CHF 0.00".
+  const { display } = amountTexts({ value: amount, currency, locale, signRole: 'change' });
+  const direction = display.startsWith('−') ? 'down' : display.startsWith('+') ? 'up' : 'flat';
+  const color =
+    direction === 'down'
+      ? theme.statusLoss
+      : direction === 'up'
+        ? theme.statusGain
+        : theme.textSecondary;
+  const backgroundColor =
+    direction === 'down'
+      ? theme.statusLossSubtle
+      : direction === 'up'
+        ? theme.statusGainSubtle
+        : theme.bgSubtle;
   return (
     <View
       style={{
         flexDirection: 'row',
         flexWrap: 'wrap',
         alignItems: 'center',
-        gap: 4,
-        padding: 8,
+        gap: Spacing.one,
+        padding: Spacing.two,
         borderRadius: Radii.pill,
         backgroundColor,
       }}
     >
-      <Text style={{ color, fontWeight: '600' }}>{negative ? '↘' : '↗'}</Text>
+      {/* The arrow repeats the sign of the amount; screen readers read the amount instead. */}
+      <Text
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{ ...TypeScale.labelMedium, fontWeight: '600', color }}
+      >
+        {direction === 'down' ? '↘' : direction === 'up' ? '↗' : '→'}
+      </Text>
       <Amount
         value={amount}
         currency={currency}
         signRole="change"
         locale={locale}
-        style={{ color, fontWeight: '600' }}
+        style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
       />
-      {percentage ? <Text style={{ color }}>{percentage}</Text> : null}
+      {percentage ? (
+        <Text style={{ ...TypeScale.numberMedium, color }}>{percentage}</Text>
+      ) : null}
     </View>
   );
 }
+
+/**
+ * Overview spec: the logo from `logoUrl`; when there is none (or it fails to load), the house
+ * icon for the personal-assets default portfolio, else the initials of `name`.
+ */
 export function InstitutionLogo({
   name,
   logoUrl,
+  personalAssetsDefault = false,
   size = 44,
+  locale = currentUiLocale(),
 }: {
   name: string;
   logoUrl?: string | null;
+  personalAssetsDefault?: boolean;
   size?: number;
+  locale?: UiLocale;
 }) {
   const theme = useTheme();
   const [failed, setFailed] = useState(false);
-  // Remote logos may be blocked / become unavailable. Initials are always visible.
-  const initials =
-    name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((word) => word[0]?.toUpperCase() ?? '')
-      .join('') || '⌂';
+  const box = Math.max(44, size);
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join('');
+  const showHouse = personalAssetsDefault || !initials;
   return (
     <View
-      accessibilityLabel={name}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={name.trim() || uiMessage('ui.personalAssets', locale)}
       style={{
-        height: Math.max(44, size),
-        width: Math.max(44, size),
+        height: box,
+        width: box,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: theme.bgSubtle,
@@ -115,29 +147,38 @@ export function InstitutionLogo({
         borderColor: theme.borderDefault,
       }}
     >
-      <Text style={{ color: theme.textPrimary, fontWeight: '600' }}>{initials}</Text>
+      {showHouse ? (
+        <SymbolView
+          name={{ ios: 'house', android: 'home', web: 'home' }}
+          size={box / 2}
+          tintColor={theme.textPrimary}
+        />
+      ) : (
+        <Text style={{ ...TypeScale.labelMedium, fontWeight: '600', color: theme.textPrimary }}>
+          {initials}
+        </Text>
+      )}
+      {/* Remote logos may be blocked or become unavailable: the fallback stays underneath. */}
       {logoUrl?.startsWith('https://') && !failed ? (
         <Image
           source={{ uri: logoUrl }}
-          accessibilityLabel={name}
+          accessible={false}
           onError={() => setFailed(true)}
           contentFit="contain"
-          style={{
-            position: 'absolute',
-            width: Math.max(44, size) - 8,
-            height: Math.max(44, size) - 8,
-          }}
+          style={{ position: 'absolute', width: box - Spacing.two, height: box - Spacing.two }}
         />
       ) : null}
     </View>
   );
 }
+
 export type SummaryRowProps = {
   title: string;
   subtitle?: string;
   amount: DecimalString | null;
   currency: string;
   status?: ValueStatus;
+  valueSourceDate?: string | null;
   masked?: boolean;
   onPress?: () => void;
   locale?: UiLocale;
@@ -148,34 +189,57 @@ export function AccountRow({
   amount,
   currency,
   status,
+  valueSourceDate,
   masked,
   onPress,
   locale = currentUiLocale(),
 }: SummaryRowProps) {
   const theme = useTheme();
+  // Spec README §3: an UNKNOWN (or unrecognized) status shows the amount as "–", never a number.
+  const valueKnown = isValueKnown(status);
   const contents = (
     <View
       style={{
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 12,
+        gap: Spacing.compact,
         justifyContent: 'space-between',
         alignItems: 'center',
       }}
     >
       <View style={{ flexGrow: 1, flexShrink: 1 }}>
-        <Text style={{ fontWeight: '600', color: theme.textPrimary }}>{title}</Text>
-        {subtitle ? <Text style={{ color: theme.textSecondary }}>{subtitle}</Text> : null}
-        <ValueStatusBadge status={status} locale={locale} />
+        <Text style={{ ...TypeScale.labelMedium, fontWeight: '600', color: theme.textPrimary }}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>{subtitle}</Text>
+        ) : null}
+        <ValueStatusBadge status={status} valueSourceDate={valueSourceDate} locale={locale} />
       </View>
-      <Amount value={amount} currency={currency} masked={masked} locale={locale} />
+      <Amount
+        value={amount}
+        currency={currency}
+        masked={masked}
+        valueKnown={valueKnown}
+        locale={locale}
+        style={TypeScale.numberLarge}
+      />
     </View>
   );
   if (!onPress) return <View style={{ paddingVertical: Spacing.compact }}>{contents}</View>;
+  // A pressable row is one screen-reader element, so its label carries everything it shows.
+  const label = [
+    title,
+    subtitle,
+    amountTexts({ value: amount, currency, masked, valueKnown, locale }).label,
+    valueStatusTexts(status, valueSourceDate, locale)?.label,
+  ]
+    .filter(Boolean)
+    .join(', ');
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={title}
+      accessibilityLabel={label}
       onPress={onPress}
       style={{ paddingVertical: Spacing.compact, minHeight: 44 }}
     >
@@ -183,9 +247,20 @@ export function AccountRow({
     </Pressable>
   );
 }
-export function TransactionRow(props: SummaryRowProps & { date: string }) {
-  return <AccountRow {...props} subtitle={props.subtitle ?? props.date} />;
+
+export function TransactionRow({
+  date,
+  ...props
+}: SummaryRowProps & {
+  /** Booking date, ISO `YYYY-MM-DD`. */
+  date: string;
+}) {
+  const locale = props.locale ?? currentUiLocale();
+  return (
+    <AccountRow {...props} locale={locale} subtitle={props.subtitle ?? displayDate(date, locale)} />
+  );
 }
+
 export function PortfolioTabs({
   tabs,
   selected,
@@ -197,7 +272,10 @@ export function PortfolioTabs({
 }) {
   const theme = useTheme();
   return (
-    <View accessibilityRole="tablist" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+    <View
+      accessibilityRole="tablist"
+      style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}
+    >
       {tabs.map((tab) => (
         <Pressable
           key={tab.id}
@@ -209,13 +287,18 @@ export function PortfolioTabs({
             minHeight: 44,
             justifyContent: 'center',
             borderRadius: Radii.pill,
-            paddingHorizontal: 16,
+            paddingHorizontal: Spacing.three,
             backgroundColor: selected === tab.id ? theme.bgInverse : theme.bgSurface,
             borderWidth: 1,
             borderColor: theme.borderInteractive,
           }}
         >
-          <Text style={{ color: selected === tab.id ? theme.bgSurface : theme.textPrimary }}>
+          <Text
+            style={{
+              ...TypeScale.labelMedium,
+              color: selected === tab.id ? theme.bgSurface : theme.textPrimary,
+            }}
+          >
             {tab.label}
           </Text>
         </Pressable>
@@ -223,39 +306,48 @@ export function PortfolioTabs({
     </View>
   );
 }
+
 export function ChipGroup({
   options,
   selected,
   onSelect,
   multi = false,
+  label,
 }: {
   options: { value: string; label: string }[];
   selected: string[];
   onSelect: (value: string) => void;
   multi?: boolean;
+  /** Accessible name of the group. */
+  label?: string;
 }) {
   const theme = useTheme();
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+    <View
+      accessibilityRole={multi ? undefined : 'radiogroup'}
+      accessibilityLabel={label}
+      style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}
+    >
       {options.map((option) => {
         const active = selected.includes(option.value);
         return (
           <Pressable
             key={option.value}
             accessibilityRole={multi ? 'checkbox' : 'radio'}
-            accessibilityState={multi ? { checked: active } : { selected: active }}
+            accessibilityState={{ checked: active }}
+            accessibilityLabel={option.label}
             onPress={() => onSelect(option.value)}
             style={{
               minHeight: 44,
               borderRadius: Radii.pill,
-              paddingHorizontal: 12,
+              paddingHorizontal: Spacing.compact,
               justifyContent: 'center',
               borderWidth: 1,
               borderColor: theme.borderInteractive,
               backgroundColor: active ? theme.brandSubtle : theme.bgSurface,
             }}
           >
-            <Text style={{ color: theme.textPrimary }}>
+            <Text style={{ ...TypeScale.labelMedium, color: theme.textPrimary }}>
               {option.label}
               {active ? ' ✓' : ''}
             </Text>
@@ -266,6 +358,7 @@ export function ChipGroup({
   );
 }
 export const FilterChips = ChipGroup;
+
 export function CountTile({ label, count }: { label: string; count: number | string }) {
   const theme = useTheme();
   return (
@@ -275,14 +368,15 @@ export function CountTile({ label, count }: { label: string; count: number | str
         backgroundColor: theme.bgSubtle,
         borderRadius: Radii.card,
         minWidth: 110,
-        gap: 4,
+        gap: Spacing.one,
       }}
     >
-      <Text style={{ color: theme.textSecondary }}>{label}</Text>
-      <Text style={{ color: theme.textPrimary, fontSize: 24, fontWeight: '600' }}>{count}</Text>
+      <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>{label}</Text>
+      <Text style={{ ...TypeScale.headingLarge, color: theme.textPrimary }}>{count}</Text>
     </View>
   );
 }
+
 export function KeyValueList({
   items,
 }: {
@@ -290,21 +384,21 @@ export function KeyValueList({
 }) {
   const theme = useTheme();
   return (
-    <View style={{ gap: 12 }}>
+    <View style={{ gap: Spacing.compact }}>
       {items.map((item) => (
         <View
           key={item.key}
           style={{
             flexDirection: 'row',
             flexWrap: 'wrap',
-            gap: 8,
+            gap: Spacing.two,
             justifyContent: 'space-between',
           }}
         >
-          <Text style={{ color: theme.textSecondary }}>{item.label}</Text>
+          <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>{item.label}</Text>
           <View style={{ flexShrink: 1 }}>
             {typeof item.value === 'string' || typeof item.value === 'number' ? (
-              <Text style={{ color: theme.textPrimary }}>{item.value}</Text>
+              <Text style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>{item.value}</Text>
             ) : (
               item.value
             )}
@@ -314,6 +408,7 @@ export function KeyValueList({
     </View>
   );
 }
+
 export function Stepper({
   steps,
   current,
@@ -327,35 +422,37 @@ export function Stepper({
 }) {
   const theme = useTheme();
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      {steps.map((step, index) => (
-        <Pressable
-          key={index}
-          accessibilityRole="button"
-          accessibilityState={{
-            selected: current === index,
-            disabled: !onSelect || index > current,
-          }}
-          disabled={!onSelect || index > current}
-          accessibilityLabel={index + 1 + '. ' + step}
-          accessibilityHint={uiMessage('ui.select', locale)}
-          onPress={() => onSelect?.(index)}
-          style={{
-            minHeight: 44,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-            paddingHorizontal: 12,
-            backgroundColor: current === index ? theme.brandSubtle : theme.bgSurface,
-            borderRadius: Radii.control,
-            borderWidth: 1,
-            borderColor: theme.borderDefault,
-          }}
-        >
-          <Text style={{ fontWeight: '600', color: theme.textPrimary }}>{index + 1}</Text>
-          <Text style={{ color: theme.textPrimary }}>{step}</Text>
-        </Pressable>
-      ))}
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}>
+      {steps.map((step, index) => {
+        const disabled = !onSelect || index > current;
+        return (
+          <Pressable
+            key={index}
+            accessibilityRole="button"
+            accessibilityState={{ selected: current === index, disabled }}
+            disabled={disabled}
+            accessibilityLabel={index + 1 + '. ' + step}
+            accessibilityHint={disabled ? undefined : uiMessage('ui.select', locale)}
+            onPress={() => onSelect?.(index)}
+            style={{
+              minHeight: 44,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: Spacing.two,
+              paddingHorizontal: Spacing.compact,
+              backgroundColor: current === index ? theme.brandSubtle : theme.bgSurface,
+              borderRadius: Radii.control,
+              borderWidth: 1,
+              borderColor: theme.borderDefault,
+            }}
+          >
+            <Text style={{ ...TypeScale.labelMedium, fontWeight: '600', color: theme.textPrimary }}>
+              {index + 1}
+            </Text>
+            <Text style={{ ...TypeScale.labelMedium, color: theme.textPrimary }}>{step}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
