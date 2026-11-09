@@ -15,27 +15,27 @@ jest.mock('@/hooks/use-theme', () => ({
 jest.mock('expo-image', () => ({ Image: 'Image' }));
 
 describe('shared navigation and financial rows', () => {
-  it('tracks selected portfolio tabs and exposes accessible states', () => {
+  it('tracks selected portfolio tabs and exposes accessible states', async () => {
     const onSelect = jest.fn();
-    render(<PortfolioTabs tabs={[{ id: 'a', label: 'All' }, { id: 'b', label: 'Bank' }]}
+    await render(<PortfolioTabs tabs={[{ id: 'a', label: 'All' }, { id: 'b', label: 'Bank' }]}
       selected="a" onSelect={onSelect} />);
     expect(screen.getByRole('tab', { name: 'All' }).props.accessibilityState.selected).toBe(true);
-    fireEvent.press(screen.getByRole('tab', { name: 'Bank' }));
+    await fireEvent.press(screen.getByRole('tab', { name: 'Bank' }));
     expect(onSelect).toHaveBeenCalledWith('b');
   });
-  it('calls the chip control with the selected filter', () => {
+  it('calls the chip control with the selected filter', async () => {
     const onSelect = jest.fn();
-    render(<ChipGroup options={[{ value: 'cash', label: 'Cash' }]} selected={[]} onSelect={onSelect} />);
-    fireEvent.press(screen.getByRole('radio', { name: 'Cash' }));
+    await render(<ChipGroup options={[{ value: 'cash', label: 'Cash' }]} selected={[]} onSelect={onSelect} />);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Cash' }));
     expect(onSelect).toHaveBeenCalledWith('cash');
   });
-  it('masks account balances even in the rendered tree', () => {
-    render(<AccountRow title="Main" amount="1234567.89" currency="CHF" masked />);
+  it('masks account balances even in the rendered tree', async () => {
+    await render(<AccountRow title="Main" amount="1234567.89" currency="CHF" masked />);
     expect(screen.getByText('••••')).toBeTruthy();
     expect(JSON.stringify(screen.toJSON())).not.toContain('1234567.89');
   });
-  it('falls back to institution initials when no logo is provided', () => {
-    render(<InstitutionLogo name="Example Bank" />);
+  it('falls back to institution initials when no logo is provided', async () => {
+    await render(<InstitutionLogo name="Example Bank" />);
     expect(screen.getByText('EB')).toBeTruthy();
   });
 });
