@@ -13,10 +13,10 @@ import { ApiError } from '@/api/client';
 import { problemReaction } from '@/api/problems';
 import { ActionButton, Amount, ChipGroup, ConflictDialog, Dialog, EmptyState, ErrorBanner, LoadingSkeleton, OfflineBanner, ValueStatusBadge } from '@/components/shared';
 import { Spacing, TypeScale } from '@/constants/theme';
-import { formatDate, formatRelativeDay } from '@/format/date';
+import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
-import { accountValuation, categoryName, groupedTransactions, uniqueTransactions, type Transaction } from './model';
-import { TransactionLine } from './transaction-line';
+import { accountValuation, categoryName, uniqueTransactions, type Transaction } from './model';
+import { TransactionResults } from './transaction-results';
 
 export type AccountDetailProps = {
   accountId: string;
@@ -219,16 +219,9 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
               actionLabel={uncategorized ? intl.formatMessage({ id: 'account.all' }) : intl.formatMessage({ id: 'account.import' })}
               onAction={uncategorized ? () => setUncategorized(false) : onImport} />
           ) : null}
-          {groupedTransactions(records, sort.startsWith('bookingDate')).map((group, index) => (
-            <View key={group.date ?? `amount-${index}`}>
-              {group.date ? <Text accessibilityRole="header" style={{ ...TypeScale.labelMedium, color: theme.textSecondary }}>
-                {formatRelativeDay(group.date, intl)} · {formatDate(group.date, intl.locale)}
-              </Text> : null}
-              {group.rows.map((row) => <TransactionLine key={row.id} transaction={row}
-                categories={categories.data ?? []} archived={archived}
-                onOpen={onTransaction} onCategory={setCategoryTarget} />)}
-            </View>
-          ))}
+          <TransactionResults transactions={records} categories={categories.data ?? []}
+            archived={archived} byDate={sort.startsWith('bookingDate')}
+            onOpen={onTransaction} onCategory={setCategoryTarget} />
           {records.length ? <Text accessibilityLiveRegion="polite" style={{ color: theme.textSecondary }}>
             {intl.formatMessage({ id: 'account.showing' }, { shown: records.length, total })}
           </Text> : null}
