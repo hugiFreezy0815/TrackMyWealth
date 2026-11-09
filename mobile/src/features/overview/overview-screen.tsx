@@ -9,14 +9,14 @@ import {
   useAccounts, useCashFlow, useNetWorth, usePortfolios, useWorkspace,
 } from '@/api/queries/resources';
 import {
-  ActionButton, Amount, ChipGroup, Dialog, EmptyState, ErrorBanner, InstitutionLogo,
+  ActionButton, Amount, ChipGroup, Dialog, ErrorBanner, InstitutionLogo,
   LoadingSkeleton, OfflineBanner, SectionCard, ValueStatusBadge,
 } from '@/components/shared';
 import { amountTexts } from '@/components/shared/amount';
-import type { UiLocale } from '@/components/shared/locale';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
+import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import {
   currencyAmount, hasNonZeroAmount, isFirstRunEmpty, largestLiabilities,
   monthKey, scopeCurrencies, unknownValuations, unreconciledAccounts,
@@ -24,8 +24,6 @@ import {
 } from './overview-model';
 
 export type OverviewScreenProps = {
-  hiddenAmounts?: boolean;
-  onToggleAmounts?: () => void;
   onAddPortfolio: () => void;
   onReviewAccount?: (accountId: string) => void;
 };
@@ -42,10 +40,6 @@ const sectionLabels: Record<NetWorth['sections'][number]['section'], string> = {
   PROPERTY_AND_MORTGAGE: 'overview.sections.PROPERTY_AND_MORTGAGE',
   OTHER: 'overview.sections.OTHER',
 };
-function language(locale: string): UiLocale {
-  if (locale.toLowerCase().startsWith('de-ch')) return 'de-CH';
-  return locale.toLowerCase().startsWith('de') ? 'de-DE' : 'en';
-}
 function msg(intl: IntlShape, id: string, values?: Record<string, string | number>): string {
   return intl.formatMessage({ id }, values);
 }
@@ -141,7 +135,6 @@ function Totals({
   data, hidden, explain, intl,
 }: { data: NetWorth; hidden: boolean; explain: (part: FinancialPart) => void; intl: IntlShape }) {
   const theme = useTheme();
-  const locale = language(intl.locale);
   const amounts = [
     { part: 'netWorth', label: 'overview.netWorth', value: data.netWorth },
     { part: 'assets', label: 'overview.assets', value: data.totalAssets },
@@ -150,7 +143,7 @@ function Totals({
   return (
     <View style={{ gap: Spacing.three }}>
       {amounts.map(({ part, label, value }) => {
-        const number = amountTexts({ value, currency: data.currency, masked: hidden, locale }).label;
+        const number = amountTexts(intl, { value, currency: data.currency, masked: hidden }).label;
         const a11y = [
           msg(intl, label), number,
           part === 'netWorth' && data.approximate ? msg(intl, 'valueStatus.estimated') : '',
@@ -163,15 +156,14 @@ function Totals({
               onPress={() => explain(part)}
               style={{ minHeight: 44, justifyContent: 'center' }}
             >
-              <Amount value={value} currency={data.currency} locale={locale} masked={hidden}
-                style={{
+              <Amount value={value} currency={data.currency} masked={hidden} style={{
                   ...(part === 'netWorth' ? TypeScale.displayMedium : TypeScale.headingMedium),
                   color: part === 'liabilities' ? theme.statusLoss : theme.textPrimary,
                 }}
               />
             </Pressable>
             {part === 'netWorth' && data.approximate ? (
-              <ValueStatusBadge status="ESTIMATED" locale={locale} />
+              <ValueStatusBadge status="ESTIMATED" />
             ) : null}
             {part === 'netWorth' && !data.complete ? (
               <Pressable accessibilityRole="button" onPress={() => explain('netWorth')}
@@ -184,8 +176,7 @@ function Totals({
                 flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8,
               }}>
                 <InfoText>{account.name}</InfoText>
-                <Amount value={account.value} currency={data.currency} masked={hidden}
-                  locale={locale} style={{ ...TypeScale.caption, color: theme.textSecondary }} />
+                <Amount value={account.value} currency={data.currency} masked={hidden} style={{ ...TypeScale.caption, color: theme.textSecondary }} />
               </View>
             )) : null}
           </SectionCard>
@@ -199,7 +190,6 @@ function SectionTiles({
   data, hidden, intl, desktop,
 }: { data: NetWorth; hidden: boolean; intl: IntlShape; desktop: boolean }) {
   const theme = useTheme();
-  const locale = language(intl.locale);
   if (!data.sections.length) return null;
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}>
@@ -211,10 +201,10 @@ function SectionTiles({
             Object.prototype.hasOwnProperty.call(sectionLabels, section.section)
               ? sectionLabels[section.section] : 'overview.unknownSection',
           )}>
-            <Amount value={section.subtotal} currency={data.currency} masked={hidden} locale={locale}
+            <Amount value={section.subtotal} currency={data.currency} masked={hidden}
               valueKnown={section.valueStatus !== 'UNKNOWN'}
               style={{ ...TypeScale.numberLarge, color: theme.textPrimary }} />
-            <ValueStatusBadge status={section.valueStatus} locale={locale} />
+            <ValueStatusBadge status={section.valueStatus} />
             {!section.complete ? <InfoText warning>{msg(intl, 'total.incomplete')}</InfoText> : null}
           </SectionCard>
         </View>
@@ -227,7 +217,6 @@ function PortfoliosCard({
   items, hidden, intl,
 }: { items: readonly Portfolio[]; hidden: boolean; intl: IntlShape }) {
   const theme = useTheme();
-  const locale = language(intl.locale);
   return (
     <SectionCard title={msg(intl, 'overview.portfolios')}>
       {items.length === 0 ? <InfoText>{msg(intl, 'overview.portfolio.empty')}</InfoText> : null}
@@ -237,7 +226,7 @@ function PortfoliosCard({
           borderBottomWidth: 1, borderBottomColor: theme.borderDefault,
         }}>
           <InstitutionLogo name={item.name} logoUrl={item.logoUrl}
-            personalAssetsDefault={item.personalAssetsDefault} locale={locale} />
+            personalAssetsDefault={item.personalAssetsDefault} />
           <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
             <Text style={{ ...TypeScale.labelMedium, fontWeight: '600', color: theme.textPrimary }}>
               {item.name}
@@ -249,16 +238,16 @@ function PortfoliosCard({
                     count: item.activeAccountCount, currency: item.portfolioCurrency,
                   })}
             </InfoText>
-            <ValueStatusBadge status={item.valueStatus} locale={locale} />
+            <ValueStatusBadge status={item.valueStatus} />
             {!item.complete ? <InfoText warning>{msg(intl, 'total.incomplete')}</InfoText> : null}
           </View>
           <View style={{ alignItems: 'flex-end', minWidth: 0, flexShrink: 1, gap: 6 }}>
             <Amount value={item.total} currency={item.portfolioCurrency} masked={hidden}
-              locale={locale} valueKnown={item.valueStatus !== 'UNKNOWN'}
+              valueKnown={item.valueStatus !== 'UNKNOWN'}
               style={TypeScale.numberLarge} />
             {item.portfolioCurrency !== item.workspaceCurrency ? (
               <Amount value={item.totalInWorkspaceCurrency} currency={item.workspaceCurrency}
-                masked={hidden} locale={locale} approx valueKnown={item.valueStatus !== 'UNKNOWN'}
+                masked={hidden} approx valueKnown={item.valueStatus !== 'UNKNOWN'}
                 style={{ ...TypeScale.caption, color: theme.textSecondary }} />
             ) : null}
           </View>
@@ -272,7 +261,6 @@ function CashFlowCard({
   data, currency, hidden, intl,
 }: { data: CashFlow; currency: string; hidden: boolean; intl: IntlShape }) {
   const theme = useTheme();
-  const locale = language(intl.locale);
   const month = intl.formatDate(new Date(data.month + '-01T12:00:00Z'), {
     month: 'long', timeZone: 'UTC',
   });
@@ -290,14 +278,14 @@ function CashFlowCard({
         }}>
           <InfoText>{msg(intl, label)}</InfoText>
           <Amount value={entry?.amount ?? null} valueKnown={entry?.valueKnown ?? false}
-            currency={currency} masked={hidden} locale={locale} style={TypeScale.numberLarge} />
+            currency={currency} masked={hidden} style={TypeScale.numberLarge} />
         </View>
       ))}
       {pending?.valueKnown && hasNonZeroAmount(pending.amount) ? (
         <View style={{ padding: Spacing.compact, backgroundColor: theme.statusWarningSubtle }}>
           <Text style={{ ...TypeScale.bodyMedium, color: theme.statusWarning }}>
             {msg(intl, 'overview.cashFlow.pendingReview', {
-              amount: amountTexts({ value: pending.amount, currency, masked: hidden, locale }).display,
+              amount: amountTexts(intl, { value: pending.amount, currency, masked: hidden }).display,
             })}
           </Text>
         </View>
@@ -316,9 +304,8 @@ function ExplanationSheet({
   const title = msg(intl, 'overview.' +
     (part === 'netWorth' ? 'netWorth' : part === 'assets' ? 'assets' : 'liabilities'));
   return (
-    <Dialog title={title} visible onClose={close} locale={language(intl.locale)}>
-      <Amount value={value} currency={data.currency} masked={hidden}
-        locale={language(intl.locale)} style={TypeScale.headingMedium} />
+    <Dialog title={title} visible onClose={close}>
+      <Amount value={value} currency={data.currency} masked={hidden} style={TypeScale.headingMedium} />
       <InfoText>{msg(intl, 'overview.explain.asOf', {
         date: formatDate(data.asOf, intl.locale),
       })}</InfoText>
@@ -363,18 +350,15 @@ function FirstRun({
 
 /** US-01-15 / S1: independent TanStack queries, no financial arithmetic in the UI. */
 export function OverviewScreen({
-  hiddenAmounts, onToggleAmounts, onAddPortfolio, onReviewAccount,
+  onAddPortfolio, onReviewAccount,
 }: OverviewScreenProps) {
   const intl = useIntl();
-  const locale = language(intl.locale);
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const online = useOnline();
   const [selectedCurrency, selectCurrency] = useState<string | null>(null);
-  const [localHidden, setLocalHidden] = useState(false);
   const [explanation, setExplanation] = useState<Explanation>(null);
-  const hidden = hiddenAmounts ?? localHidden;
-  const toggleHidden = onToggleAmounts ?? (() => setLocalHidden((value) => !value));
+  const hidden = useAmountsHidden();
   const month = useMemo(() => monthKey(new Date()), []);
   const workspace = useWorkspace();
   const portfolios = usePortfolios();
@@ -415,16 +399,7 @@ export function OverviewScreen({
             {msg(intl, 'overview.title')}
           </Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={msg(intl, hidden ? 'overview.showAmounts' : 'overview.hideAmounts')}
-          onPress={toggleHidden}
-          style={{ minHeight: 44, minWidth: 44, justifyContent: 'center' }}
-        >
-          <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
-            {msg(intl, hidden ? 'overview.showAmounts' : 'overview.hideAmounts')}
-          </Text>
-        </Pressable>
+
       </View>
       {Platform.OS === 'web' ? (
         <Pressable accessibilityRole="button" accessibilityLabel={msg(intl, 'overview.refresh')}
@@ -432,11 +407,11 @@ export function OverviewScreen({
           <Text style={{ color: theme.brandLink }}>{msg(intl, 'overview.refresh')}</Text>
         </Pressable>
       ) : null}
-      {!online ? <OfflineBanner locale={locale}
+      {!online ? <OfflineBanner
         lastUpdated={netWorth.dataUpdatedAt ? new Date(netWorth.dataUpdatedAt).toISOString() : undefined}
       /> : null}
-      {workspace.isPending ? <LoadingSkeleton count={1} locale={locale} /> : null}
-      {workspace.isError ? <ErrorBanner error={workspace.error} locale={locale}
+      {workspace.isPending ? <LoadingSkeleton count={1} /> : null}
+      {workspace.isError ? <ErrorBanner error={workspace.error}
         onRetry={() => void workspace.refetch()} /> : null}
       {workspace.data ? (
         <>
@@ -454,7 +429,7 @@ export function OverviewScreen({
           date: formatDate(netWorth.data.asOf, intl.locale),
         })}</InfoText>
       ) : null}
-      {accounts.isError ? <ErrorBanner error={accounts.error} locale={locale}
+      {accounts.isError ? <ErrorBanner error={accounts.error}
         onRetry={() => void accounts.refetch()} /> : null}
       {unreconciled.length > 0 ? (
         <View accessibilityRole="alert" style={{
@@ -477,8 +452,8 @@ export function OverviewScreen({
       ) : null}
       {firstRun ? <FirstRun intl={intl} offline={!online} onAddPortfolio={onAddPortfolio} /> : (
         <>
-          {netWorth.isPending ? <LoadingSkeleton count={4} height={28} locale={locale} /> : null}
-          {netWorth.isError ? <ErrorBanner error={netWorth.error} locale={locale}
+          {netWorth.isPending ? <LoadingSkeleton count={4} height={28} /> : null}
+          {netWorth.isError ? <ErrorBanner error={netWorth.error}
             onRetry={() => void netWorth.refetch()} /> : null}
           {netWorth.data ? (
             <View style={{ gap: Spacing.three }}>
@@ -492,14 +467,14 @@ export function OverviewScreen({
       {!firstRun ? (
         <View style={{ flexDirection: width >= 1024 ? 'row' : 'column', gap: Spacing.three }}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            {portfolios.isPending ? <LoadingSkeleton count={3} locale={locale} /> : null}
-            {portfolios.isError ? <ErrorBanner error={portfolios.error} locale={locale}
+            {portfolios.isPending ? <LoadingSkeleton count={3} /> : null}
+            {portfolios.isError ? <ErrorBanner error={portfolios.error}
               onRetry={() => void portfolios.refetch()} /> : null}
             {portfolios.data ? <PortfoliosCard items={portfolioItems} hidden={hidden} intl={intl} /> : null}
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            {cashFlow.isPending ? <LoadingSkeleton count={3} locale={locale} /> : null}
-            {cashFlow.isError ? <ErrorBanner error={cashFlow.error} locale={locale}
+            {cashFlow.isPending ? <LoadingSkeleton count={3} /> : null}
+            {cashFlow.isError ? <ErrorBanner error={cashFlow.error}
               onRetry={() => void cashFlow.refetch()} /> : null}
             {cashFlow.data ? <CashFlowCard data={cashFlow.data} intl={intl}
               currency={currency ?? cashFlow.data.income[0]?.currency ?? ''}
