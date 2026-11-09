@@ -198,8 +198,7 @@ public class CashFlowService {
     List<Object[]> income =
         transactionRepository.sumIncomeByDateAndCurrency(accountIds, INCOME_TYPES, from, to);
     List<Object[]> spending =
-        transactionRepository.sumSpendingByDateAndCurrency(
-            accountIds, SPENDING_TYPES, from, to);
+        transactionRepository.sumSpendingByDateAndCurrency(accountIds, SPENDING_TYPES, from, to);
     List<Object[]> all = Stream.concat(income.stream(), spending.stream()).toList();
     if (all.isEmpty()) {
       return BigDecimal.ZERO;

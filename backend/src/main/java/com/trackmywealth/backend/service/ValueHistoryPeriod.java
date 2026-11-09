@@ -62,8 +62,9 @@ public enum ValueHistoryPeriod {
                   1,
                   (long)
                       Math.ceil(
-                          (double) ChronoUnit.MONTHS.between(
-                                  YearMonth.from(from), YearMonth.from(to))
+                          (double)
+                                  ChronoUnit.MONTHS.between(
+                                      YearMonth.from(from), YearMonth.from(to))
                               / (MAX_POINTS - 1)));
         };
     List<LocalDate> dates = new ArrayList<>();

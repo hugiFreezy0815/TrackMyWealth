@@ -14587,6 +14587,110 @@ paths:
       - UNAUTHENTICATED
       - NOT_FOUND
       - INTERNAL
+  /api/v1/net-worth/history:
+    get:
+      tags:
+      - Net worth
+      summary: Historical workspace net worth and period change
+      operationId: getNetWorthHistory
+      parameters:
+      - name: period
+        in: query
+        required: false
+        schema:
+          type: string
+          default: 1M
+      - name: currency
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: X-Correlation-Id
+        in: header
+        description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
+          \ otherwise the server generates a UUID."
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          minLength: 8
+          pattern: "[A-Za-z0-9._-]{8,64}"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValueHistoryResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "401":
+          description: |-
+            Problem codes:
+            - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "404":
+          description: |-
+            Problem codes:
+            - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "500":
+          description: |-
+            Problem codes:
+            - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        default:
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+      x-problem-codes:
+      - VALIDATION_FAILED
+      - UNAUTHENTICATED
+      - NOT_FOUND
+      - INTERNAL
   /api/v1/portfolios:
     get:
       tags:
@@ -15073,6 +15177,111 @@ paths:
       - CONFLICT
       - VERSION_REQUIRED
       - VERSION_CONFLICT
+      - INTERNAL
+  /api/v1/portfolios/{portfolioId}/history:
+    get:
+      tags:
+      - Portfolios
+      summary: Historical value and period change in the portfolio currency
+      operationId: getPortfolioHistory
+      parameters:
+      - name: portfolioId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: period
+        in: query
+        required: false
+        schema:
+          type: string
+          default: 1M
+      - name: X-Correlation-Id
+        in: header
+        description: "Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64};\
+          \ otherwise the server generates a UUID."
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          minLength: 8
+          pattern: "[A-Za-z0-9._-]{8,64}"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValueHistoryResponse"
+        "400":
+          description: |-
+            Problem codes:
+            - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "401":
+          description: |-
+            Problem codes:
+            - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "404":
+          description: |-
+            Problem codes:
+            - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        "500":
+          description: |-
+            Problem codes:
+            - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ApiProblem"
+        default:
+          headers:
+            X-Correlation-Id:
+              description: Correlation id assigned to this request.
+              schema:
+                type: string
+          $ref: "#/components/responses/ApiProblemResponse"
+      x-problem-codes:
+      - VALIDATION_FAILED
+      - UNAUTHENTICATED
+      - NOT_FOUND
       - INTERNAL
   /api/v1/portfolios/{portfolioId}/summary:
     get:
@@ -18824,6 +19033,40 @@ components:
       - protectedCategory
       - systemDefault
       - version
+    Change:
+      type: object
+      properties:
+        amount:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        percent:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        contributions:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        marketAndFx:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+      required:
+      - amount
+      - contributions
+      - marketAndFx
+      - percent
     Conflict:
       type: object
       properties:
@@ -21661,6 +21904,23 @@ components:
       required:
       - content
       - page
+    Point:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        value:
+          type: string
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        estimated:
+          type: boolean
+      required:
+      - date
+      - estimated
+      - value
     PortfolioListItemResponse:
       type: object
       properties:
@@ -21735,10 +21995,15 @@ components:
           type:
           - string
           - "null"
+        change:
+          anyOf:
+          - $ref: "#/components/schemas/PortfolioPeriodChange"
+          - type: "null"
       required:
       - activeAccountCount
       - asOf
       - catalogueInstitutionId
+      - change
       - complete
       - country
       - id
@@ -21755,6 +22020,29 @@ components:
       - valueStatus
       - version
       - workspaceCurrency
+    PortfolioPeriodChange:
+      type: object
+      properties:
+        period:
+          type: string
+        amount:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+        percent:
+          type:
+          - string
+          - "null"
+          format: decimal
+          description: Exact decimal encoded as a plain JSON string. Strings are canonical
+            on requests; JSON numbers remain accepted for compatibility.
+      required:
+      - amount
+      - percent
+      - period
     PortfolioResponse:
       type: object
       properties:
@@ -22260,6 +22548,25 @@ components:
       - subtotal
       - subtotalInWorkspaceCurrency
       - valueStatus
+    SectionChange:
+      type: object
+      properties:
+        section:
+          type: string
+          enum:
+          - CASH_AND_SAVINGS
+          - PILLAR_3A
+          - PENSION
+          - DEPOT
+          - CRYPTO
+          - CARDS
+          - PROPERTY_AND_MORTGAGE
+          - OTHER
+        change:
+          $ref: "#/components/schemas/Change"
+      required:
+      - change
+      - section
     SecurityCompleteness:
       type: object
       properties:
@@ -23143,6 +23450,45 @@ components:
       - role
       - status
       - version
+    ValueHistoryResponse:
+      type: object
+      properties:
+        currency:
+          type: string
+        period:
+          type: string
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/Point"
+        change:
+          $ref: "#/components/schemas/Change"
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/SectionChange"
+        complete:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            type: string
+      required:
+      - change
+      - complete
+      - currency
+      - from
+      - period
+      - points
+      - sections
+      - to
+      - warnings
     WorkspaceMemberListItemResponse:
       type: object
       properties:

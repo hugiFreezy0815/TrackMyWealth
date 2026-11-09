@@ -1232,6 +1232,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/net-worth/history': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Historical workspace net worth and period change */
+    get: operations['getNetWorthHistory'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/portfolios': {
     parameters: {
       query?: never;
@@ -1264,6 +1281,23 @@ export interface paths {
     get: operations['getPortfolio'];
     /** Rename a portfolio, describe its institution or set its type */
     put: operations['updatePortfolio'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/portfolios/{portfolioId}/history': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Historical value and period change in the portfolio currency */
+    get: operations['getPortfolioHistory'];
+    put?: never;
     post?: never;
     delete?: never;
     options?: never;
@@ -2072,6 +2106,28 @@ export interface components {
       customised: boolean;
       /** Format: int32 */
       version: number;
+    };
+    Change: {
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      amount: DecimalString;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      percent: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      contributions: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      marketAndFx: DecimalString | null;
     };
     Conflict: {
       /** @enum {string} */
@@ -3180,6 +3236,16 @@ export interface components {
       content: components['schemas']['TransactionResponse'][];
       page: components['schemas']['PageMetadata'];
     };
+    Point: {
+      /** Format: date */
+      date: string;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      value: DecimalString;
+      estimated: boolean;
+    };
     PortfolioListItemResponse: {
       /** Format: uuid */
       id: string;
@@ -3222,6 +3288,20 @@ export interface components {
       /** Format: date */
       asOf: string;
       institutionName: string | null;
+      change: components['schemas']['PortfolioPeriodChange'] | null;
+    };
+    PortfolioPeriodChange: {
+      period: string;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      amount: DecimalString | null;
+      /**
+       * Format: decimal
+       * @description Exact decimal encoded as a plain JSON string. Strings are canonical on requests; JSON numbers remain accepted for compatibility.
+       */
+      percent: DecimalString | null;
     };
     PortfolioResponse: {
       /** Format: uuid */
@@ -3452,6 +3532,19 @@ export interface components {
       /** @enum {string} */
       valueStatus: 'CURRENT' | 'ESTIMATED' | 'STALE' | 'UNRECONCILED' | 'UNKNOWN';
       accounts: components['schemas']['AccountRow'][];
+    };
+    SectionChange: {
+      /** @enum {string} */
+      section:
+        | 'CASH_AND_SAVINGS'
+        | 'PILLAR_3A'
+        | 'PENSION'
+        | 'DEPOT'
+        | 'CRYPTO'
+        | 'CARDS'
+        | 'PROPERTY_AND_MORTGAGE'
+        | 'OTHER';
+      change: components['schemas']['Change'];
     };
     SecurityCompleteness: {
       complete: boolean;
@@ -3825,6 +3918,19 @@ export interface components {
       language: string;
       /** Format: int32 */
       version: number;
+    };
+    ValueHistoryResponse: {
+      currency: string;
+      period: string;
+      /** Format: date */
+      from: string;
+      /** Format: date */
+      to: string;
+      points: components['schemas']['Point'][];
+      change: components['schemas']['Change'];
+      sections: components['schemas']['SectionChange'][];
+      complete: boolean;
+      warnings: string[];
     };
     WorkspaceMemberListItemResponse: {
       /** Format: uuid */
@@ -15881,6 +15987,91 @@ export interface operations {
       default: components['responses']['ApiProblemResponse'];
     };
   };
+  getNetWorthHistory: {
+    parameters: {
+      query?: {
+        period?: string;
+        currency?: string;
+      };
+      header?: {
+        /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
+        'X-Correlation-Id'?: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ValueHistoryResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+       */
+      401: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+       */
+      404: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+       */
+      500: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      default: components['responses']['ApiProblemResponse'];
+    };
+  };
   listPortfolios: {
     parameters: {
       query?: never;
@@ -16271,6 +16462,92 @@ export interface operations {
        *     - `VERSION_REQUIRED`: A state-changing request omitted the If-Match version it must protect.
        */
       428: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `INTERNAL`: Unexpected; quote the correlationId when reporting it. Also any other 5xx without a code of its own.
+       */
+      500: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      default: components['responses']['ApiProblemResponse'];
+    };
+  };
+  getPortfolioHistory: {
+    parameters: {
+      query?: {
+        period?: string;
+      };
+      header?: {
+        /** @description Optional caller correlation id. Must match [A-Za-z0-9._-]{8,64}; otherwise the server generates a UUID. */
+        'X-Correlation-Id'?: string;
+      };
+      path: {
+        portfolioId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ValueHistoryResponse'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `VALIDATION_FAILED`: The request body or parameters are malformed or fail validation; errors lists each rejected field. Also any other 4xx without a code of its own (e.g. 405, 415).
+       */
+      400: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `UNAUTHENTICATED`: No valid access token, or a sign-in was refused.
+       */
+      401: {
+        headers: {
+          /** @description Correlation id assigned to this request. */
+          'X-Correlation-Id'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ApiProblem'];
+        };
+      };
+      /**
+       * @description Problem codes:
+       *     - `NOT_FOUND`: Not found, or not visible to the caller; the two are never told apart.
+       */
+      404: {
         headers: {
           /** @description Correlation id assigned to this request. */
           'X-Correlation-Id'?: string;

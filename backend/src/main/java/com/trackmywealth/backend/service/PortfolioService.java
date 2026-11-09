@@ -212,7 +212,12 @@ public class PortfolioService {
               () -> ids.stream().map(id -> placements.get(id).section()).toList());
       rows.add(
           toListItem(
-              portfolio, type, ids.size(), totals, workspaceCurrency, asOf,
+              portfolio,
+              type,
+              ids.size(),
+              totals,
+              workspaceCurrency,
+              asOf,
               monthlyChanges.get(portfolio.getId())));
     }
     return rows;

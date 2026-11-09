@@ -83,9 +83,25 @@ public record PortfolioListItemResponse(
       LocalDate asOf,
       @Nullable String institutionName) {
     this(
-        id, version, name, catalogueInstitutionId, institutionType, country, logoUrl,
-        portfolioType, portfolioTypeOverridden, personalAssetsDefault, activeAccountCount,
-        portfolioCurrency, total, workspaceCurrency, totalInWorkspaceCurrency, complete,
-        valueStatus, asOf, institutionName, null);
+        id,
+        version,
+        name,
+        catalogueInstitutionId,
+        institutionType,
+        country,
+        logoUrl,
+        portfolioType,
+        portfolioTypeOverridden,
+        personalAssetsDefault,
+        activeAccountCount,
+        portfolioCurrency,
+        total,
+        workspaceCurrency,
+        totalInWorkspaceCurrency,
+        complete,
+        valueStatus,
+        asOf,
+        institutionName,
+        null);
   }
 }

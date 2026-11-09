@@ -9,12 +9,12 @@ import com.trackmywealth.backend.dto.CreateCustomAssetValuationRequest;
 import com.trackmywealth.backend.dto.CreatePortfolioRequest;
 import com.trackmywealth.backend.dto.NetWorthResponse;
 import com.trackmywealth.backend.dto.NetWorthSectionResponse;
+import com.trackmywealth.backend.dto.PortfolioListItemResponse;
 import com.trackmywealth.backend.dto.PortfolioResponse;
 import com.trackmywealth.backend.dto.PortfolioSection;
 import com.trackmywealth.backend.dto.SetupAdministratorRequest;
-import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.dto.ValueHistoryResponse;
-import com.trackmywealth.backend.dto.PortfolioListItemResponse;
+import com.trackmywealth.backend.dto.ValueStatus;
 import com.trackmywealth.backend.entity.FxRate;
 import com.trackmywealth.backend.repository.FxRateRepository;
 import com.trackmywealth.backend.testsupport.AccountRequests;
@@ -322,9 +322,11 @@ class NetWorthControllerTest {
 
     ValueHistoryResponse history = history(token, "1M");
 
-    var between = history.points().stream()
-        .filter(point -> point.date().equals(today().minusDays(15)))
-        .findFirst().orElseThrow();
+    var between =
+        history.points().stream()
+            .filter(point -> point.date().equals(today().minusDays(15)))
+            .findFirst()
+            .orElseThrow();
     assertThat(between.value()).isEqualByComparingTo("10000");
     assertThat(between.estimated()).isTrue();
     assertThat(history.points().get(history.points().size() - 1).value())
@@ -341,15 +343,22 @@ class NetWorthControllerTest {
         createAccount(
                 token,
                 AccountRequests.account("Euro cash", "CASH", "EUR")
-                    .portfolioId(portfolio.id()).build())
+                    .portfolioId(portfolio.id())
+                    .build())
             .id();
     seedOpeningBalance(cash, "1000.00");
     seedFxRate("EUR", "CHF", "0.9500000000");
 
     ValueHistoryResponse portfolioHistory =
-        client(token).get().uri("/api/v1/portfolios/" + portfolio.id() + "/history?period=1W")
-            .exchange().expectStatus().isOk()
-            .expectBody(ValueHistoryResponse.class).returnResult().getResponseBody();
+        client(token)
+            .get()
+            .uri("/api/v1/portfolios/" + portfolio.id() + "/history?period=1W")
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectBody(ValueHistoryResponse.class)
+            .returnResult()
+            .getResponseBody();
     ValueHistoryResponse workspaceHistory = history(token, "1W");
 
     assertThat(portfolioHistory.currency()).isEqualTo("EUR");
@@ -368,8 +377,12 @@ class NetWorthControllerTest {
   void invalidHistoryPeriodIsRejectedWithValidationFailed() {
     String token = bootstrapAdministrator();
 
-    client(token).get().uri("/api/v1/net-worth/history?period=2Y")
-        .exchange().expectStatus().isBadRequest()
+    client(token)
+        .get()
+        .uri("/api/v1/net-worth/history?period=2Y")
+        .exchange()
+        .expectStatus()
+        .isBadRequest()
         .expectBody(String.class)
         .value(body -> assertThat(body).contains("VALIDATION_FAILED"));
   }
@@ -379,10 +392,15 @@ class NetWorthControllerTest {
     String token = bootstrapAdministrator();
 
     PortfolioListItemResponse[] rows =
-        client(token).get().uri("/api/v1/portfolios")
-            .exchange().expectStatus().isOk()
+        client(token)
+            .get()
+            .uri("/api/v1/portfolios")
+            .exchange()
+            .expectStatus()
+            .isOk()
             .expectBody(PortfolioListItemResponse[].class)
-            .returnResult().getResponseBody();
+            .returnResult()
+            .getResponseBody();
 
     assertThat(rows).isNotEmpty();
     assertThat(rows[0].change()).isNotNull();
@@ -391,9 +409,15 @@ class NetWorthControllerTest {
   }
 
   private ValueHistoryResponse history(String token, String period) {
-    return client(token).get().uri("/api/v1/net-worth/history?period=" + period)
-        .exchange().expectStatus().isOk()
-        .expectBody(ValueHistoryResponse.class).returnResult().getResponseBody();
+    return client(token)
+        .get()
+        .uri("/api/v1/net-worth/history?period=" + period)
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectBody(ValueHistoryResponse.class)
+        .returnResult()
+        .getResponseBody();
   }
 
   // --- Helpers ---------------------------------------------------------------------------------

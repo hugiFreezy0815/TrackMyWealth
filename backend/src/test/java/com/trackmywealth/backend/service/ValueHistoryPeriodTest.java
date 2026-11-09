@@ -55,9 +55,7 @@ class ValueHistoryPeriodTest {
   void periodChangeUsesAbsoluteStartingValueAndRoundsOnlyPercent() {
     var change =
         ValueHistoryService.change(
-            new BigDecimal("100000.00"),
-            new BigDecimal("103000.00"),
-            new BigDecimal("5000.00"));
+            new BigDecimal("100000.00"), new BigDecimal("103000.00"), new BigDecimal("5000.00"));
     assertThat(change.amount()).isEqualByComparingTo("3000");
     assertThat(change.percent()).isEqualByComparingTo("3.00");
     assertThat(change.contributions()).isEqualByComparingTo("5000");
@@ -69,8 +67,7 @@ class ValueHistoryPeriodTest {
     assertThat(newWorkspace.amount()).isEqualByComparingTo("10");
 
     var negativeStart =
-        ValueHistoryService.change(
-            new BigDecimal("-100"), new BigDecimal("-90"), BigDecimal.ZERO);
+        ValueHistoryService.change(new BigDecimal("-100"), new BigDecimal("-90"), BigDecimal.ZERO);
     assertThat(negativeStart.percent()).isEqualByComparingTo("10.00");
   }
 }

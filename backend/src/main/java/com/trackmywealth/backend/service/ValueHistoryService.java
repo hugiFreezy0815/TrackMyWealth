@@ -111,7 +111,8 @@ public class ValueHistoryService {
       boolean withSections) {
     ValueHistoryPeriod period = ValueHistoryPeriod.parse(periodParam);
     LocalDate today = businessDateService.today();
-    LocalDate from = period.start(today, historyStartRepository.firstActivity(actor.workspaceId(), today));
+    LocalDate from =
+        period.start(today, historyStartRepository.firstActivity(actor.workspaceId(), today));
     List<LocalDate> dates = period.dates(from, today);
     Map<UUID, PortfolioPlacement> placements =
         withSections ? accountService.portfolioPlacementsOf(accounts) : Map.of();
@@ -134,8 +135,7 @@ public class ValueHistoryService {
     Snapshot end = Objects.requireNonNull(last);
     List<UUID> accountIds = accounts.stream().map(Account::getId).toList();
     BigDecimal contributions =
-        cashFlowService.netContributions(
-            accountIds, from.plusDays(1), today, currency);
+        cashFlowService.netContributions(accountIds, from.plusDays(1), today, currency);
     if (contributions == null) {
       complete = false;
       warnings.add("Currency conversion unavailable for contributions.");
@@ -184,7 +184,9 @@ public class ValueHistoryService {
     List<Account> eligibleAtEnd = onDate(accounts, today, businessDateService.zone());
     Map<UUID, List<Account>> groups = new HashMap<>();
     for (Account account : accounts) {
-      groups.computeIfAbsent(account.getPortfolio().getId(), unused -> new ArrayList<>()).add(account);
+      groups
+          .computeIfAbsent(account.getPortfolio().getId(), unused -> new ArrayList<>())
+          .add(account);
     }
     var start = accountValuationService.valueAllInCurrencies(eligibleAtStart, currencies, from);
     var end = accountValuationService.valueAllInCurrencies(eligibleAtEnd, currencies, today);
@@ -207,8 +209,7 @@ public class ValueHistoryService {
         continue;
       }
       Change change = change(sum(atStart), sum(atEnd), null);
-      result.put(
-          portfolioId, new PortfolioPeriodChange("1M", change.amount(), change.percent()));
+      result.put(portfolioId, new PortfolioPeriodChange("1M", change.amount(), change.percent()));
     }
     return Map.copyOf(result);
   }
@@ -248,13 +249,12 @@ public class ValueHistoryService {
   private static List<Account> onDate(
       Collection<Account> accounts, LocalDate date, java.time.ZoneId businessZone) {
     return accounts.stream()
-        .filter(
-            account ->
-                account.getOpenedAt() == null || !date.isBefore(account.getOpenedAt()))
+        .filter(account -> account.getOpenedAt() == null || !date.isBefore(account.getOpenedAt()))
         .filter(
             account ->
                 account.getArchivedAt() == null
-                    || date.isBefore(account.getArchivedAt().atZoneSameInstant(businessZone).toLocalDate()))
+                    || date.isBefore(
+                        account.getArchivedAt().atZoneSameInstant(businessZone).toLocalDate()))
         .toList();
   }
 
@@ -273,9 +273,7 @@ public class ValueHistoryService {
     BigDecimal percent =
         from.signum() == 0
             ? null
-            : amount
-                .multiply(BigDecimal.valueOf(100))
-                .divide(from.abs(), 2, RoundingMode.HALF_UP);
+            : amount.multiply(BigDecimal.valueOf(100)).divide(from.abs(), 2, RoundingMode.HALF_UP);
     return new Change(
         amount,
         percent,
@@ -284,5 +282,8 @@ public class ValueHistoryService {
   }
 
   private record Snapshot(
-      BigDecimal value, boolean complete, boolean estimated, Map<PortfolioSection, BigDecimal> sections) {}
+      BigDecimal value,
+      boolean complete,
+      boolean estimated,
+      Map<PortfolioSection, BigDecimal> sections) {}
 }

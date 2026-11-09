@@ -24,13 +24,14 @@ public class NetWorthController {
   private final NetWorthService netWorthService;
   private final ValueHistoryService historyService;
 
-  public NetWorthController(
-      NetWorthService netWorthService, ValueHistoryService historyService) {
+  public NetWorthController(NetWorthService netWorthService, ValueHistoryService historyService) {
     this.netWorthService = netWorthService;
     this.historyService = historyService;
   }
 
-  @Operation(operationId = "getNetWorthHistory", summary = "Historical workspace net worth and period change")
+  @Operation(
+      operationId = "getNetWorthHistory",
+      summary = "Historical workspace net worth and period change")
   @ProblemCodes({ProblemCode.VALIDATION_FAILED, ProblemCode.NOT_FOUND})
   @GetMapping("/history")
   public ValueHistoryResponse getHistory(
