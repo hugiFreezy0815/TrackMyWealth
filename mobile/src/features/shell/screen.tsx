@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
+import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useIntl } from 'react-intl';
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 
-export function ShellScreen({ title, children }: { title: string; children: React.ReactNode }) {
+export function ShellScreen({ title, children }: { title: string; children: ReactNode }) {
   const theme = useTheme();
   return (
     <ScrollView style={{ backgroundColor: theme.background }} contentContainerStyle={styles.scroll}>

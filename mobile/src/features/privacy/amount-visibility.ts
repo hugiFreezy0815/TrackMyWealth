@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
 
 const KEY = 'trackmywealth.hide-amounts';
 const listeners = new Set<() => void>();
-let hidden = false;
+let hidden = true;
 let restored = false;
 
 function emit() { listeners.forEach((listener) => listener()); }
