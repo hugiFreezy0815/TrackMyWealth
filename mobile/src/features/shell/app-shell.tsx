@@ -12,6 +12,7 @@ import { restoreAmountVisibility } from '@/features/privacy/amount-visibility';
 import { useAppSwitcherProtection } from '@/features/privacy/screen-protection';
 
 import { OfflineBanner } from './offline-banner';
+import { ToastHost } from './toast';
 import { isCurrentRoute, layoutFor, navigationFor } from './navigation';
 
 /** W01: the 248 px desktop sidebar. */
@@ -100,6 +101,7 @@ export function AppShell({ identity }: { identity: Identity | null }) {
             ) : (
               <Slot />
             )}
+            <ToastHost />
           </View>
           {!desktop && menu}
         </View>
