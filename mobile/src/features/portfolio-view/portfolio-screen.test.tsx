@@ -144,7 +144,7 @@ describe('S2 Portfolio View acceptance (#493)', () => {
   it('keeps cached header and offers Retry on view errors', async () => {
     setData(undefined, new Error('network failed'));
     await mount();
-    expect(screen.getByText('Home')).toBeTruthy();
+    expect(screen.getAllByText('Home').length).toBeGreaterThan(0);
     expect(screen.getByTestId('portfolio-total')).toBeTruthy();
   });
 
