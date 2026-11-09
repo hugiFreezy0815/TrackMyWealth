@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      # #544: see pull_request below.
+      - "docker-compose.yml"
+      - ".env.example"
       # #372: the drift check runs in this build, so a change to the committed contract alone
       # (api/openapi.yaml edited by hand) is checked too.
       - "api/**"
@@ -12,6 +15,10 @@ on:
   pull_request:
     paths:
       - "backend/**"
+      # #544: the Compose secret-forwarding check runs in this build, so a Compose-only change is
+      # checked before it merges, not only afterwards on main.
+      - "docker-compose.yml"
+      - ".env.example"
       # #372: the drift check runs in this build, so a change to the committed contract alone
       # (api/openapi.yaml edited by hand) is checked too.
       - "api/**"
@@ -57,6 +64,30 @@ jobs:
       # builds - separate from the Maven build above, which doesn't touch the Dockerfile at all.
       - name: Build Docker image
         run: docker build -t trackmywealth-backend .
+
+      # #544: verify both explicit values reach the backend service, and omitted values
+      # remain empty so developers can still run postgres-only Compose commands.
+      - name: Check Compose secret forwarding
+        working-directory: .
+        run: |
+          MFA_ENCRYPTION_KEY=test-mfa-key IMPORT_ACCOUNT_IDENTIFIER_KEY=test-identifier-key \
+            docker compose config --format json > /tmp/tmw-compose-configured.json
+          env -u MFA_ENCRYPTION_KEY -u IMPORT_ACCOUNT_IDENTIFIER_KEY \
+            docker compose config --format json > /tmp/tmw-compose-unset.json
+          python3 - <<'PY'
+          import json
+
+          with open("/tmp/tmw-compose-configured.json", encoding="utf-8") as handle:
+              configured = json.load(handle)["services"]["backend"]["environment"]
+          with open("/tmp/tmw-compose-unset.json", encoding="utf-8") as handle:
+              unset = json.load(handle)["services"]["backend"]["environment"]
+          for name, expected in {
+              "MFA_ENCRYPTION_KEY": "test-mfa-key",
+              "IMPORT_ACCOUNT_IDENTIFIER_KEY": "test-identifier-key",
+          }.items():
+              assert configured[name] == expected, name
+              assert unset[name] == "", name
+          PY
 
   sql-lint:
     # Only new/changed migration files are linted, never the full directory: an already-applied
