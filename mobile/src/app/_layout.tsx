@@ -16,6 +16,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppShell } from '@/features/shell/app-shell';
 import { ThemedText } from '@/components/themed-text';
 import { AuthScreen } from '@/features/auth/auth-screen';
+import { installBackForwardGuard } from '@/features/auth/web-document';
 import { restoreSession, sessionSnapshot, subscribeSession } from '@/features/auth/session';
 
 SplashScreen.preventAutoHideAsync();
@@ -27,6 +28,7 @@ export default function TabLayout() {
 
   useEffect(() => {
     const stopQueryEnvironment = configureQueryEnvironment();
+    const removeBackForwardGuard = installBackForwardGuard(() => sessionSnapshot().signedIn);
     const unsubscribe = subscribeSession(() => setSession(sessionSnapshot()));
     // The stored session belongs to the configured server, so that address comes first.
     loadServerUrl()
@@ -36,6 +38,7 @@ export default function TabLayout() {
     return () => {
       unsubscribe();
       stopQueryEnvironment();
+      removeBackForwardGuard();
     };
   }, []);
 
