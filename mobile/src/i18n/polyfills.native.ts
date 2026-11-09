@@ -1,4 +1,4 @@
-// ADR 0008: Hermes has no Intl.PluralRules, and its NumberFormat turns a DecimalString into a JS
+// ADR 0008: Hermes has no Intl.PluralRules or Intl.DisplayNames, and its NumberFormat turns a DecimalString into a JS
 // number (digits lost). Load the FormatJS implementations on iOS/Android; web browsers have
 // NumberFormat v3 natively (src/i18n/polyfills.ts). Import order matters: the device's time zone
 // is read first, NumberFormat needs PluralRules.
@@ -13,6 +13,10 @@ import '@formatjs/intl-numberformat/polyfill-force.js';
 import '@formatjs/intl-numberformat/locale-data/en.js';
 import '@formatjs/intl-numberformat/locale-data/de.js';
 import '@formatjs/intl-numberformat/locale-data/de-CH.js';
+// Hermes has no DisplayNames: the ISO currency and country pickers (#491) name every code.
+import '@formatjs/intl-displaynames/polyfill.js';
+import '@formatjs/intl-displaynames/locale-data/en.js';
+import '@formatjs/intl-displaynames/locale-data/de.js';
 // Only where the engine lacks formatRange/dateStyle; then with time zone data and the device zone.
 import '@formatjs/intl-datetimeformat/polyfill.js';
 import '@formatjs/intl-datetimeformat/locale-data/en.js';

@@ -361,6 +361,7 @@ export function ChipGroup({
   multi = false,
   label,
   disabled = false,
+  describedBy,
 }: {
   options: ChipOption[];
   selected: string[];
@@ -369,12 +370,19 @@ export function ChipGroup({
   /** Accessible name of the group. */
   label?: string;
   disabled?: boolean;
+  /**
+   * A visible note that applies to the whole choice (e.g. "can't be changed later"): `id` is the
+   * note's `nativeID`, referenced by the group on web; native screen readers hear `text` as each
+   * chip's hint, since a group view that is not itself accessible is never announced.
+   */
+  describedBy?: { id: string; text: string };
 }) {
   const theme = useTheme();
   return (
     <View
       accessibilityRole={multi ? undefined : 'radiogroup'}
       accessibilityLabel={label}
+      aria-describedby={describedBy?.id}
       style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}
     >
       {options.map((option) => {
@@ -386,6 +394,7 @@ export function ChipGroup({
             aria-checked={active}
             aria-disabled={disabled}
             accessibilityLabel={option.label}
+            accessibilityHint={describedBy?.text}
             disabled={disabled}
             onPress={() => onSelect(option.value)}
             style={{

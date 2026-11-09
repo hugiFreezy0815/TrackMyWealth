@@ -11,6 +11,7 @@ export {
 export {
   TextField,
   AmountField,
+  ChoiceField,
   CurrencyPicker,
   FieldMessages,
   amountInputText,
@@ -44,3 +45,5 @@ export {
   type ChipOption,
 } from './presentation';
 export { DateField, isoToLocalDate, localDateToIso, type DateFieldProps } from './date-field';
+export { SelectField, filterOptions, type SelectFieldProps } from './select-field';
+export { moveAccessibilityFocus } from './accessibility-focus';
