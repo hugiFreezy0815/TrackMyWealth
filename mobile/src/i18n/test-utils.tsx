@@ -2,7 +2,12 @@ import { render } from '@testing-library/react-native';
 import type { ReactElement, ReactNode } from 'react';
 import { IntlProvider } from 'react-intl';
 
-import { messagesFor, type AppLocale } from './index';
+import { AppIntlProvider, messagesFor, type AppLocale } from './index';
+
+/** Wraps a component in the app's real catalogues, so tests see the copy a member sees. */
+export function withIntl(ui: ReactElement, language: 'en' | 'de' = 'en'): ReactElement {
+  return <AppIntlProvider language={language}>{ui}</AppIntlProvider>;
+}
 
 /**
  * Render inside the app's catalogue for `locale`. A message id missing from the catalogue fails

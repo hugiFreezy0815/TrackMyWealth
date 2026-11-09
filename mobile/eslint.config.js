@@ -28,6 +28,23 @@ const LITERAL_UI_STRING_SYNTAX = [
   'JSXAttribute[name.name=/^(accessibilityLabel|accessibilityHint|aria-label|placeholder|title|label)$/] > Literal',
 ].map((selector) => ({ selector, message: LITERAL_UI_STRING_MESSAGE }));
 
+// Flat config also replaces no-restricted-imports options per file, so both entries live here and
+// every block that sets the rule lists the ones its files need.
+// US-29-05 (#375): app code calls the API through typedApi, whose paths and types come from the
+// contract; the untyped transport stays inside src/api (and its tests).
+const TYPED_API_ONLY = {
+  name: '@/api/client',
+  importNames: ['api', 'request'],
+  message: 'Call the API through typedApi (@/api/typed-api): its types are generated.',
+};
+// FR-CLI-005 / #487: an amount rendered without PrivacyAmount would ignore "Hide amounts".
+const PRIVATE_AMOUNTS_ONLY = {
+  name: '@/format/amount',
+  importNames: ['formatAmount', 'a11yAmount'],
+  message:
+    'Render money with PrivacyAmount (@/features/privacy/privacy-amount): it honours "Hide amounts" (FR-CLI-005).',
+};
+
 module.exports = defineConfig([
   expoConfig,
   // Disables ESLint's own stylistic/formatting rules so ESLint (logic/quality) and Prettier
@@ -43,23 +60,18 @@ module.exports = defineConfig([
     },
   },
   {
-    // US-29-05 (#375): app code calls the API through typedApi, whose paths and types come from
-    // the contract; the untyped transport stays inside src/api (and its tests).
     files: ['src/**/*.{ts,tsx}'],
     ignores: ['src/api/**', '**/*.test.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: '@/api/client',
-              importNames: ['api', 'request'],
-              message: 'Call the API through typedApi (@/api/typed-api): its types are generated.',
-            },
-          ],
-        },
-      ],
+      'no-restricted-imports': ['error', { paths: [TYPED_API_ONLY, PRIVATE_AMOUNTS_ONLY] }],
+    },
+  },
+  {
+    // The amount component that formats money; it applies the privacy mask itself. PrivacyAmount
+    // (#487) renders through the shared Amount (#488), so both honour "Hide amounts".
+    files: ['src/components/shared/amount.tsx', 'src/features/privacy/privacy-amount.tsx'],
+    rules: {
+      'no-restricted-imports': ['error', { paths: [TYPED_API_ONLY] }],
     },
   },
   {
@@ -83,13 +95,19 @@ module.exports = defineConfig([
     // accessibility props, string expressions) belongs in the catalogues. Flat config replaces a
     // rule's options per file instead of merging them, so this block repeats the #452 selectors.
     // The legacy screens below predate the catalogues; their sprint-7 tickets migrate them and
-    // delete the entry here. The shared components (#488) follow the same rule.
-    files: ['src/features/**/*.{ts,tsx,jsx}', 'src/components/shared/**/*.{ts,tsx}'],
+    // delete the entry here. Routes render screens too (#487 migrated auth and the shell routes),
+    // and the shared components (#488) follow the same rule.
+    files: [
+      'src/features/**/*.{ts,tsx,jsx}',
+      'src/app/**/*.{ts,tsx,jsx}',
+      'src/components/shared/**/*.{ts,tsx}',
+    ],
     ignores: [
       '**/*.test.{ts,tsx}',
-      'src/features/auth/**',
       'src/features/reference-data/**',
       'src/features/imports/**',
+      // The #488 component gallery: development builds only, synthetic sample copy.
+      'src/app/dev/**',
     ],
     rules: {
       'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SYNTAX, ...LITERAL_UI_STRING_SYNTAX],

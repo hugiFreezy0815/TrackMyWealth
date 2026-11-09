@@ -91,6 +91,14 @@ export const Colors = {
     backgroundElement: DesignTokens.light.bgSubtle,
     backgroundSelected: DesignTokens.light.brandSubtle,
     textSecondary: DesignTokens.light.textSecondary,
+    /** #487 shell roles, mapped onto the UX-03 tokens. Accent for text, links and filled buttons. */
+    primary: DesignTokens.light.brandLink,
+    /** Text and icons on a `primary` fill. */
+    onPrimary: DesignTokens.light.textOnBrand,
+    /** Control borders and separators. */
+    border: DesignTokens.light.borderInteractive,
+    warningBackground: DesignTokens.light.statusWarningSubtle,
+    onWarning: DesignTokens.light.statusWarning,
   },
   dark: {
     ...DesignTokens.dark,
@@ -99,6 +107,14 @@ export const Colors = {
     backgroundElement: DesignTokens.dark.bgSubtle,
     backgroundSelected: DesignTokens.dark.brandSubtle,
     textSecondary: DesignTokens.dark.textSecondary,
+    /** #487 shell roles, mapped onto the UX-03 tokens. Accent for text, links and filled buttons. */
+    primary: DesignTokens.dark.brandLink,
+    /** Text and icons on a `primary` fill. */
+    onPrimary: DesignTokens.dark.textOnBrand,
+    /** Control borders and separators. */
+    border: DesignTokens.dark.borderInteractive,
+    warningBackground: DesignTokens.dark.statusWarningSubtle,
+    onWarning: DesignTokens.dark.statusWarning,
   },
 } as const;
 

@@ -6,6 +6,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import type { DecimalString } from '@/api/decimal';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
+import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -58,8 +59,15 @@ export function ChangeChip({
 }) {
   const theme = useTheme();
   const intl = useIntl();
-  // Direction follows the displayed (rounded) amount, so "-0.001" is a neutral "CHF 0.00".
-  const { display } = amountTexts(intl, { value: amount, currency, signRole: 'change' });
+  // Direction follows the displayed (rounded) amount, so "-0.001" is a neutral "CHF 0.00". With
+  // "Hide amounts" the chip is neutral too: a red or green chip would reveal the sign.
+  const hidden = useAmountsHidden();
+  const { display } = amountTexts(intl, {
+    value: amount,
+    currency,
+    signRole: 'change',
+    masked: hidden,
+  });
   const direction = display.startsWith('−') ? 'down' : display.startsWith('+') ? 'up' : 'flat';
   const color =
     direction === 'down'
@@ -99,7 +107,9 @@ export function ChangeChip({
         signRole="change"
         style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
       />
-      {percentage ? <Text style={{ ...TypeScale.numberMedium, color }}>{percentage}</Text> : null}
+      {percentage && !hidden ? (
+        <Text style={{ ...TypeScale.numberMedium, color }}>{percentage}</Text>
+      ) : null}
     </View>
   );
 }
@@ -195,6 +205,7 @@ export function AccountRow({
   const intl = useIntl();
   // Spec README §3: an UNKNOWN (or unrecognized) status shows the amount as "–", never a number.
   const valueKnown = isValueKnown(status);
+  const hidden = useAmountsHidden();
   const contents = (
     <View
       style={{
@@ -228,7 +239,7 @@ export function AccountRow({
   const label = [
     title,
     subtitle,
-    amountTexts(intl, { value: amount, currency, masked, valueKnown }).label,
+    amountTexts(intl, { value: amount, currency, masked: masked || hidden, valueKnown }).label,
     valueStatusTexts(status, valueSourceDate, intl)?.label,
   ]
     .filter(Boolean)

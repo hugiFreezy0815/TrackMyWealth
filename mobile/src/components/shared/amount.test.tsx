@@ -1,9 +1,13 @@
 import { screen } from '@testing-library/react-native';
 
+import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { renderWithIntl } from '@/i18n/test-utils';
 import { Amount } from './amount';
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('@/features/privacy/amount-visibility', () => ({
+  useAmountsHidden: jest.fn(() => false),
+}));
 jest.mock('@/hooks/use-theme', () => ({ useTheme: () => ({ textPrimary: '#0B1C3F' }) }));
 
 // The normative formats themselves are tested in src/format (Node Intl and the Hermes polyfill).
@@ -28,6 +32,13 @@ describe('Amount', () => {
       <Amount value="1234.56" currency="CHF" masked accessibilityLabel="1234.56" />,
     );
     expect(screen.getByText('••••').props.accessibilityLabel).toBe('hidden');
+  });
+
+  it('masks every amount while "Hide amounts" is on (FR-CLI-005)', async () => {
+    jest.mocked(useAmountsHidden).mockReturnValueOnce(true);
+    await renderWithIntl(<Amount value="-1234.5" currency="CHF" accessibilityLabel="leak" />);
+    expect(screen.getByText('••••').props.accessibilityLabel).toBe('hidden');
+    expect(JSON.stringify(screen.toJSON())).not.toContain('1234');
   });
 
   it('reads an unknown value as unknown rather than zero', async () => {

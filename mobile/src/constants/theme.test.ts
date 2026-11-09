@@ -78,3 +78,23 @@ describe('canonical UX-03 light and dark tokens', () => {
     expect(TypeScale.bodyMedium.lineHeight).toBe(20);
   });
 });
+
+// #487: the shell roles of the palette.
+// WCAG 2.2 AA 1.4.3: normal-size text needs 4.5:1 against what it is drawn on.
+const TEXT_PAIRS = [
+  ['text', 'background'],
+  ['text', 'backgroundElement'],
+  ['textSecondary', 'background'],
+  ['textSecondary', 'backgroundElement'],
+  ['primary', 'background'],
+  ['primary', 'backgroundElement'],
+  ['onPrimary', 'primary'],
+  ['onWarning', 'warningBackground'],
+] as const;
+
+describe.each(['light', 'dark'] as const)('%s palette', (scheme) => {
+  it.each(TEXT_PAIRS)('%s on %s meets WCAG AA for text', (foreground, background) => {
+    const palette = Colors[scheme];
+    expect(contrast(palette[foreground], palette[background])).toBeGreaterThanOrEqual(4.5);
+  });
+});

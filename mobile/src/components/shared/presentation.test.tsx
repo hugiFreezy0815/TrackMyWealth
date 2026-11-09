@@ -1,5 +1,6 @@
 import { fireEvent, screen } from '@testing-library/react-native';
 
+import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { renderWithIntl } from '@/i18n/test-utils';
 
 import {
@@ -14,6 +15,9 @@ import {
 } from './presentation';
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('@/features/privacy/amount-visibility', () => ({
+  useAmountsHidden: jest.fn(() => false),
+}));
 jest.mock('@/hooks/use-theme', () => ({
   useTheme: () => ({
     textPrimary: '#0B1C3F',
@@ -168,6 +172,27 @@ describe('shared navigation and financial rows', () => {
     const glyph = screen.getByText(arrow, { includeHiddenElements: true });
     expect(glyph.props.style.color).toBe(color);
     expect(glyph.props.accessibilityElementsHidden).toBe(true);
+  });
+
+  it('keeps a hidden change neutral and drops its percentage', async () => {
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    await renderWithIntl(<ChangeChip amount="-312.4" currency="CHF" percentage="−0.8%" />);
+    expect(screen.getByText('••••')).toBeTruthy();
+    expect(screen.queryByText('−0.8%')).toBeNull();
+    const glyph = screen.getByText('→', { includeHiddenElements: true });
+    expect(glyph.props.style.color).toBe('#53627A');
+    jest.mocked(useAmountsHidden).mockReturnValue(false);
+  });
+
+  it('reads "hidden" in a pressable row while "Hide amounts" is on', async () => {
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    await renderWithIntl(
+      <AccountRow title="Main" amount="1234.5" currency="CHF" onPress={jest.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: /^Main/ }).props.accessibilityLabel).toBe(
+      'Main, hidden',
+    );
+    jest.mocked(useAmountsHidden).mockReturnValue(false);
   });
 
   it('falls back to institution initials when no logo is provided', async () => {

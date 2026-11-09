@@ -1,7 +1,8 @@
 import { useIntl } from 'react-intl';
-import { Text, type TextStyle } from 'react-native';
+import { Text, type TextProps } from 'react-native';
 
 import type { DecimalString } from '@/api/decimal';
+import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { a11yAmount, formatAmount, type AmountIntl, type AmountOptions } from '@/format/amount';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -37,20 +38,39 @@ export function amountTexts(
   }
 }
 
-export type AmountProps = AmountValue & {
-  style?: TextStyle;
-  accessibilityLabel?: string;
-  testID?: string;
-};
-export function Amount({ style, accessibilityLabel, testID, ...amount }: AmountProps) {
+export type AmountProps = AmountValue & Omit<TextProps, 'children'>;
+
+/**
+ * The one component that renders money (#488, FR-CLI-005): "Hide amounts" (#487) masks it on
+ * every screen, as does `masked`. PrivacyAmount renders through it.
+ */
+export function Amount({
+  value,
+  currency,
+  signRole,
+  approx,
+  valueKnown,
+  masked,
+  style,
+  accessibilityLabel,
+  ...textProps
+}: AmountProps) {
   const theme = useTheme();
   const intl = useIntl();
-  const { display, label } = amountTexts(intl, amount);
+  const hidden = useAmountsHidden() || masked === true;
+  const { display, label } = amountTexts(intl, {
+    value,
+    currency,
+    signRole,
+    approx,
+    valueKnown,
+    masked: hidden,
+  });
   return (
     <Text
-      testID={testID}
+      {...textProps}
       // Masking wins over any caller-provided label: private digits cannot leak.
-      accessibilityLabel={amount.masked ? label : (accessibilityLabel ?? label)}
+      accessibilityLabel={hidden ? label : (accessibilityLabel ?? label)}
       style={[{ color: theme.textPrimary, fontVariant: ['tabular-nums'], flexShrink: 1 }, style]}
     >
       {display}
