@@ -738,6 +738,12 @@ class PortfolioViewControllerTest {
     AccountRow row = getView(token, bank.id()).sections().get(0).accounts().get(0);
     assertThat(row.maskedIdentifier()).isEqualTo("DE12 \u2022\u2022\u2022\u2022 4471");
     assertThat(row.reconciliationStatus()).isEqualTo(ReconciliationStatusValues.RECONCILED);
+    // The stored row, every column at once: only the hash and the mask, never the middle.
+    assertThat(queryString("SELECT a::TEXT FROM account a WHERE id = ?", cash))
+        .contains("DE12 \u2022\u2022\u2022\u2022 4471")
+        .doesNotContain("345678901200364471")
+        .doesNotContain("34567890")
+        .doesNotContain("12003644");
   }
 
   @Test
