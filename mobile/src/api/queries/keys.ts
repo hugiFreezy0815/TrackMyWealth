@@ -21,6 +21,8 @@ export const queryKeys = {
   netWorth: (currency?: string) => [queryRoots.netWorth, currency ?? 'default'] as const,
   accounts: (filters?: object) => [queryRoots.accounts, filters ?? {}] as const,
   account: (id: string) => [queryRoots.accounts, id] as const,
+  /** Prefix of every transaction query of one account: lists, counts and single rows. */
+  accountTransactionScope: (id: string) => [queryRoots.accounts, id, 'transactions'] as const,
   accountTransactions: (id: string, filters?: object) =>
     [queryRoots.accounts, id, 'transactions', filters ?? {}] as const,
   uncategorizedCount: (accountId: string) =>
