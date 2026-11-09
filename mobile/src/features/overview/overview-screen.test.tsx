@@ -554,6 +554,13 @@ describe('Overview S1 (#489)', () => {
     expect(add).toHaveBeenCalledTimes(1);
   });
 
+  it('shows and dismisses a safe notice when a portfolio deep link was removed', async () => {
+    await renderOverview('en', { missingPortfolioNotice: true });
+    expect(screen.getByText('This portfolio no longer exists.')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByText('This portfolio no longer exists.')).toBeNull();
+  });
+
   it('leaves the page heading to the shell and shows only the greeting', async () => {
     await renderOverview();
     expect(screen.queryByRole('header', { name: 'Overview' })).toBeNull();
