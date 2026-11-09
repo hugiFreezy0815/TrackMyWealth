@@ -1,4 +1,10 @@
 import { Redirect } from 'expo-router';
+
+import { isAdministrator } from '@/features/auth/session';
+import { useIdentity } from '@/features/auth/use-identity';
+import { homeFor } from '@/features/shell/navigation';
+
 export default function IndexRoute() {
-  return <Redirect href="/overview" />;
+  const identity = useIdentity();
+  return <Redirect href={homeFor(isAdministrator(identity))} />;
 }

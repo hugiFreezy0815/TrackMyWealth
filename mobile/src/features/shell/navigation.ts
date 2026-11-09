@@ -28,15 +28,17 @@ const REFERENCE_DATA: NavigationItem = {
 };
 
 /**
- * The entries for a layout. Reference data (US-01-05) is offered to the administrator only;
- * that is visibility, not authorization: the screen and the server check the role again.
+ * The administrator is never a workspace member and sees no financial data (PO 2026-11-09): no
+ * Overview, Reference data (US-01-05) instead. Visibility only: the screens and the server check
+ * the role again.
  */
 export function navigationFor(layout: Layout, administrator: boolean): NavigationItem[] {
-  return [
-    OVERVIEW,
-    ...(administrator ? [REFERENCE_DATA] : []),
-    layout === 'desktop' ? SETTINGS : MORE,
-  ];
+  return [administrator ? REFERENCE_DATA : OVERVIEW, layout === 'desktop' ? SETTINGS : MORE];
+}
+
+/** Where a signed-in person lands: Overview for a member, Reference data for the administrator. */
+export function homeFor(administrator: boolean): '/overview' | '/reference-data' {
+  return administrator ? '/reference-data' : '/overview';
 }
 
 export function isCurrentRoute(pathname: string, href: NavigationItem['href']): boolean {

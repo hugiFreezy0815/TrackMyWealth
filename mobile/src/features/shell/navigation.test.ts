@@ -1,4 +1,4 @@
-import { isCurrentRoute, layoutFor, navigationFor } from './navigation';
+import { homeFor, isCurrentRoute, layoutFor, navigationFor } from './navigation';
 
 const hrefs = (layout: Parameters<typeof navigationFor>[0], administrator = false) =>
   navigationFor(layout, administrator).map((entry) => entry.href);
@@ -27,10 +27,15 @@ describe('approved Sprint-7 navigation', () => {
     expect(all.some((href) => /portfolio|investment|cash/i.test(href))).toBe(false);
   });
 
-  it('offers Reference data to the administrator only', () => {
-    expect(hrefs('phone', true)).toEqual(['/overview', '/reference-data', '/more']);
-    expect(hrefs('desktop', true)).toEqual(['/overview', '/reference-data', '/settings']);
+  it('gives the administrator Reference data instead of the financial Overview', () => {
+    expect(hrefs('phone', true)).toEqual(['/reference-data', '/more']);
+    expect(hrefs('desktop', true)).toEqual(['/reference-data', '/settings']);
     expect(hrefs('desktop', false)).not.toContain('/reference-data');
+  });
+
+  it('lands a member on Overview and the administrator on Reference data', () => {
+    expect(homeFor(false)).toBe('/overview');
+    expect(homeFor(true)).toBe('/reference-data');
   });
 
   it('keeps portfolio detail in the Overview scope and Settings under More', () => {

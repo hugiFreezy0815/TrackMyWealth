@@ -142,7 +142,8 @@ broken screen.
 - **Navigation** follows docs/ux/01-information-architecture.md: phone and tablet (<1024 px) show
   bottom tabs Overview + More, desktop (>=1024 px) a 248 px sidebar with Overview + Settings.
   Breakpoints are viewport widths (`layoutFor`), never the platform. Future areas are absent, not
-  disabled. Administrators also get Reference data; the screen and server check the role again.
+  disabled. The administrator, never a workspace member, gets Reference data instead of Overview
+  and lands there (`homeFor`); the screen and the server check the role again.
 - **Screens** use `ShellScreen` (title, eye control, optional 360 px detail panel). A route whose
   screen story has not shipped renders `UnavailableScreen`: no data, a way back to Overview.
 - **Money** is rendered with `PrivacyAmount` only; ESLint fails a direct `formatAmount` import

@@ -93,10 +93,11 @@ describe('AppShell navigation per device (US-01-13)', () => {
     expect(links[1].props['aria-current']).toBeUndefined();
   });
 
-  it('offers Reference data to the administrator only', async () => {
+  it('gives the administrator Reference data and no financial Overview', async () => {
     viewport(390);
-    await renderShell(ADMIN);
-    expect(screen.getByRole('tab', { name: 'Reference data' })).toBeTruthy();
+    await renderShell(ADMIN, '/reference-data');
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((tab) => tab.props.accessibilityLabel)).toEqual(['Reference data', 'More']);
 
     await renderShell(MEMBER);
     expect(screen.queryByRole('tab', { name: 'Reference data' })).toBeNull();
