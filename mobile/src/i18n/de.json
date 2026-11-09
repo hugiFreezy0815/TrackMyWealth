@@ -209,5 +209,10 @@
   "account.corrected": "Korrigiert",
   "account.warning": "Prüfe diese Transaktion",
   "account.statementAdjustment": "Auszugsanpassung",
-  "account.notFound": "Dieses Konto existiert nicht mehr oder ist für dich nicht verfügbar"
+  "account.notFound": "Dieses Konto existiert nicht mehr oder ist für dich nicht verfügbar",
+  "account.date": "Datum",
+  "account.description": "Beschreibung",
+  "account.category": "Kategorie",
+  "account.amount": "Betrag",
+  "account.estimatedFx": "Geschätzter Wechselkurs"
 }
