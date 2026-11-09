@@ -6,6 +6,7 @@ import { useIntl } from 'react-intl';
 
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
+import { OverviewSetupGate } from '@/features/overview-name/setup-gate';
 import { type Identity, isAdministrator } from '@/features/auth/session';
 import { restoreAmountVisibility } from '@/features/privacy/amount-visibility';
 import { useAppSwitcherProtection } from '@/features/privacy/screen-protection';
@@ -92,7 +93,9 @@ export function AppShell({ identity }: { identity: Identity | null }) {
         <View style={styles.main}>
           <OfflineBanner />
           <View style={styles.content}>
-            <Slot />
+            {identity && !isAdministrator(identity) ? (
+              <OverviewSetupGate userId={identity.userId}><Slot /></OverviewSetupGate>
+            ) : <Slot />}
           </View>
           {!desktop && menu}
         </View>
