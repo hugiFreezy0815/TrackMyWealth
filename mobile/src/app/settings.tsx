@@ -3,6 +3,7 @@ import { useIntl } from 'react-intl';
 
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
+import { OverviewNameSettings } from '@/features/overview-name/settings-row';
 import { setAmountsHidden, useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { ShellScreen } from '@/features/shell/screen';
 import { useSignOut } from '@/features/shell/use-sign-out';
@@ -14,6 +15,7 @@ export default function SettingsRoute() {
   const signOut = useSignOut();
   return (
     <ShellScreen title={intl.formatMessage({ id: 'nav.settings' })} privacyToggle={false}>
+      <OverviewNameSettings />
       <View style={styles.preference}>
         <View style={styles.label}>
           <ThemedText type="smallBold">

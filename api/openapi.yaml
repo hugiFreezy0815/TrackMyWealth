@@ -23112,7 +23112,11 @@ components:
       type: object
       properties:
         name:
-          type: string
+          type:
+          - string
+          - "null"
+          description: "The new name, at most 60 characters after surrounding spaces\
+            \ are removed; null or blank clears it."
       required:
       - name
     UserSummaryResponse:

@@ -9,6 +9,7 @@ import { amountsHidden, setAmountsHidden } from '@/features/privacy/amount-visib
 import { withIntl } from '@/i18n/test-utils';
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('@/features/overview-name/settings-row', () => ({ OverviewNameSettings: () => null }));
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => {}),

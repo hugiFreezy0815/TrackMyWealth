@@ -147,5 +147,22 @@
   "overview.liabilities.includesOne": "Enthält {first}",
   "overview.explain.complete": "Alle verfügbaren Kontowerte sind enthalten.",
   "overview.section.incomplete": "Nicht alle Werte sind enthalten",
-  "overview.unknownSection": "Sonstiges"
+  "overview.unknownSection": "Sonstiges",
+  "setup.overviewName.title": "Benenne deine Übersicht",
+  "setup.overviewName.question": "Wie soll dein erster Tab heissen?",
+  "setup.overviewName.label": "Name deiner Übersicht",
+  "setup.overviewName.optional": "Optional. Du kannst den Namen jederzeit in den Einstellungen ändern.",
+  "setup.overviewName.tooLong": "Verwende höchstens {max} Zeichen.",
+  "setup.overviewName.invalid": "Dieser Name kann nicht gespeichert werden. Wähle einen anderen.",
+  "setup.overviewName.count": "{count} von {max} Zeichen",
+  "setup.overviewName.preview": "Vorschau des ersten Tabs",
+  "setup.overviewName.conflict.theirs": "Ein anderes Mitglied hat den Namen geändert zu: {name}",
+  "setup.overviewName.conflict.yours": "Dein ungespeicherter Name: {name}",
+  "setup.overviewName.conflict.help": "Deine Eingabe bleibt erhalten. Prüfe den aktuellen Namen und speichere erneut.",
+  "setup.currency.label": "Anzeigewährung",
+  "setup.continue": "Weiter",
+  "setup.skip": "Jetzt überspringen",
+  "settings.overviewName": "Name deiner Übersicht",
+  "settings.overviewName.save": "Speichern",
+  "settings.overviewName.clear": "Namen entfernen"
 }

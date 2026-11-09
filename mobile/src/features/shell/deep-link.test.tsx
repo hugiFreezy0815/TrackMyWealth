@@ -15,6 +15,9 @@ const mockSession: { current: Session; listeners: Set<() => void> } = {
 };
 
 jest.mock('@/global.css', () => ({}));
+jest.mock('@/features/overview-name/setup-gate', () => ({
+  OverviewSetupGate: ({ children }: { children: React.ReactNode }) => children,
+}));
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => {}),
