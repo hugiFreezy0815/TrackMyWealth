@@ -177,8 +177,8 @@ describe('S4 transaction detail', () => {
 
   it('sends the server ETag version with a category override', async () => {
     await show();
-    fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
-    fireEvent.press(screen.getByRole('button', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Food › Dining out' }));
     await waitFor(() =>
       expect(setCategory).toHaveBeenCalledWith({ categoryId: 'dining', version: 7 }),
     );
@@ -193,8 +193,8 @@ describe('S4 transaction detail', () => {
       refetch: jest.fn(async () => ({ data: { ...base, version: 8 } })),
     } as unknown as ReturnType<typeof useTransaction>);
     await show();
-    fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
-    fireEvent.press(screen.getByRole('button', { name: 'Food › Dining out' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Food › Dining out' }));
     await waitFor(() => {
       expect(setCategory).toHaveBeenNthCalledWith(1, { categoryId: 'dining', version: 7 });
       expect(setCategory).toHaveBeenNthCalledWith(2, { categoryId: 'dining', version: 8 });
@@ -205,15 +205,15 @@ describe('S4 transaction detail', () => {
     fixtures({ ...base, categoryAssignedBy: 'USER' });
     await show();
     expect(screen.getByText('Food › Groceries · by you')).toBeTruthy();
-    fireEvent.press(screen.getByRole('button', { name: 'Reset category' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Reset category' }));
     await waitFor(() => expect(resetCategory).toHaveBeenCalledWith({ version: 7 }));
   });
 
   it('requires the VOID explanation before deleting an imported row', async () => {
     const back = await show();
-    fireEvent.press(screen.getByRole('button', { name: 'Delete transaction' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Delete transaction' }));
     expect(screen.getByText(/Void this imported transaction/)).toBeTruthy();
-    fireEvent.press(screen.getByRole('button', { name: 'Confirm deletion' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Confirm deletion' }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith({ version: 7 }));
     expect(back).toHaveBeenCalled();
   });
