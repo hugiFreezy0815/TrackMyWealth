@@ -28,6 +28,9 @@ export const queryKeys = {
   accountPositions: (accountId: string) => [queryRoots.accounts, accountId, 'positions'] as const,
   transaction: (accountId: string, transactionId: string) =>
     [queryRoots.accounts, accountId, 'transactions', transactionId] as const,
+  transactionHistory: (accountId: string, transactionId: string) =>
+    [queryRoots.accounts, accountId, 'transactions', transactionId, 'history'] as const,
+  security: (id: string) => ['securities', id] as const,
   categories: (includeInactive?: boolean) =>
     [queryRoots.categories, includeInactive ?? false] as const,
   cashFlow: (month: string, currency?: string) =>
