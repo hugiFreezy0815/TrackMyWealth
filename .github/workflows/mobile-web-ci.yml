@@ -36,6 +36,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # TEMPORARY: derive exact Prettier source for issue 493, remove before review.
+      - name: Canonical Prettier source for issue 493 (temporary)
+        run: |
+          npx prettier --write 'src/api/queries/resources.ts' 'src/app/overview.tsx' 'src/app/overview/[portfolioId].tsx' 'src/features/overview/overview-screen.tsx' 'src/features/overview/portfolios-card.tsx' 'src/features/overview/tab-strip.tsx' 'src/features/portfolio-view/model.test.ts' 'src/features/portfolio-view/model.ts' 'src/features/portfolio-view/portfolio-screen.test.tsx' 'src/features/portfolio-view/portfolio-screen.tsx'
+          node -e 'const fs=require("node:fs"); for(const p of process.argv.slice(1)) console.log("PRETTIER_JSON:"+JSON.stringify({path:p,content:fs.readFileSync(p,"utf8")}))' 'src/api/queries/resources.ts' 'src/app/overview.tsx' 'src/app/overview/[portfolioId].tsx' 'src/features/overview/overview-screen.tsx' 'src/features/overview/portfolios-card.tsx' 'src/features/overview/tab-strip.tsx' 'src/features/portfolio-view/model.test.ts' 'src/features/portfolio-view/model.ts' 'src/features/portfolio-view/portfolio-screen.test.tsx' 'src/features/portfolio-view/portfolio-screen.tsx'
+
       # mobile/.npmrc turns off npm's peer-dependency check while Expo SDK 58 pins a React Native
       # release candidate, so validate every SDK-managed package against Expo's own version list.
       # Offline: against the list the installed SDK ships with, not Expo's latest online list. The
