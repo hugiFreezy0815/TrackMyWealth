@@ -191,7 +191,8 @@ public class PortfolioService {
     Map<UUID, PortfolioPlacement> placements = accountService.portfolioPlacementsOf(accounts);
 
     Map<UUID, PortfolioPeriodChange> monthlyChanges =
-        historyService.monthlyChanges(portfolios, accounts, actor.workspaceId(), asOf);
+        historyService.monthlyChanges(
+            portfolios, accountRepository.findByWorkspaceId(actor.workspaceId()), asOf);
     List<PortfolioListItemResponse> rows = new ArrayList<>(portfolios.size());
     for (Portfolio portfolio : portfolios) {
       List<UUID> ids = accountIdsByPortfolio.get(portfolio.getId());
