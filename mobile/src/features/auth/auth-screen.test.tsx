@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 
 import { NetworkError } from '@/api/client';
 import { saveServerUrl } from '@/api/server-url';
+import { withIntl } from '@/i18n/test-utils';
 
 import { AuthScreen } from './auth-screen';
 import { cancelMfa, signIn, verifyMfa } from './session';
@@ -25,7 +26,7 @@ describe('AuthScreen', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('saves the chosen server before sending the credentials to it', async () => {
-    await render(<AuthScreen mfaRequired={false} />);
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
 
     await fireEvent.changeText(screen.getByLabelText('Server'), 'https://wealth.example.com/');
     await fireEvent.changeText(screen.getByLabelText('Email'), ' demo@example.com ');
@@ -40,7 +41,7 @@ describe('AuthScreen', () => {
   });
 
   it('labels every field visibly, not only for screen readers', async () => {
-    await render(<AuthScreen mfaRequired={false} />);
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
 
     for (const label of ['Server', 'Email', 'Password']) {
       expect(screen.getByText(label)).toBeTruthy();
@@ -48,7 +49,7 @@ describe('AuthScreen', () => {
   });
 
   it('never sends credentials to a server without HTTPS', async () => {
-    await render(<AuthScreen mfaRequired={false} />);
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
 
     await fireEvent.changeText(screen.getByLabelText('Server'), 'http://wealth.example.com');
     await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
@@ -59,7 +60,7 @@ describe('AuthScreen', () => {
 
   it('shows one generic message for any failed sign-in', async () => {
     jest.mocked(signIn).mockRejectedValueOnce(new Error('401'));
-    await render(<AuthScreen mfaRequired={false} />);
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
 
     await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
 
@@ -68,7 +69,7 @@ describe('AuthScreen', () => {
 
   it('says when the server could not be reached instead of blaming the credentials', async () => {
     jest.mocked(signIn).mockRejectedValueOnce(new NetworkError('could not reach the server'));
-    await render(<AuthScreen mfaRequired={false} />);
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
 
     await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
 
@@ -76,7 +77,7 @@ describe('AuthScreen', () => {
   });
 
   it('forgets the password once the server accepted it', async () => {
-    await render(<AuthScreen mfaRequired={false} />);
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
 
     await fireEvent.changeText(screen.getByLabelText('Email'), 'demo@example.com');
     await fireEvent.changeText(screen.getByLabelText('Password'), 'secret');
@@ -87,7 +88,7 @@ describe('AuthScreen', () => {
 
   it('keeps the password for another try when sign-in failed', async () => {
     jest.mocked(signIn).mockRejectedValueOnce(new Error('401'));
-    await render(<AuthScreen mfaRequired={false} />);
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
 
     await fireEvent.changeText(screen.getByLabelText('Password'), 'secret');
     await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
@@ -98,7 +99,7 @@ describe('AuthScreen', () => {
 
   it('asks only for the authenticator code during MFA and can start over', async () => {
     jest.mocked(verifyMfa).mockRejectedValueOnce(new Error('401'));
-    await render(<AuthScreen mfaRequired />);
+    await render(withIntl(<AuthScreen mfaRequired />));
 
     expect(screen.queryByLabelText('Password')).toBeNull();
     await fireEvent.changeText(screen.getByLabelText('Authenticator code'), '123456');
@@ -109,5 +110,34 @@ describe('AuthScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Start over' }));
 
     expect(cancelMfa).toHaveBeenCalled();
+  });
+
+  it('explains a malformed server address in the member language', async () => {
+    await render(withIntl(<AuthScreen mfaRequired={false} />, 'de'));
+
+    await fireEvent.changeText(screen.getByLabelText('Server'), 'not an address');
+    await fireEvent.press(screen.getByRole('button', { name: 'Anmelden' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Gib die Serveradresse ein/);
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it('renders every sign-in text from the German catalogue', async () => {
+    await render(withIntl(<AuthScreen mfaRequired={false} />, 'de'));
+
+    for (const label of ['E-Mail', 'Passwort']) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+    expect(screen.getByRole('header')).toHaveTextContent('Anmelden');
+  });
+
+  it('keeps the button name for screen readers while the request runs', async () => {
+    jest.mocked(signIn).mockReturnValueOnce(new Promise(() => {}));
+    await render(withIntl(<AuthScreen mfaRequired={false} />));
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+
+    const button = await screen.findByRole('button', { name: 'Sign in', busy: true });
+    expect(button).toBeDisabled();
   });
 });

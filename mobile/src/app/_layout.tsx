@@ -9,14 +9,15 @@ import { AppIntlProvider } from '@/i18n';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { View, useColorScheme } from 'react-native';
+import { useIntl } from 'react-intl';
 
 import { loadServerUrl } from '@/api/server-url';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import { AppShell } from '@/features/shell/app-shell';
 import { ThemedText } from '@/components/themed-text';
 import { AuthScreen } from '@/features/auth/auth-screen';
+import { installBackForwardGuard } from '@/features/auth/web-document';
 import { restoreSession, sessionSnapshot, subscribeSession } from '@/features/auth/session';
-import { SessionBar } from '@/features/auth/session-bar';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -27,6 +28,7 @@ export default function TabLayout() {
 
   useEffect(() => {
     const stopQueryEnvironment = configureQueryEnvironment();
+    const removeBackForwardGuard = installBackForwardGuard(() => sessionSnapshot().signedIn);
     const unsubscribe = subscribeSession(() => setSession(sessionSnapshot()));
     // The stored session belongs to the configured server, so that address comes first.
     loadServerUrl()
@@ -36,6 +38,7 @@ export default function TabLayout() {
     return () => {
       unsubscribe();
       stopQueryEnvironment();
+      removeBackForwardGuard();
     };
   }, []);
 
@@ -50,19 +53,23 @@ export default function TabLayout() {
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <AnimatedSplashOverlay />
           {restoring ? (
-            <View accessibilityLabel="Restoring session">
-              <ThemedText>Restoring session…</ThemedText>
-            </View>
+            <RestoringSession />
           ) : session.signedIn ? (
-            <>
-              <SessionBar identity={session.identity} />
-              <AppTabs identity={session.identity} />
-            </>
+            <AppShell identity={session.identity} />
           ) : (
             <AuthScreen mfaRequired={session.mfaRequired} />
           )}
         </ThemeProvider>
       </AppIntlProvider>
     </QueryClientProvider>
+  );
+}
+
+function RestoringSession() {
+  const intl = useIntl();
+  return (
+    <View accessibilityRole="progressbar" accessibilityState={{ busy: true }}>
+      <ThemedText>{intl.formatMessage({ id: 'session.restoring' })}</ThemedText>
+    </View>
   );
 }

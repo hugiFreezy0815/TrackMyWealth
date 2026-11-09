@@ -24,8 +24,14 @@ function isLocalHost(hostname: string): boolean {
 // platforms. Credentials, query and fragment are rejected rather than silently dropped.
 const SERVER_URL = /^(https?):\/\/(\[[0-9a-f:]+\]|[a-z0-9.-]+)(:\d{1,5})?(\/[^\s?#@]*)?$/i;
 
+/** Why an address was refused; the UI maps it to a localized message (auth.error.serverUrl*). */
+export type InvalidServerUrlReason = 'format' | 'insecure';
+
 export class InvalidServerUrlError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly reason: InvalidServerUrlReason,
+  ) {
     super(message);
     this.name = 'InvalidServerUrlError';
   }
@@ -35,13 +41,16 @@ export class InvalidServerUrlError extends Error {
 export function normalizeServerUrl(input: string): string {
   const match = SERVER_URL.exec(input.trim());
   if (!match) {
-    throw new InvalidServerUrlError('Enter the server address, e.g. https://wealth.example.com');
+    throw new InvalidServerUrlError(
+      'Enter the server address, e.g. https://wealth.example.com',
+      'format',
+    );
   }
   const [, scheme, host, port = '', path = ''] = match;
   const protocol = scheme.toLowerCase();
   const hostname = host.toLowerCase();
   if (protocol === 'http' && !isLocalHost(hostname)) {
-    throw new InvalidServerUrlError('The server must use https://');
+    throw new InvalidServerUrlError('The server must use https://', 'insecure');
   }
   return `${protocol}://${hostname}${port}${path.replace(/\/+$/, '')}`;
 }
