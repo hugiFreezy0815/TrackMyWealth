@@ -72,7 +72,7 @@ export function AppShell() {
       </View>
       {backgrounded && Platform.OS !== 'web' && (
         <View
-          style={[StyleSheet.absoluteFillObject, styles.privacyCover, { backgroundColor: theme.background }]}
+          style={[StyleSheet.absoluteFill, styles.privacyCover, { backgroundColor: theme.background }]}
           accessibilityLabel={intl.formatMessage({ id: 'privacy.protected' })}
           importantForAccessibility="yes"
         >
