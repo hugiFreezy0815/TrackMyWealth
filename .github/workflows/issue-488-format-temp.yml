@@ -1,0 +1,39 @@
+# Temporary developer-only workflow, restricted to #488's isolated branch.
+# Removed from the PR after formatting the new sources.
+name: Format issue 488 branch (temporary)
+on:
+  push:
+    branches:
+      - feat/issue-488-shared-ui-components
+    paths:
+      - .github/workflows/issue-488-format-temp.yml
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.repository == 'hugiFreezy0815/TrackMyWealth'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/issue-488-shared-ui-components
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install exact tooling
+        run: cd mobile && npm ci --ignore-scripts
+      - name: Format only #488 implementation files
+        run: |
+          cd mobile
+          npx prettier --write src/components/shared src/constants/theme.ts src/constants/theme.test.ts src/app/dev/components.tsx
+      - name: Commit formatting only when required
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/src/components/shared mobile/src/constants/theme.ts mobile/src/constants/theme.test.ts mobile/src/app/dev/components.tsx
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "style(ui): apply repository Prettier formatting (#488)"
+          git push origin HEAD:feat/issue-488-shared-ui-components
