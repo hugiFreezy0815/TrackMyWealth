@@ -248,6 +248,38 @@ describe('S2 Portfolio View acceptance (#493)', () => {
     expect(screen.getByText('Savings')).toBeTruthy();
   });
 
+  it('keeps unknown server sections and their rows visible under Other', async () => {
+    setData(view([makeSection('FUTURE' as PortfolioSection['section'],
+      [makeAccount('Unrecognised kind', { accountType: 'FUTURE_ACCOUNT' })])]));
+    const { onAccount } = await mount();
+    expect(screen.getByText('Other')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: /Unrecognised kind/ }));
+    expect(onAccount).toHaveBeenCalledWith('Unrecognised kind');
+  });
+
+  it('keeps a depot row visible when its positions endpoint fails and offers retry', async () => {
+    setData(view([makeSection('DEPOT', [makeAccount('depot', {
+      accountType: 'SECURITIES', positionsCount: 3, positionsAsOf: '2026-09-30',
+    })])]));
+    const refresh = jest.fn();
+    jest.mocked(useAccountPositions).mockReturnValue({
+      data: undefined, isPending: false, isError: true,
+      error: new ApiError('failed', 503, { code: 'INTERNAL' }), refetch: refresh,
+    } as unknown as ReturnType<typeof useAccountPositions>);
+    await mount();
+    expect(screen.getByText('depot')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('masks private financial values across portfolio header and section', async () => {
+    jest.mocked(useAmountsHidden).mockReturnValue(true);
+    setData(view([makeSection('CASH_AND_SAVINGS', [makeAccount('Private cash')])]));
+    await mount();
+    expect(screen.getByTestId('portfolio-total').props.children).toBe('••••');
+    expect(screen.getByTestId('portfolio-total').props.accessibilityLabel).toMatch(/hidden/i);
+  });
+
   it('supports empty portfolios and Add account without inventing a balance', async () => {
     setData(view([], { total: '0.00', totalInWorkspaceCurrency: '0.00' }));
     const { onAddAccount } = await mount('de');
@@ -263,7 +295,7 @@ describe('S2 Portfolio View acceptance (#493)', () => {
     expect(screen.getByTestId('portfolio-total')).toBeTruthy();
   });
 
-  it('does not silently redirect a removed portfolio; offers a safe back action', async () => {
+  it('redirects removed portfolio links to the first tab', async () => {
     setData(undefined, new ApiError('not found', 404, { code: 'NOT_FOUND' }));
     const { onMissing } = await mount();
     expect(screen.getByText('This portfolio no longer exists.')).toBeTruthy();
