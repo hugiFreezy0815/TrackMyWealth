@@ -47,8 +47,7 @@ public class ValueHistoryStartRepository {
     this.jdbcTemplate = jdbcTemplate;
   }
 
-  public LocalDate firstActivity(
-      UUID workspaceId, @Nullable UUID portfolioId, LocalDate today) {
+  public LocalDate firstActivity(UUID workspaceId, @Nullable UUID portfolioId, LocalDate today) {
     MapSqlParameterSource params =
         new MapSqlParameterSource("workspaceId", workspaceId)
             .addValue("portfolioId", portfolioId, Types.OTHER);
