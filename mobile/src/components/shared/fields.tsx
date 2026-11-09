@@ -149,7 +149,9 @@ export function AmountField({
         onChangeValue(parse(next));
       }}
       hint={hint ? currency + ' · ' + hint : currency}
-      error={props.error ?? (touched && invalid ? uiMessage('ui.invalidAmount', locale) : undefined)}
+      error={
+        props.error ?? (touched && invalid ? uiMessage('ui.invalidAmount', locale) : undefined)
+      }
     />
   );
 }

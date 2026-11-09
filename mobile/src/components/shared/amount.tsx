@@ -89,8 +89,7 @@ export function displayAmount({
   const zero = /^0+$/.test(integer + rounded.fraction);
   const { group, decimal } = SEPARATORS[locale] ?? SEPARATORS.en;
   const number =
-    integer.replace(/\B(?=(\d{3})+(?!\d))/g, group) +
-    (scale > 0 ? decimal + rounded.fraction : '');
+    integer.replace(/\B(?=(\d{3})+(?!\d))/g, group) + (scale > 0 ? decimal + rounded.fraction : '');
   const sign = zero ? '' : negative ? '−' : signRole === 'change' ? '+' : '';
   return (approx ? '≈' : '') + sign + currency + NBSP + number;
 }

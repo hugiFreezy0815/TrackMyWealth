@@ -1,12 +1,5 @@
 import { type ReactNode } from 'react';
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  Text,
-  View,
-  type DimensionValue,
-} from 'react-native';
+import { ActivityIndicator, Modal, Pressable, Text, View, type DimensionValue } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { problemReaction, type ClientReaction } from '@/api/problems';
@@ -103,12 +96,12 @@ export function ErrorBanner({
   // Spec README §8: the message key of the problem code (or of its reaction for a code without
   // its own message or unknown to this version). A server's raw title/detail is never shown.
   const text =
-    message ?? (reaction ? uiMessage(problemMessageKey(reaction), locale) : uiMessage('ui.error', locale));
+    message ??
+    (reaction ? uiMessage(problemMessageKey(reaction), locale) : uiMessage('ui.error', locale));
   // Retrying cannot help when the member must sign in again, change the input, or the same
   // request is bound to fail again.
   const showRetry =
-    onRetry != null &&
-    (!reaction || !NO_RETRY_REACTIONS.includes(reaction.reaction));
+    onRetry != null && (!reaction || !NO_RETRY_REACTIONS.includes(reaction.reaction));
   return (
     <View
       accessibilityRole="alert"

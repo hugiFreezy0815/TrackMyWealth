@@ -196,7 +196,11 @@ export default function ComponentGallery() {
       <Dialog title="Sample dialog" visible={dialog === 'dialog'} onClose={() => setDialog(null)}>
         <Text style={{ color: theme.textSecondary }}>Synthetic dialog content.</Text>
       </Dialog>
-      <BottomSheet title="Sample sheet" visible={dialog === 'sheet'} onClose={() => setDialog(null)}>
+      <BottomSheet
+        title="Sample sheet"
+        visible={dialog === 'sheet'}
+        onClose={() => setDialog(null)}
+      >
         <Text style={{ color: theme.textSecondary }}>Synthetic sheet content.</Text>
       </BottomSheet>
     </ScrollView>

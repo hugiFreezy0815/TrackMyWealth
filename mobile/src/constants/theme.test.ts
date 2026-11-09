@@ -41,6 +41,35 @@ describe('canonical UX-03 light and dark tokens', () => {
       }
     },
   );
+  // Every foreground/background pair the shared components and the gallery use (#488 AC3).
+  it.each(['light', 'dark'] as const)('%s passes AA for every pair the components use', (mode) => {
+    const theme = DesignTokens[mode];
+    const textPairs: [keyof typeof theme, keyof typeof theme][] = [
+      ['statusInfo', 'statusInfoSubtle'],
+      ['statusWarning', 'statusWarningSubtle'],
+      ['textPrimary', 'bgSubtle'],
+      ['statusLoss', 'statusLossSubtle'],
+      ['statusGain', 'statusGainSubtle'],
+      ['textSecondary', 'bgSubtle'],
+      ['textPrimary', 'statusLossSubtle'],
+      ['textSecondary', 'statusLossSubtle'],
+      ['textPrimary', 'statusWarningSubtle'],
+      ['textSecondary', 'statusWarningSubtle'],
+      ['textPrimary', 'brandSubtle'],
+      ['bgSurface', 'bgInverse'],
+      ['brandLink', 'bgSurface'],
+      ['statusLoss', 'bgSurface'],
+      ['textOnBrand', 'brandPrimary'],
+    ];
+    for (const [foreground, background] of textPairs) {
+      expect([foreground, background, contrast(theme[foreground], theme[background])]).toEqual([
+        foreground,
+        background,
+        expect.any(Number),
+      ]);
+      expect(contrast(theme[foreground], theme[background])).toBeGreaterThanOrEqual(4.5);
+    }
+  });
   it('retains the old Expo theme keys while moving to design-system roles', () => {
     expect(Colors.light.text).toBe(DesignTokens.light.textPrimary);
     expect(Colors.dark.background).toBe(DesignTokens.dark.bgCanvas);

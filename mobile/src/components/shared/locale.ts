@@ -173,7 +173,8 @@ const de: Record<MessageKey, string> = {
   'problem.INTERNAL': 'Auf dem Server ist etwas schiefgelaufen.',
   'problem.reaction.FIX_INPUT': 'Einige Angaben sind ungültig. Prüfe sie und versuche es erneut.',
   'problem.reaction.SHOW': 'Das ist gerade nicht möglich.',
-  'problem.reaction.RELOAD': 'Die Daten haben sich geändert. Lade neu, um den aktuellen Stand zu sehen.',
+  'problem.reaction.RELOAD':
+    'Die Daten haben sich geändert. Lade neu, um den aktuellen Stand zu sehen.',
   'problem.reaction.RELOAD_AND_RETRY':
     'Die Daten haben sich geändert. Lade sie neu und versuche es erneut.',
   'problem.reaction.RETRY': 'Die Anfrage ist nicht durchgekommen. Versuche es erneut.',

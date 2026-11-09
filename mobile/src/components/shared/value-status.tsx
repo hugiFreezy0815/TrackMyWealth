@@ -132,7 +132,11 @@ export function ValueStatusBadge({
         >
           <View
             accessibilityViewIsModal
-            style={{ borderRadius: Radii.card, padding: Spacing.four, backgroundColor: theme.bgSurface }}
+            style={{
+              borderRadius: Radii.card,
+              padding: Spacing.four,
+              backgroundColor: theme.bgSurface,
+            }}
           >
             <Text
               accessibilityRole="header"
@@ -141,7 +145,11 @@ export function ValueStatusBadge({
               {label}
             </Text>
             <Text
-              style={{ ...TypeScale.bodyMedium, color: theme.textSecondary, marginTop: Spacing.compact }}
+              style={{
+                ...TypeScale.bodyMedium,
+                color: theme.textSecondary,
+                marginTop: Spacing.compact,
+              }}
             >
               {detail}
             </Text>

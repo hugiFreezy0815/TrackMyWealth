@@ -32,7 +32,10 @@ export function SectionCard({
         gap: Spacing.compact,
       }}
     >
-      <Text accessibilityRole="header" style={{ ...TypeScale.headingSmall, color: theme.textPrimary }}>
+      <Text
+        accessibilityRole="header"
+        style={{ ...TypeScale.headingSmall, color: theme.textPrimary }}
+      >
         {title}
       </Text>
       {description ? (
@@ -97,9 +100,7 @@ export function ChangeChip({
         locale={locale}
         style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
       />
-      {percentage ? (
-        <Text style={{ ...TypeScale.numberMedium, color }}>{percentage}</Text>
-      ) : null}
+      {percentage ? <Text style={{ ...TypeScale.numberMedium, color }}>{percentage}</Text> : null}
     </View>
   );
 }
@@ -398,7 +399,9 @@ export function KeyValueList({
           <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>{item.label}</Text>
           <View style={{ flexShrink: 1 }}>
             {typeof item.value === 'string' || typeof item.value === 'number' ? (
-              <Text style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>{item.value}</Text>
+              <Text style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>
+                {item.value}
+              </Text>
             ) : (
               item.value
             )}
