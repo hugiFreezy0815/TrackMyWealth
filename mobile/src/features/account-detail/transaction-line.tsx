@@ -42,7 +42,7 @@ export function TransactionLine({
   const voided = !!row.voidedAt;
   const muted = { color: theme.textSecondary, ...TypeScale.caption };
   return (
-    <View testID={`transaction-${row.id}`} style={{
+    <View style={{
       paddingVertical: Spacing.compact, borderBottomWidth: 1, borderBottomColor: theme.borderDefault,
       gap: Spacing.one,
     }}>
