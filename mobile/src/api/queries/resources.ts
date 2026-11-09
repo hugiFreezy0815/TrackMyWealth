@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { typedApi } from '@/api/typed-api';
+import type { components } from '@/api/schema';
 import { ifMatch } from './conflict';
 import { invalidateFinancialData } from './invalidation';
 import { queryKeys } from './keys';
@@ -175,7 +176,7 @@ export const useSecurity = (securityId: string) =>
 /** Updating S4 invalidates S3 page zero, counts, totals and history. */
 export function useTransactionDetailActions(accountId: string, transactionId: string) {
   const client = useQueryClient();
-  const sync = async (updated?: Awaited<ReturnType<typeof typedApi.get<'/api/v1/accounts/{accountId}/transactions/{transactionId}'>>>) => {
+  const sync = async (updated?: components['schemas']['TransactionResponse']) => {
     if (updated) client.setQueryData(queryKeys.transaction(accountId, transactionId), updated);
     await invalidateFinancialData(client);
     await client.invalidateQueries({ queryKey: queryKeys.transactionHistory(accountId, transactionId) });
