@@ -43,6 +43,47 @@ describe('locale-aware decimal input', () => {
       expect(parseAmountInput(input, 'en')).toBeNull();
     },
   );
+  // #534: the decimal-pad key follows the device region, not the app language.
+  it.each([
+    ['12.5', 'de', '.', '12.5'], // Swiss phone, app in German: "." is the only decimal key
+    ['12,5', 'de', '.', '12.5'],
+    ['1.234,5', 'de', '.', '1234.5'],
+    ['1.234.567', 'de', ',', '1234567'],
+    ['1.250', 'de', ',', '1250'], // German phone: "." only groups
+    ['1.250', 'en', ',', '1.250'], // "." is never a group in English
+    ['12,5', 'en', ',', '12.5'], // English app on a German phone: "," is the decimal key
+    ['1,234,567', 'en', ',', '1234567'],
+    ['1,234.5', 'en', ',', '1234.5'],
+    ["1'234,5", 'de-CH', ',', '1234.5'],
+    ['1250.75', 'de-CH', ',', '1250.75'],
+  ] as const)(
+    'parses %s in %s on a device with decimal "%s" into %s',
+    (raw, locale, device, expected) => {
+      expect(parseAmountInput(raw, locale, device)).toBe(expected);
+    },
+  );
+
+  it.each([
+    ['1.250', 'de', '.'], // 1.25 on the keypad or 1250 grouped: never guess
+    ['1,250', 'en', ','],
+    ['12,500', 'en', ','],
+    ['1,250', 'de-CH', '.'], // "," is neither the decimal key nor a Swiss group here
+    ['1.234,5,6', 'de', ','],
+    ["1'234.567,5", 'de-CH', '.'],
+    ['.5', 'en', '.'],
+  ] as const)('rejects ambiguous or invalid %s in %s on a "%s" device', (raw, locale, device) => {
+    expect(parseAmountInput(raw, locale, device)).toBeNull();
+  });
+
+  it('flags neither an empty nor a valid field as invalid', async () => {
+    const onChangeValue = jest.fn();
+    await renderWithIntl(
+      <AmountField label="Amount" value="5" currency="CHF" onChangeValue={onChangeValue} />,
+    );
+    await fireEvent.changeText(screen.getByLabelText('Amount'), '  ');
+    expect(onChangeValue).toHaveBeenLastCalledWith(null, { invalid: false });
+  });
+
   it.each([
     ['1234.5', 'de-DE', '1234,5'],
     ['1234.5', 'de', '1234,5'],
@@ -62,7 +103,7 @@ describe('locale-aware decimal input', () => {
       locale as AppLocale,
     );
     await fireEvent.changeText(screen.getByLabelText('Betrag'), input);
-    expect(onChangeValue).toHaveBeenLastCalledWith('1234.5');
+    expect(onChangeValue).toHaveBeenLastCalledWith('1234.5', { invalid: false });
   });
 
   it('keeps the typed text while it stands for the value, and shows a new value from the parent', async () => {
@@ -84,7 +125,8 @@ describe('locale-aware decimal input', () => {
       <AmountField label="Amount" value={null} currency="EUR" onChangeValue={onChangeValue} />,
     );
     await fireEvent.changeText(screen.getByLabelText('Amount'), '1,23.4');
-    expect(onChangeValue).toHaveBeenLastCalledWith(null);
+    // Invalid text emits null like an empty field, but flagged so the form blocks saving.
+    expect(onChangeValue).toHaveBeenLastCalledWith(null, { invalid: true });
     expect(screen.queryByRole('alert')).toBeNull();
     await fireEvent(screen.getByLabelText('Amount'), 'blur');
     expect(screen.getByRole('alert')).toHaveTextContent('Enter a valid amount.');
@@ -109,6 +151,23 @@ describe('locale-aware decimal input', () => {
     expect(screen.getByRole('radio', { name: 'EUR' }).props.accessibilityState.checked).toBe(false);
     await fireEvent.press(screen.getByRole('radio', { name: 'EUR' }));
     expect(onChange).toHaveBeenCalledWith('EUR');
+  });
+
+  it('disables every currency while the picker is disabled', async () => {
+    const onChange = jest.fn();
+    await renderWithIntl(
+      <CurrencyPicker
+        label="Currency"
+        options={[{ value: 'CHF', label: 'CHF' }]}
+        value={null}
+        onChange={onChange}
+        disabled
+      />,
+    );
+    const radio = screen.getByRole('radio', { name: 'CHF' });
+    expect(radio.props.accessibilityState).toEqual({ checked: false, disabled: true });
+    await fireEvent.press(radio);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it.each([

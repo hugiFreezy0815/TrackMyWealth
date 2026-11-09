@@ -132,4 +132,24 @@ describe('DateField (native date picker)', () => {
     );
     expect(screen.getByRole('alert')).toHaveTextContent('Required');
   });
+
+  it('offers to clear an optional date, and only when one is set', async () => {
+    const onClear = jest.fn();
+    const view = await renderWithIntl(
+      <DateField label="Valid until" value="2026-10-01" onChange={jest.fn()} onClear={onClear} />,
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Clear date, Valid until' }));
+    expect(onClear).toHaveBeenCalledTimes(1);
+    await view.rerender(
+      <DateField label="Valid until" value={null} onChange={jest.fn()} onClear={onClear} />,
+    );
+    expect(screen.queryByRole('button', { name: /^Clear date/ })).toBeNull();
+  });
+
+  it('cannot clear a required date', async () => {
+    await renderWithIntl(
+      <DateField label="Booking date" value="2026-10-01" onChange={jest.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: /^Clear date/ })).toBeNull();
+  });
 });

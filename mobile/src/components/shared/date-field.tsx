@@ -29,6 +29,7 @@ export function DateField({
   label,
   value,
   onChange,
+  onClear,
   minimumDate,
   maximumDate,
   error,
@@ -92,6 +93,18 @@ export function DateField({
           {shown}
         </Text>
       </Pressable>
+      {onClear && value && !disabled ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={intl.formatMessage({ id: 'ui.clearDate' }) + ', ' + label}
+          onPress={onClear}
+          style={{ minHeight: 44, minWidth: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
+        >
+          <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
+            {intl.formatMessage({ id: 'ui.clearDate' })}
+          </Text>
+        </Pressable>
+      ) : null}
       <FieldMessages hint={hint} error={error} />
       <BottomSheet title={label} visible={pending !== null} onClose={() => setPending(null)}>
         {pending ? (

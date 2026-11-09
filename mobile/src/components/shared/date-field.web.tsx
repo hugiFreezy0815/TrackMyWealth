@@ -18,6 +18,7 @@ export function DateField({
   label,
   value,
   onChange,
+  onClear,
   minimumDate,
   maximumDate,
   error,
@@ -41,7 +42,9 @@ export function DateField({
         max={maximumDate}
         disabled={disabled}
         onChange={(event) => {
+          // The browser's own clear button empties the input; a partial date is never emitted.
           if (isValidIsoDate(event.target.value)) onChange(event.target.value);
+          else if (event.target.value === '') onClear?.();
         }}
         style={{
           ...TypeScale.bodyLarge,

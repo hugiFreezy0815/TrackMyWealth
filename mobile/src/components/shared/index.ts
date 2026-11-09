@@ -1,6 +1,7 @@
 export { Amount, amountTexts, type AmountValue } from './amount';
 export {
   ValueStatusBadge,
+  ValueStatusExplanation,
   isValueKnown,
   recognizedValueStatus,
   valueStatusTexts,
@@ -40,5 +41,6 @@ export {
   CountTile,
   KeyValueList,
   Stepper,
+  type ChipOption,
 } from './presentation';
 export { DateField, isoToLocalDate, localDateToIso, type DateFieldProps } from './date-field';

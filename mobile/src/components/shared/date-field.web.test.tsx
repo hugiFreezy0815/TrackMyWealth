@@ -50,4 +50,15 @@ describe('DateField (web, browser date input)', () => {
     await fireEvent(input, 'change', { target: { value: '2026-11-08' } });
     expect(onChange).toHaveBeenCalledWith('2026-11-08');
   });
+
+  it('clears an optional date with the browser control', async () => {
+    const onChange = jest.fn();
+    const onClear = jest.fn();
+    await renderWithIntl(
+      <DateField label="Date" value="2026-11-08" onChange={onChange} onClear={onClear} />,
+    );
+    await fireEvent(screen.getByLabelText('Date'), 'change', { target: { value: '' } });
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

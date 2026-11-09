@@ -5,6 +5,8 @@ export type DateFieldProps = {
   /** The chosen calendar date as `YYYY-MM-DD`, or null when none is chosen. */
   value: string | null;
   onChange: (value: string) => void;
+  /** For an optional date: offers to clear it. Without it, a chosen date can only be changed. */
+  onClear?: () => void;
   /** Earliest and latest selectable dates, `YYYY-MM-DD`. */
   minimumDate?: string;
   maximumDate?: string;

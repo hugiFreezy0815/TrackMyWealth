@@ -42,6 +42,7 @@ export default function ComponentGallery() {
   const [selected, setSelected] = useState('all');
   const [chip, setChip] = useState('one');
   const [amount, setAmount] = useState<string | null>('1234.5');
+  const [amountInvalid, setAmountInvalid] = useState(false);
   const [date, setDate] = useState<string | null>('2026-11-08');
   const [noDate, setNoDate] = useState<string | null>(null);
   const [currency, setCurrency] = useState('CHF');
@@ -72,11 +73,11 @@ export default function ComponentGallery() {
           onSelect={(value) => setLocale(value as AppLocale)}
         />
         <SectionCard title="Palette and tokens" description="Light/dark follows the device theme.">
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}>
             {Object.entries(DesignTokens.light)
               .slice(0, 18)
               .map(([key]) => (
-                <View key={key} style={{ width: 120, gap: 4 }}>
+                <View key={key} style={{ width: 120, gap: Spacing.one }}>
                   <View
                     style={{
                       height: 36,
@@ -86,7 +87,7 @@ export default function ComponentGallery() {
                       backgroundColor: theme[key as keyof typeof DesignTokens.light],
                     }}
                   />
-                  <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{key}</Text>
+                  <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{key}</Text>
                 </View>
               ))}
           </View>
@@ -107,7 +108,7 @@ export default function ComponentGallery() {
           {(
             ['CURRENT', 'ESTIMATED', 'STALE', 'UNRECONCILED', 'UNKNOWN', 'FUTURE_VALUE'] as const
           ).map((status) => (
-            <View key={status} style={{ gap: 4 }}>
+            <View key={status} style={{ gap: Spacing.one }}>
               <Text style={{ color: theme.textSecondary }}>{status}</Text>
               <ValueStatusBadge status={status} valueSourceDate="2026-10-01" />
             </View>
@@ -158,19 +159,29 @@ export default function ComponentGallery() {
           <TextField label="Sample name" value="Test" onChangeText={() => {}} />
           <AmountField
             label="Opening balance"
-
             currency={currency}
             value={amount}
-            onChangeValue={setAmount}
+            onChangeValue={(value, { invalid }) => {
+              setAmount(value);
+              setAmountInvalid(invalid);
+            }}
           />
-          <Text style={{ color: theme.textSecondary }}>DecimalString: {String(amount)}</Text>
+          <Text style={{ color: theme.textSecondary }}>
+            DecimalString: {String(amount)}
+            {amountInvalid ? ' (invalid input: submit blocked)' : ''}
+          </Text>
           <DateField
             label="Booking date"
             value={date}
             onChange={setDate}
             maximumDate="2026-12-31"
           />
-          <DateField label="Optional date" value={noDate} onChange={setNoDate} />
+          <DateField
+            label="Optional date"
+            value={noDate}
+            onChange={setNoDate}
+            onClear={() => setNoDate(null)}
+          />
           <CurrencyPicker
             label="Currency"
             value={currency}
@@ -190,21 +201,36 @@ export default function ComponentGallery() {
           <Text
             accessibilityRole="button"
             onPress={() => setConflict(true)}
-            style={{ color: theme.brandLink, padding: 14 }}
+            style={{
+              ...TypeScale.labelMedium,
+              color: theme.brandLink,
+              padding: Spacing.compact,
+              minHeight: 44,
+            }}
           >
             Show conflict dialog
           </Text>
           <Text
             accessibilityRole="button"
             onPress={() => setDialog('dialog')}
-            style={{ color: theme.brandLink, padding: 14 }}
+            style={{
+              ...TypeScale.labelMedium,
+              color: theme.brandLink,
+              padding: Spacing.compact,
+              minHeight: 44,
+            }}
           >
             Show dialog
           </Text>
           <Text
             accessibilityRole="button"
             onPress={() => setDialog('sheet')}
-            style={{ color: theme.brandLink, padding: 14 }}
+            style={{
+              ...TypeScale.labelMedium,
+              color: theme.brandLink,
+              padding: Spacing.compact,
+              minHeight: 44,
+            }}
           >
             Show bottom sheet
           </Text>

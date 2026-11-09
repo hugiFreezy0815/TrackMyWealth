@@ -57,6 +57,13 @@ describe('ErrorBanner', () => {
     [problem(409, 'VERSION_CONFLICT'), 'en', /changed meanwhile\. Reload it/],
     [problem(403, 'FORBIDDEN'), 'de-CH', /^Das darfst du nicht\.$/],
     [problem(429, 'RATE_LIMITED'), 'en', /Too many requests/],
+    // Spec README §6: NOT_FOUND also covers items the member cannot see.
+    [problem(404, 'NOT_FOUND'), 'en', /^This item no longer exists or is not available to you\.$/],
+    [
+      problem(404, 'NOT_FOUND'),
+      'de-CH',
+      /^Dieser Eintrag existiert nicht mehr oder ist für dich nicht verfügbar\.$/,
+    ],
     // A known code without its own message: the message of its reaction (FIX_INPUT).
     [problem(400, 'INVALID_SORT'), 'en', /Some entries are not valid\. Check them/],
     // An unknown code: the reaction of its status (403 → SHOW).

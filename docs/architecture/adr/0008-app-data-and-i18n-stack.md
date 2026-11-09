@@ -70,3 +70,9 @@ PO decisions while integrating the shared components (#488, PR #534) with this s
   of throwing while a screen renders.
 - **One amount formatter:** `src/format/amount.ts`. Components never format amounts or dates
   themselves; the literal-UI-string lint rule also covers `src/components/shared/**`.
+- **Amount input (PR #534 review):** the `decimal-pad` key follows the device region, not the
+  member's app language. `AmountField` therefore reads a single trailing separator as the decimal
+  point when it is the decimal separator of the app locale or of the device; other separators
+  must be the locale's grouping (apostrophes always group). Input that could mean either
+  ("1.250") is rejected, never guessed. An invalid field emits `null` with `{ invalid: true }`,
+  so forms block saving instead of storing "no amount".

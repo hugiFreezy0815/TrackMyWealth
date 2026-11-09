@@ -131,6 +131,51 @@ describe('shared navigation and financial rows', () => {
     expect(label).toBe('Main, Cash, minus 1234.50 Swiss francs, Estimated');
   });
 
+  it('offers the status explanation as an action, not as a button nested in the row', async () => {
+    const onPress = jest.fn();
+    await renderWithIntl(
+      <AccountRow
+        title="Main"
+        amount="10"
+        currency="CHF"
+        status="STALE"
+        valueSourceDate="2026-10-01"
+        onPress={onPress}
+      />,
+    );
+    // The row is the only button: the badge inside it is plain text.
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    const row = screen.getByRole('button', { name: /^Main/ });
+    expect(row.props.accessibilityActions).toEqual([
+      { name: 'activate' },
+      { name: 'explainValueStatus', label: 'Explain value status' },
+    ]);
+    expect(screen.queryByText(/older than usual/)).toBeNull();
+    await fireEvent(row, 'accessibilityAction', {
+      nativeEvent: { actionName: 'explainValueStatus' },
+    });
+    expect(screen.getByText(/older than usual/)).toBeTruthy();
+    expect(onPress).not.toHaveBeenCalled();
+    await fireEvent(row, 'accessibilityAction', { nativeEvent: { actionName: 'activate' } });
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the badge a button in a row that is not pressable', async () => {
+    await renderWithIntl(<AccountRow title="Main" amount="10" currency="CHF" status="ESTIMATED" />);
+    const badge = screen.getByRole('button', { name: /^Estimated\. / });
+    await fireEvent.press(badge);
+    expect(screen.getByText(/rests on an approximation/)).toBeTruthy();
+  });
+
+  it('adds no actions to a pressable row without a status badge', async () => {
+    await renderWithIntl(
+      <AccountRow title="Main" amount="10" currency="CHF" status="CURRENT" onPress={jest.fn()} />,
+    );
+    expect(
+      screen.getByRole('button', { name: /^Main/ }).props.accessibilityActions,
+    ).toBeUndefined();
+  });
+
   it('keeps a hidden amount hidden in the pressable row label', async () => {
     await renderWithIntl(
       <AccountRow title="Main" amount="1234.5" currency="CHF" masked onPress={jest.fn()} />,

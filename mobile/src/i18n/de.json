@@ -54,7 +54,7 @@
   "valueStatus.dismiss": "Erklärung schließen",
   "problem.UNAUTHENTICATED": "Deine Sitzung ist abgelaufen. Melde dich erneut an.",
   "problem.FORBIDDEN": "Das darfst du nicht.",
-  "problem.NOT_FOUND": "Dieser Eintrag existiert nicht mehr.",
+  "problem.NOT_FOUND": "Dieser Eintrag existiert nicht mehr oder ist für dich nicht verfügbar.",
   "problem.VALIDATION_FAILED": "Einige Angaben sind ungültig. Prüfe die markierten Felder.",
   "problem.VERSION_REQUIRED": "Lade diesen Eintrag neu, bevor du ihn speicherst.",
   "problem.VERSION_CONFLICT": "Dieser Eintrag wurde inzwischen geändert. Lade ihn neu und speichere erneut.",
@@ -81,6 +81,7 @@
   "ui.close": "Schließen",
   "ui.done": "Fertig",
   "ui.select": "Auswählen",
+  "ui.clearDate": "Datum entfernen",
   "ui.chooseDate": "Datum wählen",
   "ui.invalidAmount": "Gib einen gültigen Betrag ein.",
   "ui.personalAssets": "Privatvermögen"

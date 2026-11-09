@@ -1,44 +1,73 @@
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
-import { Pressable, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { Text, TextInput, View, type TextInputProps } from 'react-native';
 
 import type { DecimalString } from '@/api/decimal';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { DEVICE_DECIMAL_SEPARATOR } from '@/i18n/device-intl';
+
+import { ChipGroup, type ChipOption } from './presentation';
 
 /** Number input conventions (#378): de-CH 1'234.5, other German 1.234,5, English 1,234.5. */
-function inputConvention(locale: string): { group: string; decimal: ',' | '.' } {
+function inputConvention(locale: string): { group: ',' | '.' | "'"; decimal: ',' | '.' } {
   const lower = locale.toLowerCase();
-  if (lower.startsWith('de-ch')) return { group: "['’]", decimal: '.' };
-  if (lower.startsWith('de')) return { group: '\\.', decimal: ',' };
+  if (lower.startsWith('de-ch')) return { group: "'", decimal: '.' };
+  if (lower.startsWith('de')) return { group: '.', decimal: ',' };
   return { group: ',', decimal: '.' };
 }
 
 /**
- * Normalize local input into an API plain DecimalString, never a Number.
- * Accept either explicit native decimal separator or a grouping separator, not
- * mixed ambiguities. Input that is incomplete or invalid never reaches the API.
+ * Normalize typed or pasted input into an API plain DecimalString, never a Number.
+ *
+ * The `decimal-pad` keyboard offers the device's decimal key, which can differ from the app
+ * language (#534): a Swiss phone with the app in German offers ".", an English app on a German
+ * phone offers ",". So the last separator is the decimal point when it occurs once and is the
+ * decimal separator of the app locale or of the device; every other separator must group digits
+ * in threes with the locale's grouping character (apostrophes always group). A lone separator
+ * that could be either ("1.250" when "." both groups and is the device's decimal key) is
+ * rejected rather than guessed: an amount must never change silently. Invalid input is null.
  */
-export function parseAmountInput(input: string, locale: string): DecimalString | null {
-  const trimmed = input
+export function parseAmountInput(
+  input: string,
+  locale: string,
+  deviceDecimal: ',' | '.' = DEVICE_DECIMAL_SEPARATOR,
+): DecimalString | null {
+  const text = input
     .trim()
-    .replaceAll(' ', '')
-    .replaceAll(' ', '')
+    .replaceAll('\u00A0', '')
+    .replaceAll('\u202F', '')
+    .replaceAll(' ', '')
+    .replaceAll('’', "'")
     // Accept the typographic minus that `Amount` displays, so a copied amount parses.
     .replace(/^−/, '-');
-  if (!trimmed || /[eE+]/.test(trimmed)) return null;
-  const { group, decimal } = inputConvention(locale);
-  // Strictly validate grouping before stripping it. This prevents silent amount changes.
-  const validGrouping = new RegExp(
-    '^-?(?:\\d+|\\d{1,3}(?:' + group + '\\d{3})+)(?:' + (decimal === ',' ? ',' : '\\.') + '\\d+)?$',
-  );
-  if (!validGrouping.test(trimmed)) return null;
-  const grouped = trimmed.replace(new RegExp(group, 'g'), '');
-  const canonical = decimal === '.' ? grouped : grouped.replace(',', '.');
-  if (!/^-?\d+(\.\d+)?$/.test(canonical)) return null;
-  const negative = canonical.startsWith('-');
-  const [rawInt, rest] = (negative ? canonical.slice(1) : canonical).split('.');
-  return (negative ? '-' : '') + rawInt.replace(/^0+(?=\d)/, '') + (rest == null ? '' : '.' + rest);
+  if (!/^-?\d[\d.,']*$/.test(text)) return null;
+  const negative = text.startsWith('-');
+  const body = negative ? text.slice(1) : text;
+  const convention = inputConvention(locale);
+  const groups = new Set<string>([convention.group, "'"]);
+  const separators = body.replace(/\d/g, '');
+  const last = separators.at(-1);
+  const decimal =
+    last &&
+    (last === convention.decimal || last === deviceDecimal) &&
+    separators.indexOf(last) === separators.length - 1
+      ? last
+      : null;
+  const at = decimal ? body.lastIndexOf(decimal) : body.length;
+  const integer = body.slice(0, at);
+  const fraction = decimal ? body.slice(at + 1) : null;
+  if (fraction !== null && !/^\d+$/.test(fraction)) return null;
+  const grouping = new Set(integer.replace(/\d/g, ''));
+  if (grouping.size > 1) return null;
+  const [group] = grouping;
+  if (group && (!groups.has(group) || !/^\d{1,3}(?:\D\d{3})+$/.test(integer))) return null;
+  // "1.250": a decimal point to one convention and a thousands group to the other.
+  if (decimal && groups.has(decimal) && !group && integer.length <= 3 && fraction?.length === 3) {
+    return null;
+  }
+  const digits = integer.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  return (negative ? '-' : '') + digits + (fraction === null ? '' : '.' + fraction);
 }
 
 /** The editable text for a DecimalString: the locale's decimal separator, no grouping. */
@@ -124,7 +153,11 @@ export function FieldMessages({ hint, error }: { hint?: string; error?: string }
 export type AmountFieldProps = Omit<TextFieldProps, 'value' | 'onChangeText' | 'keyboardType'> & {
   /** The current amount as a DecimalString (null when empty or invalid). */
   value: DecimalString | null;
-  onChangeValue: (value: DecimalString | null) => void;
+  /**
+   * The parsed amount, and whether the text is invalid. Both an empty and an invalid field emit
+   * null, so a form must block submitting while `invalid` is true instead of saving "no amount".
+   */
+  onChangeValue: (value: DecimalString | null, state: { invalid: boolean }) => void;
   currency: string;
   onChangeRawText?: (raw: string) => void;
 };
@@ -156,7 +189,8 @@ export function AmountField({
       onChangeText={(next) => {
         setDraft({ text: next, base: value });
         onChangeRawText?.(next);
-        onChangeValue(parse(next));
+        const parsed = parse(next);
+        onChangeValue(parsed, { invalid: next.trim() !== '' && parsed === null });
       }}
       hint={hint ? currency + ' · ' + hint : currency}
       error={
@@ -167,7 +201,8 @@ export function AmountField({
   );
 }
 
-export type PickerOption = { value: string; label: string };
+export type PickerOption = ChipOption;
+/** A single choice among currencies: a labelled radio group of chips (`ChipGroup`). */
 export function CurrencyPicker({
   label,
   value,
@@ -185,41 +220,13 @@ export function CurrencyPicker({
   return (
     <View style={{ gap: Spacing.two }}>
       <Text style={{ ...TypeScale.labelMedium, color: theme.textPrimary }}>{label}</Text>
-      <View
-        accessibilityRole="radiogroup"
-        accessibilityLabel={label}
-        style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}
-      >
-        {options.map((option) => {
-          const checked = value === option.value;
-          return (
-            <Pressable
-              key={option.value}
-              accessibilityRole="radio"
-              accessibilityState={{ checked, disabled }}
-              accessibilityLabel={option.label}
-              disabled={disabled}
-              onPress={() => onChange(option.value)}
-              style={{
-                minHeight: 44,
-                minWidth: 52,
-                borderRadius: Radii.control,
-                padding: Spacing.two,
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderWidth: 1,
-                borderColor: theme.borderInteractive,
-                backgroundColor: checked ? theme.brandSubtle : theme.bgSurface,
-              }}
-            >
-              <Text style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>
-                {option.label}
-                {checked ? ' ✓' : ''}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <ChipGroup
+        label={label}
+        options={options}
+        selected={value == null ? [] : [value]}
+        onSelect={onChange}
+        disabled={disabled}
+      />
     </View>
   );
 }

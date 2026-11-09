@@ -11,7 +11,15 @@ import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Amount, amountTexts } from './amount';
-import { isValueKnown, type ValueStatus, ValueStatusBadge, valueStatusTexts } from './value-status';
+import {
+  isValueKnown,
+  type ValueStatus,
+  ValueStatusBadge,
+  ValueStatusExplanation,
+  valueStatusTexts,
+} from './value-status';
+
+const EXPLAIN_VALUE_STATUS = 'explainValueStatus';
 
 export function SectionCard({
   title,
@@ -206,6 +214,7 @@ export function AccountRow({
   // Spec README §3: an UNKNOWN (or unrecognized) status shows the amount as "–", never a number.
   const valueKnown = isValueKnown(status);
   const hidden = useAmountsHidden();
+  const [explaining, setExplaining] = useState(false);
   const contents = (
     <View
       style={{
@@ -223,7 +232,11 @@ export function AccountRow({
         {subtitle ? (
           <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>{subtitle}</Text>
         ) : null}
-        <ValueStatusBadge status={status} valueSourceDate={valueSourceDate} />
+        <ValueStatusBadge
+          status={status}
+          valueSourceDate={valueSourceDate}
+          interactive={!onPress}
+        />
       </View>
       <Amount
         value={amount}
@@ -236,23 +249,48 @@ export function AccountRow({
   );
   if (!onPress) return <View style={{ paddingVertical: Spacing.compact }}>{contents}</View>;
   // A pressable row is one screen-reader element, so its label carries everything it shows.
+  // Its badge is not a nested button, so the status explanation is an accessibility action.
+  const statusTexts = valueStatusTexts(status, valueSourceDate, intl);
   const label = [
     title,
     subtitle,
     amountTexts(intl, { value: amount, currency, masked: masked || hidden, valueKnown }).label,
-    valueStatusTexts(status, valueSourceDate, intl)?.label,
+    statusTexts?.label,
   ]
     .filter(Boolean)
     .join(', ');
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={{ paddingVertical: Spacing.compact, minHeight: 44 }}
-    >
-      {contents}
-    </Pressable>
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityActions={
+          statusTexts
+            ? [
+                { name: 'activate' },
+                {
+                  name: EXPLAIN_VALUE_STATUS,
+                  label: intl.formatMessage({ id: 'valueStatus.explain' }),
+                },
+              ]
+            : undefined
+        }
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === EXPLAIN_VALUE_STATUS) setExplaining(true);
+          else if (event.nativeEvent.actionName === 'activate') onPress();
+        }}
+        onPress={onPress}
+        style={{ paddingVertical: Spacing.compact, minHeight: 44 }}
+      >
+        {contents}
+      </Pressable>
+      <ValueStatusExplanation
+        status={status}
+        valueSourceDate={valueSourceDate}
+        visible={explaining}
+        onClose={() => setExplaining(false)}
+      />
+    </>
   );
 }
 
@@ -313,19 +351,22 @@ export function PortfolioTabs({
   );
 }
 
+export type ChipOption = { value: string; label: string };
 export function ChipGroup({
   options,
   selected,
   onSelect,
   multi = false,
   label,
+  disabled = false,
 }: {
-  options: { value: string; label: string }[];
+  options: ChipOption[];
   selected: string[];
   onSelect: (value: string) => void;
   multi?: boolean;
   /** Accessible name of the group. */
   label?: string;
+  disabled?: boolean;
 }) {
   const theme = useTheme();
   return (
@@ -340,11 +381,14 @@ export function ChipGroup({
           <Pressable
             key={option.value}
             accessibilityRole={multi ? 'checkbox' : 'radio'}
-            accessibilityState={{ checked: active }}
+            accessibilityState={{ checked: active, disabled }}
             accessibilityLabel={option.label}
+            disabled={disabled}
             onPress={() => onSelect(option.value)}
             style={{
               minHeight: 44,
+              minWidth: 44,
+              opacity: disabled ? 0.5 : 1,
               borderRadius: Radii.pill,
               paddingHorizontal: Spacing.compact,
               justifyContent: 'center',

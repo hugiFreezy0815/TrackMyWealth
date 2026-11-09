@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useIntl, type IntlShape } from 'react-intl';
-import { Modal, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { labelFor, type DisplayEnum } from '@/api/enum-label';
 import type { components } from '@/api/schema';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
+
+import { BottomSheet } from './feedback';
 
 /** The generated contract enum (#375); every response with a `valueStatus` shares it. */
 export type KnownValueStatus = components['schemas']['AccountListItemResponse']['valueStatus'];
@@ -70,10 +72,15 @@ export function valueStatusTexts(
 type Props = {
   status: ValueStatus | null | undefined;
   valueSourceDate?: string | null;
+  /**
+   * False inside a pressable row: a button nested in a button is unreachable for screen readers
+   * and competes for taps, so the row offers the explanation as an accessibility action instead.
+   */
+  interactive?: boolean;
   testID?: string;
 };
 
-export function ValueStatusBadge({ status, valueSourceDate, testID }: Props) {
+export function ValueStatusBadge({ status, valueSourceDate, interactive = true, testID }: Props) {
   const theme = useTheme();
   const intl = useIntl();
   const [expanded, setExpanded] = useState(false);
@@ -93,6 +100,25 @@ export function ValueStatusBadge({ status, valueSourceDate, testID }: Props) {
       : recognized === 'ESTIMATED'
         ? theme.statusInfoSubtle
         : theme.bgSubtle;
+  const style = {
+    paddingHorizontal: Spacing.compact,
+    minHeight: interactive ? 44 : undefined,
+    paddingVertical: interactive ? undefined : Spacing.one,
+    alignSelf: 'flex-start',
+    justifyContent: 'center',
+    borderRadius: Radii.pill,
+    backgroundColor: background,
+  } as const;
+  const text = (
+    <Text style={{ ...TypeScale.labelSmall, fontWeight: '600', color: ink }}>{label}</Text>
+  );
+  if (!interactive) {
+    return (
+      <View testID={testID} style={style}>
+        {text}
+      </View>
+    );
+  }
   return (
     <>
       <Pressable
@@ -101,66 +127,44 @@ export function ValueStatusBadge({ status, valueSourceDate, testID }: Props) {
         accessibilityLabel={label + '. ' + detail}
         accessibilityHint={intl.formatMessage({ id: 'valueStatus.explain' })}
         onPress={() => setExpanded(true)}
-        style={{
-          paddingHorizontal: Spacing.compact,
-          minHeight: 44,
-          alignSelf: 'flex-start',
-          justifyContent: 'center',
-          borderRadius: Radii.pill,
-          backgroundColor: background,
-        }}
+        style={style}
       >
-        <Text style={{ ...TypeScale.labelSmall, fontWeight: '600', color: ink }}>{label}</Text>
+        {text}
       </Pressable>
-      <Modal
-        transparent
+      <ValueStatusExplanation
+        status={status}
+        valueSourceDate={valueSourceDate}
         visible={expanded}
-        animationType="fade"
-        onRequestClose={() => setExpanded(false)}
-      >
-        <View
-          style={{
-            flex: 1,
-            justifyContent: 'center',
-            padding: Spacing.four,
-            backgroundColor: theme.bgOverlay,
-          }}
-        >
-          <View
-            accessibilityViewIsModal
-            style={{
-              borderRadius: Radii.card,
-              padding: Spacing.four,
-              backgroundColor: theme.bgSurface,
-            }}
-          >
-            <Text
-              accessibilityRole="header"
-              style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
-            >
-              {label}
-            </Text>
-            <Text
-              style={{
-                ...TypeScale.bodyMedium,
-                color: theme.textSecondary,
-                marginTop: Spacing.compact,
-              }}
-            >
-              {detail}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setExpanded(false)}
-              style={{ minHeight: 44, justifyContent: 'center', marginTop: Spacing.three }}
-            >
-              <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
-                {intl.formatMessage({ id: 'valueStatus.dismiss' })}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setExpanded(false)}
+      />
     </>
+  );
+}
+
+/** The explanation sheet of a value status (spec README §3, "tap for more"). */
+export function ValueStatusExplanation({
+  status,
+  valueSourceDate,
+  visible,
+  onClose,
+}: {
+  status: ValueStatus | null | undefined;
+  valueSourceDate?: string | null;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+  const intl = useIntl();
+  const texts = valueStatusTexts(status, valueSourceDate, intl);
+  if (!texts) return null;
+  return (
+    <BottomSheet
+      title={texts.label}
+      visible={visible}
+      onClose={onClose}
+      closeLabel={intl.formatMessage({ id: 'valueStatus.dismiss' })}
+    >
+      <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>{texts.detail}</Text>
+    </BottomSheet>
   );
 }

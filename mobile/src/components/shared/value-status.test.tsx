@@ -69,6 +69,20 @@ describe('ValueStatusBadge', () => {
     expect(screen.getByRole('button', { name: dismiss })).toBeTruthy();
   });
 
+  it('renders a plain, non-interactive badge when asked to', async () => {
+    await renderWithIntl(<ValueStatusBadge status="ESTIMATED" interactive={false} />);
+    expect(screen.getByText('Estimated')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('closes the explanation sheet', async () => {
+    await renderWithIntl(<ValueStatusBadge status="UNRECONCILED" />);
+    await fireEvent.press(screen.getByRole('button', { name: /^Differs from statement/ }));
+    expect(screen.getByText(/disagree/)).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Dismiss explanation' }));
+    expect(screen.queryByText(/disagree/)).toBeNull();
+  });
+
   it.each([
     ['CURRENT', true],
     ['ESTIMATED', true],

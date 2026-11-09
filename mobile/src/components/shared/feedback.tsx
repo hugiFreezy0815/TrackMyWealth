@@ -220,6 +220,8 @@ type DialogProps = {
   visible: boolean;
   onClose: () => void;
   children: ReactNode;
+  /** The close button's text; "Close" by default. */
+  closeLabel?: string;
 };
 
 export function Dialog({
@@ -227,6 +229,7 @@ export function Dialog({
   visible,
   onClose,
   children,
+  closeLabel,
   placement = 'center',
 }: DialogProps & { placement?: 'center' | 'bottom' }) {
   const theme = useTheme();
@@ -271,7 +274,7 @@ export function Dialog({
             style={{ minHeight: 44, justifyContent: 'center' }}
           >
             <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
-              {intl.formatMessage({ id: 'ui.close' })}
+              {closeLabel ?? intl.formatMessage({ id: 'ui.close' })}
             </Text>
           </Pressable>
         </View>
