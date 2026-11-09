@@ -67,8 +67,9 @@ module.exports = defineConfig([
     },
   },
   {
-    // The one component that formats money; it applies the privacy mask itself.
-    files: ['src/features/privacy/privacy-amount.tsx'],
+    // The amount component that formats money; it applies the privacy mask itself. PrivacyAmount
+    // (#487) renders through the shared Amount (#488), so both honour "Hide amounts".
+    files: ['src/components/shared/amount.tsx', 'src/features/privacy/privacy-amount.tsx'],
     rules: {
       'no-restricted-imports': ['error', { paths: [TYPED_API_ONLY] }],
     },
@@ -94,10 +95,20 @@ module.exports = defineConfig([
     // accessibility props, string expressions) belongs in the catalogues. Flat config replaces a
     // rule's options per file instead of merging them, so this block repeats the #452 selectors.
     // The legacy screens below predate the catalogues; their sprint-7 tickets migrate them and
-    // delete the entry here.
-    // Routes render screens too (#487 migrated auth and the shell routes).
-    files: ['src/features/**/*.{ts,tsx,jsx}', 'src/app/**/*.{ts,tsx,jsx}'],
-    ignores: ['**/*.test.{ts,tsx}', 'src/features/reference-data/**', 'src/features/imports/**'],
+    // delete the entry here. Routes render screens too (#487 migrated auth and the shell routes),
+    // and the shared components (#488) follow the same rule.
+    files: [
+      'src/features/**/*.{ts,tsx,jsx}',
+      'src/app/**/*.{ts,tsx,jsx}',
+      'src/components/shared/**/*.{ts,tsx}',
+    ],
+    ignores: [
+      '**/*.test.{ts,tsx}',
+      'src/features/reference-data/**',
+      'src/features/imports/**',
+      // The #488 component gallery: development builds only, synthetic sample copy.
+      'src/app/dev/**',
+    ],
     rules: {
       'no-restricted-syntax': ['error', ...ENUM_FALLBACK_SYNTAX, ...LITERAL_UI_STRING_SYNTAX],
     },

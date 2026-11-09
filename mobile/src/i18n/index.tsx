@@ -21,6 +21,16 @@ export function resolveLocale(
   return 'en';
 }
 
+/** The catalogue of a locale: English as the base, then German, then the regional overrides. */
+export function messagesFor(locale: AppLocale): Record<string, string> {
+  return {
+    ...en,
+    ...(locale.startsWith('de') ? de : {}),
+    ...(locale === 'de-CH' ? deCH : {}),
+    ...(locale === 'de-DE' ? deDE : {}),
+  };
+}
+
 export function AppIntlProvider({
   language,
   children,
@@ -29,15 +39,7 @@ export function AppIntlProvider({
   children: ReactNode;
 }) {
   const locale = resolveLocale(language);
-  const messages = useMemo(
-    () => ({
-      ...en,
-      ...(locale.startsWith('de') ? de : {}),
-      ...(locale === 'de-CH' ? deCH : {}),
-      ...(locale === 'de-DE' ? deDE : {}),
-    }),
-    [locale],
-  );
+  const messages = useMemo(() => messagesFor(locale), [locale]);
   return (
     <IntlProvider locale={locale} defaultLocale="en" messages={messages}>
       {children}

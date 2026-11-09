@@ -14,6 +14,7 @@ type ChildProcess = {
 const root = process.cwd();
 const screenFile = `${root}/src/features/overview/total-card.tsx`;
 const legacyFile = `${root}/src/features/reference-data/legacy-card.tsx`;
+const sharedFile = `${root}/src/components/shared/new-card.tsx`;
 const UI_STRING = 'Use an ICU message from src/i18n instead of a literal UI string.';
 
 const LINT_SNIPPETS = `
@@ -51,6 +52,7 @@ const SNIPPETS = {
     "export function label(status: string): string {\n  switch (status) {\n    case 'CURRENT':\n      return 'c';\n    default:\n      throw new Error('unknown');\n  }\n}\n",
   ],
   legacy: [legacyFile, `${header}export const Card = () => <Text>Categories</Text>;\n`],
+  shared: [sharedFile, `${header}export const Card = () => <Text accessibilityHint="Opens" />;\n`],
 } as const;
 
 let results: Record<keyof typeof SNIPPETS, string[]>;
@@ -86,6 +88,10 @@ describe('literal UI string lint rule (#486)', () => {
 
   it('keeps the #452 enum rules in feature screens', () => {
     expect(results.enumThrow.some((message) => message.includes('#452'))).toBe(true);
+  });
+
+  it('covers the shared components (#488)', () => {
+    expect(results.shared).toContain(UI_STRING);
   });
 
   it('exempts only the listed legacy screens until they migrate', () => {

@@ -54,3 +54,25 @@ React 19) has a typed API client (`typedApi`, #375), problem-code reactions and 
 - Hermes needs the `Intl` polyfills for `PluralRules`, `NumberFormat` and `DateTimeFormat`
   (`@formatjs/intl-*`) on Android. The foundation story adds them and a test that formats a de-CH
   amount and a plural message under the Jest native preset.
+
+## Addendum 2026-11-09: date picking and date display (#488)
+
+PO decisions while integrating the shared components (#488, PR #534) with this stack:
+
+- **Date picking: `@react-native-community/datetimepicker`** (the version Expo SDK 58 expects).
+  `DateField` opens the system picker: the Android dialog, and on iOS the inline calendar in a
+  bottom sheet. Dates are not typed. The library has no web implementation, so the web build of
+  `DateField` (`date-field.web.tsx`) uses the browser's `<input type="date">`. Both emit
+  `YYYY-MM-DD`.
+- **Date display:** English "1 Oct 2026", German "01.10.2026" (`src/format/date.ts`, built from
+  `formatToParts` so the order does not depend on the regional locale data a polyfill ships).
+- **Unreadable server dates and amounts** show "–" (with a warning in development builds) instead
+  of throwing while a screen renders.
+- **One amount formatter:** `src/format/amount.ts`. Components never format amounts or dates
+  themselves; the literal-UI-string lint rule also covers `src/components/shared/**`.
+- **Amount input (PR #534 review):** the `decimal-pad` key follows the device region, not the
+  member's app language. `AmountField` therefore reads a single trailing separator as the decimal
+  point when it is the decimal separator of the app locale or of the device; other separators
+  must be the locale's grouping (apostrophes always group). Input that could mean either
+  ("1.250") is rejected, never guessed. An invalid field emits `null` with `{ invalid: true }`,
+  so forms block saving instead of storing "no amount".

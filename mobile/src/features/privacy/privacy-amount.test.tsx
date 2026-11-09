@@ -3,6 +3,8 @@ import { withIntl } from '@/i18n/test-utils';
 import { PrivacyAmount } from './privacy-amount';
 import { useAmountsHidden } from './amount-visibility';
 
+// PrivacyAmount renders the shared Amount, whose theme imports the web stylesheet.
+jest.mock('@/global.css', () => ({}));
 jest.mock('./amount-visibility', () => ({ useAmountsHidden: jest.fn(() => true) }));
 
 it('never exposes a hidden amount to visual users or screen readers', async () => {

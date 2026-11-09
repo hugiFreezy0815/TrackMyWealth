@@ -1,21 +1,16 @@
-import { Text, type TextProps } from 'react-native';
-import { useIntl } from 'react-intl';
-import { a11yAmount, formatAmount, type AmountOptions } from '@/format/amount';
+import type { TextProps } from 'react-native';
+
 import type { DecimalString } from '@/api/decimal';
-import { useAmountsHidden } from './amount-visibility';
+import { Amount } from '@/components/shared/amount';
+import type { AmountOptions } from '@/format/amount';
 
 type Props = Omit<TextProps, 'children'> & {
   value: DecimalString | null;
   currency: string;
   options?: AmountOptions;
 };
+
+/** FR-CLI-005 (#487): money that honours "Hide amounts"; rendered by the shared Amount (#488). */
 export function PrivacyAmount({ value, currency, options, ...props }: Props) {
-  const intl = useIntl();
-  const hidden = useAmountsHidden();
-  const settings = { ...options, masked: hidden || options?.masked };
-  return (
-    <Text {...props} accessibilityLabel={a11yAmount(value, currency, intl, settings)}>
-      {formatAmount(value, currency, intl.locale, settings)}
-    </Text>
-  );
+  return <Amount {...props} {...options} value={value} currency={currency} />;
 }
