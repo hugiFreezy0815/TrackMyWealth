@@ -1,29 +1,36 @@
 import { useIntl } from 'react-intl';
+
 import { Amount } from '@/components/shared';
-import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate } from '@/format/date';
-import { categoryFor, categoryName, type Category, type Transaction } from './model';
+import { useTheme } from '@/hooks/use-theme';
+
+import { presentTransaction, type RowContext, type Transaction } from './model';
 
 export type TransactionResultsProps = {
   transactions: Transaction[];
-  categories: Category[];
-  archived: boolean;
+  context: RowContext;
   byDate: boolean;
   onOpen: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
 };
 
+const cellStyle = {
+  padding: '12px 6px',
+  verticalAlign: 'top',
+  overflowWrap: 'anywhere' as const,
+};
+
 /** ADR 0007 Option B: a real semantic table on web, not a div-based imitation. */
 export function TransactionResults({
   transactions,
-  categories,
-  archived,
+  context,
   onOpen,
   onCategory,
 }: TransactionResultsProps) {
   const intl = useIntl();
-  const german = intl.locale.startsWith('de');
-  const hidden = useAmountsHidden();
+  const theme = useTheme();
+  // W06: the web category cell shows "{parent} › {name}".
+  const webContext = { ...context, includeParent: true };
   return (
     <div style={{ width: '100%', overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
@@ -45,29 +52,7 @@ export function TransactionResults({
         </thead>
         <tbody>
           {transactions.map((transaction) => {
-            const category = categoryFor(transaction, categories);
-            const categoryText = transaction.internalTransfer
-              ? intl.formatMessage({ id: 'account.internalTransfer' })
-              : category
-                ? categoryName(category, categories, german, true)
-                : null;
-            const voided = !!transaction.voidedAt;
-            const name = transaction.reconciliationAdjustment
-              ? intl.formatMessage({ id: 'account.statementAdjustment' })
-              : transaction.merchantDescription ||
-                transaction.counterpartyName ||
-                transaction.transactionType;
-            const canCategorize =
-              !archived &&
-              !voided &&
-              !transaction.internalTransfer &&
-              !transaction.reconciliationAdjustment &&
-              category != null;
-            const cellStyle = {
-              padding: '12px 6px',
-              verticalAlign: 'top',
-              overflowWrap: 'anywhere' as const,
-            };
+            const view = presentTransaction(transaction, webContext, intl);
             return (
               <tr key={transaction.id}>
                 <td style={cellStyle}>{formatDate(transaction.bookingDate, intl.locale)}</td>
@@ -86,44 +71,68 @@ export function TransactionResults({
                     }}
                     onClick={() => onOpen(transaction.id)}
                   >
-                    {name}
-                    {voided ? ` · ${intl.formatMessage({ id: 'account.voided' })}` : ''}
-                    {transaction.replacesTransactionId
-                      ? ` · ${intl.formatMessage({ id: 'account.reversal' })}`
-                      : ''}
-                    {transaction.correctsTransactionId
-                      ? ` · ${intl.formatMessage({ id: 'account.corrected' })}`
-                      : ''}
+                    {view.title}
                   </button>
+                  <div style={{ color: theme.textSecondary }}>
+                    {[view.typeLabel, view.counterparty].filter(Boolean).join(' · ')}
+                  </div>
+                  {view.voided ? (
+                    <div style={{ color: theme.statusWarning }}>
+                      {intl.formatMessage({ id: 'account.voided' })}
+                      <span style={visuallyHidden}>
+                        {` (${intl.formatMessage({ id: 'account.voidedA11y' })})`}
+                      </span>
+                    </div>
+                  ) : null}
+                  {view.lifecycle.map((note) => (
+                    <div key={note} style={{ color: theme.textSecondary }}>
+                      {note}
+                    </div>
+                  ))}
+                  {view.warnings.map((warning) => (
+                    <div key={warning} style={{ color: theme.statusWarning }}>
+                      <span aria-hidden="true">⚠ </span>
+                      {warning}
+                    </div>
+                  ))}
                 </td>
                 <td style={cellStyle}>
-                  {categoryText ? (
-                    canCategorize ? (
+                  {view.categoryLabel ? (
+                    view.canCategorize ? (
                       <button
                         type="button"
                         style={{
                           minHeight: 44,
-                          color: 'inherit',
+                          color: view.uncategorized ? theme.statusWarning : 'inherit',
                           background: 'transparent',
                           border: '1px solid currentColor',
                           borderRadius: 8,
                         }}
                         onClick={() => onCategory(transaction)}
-                        aria-label={
-                          intl.formatMessage({ id: 'account.changeCategory' }) + ': ' + categoryText
-                        }
+                        aria-label={intl.formatMessage(
+                          { id: 'account.changeCategoryOf' },
+                          { category: view.categoryLabel },
+                        )}
                       >
-                        {categoryText} ⌄
+                        {view.uncategorized ? '⚠ ' : ''}
+                        {view.categoryLabel} ⌄
                       </button>
                     ) : (
-                      <span>{categoryText}</span>
+                      <span
+                        style={{
+                          color: view.uncategorized ? theme.statusWarning : theme.brandLink,
+                        }}
+                      >
+                        {view.uncategorized ? '⚠ ' : ''}
+                        {view.categoryLabel}
+                      </span>
                     )
                   ) : null}
                 </td>
                 <td style={{ ...cellStyle, textAlign: 'right' }}>
                   <span
                     style={{
-                      textDecoration: voided ? 'line-through' : undefined,
+                      textDecoration: view.voided ? 'line-through' : undefined,
                       whiteSpace: 'normal',
                     }}
                   >
@@ -133,9 +142,17 @@ export function TransactionResults({
                       signRole="change"
                     />
                   </span>
-                  {hidden ? null : transaction.amountInAccountCurrency &&
-                    transaction.fxRateEstimated ? (
-                    <span title={intl.formatMessage({ id: 'account.estimatedFx' })}> ≈</span>
+                  {view.converted ? (
+                    <div style={{ color: theme.textSecondary }}>
+                      <Amount
+                        value={view.converted.value}
+                        currency={view.converted.currency}
+                        approx
+                      />
+                      {view.converted.estimated
+                        ? ` · ${intl.formatMessage({ id: 'account.estimated' })}`
+                        : ''}
+                    </div>
                   ) : null}
                 </td>
               </tr>
@@ -146,3 +163,12 @@ export function TransactionResults({
     </div>
   );
 }
+
+const visuallyHidden = {
+  position: 'absolute' as const,
+  width: 1,
+  height: 1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap' as const,
+};

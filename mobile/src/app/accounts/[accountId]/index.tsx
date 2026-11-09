@@ -1,6 +1,7 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useIntl } from 'react-intl';
-import { AccountDetail } from '@/features/account-detail/account-detail';
+import { RefreshControl } from 'react-native';
+import { AccountDetail, useAccountRefresh } from '@/features/account-detail/account-detail';
 import { isAdministrator } from '@/features/auth/session';
 import { useIdentity } from '@/features/auth/use-identity';
 import { homeFor } from '@/features/shell/navigation';
@@ -11,9 +12,13 @@ export default function AccountDetailRoute() {
   const router = useRouter();
   const intl = useIntl();
   const identity = useIdentity();
+  const { refreshing, refresh } = useAccountRefresh();
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
   return (
-    <ShellScreen title={intl.formatMessage({ id: 'account.heading' })}>
+    <ShellScreen
+      title={intl.formatMessage({ id: 'account.heading' })}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
+    >
       <AccountDetail
         accountId={accountId ?? ''}
         onBack={() => router.replace('/overview')}
