@@ -205,8 +205,8 @@ export function DateField({
   onChange: (value: string | null) => void;
   onChangeRawText?: (value: string) => void;
 }) {
-  const [raw, setRaw] = useState(value);
-  useEffect(() => setRaw(value), [value]);
+  const [draft, setDraft] = useState<string | null>(null);
+  const raw = draft ?? value;
   const valid = useMemo(() => !raw || isValidIsoDate(raw), [raw]);
   return (
     <TextField
@@ -216,8 +216,16 @@ export function DateField({
       value={raw}
       placeholder="YYYY-MM-DD"
       keyboardType="numbers-and-punctuation"
+      onFocus={(event) => {
+        setDraft(value);
+        props.onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        setDraft(null);
+        props.onBlur?.(event);
+      }}
       onChangeText={(input) => {
-        setRaw(input);
+        setDraft(input);
         onChangeRawText?.(input);
         onChange(isValidIsoDate(input) ? input : null);
       }}
