@@ -23,18 +23,26 @@ export default function PortfolioRoute() {
         overviewName={workspace.data?.name ?? null}
         onOverview={() => router.replace('/overview')}
         onMissing={() => router.replace('/overview')}
-        onPortfolio={(id) => router.replace({
-          pathname: '/overview/[portfolioId]', params: { portfolioId: id },
-        })}
+        onPortfolio={(id) =>
+          router.replace({
+            pathname: '/overview/[portfolioId]',
+            params: { portfolioId: id },
+          })
+        }
         onAddPortfolio={() => router.push('/portfolios/new' as Href)}
-        onAddAccount={(id) => router.push({
-          pathname: '/portfolios/[portfolioId]/accounts/new',
-          params: { portfolioId: id },
-        } as Href)}
+        onAddAccount={(id) =>
+          router.push({
+            pathname: '/portfolios/[portfolioId]/accounts/new',
+            params: { portfolioId: id },
+          } as Href)
+        }
         onImport={() => router.push('/imports/new' as Href)}
-        onAccount={(id) => router.push({
-          pathname: '/accounts/[accountId]', params: { accountId: id },
-        } as Href)}
+        onAccount={(id) =>
+          router.push({
+            pathname: '/accounts/[accountId]',
+            params: { accountId: id },
+          } as Href)
+        }
       />
     </ShellScreen>
   );
