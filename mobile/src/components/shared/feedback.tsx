@@ -1,40 +1,33 @@
 import { type ReactNode } from 'react';
+import { useIntl } from 'react-intl';
 import { ActivityIndicator, Modal, Pressable, Text, View, type DimensionValue } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { problemReaction, type ClientReaction } from '@/api/problems';
+import { problemReaction, type ClientReaction, type ProblemReaction } from '@/api/problems';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
+import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
-
-import {
-  currentUiLocale,
-  displayDate,
-  problemMessageKey,
-  uiMessage,
-  type UiLocale,
-} from './locale';
 
 export function EmptyState({
   title,
   description,
   actionLabel,
   onAction,
-  locale = currentUiLocale(),
 }: {
   title?: string;
   description?: string;
   actionLabel?: string;
   onAction?: () => void;
-  locale?: UiLocale;
 }) {
   const theme = useTheme();
+  const intl = useIntl();
   return (
     <View style={{ padding: Spacing.four, gap: Spacing.two, alignItems: 'center' }}>
       <Text
         accessibilityRole="header"
         style={{ ...TypeScale.headingMedium, color: theme.textPrimary }}
       >
-        {title ?? uiMessage('ui.empty', locale)}
+        {title ?? intl.formatMessage({ id: 'ui.empty' })}
       </Text>
       {description ? (
         <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary, textAlign: 'center' }}>
@@ -78,26 +71,50 @@ export function ActionButton({
     </Pressable>
   );
 }
+/** Problem codes with their own catalogue message (`problem.<CODE>`). */
+const PROBLEM_MESSAGE_CODES: readonly string[] = [
+  'UNAUTHENTICATED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'VALIDATION_FAILED',
+  'VERSION_REQUIRED',
+  'VERSION_CONFLICT',
+  'ACCOUNT_ARCHIVED',
+  'LOCKED',
+  'RATE_LIMITED',
+  'INTERNAL',
+];
+
+/**
+ * Spec README §8: an error shows the message key of its problem `code`. A code without its own
+ * message - or one this app version does not know - shows the message of its client reaction.
+ */
+export function problemMessageKey(problem: Pick<ProblemReaction, 'code' | 'reaction'>): string {
+  return problem.code && PROBLEM_MESSAGE_CODES.includes(problem.code)
+    ? `problem.${problem.code}`
+    : `problem.reaction.${problem.reaction}`;
+}
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 const NO_RETRY_REACTIONS: readonly ClientReaction[] = ['REAUTHENTICATE', 'SHOW', 'FIX_INPUT'];
 
 export function ErrorBanner({
   error,
   message,
   onRetry,
-  locale = currentUiLocale(),
 }: {
   error?: unknown;
   message?: string;
   onRetry?: () => void;
-  locale?: UiLocale;
 }) {
   const theme = useTheme();
+  const intl = useIntl();
   const reaction = error instanceof ApiError ? problemReaction(error) : null;
   // Spec README §8: the message key of the problem code (or of its reaction for a code without
   // its own message or unknown to this version). A server's raw title/detail is never shown.
   const text =
-    message ??
-    (reaction ? uiMessage(problemMessageKey(reaction), locale) : uiMessage('ui.error', locale));
+    message ?? intl.formatMessage({ id: reaction ? problemMessageKey(reaction) : 'error.generic' });
   // Retrying cannot help when the member must sign in again, change the input, or the same
   // request is bound to fail again.
   const showRetry =
@@ -120,19 +137,20 @@ export function ErrorBanner({
           {reaction.correlationId}
         </Text>
       ) : null}
-      {showRetry ? <ActionButton onPress={onRetry} label={uiMessage('ui.retry', locale)} /> : null}
+      {showRetry ? (
+        <ActionButton onPress={onRetry} label={intl.formatMessage({ id: 'error.retry' })} />
+      ) : null}
     </View>
   );
 }
 export function OfflineBanner({
   lastUpdated,
-  locale = currentUiLocale(),
 }: {
   /** ISO date or date-time of the last successful load. */
   lastUpdated?: string;
-  locale?: UiLocale;
 }) {
   const theme = useTheme();
+  const intl = useIntl();
   return (
     <View
       accessibilityRole="alert"
@@ -146,14 +164,21 @@ export function OfflineBanner({
       }}
     >
       <Text style={{ ...TypeScale.labelMedium, fontWeight: '600', color: theme.textPrimary }}>
-        {uiMessage('ui.offline', locale)}
+        {intl.formatMessage({ id: 'ui.offline' })}
       </Text>
       <Text style={{ ...TypeScale.bodyMedium, color: theme.textPrimary }}>
-        {uiMessage('ui.offlineDetail', locale)}
+        {intl.formatMessage({ id: 'error.offline' })}
       </Text>
       {lastUpdated ? (
         <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
-          {uiMessage('ui.lastUpdated', locale, { date: displayDate(lastUpdated, locale) })}
+          {intl.formatMessage(
+            { id: 'ui.lastUpdated' },
+            {
+              date: DATE_ONLY.test(lastUpdated)
+                ? formatDate(lastUpdated, intl.locale)
+                : formatDateTime(lastUpdated, intl.locale),
+            },
+          )}
         </Text>
       ) : null}
     </View>
@@ -163,17 +188,16 @@ export function LoadingSkeleton({
   width = '100%',
   height = 16,
   count = 3,
-  locale = currentUiLocale(),
 }: {
   width?: DimensionValue;
   height?: number;
   count?: number;
-  locale?: UiLocale;
 }) {
   const theme = useTheme();
+  const intl = useIntl();
   return (
     <View
-      accessibilityLabel={uiMessage('ui.loading', locale)}
+      accessibilityLabel={intl.formatMessage({ id: 'ui.loading' })}
       accessibilityState={{ busy: true }}
       style={{ gap: Spacing.compact }}
     >
@@ -196,7 +220,6 @@ type DialogProps = {
   visible: boolean;
   onClose: () => void;
   children: ReactNode;
-  locale?: UiLocale;
 };
 
 export function Dialog({
@@ -205,9 +228,9 @@ export function Dialog({
   onClose,
   children,
   placement = 'center',
-  locale = currentUiLocale(),
 }: DialogProps & { placement?: 'center' | 'bottom' }) {
   const theme = useTheme();
+  const intl = useIntl();
   const bottom = placement === 'bottom';
   return (
     <Modal
@@ -248,7 +271,7 @@ export function Dialog({
             style={{ minHeight: 44, justifyContent: 'center' }}
           >
             <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
-              {uiMessage('ui.close', locale)}
+              {intl.formatMessage({ id: 'ui.close' })}
             </Text>
           </Pressable>
         </View>
@@ -266,27 +289,25 @@ export function ConflictDialog({
   onReview,
   onDiscard,
   onClose,
-  locale = currentUiLocale(),
 }: {
   visible: boolean;
   onReview: () => void;
   onDiscard: () => void;
   onClose: () => void;
-  locale?: UiLocale;
 }) {
   const theme = useTheme();
+  const intl = useIntl();
   return (
     <Dialog
       visible={visible}
       onClose={onClose}
-      title={uiMessage('ui.conflict', locale)}
-      locale={locale}
+      title={intl.formatMessage({ id: 'conflict.title' })}
     >
       <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>
-        {uiMessage('ui.conflictDetail', locale)}
+        {intl.formatMessage({ id: 'conflict.detail' })}
       </Text>
-      <ActionButton label={uiMessage('ui.reviewAgain', locale)} onPress={onReview} />
-      <ActionButton label={uiMessage('ui.discard', locale)} onPress={onDiscard} />
+      <ActionButton label={intl.formatMessage({ id: 'conflict.review' })} onPress={onReview} />
+      <ActionButton label={intl.formatMessage({ id: 'conflict.discard' })} onPress={onDiscard} />
     </Dialog>
   );
 }

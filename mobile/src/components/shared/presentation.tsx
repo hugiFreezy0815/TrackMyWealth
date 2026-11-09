@@ -1,14 +1,15 @@
 import { useState, type ReactNode } from 'react';
+import { useIntl } from 'react-intl';
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
 import type { DecimalString } from '@/api/decimal';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
+import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
 import { Amount, amountTexts } from './amount';
-import { currentUiLocale, displayDate, uiMessage, type UiLocale } from './locale';
 import { isValueKnown, type ValueStatus, ValueStatusBadge, valueStatusTexts } from './value-status';
 
 export function SectionCard({
@@ -50,16 +51,15 @@ export function ChangeChip({
   amount,
   currency,
   percentage,
-  locale = currentUiLocale(),
 }: {
   amount: DecimalString;
   currency: string;
   percentage?: string | null;
-  locale?: UiLocale;
 }) {
   const theme = useTheme();
+  const intl = useIntl();
   // Direction follows the displayed (rounded) amount, so "-0.001" is a neutral "CHF 0.00".
-  const { display } = amountTexts({ value: amount, currency, locale, signRole: 'change' });
+  const { display } = amountTexts(intl, { value: amount, currency, signRole: 'change' });
   const direction = display.startsWith('−') ? 'down' : display.startsWith('+') ? 'up' : 'flat';
   const color =
     direction === 'down'
@@ -97,7 +97,6 @@ export function ChangeChip({
         value={amount}
         currency={currency}
         signRole="change"
-        locale={locale}
         style={{ ...TypeScale.numberMedium, fontWeight: '600', color }}
       />
       {percentage ? <Text style={{ ...TypeScale.numberMedium, color }}>{percentage}</Text> : null}
@@ -114,15 +113,14 @@ export function InstitutionLogo({
   logoUrl,
   personalAssetsDefault = false,
   size = 44,
-  locale = currentUiLocale(),
 }: {
   name: string;
   logoUrl?: string | null;
   personalAssetsDefault?: boolean;
   size?: number;
-  locale?: UiLocale;
 }) {
   const theme = useTheme();
+  const intl = useIntl();
   const [failed, setFailed] = useState(false);
   const box = Math.max(44, size);
   const initials = name
@@ -136,7 +134,7 @@ export function InstitutionLogo({
     <View
       accessible
       accessibilityRole="image"
-      accessibilityLabel={name.trim() || uiMessage('ui.personalAssets', locale)}
+      accessibilityLabel={name.trim() || intl.formatMessage({ id: 'ui.personalAssets' })}
       style={{
         height: box,
         width: box,
@@ -182,7 +180,6 @@ export type SummaryRowProps = {
   valueSourceDate?: string | null;
   masked?: boolean;
   onPress?: () => void;
-  locale?: UiLocale;
 };
 export function AccountRow({
   title,
@@ -193,9 +190,9 @@ export function AccountRow({
   valueSourceDate,
   masked,
   onPress,
-  locale = currentUiLocale(),
 }: SummaryRowProps) {
   const theme = useTheme();
+  const intl = useIntl();
   // Spec README §3: an UNKNOWN (or unrecognized) status shows the amount as "–", never a number.
   const valueKnown = isValueKnown(status);
   const contents = (
@@ -215,14 +212,13 @@ export function AccountRow({
         {subtitle ? (
           <Text style={{ ...TypeScale.bodyMedium, color: theme.textSecondary }}>{subtitle}</Text>
         ) : null}
-        <ValueStatusBadge status={status} valueSourceDate={valueSourceDate} locale={locale} />
+        <ValueStatusBadge status={status} valueSourceDate={valueSourceDate} />
       </View>
       <Amount
         value={amount}
         currency={currency}
         masked={masked}
         valueKnown={valueKnown}
-        locale={locale}
         style={TypeScale.numberLarge}
       />
     </View>
@@ -232,8 +228,8 @@ export function AccountRow({
   const label = [
     title,
     subtitle,
-    amountTexts({ value: amount, currency, masked, valueKnown, locale }).label,
-    valueStatusTexts(status, valueSourceDate, locale)?.label,
+    amountTexts(intl, { value: amount, currency, masked, valueKnown }).label,
+    valueStatusTexts(status, valueSourceDate, intl)?.label,
   ]
     .filter(Boolean)
     .join(', ');
@@ -256,10 +252,8 @@ export function TransactionRow({
   /** Booking date, ISO `YYYY-MM-DD`. */
   date: string;
 }) {
-  const locale = props.locale ?? currentUiLocale();
-  return (
-    <AccountRow {...props} locale={locale} subtitle={props.subtitle ?? displayDate(date, locale)} />
-  );
+  const intl = useIntl();
+  return <AccountRow {...props} subtitle={props.subtitle ?? formatDate(date, intl.locale)} />;
 }
 
 export function PortfolioTabs({
@@ -416,14 +410,13 @@ export function Stepper({
   steps,
   current,
   onSelect,
-  locale = currentUiLocale(),
 }: {
   steps: string[];
   current: number;
   onSelect?: (step: number) => void;
-  locale?: UiLocale;
 }) {
   const theme = useTheme();
+  const intl = useIntl();
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }}>
       {steps.map((step, index) => {
@@ -435,7 +428,7 @@ export function Stepper({
             accessibilityState={{ selected: current === index, disabled }}
             disabled={disabled}
             accessibilityLabel={index + 1 + '. ' + step}
-            accessibilityHint={disabled ? undefined : uiMessage('ui.select', locale)}
+            accessibilityHint={disabled ? undefined : intl.formatMessage({ id: 'ui.select' })}
             onPress={() => onSelect?.(index)}
             style={{
               minHeight: 44,

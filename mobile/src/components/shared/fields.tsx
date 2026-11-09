@@ -1,18 +1,25 @@
 import { useState } from 'react';
+import { useIntl } from 'react-intl';
 import { Pressable, Text, TextInput, View, type TextInputProps } from 'react-native';
 
 import type { DecimalString } from '@/api/decimal';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-import { currentUiLocale, uiMessage, type UiLocale } from './locale';
+/** Number input conventions (#378): de-CH 1'234.5, other German 1.234,5, English 1,234.5. */
+function inputConvention(locale: string): { group: string; decimal: ',' | '.' } {
+  const lower = locale.toLowerCase();
+  if (lower.startsWith('de-ch')) return { group: "['’]", decimal: '.' };
+  if (lower.startsWith('de')) return { group: '\\.', decimal: ',' };
+  return { group: ',', decimal: '.' };
+}
 
 /**
  * Normalize local input into an API plain DecimalString, never a Number.
  * Accept either explicit native decimal separator or a grouping separator, not
  * mixed ambiguities. Input that is incomplete or invalid never reaches the API.
  */
-export function parseAmountInput(input: string, locale: UiLocale): DecimalString | null {
+export function parseAmountInput(input: string, locale: string): DecimalString | null {
   const trimmed = input
     .trim()
     .replaceAll(' ', '')
@@ -20,17 +27,14 @@ export function parseAmountInput(input: string, locale: UiLocale): DecimalString
     // Accept the typographic minus that `Amount` displays, so a copied amount parses.
     .replace(/^−/, '-');
   if (!trimmed || /[eE+]/.test(trimmed)) return null;
-  const groups = locale === 'de-CH' ? /['’]/g : locale === 'de-DE' ? /\./g : /,/g;
-  const decimalSeparator = locale === 'de-DE' ? ',' : '.';
+  const { group, decimal } = inputConvention(locale);
   // Strictly validate grouping before stripping it. This prevents silent amount changes.
-  const separator = locale === 'de-CH' ? "['’]" : locale === 'de-DE' ? '\\.' : ',';
-  const decimal = locale === 'de-DE' ? ',' : '\\.';
   const validGrouping = new RegExp(
-    '^-?(?:\\d+|\\d{1,3}(?:' + separator + '\\d{3})+)(?:' + decimal + '\\d+)?$',
+    '^-?(?:\\d+|\\d{1,3}(?:' + group + '\\d{3})+)(?:' + (decimal === ',' ? ',' : '\\.') + '\\d+)?$',
   );
   if (!validGrouping.test(trimmed)) return null;
-  const grouped = trimmed.replace(groups, '');
-  const canonical = decimalSeparator === '.' ? grouped : grouped.replace(',', '.');
+  const grouped = trimmed.replace(new RegExp(group, 'g'), '');
+  const canonical = decimal === '.' ? grouped : grouped.replace(',', '.');
   if (!/^-?\d+(\.\d+)?$/.test(canonical)) return null;
   const negative = canonical.startsWith('-');
   const [rawInt, rest] = (negative ? canonical.slice(1) : canonical).split('.');
@@ -38,9 +42,9 @@ export function parseAmountInput(input: string, locale: UiLocale): DecimalString
 }
 
 /** The editable text for a DecimalString: the locale's decimal separator, no grouping. */
-export function amountInputText(value: DecimalString | null, locale: UiLocale): string {
+export function amountInputText(value: DecimalString | null, locale: string): string {
   if (value == null) return '';
-  return locale === 'de-DE' ? value.replace('.', ',') : value;
+  return inputConvention(locale).decimal === ',' ? value.replace('.', ',') : value;
 }
 
 /**
@@ -64,25 +68,24 @@ export type TextFieldProps = Omit<TextInputProps, 'style'> & {
   error?: string;
   hint?: string;
   testID?: string;
-  locale?: UiLocale;
 };
 export function TextField({
   label,
   error,
   hint,
   editable = true,
-  locale = currentUiLocale(),
   testID,
   ...rest
 }: TextFieldProps) {
   const theme = useTheme();
+  const intl = useIntl();
   return (
     <View style={{ gap: Spacing.one }}>
       <Text style={{ ...TypeScale.labelMedium, color: theme.textPrimary }}>{label}</Text>
       <TextInput
         testID={testID}
         accessibilityLabel={label}
-        accessibilityLanguage={locale}
+        accessibilityLanguage={intl.locale}
         accessibilityHint={error ?? hint}
         editable={editable}
         placeholderTextColor={theme.textTertiary}
@@ -98,16 +101,24 @@ export function TextField({
         }}
         {...rest}
       />
-      {hint && !error ? (
-        <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{hint}</Text>
-      ) : null}
-      {error ? (
-        <Text accessibilityRole="alert" style={{ ...TypeScale.caption, color: theme.statusLoss }}>
-          {error}
-        </Text>
-      ) : null}
+      <FieldMessages hint={hint} error={error} />
     </View>
   );
+}
+
+/** The hint under a field, or its error (announced as an alert) in place of the hint. */
+export function FieldMessages({ hint, error }: { hint?: string; error?: string }) {
+  const theme = useTheme();
+  if (error) {
+    return (
+      <Text accessibilityRole="alert" style={{ ...TypeScale.caption, color: theme.statusLoss }}>
+        {error}
+      </Text>
+    );
+  }
+  return hint ? (
+    <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>{hint}</Text>
+  ) : null;
 }
 
 export type AmountFieldProps = Omit<TextFieldProps, 'value' | 'onChangeText' | 'keyboardType'> & {
@@ -124,18 +135,17 @@ export function AmountField({
   onChangeRawText,
   currency,
   hint,
-  locale = currentUiLocale(),
   ...props
 }: AmountFieldProps) {
+  const intl = useIntl();
   const [draft, setDraft] = useState<Draft<DecimalString | null> | null>(null);
   const [touched, setTouched] = useState(false);
-  const parse = (text: string) => parseAmountInput(text, locale);
-  const raw = shownText(draft, value, parse, (current) => amountInputText(current, locale));
+  const parse = (text: string) => parseAmountInput(text, intl.locale);
+  const raw = shownText(draft, value, parse, (current) => amountInputText(current, intl.locale));
   const invalid = raw.trim() !== '' && parse(raw) === null;
   return (
     <TextField
       {...props}
-      locale={locale}
       value={raw}
       keyboardType="decimal-pad"
       autoComplete="off"
@@ -150,7 +160,8 @@ export function AmountField({
       }}
       hint={hint ? currency + ' · ' + hint : currency}
       error={
-        props.error ?? (touched && invalid ? uiMessage('ui.invalidAmount', locale) : undefined)
+        props.error ??
+        (touched && invalid ? intl.formatMessage({ id: 'ui.invalidAmount' }) : undefined)
       }
     />
   );
@@ -219,42 +230,5 @@ export function isValidIsoDate(value: string): boolean {
   const date = new Date(Date.UTC(year, month - 1, day));
   return (
     date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day
-  );
-}
-
-/** Controlled by an ISO date (`YYYY-MM-DD`, or null when empty or invalid). */
-export function DateField({
-  value,
-  onChange,
-  onChangeRawText,
-  label,
-  locale = currentUiLocale(),
-  ...props
-}: Omit<TextFieldProps, 'value' | 'onChangeText' | 'onChange'> & {
-  value: string | null;
-  onChange: (value: string | null) => void;
-  onChangeRawText?: (value: string) => void;
-}) {
-  const [draft, setDraft] = useState<Draft<string | null> | null>(null);
-  const current = value || null;
-  const parse = (text: string) => (isValidIsoDate(text) ? text : null);
-  const raw = shownText(draft, current, parse, (shown) => shown ?? '');
-  // Invalid text stays in the field after blur, with its error, until the member corrects it.
-  const invalid = raw !== '' && !isValidIsoDate(raw);
-  return (
-    <TextField
-      {...props}
-      label={label}
-      locale={locale}
-      value={raw}
-      placeholder={uiMessage('ui.datePlaceholder', locale)}
-      keyboardType="numbers-and-punctuation"
-      onChangeText={(input) => {
-        setDraft({ text: input, base: current });
-        onChangeRawText?.(input);
-        onChange(parse(input));
-      }}
-      error={props.error ?? (invalid ? uiMessage('ui.invalidDate', locale) : undefined)}
-    />
   );
 }

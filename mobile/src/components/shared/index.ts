@@ -1,4 +1,4 @@
-export { Amount, amountTexts, displayAmount, accessibleAmount } from './amount';
+export { Amount, amountTexts, type AmountValue } from './amount';
 export {
   ValueStatusBadge,
   isValueKnown,
@@ -11,7 +11,7 @@ export {
   TextField,
   AmountField,
   CurrencyPicker,
-  DateField,
+  FieldMessages,
   amountInputText,
   parseAmountInput,
   isValidIsoDate,
@@ -25,6 +25,7 @@ export {
   BottomSheet,
   ConflictDialog,
   ActionButton,
+  problemMessageKey,
   RefreshingIndicator,
 } from './feedback';
 export {
@@ -40,4 +41,4 @@ export {
   KeyValueList,
   Stepper,
 } from './presentation';
-export { currentUiLocale, displayDate, problemMessageKey, type UiLocale } from './locale';
+export { DateField, isoToLocalDate, localDateToIso, type DateFieldProps } from './date-field';

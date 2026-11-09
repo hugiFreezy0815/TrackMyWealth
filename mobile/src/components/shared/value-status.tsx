@@ -1,12 +1,12 @@
 import { useState } from 'react';
+import { useIntl, type IntlShape } from 'react-intl';
 import { Modal, Pressable, Text, View } from 'react-native';
 
 import { labelFor, type DisplayEnum } from '@/api/enum-label';
 import type { components } from '@/api/schema';
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
+import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
-
-import { currentUiLocale, displayDate, uiMessage, type MessageKey, type UiLocale } from './locale';
 
 /** The generated contract enum (#375); every response with a `valueStatus` shares it. */
 export type KnownValueStatus = components['schemas']['AccountListItemResponse']['valueStatus'];
@@ -34,7 +34,7 @@ export function isValueKnown(status: ValueStatus | null | undefined): boolean {
 
 const MESSAGES: Record<
   Exclude<KnownValueStatus, 'CURRENT'>,
-  { label: MessageKey; explanation: MessageKey }
+  { label: string; explanation: string }
 > = {
   ESTIMATED: {
     label: 'valueStatus.estimated',
@@ -52,37 +52,33 @@ const MESSAGES: Record<
 export function valueStatusTexts(
   status: ValueStatus | null | undefined,
   valueSourceDate: string | null | undefined,
-  locale: UiLocale,
+  intl: Pick<IntlShape, 'locale' | 'formatMessage'>,
 ): { label: string; detail: string } | null {
   const recognized = recognizedValueStatus(status);
   if (recognized === 'CURRENT') return null;
   const messages = MESSAGES[recognized];
   const label =
     recognized === 'STALE' && !valueSourceDate
-      ? uiMessage('valueStatus.staleWithoutDate', locale)
-      : uiMessage(messages.label, locale, {
-          date: valueSourceDate ? displayDate(valueSourceDate, locale) : '',
-        });
-  return { label, detail: uiMessage(messages.explanation, locale) };
+      ? intl.formatMessage({ id: 'valueStatus.staleWithoutDate' })
+      : intl.formatMessage(
+          { id: messages.label },
+          { date: valueSourceDate ? formatDate(valueSourceDate, intl.locale) : '' },
+        );
+  return { label, detail: intl.formatMessage({ id: messages.explanation }) };
 }
 
 type Props = {
   status: ValueStatus | null | undefined;
   valueSourceDate?: string | null;
-  locale?: UiLocale;
   testID?: string;
 };
 
-export function ValueStatusBadge({
-  status,
-  valueSourceDate,
-  locale = currentUiLocale(),
-  testID,
-}: Props) {
+export function ValueStatusBadge({ status, valueSourceDate, testID }: Props) {
   const theme = useTheme();
+  const intl = useIntl();
   const [expanded, setExpanded] = useState(false);
   const recognized = recognizedValueStatus(status);
-  const texts = valueStatusTexts(status, valueSourceDate, locale);
+  const texts = valueStatusTexts(status, valueSourceDate, intl);
   if (recognized === 'CURRENT' || !texts) return null;
   const { label, detail } = texts;
   const ink =
@@ -103,7 +99,7 @@ export function ValueStatusBadge({
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={label + '. ' + detail}
-        accessibilityHint={uiMessage('valueStatus.explain', locale)}
+        accessibilityHint={intl.formatMessage({ id: 'valueStatus.explain' })}
         onPress={() => setExpanded(true)}
         style={{
           paddingHorizontal: Spacing.compact,
@@ -159,7 +155,7 @@ export function ValueStatusBadge({
               style={{ minHeight: 44, justifyContent: 'center', marginTop: Spacing.three }}
             >
               <Text style={{ ...TypeScale.labelMedium, color: theme.brandLink }}>
-                {uiMessage('valueStatus.dismiss', locale)}
+                {intl.formatMessage({ id: 'valueStatus.dismiss' })}
               </Text>
             </Pressable>
           </View>
