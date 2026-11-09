@@ -122,10 +122,14 @@ function PositionList({
                   : theme.statusGain,
               }}
             >
-              {m('portfolio.position.gain', { percent: position.unrealisedGainPercent === '0'
-                  ? '0' : isNegative(position.unrealisedGainPercent)
-                    ? '−' + position.unrealisedGainPercent.slice(1)
-                    : '+' + position.unrealisedGainPercent })}
+              {m('portfolio.position.gain', {
+                percent:
+                  position.unrealisedGainPercent === '0'
+                    ? '0'
+                    : isNegative(position.unrealisedGainPercent)
+                      ? '−' + position.unrealisedGainPercent.slice(1)
+                      : '+' + position.unrealisedGainPercent,
+              })}
             </Text>
           ) : (
             <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
