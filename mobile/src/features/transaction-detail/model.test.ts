@@ -1,3 +1,4 @@
+// S4 acceptance: keep lifecycle and category rules independent of presentation.
 import type { Category, Transaction, HistoryEntry } from './model';
 import {
   canChangeCategory,
