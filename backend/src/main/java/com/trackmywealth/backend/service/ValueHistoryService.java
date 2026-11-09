@@ -173,7 +173,7 @@ public class ValueHistoryService {
    */
   @Transactional(readOnly = true)
   public Map<UUID, PortfolioPeriodChange> monthlyChanges(
-      Collection<Portfolio> portfolios, List<Account> accounts, UUID workspaceId, LocalDate today) {
+      Collection<Portfolio> portfolios, List<Account> accounts, LocalDate today) {
     if (portfolios.isEmpty()) {
       return Map.of();
     }
