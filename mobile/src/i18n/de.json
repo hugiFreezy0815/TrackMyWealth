@@ -281,5 +281,6 @@
   "txn.confirmDelete": "Löschen bestätigen",
   "txn.adjustmentLocked": "Ändere diese Buchung über den Kontenabgleich.",
   "txn.archived": "Stelle das Konto wieder her, um seine Transaktionen zu ändern.",
-  "txn.openAccount": "Anderes Konto öffnen"
+  "txn.openAccount": "Anderes Konto öffnen",
+  "txn.source.unknown": "Quelle unbekannt"
 }
