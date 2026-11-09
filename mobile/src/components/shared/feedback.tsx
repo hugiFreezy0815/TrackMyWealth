@@ -52,7 +52,7 @@ export function ActionButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      aria-disabled={disabled}
       disabled={disabled}
       onPress={onPress}
       style={{
@@ -197,8 +197,10 @@ export function LoadingSkeleton({
   const intl = useIntl();
   return (
     <View
+      // A label needs a role on the web (axe aria-prohibited-attr): this is a busy progress bar.
+      accessibilityRole="progressbar"
       accessibilityLabel={intl.formatMessage({ id: 'ui.loading' })}
-      accessibilityState={{ busy: true }}
+      aria-busy
       style={{ gap: Spacing.compact }}
     >
       {Array.from({ length: Math.max(0, Math.min(20, count)) }, (_, index) => (

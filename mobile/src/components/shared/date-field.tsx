@@ -73,7 +73,7 @@ export function DateField({
         accessibilityRole="button"
         accessibilityLabel={label + ', ' + shown}
         accessibilityHint={error ?? hint}
-        accessibilityState={{ disabled }}
+        aria-disabled={disabled}
         disabled={disabled}
         onPress={open}
         style={{

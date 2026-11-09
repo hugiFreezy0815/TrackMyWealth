@@ -95,6 +95,8 @@ export function ChangeChip({
         flexDirection: 'row',
         flexWrap: 'wrap',
         alignItems: 'center',
+        // A chip hugs its content instead of stretching across the card.
+        alignSelf: 'flex-start',
         gap: Spacing.one,
         padding: Spacing.two,
         borderRadius: Radii.pill,
@@ -325,7 +327,7 @@ export function PortfolioTabs({
           key={tab.id}
           accessibilityRole="tab"
           accessibilityLabel={tab.label}
-          accessibilityState={{ selected: selected === tab.id }}
+          aria-selected={selected === tab.id}
           onPress={() => onSelect(tab.id)}
           style={{
             minHeight: 44,
@@ -381,7 +383,8 @@ export function ChipGroup({
           <Pressable
             key={option.value}
             accessibilityRole={multi ? 'checkbox' : 'radio'}
-            accessibilityState={{ checked: active, disabled }}
+            aria-checked={active}
+            aria-disabled={disabled}
             accessibilityLabel={option.label}
             disabled={disabled}
             onPress={() => onSelect(option.value)}
@@ -480,9 +483,17 @@ export function Stepper({
           <Pressable
             key={index}
             accessibilityRole="button"
-            accessibilityState={{ selected: current === index, disabled }}
+            aria-disabled={disabled}
             disabled={disabled}
-            accessibilityLabel={index + 1 + '. ' + step}
+            // Native has no aria-current and the web forbids aria-selected on a button: the label
+            // names the current step.
+            accessibilityLabel={
+              index +
+              1 +
+              '. ' +
+              step +
+              (current === index ? ', ' + intl.formatMessage({ id: 'ui.currentStep' }) : '')
+            }
             accessibilityHint={disabled ? undefined : intl.formatMessage({ id: 'ui.select' })}
             onPress={() => onSelect?.(index)}
             style={{

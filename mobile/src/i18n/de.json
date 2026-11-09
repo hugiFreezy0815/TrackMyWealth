@@ -81,6 +81,7 @@
   "ui.close": "Schließen",
   "ui.done": "Fertig",
   "ui.select": "Auswählen",
+  "ui.currentStep": "aktueller Schritt",
   "ui.clearDate": "Datum entfernen",
   "ui.chooseDate": "Datum wählen",
   "ui.invalidAmount": "Gib einen gültigen Betrag ein.",

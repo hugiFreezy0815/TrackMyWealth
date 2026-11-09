@@ -10,6 +10,7 @@ import {
   Dialog,
   EmptyState,
   ErrorBanner,
+  LoadingSkeleton,
   OfflineBanner,
 } from './feedback';
 
@@ -99,6 +100,14 @@ describe('ErrorBanner', () => {
 });
 
 describe('feedback states', () => {
+  // react-native-web ignores accessibilityState: the state is in aria props (#534 web check).
+  it('announces the loading skeleton as a busy progress bar', async () => {
+    await renderWithIntl(<LoadingSkeleton count={2} />);
+    const skeleton = screen.getByLabelText('Loading');
+    expect(skeleton.props.accessibilityRole).toBe('progressbar');
+    expect(skeleton).toBeBusy();
+  });
+
   it('shows the offline last-updated date in the UI locale', async () => {
     await renderWithIntl(<OfflineBanner lastUpdated="2026-11-08" />, 'de-CH');
     expect(screen.getByText('Zuletzt aktualisiert: 08.11.2026')).toBeTruthy();

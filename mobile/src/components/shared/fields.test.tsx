@@ -147,8 +147,8 @@ describe('locale-aware decimal input', () => {
       />,
     );
     expect(screen.getAllByLabelText('Currency')[0].props.accessibilityRole).toBe('radiogroup');
-    expect(screen.getByRole('radio', { name: 'CHF' }).props.accessibilityState.checked).toBe(true);
-    expect(screen.getByRole('radio', { name: 'EUR' }).props.accessibilityState.checked).toBe(false);
+    expect(screen.getByRole('radio', { name: 'CHF' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'EUR' })).not.toBeChecked();
     await fireEvent.press(screen.getByRole('radio', { name: 'EUR' }));
     expect(onChange).toHaveBeenCalledWith('EUR');
   });
@@ -165,7 +165,8 @@ describe('locale-aware decimal input', () => {
       />,
     );
     const radio = screen.getByRole('radio', { name: 'CHF' });
-    expect(radio.props.accessibilityState).toEqual({ checked: false, disabled: true });
+    expect(radio).not.toBeChecked();
+    expect(radio).toBeDisabled();
     await fireEvent.press(radio);
     expect(onChange).not.toHaveBeenCalled();
   });

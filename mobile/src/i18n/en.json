@@ -81,6 +81,7 @@
   "ui.close": "Close",
   "ui.done": "Done",
   "ui.select": "Select",
+  "ui.currentStep": "current step",
   "ui.clearDate": "Clear date",
   "ui.chooseDate": "Choose a date",
   "ui.invalidAmount": "Enter a valid amount.",

@@ -71,7 +71,7 @@ describe('shared navigation and financial rows', () => {
         onSelect={onSelect}
       />,
     );
-    expect(screen.getByRole('tab', { name: 'All' }).props.accessibilityState.selected).toBe(true);
+    expect(screen.getByRole('tab', { name: 'All' })).toBeSelected();
     await fireEvent.press(screen.getByRole('tab', { name: 'Bank' }));
     expect(onSelect).toHaveBeenCalledWith('b');
   });
@@ -90,9 +90,7 @@ describe('shared navigation and financial rows', () => {
       />,
     );
     expect(screen.getByLabelText('Type').props.accessibilityRole).toBe('radiogroup');
-    expect(screen.getByRole('radio', { name: 'Depot' }).props.accessibilityState.checked).toBe(
-      true,
-    );
+    expect(screen.getByRole('radio', { name: 'Depot' })).toBeChecked();
     await fireEvent.press(screen.getByRole('radio', { name: 'Cash' }));
     expect(onSelect).toHaveBeenCalledWith('cash');
   });
@@ -106,7 +104,7 @@ describe('shared navigation and financial rows', () => {
         onSelect={jest.fn()}
       />,
     );
-    expect(screen.getByRole('checkbox', { name: 'A' }).props.accessibilityState.checked).toBe(true);
+    expect(screen.getByRole('checkbox', { name: 'A' })).toBeChecked();
   });
 
   it('masks account balances even in the rendered tree', async () => {
@@ -266,10 +264,9 @@ describe('shared navigation and financial rows', () => {
       'en',
     );
     const finish = screen.getByRole('button', { name: '3. Finish' });
-    expect(finish.props.accessibilityState.disabled).toBe(true);
-    expect(
-      screen.getByRole('button', { name: '2. Review' }).props.accessibilityState.selected,
-    ).toBe(true);
+    expect(finish).toBeDisabled();
+    // The current step says so in its label (no aria-current on native).
+    expect(screen.getByRole('button', { name: '2. Review, current step' })).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: '1. Create' }));
     expect(onSelect).toHaveBeenCalledWith(0);
   });
