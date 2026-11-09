@@ -16,5 +16,12 @@
   "error.offline": "You are offline. Showing saved data.",
   "error.conflict": "This item changed meanwhile. Review and save again.",
   "error.retry": "Try again",
-  "error.generic": "Something went wrong."
+  "error.generic": "Something went wrong.",
+  "privacy.hideAmounts": "Hide amounts",
+  "privacy.hideAmounts.detail": "Hide every financial amount on this device",
+  "privacy.protected": "Your financial information is protected",
+  "auth.signOut": "Sign out",
+  "route.unavailable.title": "This screen is not available yet",
+  "route.unavailable.description": "Return to Overview. Your information has not been changed.",
+  "overview.pending": "Your financial overview will appear here when the overview screen is available."
 }

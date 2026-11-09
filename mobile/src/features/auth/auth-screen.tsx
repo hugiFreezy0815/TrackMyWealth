@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, StyleSheet, TextInput, type TextInputProps, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, type TextInputProps, View } from 'react-native';
 
 import { getApiBaseUrl, NetworkError } from '@/api/client';
 import { InvalidServerUrlError, saveServerUrl } from '@/api/server-url';
@@ -43,8 +43,11 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
     cancelMfa();
   }
 
+  const theme = useTheme();
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
+        <ThemedText type="smallBold" style={styles.brand}>TrackMyWealth</ThemedText>
       <ThemedText type="subtitle">{mfaRequired ? 'Verify sign-in' : 'Sign in'}</ThemedText>
       {!mfaRequired ? (
         <>
@@ -84,8 +87,18 @@ export function AuthScreen({ mfaRequired }: { mfaRequired: boolean }) {
         />
       )}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      <Button title={mfaRequired ? 'Verify code' : 'Sign in'} onPress={submit} disabled={busy} />
-      {mfaRequired && <Button title="Start over" onPress={startOver} disabled={busy} />}
+      <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }}
+        style={[styles.submit, busy && styles.disabled]} onPress={() => void submit()} disabled={busy}>
+        {busy ? <ActivityIndicator color="#FFFFFF" /> :
+          <ThemedText style={styles.submitText}>{mfaRequired ? 'Verify code' : 'Sign in'}</ThemedText>}
+      </Pressable>
+      {mfaRequired && (
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }}
+          style={styles.back} onPress={startOver} disabled={busy}>
+          <ThemedText type="smallBold">Start over</ThemedText>
+        </Pressable>
+      )}
+      </View>
     </View>
   );
 }
@@ -118,7 +131,14 @@ function LabeledField({ label, ...input }: TextInputProps & { label: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, gap: 14 },
-  labeled: { gap: 4 },
-  field: { borderWidth: 1, padding: 12, borderRadius: 8 },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  card: { width: '100%', maxWidth: 440, borderRadius: 20, padding: 28, gap: 18 },
+  brand: { color: '#075CB2', letterSpacing: 0.3 },
+  labeled: { gap: 8 },
+  field: { borderWidth: 1, minHeight: 48, padding: 12, borderRadius: 10 },
+  submit: { minHeight: 48, backgroundColor: '#075CB2', borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+  submitText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  disabled: { opacity: 0.5 },
+  back: { minHeight: 44, justifyContent: 'center', alignItems: 'center' },
 });

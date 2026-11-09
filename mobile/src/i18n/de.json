@@ -16,5 +16,12 @@
   "error.offline": "Du bist offline. Gespeicherte Daten werden angezeigt.",
   "error.conflict": "Dieser Eintrag wurde inzwischen geändert. Prüfe ihn und speichere erneut.",
   "error.retry": "Erneut versuchen",
-  "error.generic": "Etwas ist schiefgelaufen."
+  "error.generic": "Etwas ist schiefgelaufen.",
+  "privacy.hideAmounts": "Beträge verbergen",
+  "privacy.hideAmounts.detail": "Alle Geldbeträge auf diesem Gerät verbergen",
+  "privacy.protected": "Deine Finanzdaten sind geschützt",
+  "auth.signOut": "Abmelden",
+  "route.unavailable.title": "Diese Ansicht ist noch nicht verfügbar",
+  "route.unavailable.description": "Kehre zur Übersicht zurück. Deine Daten wurden nicht geändert.",
+  "overview.pending": "Deine Finanzübersicht erscheint hier, sobald die Übersicht verfügbar ist."
 }

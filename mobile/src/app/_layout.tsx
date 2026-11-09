@@ -9,11 +9,11 @@ import { View, useColorScheme } from 'react-native';
 
 import { loadServerUrl } from '@/api/server-url';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import { AppShell } from '@/features/shell/app-shell';
 import { ThemedText } from '@/components/themed-text';
 import { AuthScreen } from '@/features/auth/auth-screen';
 import { restoreSession, sessionSnapshot, subscribeSession } from '@/features/auth/session';
-import { SessionBar } from '@/features/auth/session-bar';
+
 
 SplashScreen.preventAutoHideAsync();
 
@@ -51,10 +51,7 @@ export default function TabLayout() {
               <ThemedText>Restoring session…</ThemedText>
             </View>
           ) : session.signedIn ? (
-            <>
-              <SessionBar identity={session.identity} />
-              <AppTabs identity={session.identity} />
-            </>
+            <AppShell />
           ) : (
             <AuthScreen mfaRequired={session.mfaRequired} />
           )}
