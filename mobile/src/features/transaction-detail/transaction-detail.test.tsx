@@ -11,6 +11,7 @@ import {
 import { useConflict } from '@/api/queries/conflict';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import type { components } from '@/api/schema';
+import { ApiError } from '@/api/client';
 import en from '@/i18n/en.json';
 import { TransactionDetail } from './transaction-detail';
 
@@ -181,6 +182,23 @@ describe('S4 transaction detail', () => {
     await waitFor(() =>
       expect(setCategory).toHaveBeenCalledWith({ categoryId: 'dining', version: 7 }),
     );
+  });
+
+  it('reloads the ETag and retries VERSION_REQUIRED once without losing the chosen category', async () => {
+    setCategory.mockRejectedValueOnce(new ApiError('version required', 428, {
+      code: 'VERSION_REQUIRED', status: 428, title: 'Version required',
+    }));
+    jest.mocked(useTransaction).mockReturnValue({
+      ...success(base),
+      refetch: jest.fn(async () => ({ data: { ...base, version: 8 } })),
+    } as unknown as ReturnType<typeof useTransaction>);
+    await show();
+    fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Food › Dining out' }));
+    await waitFor(() => {
+      expect(setCategory).toHaveBeenNthCalledWith(1, { categoryId: 'dining', version: 7 });
+      expect(setCategory).toHaveBeenNthCalledWith(2, { categoryId: 'dining', version: 8 });
+    });
   });
 
   it('shows reset only for user overrides, and sends the original ETag version', async () => {
