@@ -3,6 +3,7 @@
 // NumberFormat v3 natively (src/i18n/polyfills.ts). Import order matters: the device's time zone
 // is read first, NumberFormat needs PluralRules.
 import { DEVICE_TIME_ZONE } from './device-intl';
+import { applyDeviceTimeZone } from './time-zone';
 
 import '@formatjs/intl-pluralrules/polyfill.js';
 import '@formatjs/intl-pluralrules/locale-data/en.js';
@@ -20,6 +21,5 @@ import '@formatjs/intl-datetimeformat/locale-data/de-CH.js';
 import '@formatjs/intl-datetimeformat/add-golden-tz.js';
 
 type PolyfilledDateTimeFormat = { __setDefaultTimeZone?: (timeZone: string) => void };
-(Intl.DateTimeFormat as unknown as PolyfilledDateTimeFormat).__setDefaultTimeZone?.(
-  DEVICE_TIME_ZONE,
-);
+const polyfilled = Intl.DateTimeFormat as unknown as PolyfilledDateTimeFormat;
+applyDeviceTimeZone(polyfilled.__setDefaultTimeZone?.bind(polyfilled), DEVICE_TIME_ZONE);
