@@ -7,6 +7,7 @@ import { problemReaction, type ClientReaction, type ProblemReaction } from '@/ap
 import { Radii, Spacing, TypeScale } from '@/constants/theme';
 import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
+import { useEscapeKey } from './escape-key';
 
 export function EmptyState({
   title,
@@ -237,6 +238,7 @@ export function Dialog({
   const theme = useTheme();
   const intl = useIntl();
   const bottom = placement === 'bottom';
+  useEscapeKey(visible, onClose);
   return (
     <Modal
       transparent

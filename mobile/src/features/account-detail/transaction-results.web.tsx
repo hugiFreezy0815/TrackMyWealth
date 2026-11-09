@@ -1,10 +1,14 @@
 import { useIntl } from 'react-intl';
+import { useWindowDimensions } from 'react-native';
 
 import { Amount } from '@/components/shared';
+import { Fonts } from '@/constants/theme';
+import { layoutFor } from '@/features/shell/navigation';
 import { formatDate } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
 
 import { presentTransaction, type RowContext, type Transaction } from './model';
+import { TransactionResults as PhoneResults } from './transaction-results.native';
 
 export type TransactionResultsProps = {
   transactions: Transaction[];
@@ -16,38 +20,63 @@ export type TransactionResultsProps = {
   onEndReached?: () => void;
 };
 
-const cellStyle = {
-  padding: '12px 6px',
-  verticalAlign: 'top',
-  overflowWrap: 'anywhere' as const,
-};
+/**
+ * ADR 0007 Option B: a real semantic table on web (W06), not a div-based imitation. At phone
+ * width the web build shows the M25 list, like the native app, so four columns never squeeze.
+ */
+export function TransactionResults(props: TransactionResultsProps) {
+  const { width } = useWindowDimensions();
+  return layoutFor(width) === 'phone' ? (
+    <PhoneResults {...props} />
+  ) : (
+    <TransactionTable {...props} />
+  );
+}
 
-/** ADR 0007 Option B: a real semantic table on web, not a div-based imitation. */
-export function TransactionResults({
-  transactions,
-  context,
-  onOpen,
-  onCategory,
-}: TransactionResultsProps) {
+function TransactionTable({ transactions, context, onOpen, onCategory }: TransactionResultsProps) {
   const intl = useIntl();
   const theme = useTheme();
+  const cellStyle = {
+    padding: '12px 8px',
+    verticalAlign: 'top',
+    overflowWrap: 'anywhere' as const,
+    borderBottom: `1px solid ${theme.borderDefault}`,
+  };
+  const headerStyle = {
+    padding: '8px',
+    color: theme.textSecondary,
+    fontSize: 12,
+    fontWeight: 600,
+    borderBottom: `1px solid ${theme.borderDefault}`,
+  };
   // W06: the web category cell shows "{parent} › {name}".
   const webContext = { ...context, includeParent: true };
   return (
     <div style={{ width: '100%', overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+      <table
+        style={{
+          width: '100%',
+          borderCollapse: 'collapse',
+          tableLayout: 'auto',
+          // Plain DOM elements do not inherit react-native-web's text styles: theme them here.
+          fontFamily: Fonts?.sans,
+          fontSize: 14,
+          lineHeight: '20px',
+          color: theme.textPrimary,
+        }}
+      >
         <thead>
           <tr>
-            <th scope="col" style={{ textAlign: 'left' }}>
+            <th scope="col" style={{ ...headerStyle, textAlign: 'left' }}>
               {intl.formatMessage({ id: 'account.date' })}
             </th>
-            <th scope="col" style={{ textAlign: 'left' }}>
+            <th scope="col" style={{ ...headerStyle, textAlign: 'left' }}>
               {intl.formatMessage({ id: 'account.description' })}
             </th>
-            <th scope="col" style={{ textAlign: 'left' }}>
+            <th scope="col" style={{ ...headerStyle, textAlign: 'left' }}>
               {intl.formatMessage({ id: 'account.category' })}
             </th>
-            <th scope="col" style={{ textAlign: 'right' }}>
+            <th scope="col" style={{ ...headerStyle, textAlign: 'right' }}>
               {intl.formatMessage({ id: 'account.amount' })}
             </th>
           </tr>
@@ -105,7 +134,10 @@ export function TransactionResults({
                         type="button"
                         style={{
                           minHeight: 44,
-                          color: view.uncategorized ? theme.statusWarning : 'inherit',
+                          padding: '4px 10px',
+                          font: 'inherit',
+                          cursor: 'pointer',
+                          color: view.uncategorized ? theme.statusWarning : theme.brandLink,
                           background: 'transparent',
                           border: '1px solid currentColor',
                           borderRadius: 8,
