@@ -149,9 +149,9 @@ function fixtures(transaction: Transaction = base) {
   });
 }
 
-function show() {
+async function show() {
   const onBack = jest.fn();
-  render(
+  await render(
     <IntlProvider locale="en" messages={en}>
       <TransactionDetail accountId="account-1" transactionId="transaction-1" onBack={onBack} />
     </IntlProvider>,
@@ -166,8 +166,8 @@ describe('S4 transaction detail', () => {
     fixtures();
   });
 
-  it('shows automatic category provenance and current server values', () => {
-    show();
+  it('shows automatic category provenance and current server values', async () => {
+    await show();
     expect(screen.getByText('Migros')).toBeTruthy();
     expect(screen.getByText('Food › Groceries · automatic')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reset category' })).toBeNull();
@@ -175,7 +175,7 @@ describe('S4 transaction detail', () => {
   });
 
   it('sends the server ETag version with a category override', async () => {
-    show();
+    await show();
     fireEvent.press(screen.getByRole('button', { name: 'Change category' }));
     fireEvent.press(screen.getByRole('button', { name: 'Food › Dining out' }));
     await waitFor(() =>
@@ -185,14 +185,14 @@ describe('S4 transaction detail', () => {
 
   it('shows reset only for user overrides, and sends the original ETag version', async () => {
     fixtures({ ...base, categoryAssignedBy: 'USER' });
-    show();
+    await show();
     expect(screen.getByText('Food › Groceries · by you')).toBeTruthy();
     fireEvent.press(screen.getByRole('button', { name: 'Reset category' }));
     await waitFor(() => expect(resetCategory).toHaveBeenCalledWith({ version: 7 }));
   });
 
   it('requires the VOID explanation before deleting an imported row', async () => {
-    const back = show();
+    const back = await show();
     fireEvent.press(screen.getByRole('button', { name: 'Delete transaction' }));
     expect(screen.getByText(/Void this imported transaction/)).toBeTruthy();
     fireEvent.press(screen.getByRole('button', { name: 'Confirm deletion' }));
@@ -200,14 +200,14 @@ describe('S4 transaction detail', () => {
     expect(back).toHaveBeenCalled();
   });
 
-  it('hides delete for nonremovable or reconciliation rows', () => {
+  it('hides delete for nonremovable or reconciliation rows', async () => {
     fixtures({ ...base, removal: null, reconciliationAdjustment: 'ADJUSTMENT' });
-    show();
+    await show();
     expect(screen.queryByRole('button', { name: 'Delete transaction' })).toBeNull();
     expect(screen.getByText('Change this through reconciliation.')).toBeTruthy();
   });
 
-  it('renders dividend trade values without a category picker', () => {
+  it('renders dividend trade values without a category picker', async () => {
     fixtures({
       ...base,
       transactionType: 'DIVIDEND',
@@ -217,7 +217,7 @@ describe('S4 transaction detail', () => {
       taxWithheldAmount: '15.00',
       netAmount: '85.00',
     });
-    show();
+    await show();
     expect(screen.queryByRole('button', { name: 'Change category' })).toBeNull();
     expect(screen.getByText('Gross amount')).toBeTruthy();
     expect(screen.getByText('Tax withheld')).toBeTruthy();
