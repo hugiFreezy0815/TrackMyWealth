@@ -10,7 +10,7 @@ export function OfflineBanner() {
   useEffect(() => onlineManager.subscribe(setOnline), []);
   if (online !== false) return null;
   return (
-    <View accessibilityRole="alert" style={styles.banner}>
+    <View accessible accessibilityRole="alert" style={styles.banner}>
       <ThemedText style={styles.label}>{intl.formatMessage({ id: 'error.offline' })}</ThemedText>
     </View>
   );
