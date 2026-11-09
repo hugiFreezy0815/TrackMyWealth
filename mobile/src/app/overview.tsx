@@ -1,5 +1,6 @@
 import { Redirect, useRouter, type Href } from 'expo-router';
 import { useIntl } from 'react-intl';
+import { Platform } from 'react-native';
 
 import { isAdministrator } from '@/features/auth/session';
 import { useIdentity } from '@/features/auth/use-identity';
@@ -18,6 +19,9 @@ export default function OverviewRoute() {
     <ShellScreen title={intl.formatMessage({ id: 'nav.overview' })}>
       <OverviewScreen
         onAddPortfolio={() => router.push('/portfolios/new' as Href)}
+        onImportStatement={
+          Platform.OS === 'web' ? () => router.push('/imports/new' as Href) : undefined
+        }
         onReviewAccount={(accountId) =>
           router.push({ pathname: '/accounts/[accountId]', params: { accountId } })
         }
