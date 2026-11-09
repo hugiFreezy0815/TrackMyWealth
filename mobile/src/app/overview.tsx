@@ -1,4 +1,4 @@
-import { Redirect, useRouter, type Href } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useIntl } from 'react-intl';
 
 import { isAdministrator } from '@/features/auth/session';
@@ -12,11 +12,13 @@ export default function OverviewRoute() {
   const intl = useIntl();
   const identity = useIdentity();
   const router = useRouter();
+  const { portfolioMissing } = useLocalSearchParams<{ portfolioMissing?: string }>();
   if (isAdministrator(identity)) return <Redirect href={homeFor(true)} />;
 
   return (
     <ShellScreen title={intl.formatMessage({ id: 'nav.overview' })}>
       <OverviewScreen
+        missingPortfolioNotice={portfolioMissing === '1'}
         onAddPortfolio={() => router.push('/portfolios/new' as Href)}
         onPortfolio={(portfolioId) =>
           router.push({
