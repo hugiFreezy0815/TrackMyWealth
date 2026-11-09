@@ -697,9 +697,8 @@ class PortfolioViewControllerTest {
     assertThat(cardRow.balance()).isEqualByComparingTo("0");
   }
 
-  // #482: the server masks; the full IBAN is in neither the stored row nor the response. (The
-  // story's example "DE12 3456 7890 1234 5644 71" fails the IBAN checksum and would be refused, so
-  // a valid IBAN of the same shape stands in for it.)
+  // #482's acceptance criterion: the server masks; the full IBAN is in neither the stored row nor
+  // the response, which shows only the country, the check digits and the last four characters.
   @Test
   void aRowShowsOnlyTheServerMaskedIbanAndItsMatchedReconciliation() throws Exception {
     String token = bootstrapAdministrator();
@@ -712,7 +711,7 @@ class PortfolioViewControllerTest {
         .uri("/api/v1/accounts/" + cash + "/identifier")
         .header(HttpHeaders.IF_MATCH, "\"" + accountVersion(cash) + "\"")
         .contentType(MediaType.APPLICATION_JSON)
-        .body(new AccountIdentifierRequest("DE89 3704 0044 0532 0130 00"))
+        .body(new AccountIdentifierRequest("DE12 3456 7890 1200 3644 71"))
         .exchange()
         .expectStatus()
         .isOk();
@@ -729,13 +728,22 @@ class PortfolioViewControllerTest {
             .getResponseBody();
 
     assertThat(body)
-        .contains("\"maskedIdentifier\":\"DE89 \u2022\u2022\u2022\u2022 3000\"")
-        .doesNotContain("370400440532013000")
-        .doesNotContain("3704 0044")
-        .doesNotContain("0532");
+        .contains("\"maskedIdentifier\":\"DE12 \u2022\u2022\u2022\u2022 4471\"")
+        // The middle in every spelling, never shorter than 8 digits: a random UUID in the body
+        // could contain a 4-digit run by chance.
+        .doesNotContain("345678901200364471")
+        .doesNotContain("3456 7890 1200 3644")
+        .doesNotContain("34567890")
+        .doesNotContain("12003644");
     AccountRow row = getView(token, bank.id()).sections().get(0).accounts().get(0);
-    assertThat(row.maskedIdentifier()).isEqualTo("DE89 \u2022\u2022\u2022\u2022 3000");
+    assertThat(row.maskedIdentifier()).isEqualTo("DE12 \u2022\u2022\u2022\u2022 4471");
     assertThat(row.reconciliationStatus()).isEqualTo(ReconciliationStatusValues.RECONCILED);
+    // The stored row, every column at once: only the hash and the mask, never the middle.
+    assertThat(queryString("SELECT a::TEXT FROM account a WHERE id = ?", cash))
+        .contains("DE12 \u2022\u2022\u2022\u2022 4471")
+        .doesNotContain("345678901200364471")
+        .doesNotContain("34567890")
+        .doesNotContain("12003644");
   }
 
   @Test
