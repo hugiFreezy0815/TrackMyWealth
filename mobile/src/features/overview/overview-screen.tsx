@@ -39,6 +39,7 @@ export type OverviewScreenProps = {
   onAddPortfolio: () => void;
   onReviewAccount: (accountId: string) => void;
   onPortfolio?: (portfolioId: string) => void;
+  missingPortfolioNotice?: boolean;
 };
 
 /** S1 web layout: two columns from 1024 px, the right one 360 px wide. */
@@ -71,6 +72,7 @@ export function OverviewScreen({
   onAddPortfolio,
   onReviewAccount,
   onPortfolio,
+  missingPortfolioNotice = false,
 }: OverviewScreenProps) {
   const intl = useIntl();
   const theme = useTheme();
@@ -79,6 +81,7 @@ export function OverviewScreen({
   const compact = width < COMPACT_BREAKPOINT;
   const online = useOnline();
   const [selectedCurrency, selectCurrency] = useState<string | null>(null);
+  const [dismissMissing, setDismissMissing] = useState(false);
   const [explanation, setExplanation] = useState<FinancialPart | null>(null);
   const hidden = useAmountsHidden();
   // Recomputed on every render, so a session that crosses a month boundary asks for the new month.
@@ -180,6 +183,17 @@ export function OverviewScreen({
     >
       {/* The shell (#487) renders the page heading "Overview"; the screen adds the greeting. */}
       <InfoText>{msg(intl, greetingId(new Date().getHours()))}</InfoText>
+      {missingPortfolioNotice && !dismissMissing ? (
+        <View accessibilityRole="alert" style={{ padding: Spacing.two,
+          borderLeftWidth: 4, borderLeftColor: theme.statusWarning,
+          backgroundColor: theme.statusWarningSubtle, gap: Spacing.one }}>
+          <Text style={{ color: theme.textPrimary }}>{msg(intl, 'portfolio.missing')}</Text>
+          <Pressable accessibilityRole="button" onPress={() => setDismissMissing(true)}
+            style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}>
+            <Text style={{ color: theme.brandLink }}>{msg(intl, 'ui.close')}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {Platform.OS === 'web' ? (
         <Pressable
           accessibilityRole="button"
