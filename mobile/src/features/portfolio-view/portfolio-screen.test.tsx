@@ -249,8 +249,13 @@ describe('S2 Portfolio View acceptance (#493)', () => {
   });
 
   it('keeps unknown server sections and their rows visible under Other', async () => {
-    setData(view([makeSection('FUTURE' as PortfolioSection['section'],
-      [makeAccount('Unrecognised kind', { accountType: 'FUTURE_ACCOUNT' })])]));
+    setData(
+      view([
+        makeSection('FUTURE' as PortfolioSection['section'], [
+          makeAccount('Unrecognised kind', { accountType: 'FUTURE_ACCOUNT' }),
+        ]),
+      ]),
+    );
     const { onAccount } = await mount();
     expect(screen.getByText('Other')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: /Unrecognised kind/ }));
@@ -258,13 +263,24 @@ describe('S2 Portfolio View acceptance (#493)', () => {
   });
 
   it('keeps a depot row visible when its positions endpoint fails and offers retry', async () => {
-    setData(view([makeSection('DEPOT', [makeAccount('depot', {
-      accountType: 'SECURITIES', positionsCount: 3, positionsAsOf: '2026-09-30',
-    })])]));
+    setData(
+      view([
+        makeSection('DEPOT', [
+          makeAccount('depot', {
+            accountType: 'SECURITIES',
+            positionsCount: 3,
+            positionsAsOf: '2026-09-30',
+          }),
+        ]),
+      ]),
+    );
     const refresh = jest.fn();
     jest.mocked(useAccountPositions).mockReturnValue({
-      data: undefined, isPending: false, isError: true,
-      error: new ApiError('failed', 503, { code: 'INTERNAL' }), refetch: refresh,
+      data: undefined,
+      isPending: false,
+      isError: true,
+      error: new ApiError('failed', 503, { code: 'INTERNAL' }),
+      refetch: refresh,
     } as unknown as ReturnType<typeof useAccountPositions>);
     await mount();
     expect(screen.getByText('depot')).toBeTruthy();
