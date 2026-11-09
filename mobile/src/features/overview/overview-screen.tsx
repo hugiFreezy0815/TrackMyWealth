@@ -184,12 +184,22 @@ export function OverviewScreen({
       {/* The shell (#487) renders the page heading "Overview"; the screen adds the greeting. */}
       <InfoText>{msg(intl, greetingId(new Date().getHours()))}</InfoText>
       {missingPortfolioNotice && !dismissMissing ? (
-        <View accessibilityRole="alert" style={{ padding: Spacing.two,
-          borderLeftWidth: 4, borderLeftColor: theme.statusWarning,
-          backgroundColor: theme.statusWarningSubtle, gap: Spacing.one }}>
+        <View
+          accessibilityRole="alert"
+          style={{
+            padding: Spacing.two,
+            borderLeftWidth: 4,
+            borderLeftColor: theme.statusWarning,
+            backgroundColor: theme.statusWarningSubtle,
+            gap: Spacing.one,
+          }}
+        >
           <Text style={{ color: theme.textPrimary }}>{msg(intl, 'portfolio.missing')}</Text>
-          <Pressable accessibilityRole="button" onPress={() => setDismissMissing(true)}
-            style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setDismissMissing(true)}
+            style={{ minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center' }}
+          >
             <Text style={{ color: theme.brandLink }}>{msg(intl, 'ui.close')}</Text>
           </Pressable>
         </View>
