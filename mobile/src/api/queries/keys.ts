@@ -23,6 +23,10 @@ export const queryKeys = {
   account: (id: string) => [queryRoots.accounts, id] as const,
   accountTransactions: (id: string, filters?: object) =>
     [queryRoots.accounts, id, 'transactions', filters ?? {}] as const,
+  uncategorizedCount: (accountId: string) =>
+    [queryRoots.accounts, accountId, 'transactions', 'uncategorized-count'] as const,
+  accountPositions: (accountId: string) =>
+    [queryRoots.accounts, accountId, 'positions'] as const,
   transaction: (accountId: string, transactionId: string) =>
     [queryRoots.accounts, accountId, 'transactions', transactionId] as const,
   categories: (includeInactive?: boolean) =>
