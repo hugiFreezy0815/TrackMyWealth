@@ -26,7 +26,7 @@ import {
   SectionCard,
   ValueStatusBadge,
 } from '@/components/shared';
-import { Radii, Spacing, TypeScale } from '@/constants/theme';
+import { Spacing, TypeScale } from '@/constants/theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { formatDate, formatDateTime } from '@/format/date';
 import { useTheme } from '@/hooks/use-theme';
@@ -41,9 +41,7 @@ import {
   sectionMessageKey,
   typeMessageKey,
   type PortfolioAccount,
-  type PortfolioListItem,
   type PortfolioSection,
-  type PortfolioView,
   type Position,
 } from './model';
 
@@ -124,7 +122,10 @@ function PositionList({
                   : theme.statusGain,
               }}
             >
-              {m('portfolio.position.gain', { percent: position.unrealisedGainPercent })}
+              {m('portfolio.position.gain', { percent: position.unrealisedGainPercent === '0'
+                  ? '0' : isNegative(position.unrealisedGainPercent)
+                    ? '−' + position.unrealisedGainPercent.slice(1)
+                    : '+' + position.unrealisedGainPercent })}
             </Text>
           ) : (
             <Text style={{ ...TypeScale.caption, color: theme.textSecondary }}>
