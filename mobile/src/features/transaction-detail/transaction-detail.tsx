@@ -175,13 +175,22 @@ export function TransactionDetail({
   const date = (value: string) => formatDate(value, intl.locale);
   const german = intl.locale.startsWith('de');
 
-  async function handleWriteError(failure: unknown): Promise<void> {
-    if (failure instanceof ApiError && problemReaction(failure).sentCode === 'VERSION_REQUIRED') {
-      // Do not automatically replay a destructive action with a new ETag.
-      await record.refetch();
-      setError(failure);
-      return;
+  async function withVersionRetry<T>(
+    perform: (version: number) => Promise<T>,
+    version: number,
+  ): Promise<T> {
+    try {
+      return await perform(version);
+    } catch (failure) {
+      if (failure instanceof ApiError && problemReaction(failure).sentCode === 'VERSION_REQUIRED') {
+        const refreshed = await record.refetch();
+        if (refreshed.data) return perform(refreshed.data.version);
+      }
+      throw failure;
     }
+  }
+
+  async function handleWriteError(failure: unknown): Promise<void> {
     if (
       failure instanceof ApiError &&
       (failure.status === 404 || problemReaction(failure).sentCode === 'NOT_FOUND')
@@ -199,7 +208,10 @@ export function TransactionDetail({
     setSelectedCategory(id);
     setError(null);
     try {
-      await actions.setCategory.mutateAsync({ categoryId: id, version: transaction.version });
+      await withVersionRetry(
+        (version) => actions.setCategory.mutateAsync({ categoryId: id, version }),
+        transaction.version,
+      );
       setPicker(false);
       setSelectedCategory(null);
       setNotice('txn.saved');
@@ -212,7 +224,10 @@ export function TransactionDetail({
     if (!transaction || locked || !canChangeCategory(transaction, archived)) return;
     setError(null);
     try {
-      await actions.resetCategory.mutateAsync({ version: transaction.version });
+      await withVersionRetry(
+        (version) => actions.resetCategory.mutateAsync({ version }),
+        transaction.version,
+      );
       setNotice('txn.resetDone');
     } catch (failure) {
       await handleWriteError(failure);
@@ -223,10 +238,13 @@ export function TransactionDetail({
     if (!transaction || locked || !canRemove(transaction, archived)) return;
     setError(null);
     try {
-      await actions.remove.mutateAsync({
-        version: transaction.version,
-        ...(transaction.removal === 'VOID' && reason.trim() ? { reason: reason.trim() } : {}),
-      });
+      await withVersionRetry(
+        (version) => actions.remove.mutateAsync({
+          version,
+          ...(transaction.removal === 'VOID' && reason.trim() ? { reason: reason.trim() } : {}),
+        }),
+        transaction.version,
+      );
       setConfirmRemove(false);
       onBack();
     } catch (failure) {
