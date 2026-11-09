@@ -38,6 +38,7 @@ import { AssetsLiabilitiesCard, NetWorthCard, type FinancialPart } from './total
 export type OverviewScreenProps = {
   onAddPortfolio: () => void;
   onReviewAccount: (accountId: string) => void;
+  onPortfolio?: (portfolioId: string) => void;
 };
 
 /** S1 web layout: two columns from 1024 px, the right one 360 px wide. */
@@ -66,7 +67,7 @@ function useOnline(): boolean {
 }
 
 /** US-01-15 / S1: independent TanStack queries, no financial arithmetic in the UI. */
-export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScreenProps) {
+export function OverviewScreen({ onAddPortfolio, onReviewAccount, onPortfolio }: OverviewScreenProps) {
   const intl = useIntl();
   const theme = useTheme();
   const { width } = useWindowDimensions();
@@ -139,7 +140,7 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScre
         <ErrorBanner error={portfolios.error} onRetry={() => void portfolios.refetch()} />
       ) : null}
       {portfolios.data ? (
-        <PortfoliosCard items={portfolioItems} hidden={hidden} intl={intl} />
+        <PortfoliosCard items={portfolioItems} hidden={hidden} intl={intl} onPortfolio={onPortfolio} />
       ) : null}
       {waitingFor(cashFlow) ? <LoadingSkeleton count={3} /> : null}
       {cashFlow.isError ? (
@@ -198,6 +199,8 @@ export function OverviewScreen({ onAddPortfolio, onReviewAccount }: OverviewScre
             intl={intl}
             offline={!online}
             onAddPortfolio={onAddPortfolio}
+            portfolios={portfolioItems}
+            onPortfolio={onPortfolio}
           />
           <CurrencyScope
             currency={currency ?? workspace.data.currency}
