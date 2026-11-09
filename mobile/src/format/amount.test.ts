@@ -39,6 +39,12 @@ describe('a11yAmount', () => {
     );
   });
 
+  it("keeps the reader's decimal separator while the display uses the Swiss format", () => {
+    const deIntl = intl('de', { ...en, ...de });
+    expect(formatAmount('1111111.5' as DecimalString, 'EUR', 'de')).toBe(`EUR\u00a01'111'111.50`);
+    expect(a11yAmount('1111111.5' as DecimalString, 'EUR', deIntl)).toBe('1111111,50 Euro');
+  });
+
   it('reads an unnamed currency as its code and a zero without sign', () => {
     expect(a11yAmount('-0.004' as DecimalString, 'GBP', enIntl)).toBe('0.00 GBP');
   });

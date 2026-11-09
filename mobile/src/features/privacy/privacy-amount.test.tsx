@@ -12,7 +12,7 @@ it('never exposes a hidden amount to visual users or screen readers', async () =
   await render(withIntl(<PrivacyAmount value="1234.50" currency="CHF" />));
   expect(screen.getByText('••••')).toBeTruthy();
   expect(screen.getByLabelText('hidden')).toBeTruthy();
-  expect(screen.queryByText(/1,234/)).toBeNull();
+  expect(screen.queryByText(/1'234/)).toBeNull();
 });
 it('shows the amount when privacy is disabled', async () => {
   jest.mocked(useAmountsHidden).mockReturnValue(false);

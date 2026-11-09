@@ -27,10 +27,14 @@ export const usePortfolioView = (portfolioId: string) =>
       typedApi.get('/api/v1/portfolios/{portfolioId}/view', { params: { portfolioId } }),
     enabled: !!portfolioId,
   });
-export const useNetWorth = (currency?: string) =>
+/** `enabled: false` holds the request back, e.g. until the scope currency is known (S1). */
+export type QueryGate = { enabled?: boolean };
+
+export const useNetWorth = (currency?: string, { enabled = true }: QueryGate = {}) =>
   useQuery({
     queryKey: queryKeys.netWorth(currency),
     queryFn: () => typedApi.get('/api/v1/net-worth', { query: currency ? { currency } : {} }),
+    enabled,
   });
 export const useAccounts = (portfolioId?: string) =>
   useQuery({
@@ -70,12 +74,12 @@ export const useCategories = (includeInactive = false) =>
     queryKey: queryKeys.categories(includeInactive),
     queryFn: () => typedApi.get('/api/v1/categories', { query: { includeInactive } }),
   });
-export const useCashFlow = (month: string, currency?: string) =>
+export const useCashFlow = (month: string, currency?: string, { enabled = true }: QueryGate = {}) =>
   useQuery({
     queryKey: queryKeys.cashFlow(month, currency),
     queryFn: () =>
       typedApi.get('/api/v1/cash-flow', { query: { month, ...(currency ? { currency } : {}) } }),
-    enabled: !!month,
+    enabled: enabled && !!month,
   });
 export const useImportBatch = (accountId: string, batchId: string) =>
   useQuery({

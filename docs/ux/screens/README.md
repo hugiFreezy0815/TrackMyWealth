@@ -66,7 +66,8 @@ data source. Every such difference is listed under "Differences from Figma" in t
    needs a figure the API does not send yet, the spec names the story that adds it. Until that
    story merges, the element is **hidden**: no placeholder, no client-side workaround.
 2. **Amounts are strings.** Every `format: decimal` field is a `DecimalString`. It is formatted
-   for display only (#378: `de-CH` `1'234.56`, `de-DE` `1.234,56`, `en` `1,234.56`; the currency
+   for display only, in one format for every UI language (PO 2026-11-09: apostrophe group,
+   decimal point, e.g. `1'234.56`, `1'111'111.00`; see UX-02 section 3); the currency
    code comes before the number; a negative sign is always shown, never only red colour).
 3. **Value status (NFR-UX-004).** Every value that has a `valueStatus` shows the
    `ValueStatusBadge` for any status other than `CURRENT`. A total uses the status the

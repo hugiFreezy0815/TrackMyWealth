@@ -25,8 +25,12 @@ const MINUS = '−'; // U+2212 MINUS SIGN
 const NBSP = '\u00A0'; // U+00A0 between currency code and number
 const HIDDEN = '••••';
 const UNKNOWN = '–'; // U+2013 EN DASH
-// Group separator where UX-02 overrides CLDR/ICU (ICU builds differ: ' or U+2019).
-const GROUP_OVERRIDE: Record<string, string> = { 'de-CH': "'" };
+// UX-02 house format (PO 2026-11-09): every UI language displays the Swiss grouping, an ASCII
+// apostrophe, and a decimal point, e.g. 1'111'111.00. Only the spoken form follows the locale.
+const DISPLAY_GROUP = "'";
+const DISPLAY_DECIMAL = '.';
+// Formatted with 'en' and the separators replaced: Latin digits, one rule for every locale.
+const DISPLAY_LOCALE = 'en';
 
 const scaleCache = new Map<string, number>();
 const formatterCache = new Map<string, Intl.NumberFormat>();
@@ -73,16 +77,26 @@ function formatNumber(
   const negative = value.startsWith('-');
   // Type-only cast: NumberFormat v3 formats the string itself, the value never becomes a number.
   const exactInput = (negative ? value.slice(1) : value) as unknown as number;
-  const parts = decimalFormatter(canonical, currencyScale(currency)).formatToParts(exactInput);
+  const scale = currencyScale(currency);
+  const parts = decimalFormatter(DISPLAY_LOCALE, scale).formatToParts(exactInput);
   const zero = parts.every(
     (part) => !['integer', 'fraction'].includes(part.type) || /^0+$/.test(part.value),
   );
-  const group = GROUP_OVERRIDE[canonical];
   return {
     sign: zero ? '' : negative ? 'minus' : signRole === 'change' ? 'plus' : '',
-    grouped: parts.map((part) => (part.type === 'group' && group) || part.value).join(''),
-    // Screen readers read separators aloud ("apostrophe"), so the spoken form has none.
-    plain: parts
+    grouped: parts
+      .map((part) =>
+        part.type === 'group'
+          ? DISPLAY_GROUP
+          : part.type === 'decimal'
+            ? DISPLAY_DECIMAL
+            : part.value,
+      )
+      .join(''),
+    // Screen readers read separators aloud ("apostrophe"), so the spoken form has no grouping;
+    // its decimal separator is the reader's locale ("Komma" in German).
+    plain: decimalFormatter(canonical, scale)
+      .formatToParts(exactInput)
       .filter((part) => part.type !== 'group')
       .map((part) => part.value)
       .join(''),

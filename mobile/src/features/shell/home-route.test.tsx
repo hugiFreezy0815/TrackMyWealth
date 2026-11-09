@@ -11,6 +11,8 @@ import { withIntl } from '@/i18n/test-utils';
 const mockIdentity: { current: Identity | null } = { current: null };
 
 jest.mock('@/global.css', () => ({}));
+// This suite verifies redirects, not data fetching; the Overview screen has its own query tests.
+jest.mock('@/features/overview/overview-screen', () => ({ OverviewScreen: () => null }));
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => {}),

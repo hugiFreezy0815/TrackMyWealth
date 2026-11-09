@@ -24,9 +24,13 @@ type Props = {
 export function ShellScreen({ title, children, aside, privacyToggle = true }: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
-  const besideContent = aside != null && layoutFor(width) === 'desktop';
+  const layout = layoutFor(width);
+  const besideContent = aside != null && layout === 'desktop';
   return (
-    <ScrollView style={{ backgroundColor: theme.background }} contentContainerStyle={styles.scroll}>
+    <ScrollView
+      style={{ backgroundColor: theme.background }}
+      contentContainerStyle={[styles.scroll, layout === 'phone' && styles.scrollPhone]}
+    >
       <View style={[styles.frame, besideContent && styles.frameWithPanel]}>
         <View style={styles.content}>
           <View style={styles.header}>
@@ -77,6 +81,8 @@ export function UnavailableScreen() {
 
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, alignItems: 'center', padding: 24 },
+  // UX-02 / Figma M-screens: 16 px side padding on a phone.
+  scrollPhone: { padding: 16 },
   frame: { width: '100%', maxWidth: 960, gap: 24 },
   frameWithPanel: { flexDirection: 'row', alignItems: 'flex-start', maxWidth: 960 + 24 + 360 },
   content: { flex: 1, minWidth: 0, gap: 20 },

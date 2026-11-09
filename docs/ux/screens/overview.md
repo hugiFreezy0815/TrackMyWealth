@@ -58,9 +58,9 @@ Overview
 │ ( 1W )( 1M )( YTD )( 1Y )( Max )                    │   ← GAP-HISTORY (#477)
 └─────────────────────────────────────────────────────┘
 ┌ Assets                                  Liabilities ┐
-│ CHF 1'079'362.92                   −CHF 601'202.36  │
+│ CHF 1'079'362.92                    CHF 601'202.36  │
 │ ████████████████████████████░░░░░░░░░░░░░░░░░░░░    │
-│ Includes Mortgage (−CHF 600'000.00) and DKB Visa…   │
+│ Includes Mortgage (CHF 600'000.00) and DKB Visa…    │
 └─────────────────────────────────────────────────────┘
 ┌ Cash & savings ┐ ┌ Depot        ┐                     ← Section breakdown delivered (#481)
 ┌ Pillar 3a      ┐ ┌ Property & mortgage ┐
@@ -102,10 +102,10 @@ workspace currency (`GET /api/v1/workspace` → `currency`).
 | 10 | Value chart | text alternative `overview.chart.a11y` "Net worth from {start} to {end}, {change}" | line chart, estimated stretches dashed | **GAP-HISTORY (#477)** → `points[]` (`date`, `value`, `estimated`) |
 | 11 | Period switch | `period.1W/1M/YTD/1Y/MAX` | segmented control; default 1M; the choice is remembered on the device | **GAP-HISTORY (#477)** `period` parameter |
 | 12 | Assets | `overview.assets` "Assets" / "Vermögen" | `Amount` | `/net-worth` → `totalAssets` |
-| 13 | Liabilities | `overview.liabilities` "Liabilities" / "Verbindlichkeiten" | `Amount`, negative sign, loss colour | `/net-worth` → `totalLiabilities` (sent signed: shown as sent) |
+| 13 | Liabilities | `overview.liabilities` "Liabilities" / "Verbindlichkeiten" | `Amount`, loss colour, shown as sent (no sign added) | `/net-worth` → `totalLiabilities`: the server sends the **magnitude** of what is owed (positive; PO 2026-11-09, `AccountValuation`/DM-12). The label "Liabilities" carries the meaning, so the app adds no minus. Only an overpaid liability makes it negative, and then the server's minus shows |
 | 14 | Assets/liabilities bar | decorative (`aria-hidden`), the amounts above carry the meaning | bar split in the ratio of the two amounts | 12, 13. Visual proportion only; no figure is shown from it |
-| 15 | "Includes …" line | `overview.liabilities.includes` "Includes {first} and {second}" / "…and {count} more" | names + `Amount` | `/net-worth` → `accounts[]` with `nature = LIABILITY` and `valueKnown`, the two largest by absolute `value` first. Hidden when there are no liabilities |
-| 16 | Section tiles | `section.*`, **the same keys as the Portfolio View** (Cash & savings, Pillar 3a, Pension, Depot, Crypto, Credit card, Property & mortgage, Other) | `Amount` + change for the selected period | **Delivered (#481)** → `/net-worth` `sections[]` (`section`, `subtotal`, `valueStatus`, `complete`) in server order; change from **GAP-HISTORY (#477)** `sections[].change`. The section subtotal is available with #481; the change line remains hidden until #477. Only sections the server sends are shown. Phone: 2 columns; web: up to 4 per row |
+| 15 | "Includes …" line | `overview.liabilities.includes` "Includes {first} and {second}" / "…and {count} more" | names + `Amount` in the account's `currency`, shown as sent (magnitudes, like #13) | `/net-worth` → `accounts[]` with `nature = LIABILITY` and `valueKnown`, the two largest by absolute `value` first. Hidden when there are no liabilities |
+| 16 | Section tiles | `section.*`, **the same keys as the Portfolio View** (Cash & savings, Pillar 3a, Pension, Depot, Crypto, Credit card, Property & mortgage, Other) | `Amount` + change for the selected period | **Delivered (#481)** → `/net-worth` `sections[]` (`section`, `subtotal`, `valueStatus`, `complete`) in server order; change from **GAP-HISTORY (#477)** `sections[].change`. The section subtotal is available with #481; the change line remains hidden until #477. Only sections the server sends are shown. Phone: 2 columns (M03, PO 2026-11-09); web: 4 per row when each tile gets at least 160 px, else 2. The figure stays on one line: when it would not fit at 16 px it steps down in size (to 11 px at least), it never wraps or truncates |
 | 17 | Portfolios header | `overview.portfolios` "Portfolios" + "See all" | | "See all" → Portfolios tab (#376). Hidden if that tab isn't built in sprint 7 |
 | 18 | Portfolio row: logo, name | | | `GET /api/v1/portfolios` → `logoUrl`, `name` |
 | 19 | Portfolio row: subtitle | `portfolio.row.subtitle` "{count, plural, one {# account} other {# accounts}} · {currency}" | | `activeAccountCount`, `portfolioCurrency`; personal-assets default: `portfolio.row.personalAssets` "Property, vehicles and more" |
@@ -203,6 +203,7 @@ sends `{ "name": null }`.
 
 | Figma | Spec | Why |
 |---|---|---|
+| Liabilities "−CHF 601'202.36", "Mortgage (−CHF 600'000.00)" | "CHF 601'202.36" in the loss colour, "Mortgage (CHF 600'000.00)" | `/net-worth` sends liabilities as magnitudes; the app shows amounts as sent and never adds a sign (FR-API-010). PO 2026-11-09 |
 | "Good evening, Anna" | "Good evening" | `/users/me` has no display name |
 | "Prices 20 Oct, 17:35" | "As of 20 Oct" | `/net-worth` sends `asOf` as a date |
 | Scope "All accounts · CHF" with an account filter | Currency only | `/net-worth` has no account scope |
@@ -216,7 +217,8 @@ sends `{ "name": null }`.
 - Given the workspace name "Family Hug", the first tab reads "Family Hug". Given no name, it
   reads "All portfolios" (EN) or "Alle Portfolios" (DE).
 - Given `/net-worth` with `approximate=true`, the "Estimated" badge shows. Its accessible label
-  reads "Net worth, 478,160.56 Swiss francs, estimated".
+  reads "Net worth, 478160.56 Swiss francs, estimated" (spoken labels have no group
+  separators, UX-02 section 3); the card shows "CHF 478'160.56".
 - Given a portfolio in EUR and a workspace in CHF, its row shows the EUR total and "≈ CHF …".
   Given both in CHF, the "≈" line does not show.
 - Given a cash-flow request that fails, the net-worth card still shows and the cash-flow card
