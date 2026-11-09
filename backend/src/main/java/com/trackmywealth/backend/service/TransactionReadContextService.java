@@ -122,6 +122,11 @@ public class TransactionReadContextService {
    * cannot pass the database's check constraints, so it fails loudly instead of being mislabelled.
    */
   static String formatOf(ImportBatch batch, @Nullable String templateFormat) {
+    return formatOf(templateFormat, batch.getSourceKind());
+  }
+
+  /** {@link #formatOf(ImportBatch, String)} from the batch's stored values (US-07-38's history). */
+  static String formatOf(@Nullable String templateFormat, String sourceKind) {
     if (templateFormat != null) {
       String format = PUBLIC_TEMPLATE_FORMATS.get(templateFormat);
       if (format == null) {
@@ -129,11 +134,10 @@ public class TransactionReadContextService {
       }
       return format;
     }
-    return switch (batch.getSourceKind()) {
+    return switch (sourceKind) {
       case ImportBatchValues.SOURCE_DOCUMENT -> TransactionImportBatchResponse.FORMAT_CAMT;
       case ImportBatchValues.SOURCE_CSV -> TransactionImportBatchResponse.FORMAT_CSV;
-      default ->
-          throw new IllegalStateException("Unknown import source kind " + batch.getSourceKind());
+      default -> throw new IllegalStateException("Unknown import source kind " + sourceKind);
     };
   }
 }

@@ -1,22 +1,36 @@
-/** API-path-shaped keys; never share a financial cache across authenticated sessions. */
+/**
+ * API-path-shaped keys; never share a financial cache across authenticated sessions.
+ * Every key starts with one of the roots, so invalidation can address a whole resource family.
+ */
+export const queryRoots = {
+  workspace: 'workspace',
+  users: 'users',
+  portfolios: 'portfolios',
+  netWorth: 'net-worth',
+  accounts: 'accounts',
+  categories: 'categories',
+  cashFlow: 'cash-flow',
+} as const;
+
 export const queryKeys = {
-  workspace: ['workspace'] as const,
-  me: ['users', 'me'] as const,
-  portfolios: ['portfolios'] as const,
-  portfolio: (id: string) => ['portfolios', id] as const,
-  portfolioView: (id: string) => ['portfolios', id, 'view'] as const,
-  netWorth: (currency?: string) => ['net-worth', currency ?? 'default'] as const,
-  accounts: (filters?: object) => ['accounts', filters ?? {}] as const,
-  account: (id: string) => ['accounts', id] as const,
+  workspace: [queryRoots.workspace] as const,
+  me: [queryRoots.users, 'me'] as const,
+  portfolios: [queryRoots.portfolios] as const,
+  portfolio: (id: string) => [queryRoots.portfolios, id] as const,
+  portfolioView: (id: string) => [queryRoots.portfolios, id, 'view'] as const,
+  netWorth: (currency?: string) => [queryRoots.netWorth, currency ?? 'default'] as const,
+  accounts: (filters?: object) => [queryRoots.accounts, filters ?? {}] as const,
+  account: (id: string) => [queryRoots.accounts, id] as const,
   accountTransactions: (id: string, filters?: object) =>
-    ['accounts', id, 'transactions', filters ?? {}] as const,
+    [queryRoots.accounts, id, 'transactions', filters ?? {}] as const,
   transaction: (accountId: string, transactionId: string) =>
-    ['accounts', accountId, 'transactions', transactionId] as const,
-  categories: (includeInactive?: boolean) => ['categories', includeInactive ?? false] as const,
+    [queryRoots.accounts, accountId, 'transactions', transactionId] as const,
+  categories: (includeInactive?: boolean) =>
+    [queryRoots.categories, includeInactive ?? false] as const,
   cashFlow: (month: string, currency?: string) =>
-    ['cash-flow', month, currency ?? 'default'] as const,
+    [queryRoots.cashFlow, month, currency ?? 'default'] as const,
   importBatch: (accountId: string, batchId: string) =>
-    ['accounts', accountId, 'imports', batchId] as const,
+    [queryRoots.accounts, accountId, 'imports', batchId] as const,
   importRows: (accountId: string, batchId: string, status?: string) =>
-    ['accounts', accountId, 'imports', batchId, 'rows', status ?? 'all'] as const,
+    [queryRoots.accounts, accountId, 'imports', batchId, 'rows', status ?? 'all'] as const,
 };

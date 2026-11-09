@@ -191,13 +191,23 @@ public class CardStatementService {
    * no access check: the caller has already cleared the card's account.
    */
   public Optional<LocalDate> currentDueDate(AccountCreditCard extension) {
-    Short statementDay = extension.getStatementDay();
     Short dueDateOffsetDays = extension.getDueDateOffsetDays();
-    if (statementDay == null || dueDateOffsetDays == null) {
+    if (dueDateOffsetDays == null) {
       return Optional.empty();
     }
-    return Optional.of(
-        closingOnOrBefore(businessDateService.today(), statementDay).plusDays(dueDateOffsetDays));
+    return currentStatementDate(extension).map(date -> date.plusDays(dueDateOffsetDays));
+  }
+
+  /**
+   * The most recently closed statement date, including the closing day itself. Unlike the due date,
+   * this needs only the statement day configured. No account lookup: the portfolio view already
+   * loaded and authorized the card's extension in a batch.
+   */
+  public Optional<LocalDate> currentStatementDate(AccountCreditCard extension) {
+    Short statementDay = extension.getStatementDay();
+    return statementDay == null
+        ? Optional.empty()
+        : Optional.of(closingOnOrBefore(businessDateService.today(), statementDay));
   }
 
   // The most recent closing date that is on or before `today` - this cycle's own close if today has

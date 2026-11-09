@@ -226,6 +226,63 @@ class AdministratorFinancialAccessTest {
     client(adminToken).get().uri(path).exchange().expectStatus().isOk();
   }
 
+  // US-07-38 (#480), FR-USR-015: a transaction's change history is financial data like the row.
+  @Test
+  void aTransactionsHistoryIsReadByMembersOnlyAndNeverAcrossWorkspaces() throws Exception {
+    String adminToken = bootstrapAdministrator();
+    AccountSummaryResponse account = createAccount(adminToken);
+    UUID transaction = recordExpense(adminToken, account.id());
+    String history =
+        "/api/v1/accounts/" + account.id() + "/transactions/" + transaction + "/history";
+    client(adminToken).get().uri(history).exchange().expectStatus().isOk();
+
+    createStandardUser(adminToken, "member@example.com");
+    String memberToken = login("member@example.com");
+    client(adminToken).get().uri(history).exchange().expectStatus().isNotFound();
+    client(memberToken).get().uri(history).exchange().expectStatus().isOk();
+
+    UUID foreignAccount = accountInAnotherWorkspace();
+    UUID foreignTransaction = UUID.randomUUID();
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement =
+            connection.prepareStatement(
+                "INSERT INTO transaction (id, workspace_id, account_id, transaction_type,"
+                    + " booking_date, amount, currency) SELECT ?, workspace_id, id, 'EXPENSE',"
+                    + " CURRENT_DATE, -10, 'CHF' FROM account WHERE id = ?")) {
+      statement.setObject(1, foreignTransaction);
+      statement.setObject(2, foreignAccount);
+      statement.executeUpdate();
+    }
+    String foreign =
+        "/api/v1/accounts/" + foreignAccount + "/transactions/" + foreignTransaction + "/history";
+    assertThat(denial(adminToken, foreign)).isEqualTo(denial(memberToken, foreign));
+    // The member's own account path does not reach another workspace's row either.
+    client(memberToken)
+        .get()
+        .uri(
+            "/api/v1/accounts/" + account.id() + "/transactions/" + foreignTransaction + "/history")
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+  }
+
+  private UUID recordExpense(String token, UUID accountId) {
+    return client(token)
+        .post()
+        .uri("/api/v1/accounts/" + accountId + "/transactions")
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(
+            "{\"transactionType\":\"EXPENSE\",\"bookingDate\":\"2026-09-01\","
+                + "\"amount\":-10,\"currency\":\"CHF\"}")
+        .exchange()
+        .expectStatus()
+        .isCreated()
+        .expectBody(TransactionResponse.class)
+        .returnResult()
+        .getResponseBody()
+        .id();
+  }
+
   private static List<String> financialReadPaths(UUID accountId) {
     String account = "/api/v1/accounts/" + accountId;
     return List.of(
@@ -252,23 +309,6 @@ class AdministratorFinancialAccessTest {
             .replaceAll("\"timestamp\":\"[^\"]*\",?", "")
             .replaceAll("\"correlationId\":\"[^\"]*\",?", "")
         + " (404)";
-  }
-
-  private UUID recordExpense(String token, UUID accountId) {
-    return client(token)
-        .post()
-        .uri("/api/v1/accounts/" + accountId + "/transactions")
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(
-            "{\"transactionType\":\"EXPENSE\",\"bookingDate\":\"2026-09-01\","
-                + "\"amount\":-10,\"currency\":\"CHF\"}")
-        .exchange()
-        .expectStatus()
-        .isCreated()
-        .expectBody(TransactionResponse.class)
-        .returnResult()
-        .getResponseBody()
-        .id();
   }
 
   private AccountSummaryResponse createAccount(String token) {

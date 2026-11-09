@@ -1,3 +1,6 @@
+// First import: the Hermes Intl polyfills (and the device locale read before them), ADR 0008.
+import '@/i18n/polyfills';
+
 import { useEffect, useState } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 

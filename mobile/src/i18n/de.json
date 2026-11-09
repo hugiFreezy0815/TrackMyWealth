@@ -16,5 +16,10 @@
   "error.offline": "Du bist offline. Gespeicherte Daten werden angezeigt.",
   "error.conflict": "Dieser Eintrag wurde inzwischen geändert. Prüfe ihn und speichere erneut.",
   "error.retry": "Erneut versuchen",
-  "error.generic": "Etwas ist schiefgelaufen."
+  "error.generic": "Etwas ist schiefgelaufen.",
+  "amount.a11y": "{approx, select, yes {ungefähr } other {}}{sign, select, minus {minus } plus {plus } other {}}{amount} {currency}",
+  "currency.CHF": "Schweizer Franken",
+  "currency.EUR": "Euro",
+  "currency.USD": "US-Dollar",
+  "currency.JPY": "Japanische Yen"
 }

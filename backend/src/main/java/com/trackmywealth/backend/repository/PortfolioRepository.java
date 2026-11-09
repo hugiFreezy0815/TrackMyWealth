@@ -19,6 +19,6 @@ public interface PortfolioRepository extends JpaRepository<Portfolio, UUID> {
 
   // US-04-05: the portfolio list, in the order the caller gives. The workspace comes with them in
   // the same query: the list shows every total in its currency too.
-  @EntityGraph(attributePaths = "workspace")
+  @EntityGraph(attributePaths = {"workspace", "catalogueInstitution"})
   List<Portfolio> findByWorkspaceIdAndStatus(UUID workspaceId, String status, Sort sort);
 }

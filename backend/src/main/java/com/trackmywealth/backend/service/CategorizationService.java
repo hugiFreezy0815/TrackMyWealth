@@ -298,16 +298,19 @@ public class CategorizationService {
   }
 
   /**
-   * US-08-02 "reset to automatic": runs the automatic layers again as for a new row and returns how
-   * the category was assigned (empty for UNCATEGORIZED). A type the engine never categorizes goes
-   * back to having no category. The override log row stays as history; it stops counting because it
-   * no longer describes the current category, or a newer automatic row follows it.
+   * US-07-38: reset is a first-class member event even when the automatic result is UNCATEGORIZED.
+   * The log records the member and the new category without setting the override bit. The previous
+   * override remains immutable. This method is called only while the row is locked by the caller.
    */
   @Transactional
-  public Optional<String> resetToAutomatic(Transaction transaction) {
+  public Optional<String> resetToAutomatic(
+      Transaction transaction, AuthenticatedUserPrincipal actor) {
     if (!CATEGORIZED_TYPES.contains(transaction.getTransactionType())) {
       transaction.setCategoryId(null);
       transactionRepository.saveAndFlush(transaction);
+      logRepository.save(
+          TransactionCategorizationLog.ofMemberReset(
+              transaction.getId(), null, null, null, null, actor.userId()));
       return Optional.empty();
     }
     String[] assignedBy = {null};
@@ -316,7 +319,18 @@ public class CategorizationService {
         Set.of(),
         null,
         (row, decision) -> {
-          apply(row, decision);
+          // Instead of apply(): its automatic row could not be told apart from a re-run of the
+          // rules. The reset row keeps the rule and confidence, so unchanged() still holds after.
+          row.setCategoryId(decision.categoryId());
+          transactionRepository.save(row);
+          logRepository.save(
+              TransactionCategorizationLog.ofMemberReset(
+                  row.getId(),
+                  decision.categoryId(),
+                  decision.assignedBy(),
+                  decision.ruleId(),
+                  decision.confidence(),
+                  actor.userId()));
           assignedBy[0] = decision.assignedBy();
         });
     transactionRepository.flush();
@@ -374,9 +388,10 @@ public class CategorizationService {
   }
 
   // How each given row got its current category: its latest log row, where that row still
-  // describes the category the transaction holds (LatestCategoryAssignment#describes). A row with
-  // no category, or whose latest log row is stale (e.g. an override reset to UNCATEGORIZED), is
-  // absent. One query for the given rows, which callers keep to a page.
+  // describes the category the transaction holds (LatestCategoryAssignment#describes) and is not a
+  // reset that assigned nothing (RESET, US-07-38). A row with no category, or whose latest log row
+  // is stale (e.g. an older override reset to UNCATEGORIZED), is absent. One query for the given
+  // rows, which callers keep to a page.
   private Map<UUID, LatestCategoryAssignment> currentAssignments(List<Transaction> transactions) {
     Map<UUID, UUID> currentCategory = new HashMap<>();
     for (Transaction transaction : transactions) {
@@ -390,7 +405,8 @@ public class CategorizationService {
     Map<UUID, LatestCategoryAssignment> current = new HashMap<>();
     for (LatestCategoryAssignment latest :
         logRepository.findLatestAssignments(currentCategory.keySet())) {
-      if (latest.describes(currentCategory.get(latest.getTransactionId()))) {
+      if (latest.describes(currentCategory.get(latest.getTransactionId()))
+          && !TransactionCategorizationLog.ASSIGNED_BY_RESET.equals(latest.getAssignedBy())) {
         current.put(latest.getTransactionId(), latest);
       }
     }
