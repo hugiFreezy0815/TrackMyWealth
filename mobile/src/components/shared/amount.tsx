@@ -43,7 +43,7 @@ export function displayAmount({
     maximumFractionDigits: scale,
     roundingMode: 'halfExpand',
     useGrouping: true,
-  }).formatToParts(negative ? value.slice(1) : value);
+  }).formatToParts((negative ? value.slice(1) : value) as `${number}`);
   const zero = parts.every(
     (part) => !['integer', 'fraction'].includes(part.type) || /^0+$/.test(part.value),
   );
