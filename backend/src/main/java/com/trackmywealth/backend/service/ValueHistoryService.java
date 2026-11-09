@@ -135,7 +135,7 @@ public class ValueHistoryService {
     List<UUID> accountIds = accounts.stream().map(Account::getId).toList();
     BigDecimal contributions =
         cashFlowService.netContributions(
-            actor.workspaceId(), accountIds, from.plusDays(1), today, currency);
+            accountIds, from.plusDays(1), today, currency);
     if (contributions == null) {
       complete = false;
       warnings.add("Currency conversion unavailable for contributions.");
