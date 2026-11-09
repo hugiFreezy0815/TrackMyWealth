@@ -47,19 +47,91 @@ export const useAccount = (accountId: string) =>
     queryFn: () => typedApi.get('/api/v1/accounts/{accountId}', { params: { accountId } }),
     enabled: !!accountId,
   });
-export const useAccountTransactions = (accountId: string, uncategorized = false) =>
+export type TransactionSort = 'bookingDate,desc' | 'bookingDate,asc' | 'amount,desc' | 'amount,asc';
+
+/** Each sort/filter gets a separate cache. Changing either begins at page zero. */
+export const useAccountTransactions = (
+  accountId: string,
+  uncategorized = false,
+  sort: TransactionSort = 'bookingDate,desc',
+  enabled = true,
+) =>
   useInfiniteQuery({
-    queryKey: queryKeys.accountTransactions(accountId, { uncategorized }),
+    queryKey: queryKeys.accountTransactions(accountId, { uncategorized, sort }),
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
       typedApi.get('/api/v1/accounts/{accountId}/transactions', {
         params: { accountId },
-        query: { page: pageParam, size: 50, uncategorized },
+        query: { page: pageParam, size: 50, uncategorized, sort: [sort] },
       }),
     getNextPageParam: (last) =>
       last.page.number + 1 < last.page.totalPages ? last.page.number + 1 : undefined,
-    enabled: !!accountId,
+    enabled: !!accountId && enabled,
   });
+
+/** Count is server-authoritative: never subtract a local count after a mutation. */
+export const useUncategorizedCount = (accountId: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.uncategorizedCount(accountId),
+    queryFn: async () => {
+      const page = await typedApi.get('/api/v1/accounts/{accountId}/transactions', {
+        params: { accountId },
+        query: { uncategorized: true, page: 0, size: 1 },
+      });
+      return page.page.totalElements;
+    },
+    enabled: !!accountId && enabled,
+  });
+
+export const useArchivedAccounts = (portfolioId: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.accounts({ portfolioId, archived: true }),
+    queryFn: () => typedApi.get('/api/v1/accounts', {
+      query: { portfolioId, archived: true },
+    }),
+    enabled: !!portfolioId && enabled,
+  });
+
+export const useAccountPositions = (accountId: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.accountPositions(accountId),
+    queryFn: () => typedApi.get('/api/v1/accounts/{accountId}/positions', {
+      params: { accountId },
+    }),
+    enabled: !!accountId && enabled,
+  });
+
+/** Every write sends the exact version read from the server. */
+export function useAccountArchiveAction(accountId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ version, restore }: { version: number; restore: boolean }) =>
+      restore
+        ? typedApi.post('/api/v1/accounts/{accountId}/restore', {
+            params: { accountId }, version: ifMatch({ version }),
+          })
+        : typedApi.post('/api/v1/accounts/{accountId}/archive', {
+            params: { accountId }, version: ifMatch({ version }),
+          }),
+    onSuccess: () => invalidateFinancialData(client),
+  });
+}
+
+export function useChangeTransactionCategory(accountId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      transactionId, categoryId, version,
+    }: { transactionId: string; categoryId: string; version: number }) =>
+      typedApi.put('/api/v1/accounts/{accountId}/transactions/{transactionId}/category', {
+        params: { accountId, transactionId },
+        version: ifMatch({ version }),
+        body: { categoryId },
+      }),
+    onSuccess: () => invalidateFinancialData(client),
+  });
+}
+
 export const useTransaction = (accountId: string, transactionId: string) =>
   useQuery({
     queryKey: queryKeys.transaction(accountId, transactionId),
