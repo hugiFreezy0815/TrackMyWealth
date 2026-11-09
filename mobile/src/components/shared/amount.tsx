@@ -60,15 +60,24 @@ export function accessibleAmount({
   locale = 'en',
   masked = false,
   valueKnown = true,
+  approx = false,
 }: AmountFormatOptions): string {
   if (masked) return uiMessage('amount.hidden', locale);
   if (value == null || !valueKnown) return uiMessage('amount.unknown', locale);
-  // Screen readers announce ISO codes more consistently when separated by spaces.
-  const formatted = displayAmount({ value, currency, locale }).replaceAll(NBSP, ' ');
-  if (formatted.startsWith('−')) {
-    return (locale.startsWith('de') ? 'minus ' : 'minus ') + formatted.slice(1);
+  const formatted = displayAmount({ value, currency, locale });
+  const negative = formatted.startsWith('−');
+  const numericText = formatted.split(NBSP)[1] ?? '';
+  // DisplayNames has localized currency names on web and supported native Intl runtimes.
+  // The ISO code remains a safe fallback if the polyfill lacks that locale.
+  let currencyName = currency;
+  try {
+    currencyName = new Intl.DisplayNames([locale], { type: 'currency' }).of(currency) ?? currency;
+  } catch {
+    // The offline/hermes locale data may not provide currency names.
   }
-  return formatted;
+  const prefix = negative ? 'minus ' : '';
+  const approximate = approx ? (locale.startsWith('de') ? 'ungefähr ' : 'approximately ') : '';
+  return approximate + prefix + numericText + ' ' + currencyName;
 }
 
 export type AmountProps = AmountFormatOptions & {
@@ -80,7 +89,8 @@ export function Amount({ style, accessibilityLabel, testID, ...options }: Amount
   const theme = useTheme();
   const locale = options.locale ?? currentUiLocale();
   const display = displayAmount({ ...options, locale });
-  const label = accessibilityLabel ?? accessibleAmount({ ...options, locale });
+  // Masking wins over any caller-provided label: private digits cannot leak.
+  const label = options.masked ? uiMessage('amount.hidden', locale) : accessibilityLabel ?? accessibleAmount({ ...options, locale });
   return (
     <Text
       testID={testID}
