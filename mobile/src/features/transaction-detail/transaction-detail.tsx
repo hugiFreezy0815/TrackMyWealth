@@ -1,7 +1,7 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { onlineManager } from '@tanstack/react-query';
 import { useIntl } from 'react-intl';
-import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { useConflict } from '@/api/queries/conflict';
@@ -102,7 +102,7 @@ function CategoryPicker({
           minHeight: 44,
         }}
       />
-      <View style={{ maxHeight: 360, gap: Spacing.one }}>
+      <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ gap: Spacing.one }}>
         {choices.map((category) => (
           <Pressable
             key={category.id}
@@ -132,7 +132,7 @@ function CategoryPicker({
             {intl.formatMessage({ id: 'txn.picker.empty' })}
           </Text>
         ) : null}
-      </View>
+      </ScrollView>
       {busy ? <ActivityIndicator /> : null}
     </Dialog>
   );
@@ -423,7 +423,9 @@ export function TransactionDetail({
               ? 'txn.source.imported'
               : transaction.source === 'MANUAL'
                 ? 'txn.source.manual'
-                : 'txn.source.bank',
+                : ['API', 'AGGREGATOR'].includes(transaction.source)
+                  ? 'txn.source.bank'
+                  : 'txn.source.unknown',
           })}
           {transaction.fxRateEstimated ? ' · ' + intl.formatMessage({ id: 'txn.fxEstimated' }) : ''}
         </Text>
