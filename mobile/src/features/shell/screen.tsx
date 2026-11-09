@@ -19,9 +19,10 @@ type Props = {
   aside?: ReactNode;
   /** The eye control on every screen (FR-CLI-005); Settings shows its own labelled switch. */
   privacyToggle?: boolean;
+  detailWidth?: number;
 };
 
-export function ShellScreen({ title, children, aside, privacyToggle = true }: Props) {
+export function ShellScreen({ title, children, aside, privacyToggle = true, detailWidth = DETAIL_PANEL_WIDTH }: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const layout = layoutFor(width);
@@ -45,7 +46,7 @@ export function ShellScreen({ title, children, aside, privacyToggle = true }: Pr
           <View
             role="complementary"
             testID="shell-detail-panel"
-            style={besideContent ? styles.panelBeside : styles.panelBelow}
+            style={besideContent ? [styles.panelBeside, { width: detailWidth }] : styles.panelBelow}
           >
             {aside}
           </View>
