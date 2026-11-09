@@ -40,7 +40,11 @@ export function historyDescription(entry: HistoryEntry, categories: Category[], 
   const actor = entry.actorDisplayName ?? '';
   const from = historyCategory(entry.fromCategoryId, categories, german);
   const to = historyCategory(entry.toCategoryId, categories, german);
-  const values = { actor, from, to, reason: entry.reason ?? '' };
+  const values = {
+    actor, from, to, reason: entry.reason ?? '',
+    format: entry.importBatch?.fileFormat ?? '',
+    date: entry.importBatch?.uploadedAt.slice(0, 10) ?? '',
+  };
   const kinds: Record<string, string> = {
     IMPORTED: 'txn.history.imported',
     CREATED: 'txn.history.created',
