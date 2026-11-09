@@ -1,22 +1,14 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { onlineManager } from '@tanstack/react-query';
+import { useEffect, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 
 import { usePortfolios, useWorkspace } from '@/api/queries/resources';
 import { LoadingSkeleton } from '@/components/shared';
 import { Spacing } from '@/constants/theme';
+import { useOnline } from '@/hooks/use-online';
 
 import { completeOverviewStep, hasCompletedOverviewStep, setupStepKey } from './device-step';
 import { isFirstOverviewSetup } from './model';
 import { OverviewNameEditor } from './overview-name-editor';
-
-function useOnline() {
-  return useSyncExternalStore(
-    (notify) => onlineManager.subscribe(notify),
-    () => onlineManager.isOnline(),
-    () => true,
-  );
-}
 
 /** First-run step after sign-in/MFA, before financial routes are shown to a new member. */
 export function OverviewSetupGate({ userId, children }: { userId: string; children: ReactNode }) {

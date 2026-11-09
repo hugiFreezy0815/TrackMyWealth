@@ -1,5 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
-import { onlineManager } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import {
   Platform,
@@ -21,6 +20,7 @@ import {
 import { ErrorBanner, LoadingSkeleton, OfflineBanner } from '@/components/shared';
 import { Spacing } from '@/constants/theme';
 import { formatDate } from '@/format/date';
+import { useOnline } from '@/hooks/use-online';
 import { useTheme } from '@/hooks/use-theme';
 import { useAmountsHidden } from '@/features/privacy/amount-visibility';
 import { CashFlowCard } from './cash-flow-card';
@@ -57,14 +57,6 @@ const GREETINGS = {
 function greetingId(hour: number): string {
   if (hour < 12) return GREETINGS.morning;
   return hour < 18 ? GREETINGS.afternoon : GREETINGS.evening;
-}
-
-function useOnline(): boolean {
-  return useSyncExternalStore(
-    (notify) => onlineManager.subscribe(notify),
-    () => onlineManager.isOnline(),
-    () => true,
-  );
 }
 
 /** US-01-15 / S1: independent TanStack queries, no financial arithmetic in the UI. */
