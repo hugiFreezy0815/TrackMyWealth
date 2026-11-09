@@ -12,6 +12,8 @@ export type TransactionResultsProps = {
   byDate: boolean;
   onOpen: (id: string) => void;
   onCategory: (transaction: Transaction) => void;
+  /** Native only: web pages with the "Load more" button (spec S3 "Paging"). */
+  onEndReached?: () => void;
 };
 
 const cellStyle = {

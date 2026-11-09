@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { IntlProvider, createIntl, createIntlCache } from 'react-intl';
 import { StyleSheet } from 'react-native';
 
@@ -19,6 +19,12 @@ jest.mock('@/features/privacy/amount-visibility', () => ({
   useAmountsHidden: jest.fn(() => false),
 }));
 jest.mock('@/features/shell/toast', () => ({ showToast: jest.fn() }));
+// Jest has no layout: the end marker reports itself visible whenever its layout event fires.
+jest.mock('@/features/shell/scroll-events', () => ({
+  useWhenOnScreen: (_ref: unknown, onVisible: () => void, enabled: boolean) => () => {
+    if (enabled) onVisible();
+  },
+}));
 jest.mock('@/api/typed-api', () => ({
   typedApi: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
 }));
@@ -204,6 +210,27 @@ describe('S3 account detail acceptance checks (#494)', () => {
 
     expect(await screen.findByText('Showing 50 of 120')).toBeTruthy();
     expect(listCalls().at(-1)).toMatchObject({ page: 0, uncategorized: false });
+  });
+
+  it('loads the next page on a phone once the last 10 rows come into view', async () => {
+    fakeServer(
+      summary(),
+      Array.from({ length: 120 }, (_, index) => txn(index)),
+    );
+    await renderDetail();
+    expect(await screen.findByText('Showing 50 of 120')).toBeTruthy();
+
+    // The marker sits before row 41 of 50, i.e. 10 rows before the end.
+    const marker = screen.getByTestId('transactions-end-marker');
+    const rows = screen.getAllByLabelText(/^Shop \d{3},/);
+    expect(rows.indexOf(screen.getByLabelText(/^Shop 040,/))).toBe(40);
+    await act(async () => fireEvent(marker, 'layout'));
+    expect(await screen.findByText('Showing 100 of 120')).toBeTruthy();
+
+    await act(async () => fireEvent(screen.getByTestId('transactions-end-marker'), 'layout'));
+    expect(await screen.findByText('Showing 120 of 120')).toBeTruthy();
+    expect(screen.queryByTestId('transactions-end-marker')).toBeNull();
+    expect(listCalls().map((query) => query.page)).toEqual([0, 1, 2]);
   });
 
   it('counts uncategorised from the server: 3, then 2 after a change, filter kept', async () => {

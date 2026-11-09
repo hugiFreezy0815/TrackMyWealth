@@ -395,6 +395,13 @@ export function AccountDetail({ accountId, onBack, onTransaction, onImport }: Ac
             byDate={sort.startsWith('bookingDate')}
             onOpen={onTransaction}
             onCategory={setCategoryTarget}
+            onEndReached={
+              transactions.hasNextPage && !transactions.isFetchNextPageError
+                ? () => {
+                    if (!transactions.isFetchingNextPage) void transactions.fetchNextPage();
+                  }
+                : undefined
+            }
           />
           {records.length ? (
             <Text accessibilityLiveRegion="polite" style={{ color: theme.textSecondary }}>

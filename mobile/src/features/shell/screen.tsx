@@ -15,6 +15,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { AmountVisibilityToggle } from '@/features/privacy/amount-visibility-toggle';
 
 import { layoutFor } from './navigation';
+import { ShellScrollProvider, useShellScrollEvents } from './scroll-events';
 
 /** W01/W06: the nominal width of the desktop detail panel. */
 export const DETAIL_PANEL_WIDTH = 360;
@@ -41,10 +42,14 @@ export function ShellScreen({
   const { width } = useWindowDimensions();
   const layout = layoutFor(width);
   const besideContent = aside != null && layout === 'desktop';
+  const scroll = useShellScrollEvents();
   return (
     <ScrollView
       style={{ backgroundColor: theme.background }}
       refreshControl={refreshControl}
+      // Content such as an infinite list learns about scrolling (useWhenOnScreen).
+      onScroll={scroll.notify}
+      scrollEventThrottle={100}
       contentContainerStyle={[styles.scroll, layout === 'phone' && styles.scrollPhone]}
     >
       <View style={[styles.frame, besideContent && styles.frameWithPanel]}>
@@ -55,7 +60,7 @@ export function ShellScreen({
             </ThemedText>
             {privacyToggle && <AmountVisibilityToggle />}
           </View>
-          {children}
+          <ShellScrollProvider events={scroll.events}>{children}</ShellScrollProvider>
         </View>
         {aside != null && (
           <View
