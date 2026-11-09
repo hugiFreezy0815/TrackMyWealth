@@ -12,8 +12,8 @@ jest.mock('@/hooks/use-theme', () => ({
   }),
 }));
 describe('ValueStatusBadge', () => {
-  it('renders nothing for CURRENT', () => {
-    const { toJSON } = render(<ValueStatusBadge status="CURRENT" />);
+  it('renders nothing for CURRENT', async () => {
+    const { toJSON } = await render(<ValueStatusBadge status="CURRENT" />);
     expect(toJSON()).toBeNull();
   });
   it.each([
@@ -23,13 +23,13 @@ describe('ValueStatusBadge', () => {
     ['UNKNOWN', 'Value unknown'],
     ['FUTURE_SERVER_ENUM', 'Value unknown'],
     ['toString', 'Value unknown'],
-  ])('renders %s as %s', (status, label) => {
-    render(<ValueStatusBadge status={status} valueSourceDate="2026-10-01" locale="en" />);
+  ])('renders %s as %s', async (status, label) => {
+    await render(<ValueStatusBadge status={status} valueSourceDate="2026-10-01" locale="en" />);
     expect(screen.getByRole('button', { name: new RegExp(label) })).toBeTruthy();
   });
-  it('explains the financial status on demand', () => {
-    render(<ValueStatusBadge status="ESTIMATED" locale="en" />);
-    fireEvent.press(screen.getByRole('button', { name: /Estimated/ }));
+  it('explains the financial status on demand', async () => {
+    await render(<ValueStatusBadge status="ESTIMATED" locale="en" />);
+    await fireEvent.press(screen.getByRole('button', { name: /Estimated/ }));
     expect(screen.getByText(/based on an approximation/)).toBeTruthy();
   });
 });
